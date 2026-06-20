@@ -1,8 +1,8 @@
-﻿node_modules/
+node_modules/
 .next/
-out/
 dist/
+build/
 .env
 .env.local
-.env.*.local
-*.log
+*.tsbuildinfo
+cache/

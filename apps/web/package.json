@@ -1,0 +1,18 @@
+{
+  "name": "ppbf-web",
+  "version": "0.2.0",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "next": "^15.5.19",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.18.0"
+  },
+  "devDependencies": {
+    "typescript": "5.8.2"
+  }
+}

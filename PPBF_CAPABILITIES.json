@@ -1,0 +1,45 @@
+{
+  "version": "1.1-expanded",
+  "lastUpdated": "2026-06-17",
+  "capabilities": [
+    {"id":1,"name":"Multi-role portals with RBAC","group":"Core Platform","status":"draft"},
+    {"id":2,"name":"Participant master record service","group":"Core Platform","status":"draft"},
+    {"id":3,"name":"Nonprofit operations & board governance","group":"Core Platform","status":"draft"},
+    {"id":4,"name":"Goal Intake → Routing Service","group":"Routing","status":"draft"},
+    {"id":5,"name":"Development Route Factory","group":"Routing","status":"draft"},
+    {"id":6,"name":"Assignment & Skill Service","group":"Routing","status":"draft"},
+    {"id":7,"name":"Program lane router","group":"Routing","status":"draft"},
+    {"id":8,"name":"Session Logging Service","group":"Execution","status":"draft"},
+    {"id":9,"name":"Participant Self-Report Service","group":"Execution","status":"draft"},
+    {"id":10,"name":"Coach Review Queue + Decision Engine","group":"Execution","status":"draft"},
+    {"id":11,"name":"Safety Gate Matrix","group":"Execution","status":"draft"},
+    {"id":12,"name":"Research Intake + Evidence Review","group":"Execution","status":"draft"},
+    {"id":13,"name":"Athlete Self-Service Portal","group":"Stakeholder","status":"draft"},
+    {"id":14,"name":"Guardian Portal","group":"Stakeholder","status":"draft"},
+    {"id":15,"name":"Public Portal","group":"Stakeholder","status":"draft"},
+    {"id":16,"name":"Grant/Impact Reporting Engine","group":"Stakeholder","status":"draft"},
+    {"id":17,"name":"Creative & Brand Asset Manager","group":"Stakeholder","status":"draft"},
+    {"id":18,"name":"AI/ML Augmentation Service","group":"Intelligence","status":"draft"},
+    {"id":19,"name":"Research & Evidence Pipeline","group":"Intelligence","status":"draft"},
+    {"id":20,"name":"Safety Refusal Engine","group":"Intelligence","status":"draft"},
+    {"id":21,"name":"Payment Service (gated)","group":"Stakeholder","status":"draft"},
+    {"id":22,"name":"Build Continuity Ledger","group":"Continuity","status":"draft"},
+    {"id":23,"name":"Redundancy/Drift Alert Engine","group":"Governance","status":"draft"},
+    {"id":24,"name":"Promotion & Audit Workflow","group":"Governance","status":"draft"},
+    {"id":25,"name":"WORKFLOW_SYSTEM & File Status Engine","group":"Governance","status":"draft"}
+  ],
+  "taskDimensions": [
+    "Boxing Technique Fundamentals","Neurological Coordination & Timing","Emotional Regulation & Stress Response",
+    "Tactical Decision Making Under Pressure","Physical Conditioning & Power Transfer","Adaptive Skill Modification",
+    "Recovery & Readiness Assessment","Life Skill & Behavioral Transfer","Military SPECOPS Preparation",
+    "Injury Prevention & Safety Protocols","Progression & Regression Logic","Confidence & Self-Efficacy Building",
+    "Team Dynamics & Leadership","Goal Setting & Planning","Reflection & Metacognition","Long-term Habit Formation"
+  ],
+  "lifecycleTags": [
+    "Youth Development (Non-Contact Safe)","Adaptive/Disabled Participant","Deconditioned Adult Beginner",
+    "Recreational Adult","Competitive Amateur","Elite/Pro-Grade","AF_SPECOPS Military Prep",
+    "Emotional Regulation Focus","After-School Educational","High-Performance Training","Recovery/Return-to-Training"
+  ],
+  "routingMatrix": {"ranks":6,"lifecycleTags":11,"taskDimensions":16,"totalCombinations":1056},
+  "governance": {"activeSource":"docs/00_MASTER_BLUEPRINT.md","promotionRequired":true,"statusEngine":["ACTIVE","REVIEW_REQUIRED","DRAFT","SUPERSEDED","ARCHIVE"]}
+}
