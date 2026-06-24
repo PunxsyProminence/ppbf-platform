@@ -1,49 +1,65 @@
-'use client';
-import { useState } from 'react';
-import { generateRoute, ALL_LIFECYCLE_TAGS, ALL_TASK_DIMENSIONS } from '@packages/routing/routeFactory';
-import { isFeatureEnabled, getEnabledCapabilities } from '@packages/governance/featureFlags';
-import { MainNavigation } from '@packages/portals/MainNavigation';
-import { getVersionInfo } from '@packages/governance/version';
+import Image from "next/image";
 
-export default function PPBFPortal() {
-  const [route, setRoute] = useState<any>(null);
-
-  const handleGenerate = () => {
-    const newRoute = generateRoute({
-      goal: 'Improve emotional regulation',
-      participantType: 'Youth',
-      lifecycleTag: ALL_LIFECYCLE_TAGS[0],
-      taskDimension: ALL_TASK_DIMENSIONS[0],
-    });
-    setRoute(newRoute);
-  };
-
+export default function Home() {
   return (
-    <div>
-      <MainNavigation />
-      <h1>PPBF Athlete Portal</h1>
-      <p>Feature flags & routing matrix active. See DEVELOPER_ONBOARDING.md for contributors.</p>
-      <p style={{ fontSize: '0.9em', color: '#666' }}>
-        Example flag check (Cap 4): {isFeatureEnabled(4) ? 'ENABLED' : 'draft (gated)'} | Active caps: {getEnabledCapabilities().length}
-      </p>
-      <p style={{ fontSize: '0.75rem', color: '#888' }}>Version: {getVersionInfo().version} | {getVersionInfo().status} | {getVersionInfo().governance} (Batch {getVersionInfo().totalBatches})</p>
-      
-      <button onClick={handleGenerate} style={{ padding: '12px 24px', margin: '20px 0' }}>
-        Generate Development Route
-      </button>
-
-      {route && (
-        <pre style={{ background: '#f5f5f5', padding: '20px', borderRadius: '8px' }}>
-          {JSON.stringify(route, null, 2)}
-        </pre>
-      )}
-
-      <div style={{ marginTop: 40, paddingTop: 20, borderTop: '1px solid #ddd' }}>
-        <strong>Other governed portals:</strong><br />
-        <a href="/reports">Reports</a> | <a href="/brand">Brand</a> | <a href="/ledger">Ledger</a> | <a href="/continuity">Continuity</a> | <a href="/payment">Payment (Gated)</a> | <a href="/audit">Governance Audit</a> | <a href="/migration">Legacy Migration</a> | <a href="/launch">Launch</a><br />
-        <a href="/public">Public Portal</a> | <a href="/admin">Admin Dashboard</a> | <a href="/athlete">Athlete Portal</a> | <a href="/athlete/dashboard">Athlete Dashboard</a> | <a href="/guardian">Guardian Portal</a> | <a href="/readiness">Readiness</a>
-        <br /><small>Developer resources: DEVELOPER_ONBOARDING.md | API_DOCS.md | run-tests.ps1 | QUALITY_CHECKLIST.md | master-runner.ps1 | ultimate-summary.ps1 | backup-export.ps1 | PROJECT_COMPLETE.md | quick-reference.ps1 | COMPLETE_REFERENCE_GUIDE.md | final-master-status.ps1 | ALL_SCRIPTS_SUMMARY.md | FINAL_RECOMMENDATIONS.md | health-check.ps1 | ppbf-cli.ps1 (in root) — Batch 19</small>
-      </div>
+    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
+      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
+        <Image
+          className="dark:invert"
+          src="/next.svg"
+          alt="Next.js logo"
+          width={100}
+          height={20}
+          priority
+        />
+        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
+          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
+            To get started, edit the page.tsx file.
+          </h1>
+          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
+            Looking for a starting point or more instructions? Head over to{" "}
+            <a
+              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
+              className="font-medium text-zinc-950 dark:text-zinc-50"
+            >
+              Templates
+            </a>{" "}
+            or the{" "}
+            <a
+              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
+              className="font-medium text-zinc-950 dark:text-zinc-50"
+            >
+              Learning
+            </a>{" "}
+            center.
+          </p>
+        </div>
+        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
+          <a
+            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
+            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <Image
+              className="dark:invert"
+              src="/vercel.svg"
+              alt="Vercel logomark"
+              width={16}
+              height={16}
+            />
+            Deploy Now
+          </a>
+          <a
+            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
+            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Documentation
+          </a>
+        </div>
+      </main>
     </div>
   );
 }
