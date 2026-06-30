@@ -2,8 +2,8 @@
 FROM node:20-alpine AS base
 WORKDIR /app
 RUN apk add --no-cache libc6-compat
-COPY package.json package-lock.json ./
-RUN npm ci
+COPY apps/web/package.json ./apps/web/
+RUN npm install --prefix apps/web
 
 # Stage 2: Production Build
 FROM base AS builder
@@ -11,7 +11,7 @@ WORKDIR /app
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
-RUN npm run build
+RUN npm run --prefix apps/web build
 
 # Stage 3: Runner Production Image
 FROM alpine:3.19 AS runner
