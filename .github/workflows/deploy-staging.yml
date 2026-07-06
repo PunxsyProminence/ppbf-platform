@@ -24,7 +24,7 @@ jobs:
       - name: Build and Push Container Image to ACR
         run: |
           az acr build \
-            --registry acrppbfstaging \
+            --registry ${{ secrets.AZURE_CONTAINER_REGISTRY }} \
             --image ppbf-frontend:${{ github.sha }} \
             --file Dockerfile \
             .
@@ -32,10 +32,10 @@ jobs:
       - name: Deploy to Azure Container App
         uses: azure/container-apps-deploy-action@v1
         with:
-          acrName: acrppbfstaging
+          acrName: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
           resourceGroup: rg-ppbf-staging
           containerAppName: app-ppbf-staging
-          imageToDeploy: acrppbfstaging.azurecr.io/ppbf-frontend:${{ github.sha }}
+          imageToDeploy: ${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io/ppbf-frontend:${{ github.sha }}
           environmentVariables: |
             PPBF_ONBOARDING_LIVE_SAVE=false
             PPBF_AUTH_PROVIDER_WIRED=false
