@@ -21,22 +21,13 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to Azure Container Registry
-        run: |
-          az acr login --name acrppbfstaging
-
       - name: Build and Push Container Image to ACR
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Dockerfile
-          push: true
-          tags: acrppbfstaging.azurecr.io/ppbf-frontend:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+        run: |
+          az acr build \
+            --registry acrppbfstaging \
+            --image ppbf-frontend:${{ github.sha }} \
+            --file Dockerfile \
+            .
 
       - name: Deploy to Azure Container App
         uses: azure/container-apps-deploy-action@v1
