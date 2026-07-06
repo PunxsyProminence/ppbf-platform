@@ -33,7 +33,7 @@ jobs:
         uses: azure/container-apps-deploy-action@v1
         with:
           acrName: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
-          resourceGroup: rg-ppbf-staging
+          resourceGroup: ${{ secrets.AZURE_RESOURCE_GROUP }}
           containerAppName: app-ppbf-staging
           imageToDeploy: ${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io/ppbf-frontend:${{ github.sha }}
           environmentVariables: |
