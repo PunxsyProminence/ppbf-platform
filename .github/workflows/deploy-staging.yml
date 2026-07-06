@@ -32,6 +32,18 @@ jobs:
         run: |
           az acr login --name "$ACR_NAME"
 
+      - name: Load Azure Container Registry deploy credentials
+        id: acr-credentials
+        run: |
+          ACR_USERNAME="$(az acr credential show --name "$ACR_NAME" --query username -o tsv)"
+          ACR_PASSWORD="$(az acr credential show --name "$ACR_NAME" --query 'passwords[0].value' -o tsv)"
+          test -n "$ACR_USERNAME"
+          test -n "$ACR_PASSWORD"
+          echo "::add-mask::$ACR_USERNAME"
+          echo "::add-mask::$ACR_PASSWORD"
+          echo "username=$ACR_USERNAME" >> "$GITHUB_OUTPUT"
+          echo "password=$ACR_PASSWORD" >> "$GITHUB_OUTPUT"
+
       - name: Build and Push Container Image to ACR
         uses: docker/build-push-action@v5
         with:
@@ -46,11 +58,11 @@ jobs:
         uses: azure/container-apps-deploy-action@v1
         with:
           acrName: ${{ env.ACR_NAME }}
+          acrUsername: ${{ steps.acr-credentials.outputs.username }}
+          acrPassword: ${{ steps.acr-credentials.outputs.password }}
           resourceGroup: ${{ env.RESOURCE_GROUP }}
           containerAppName: app-ppbf-staging
           imageToDeploy: ${{ env.ACR_LOGIN_SERVER }}/ppbf-frontend:${{ github.sha }}
-          environmentVariables: |
+          environmentVariables: >-
             PPBF_ONBOARDING_LIVE_SAVE=false
             PPBF_AUTH_PROVIDER_WIRED=false
-
-
