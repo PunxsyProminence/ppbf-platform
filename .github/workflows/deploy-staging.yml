@@ -10,6 +10,10 @@ permissions:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    env:
+      ACR_NAME: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+      ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io
+      RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
@@ -26,7 +30,7 @@ jobs:
 
       - name: Log in to Azure Container Registry
         run: |
-          az acr login --name acrppbfstaging
+          az acr login --name "$ACR_NAME"
 
       - name: Build and Push Container Image to ACR
         uses: docker/build-push-action@v5
@@ -34,17 +38,17 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: acrppbfstaging.azurecr.io/ppbf-frontend:${{ github.sha }}
+          tags: ${{ env.ACR_LOGIN_SERVER }}/ppbf-frontend:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Deploy to Azure Container App
         uses: azure/container-apps-deploy-action@v1
         with:
-          acrName: acrppbfstaging
-          resourceGroup: rg-ppbf-staging
+          acrName: ${{ env.ACR_NAME }}
+          resourceGroup: ${{ env.RESOURCE_GROUP }}
           containerAppName: app-ppbf-staging
-          imageToDeploy: acrppbfstaging.azurecr.io/ppbf-frontend:${{ github.sha }}
+          imageToDeploy: ${{ env.ACR_LOGIN_SERVER }}/ppbf-frontend:${{ github.sha }}
           environmentVariables: |
             PPBF_ONBOARDING_LIVE_SAVE=false
             PPBF_AUTH_PROVIDER_WIRED=false
