@@ -1,11 +1,11 @@
 name: deploy-staging
 
 on:
-  workflow_dispatch: # Forces manual trigger gate only
+  workflow_dispatch:
 
 permissions:
-  id-token: write    # Required for passwordless OIDC authentication
-  contents: read     # Required to checkout the monorepo source code
+  id-token: write
+  contents: read
 
 jobs:
   build-and-deploy:
@@ -37,8 +37,6 @@ jobs:
         run: |
           ACR_USERNAME="$(az acr credential show --name "$ACR_NAME" --query username -o tsv)"
           ACR_PASSWORD="$(az acr credential show --name "$ACR_NAME" --query 'passwords[0].value' -o tsv)"
-          test -n "$ACR_USERNAME"
-          test -n "$ACR_PASSWORD"
           echo "::add-mask::$ACR_USERNAME"
           echo "::add-mask::$ACR_PASSWORD"
           echo "username=$ACR_USERNAME" >> "$GITHUB_OUTPUT"
