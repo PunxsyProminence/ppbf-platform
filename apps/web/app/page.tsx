@@ -3,10 +3,10 @@
 import React, { useState } from 'react';
 
 export default function CompleteCommandCenter() {
-  const [activeTab, setActiveTab] = useState('execution');
+  // Lock the tab states explicitly to keys of the registry layout
+  const [activeTab, setActiveTab] = useState<'execution' | 'governance' | 'continuity'>('execution');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // 25 Core Governed Capabilities mapped straight from PPBF_CAPABILITIES.json
   const capabilityRegistry = {
     execution: [
       { id: 'E01', name: 'Participant Intake Processing', status: 'ACTIVE', tier: 'Layer 1', desc: 'Validates basic registration, entry parameters, and foundational bio-metrics.' },
@@ -173,7 +173,7 @@ export default function CompleteCommandCenter() {
       {/* Unified Frame Footer */}
       <footer className="bg-[#0b0f19] border-t border-slate-900 px-6 py-3 flex flex-col sm:flex-row justify-between items-center text-xs text-slate-500 gap-2 font-mono">
         <div>System State Context: Bounded Architecture Fully Configured</div>
-        <div>Punxsy Prominence Organization © 2026</div>
+        <div>Punxsy Arts Organization © 2026</div>
       </footer>
     </div>
   );
