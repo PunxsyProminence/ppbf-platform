@@ -145,6 +145,15 @@ export default function PPBFMasterDashboard() {
                 </label>
               </div>
 
+              {/* LAYER 08 - MISSING TEXTAREA NOW INJECTED */}
+              <div className="bg-[#0b0f19] border border-slate-800 p-5 rounded-xl space-y-3 col-span-full">
+                <h3 className="font-bold text-slate-200 font-mono text-sm">Layer 08: Raw Observation Floor Intake</h3>
+                <textarea 
+                  placeholder="Log real-time technique, fatigue peaks, or asymmetry data notes directly from the gym floor..." 
+                  className="w-full bg-[#111827] border border-slate-700 p-3 rounded-lg text-xs font-mono text-slate-300 focus:outline-none focus:border-indigo-500 resize-none h-24"
+                />
+              </div>
+
               <div className="bg-[#0b0f19] border border-slate-800 p-5 rounded-xl space-y-3">
                 <h3 className="font-bold text-slate-200 font-mono text-sm">Layer 02: Asymmetry Monitor</h3>
                 <div className="grid grid-cols-2 gap-2 text-xs">
