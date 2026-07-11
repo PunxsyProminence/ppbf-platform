@@ -48,10 +48,10 @@ export default function AthleteWorkspace() {
   const rankDefinitions: Record<LatinRank, { label: string; desc: string }> = {
     TIRO: { label: "Beginner", desc: "Learning stance, guard, jab, and core gym discipline protocols." },
     DISCIPULUS: { label: "Student", desc: "Developing combinations, basic defensive pacing, rhythm, and reaction cued drills." },
-    PUGIL NOVUS: { label: "Developing Boxer", desc: "Building combination fluency, footwork pivoting, defensive recovery, and tactical awareness." },
-    PUGIL SCIENTIA: { label: "Skilled Boxer", desc: "Applying technical counters, generating target angles, and decision-making under fatigue indices." },
-    PUGIL FORTIS: { label: "Advanced Boxer", desc: "Adapting strategic block options, maintaining composure in live drilling, and modeling maturity." },
-    PUGIL PRAECEPTOR: { label: "Mentor Boxer", desc: "High boxing proficiency combined with youth mentorship and cultural leadership standards." }
+    "PUGIL NOVUS": { label: "Developing Boxer", desc: "Building combination fluency, footwork pivoting, defensive recovery, and tactical awareness." },
+    "PUGIL SCIENTIA": { label: "Skilled Boxer", desc: "Applying technical counters, generating target angles, and decision-making under fatigue indices." },
+    "PUGIL FORTIS": { label: "Advanced Boxer", desc: "Adapting strategic block options, maintaining composure in live drilling, and modeling maturity." },
+    "PUGIL PRAECEPTOR": { label: "Mentor Boxer", desc: "High boxing proficiency combined with youth mentorship and cultural leadership standards." }
   };
 
   // 6 Athletic Boxing Tracks + SpecOps Track Manifest
