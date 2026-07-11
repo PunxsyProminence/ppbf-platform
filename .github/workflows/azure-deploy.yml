@@ -31,4 +31,4 @@ jobs:
           app_location: "/"
           api_location: ""
           output_location: "apps/web/out"
-          app_build_command: "npm install && npm run build --workspace=ppbf-web"
+          app_build_command: "npm install && npm run build --workspace=web"
