@@ -11,7 +11,16 @@ const launchLinks = [
   { label: 'Master console', href: '/' },
   { label: 'Athlete dashboard', href: '/athlete/dashboard' },
   { label: 'Coach review queue', href: '/coach/review-queue' },
+  { label: 'Board hub', href: '/board' },
   { label: 'Admin capabilities', href: '/admin' },
+  { label: 'Public portal', href: '/public' },
+  { label: 'Guardian portal', href: '/guardian' },
+  { label: 'Research intake', href: '/research' },
+  { label: 'Evidence review', href: '/evidence' },
+  { label: 'Audit trace', href: '/audit' },
+  { label: 'Scenario simulator', href: '/simulator' },
+  { label: 'Knowledge graph', href: '/knowledge-graph' },
+  { label: 'Source control', href: '/source-control' },
 ];
 
 export default function LaunchPortalPage() {
