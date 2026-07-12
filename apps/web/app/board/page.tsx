@@ -12,19 +12,19 @@ const boardMembers = [
 
 export default function BoardHubPage() {
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.14),_transparent_28%),linear-gradient(180deg,#020617_0%,#0b1120_100%)] text-slate-100">
+    <main className="min-h-screen bg-[#0a0a0a] text-[#e5e5e5]">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-10 lg:px-10">
-        <header className="flex flex-col gap-4 border-b border-slate-800 pb-6 md:flex-row md:items-end md:justify-between">
+        <header className="flex flex-col gap-4 border-b-4 border-[#8b0000] pb-6 md:flex-row md:items-end md:justify-between">
           <div className="space-y-3">
-            <p className="text-xs font-mono uppercase tracking-[0.35em] text-emerald-300/80">Board Hub</p>
+            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[#c85a17]/80">Board Hub</p>
             <h1 className="text-4xl font-black tracking-tight md:text-5xl">One dashboard per board member</h1>
-            <p className="max-w-3xl text-sm leading-6 text-slate-300 md:text-base">
+            <p className="max-w-3xl text-sm leading-6 text-[#a0a0a0] md:text-base">
               Select a seat to open a focused governance dashboard with only the essentials for that member.
             </p>
           </div>
           <Link
             href="/operations"
-            className="inline-flex items-center justify-center rounded-2xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-xs font-mono font-bold text-emerald-300 transition hover:bg-emerald-500/20 hover:text-emerald-200"
+            className="inline-flex items-center justify-center border-2 border-[#8b0000] bg-[#4a0000]/10 px-4 py-2 text-xs font-mono font-bold text-[#c85a17] transition hover:bg-[#4a0000]/20 hover:text-[#ff6b6b]"
           >
             Operations Hub
           </Link>
@@ -35,12 +35,12 @@ export default function BoardHubPage() {
             <Link
               key={member.slug}
               href={`/board/${member.slug}`}
-              className="rounded-3xl border border-slate-800 bg-slate-950/70 p-5 transition hover:border-emerald-500/30 hover:bg-emerald-500/10"
+              className="border-2 border-[#8b0000] bg-[#0f0f0f]/70 p-5 transition hover:border-[#dc2626]/30 hover:bg-[#4a0000]/10"
             >
-              <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-slate-500">Board seat</p>
-              <h2 className="mt-2 text-xl font-black text-slate-100">{member.label}</h2>
-              <p className="mt-2 text-sm leading-6 text-slate-400">{member.role}</p>
-              <div className="mt-4 text-xs font-mono text-emerald-300">Open dashboard</div>
+              <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-[#8a8a8a]">Board seat</p>
+              <h2 className="mt-2 text-xl font-black text-[#e5e5e5]">{member.label}</h2>
+              <p className="mt-2 text-sm leading-6 text-[#a0a0a0]">{member.role}</p>
+              <div className="mt-4 text-xs font-mono text-[#c85a17]">Open dashboard</div>
             </Link>
           ))}
         </section>

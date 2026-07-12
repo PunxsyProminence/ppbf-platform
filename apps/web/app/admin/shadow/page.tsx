@@ -213,7 +213,7 @@ export default function AdminShadowConsolePage() {
     <RoleStandaloneView roleLabel="SHADOW Admin Console" routeLabel="/admin/shadow" allowedRoles={['admin']}>
       <main className="grid gap-6 lg:grid-cols-[1fr_380px]">
         {/* Chat Interface */}
-        <section className="rounded-3xl border border-red-500/30 bg-[#0a0609]/70 p-6 shadow-2xl shadow-red-950/20">
+        <section className="border-4 border-[#8b0000] bg-[#0a0a0a]/70 p-6">
           <div className="mb-6 border-b border-red-500/20 pb-4">
             <p className="text-xs font-mono uppercase tracking-[0.2em] text-red-400">AI/ML Telemetry Scout</p>
             <h2 className="mt-2 text-2xl font-black text-red-50">SHADOW Conversation Hub</h2>
@@ -221,19 +221,19 @@ export default function AdminShadowConsolePage() {
           </div>
 
           {/* Messages */}
-          <div className="mb-6 max-h-[500px] space-y-4 overflow-y-auto rounded-2xl bg-[#0f0b0c] p-4">
+          <div className="mb-6 max-h-[500px] space-y-4 overflow-y-auto bg-[#0f0f0f] p-4 border-4 border-[#8b0000]">
             {messages.map((msg) => (
               <div
                 key={msg.id}
                 className={`flex gap-3 ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-xs rounded-2xl px-4 py-3 ${
+                  className={`max-w-xs px-4 py-3 border-2 ${
                     msg.type === 'user'
-                      ? 'border border-red-500/50 bg-red-500/10 text-red-100'
+                      ? 'border-[#8b0000] bg-[#4a0000] text-[#e5e5e5]'
                       : msg.type === 'system'
-                        ? 'border border-slate-700 bg-slate-900/60 text-slate-200'
-                        : 'border border-red-400/40 bg-red-950/40 text-red-50'
+                        ? 'border-[#b35806] bg-[#2a2a2a] text-[#e5e5e5]'
+                        : 'border-[#8b0000] bg-[#3a0000] text-[#e5e5e5]'
                   }`}
                 >
                   <p className="text-sm leading-6">{msg.text}</p>
@@ -251,11 +251,11 @@ export default function AdminShadowConsolePage() {
               value={userInput}
               onChange={(e) => setUserInput(e.target.value)}
               placeholder="merge | status | list | clear ..."
-              className="flex-1 rounded-2xl border border-red-500/30 bg-red-950/20 px-4 py-3 text-sm text-red-50 placeholder-red-400/50 outline-none transition focus:border-red-400/50 focus:bg-red-950/30"
+              className="flex-1 border-2 border-[#8b0000] bg-[#1a1a1a] px-4 py-3 text-sm text-[#e5e5e5] placeholder-[#b35806] outline-none transition focus:border-[#c85a17] focus:bg-[#2a2a2a]"
             />
             <button
               type="submit"
-              className="rounded-2xl border border-red-500/50 bg-red-500/20 px-6 py-3 text-sm font-mono font-bold text-red-200 transition hover:border-red-400/70 hover:bg-red-500/30 hover:text-red-100"
+              className="border-2 border-[#8b0000] bg-[#3a0000] px-6 py-3 text-sm font-mono font-bold text-[#e5e5e5] transition hover:border-[#c85a17] hover:bg-[#4a0000] hover:text-[#f5f5f5]"
             >
               Send
             </button>
@@ -265,9 +265,9 @@ export default function AdminShadowConsolePage() {
         {/* Data Import & Merge Panel */}
         <aside className="space-y-4">
           {/* Import Section */}
-          <section className="rounded-3xl border border-amber-500/30 bg-[#0b0a09]/70 p-4">
-            <p className="text-xs font-mono uppercase tracking-[0.2em] text-amber-400">Data Import</p>
-            <h3 className="mt-2 text-lg font-black text-amber-50">External Sources</h3>
+          <section className="border-4 border-[#b35806] bg-[#0a0a0a]/70 p-4">
+            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#c85a17]">Data Import</p>
+            <h3 className="mt-2 text-lg font-black text-[#f5f0e8]">External Sources</h3>
 
             <div className="mt-4 space-y-2">
               <input
@@ -279,39 +279,39 @@ export default function AdminShadowConsolePage() {
               />
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="w-full rounded-2xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm font-mono text-amber-200 transition hover:border-amber-400/60 hover:bg-amber-500/20 hover:text-amber-100"
+                className="w-full border-2 border-[#b35806] bg-[#2a1a0a] px-3 py-2 text-sm font-mono text-[#e5a87a] transition hover:border-[#c85a17] hover:bg-[#3a2a1a] hover:text-[#f5e5d0]"
               >
                 📁 Upload File
               </button>
               {uploadedFileName && (
-                <p className="text-[11px] text-amber-300/70">Last: {uploadedFileName}</p>
+                <p className="text-[11px] text-[#e5a87a]/70">Last: {uploadedFileName}</p>
               )}
             </div>
 
-            <div className="mt-4 border-t border-amber-500/20 pt-3">
-              <p className="text-[11px] font-mono text-amber-300/60">Quick Add:</p>
+            <div className="mt-4 border-t border-[#b35806]/20 pt-3">
+              <p className="text-[11px] font-mono text-[#e5a87a]/60">Quick Add:</p>
               <div className="mt-2 grid grid-cols-2 gap-2">
                 <button
                   onClick={() => handleManualDataEntry('workout')}
-                  className="rounded-xl border border-amber-500/30 bg-amber-950/40 px-2 py-1 text-[11px] text-amber-200 transition hover:border-amber-400/50 hover:bg-amber-500/10"
+                  className="border-2 border-[#b35806] bg-[#2a1a0a] px-2 py-1 text-[11px] text-[#e5a87a] transition hover:border-[#c85a17] hover:bg-[#3a2a1a]"
                 >
                   Workout
                 </button>
                 <button
                   onClick={() => handleManualDataEntry('biometric')}
-                  className="rounded-xl border border-amber-500/30 bg-amber-950/40 px-2 py-1 text-[11px] text-amber-200 transition hover:border-amber-400/50 hover:bg-amber-500/10"
+                  className="border-2 border-[#b35806] bg-[#2a1a0a] px-2 py-1 text-[11px] text-[#e5a87a] transition hover:border-[#c85a17] hover:bg-[#3a2a1a]"
                 >
                   Biometric
                 </button>
                 <button
                   onClick={() => handleManualDataEntry('coach-note')}
-                  className="rounded-xl border border-amber-500/30 bg-amber-950/40 px-2 py-1 text-[11px] text-amber-200 transition hover:border-amber-400/50 hover:bg-amber-500/10"
+                  className="border-2 border-[#b35806] bg-[#2a1a0a] px-2 py-1 text-[11px] text-[#e5a87a] transition hover:border-[#c85a17] hover:bg-[#3a2a1a]"
                 >
                   Coach Note
                 </button>
                 <button
                   onClick={() => handleManualDataEntry('video')}
-                  className="rounded-xl border border-amber-500/30 bg-amber-950/40 px-2 py-1 text-[11px] text-amber-200 transition hover:border-amber-400/50 hover:bg-amber-500/10"
+                  className="border-2 border-[#b35806] bg-[#2a1a0a] px-2 py-1 text-[11px] text-[#e5a87a] transition hover:border-[#c85a17] hover:bg-[#3a2a1a]"
                 >
                   Video
                 </button>
@@ -321,13 +321,13 @@ export default function AdminShadowConsolePage() {
 
           {/* Imported Data */}
           {dataSets.length > 0 && (
-            <section className="rounded-3xl border border-cyan-500/30 bg-[#09090f]/70 p-4">
-              <p className="text-xs font-mono uppercase tracking-[0.2em] text-cyan-400">Data Sets</p>
+            <section className="border-4 border-[#8b0000] bg-[#0a0a0a]/70 p-4">
+              <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#c85a17]">Data Sets</p>
               <div className="mt-3 space-y-2">
                 {dataSets.map((ds, idx) => (
-                  <div key={idx} className="rounded-2xl border border-cyan-500/30 bg-cyan-950/20 p-2">
-                    <p className="text-xs font-mono text-cyan-300">{ds.label}</p>
-                    <p className="text-[10px] text-cyan-400/70">
+                  <div key={idx} className="border-2 border-[#8b0000] bg-[#1a1a1a]/20 p-2">
+                    <p className="text-xs font-mono text-[#e5a87a]">{ds.label}</p>
+                    <p className="text-[10px] text-[#c85a17]/70">
                       {ds.type} • {Object.keys(ds.data).length} records
                     </p>
                   </div>
@@ -338,11 +338,11 @@ export default function AdminShadowConsolePage() {
 
           {/* Merge Log */}
           {mergeLog.length > 0 && (
-            <section className="rounded-3xl border border-green-500/30 bg-[#050a06]/70 p-4">
-              <p className="text-xs font-mono uppercase tracking-[0.2em] text-green-400">Merge Log</p>
+            <section className="border-4 border-[#8b0000] bg-[#0a0a0a]/70 p-4">
+              <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#c85a17]">Merge Log</p>
               <div className="mt-3 space-y-1 font-mono text-[10px]">
                 {mergeLog.map((log, idx) => (
-                  <p key={idx} className="text-green-300/80">
+                  <p key={idx} className="text-[#e5a87a]/80">
                     {log}
                   </p>
                 ))}
@@ -354,13 +354,13 @@ export default function AdminShadowConsolePage() {
           <div className="flex gap-2 pt-2">
             <Link
               href="/admin"
-              className="flex-1 rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-center text-[11px] font-mono text-slate-300 transition hover:border-slate-500 hover:text-slate-100"
+              className="flex-1 border-2 border-[#8b0000] bg-[#1a1a1a] px-3 py-2 text-center text-[11px] font-mono text-[#c85a17] transition hover:border-[#c85a17] hover:text-[#e5a87a]"
             >
               Admin Hub
             </Link>
             <Link
               href="/shadow"
-              className="flex-1 rounded-2xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-center text-[11px] font-mono text-red-300 transition hover:border-red-400/50 hover:bg-red-500/20"
+              className="flex-1 border-2 border-[#8b0000] bg-[#3a0000] px-3 py-2 text-center text-[11px] font-mono text-[#c85a17] transition hover:border-[#c85a17] hover:bg-[#4a0000]"
             >
               SHADOW
             </Link>

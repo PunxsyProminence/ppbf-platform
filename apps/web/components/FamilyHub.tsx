@@ -4,9 +4,9 @@ import React from 'react';
 export default function FamilyHub() {
   return (
     <div className="space-y-6">
-      <div className="border-b border-slate-800 pb-3">
-        <h2 className="text-xl font-black text-slate-100 tracking-tight">Family Co-Observation Hub</h2>
-        <p className="text-xs text-slate-400 mt-1 font-mono">Layer 05 Video Analysis, Layer 07 Home Exercises, and Layer 15 Observations</p>
+      <div className="border-b border-[#8b0000] pb-3">
+        <h2 className="text-xl font-black text-[#e5e5e5] tracking-tight">Family Co-Observation Hub</h2>
+        <p className="text-xs text-[#a0a0a0] mt-1 font-mono">Layer 05 Video Analysis, Layer 07 Home Exercises, and Layer 15 Observations</p>
       </div>
 
       <div className="bg-gradient-to-r from-emerald-950/40 to-indigo-950/30 border border-emerald-500/20 rounded-xl p-6 shadow-md">

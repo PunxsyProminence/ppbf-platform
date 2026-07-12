@@ -227,16 +227,16 @@ export default function AdminCapabilitiesPage() {
 
   return (
     <RoleSessionGate allowedRoles={['admin']}>
-    <main style={{ minHeight: '100vh', background: '#0a0a0a', color: '#f0f0f0' }}>
+    <main style={{ minHeight: '100vh', background: '#0a0a0a', color: '#e5e5e5' }}>
       <header
         style={{
           background: '#1a1a1a',
-          color: 'white',
+          color: '#e5e5e5',
           padding: '12px 24px',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          borderBottom: '4px solid #7f1d1d',
+          borderBottom: '4px solid #8b0000',
           fontFamily: 'monospace',
         }}
       >
@@ -246,9 +246,9 @@ export default function AdminCapabilitiesPage() {
             href="/admin/shadow"
             style={{
               fontSize: '0.75rem',
-              border: '2px solid #991b1b',
-              background: '#7f1d1d',
-              color: '#fca5a5',
+              border: '2px solid #8b0000',
+              background: '#4a0000',
+              color: '#c85a17',
               padding: '6px 8px',
               textDecoration: 'none',
               fontWeight: 700,
@@ -257,12 +257,14 @@ export default function AdminCapabilitiesPage() {
               transition: 'all 0.2s',
             }}
             onMouseOver={(e) => {
-              (e.target as HTMLElement).style.background = '#b91c1c';
-              (e.target as HTMLElement).style.borderColor = '#dc2626';
+              (e.target as HTMLElement).style.background = '#dc2626';
+              (e.target as HTMLElement).style.borderColor = '#ff6b6b';
+              (e.target as HTMLElement).style.color = '#e5e5e5';
             }}
             onMouseOut={(e) => {
-              (e.target as HTMLElement).style.background = '#7f1d1d';
-              (e.target as HTMLElement).style.borderColor = '#991b1b';
+              (e.target as HTMLElement).style.background = '#4a0000';
+              (e.target as HTMLElement).style.borderColor = '#8b0000';
+              (e.target as HTMLElement).style.color = '#c85a17';
             }}
           >
             SHADOW
@@ -271,9 +273,9 @@ export default function AdminCapabilitiesPage() {
             href="/operations"
             style={{
               fontSize: '0.75rem',
-              border: '2px solid #374151',
-              background: '#1f2937',
-              color: '#d1d5db',
+              border: '2px solid #8b0000',
+              background: '#1a1a1a',
+              color: '#a0a0a0',
               padding: '6px 8px',
               textDecoration: 'none',
               fontWeight: 700,
@@ -282,12 +284,12 @@ export default function AdminCapabilitiesPage() {
               transition: 'all 0.2s',
             }}
             onMouseOver={(e) => {
-              (e.target as HTMLElement).style.background = '#374151';
-              (e.target as HTMLElement).style.borderColor = '#4b5563';
+              (e.target as HTMLElement).style.background = '#4a4a4a';
+              (e.target as HTMLElement).style.borderColor = '#8a8a8a';
             }}
             onMouseOut={(e) => {
-              (e.target as HTMLElement).style.background = '#1f2937';
-              (e.target as HTMLElement).style.borderColor = '#374151';
+              (e.target as HTMLElement).style.background = '#1a1a1a';
+              (e.target as HTMLElement).style.borderColor = '#8b0000';
             }}
           >
             OPS HUB
@@ -296,9 +298,9 @@ export default function AdminCapabilitiesPage() {
             href="/research/chat"
             style={{
               fontSize: '0.75rem',
-              border: '2px solid #78350f',
-              background: '#92400e',
-              color: '#d97706',
+              border: '2px solid #b35806',
+              background: '#4a2a1a',
+              color: '#c85a17',
               padding: '6px 8px',
               textDecoration: 'none',
               fontWeight: 700,
@@ -307,12 +309,12 @@ export default function AdminCapabilitiesPage() {
               transition: 'all 0.2s',
             }}
             onMouseOver={(e) => {
-              (e.target as HTMLElement).style.background = '#b45309';
-              (e.target as HTMLElement).style.borderColor = '#d97706';
+              (e.target as HTMLElement).style.background = '#8b4513';
+              (e.target as HTMLElement).style.borderColor = '#c85a17';
             }}
             onMouseOut={(e) => {
-              (e.target as HTMLElement).style.background = '#92400e';
-              (e.target as HTMLElement).style.borderColor = '#78350f';
+              (e.target as HTMLElement).style.background = '#4a2a1a';
+              (e.target as HTMLElement).style.borderColor = '#b35806';
             }}
           >
             RESEARCH
@@ -325,38 +327,39 @@ export default function AdminCapabilitiesPage() {
           background: '#0f0f0f',
           padding: '8px 24px',
           fontSize: '0.75rem',
-          borderBottom: '2px solid #333',
+          borderBottom: '2px solid #4a4a4a',
           fontFamily: 'monospace',
           letterSpacing: '0.05em',
+          color: '#a0a0a0',
         }}
       >
         All actions are logged. Jason approval required for production changes.
       </section>
 
       <div style={{ padding: '32px 40px' }}>
-        <h1 style={{ marginBottom: '24px', fontSize: '2rem' }}>Admin Dashboard - Capabilities</h1>
+        <h1 style={{ marginBottom: '24px', fontSize: '2rem', color: '#e5e5e5' }}>Admin Dashboard - Capabilities</h1>
 
         <section
           style={{
             display: 'grid',
             gap: '12px',
             padding: '18px',
-            border: '1px solid #ddd',
-            borderRadius: '10px',
-            background: 'white',
+            border: '2px solid #8b0000',
+            background: '#1a1a1a',
             marginBottom: '18px',
+            color: '#e5e5e5',
           }}
         >
-          <h2 style={{ fontSize: '1.2rem', marginBottom: '4px' }}>Athlete Track Assignment</h2>
+          <h2 style={{ fontSize: '1.2rem', marginBottom: '4px', color: '#e5e5e5' }}>Athlete Track Assignment</h2>
 
-          <label style={{ fontSize: '0.85rem', color: '#4b5563' }} htmlFor="athleteProfile">
+          <label style={{ fontSize: '0.85rem', color: '#a0a0a0' }} htmlFor="athleteProfile">
             Active athlete profile
           </label>
           <select
             id="athleteProfile"
             value={selectedAthleteId}
             onChange={(event) => setSelectedAthleteId(event.target.value)}
-            style={{ padding: '10px', border: '1px solid #ccc', borderRadius: '8px' }}
+            style={{ padding: '10px', border: '2px solid #8b0000', background: '#0f0f0f', color: '#e5e5e5', fontFamily: 'monospace' }}
           >
             {athleteProfiles.map((profile) => (
               <option key={profile.id} value={profile.id}>
@@ -375,24 +378,24 @@ export default function AdminCapabilitiesPage() {
                   onClick={() => toggleTrackAssignment(trackId)}
                   style={{
                     textAlign: 'left',
-                    borderRadius: '10px',
-                    border: assigned ? '1px solid #16a34a' : '1px solid #d1d5db',
-                    background: assigned ? '#ecfdf3' : 'white',
-                    color: '#111827',
+                    border: assigned ? '2px solid #dc2626' : '2px solid #8b0000',
+                    background: assigned ? '#4a0000' : '#0f0f0f',
+                    color: assigned ? '#ff6b6b' : '#a0a0a0',
                     padding: '12px',
                     cursor: 'pointer',
                     display: 'grid',
                     gap: '4px',
+                    fontFamily: 'monospace',
                   }}
                 >
                   <strong style={{ fontSize: '0.9rem' }}>{trackManifests[trackId].name}</strong>
-                  <span style={{ fontSize: '0.75rem', color: '#4b5563' }}>{assigned ? 'Assigned' : 'Not assigned'}</span>
+                  <span style={{ fontSize: '0.75rem', color: assigned ? '#c85a17' : '#8a8a8a' }}>{assigned ? 'Assigned' : 'Not assigned'}</span>
                 </button>
               );
             })}
           </div>
 
-          <p style={{ margin: 0, fontSize: '0.78rem', color: '#6b7280' }}>
+          <p style={{ margin: 0, fontSize: '0.78rem', color: '#8a8a8a' }}>
             Athlete dashboards now only surface assigned tracks. Athletes can still review the full track catalog in read-only mode.
           </p>
         </section>
@@ -402,32 +405,32 @@ export default function AdminCapabilitiesPage() {
             display: 'grid',
             gap: '12px',
             padding: '18px',
-            border: '1px solid #ddd',
-            borderRadius: '10px',
-            background: 'white',
+            border: '2px solid #8b0000',
+            background: '#1a1a1a',
             marginBottom: '18px',
+            color: '#e5e5e5',
           }}
         >
-          <h2 style={{ fontSize: '1.2rem', marginBottom: '4px' }}>Add Capability</h2>
+          <h2 style={{ fontSize: '1.2rem', marginBottom: '4px', color: '#e5e5e5' }}>Add Capability</h2>
 
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder="Capability name"
-            style={{ padding: '10px', border: '1px solid #ccc', borderRadius: '8px' }}
+            style={{ padding: '10px', border: '2px solid #8b0000', background: '#0f0f0f', color: '#e5e5e5', fontFamily: 'monospace' }}
           />
 
           <input
             value={group}
             onChange={(event) => setGroup(event.target.value)}
             placeholder="Capability group"
-            style={{ padding: '10px', border: '1px solid #ccc', borderRadius: '8px' }}
+            style={{ padding: '10px', border: '2px solid #8b0000', background: '#0f0f0f', color: '#e5e5e5', fontFamily: 'monospace' }}
           />
 
           <select
             value={status}
             onChange={(event) => setStatus(event.target.value as CapabilityStatus)}
-            style={{ padding: '10px', border: '1px solid #ccc', borderRadius: '8px' }}
+            style={{ padding: '10px', border: '2px solid #8b0000', background: '#0f0f0f', color: '#e5e5e5', fontFamily: 'monospace' }}
           >
             <option value="DRAFT">DRAFT</option>
             <option value="ACTIVE">ACTIVE</option>
@@ -440,11 +443,12 @@ export default function AdminCapabilitiesPage() {
               onClick={addCapability}
               style={{
                 padding: '10px 14px',
-                borderRadius: '8px',
-                border: 'none',
-                background: '#111',
-                color: 'white',
+                border: '2px solid #8b0000',
+                background: '#dc2626',
+                color: '#e5e5e5',
                 cursor: 'pointer',
+                fontFamily: 'monospace',
+                fontWeight: 'bold',
               }}
             >
               Add Capability
@@ -455,11 +459,12 @@ export default function AdminCapabilitiesPage() {
               onClick={exportCapabilities}
               style={{
                 padding: '10px 14px',
-                borderRadius: '8px',
-                border: '1px solid #111',
-                background: 'white',
-                color: '#111',
+                border: '2px solid #8b0000',
+                background: '#0f0f0f',
+                color: '#c85a17',
                 cursor: 'pointer',
+                fontFamily: 'monospace',
+                fontWeight: 'bold',
               }}
             >
               Export JSON
@@ -469,19 +474,19 @@ export default function AdminCapabilitiesPage() {
 
         <section
           style={{
-            border: '1px solid #ddd',
-            borderRadius: '10px',
-            background: 'white',
+            border: '2px solid #8b0000',
+            background: '#1a1a1a',
             padding: '18px',
+            color: '#e5e5e5',
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-            <h2 style={{ fontSize: '1.2rem' }}>Capability Catalog ({filteredCapabilities.length})</h2>
+            <h2 style={{ fontSize: '1.2rem', color: '#e5e5e5' }}>Capability Catalog ({filteredCapabilities.length})</h2>
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search by name, group, or status"
-              style={{ padding: '10px', border: '1px solid #ccc', borderRadius: '8px', minWidth: '260px' }}
+              style={{ padding: '10px', border: '2px solid #8b0000', background: '#0f0f0f', color: '#e5e5e5', fontFamily: 'monospace', minWidth: '260px' }}
             />
           </div>
 
@@ -490,18 +495,19 @@ export default function AdminCapabilitiesPage() {
               <article
                 key={capability.id}
                 style={{
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '8px',
+                  border: '1px solid #4a4a4a',
                   padding: '12px',
                   display: 'grid',
                   gap: '4px',
+                  background: '#0f0f0f',
+                  color: '#e5e5e5',
                 }}
               >
                 <strong>
                   #{capability.id} - {capability.name}
                 </strong>
-                <span style={{ color: '#374151' }}>Group: {capability.group}</span>
-                <span style={{ color: '#374151' }}>Status: {capability.status}</span>
+                <span style={{ color: '#a0a0a0' }}>Group: {capability.group}</span>
+                <span style={{ color: '#a0a0a0' }}>Status: <span style={{ color: capability.status === 'ACTIVE' ? '#dc2626' : capability.status === 'BLOCKED' ? '#ff6b6b' : '#c85a17' }}>{capability.status}</span></span>
               </article>
             ))}
           </div>

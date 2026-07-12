@@ -48,20 +48,20 @@ export default function GlobalRoleHeader() {
         <div className="flex items-center gap-2">
           <Link
             href="/operations"
-            className="border-2 border-[#b35806] bg-[#1f1f1f] px-3 py-1 text-[11px] font-mono text-[#c85a17] transition hover:border-[#c85a17] hover:bg-[#2a1f1f]"
+            className="border-2 border-[#b35806] bg-[#4a4a4a] px-3 py-1 text-[11px] font-mono text-[#c85a17] transition hover:border-[#c85a17] hover:bg-[#5a5a5a]"
           >
             Operations
           </Link>
           <Link
             href="/launch"
-            className="border-2 border-[#4a4a4a] bg-[#1a1a1a] px-3 py-1 text-[11px] font-mono text-[#b0b0b0] transition hover:border-[#8a8a8a] hover:text-[#e5e5e5]"
+            className="border-2 border-[#4a4a4a] bg-[#4a4a4a] px-3 py-1 text-[11px] font-mono text-[#b0b0b0] transition hover:border-[#8a8a8a] hover:bg-[#5a5a5a] hover:text-[#e5e5e5]"
           >
             Launch
           </Link>
           <button
             type="button"
             onClick={signOut}
-            className="border-2 border-[#8b0000] bg-[#1a1a1a] px-3 py-1 text-[11px] font-mono text-[#dc2626] transition hover:border-[#dc2626] hover:bg-[#2a1a1a]"
+            className="border-2 border-[#8b0000] bg-[#4a4a4a] px-3 py-1 text-[11px] font-mono text-[#dc2626] transition hover:border-[#dc2626] hover:bg-[#5a5a5a]"
           >
             Logout
           </button>

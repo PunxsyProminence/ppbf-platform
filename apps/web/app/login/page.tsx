@@ -141,7 +141,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={signIn}
-                  className="mt-2 inline-flex w-full items-center justify-center border-2 border-[#dc2626] bg-[#2a1a1a] px-4 py-3 text-sm font-black uppercase tracking-[0.2em] text-[#ff6b6b] transition hover:border-[#ff6b6b] hover:bg-[#3a2a2a] hover:text-[#ffaaaa]"
+                  className="mt-2 inline-flex w-full items-center justify-center border-2 border-[#dc2626] bg-[#4a4a4a] px-4 py-3 text-sm font-black uppercase tracking-[0.2em] text-[#ff6b6b] transition hover:border-[#ff6b6b] hover:bg-[#5a5a5a] hover:text-[#ffaaaa]"
                 >
                   Sign In
                 </button>

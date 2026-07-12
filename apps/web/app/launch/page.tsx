@@ -69,7 +69,7 @@ export default function LaunchPortalPage() {
                   <Link
                     key={item.href}
                     href={item.href}
-                    className="border-2 border-[#8b0000] bg-[#1a1a1a] px-4 py-3 text-sm text-[#c0c0c0] transition hover:border-[#dc2626] hover:bg-[#2a1a1a] hover:text-[#e5e5e5]"
+                    className="border-2 border-[#8b0000] bg-[#4a4a4a] px-4 py-3 text-sm text-[#c0c0c0] transition hover:border-[#dc2626] hover:bg-[#5a5a5a] hover:text-[#e5e5e5]"
                   >
                     {item.label}
                   </Link>
