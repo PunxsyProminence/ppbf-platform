@@ -39,10 +39,6 @@
 		{
 			"route": "/board/at-large*",
 			"rewrite": "/board/at-large.html"
-		},
-		{
-			"route": "/*",
-			"rewrite": "/index.html"
 		}
 	],
 	"navigationFallback": {
