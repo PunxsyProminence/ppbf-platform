@@ -359,7 +359,7 @@ export default function AdminCapabilitiesPage() {
             id="athleteProfile"
             value={selectedAthleteId}
             onChange={(event) => setSelectedAthleteId(event.target.value)}
-            style={{ padding: '10px', border: '2px solid #8b0000', background: '#0f0f0f', color: '#e5e5e5', fontFamily: 'monospace' }}
+            style={{ padding: '10px', border: '2px solid #8b4444', background: '#0f0f0f', color: '#e8d7c6', fontFamily: 'monospace' }}
           >
             {athleteProfiles.map((profile) => (
               <option key={profile.id} value={profile.id}>
@@ -378,9 +378,9 @@ export default function AdminCapabilitiesPage() {
                   onClick={() => toggleTrackAssignment(trackId)}
                   style={{
                     textAlign: 'left',
-                    border: assigned ? '2px solid #dc2626' : '2px solid #8b0000',
+                    border: assigned ? '2px solid #dc2626' : '2px solid #8b4444',
                     background: assigned ? '#4a0000' : '#0f0f0f',
-                    color: assigned ? '#ff6b6b' : '#a0a0a0',
+                    color: assigned ? '#ff6b6b' : '#b0a095',
                     padding: '12px',
                     cursor: 'pointer',
                     display: 'grid',
@@ -389,7 +389,7 @@ export default function AdminCapabilitiesPage() {
                   }}
                 >
                   <strong style={{ fontSize: '0.9rem' }}>{trackManifests[trackId].name}</strong>
-                  <span style={{ fontSize: '0.75rem', color: assigned ? '#c85a17' : '#8a8a8a' }}>{assigned ? 'Assigned' : 'Not assigned'}</span>
+                  <span style={{ fontSize: '0.75rem', color: assigned ? '#d4a574' : '#8a8a8a' }}>{assigned ? 'Assigned' : 'Not assigned'}</span>
                 </button>
               );
             })}
@@ -405,32 +405,32 @@ export default function AdminCapabilitiesPage() {
             display: 'grid',
             gap: '12px',
             padding: '18px',
-            border: '2px solid #8b0000',
+            border: '2px solid #8b4444',
             background: '#1a1a1a',
             marginBottom: '18px',
-            color: '#e5e5e5',
+            color: '#e8d7c6',
           }}
         >
-          <h2 style={{ fontSize: '1.2rem', marginBottom: '4px', color: '#e5e5e5' }}>Add Capability</h2>
+          <h2 style={{ fontSize: '1.2rem', marginBottom: '4px', color: '#e8d7c6' }}>Add Capability</h2>
 
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder="Capability name"
-            style={{ padding: '10px', border: '2px solid #8b0000', background: '#0f0f0f', color: '#e5e5e5', fontFamily: 'monospace' }}
+            style={{ padding: '10px', border: '2px solid #8b4444', background: '#0f0f0f', color: '#e8d7c6', fontFamily: 'monospace' }}
           />
 
           <input
             value={group}
             onChange={(event) => setGroup(event.target.value)}
             placeholder="Capability group"
-            style={{ padding: '10px', border: '2px solid #8b0000', background: '#0f0f0f', color: '#e5e5e5', fontFamily: 'monospace' }}
+            style={{ padding: '10px', border: '2px solid #8b4444', background: '#0f0f0f', color: '#e8d7c6', fontFamily: 'monospace' }}
           />
 
           <select
             value={status}
             onChange={(event) => setStatus(event.target.value as CapabilityStatus)}
-            style={{ padding: '10px', border: '2px solid #8b0000', background: '#0f0f0f', color: '#e5e5e5', fontFamily: 'monospace' }}
+            style={{ padding: '10px', border: '2px solid #8b4444', background: '#0f0f0f', color: '#e8d7c6', fontFamily: 'monospace' }}
           >
             <option value="DRAFT">DRAFT</option>
             <option value="ACTIVE">ACTIVE</option>
@@ -443,9 +443,9 @@ export default function AdminCapabilitiesPage() {
               onClick={addCapability}
               style={{
                 padding: '10px 14px',
-                border: '2px solid #8b0000',
+                border: '2px solid #8b4444',
                 background: '#dc2626',
-                color: '#e5e5e5',
+                color: '#e8d7c6',
                 cursor: 'pointer',
                 fontFamily: 'monospace',
                 fontWeight: 'bold',
@@ -459,9 +459,9 @@ export default function AdminCapabilitiesPage() {
               onClick={exportCapabilities}
               style={{
                 padding: '10px 14px',
-                border: '2px solid #8b0000',
+                border: '2px solid #8b4444',
                 background: '#0f0f0f',
-                color: '#c85a17',
+                color: '#d4a574',
                 cursor: 'pointer',
                 fontFamily: 'monospace',
                 fontWeight: 'bold',
@@ -474,19 +474,19 @@ export default function AdminCapabilitiesPage() {
 
         <section
           style={{
-            border: '2px solid #8b0000',
+            border: '2px solid #8b4444',
             background: '#1a1a1a',
             padding: '18px',
-            color: '#e5e5e5',
+            color: '#e8d7c6',
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-            <h2 style={{ fontSize: '1.2rem', color: '#e5e5e5' }}>Capability Catalog ({filteredCapabilities.length})</h2>
+            <h2 style={{ fontSize: '1.2rem', color: '#e8d7c6' }}>Capability Catalog ({filteredCapabilities.length})</h2>
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search by name, group, or status"
-              style={{ padding: '10px', border: '2px solid #8b0000', background: '#0f0f0f', color: '#e5e5e5', fontFamily: 'monospace', minWidth: '260px' }}
+              style={{ padding: '10px', border: '2px solid #8b4444', background: '#0f0f0f', color: '#e8d7c6', fontFamily: 'monospace', minWidth: '260px' }}
             />
           </div>
 
@@ -500,14 +500,14 @@ export default function AdminCapabilitiesPage() {
                   display: 'grid',
                   gap: '4px',
                   background: '#0f0f0f',
-                  color: '#e5e5e5',
+                  color: '#e8d7c6',
                 }}
               >
                 <strong>
                   #{capability.id} - {capability.name}
                 </strong>
-                <span style={{ color: '#a0a0a0' }}>Group: {capability.group}</span>
-                <span style={{ color: '#a0a0a0' }}>Status: <span style={{ color: capability.status === 'ACTIVE' ? '#dc2626' : capability.status === 'BLOCKED' ? '#ff6b6b' : '#c85a17' }}>{capability.status}</span></span>
+                <span style={{ color: '#b0a095' }}>Group: {capability.group}</span>
+                <span style={{ color: '#b0a095' }}>Status: <span style={{ color: capability.status === 'ACTIVE' ? '#dc2626' : capability.status === 'BLOCKED' ? '#ff6b6b' : '#d4a574' }}>{capability.status}</span></span>
               </article>
             ))}
           </div>

@@ -20,10 +20,10 @@ export default function NonProfitTrack() {
   const qualifiesForWaiver = attendance >= 12; // 75% Attendance standard rule
 
   return (
-    <div className="space-y-4 bg-[#1a1a1a]/40 border border-[#8b0000] p-5">
-      <div className="border-b border-[#8b0000] pb-2 flex justify-between items-center">
-        <h4 className="text-sm font-black font-mono text-[#c85a17] uppercase tracking-wider">📋 Component A: Non-Profit Athlete Ranks Track</h4>
-        <span className="text-[10px] bg-[#4a4a4a] border border-[#8b0000] font-mono text-[#a0a0a0] px-2 py-0.5">Layer 05 / 22</span>
+    <div className="space-y-4 bg-[#1a1a1a]/40 border border-[#8b4444] p-5">
+      <div className="border-b border-[#8b4444] pb-2 flex justify-between items-center">
+        <h4 className="text-sm font-black font-mono text-[#d4a574] uppercase tracking-wider">📋 Component A: Non-Profit Athlete Ranks Track</h4>
+        <span className="text-[10px] bg-[#4a4a4a] border border-[#8b4444] font-mono text-[#a0a0a0] px-2 py-0.5">Layer 05 / 22</span>
       </div>
 
       {/* Attendance-Based Fee Waiver Engine */}

@@ -148,9 +148,9 @@ export default function LoginPage() {
               </>
             ) : (
               <>
-                <div className="border-2 border-[#8b0000] bg-[#0f0f0f] p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#c85a17]">Message</p>
-                  <p className="mt-3 text-sm leading-6 text-[#c0c0c0]">{announcement}</p>
+                <div className="border-2 border-[#8b4444] bg-[#0f0f0f] p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#d4a574]">Message</p>
+                  <p className="mt-3 text-sm leading-6 text-[#e8d7c6]">{announcement}</p>
                   {announcementSavedAt ? (
                     <p className="mt-3 text-[11px] font-mono text-[#8a8a8a]">Updated: {announcementSavedAt}</p>
                   ) : null}
@@ -158,7 +158,7 @@ export default function LoginPage() {
 
                 <p className="text-xs uppercase tracking-[0.18em] text-[#8a8a8a]">Admin only</p>
 
-                <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-[#c0c0c0]" htmlFor="announcement-draft">
+                <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-[#e8d7c6]" htmlFor="announcement-draft">
                   Announcement
                 </label>
                 <textarea
@@ -166,11 +166,11 @@ export default function LoginPage() {
                   value={draftAnnouncement}
                   onChange={(event) => setDraftAnnouncement(event.target.value)}
                   rows={4}
-                  className="w-full border-2 border-[#8b0000] bg-[#0f0f0f] px-4 py-3 text-[#e5e5e5] outline-none transition placeholder-[#666666] focus:border-[#dc2626] focus:bg-[#1a1a1a]"
+                  className="w-full border-2 border-[#8b4444] bg-[#0f0f0f] px-4 py-3 text-[#e8d7c6] outline-none transition placeholder-[#6a5a4a] focus:border-[#d4a574] focus:bg-[#1a1a1a]"
                   placeholder="Type message for members..."
                 />
 
-                <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-[#c0c0c0]" htmlFor="admin-pin">
+                <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-[#e8d7c6]" htmlFor="admin-pin">
                   Admin PIN
                 </label>
                 <input
@@ -180,7 +180,7 @@ export default function LoginPage() {
                   value={adminPin}
                   onChange={(event) => setAdminPin(event.target.value)}
                   placeholder="Enter admin PIN"
-                  className="w-full border-2 border-[#8b0000] bg-[#0f0f0f] px-4 py-3 text-[#e5e5e5] outline-none transition placeholder-[#666666] focus:border-[#dc2626] focus:bg-[#1a1a1a]"
+                  className="w-full border-2 border-[#8b4444] bg-[#0f0f0f] px-4 py-3 text-[#e8d7c6] outline-none transition placeholder-[#6a5a4a] focus:border-[#d4a574] focus:bg-[#1a1a1a]"
                 />
 
                 {announcementError ? <p className="text-sm text-[#ff6b6b]">{announcementError}</p> : null}
@@ -188,7 +188,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={publishAnnouncement}
-                  className="mt-2 inline-flex w-full items-center justify-center border-2 border-[#8b0000] bg-[#1a1a1a] px-4 py-3 text-sm font-black uppercase tracking-[0.2em] text-[#c0c0c0] transition hover:border-[#dc2626] hover:bg-[#2a1a1a] hover:text-[#e5e5e5]"
+                  className="mt-2 inline-flex w-full items-center justify-center border-2 border-[#8b4444] bg-[#1a1a1a] px-4 py-3 text-sm font-black uppercase tracking-[0.2em] text-[#e8d7c6] transition hover:border-[#d4a574] hover:bg-[#2a1a1a] hover:text-[#f0e8d8]"
                 >
                   Post
                 </button>
