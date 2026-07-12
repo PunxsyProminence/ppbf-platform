@@ -2,9 +2,20 @@ import { notFound } from 'next/navigation';
 import BoardMemberDashboard from '@/components/BoardMemberDashboard';
 
 const boardMembers = {
+  president: {
+    title: 'President Dashboard',
+    seatLabel: 'President',
+    focus: 'Executive leadership, strategic initiatives, and overall organizational direction.',
+    metrics: [
+      { label: 'Vision', value: 'Clear' },
+      { label: 'Strategy', value: 'Aligned' },
+      { label: 'Execution', value: 'Tracked' },
+      { label: 'Status', value: 'Active' },
+    ],
+  },
   chair: {
     title: 'Board Chair Dashboard',
-    seatLabel: 'President / Board Chair',
+    seatLabel: 'Board Chair',
     focus: 'Strategic leadership, agenda setting, and the clean overview needed to guide the organization.',
     metrics: [
       { label: 'Agenda', value: 'Prepared' },
@@ -103,6 +114,7 @@ export default function BoardMemberPage({ params }: { params: { member: string }
       metrics={dashboard.metrics}
       allowedRoles={[
         member as
+          | 'board-president'
           | 'board-chair'
           | 'board-vice-chair'
           | 'board-treasurer'

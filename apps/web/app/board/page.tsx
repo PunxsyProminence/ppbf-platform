@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
 const boardMembers = [
+  { slug: 'president', label: 'President', role: 'Executive leadership and organizational oversight' },
   { slug: 'chair', label: 'Board Chair', role: 'Strategic direction and meeting leadership' },
   { slug: 'vice-chair', label: 'Vice Chair', role: 'Continuity, support, and committee oversight' },
   { slug: 'treasurer', label: 'Treasurer', role: 'Budget, financial integrity, and ledger review' },
