@@ -1,8 +1,6 @@
 'use client';
 
-import Link from 'next/link';
-import { useState } from 'react';
-import FeatureSurface from '@/components/FeatureSurface';
+import { useState, type SyntheticEvent } from 'react';
 
 type VisitorType =
   | 'Athlete / Participant'
@@ -193,7 +191,7 @@ export default function PublicPortalPage() {
     addTrace('FAQ opened', question);
   }
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!consentToContact) {
       setConfirmation('Please provide consent to be contacted before submitting.');
@@ -205,27 +203,54 @@ export default function PublicPortalPage() {
   }
 
   return (
-    <FeatureSurface
-      eyebrow="PUBLIC PORTAL"
-      title="PPBF Public Entry + Interest Intake"
-      description="A public-facing front door for visitors, families, partners, volunteers, and first-time participants."
-      status="ready"
-      primaryLinks={[
-        { label: 'The Ring', href: '/operations' },
-        { label: 'Operations Hub', href: '/operations#hub' },
-        { label: 'Public FAQ', href: '/public#public-faq' },
-        { label: 'Interest Intake', href: '/public#interest-intake' },
-      ]}
-      stats={[
-        { label: 'Audience', value: 'Visitors' },
-        { label: 'Purpose', value: 'Awareness + Interest Intake' },
-        { label: 'Mode', value: 'Public / Read-only' },
-        { label: 'Access', value: 'Open' },
-        { label: 'Privacy', value: 'No private data exposed' },
-      ]}
-    >
-      <div className="space-y-6">
-        <section className="border border-[#8b4444] bg-[#141414] p-5">
+    <main className="min-h-screen bg-[#0a0a0a] text-[#e8d7c6]">
+      <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-10 lg:px-10">
+        <header className="flex flex-col gap-4 border-b-4 border-[#8b4444] pb-6 md:flex-row md:items-end md:justify-between">
+          <div className="space-y-3">
+            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[#d4a574]">PUBLIC PORTAL</p>
+            <h1 className="font-display text-4xl tracking-tight text-[#e8d7c6] md:text-5xl">PPBF Public Entry + Interest Intake</h1>
+            <p className="max-w-4xl text-sm leading-7 text-[#cbb8a8] md:text-base">
+              The public-facing front door for awareness, trust building, community introduction, public interest intake, volunteer recruitment, partner engagement, and future athlete enrollment.
+            </p>
+          </div>
+          <div className="border-2 border-[#8b4444] bg-[#1a1a1a] px-4 py-3 text-xs font-mono text-[#e8d7c6] shadow-2xl shadow-black/70">
+            Status: ready
+          </div>
+        </header>
+
+        <section className="mt-6 grid gap-3 md:grid-cols-3">
+          {[
+            { label: 'Audience', value: 'Visitors' },
+            { label: 'Purpose', value: 'Awareness + Interest Intake' },
+            { label: 'Access', value: 'Public / Read-only' },
+          ].map((item) => (
+            <div key={item.label} className="border-2 border-[#5a4a3a] bg-[#101010] p-4">
+              <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-[#b0a095]">{item.label}</p>
+              <p className="mt-2 text-xl font-black text-[#e8d7c6]">{item.value}</p>
+            </div>
+          ))}
+        </section>
+
+        <section className="mt-6 border-2 border-[#d4a574] bg-[#22150f] p-5 shadow-2xl shadow-black/70">
+          <p className="text-xs font-mono uppercase tracking-[0.25em] text-[#f0cfaa]">Identity</p>
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            {['VETERAN-OWNED', '501(c)(3) PUBLIC CHARITY', 'COMMUNITY IMPACT DRIVEN'].map((item) => (
+              <div key={item} className="border border-[#d4a574] bg-[#101010] p-4 text-center">
+                <p className="text-lg font-black tracking-[0.18em] text-[#f3dcc1]">{item}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="mt-6 border-2 border-[#8b4444] bg-[#141414] p-5">
+          <h2 className="text-[20px] font-black text-[#e8d7c6]">PUBLIC PORTAL PURPOSE</h2>
+          <p className="mt-3 text-[16px] leading-7 text-[#cfbfae]">
+            This portal is for public awareness and contact interest only. It does not route users into internal systems.
+          </p>
+        </section>
+
+        <div className="mt-6 space-y-6">
+        <section id="volunteer-recruitment" className="border border-[#8b4444] bg-[#141414] p-5">
           <h2 className="text-[20px] font-black text-[#e8d7c6]">CHOOSE YOUR PATH</h2>
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {pathwayCards.map((path) => {
@@ -345,7 +370,7 @@ export default function PublicPortalPage() {
                   setConsentToContact(e.target.checked);
                 }}
               />
-              Consent to be contacted
+              <span>Consent to be contacted</span>
             </label>
 
             <button
@@ -359,7 +384,7 @@ export default function PublicPortalPage() {
           </form>
         </section>
 
-        <section className="border border-[#8b4444] bg-[#141414] p-5">
+        <section id="partner-engagement" className="border border-[#8b4444] bg-[#141414] p-5">
           <h2 className="text-[20px] font-black text-[#e8d7c6]">PROGRAM PREVIEW</h2>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             {programCards.map((program) => (
@@ -419,19 +444,19 @@ export default function PublicPortalPage() {
           <h2 className="text-[20px] font-black text-[#e8d7c6]">PUBLIC QUICK LINKS</h2>
           <div className="mt-3 flex flex-wrap gap-2">
             {[
-              { label: 'The Ring', href: '/operations' },
-              { label: 'Launch Portal', href: '/launch' },
               { label: 'Public FAQ', href: '/public#public-faq' },
               { label: 'Interest Intake', href: '/public#interest-intake' },
+              { label: 'Volunteer Recruitment', href: '/public#volunteer-recruitment' },
+              { label: 'Partner Engagement', href: '/public#partner-engagement' },
             ].map((link) => (
-              <Link
+              <a
                 key={link.label}
                 href={link.href}
                 onClick={() => addTrace('quick link clicked', `${link.label} -> ${link.href}`)}
                 className="inline-flex min-h-[44px] items-center border border-[#8b4444] bg-[#2a1414] px-4 text-[14px] font-bold text-[#e8d7c6] transition hover:border-[#d4a574]"
               >
                 {link.label}
-              </Link>
+              </a>
             ))}
           </div>
         </section>
@@ -449,7 +474,8 @@ export default function PublicPortalPage() {
             ))}
           </div>
         </section>
+        </div>
       </div>
-    </FeatureSurface>
+    </main>
   );
 }
