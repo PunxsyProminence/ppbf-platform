@@ -1,35 +1,35 @@
 {
   "routes": [
     {
-      "route": "/board/president*",
+      "route": "/board/president",
       "rewrite": "/board/president.html"
     },
     {
-      "route": "/board/chair*",
+      "route": "/board/chair",
       "rewrite": "/board/chair.html"
     },
     {
-      "route": "/board/vice-chair*",
+      "route": "/board/vice-chair",
       "rewrite": "/board/vice-chair.html"
     },
     {
-      "route": "/board/treasurer*",
+      "route": "/board/treasurer",
       "rewrite": "/board/treasurer.html"
     },
     {
-      "route": "/board/secretary*",
+      "route": "/board/secretary",
       "rewrite": "/board/secretary.html"
     },
     {
-      "route": "/board/safety-director*",
+      "route": "/board/safety-director",
       "rewrite": "/board/safety-director.html"
     },
     {
-      "route": "/board/community-director*",
+      "route": "/board/community-director",
       "rewrite": "/board/community-director.html"
     },
     {
-      "route": "/board/at-large*",
+      "route": "/board/at-large",
       "rewrite": "/board/at-large.html"
     },
     {
