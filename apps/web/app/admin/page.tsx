@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import RoleSessionGate from '@/components/RoleSessionGate';
 
 type CapabilityStatus = 'DRAFT' | 'ACTIVE' | 'BLOCKED';
 
@@ -180,6 +181,7 @@ export default function AdminCapabilitiesPage() {
   }
 
   return (
+    <RoleSessionGate allowedRoles={['admin']}>
     <main style={{ minHeight: '100vh', background: '#f8f9fa', color: '#111' }}>
       <header
         style={{
@@ -322,5 +324,6 @@ export default function AdminCapabilitiesPage() {
         </section>
       </div>
     </main>
+    </RoleSessionGate>
   );
 }

@@ -7,6 +7,8 @@ const primaryDashboards = [
 ];
 
 const supportSurfaces = [
+  { label: 'Member login', href: '/login' },
+  { label: 'Dashboard entry', href: '/dashboard' },
   { label: 'Launch portal', href: '/launch' },
   { label: 'Public portal', href: '/public' },
   { label: 'Guardian portal', href: '/guardian' },

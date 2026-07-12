@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import RoleSessionGate from './RoleSessionGate';
+import type { ClubRole } from './roleRoutes';
 
 interface BoardMemberDashboardProps {
   title: string;
@@ -6,11 +8,13 @@ interface BoardMemberDashboardProps {
   focus: string;
   metrics: ReadonlyArray<{ label: string; value: string }>;
   links: ReadonlyArray<{ label: string; href: string }>;
+  allowedRoles: ClubRole[];
 }
 
-export default function BoardMemberDashboard({ title, seatLabel, focus, metrics, links }: BoardMemberDashboardProps) {
+export default function BoardMemberDashboard({ title, seatLabel, focus, metrics, links, allowedRoles }: BoardMemberDashboardProps) {
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.12),_transparent_30%),linear-gradient(180deg,#020617_0%,#0f172a_100%)] text-slate-100">
+    <RoleSessionGate allowedRoles={allowedRoles}>
+      <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.12),_transparent_30%),linear-gradient(180deg,#020617_0%,#0f172a_100%)] text-slate-100">
       <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-6 py-10 lg:px-10">
         <header className="flex flex-col gap-4 border-b border-slate-800 pb-6 md:flex-row md:items-end md:justify-between">
           <div className="space-y-3">
@@ -61,6 +65,7 @@ export default function BoardMemberDashboard({ title, seatLabel, focus, metrics,
           </aside>
         </section>
       </div>
-    </main>
+      </main>
+    </RoleSessionGate>
   );
 }

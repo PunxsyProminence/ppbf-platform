@@ -8,6 +8,8 @@ const launchMilestones = [
 ];
 
 const launchLinks = [
+  { label: 'Member login', href: '/login' },
+  { label: 'Dashboard entry', href: '/dashboard' },
   { label: 'Master console', href: '/' },
   { label: 'Athlete dashboard', href: '/athlete/dashboard' },
   { label: 'Coach review queue', href: '/coach/review-queue' },

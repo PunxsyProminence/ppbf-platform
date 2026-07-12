@@ -101,6 +101,16 @@ export default function BoardMemberPage({ params }: { params: { member: string }
       seatLabel={dashboard.seatLabel}
       focus={dashboard.focus}
       metrics={dashboard.metrics}
+      allowedRoles={[
+        member as
+          | 'board-chair'
+          | 'board-vice-chair'
+          | 'board-treasurer'
+          | 'board-secretary'
+          | 'board-safety-director'
+          | 'board-community-director'
+          | 'board-at-large',
+      ]}
       links={[
         { label: 'Board hub', href: '/board' },
         { label: 'Main operation hub', href: '/' },
