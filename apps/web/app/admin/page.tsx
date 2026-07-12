@@ -227,16 +227,16 @@ export default function AdminCapabilitiesPage() {
 
   return (
     <RoleSessionGate allowedRoles={['admin']}>
-    <main style={{ minHeight: '100vh', background: '#0a0a0a', color: '#e5e5e5' }}>
+    <main style={{ minHeight: '100vh', background: '#0a0a0a', color: '#e8d7c6' }}>
       <header
         style={{
           background: '#1a1a1a',
-          color: '#e5e5e5',
+          color: '#e8d7c6',
           padding: '12px 24px',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          borderBottom: '4px solid #8b0000',
+          borderBottom: '4px solid #8b4444',
           fontFamily: 'monospace',
         }}
       >
@@ -246,9 +246,9 @@ export default function AdminCapabilitiesPage() {
             href="/admin/shadow"
             style={{
               fontSize: '0.75rem',
-              border: '2px solid #8b0000',
-              background: '#4a0000',
-              color: '#c85a17',
+              border: '2px solid #8b4444',
+              background: '#5a2a2a',
+              color: '#d4a574',
               padding: '6px 8px',
               textDecoration: 'none',
               fontWeight: 700,
@@ -257,14 +257,14 @@ export default function AdminCapabilitiesPage() {
               transition: 'all 0.2s',
             }}
             onMouseOver={(e) => {
-              (e.target as HTMLElement).style.background = '#dc2626';
-              (e.target as HTMLElement).style.borderColor = '#ff6b6b';
-              (e.target as HTMLElement).style.color = '#e5e5e5';
+              (e.target as HTMLElement).style.background = '#8b4444';
+              (e.target as HTMLElement).style.borderColor = '#d4a574';
+              (e.target as HTMLElement).style.color = '#e8d7c6';
             }}
             onMouseOut={(e) => {
-              (e.target as HTMLElement).style.background = '#4a0000';
-              (e.target as HTMLElement).style.borderColor = '#8b0000';
-              (e.target as HTMLElement).style.color = '#c85a17';
+              (e.target as HTMLElement).style.background = '#5a2a2a';
+              (e.target as HTMLElement).style.borderColor = '#8b4444';
+              (e.target as HTMLElement).style.color = '#d4a574';
             }}
           >
             SHADOW
@@ -273,9 +273,9 @@ export default function AdminCapabilitiesPage() {
             href="/operations"
             style={{
               fontSize: '0.75rem',
-              border: '2px solid #8b0000',
+              border: '2px solid #8b4444',
               background: '#1a1a1a',
-              color: '#a0a0a0',
+              color: '#b0a095',
               padding: '6px 8px',
               textDecoration: 'none',
               fontWeight: 700,
@@ -289,7 +289,7 @@ export default function AdminCapabilitiesPage() {
             }}
             onMouseOut={(e) => {
               (e.target as HTMLElement).style.background = '#1a1a1a';
-              (e.target as HTMLElement).style.borderColor = '#8b0000';
+              (e.target as HTMLElement).style.borderColor = '#8b4444';
             }}
           >
             OPS HUB
@@ -298,9 +298,9 @@ export default function AdminCapabilitiesPage() {
             href="/research/chat"
             style={{
               fontSize: '0.75rem',
-              border: '2px solid #b35806',
-              background: '#4a2a1a',
-              color: '#c85a17',
+              border: '2px solid #d4a574',
+              background: '#5a4a3a',
+              color: '#d4a574',
               padding: '6px 8px',
               textDecoration: 'none',
               fontWeight: 700,
@@ -309,12 +309,12 @@ export default function AdminCapabilitiesPage() {
               transition: 'all 0.2s',
             }}
             onMouseOver={(e) => {
-              (e.target as HTMLElement).style.background = '#8b4513';
-              (e.target as HTMLElement).style.borderColor = '#c85a17';
+              (e.target as HTMLElement).style.background = '#8b4444';
+              (e.target as HTMLElement).style.borderColor = '#d4a574';
             }}
             onMouseOut={(e) => {
-              (e.target as HTMLElement).style.background = '#4a2a1a';
-              (e.target as HTMLElement).style.borderColor = '#b35806';
+              (e.target as HTMLElement).style.background = '#5a4a3a';
+              (e.target as HTMLElement).style.borderColor = '#d4a574';
             }}
           >
             RESEARCH
@@ -330,24 +330,24 @@ export default function AdminCapabilitiesPage() {
           borderBottom: '2px solid #4a4a4a',
           fontFamily: 'monospace',
           letterSpacing: '0.05em',
-          color: '#a0a0a0',
+          color: '#b0a095',
         }}
       >
         All actions are logged. Jason approval required for production changes.
       </section>
 
       <div style={{ padding: '32px 40px' }}>
-        <h1 style={{ marginBottom: '24px', fontSize: '2rem', color: '#e5e5e5' }}>Admin Dashboard - Capabilities</h1>
+        <h1 style={{ marginBottom: '24px', fontSize: '2rem', color: '#e8d7c6' }}>Admin Dashboard - Capabilities</h1>
 
         <section
           style={{
             display: 'grid',
             gap: '12px',
             padding: '18px',
-            border: '2px solid #8b0000',
+            border: '2px solid #8b4444',
             background: '#1a1a1a',
             marginBottom: '18px',
-            color: '#e5e5e5',
+            color: '#e8d7c6',
           }}
         >
           <h2 style={{ fontSize: '1.2rem', marginBottom: '4px', color: '#e5e5e5' }}>Athlete Track Assignment</h2>
