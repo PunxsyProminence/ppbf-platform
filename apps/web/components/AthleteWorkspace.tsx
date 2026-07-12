@@ -160,9 +160,27 @@ export default function AthleteWorkspace() {
   const [rpeGoal, setRpeGoal] = useState<number>(6);
   const [workloadOverrideLevel, setWorkloadOverrideLevel] = useState<number>(0);
   const [sorenessLocations, setSorenessLocations] = useState<string[]>([]);
+  const [selectedSorenessLocation, setSelectedSorenessLocation] = useState<string | null>(null);
+  const [sorenessDescriptions, setSorenessDescriptions] = useState<Record<string, { painType: PainType; severity: number; description: string; startedWhen: string }>>({});
+  const [showSorenessModal, setShowSorenessModal] = useState(false);
+  const [currentPainType, setCurrentPainType] = useState<PainType>('Dull');
+  const [currentPainSeverity, setCurrentPainSeverity] = useState(3);
+  const [currentPainDescription, setCurrentPainDescription] = useState('');
+  const [currentPainStarted, setCurrentPainStarted] = useState('Today');
   const [academicPassing, setAcademicPassing] = useState<boolean>(true);
   const [completedDrills, setCompletedDrills] = useState<Record<string, boolean>>({});
   const [drillSearch, setDrillSearch] = useState<string>('');
+
+  // Check-In/Check-Out States
+  const [sessionActive, setSessionActive] = useState(false);
+  const [checkInTime, setCheckInTime] = useState<string | null>(null);
+  const [checkInNotes, setCheckInNotes] = useState('');
+  const [checkOutNotes, setCheckOutNotes] = useState('');
+  const [tempCheckInNotes, setTempCheckInNotes] = useState('');
+  const [sessionLog, setSessionLog] = useState<Array<{ id: string; checkInTime: string; checkOutTime?: string; checkInNotes: string; checkOutNotes?: string }>>([
+    { id: 'sess_1', checkInTime: '2026-07-11 4:00 PM', checkOutTime: '2026-07-11 5:30 PM', checkInNotes: 'Feeling good, ready for heavy footwork drills', checkOutNotes: 'Great session! Completed all combo targets with 88% accuracy' },
+    { id: 'sess_2', checkInTime: '2026-07-10 4:00 PM', checkOutTime: '2026-07-10 5:15 PM', checkInNotes: 'Slight left shoulder soreness, will monitor', checkOutNotes: 'Modified rounds 7-9 due to fatigue, recovered well' }
+  ]);
 
   // Telemetry & Diagnostics
   const [telemetryLog, setTelemetryLog] = useState<any | null>(null);
@@ -197,6 +215,13 @@ export default function AthleteWorkspace() {
   const [newGoalTitle, setNewGoalTitle] = useState('');
   const [newGoalCategory, setNewGoalCategory] = useState<SMARTCategory>('Boxing');
   const [newGoalTargetDate, setNewGoalTargetDate] = useState('');
+  const [newGoalSpecific, setNewGoalSpecific] = useState('');
+  const [newGoalMeasurable, setNewGoalMeasurable] = useState('');
+  const [newGoalAchievable, setNewGoalAchievable] = useState('');
+  const [newGoalRelevant, setNewGoalRelevant] = useState('');
+  const [newGoalTimeBound, setNewGoalTimeBound] = useState('');
+  const [newGoalSuccessMetric, setNewGoalSuccessMetric] = useState('');
+  const [showGoalForm, setShowGoalForm] = useState(false);
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
 
   // Tracks States
@@ -468,6 +493,64 @@ export default function AthleteWorkspace() {
     Math.min(10, (sleepHours * 1.05) + (motivation * 0.55) - (soreness * 0.45) + (workloadOverrideLevel * 0.3)),
   );
 
+  const handleCreateNewGoal = () => {
+    if (newGoalTitle && newGoalSpecific && newGoalMeasurable && newGoalAchievable && newGoalRelevant && newGoalTimeBound && newGoalTargetDate && newGoalSuccessMetric) {
+      const newGoal: SMARTGoal = {
+        id: `sg_${Date.now()}`,
+        title: newGoalTitle,
+        category: newGoalCategory,
+        specific: newGoalSpecific,
+        measurable: newGoalMeasurable,
+        achievable: newGoalAchievable,
+        relevant: newGoalRelevant,
+        timeBound: newGoalTimeBound,
+        targetDate: newGoalTargetDate,
+        successMetric: newGoalSuccessMetric,
+        linkedWorkouts: [],
+        linkedTasks: [],
+        coachNotes: '',
+        athleteReflection: '',
+        status: 'Active',
+        progressPercent: 0
+      };
+      setSmartGoals([...smartGoals, newGoal]);
+      setNewGoalTitle('');
+      setNewGoalCategory('Boxing');
+      setNewGoalTargetDate('');
+      setNewGoalSpecific('');
+      setNewGoalMeasurable('');
+      setNewGoalAchievable('');
+      setNewGoalRelevant('');
+      setNewGoalTimeBound('');
+      setNewGoalSuccessMetric('');
+      setShowGoalForm(false);
+    }
+  };
+
+  const handleCheckIn = () => {
+    setSessionActive(true);
+    setCheckInTime(new Date().toLocaleString());
+    setCheckInNotes(tempCheckInNotes);
+    setTempCheckInNotes('');
+  };
+
+  const handleCheckOut = () => {
+    if (checkInTime) {
+      const newSession = {
+        id: `sess_${Date.now()}`,
+        checkInTime: checkInTime,
+        checkOutTime: new Date().toLocaleString(),
+        checkInNotes: checkInNotes,
+        checkOutNotes: checkOutNotes
+      };
+      setSessionLog([newSession, ...sessionLog]);
+      setSessionActive(false);
+      setCheckInTime(null);
+      setCheckInNotes('');
+      setCheckOutNotes('');
+    }
+  };
+
   const handleDispatchIntake = () => {
     const packet = {
       timestamp: new Date().toISOString(),
@@ -606,6 +689,34 @@ export default function AthleteWorkspace() {
                 <span className="text-xs font-mono font-bold text-[#e8d7c6]">Selected Path Concept:</span>
                 <p className="text-[11px] text-[#b0a095] font-mono leading-relaxed">{trackManifests[activeTrack].desc}</p>
               </div>
+
+              {/* SESSION CHECK-IN / CHECK-OUT */}
+              <div className={`border-2 p-4 space-y-3 ${sessionActive ? 'bg-[#0a2a0a] border-[#4a9a4a]' : 'bg-[#0a0a0a] border-[#8b4444]'}`}>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-mono font-bold text-[#e8d7c6]">Session Check-In / Check-Out Log</span>
+                  <span className={`text-[9px] font-bold px-2 py-0.5 font-mono ${sessionActive ? 'bg-[#4a9a4a]/30 text-[#4a9a4a]' : 'bg-[#4a4a4a]/30 text-[#8a8a8a]'}`}>{sessionActive ? '🟢 SESSION ACTIVE' : '⚪ No Active Session'}</span>
+                </div>
+
+                {!sessionActive ? (
+                  <div className="space-y-2">
+                    <textarea value={tempCheckInNotes} onChange={(e) => setTempCheckInNotes(e.target.value)} placeholder="Start of session notes (pain, readiness, goals today...)" className="w-full bg-[#1a1a1a] border-2 border-[#8b4444] px-3 py-2 text-xs font-mono text-[#e8d7c6] focus:outline-none resize-none h-12" />
+                    <button onClick={handleCheckIn} className="w-full bg-[#4a9a4a] hover:bg-[#2a7a2a] text-[#e8d7c6] font-mono font-bold text-xs py-2 transition border-2 border-[#4a9a4a]">
+                      ✅ Check In (Start Session)
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2 bg-[#0a2a0a]/40 p-3 border-2 border-[#4a9a4a]">
+                    <div className="text-xs font-mono text-[#b0a095] space-y-1">
+                      <div><strong>Check-In Time:</strong> {checkInTime}</div>
+                      <div><strong>Check-In Notes:</strong> {checkInNotes || '(none)'}</div>
+                    </div>
+                    <textarea value={checkOutNotes} onChange={(e) => setCheckOutNotes(e.target.value)} placeholder="End of session notes (performance summary, what went well, what to improve...)" className="w-full bg-[#1a1a1a] border-2 border-[#4a9a4a] px-3 py-2 text-xs font-mono text-[#e8d7c6] focus:outline-none resize-none h-12" />
+                    <button onClick={handleCheckOut} className="w-full bg-[#dc2626] hover:bg-[#8b4444] text-[#e8d7c6] font-mono font-bold text-xs py-2 transition border-2 border-[#8b4444]">
+                      ⏹️ Check Out (End Session)
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Today's Prescribed Workout drills */}
@@ -658,18 +769,23 @@ export default function AthleteWorkspace() {
               </div>
 
               <div className="space-y-2 border-2 border-[#8b4444] bg-[#1a1a1a]/50 p-3">
-                <span className="text-xs font-mono text-[#e8d7c6] font-bold">Soreness location mapping</span>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-mono text-[#e8d7c6] font-bold">Soreness location mapping</span>
+                  {sorenessLocations.length > 0 && <span className="text-[9px] bg-[#8b4444]/30 text-[#8b4444] px-2 py-0.5 font-bold font-mono">{sorenessLocations.length} locations selected</span>}
+                </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {sorenessAreaOptions.map((location) => {
                     const selected = sorenessLocations.includes(location);
+                    const hasDescription = sorenessDescriptions[location];
                     return (
                       <button
                         key={location}
                         type="button"
-                        onClick={() => toggleSorenessLocation(location)}
-                        className={`border-2 px-2 py-1.5 text-[11px] font-mono text-left transition ${selected ? 'border-[#d4a574] bg-[#5a2a2a]/30 text-[#8b4444]' : 'border-[#8b4444] bg-[#0f0f0f] text-[#b0a095] hover:text-[#e8d7c6]'}`}
+                        onClick={() => { setSelectedSorenessLocation(location); setShowSorenessModal(true); if (hasDescription) { setCurrentPainType(hasDescription.painType); setCurrentPainSeverity(hasDescription.severity); setCurrentPainDescription(hasDescription.description); setCurrentPainStarted(hasDescription.startedWhen); } else { setCurrentPainType('Dull'); setCurrentPainSeverity(3); setCurrentPainDescription(''); setCurrentPainStarted('Today'); } }}
+                        className={`border-2 px-2 py-1.5 text-[11px] font-mono text-left transition relative ${selected ? 'border-[#d4a574] bg-[#5a2a2a]/30 text-[#8b4444]' : 'border-[#8b4444] bg-[#0f0f0f] text-[#b0a095] hover:text-[#e8d7c6]'}`}
                       >
                         {location}
+                        {hasDescription && <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-[#d4a574] rounded-full"></span>}
                       </button>
                     );
                   })}
@@ -689,6 +805,124 @@ export default function AthleteWorkspace() {
               <button onClick={handleDispatchIntake} className="w-full bg-[#8b4444] hover:bg-[#5a2a2a] text-[#e8d7c6] font-mono font-black text-xs py-2.5 transition uppercase tracking-wider border-2 border-[#8b4444]">
                 ⚡ Dispatch Ingest Telemetry to Staging Path
               </button>
+
+              {/* SESSION HISTORY LOG */}
+              {sessionLog.length > 0 && (
+                <div className="border-2 border-[#8b4444] bg-[#1a1a1a]/40 p-4 space-y-3">
+                  <h4 className="text-xs font-mono font-bold text-[#e8d7c6] uppercase tracking-wide">📋 Recent Session Log</h4>
+                  <div className="space-y-3 max-h-64 overflow-y-auto">
+                    {sessionLog.slice(0, 5).map(session => (
+                      <div key={session.id} className="bg-[#0f0f0f] border-2 border-[#8b4444]/40 p-3 space-y-1.5">
+                        <div className="flex justify-between items-center text-[10px] font-mono">
+                          <span className="text-[#d4a574] font-bold">Check-In: {session.checkInTime}</span>
+                          {session.checkOutTime && <span className="text-[#8a8a8a]">Check-Out: {session.checkOutTime}</span>}
+                        </div>
+                        {session.checkInNotes && <p className="text-[10px] text-[#b0a095] font-mono italic">📝 Start: {session.checkInNotes}</p>}
+                        {session.checkOutNotes && <p className="text-[10px] text-[#b0a095] font-mono italic">📝 End: {session.checkOutNotes}</p>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* SORENESS DESCRIPTION MODAL */}
+              {showSorenessModal && selectedSorenessLocation && (
+                <div className="fixed inset-0 bg-[#0a0a0a]/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                  <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-6 max-w-md w-full space-y-4 animate-fadeIn">
+                    <div className="border-b border-[#4a4a4a] pb-3">
+                      <h3 className="text-base font-bold font-mono text-[#e8d7c6]">Soreness Details: {selectedSorenessLocation}</h3>
+                      <p className="text-xs text-[#b0a095] font-mono mt-1">Describe the pain you're experiencing in this location</p>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-mono text-[#b0a095] block">Pain Type</label>
+                        <select value={currentPainType} onChange={(e) => setCurrentPainType(e.target.value as PainType)} className="w-full bg-[#1a1a1a] border-2 border-[#8b4444] px-3 py-2 text-xs font-mono text-[#e8d7c6] focus:outline-none">
+                          <option value="Sharp">Sharp</option>
+                          <option value="Dull">Dull</option>
+                          <option value="Burning">Burning</option>
+                          <option value="Tight">Tight</option>
+                          <option value="Pulling">Pulling</option>
+                          <option value="Throbbing">Throbbing</option>
+                          <option value="Swollen">Swollen</option>
+                          <option value="Numbness/Tingling">Numbness/Tingling</option>
+                          <option value="Instability">Instability</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between">
+                          <label className="text-xs font-mono text-[#b0a095]">Pain Severity</label>
+                          <span className="text-[#d4a574] font-bold text-xs">{currentPainSeverity}/10</span>
+                        </div>
+                        <input type="range" min="0" max="10" step="1" value={currentPainSeverity} onChange={(e) => setCurrentPainSeverity(parseInt(e.target.value))} className="w-full accent-[#d4a574] h-1 bg-[#4a4a4a]" />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-mono text-[#b0a095] block">When did it start?</label>
+                        <select value={currentPainStarted} onChange={(e) => setCurrentPainStarted(e.target.value)} className="w-full bg-[#1a1a1a] border-2 border-[#8b4444] px-3 py-2 text-xs font-mono text-[#e8d7c6] focus:outline-none">
+                          <option value="Just now">Just now</option>
+                          <option value="Today">Today</option>
+                          <option value="Yesterday">Yesterday</option>
+                          <option value="This week">This week</option>
+                          <option value="Last week">Last week</option>
+                          <option value="Ongoing">Ongoing</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-mono text-[#b0a095] block">Additional Notes</label>
+                        <textarea value={currentPainDescription} onChange={(e) => setCurrentPainDescription(e.target.value)} placeholder="e.g., Sharp pain on lateral side, worse with rotation..." className="w-full bg-[#1a1a1a] border-2 border-[#8b4444] px-3 py-2 text-xs font-mono text-[#e8d7c6] focus:outline-none resize-none h-20" />
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2 pt-2">
+                      <button
+                        onClick={() => {
+                          if (currentPainType) {
+                            setSorenessDescriptions({
+                              ...sorenessDescriptions,
+                              [selectedSorenessLocation]: {
+                                painType: currentPainType,
+                                severity: currentPainSeverity,
+                                description: currentPainDescription,
+                                startedWhen: currentPainStarted
+                              }
+                            });
+                            if (!sorenessLocations.includes(selectedSorenessLocation)) {
+                              setSorenessLocations([...sorenessLocations, selectedSorenessLocation]);
+                            }
+                          }
+                          setShowSorenessModal(false);
+                          setSelectedSorenessLocation(null);
+                        }}
+                        className="flex-1 bg-[#8b4444] hover:bg-[#5a2a2a] text-[#e8d7c6] font-mono font-bold text-xs py-2 transition border-2 border-[#8b4444]"
+                      >
+                        Save Soreness
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (sorenessDescriptions[selectedSorenessLocation]) {
+                            const newDescriptions = { ...sorenessDescriptions };
+                            delete newDescriptions[selectedSorenessLocation];
+                            setSorenessDescriptions(newDescriptions);
+                            setSorenessLocations(sorenessLocations.filter(l => l !== selectedSorenessLocation));
+                          }
+                          setShowSorenessModal(false);
+                          setSelectedSorenessLocation(null);
+                        }}
+                        className="flex-1 bg-[#4a4a4a] hover:bg-[#8b4444]/30 text-[#8a8a8a] font-mono font-bold text-xs py-2 transition border-2 border-[#8b4444]"
+                      >
+                        Remove
+                      </button>
+                      <button onClick={() => setShowSorenessModal(false)} className="flex-1 bg-[#1a1a1a] hover:bg-[#2a2a2a] text-[#b0a095] font-mono font-bold text-xs py-2 transition border-2 border-[#8b4444]">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -945,10 +1179,85 @@ export default function AthleteWorkspace() {
       {/* --- SMART GOALS VIEW --- */}
       {activeTab === 'smart-goals' && (
         <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-6 space-y-6 animate-fadeIn">
-          <div className="border-b border-[#4a4a4a] pb-3">
-            <h3 className="text-base font-bold font-mono text-[#e8d7c6]">SMART Goals Framework</h3>
-            <p className="text-xs text-[#b0a095] font-mono mt-0.5">Specific, Measurable, Achievable, Relevant, Time-bound goal tracking for athletic progression.</p>
+          <div className="border-b border-[#4a4a4a] pb-3 flex justify-between items-start">
+            <div>
+              <h3 className="text-base font-bold font-mono text-[#e8d7c6]">SMART Goals Framework</h3>
+              <p className="text-xs text-[#b0a095] font-mono mt-0.5">Specific, Measurable, Achievable, Relevant, Time-bound goal tracking for athletic progression.</p>
+            </div>
+            <button onClick={() => setShowGoalForm(!showGoalForm)} className="px-3 py-1.5 bg-[#8b4444] hover:bg-[#5a2a2a] text-[#e8d7c6] font-mono font-bold text-xs border-2 border-[#8b4444] transition">
+              + New Goal
+            </button>
           </div>
+
+          {/* CREATE NEW GOAL FORM */}
+          {showGoalForm && (
+            <div className="bg-[#1a1a1a] border-2 border-[#d4a574] p-5 space-y-4">
+              <h4 className="text-sm font-bold font-mono text-[#d4a574] uppercase">Create SMART Goal</h4>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-mono text-[#b0a095] block mb-1">Goal Title</label>
+                  <input type="text" value={newGoalTitle} onChange={(e) => setNewGoalTitle(e.target.value)} placeholder="e.g., Master Double End Bag" className="w-full bg-[#0f0f0f] border-2 border-[#8b4444] px-3 py-2 text-xs font-mono text-[#e8d7c6] focus:outline-none" />
+                </div>
+                <div>
+                  <label className="text-xs font-mono text-[#b0a095] block mb-1">Category</label>
+                  <select value={newGoalCategory} onChange={(e) => setNewGoalCategory(e.target.value as SMARTCategory)} className="w-full bg-[#0f0f0f] border-2 border-[#8b4444] px-3 py-2 text-xs font-mono text-[#e8d7c6] focus:outline-none">
+                    <option value="Boxing">Boxing</option>
+                    <option value="Fitness">Fitness</option>
+                    <option value="Weight Loss">Weight Loss</option>
+                    <option value="Weight Gain">Weight Gain</option>
+                    <option value="Academics">Academics</option>
+                    <option value="Attendance">Attendance</option>
+                    <option value="Recovery">Recovery</option>
+                    <option value="Lifestyle">Lifestyle</option>
+                    <option value="Leadership">Leadership</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-mono text-[#b0a095] block mb-1">Target Date</label>
+                  <input type="date" value={newGoalTargetDate} onChange={(e) => setNewGoalTargetDate(e.target.value)} className="w-full bg-[#0f0f0f] border-2 border-[#8b4444] px-3 py-2 text-xs font-mono text-[#e8d7c6] focus:outline-none" />
+                </div>
+                <div>
+                  <label className="text-xs font-mono text-[#b0a095] block mb-1">Success Metric</label>
+                  <input type="text" value={newGoalSuccessMetric} onChange={(e) => setNewGoalSuccessMetric(e.target.value)} placeholder="e.g., Complete 20 rounds without fatigue" className="w-full bg-[#0f0f0f] border-2 border-[#8b4444] px-3 py-2 text-xs font-mono text-[#e8d7c6] focus:outline-none" />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-mono text-[#b0a095] block">SPECIFIC - What exactly will you do?</label>
+                <textarea value={newGoalSpecific} onChange={(e) => setNewGoalSpecific(e.target.value)} placeholder="e.g., Practice 12-minute double-end bag rounds with footwork focus" className="w-full bg-[#0f0f0f] border-2 border-[#8b4444] px-3 py-2 text-xs font-mono text-[#e8d7c6] focus:outline-none resize-none h-16" />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-mono text-[#b0a095] block">MEASURABLE - How will you track it?</label>
+                <textarea value={newGoalMeasurable} onChange={(e) => setNewGoalMeasurable(e.target.value)} placeholder="e.g., Track time per round, number of unbroken rounds, punch accuracy percentage" className="w-full bg-[#0f0f0f] border-2 border-[#8b4444] px-3 py-2 text-xs font-mono text-[#e8d7c6] focus:outline-none resize-none h-16" />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-mono text-[#b0a095] block">ACHIEVABLE - Why is this realistic?</label>
+                <textarea value={newGoalAchievable} onChange={(e) => setNewGoalAchievable(e.target.value)} placeholder="e.g., Currently doing 8 rounds; increasing by 2 rounds/week is sustainable" className="w-full bg-[#0f0f0f] border-2 border-[#8b4444] px-3 py-2 text-xs font-mono text-[#e8d7c6] focus:outline-none resize-none h-16" />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-mono text-[#b0a095] block">RELEVANT - Why does this matter?</label>
+                <textarea value={newGoalRelevant} onChange={(e) => setNewGoalRelevant(e.target.value)} placeholder="e.g., Stamina and footwork are critical for sparring advancement" className="w-full bg-[#0f0f0f] border-2 border-[#8b4444] px-3 py-2 text-xs font-mono text-[#e8d7c6] focus:outline-none resize-none h-16" />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-mono text-[#b0a095] block">TIME-BOUND - What's the timeline?</label>
+                <textarea value={newGoalTimeBound} onChange={(e) => setNewGoalTimeBound(e.target.value)} placeholder="e.g., 8 weeks; reach 12 rounds by end of August" className="w-full bg-[#0f0f0f] border-2 border-[#8b4444] px-3 py-2 text-xs font-mono text-[#e8d7c6] focus:outline-none resize-none h-16" />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button onClick={handleCreateNewGoal} className="flex-1 bg-[#4a9a4a] hover:bg-[#2a7a2a] text-[#e8d7c6] font-mono font-bold text-xs py-2 transition border-2 border-[#4a9a4a]">
+                  ✅ Create Goal
+                </button>
+                <button onClick={() => { setShowGoalForm(false); setNewGoalTitle(''); setNewGoalSpecific(''); setNewGoalMeasurable(''); setNewGoalAchievable(''); setNewGoalRelevant(''); setNewGoalTimeBound(''); setNewGoalSuccessMetric(''); }} className="flex-1 bg-[#4a4a4a] hover:bg-[#8b4444]/30 text-[#b0a095] font-mono font-bold text-xs py-2 transition border-2 border-[#8b4444]">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="space-y-4">
             {smartGoals.map(goal => (
@@ -965,7 +1274,7 @@ export default function AthleteWorkspace() {
                   <span><strong>Due:</strong> {goal.targetDate}</span>
                 </div>
                 <div className="w-full bg-[#0f0f0f] border-2 border-[#8b4444]/40 h-2 rounded">
-                  <div className="bg-[#8b4444] h-full" style={{ width: `${Math.min(100, (Math.random() * 60 + 20))}%` }}></div>
+                  <div className="bg-[#8b4444] h-full" style={{ width: `${Math.min(100, goal.progressPercent)}%` }}></div>
                 </div>
               </div>
             ))}
