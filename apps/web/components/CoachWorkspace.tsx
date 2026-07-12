@@ -116,6 +116,24 @@ interface ShadowAlert {
   timestamp: string;
 }
 
+interface GamePlan {
+  id: string;
+  title: string;
+  focus: string;
+  keyObjectives: string[];
+  keyDrills: string[];
+  progressionStrategy: string;
+  createdDate: string;
+  status: 'Draft' | 'Active' | 'Completed';
+}
+
+interface ShadowCoachMessage {
+  id: string;
+  sender: 'coach' | 'shadow';
+  text: string;
+  timestamp: string;
+}
+
 export default function CoachWorkspace() {
   const [coachMode, setCoachMode] = useState<CoachMode>('Group');
   const [sessionHeader, setSessionHeader] = useState<SessionHeader>({
@@ -243,6 +261,82 @@ export default function CoachWorkspace() {
     { id: 'sa_2', athleteId: 'ath_002', message: 'Readiness below threshold (YELLOW)', severity: 'Info', timestamp: new Date().toISOString() }
   ]);
   const [expandedShadow, setExpandedShadow] = useState(true);
+
+  // Game Plan States
+  const [gamePlans, setGamePlans] = useState<GamePlan[]>([
+    { id: 'gp_1', title: 'Youth Class Footwork Focus', focus: 'Stance and pivot mechanics', keyObjectives: ['Master 45-degree pivot', 'Improve angles', 'Build consistency'], keyDrills: ['Pivot drill', 'Angle work', 'Shadow boxing'], progressionStrategy: 'Light practice → Resistance drills → Partial contact', status: 'Active', createdDate: new Date().toISOString() },
+    { id: 'gp_2', title: 'Defensive Head Movement', focus: 'Slip and duck technique', keyObjectives: ['Slip to outside', 'Duck with power', 'Combine with counters'], keyDrills: ['Slip drill', 'Duck under', 'Counter combinations'], progressionStrategy: 'Stationary → With footwork → Against partner', status: 'Draft', createdDate: new Date().toISOString() }
+  ]);
+  const [showGamePlanForm, setShowGamePlanForm] = useState(false);
+  const [newGamePlanTitle, setNewGamePlanTitle] = useState('');
+  const [newGamePlanFocus, setNewGamePlanFocus] = useState('');
+  const [newGamePlanObjectives, setNewGamePlanObjectives] = useState('');
+  const [newGamePlanDrills, setNewGamePlanDrills] = useState('');
+  const [newGamePlanProgression, setNewGamePlanProgression] = useState('');
+
+  // SHADOW Chat States
+  const [shadowMessages, setShadowMessages] = useState<ShadowCoachMessage[]>([
+    { id: 'sm_1', sender: 'shadow', text: 'Your youth class is showing solid footwork today. Sophia Chen is compensating slightly on her pivot—recommend extra angle work.', timestamp: new Date().toISOString() },
+    { id: 'sm_2', sender: 'coach', text: 'Good catch. Adding pivot refinement drill. Any other observations?', timestamp: new Date().toISOString() },
+    { id: 'sm_3', sender: 'shadow', text: 'James Thompson is favoring his left side—monitor for fatigue. Consider modified rounds.', timestamp: new Date().toISOString() },
+    { id: 'sm_4', sender: 'coach', text: 'Will adjust his blocks. What about overall conditioning pace?', timestamp: new Date().toISOString() },
+    { id: 'sm_5', sender: 'shadow', text: 'Group is tracking well. Recommend increasing interval intensity for the next round.', timestamp: new Date().toISOString() }
+  ]);
+  const [shadowInputMessage, setShadowInputMessage] = useState('');
+
+  const handleAddShadowMessage = () => {
+    if (!shadowInputMessage.trim()) return;
+    const newMsg: ShadowCoachMessage = {
+      id: `sm_${Date.now()}`,
+      sender: 'coach',
+      text: shadowInputMessage,
+      timestamp: new Date().toISOString()
+    };
+    setShadowMessages([...shadowMessages, newMsg]);
+    setShadowInputMessage('');
+
+    // Simulate SHADOW response
+    setTimeout(() => {
+      const responses = [
+        'Acknowledged. Monitoring session dynamics.',
+        'Continue current progression. Team is responding well.',
+        'Good decision. I am tracking athlete performance metrics.',
+        'Confirmed. Ready for next phase of session.',
+        'Recommend this approach. Keep athlete safety priority.'
+      ];
+      const randomResponse = responses[Math.floor(Math.random() * responses.length)];
+      const shadowReply: ShadowCoachMessage = {
+        id: `sm_${Date.now() + 1}`,
+        sender: 'shadow',
+        text: randomResponse,
+        timestamp: new Date().toISOString()
+      };
+      setShadowMessages(prev => [...prev, shadowReply]);
+    }, 500);
+  };
+
+  const handleCreateGamePlan = () => {
+    if (!newGamePlanTitle || !newGamePlanFocus) return;
+    const objectives = newGamePlanObjectives.split('\n').filter(o => o.trim());
+    const drills = newGamePlanDrills.split('\n').filter(d => d.trim());
+    const newPlan: GamePlan = {
+      id: `gp_${Date.now()}`,
+      title: newGamePlanTitle,
+      focus: newGamePlanFocus,
+      keyObjectives: objectives,
+      keyDrills: drills,
+      progressionStrategy: newGamePlanProgression,
+      createdDate: new Date().toISOString(),
+      status: 'Draft'
+    };
+    setGamePlans([...gamePlans, newPlan]);
+    setNewGamePlanTitle('');
+    setNewGamePlanFocus('');
+    setNewGamePlanObjectives('');
+    setNewGamePlanDrills('');
+    setNewGamePlanProgression('');
+    setShowGamePlanForm(false);
+  };
 
   const handleStartSession = () => {
     setSessionHeader({ ...sessionHeader, status: 'In Progress' });
@@ -546,6 +640,47 @@ export default function CoachWorkspace() {
                   <button className="w-full bg-[#8b4444] hover:bg-[#5a2a2a] text-[#e8d7c6] font-mono font-bold text-xs py-2 border-2 border-[#8b4444] transition">Schedule Follow-Up</button>
                 </div>
               </div>
+
+              <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-6 space-y-4">
+                <div className="border-b border-[#4a4a4a] pb-3">
+                  <h3 className="text-sm font-black font-mono text-[#e8d7c6] uppercase">Game Plan Creator</h3>
+                  <p className="text-xs text-[#b0a095] font-mono mt-1">Build & manage session strategy</p>
+                </div>
+
+                {!showGamePlanForm ? (
+                  <button onClick={() => setShowGamePlanForm(true)} className="w-full bg-[#8b4444] hover:bg-[#5a2a2a] text-[#e8d7c6] font-mono font-bold text-xs py-2 border-2 border-[#8b4444] transition">
+                    + Create New Game Plan
+                  </button>
+                ) : (
+                  <div className="space-y-3 bg-[#1a1a1a] p-4 border-2 border-[#8b4444]">
+                    <input type="text" value={newGamePlanTitle} onChange={(e) => setNewGamePlanTitle(e.target.value)} placeholder="Game Plan Title (e.g., 'Youth Footwork Focus')" className="w-full bg-[#0f0f0f] border-2 border-[#8b4444] px-3 py-2 text-xs font-mono text-[#e8d7c6] focus:outline-none" />
+                    <input type="text" value={newGamePlanFocus} onChange={(e) => setNewGamePlanFocus(e.target.value)} placeholder="Primary Focus Area" className="w-full bg-[#0f0f0f] border-2 border-[#8b4444] px-3 py-2 text-xs font-mono text-[#e8d7c6] focus:outline-none" />
+                    <textarea value={newGamePlanObjectives} onChange={(e) => setNewGamePlanObjectives(e.target.value)} placeholder="Key Objectives (one per line)" className="w-full h-16 bg-[#0f0f0f] border-2 border-[#8b4444] px-3 py-2 text-xs font-mono text-[#e8d7c6] focus:outline-none resize-none" />
+                    <textarea value={newGamePlanDrills} onChange={(e) => setNewGamePlanDrills(e.target.value)} placeholder="Key Drills (one per line)" className="w-full h-16 bg-[#0f0f0f] border-2 border-[#8b4444] px-3 py-2 text-xs font-mono text-[#e8d7c6] focus:outline-none resize-none" />
+                    <textarea value={newGamePlanProgression} onChange={(e) => setNewGamePlanProgression(e.target.value)} placeholder="Progression Strategy" className="w-full h-12 bg-[#0f0f0f] border-2 border-[#8b4444] px-3 py-2 text-xs font-mono text-[#e8d7c6] focus:outline-none resize-none" />
+                    <div className="flex gap-2">
+                      <button onClick={handleCreateGamePlan} className="flex-1 bg-[#2a6b2a] hover:bg-[#1a5a1a] text-[#e8d7c6] font-mono font-bold text-xs py-2 border-2 border-[#2a6b2a] transition">✅ Create Plan</button>
+                      <button onClick={() => setShowGamePlanForm(false)} className="flex-1 bg-[#4a4a4a] hover:bg-[#3a3a3a] text-[#e8d7c6] font-mono font-bold text-xs py-2 border-2 border-[#4a4a4a] transition">Cancel</button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {gamePlans.map(plan => (
+                    <div key={plan.id} className={`border-2 p-3 space-y-1.5 ${plan.status === 'Active' ? 'bg-[#2a5a2a]/30 border-[#2a6b2a]' : plan.status === 'Completed' ? 'bg-[#2a2a2a]/30 border-[#4a4a4a]' : 'bg-[#0f0f0f] border-[#8b4444]'}`}>
+                      <div className="flex justify-between items-start">
+                        <h5 className="text-xs font-bold font-mono text-[#e8d7c6]">{plan.title}</h5>
+                        <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 ${plan.status === 'Active' ? 'bg-[#2a6b2a] text-[#a0d0a0]' : plan.status === 'Completed' ? 'bg-[#4a4a4a] text-[#8a8a8a]' : 'bg-[#8b4444] text-[#e8d7c6]'}`}>{plan.status}</span>
+                      </div>
+                      <p className="text-[10px] text-[#b0a095] font-mono">🎯 {plan.focus}</p>
+                      <div className="text-[9px] text-[#8a8a8a] font-mono space-y-0.5">
+                        <div><strong>Objectives:</strong> {plan.keyObjectives.join(' • ')}</div>
+                        <div><strong>Drills:</strong> {plan.keyDrills.join(' • ')}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </>
           )}
         </div>
@@ -666,22 +801,48 @@ export default function CoachWorkspace() {
             </div>
           )}
 
-          <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-4 sticky top-4">
+          <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-4 sticky top-4 space-y-3">
             <button onClick={() => setExpandedShadow(!expandedShadow)} className="w-full flex items-center justify-between mb-3 pb-3 border-b border-[#4a4a4a]">
-              <h4 className="text-sm font-black font-mono text-[#e8d7c6]">SHADOW</h4>
+              <h4 className="text-sm font-black font-mono text-[#e8d7c6]">🤖 SHADOW AI Coaching</h4>
               <div className={`text-xs font-mono font-bold ${shadowOnline ? 'text-[#2a6b2a]' : 'text-[#8a8a8a]'}`}>{shadowOnline ? '● ONLINE' : '○ OFFLINE'}</div>
             </button>
 
             {expandedShadow && (
               <div className="space-y-3">
-                <div className="text-xs font-mono text-[#d4a574] font-bold">SESSION ALERTS</div>
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {shadowAlerts.map(alert => (
-                    <div key={alert.id} className={`p-2 border-2 text-[10px] font-mono ${alert.severity === 'Critical' ? 'bg-[#6b2a2a]/30 border-[#ff6b6b] text-[#ff9999]' : alert.severity === 'Warning' ? 'bg-[#6b5a2a]/30 border-[#d4a574] text-[#d4a574]' : 'bg-[#2a5a6b]/30 border-[#4a9fbf] text-[#7ab5c9]'}`}>
-                      <div className="font-bold mb-1">{alert.message}</div>
-                      <div className="text-[#8a8a8a]">{new Date(alert.timestamp).toLocaleTimeString()}</div>
+                {/* CHAT DISPLAY */}
+                <div className="bg-[#1a1a1a] border-2 border-[#8b4444] p-3 h-48 overflow-y-auto space-y-2">
+                  {shadowMessages.map(msg => (
+                    <div key={msg.id} className={`text-xs font-mono p-2 rounded ${msg.sender === 'shadow' ? 'bg-[#2a5a6b]/30 text-[#7ab5c9] border-l-2 border-[#4a9fbf]' : 'bg-[#5a3a1a]/30 text-[#d4a574] border-l-2 border-[#d4a574] ml-4'}`}>
+                      <div className="font-bold text-[9px] mb-0.5">{msg.sender === 'shadow' ? '🤖 SHADOW' : '👤 You'}</div>
+                      <div className="text-[10px] leading-tight">{msg.text}</div>
                     </div>
                   ))}
+                </div>
+
+                {/* CHAT INPUT */}
+                <div className="space-y-1">
+                  <input type="text" value={shadowInputMessage} onChange={(e) => setShadowInputMessage(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleAddShadowMessage()} placeholder="Ask SHADOW for coaching insights..." className="w-full bg-[#0f0f0f] border-2 border-[#8b4444] px-2 py-1.5 text-xs font-mono text-[#e8d7c6] focus:outline-none" />
+                  <button onClick={handleAddShadowMessage} className="w-full bg-[#8b4444] hover:bg-[#5a2a2a] text-[#e8d7c6] font-mono font-bold text-xs py-1 border-2 border-[#8b4444] transition">💬 Send Message</button>
+                </div>
+
+                {/* QUICK QUESTIONS */}
+                <div className="space-y-1">
+                  <div className="text-xs font-mono font-bold text-[#d4a574]">Quick Questions:</div>
+                  {['How is athlete pacing?', 'Any technical gaps?', 'Adjust intensity?'].map(q => (
+                    <button key={q} onClick={() => { setShadowInputMessage(q); setTimeout(() => handleAddShadowMessage(), 0); }} className="w-full text-left px-2 py-1 bg-[#2a2a2a] hover:bg-[#3a3a3a] border-2 border-[#8b4444] text-[#b0a095] hover:text-[#e8d7c6] font-mono text-[9px] transition truncate">❓ {q}</button>
+                  ))}
+                </div>
+
+                {/* SESSION ALERTS */}
+                <div className="space-y-2">
+                  <div className="text-xs font-mono text-[#d4a574] font-bold">Session Alerts</div>
+                  <div className="space-y-1 max-h-32 overflow-y-auto">
+                    {shadowAlerts.map(alert => (
+                      <div key={alert.id} className={`p-1.5 border-2 text-[9px] font-mono ${alert.severity === 'Critical' ? 'bg-[#6b2a2a]/30 border-[#ff6b6b] text-[#ff9999]' : alert.severity === 'Warning' ? 'bg-[#6b5a2a]/30 border-[#d4a574] text-[#d4a574]' : 'bg-[#2a5a6b]/30 border-[#4a9fbf] text-[#7ab5c9]'}`}>
+                        <div className="font-bold">{alert.message}</div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
