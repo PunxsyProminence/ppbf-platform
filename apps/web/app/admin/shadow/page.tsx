@@ -354,13 +354,13 @@ export default function AdminShadowConsolePage() {
           <div className="flex gap-2 pt-2">
             <Link
               href="/admin"
-              className="flex-1 border-2 border-[#8b0000] bg-[#1a1a1a] px-3 py-2 text-center text-[11px] font-mono text-[#c85a17] transition hover:border-[#c85a17] hover:text-[#e5a87a]"
+              className="flex-1 border-2 border-[#8b4444] bg-[#1a1a1a] px-3 py-2 text-center text-[11px] font-mono text-[#d4a574] transition hover:border-[#d4a574] hover:text-[#e8d7c6]"
             >
               Admin Hub
             </Link>
             <Link
               href="/shadow"
-              className="flex-1 border-2 border-[#8b0000] bg-[#3a0000] px-3 py-2 text-center text-[11px] font-mono text-[#c85a17] transition hover:border-[#c85a17] hover:bg-[#4a0000]"
+              className="flex-1 border-2 border-[#8b4444] bg-[#3a0000] px-3 py-2 text-center text-[11px] font-mono text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#4a0000]"
             >
               SHADOW
             </Link>

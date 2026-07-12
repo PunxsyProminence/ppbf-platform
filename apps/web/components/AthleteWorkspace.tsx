@@ -446,7 +446,7 @@ export default function AthleteWorkspace() {
 
       {/* --- RABBIT HOLES VIEW --- */}
       {activeTab === 'rabbitholes' && (
-        <div className="bg-[#0a0a0a] border-2 border-[#8b0000] p-6 space-y-6 animate-fadeIn">
+        <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-6 space-y-6 animate-fadeIn">
           <div className="border-b border-[#4a4a4a] pb-3">
             <h3 className="text-base font-bold font-mono text-[#e8d7c6]">Layer 24: Technical "Rabbit Holes"</h3>
             <p className="text-xs text-[#b0a095] font-mono mt-0.5">Deep-dive athletic research covering motor learning, kinetics, and neurological training parameters.</p>
@@ -454,22 +454,22 @@ export default function AthleteWorkspace() {
 
           <div className="space-y-6">
             {rabbitHoles.map(rh => (
-              <div key={rh.id} className="bg-[#1a1a1a]/40 border-2 border-[#8b0000] p-5 space-y-3">
+              <div key={rh.id} className="bg-[#1a1a1a]/40 border-2 border-[#8b4444] p-5 space-y-3">
                 <div className="flex justify-between items-center">
-                  <span className="text-[9px] font-mono font-bold bg-[#4a4a4a] text-[#c85a17] px-2 py-0.5 uppercase">Advanced Study Matrix</span>
+                  <span className="text-[9px] font-mono font-bold bg-[#4a4a4a] text-[#d4a574] px-2 py-0.5 uppercase">Advanced Study Matrix</span>
                   <span className="text-[9px] font-mono text-[#8a8a8a] font-bold">ID: {rh.id}</span>
                 </div>
 
-                <h4 className="text-base font-black font-mono text-[#e5e5e5]">{rh.title}</h4>
-                <span className="text-xs text-[#a0a0a0] font-mono italic block">Concept Block: {rh.concept}</span>
+                <h4 className="text-base font-black font-mono text-[#e8d7c6]">{rh.title}</h4>
+                <span className="text-xs text-[#b0a095] font-mono italic block">Concept Block: {rh.concept}</span>
 
-                <p className="text-xs text-[#c0c0c0] font-mono leading-relaxed bg-[#0f0f0f]/60 p-4 border-2 border-[#8b0000]">
+                <p className="text-xs text-[#e8d7c6] font-mono leading-relaxed bg-[#0f0f0f]/60 p-4 border-2 border-[#8b4444]">
                   {rh.breakdown}
                 </p>
 
-                <div className="bg-[#4a0000]/25 border-2 border-[#8b0000] p-4 text-xs font-mono space-y-1">
+                <div className="bg-[#4a0000]/25 border-2 border-[#8b4444] p-4 text-xs font-mono space-y-1">
                   <span className="font-bold text-[#ff6b6b] uppercase tracking-wide block text-[10px]">Home Study & Application Homework:</span>
-                  <p className="text-[#c0c0c0]">{rh.homework}</p>
+                  <p className="text-[#e8d7c6]">{rh.homework}</p>
                 </div>
               </div>
             ))}
@@ -480,38 +480,38 @@ export default function AthleteWorkspace() {
       {/* --- SAFESPORT MESSAGING VIEW --- */}
       {activeTab === 'messaging' && (
         <div className="space-y-6 animate-fadeIn">
-          <div className="bg-[#4a0000]/40 text-[#ff6b6b] border-2 border-[#8b0000] px-4 py-3 text-xs font-mono flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+          <div className="bg-[#4a0000]/40 text-[#ff6b6b] border-2 border-[#8b4444] px-4 py-3 text-xs font-mono flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
             <div>🔒 <strong>SAFESPORT POLICY GATES:</strong> Direct adult-to-minor individual messages are blocked. Parent CC loops are active.</div>
-            <span className="text-[10px] bg-[#4a0000]/40 px-2 py-0.5 uppercase font-bold text-[#e5e5e5] border-2 border-[#8b0000]">SafeSport Enforced</span>
+            <span className="text-[10px] bg-[#4a0000]/40 px-2 py-0.5 uppercase font-bold text-[#e8d7c6] border-2 border-[#8b4444]">SafeSport Enforced</span>
           </div>
 
-          <div className="bg-[#0a0a0a] border-2 border-[#8b0000] p-6 space-y-6">
+          <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-6 space-y-6">
             <div className="border-b border-[#4a4a4a] pb-3">
-              <h3 className="text-base font-bold font-mono text-[#e5e5e5]">SafeSport Certified Communications Portal</h3>
-              <p className="text-xs text-[#a0a0a0] font-mono mt-0.5">Secure messaging protecting our youth, guardians, and coaching staff.</p>
+              <h3 className="text-base font-bold font-mono text-[#e8d7c6]">SafeSport Certified Communications Portal</h3>
+              <p className="text-xs text-[#b0a095] font-mono mt-0.5">Secure messaging protecting our youth, guardians, and coaching staff.</p>
             </div>
 
             <form onSubmit={handleSendMessage} className="space-y-4">
               <div className="space-y-1.5">
-                <label className="text-xs font-mono text-[#a0a0a0] block">Select Staff Member Recipient</label>
-                <select value={messageRecipient} onChange={(e) => setMessageRecipient(e.target.value)} className="w-full bg-[#1a1a1a] border-2 border-[#8b0000] px-3 py-2 text-xs font-mono text-[#e5e5e5] focus:outline-none focus:border-[#dc2626]">
+                <label className="text-xs font-mono text-[#b0a095] block">Select Staff Member Recipient</label>
+                <select value={messageRecipient} onChange={(e) => setMessageRecipient(e.target.value)} className="w-full bg-[#1a1a1a] border-2 border-[#8b4444] px-3 py-2 text-xs font-mono text-[#e8d7c6] focus:outline-none focus:border-[#dc2626]">
                   <option value="Coach Jason">Coach Jason (Head Coach)</option>
                   <option value="Coach Danielle">Coach Danielle (Adult Fitness Director)</option>
                 </select>
               </div>
 
-              <div className="bg-[#0f0f0f] border-2 border-[#8b0000] p-4 space-y-2">
+              <div className="bg-[#0f0f0f] border-2 border-[#8b4444] p-4 space-y-2">
                 <span className="text-xs font-bold font-mono text-[#ff6b6b] block uppercase tracking-wider">Automated Guardian Carbon Copy (CC) Engaged</span>
-                <p className="text-[11px] text-[#a0a0a0] font-mono">To maintain strict SafeSport compliance, parents receive a physical, non-deletable archive copy of all outbound communications.</p>
-                <input type="email" value={parentCcEmail} onChange={(e) => setParentCcEmail(e.target.value)} placeholder="Parent email address" className="w-full bg-[#1a1a1a] border-2 border-[#8b0000] px-3 py-2 text-xs font-mono text-[#e5e5e5] focus:outline-none focus:border-[#dc2626]" />
+                <p className="text-[11px] text-[#b0a095] font-mono">To maintain strict SafeSport compliance, parents receive a physical, non-deletable archive copy of all outbound communications.</p>
+                <input type="email" value={parentCcEmail} onChange={(e) => setParentCcEmail(e.target.value)} placeholder="Parent email address" className="w-full bg-[#1a1a1a] border-2 border-[#8b4444] px-3 py-2 text-xs font-mono text-[#e8d7c6] focus:outline-none focus:border-[#dc2626]" />
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-mono text-[#a0a0a0] block">Your Message Body</label>
-                <textarea value={messageText} onChange={(e) => setMessageText(e.target.value)} placeholder="Type your message text here..." className="w-full h-24 bg-[#1a1a1a] border-2 border-[#8b0000] p-3 text-xs font-mono text-[#e5e5e5] focus:outline-none focus:border-[#dc2626] resize-none" />
+                <label className="text-xs font-mono text-[#b0a095] block">Your Message Body</label>
+                <textarea value={messageText} onChange={(e) => setMessageText(e.target.value)} placeholder="Type your message text here..." className="w-full h-24 bg-[#1a1a1a] border-2 border-[#8b4444] p-3 text-xs font-mono text-[#e8d7c6] focus:outline-none focus:border-[#dc2626] resize-none" />
               </div>
 
-              <button type="submit" className="w-full bg-[#dc2626] hover:bg-[#8b0000] text-[#e5e5e5] font-mono font-black text-xs py-2.5 transition uppercase tracking-wider border-2 border-[#8b0000]">🔒 Send SafeSport Compliant Log Message</button>
+              <button type="submit" className="w-full bg-[#dc2626] hover:bg-[#8b4444] text-[#e8d7c6] font-mono font-black text-xs py-2.5 transition uppercase tracking-wider border-2 border-[#8b4444]">🔒 Send SafeSport Compliant Log Message</button>
             </form>
           </div>
         </div>
@@ -520,16 +520,16 @@ export default function AthleteWorkspace() {
       {/* --- SCHEDULING VIEW --- */}
       {activeTab === 'scheduling' && (
         <div className="space-y-6 animate-fadeIn">
-          <div className="bg-[#4a0000]/40 text-[#ff6b6b] border-2 border-[#8b0000] px-4 py-3 text-xs font-mono flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+          <div className="bg-[#4a0000]/40 text-[#ff6b6b] border-2 border-[#8b4444] px-4 py-3 text-xs font-mono flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
             <div>📅 <strong>SCHEDULING CURRICULUM:</strong> Book classes directly. Access requires clear academic records.</div>
-            <span className="text-[10px] bg-[#4a0000]/40 px-2 py-0.5 uppercase font-bold text-[#e5e5e5] border-2 border-[#8b0000]">Layer 06 Active</span>
+            <span className="text-[10px] bg-[#4a0000]/40 px-2 py-0.5 uppercase font-bold text-[#e8d7c6] border-2 border-[#8b4444]">Layer 06 Active</span>
           </div>
 
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-            <div className="xl:col-span-2 bg-[#0a0a0a] border-2 border-[#8b0000] p-6 space-y-6">
+            <div className="xl:col-span-2 bg-[#0a0a0a] border-2 border-[#8b4444] p-6 space-y-6">
               <div className="border-b border-[#4a4a4a] pb-3">
-                <h3 className="text-base font-bold font-mono text-[#e5e5e5]">Prescribed Training Blocks Schedule</h3>
-                <p className="text-xs text-[#a0a0a0] font-mono mt-0.5">Reserve class coordinates directly within our weekly curriculum schedule.</p>
+                <h3 className="text-base font-bold font-mono text-[#e8d7c6]">Prescribed Training Blocks Schedule</h3>
+                <p className="text-xs text-[#b0a095] font-mono mt-0.5">Reserve class coordinates directly within our weekly curriculum schedule.</p>
               </div>
 
               <div className="space-y-3">
@@ -538,19 +538,19 @@ export default function AthleteWorkspace() {
                   { days: "Mon - Thu", time: "5:00 - 6:00 PM", title: "Intermediate / Technical Boxing", desc: "Partner combinations, target-pad coordination, controlled light sparring." },
                   { days: "Mon / Wed / Fri", time: "5:45 - 7:00 PM", title: "Danielle's Strength & Fitness", desc: "Adult conditioning, physical fitness progression ($50/mo or $10 drop-in)." }
                 ].map((block, idx) => (
-                  <div key={idx} className="bg-[#1a1a1a] border-2 border-[#8b0000] p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:border-[#dc2626]/20 transition">
+                  <div key={idx} className="bg-[#1a1a1a] border-2 border-[#8b4444] p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:border-[#dc2626]/20 transition">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <span className="text-[9px] font-mono font-bold bg-[#4a4a4a] text-[#a0a0a0] px-2 py-0.5">{block.days}</span>
-                        <span className="text-xs font-bold text-[#e5e5e5] font-mono">{block.time}</span>
+                        <span className="text-xs font-bold text-[#e8d7c6] font-mono">{block.time}</span>
                       </div>
-                      <h4 className="text-sm font-black font-mono text-[#c85a17]">{block.title}</h4>
-                      <p className="text-[11px] text-[#a0a0a0] font-mono leading-relaxed">{block.desc}</p>
+                      <h4 className="text-sm font-black font-mono text-[#d4a574]">{block.title}</h4>
+                      <p className="text-[11px] text-[#b0a095] font-mono leading-relaxed">{block.desc}</p>
                     </div>
                     <button
                       type="button" disabled={academicHold} onClick={() => handleBookSession(block.title, block.time)}
                       className={`w-full sm:w-auto px-4 py-2 text-xs font-mono font-bold transition uppercase tracking-wider border-2 ${
-                        academicHold ? 'bg-[#4a4a4a] text-[#8a8a8a] border-[#8b0000] cursor-not-allowed' : 'bg-[#dc2626] hover:bg-[#8b0000] text-[#e5e5e5] border-[#8b0000]'
+                        academicHold ? 'bg-[#4a4a4a] text-[#8a8a8a] border-[#8b4444] cursor-not-allowed' : 'bg-[#dc2626] hover:bg-[#8b4444] text-[#e8d7c6] border-[#8b4444]'
                       }`}
                     >
                       {academicHold ? 'Hold Lock' : 'Book Class'}
@@ -560,14 +560,14 @@ export default function AthleteWorkspace() {
               </div>
             </div>
 
-            <div className="bg-[#0a0a0a] border-2 border-[#8b0000] p-5 space-y-4 h-fit">
+            <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-5 space-y-4 h-fit">
               <span className="text-[10px] font-mono font-bold text-[#8a8a8a] uppercase tracking-wider block">Scheduling Safety Controls</span>
-              <div className="bg-[#1a1a1a] border-2 border-[#8b0000] p-3.5 flex items-center justify-between text-xs font-mono">
+              <div className="bg-[#1a1a1a] border-2 border-[#8b4444] p-3.5 flex items-center justify-between text-xs font-mono">
                 <div className="space-y-0.5">
-                  <span className="text-[#e5e5e5] block font-bold">Academic Hold Trigger</span>
+                  <span className="text-[#e8d7c6] block font-bold">Academic Hold Trigger</span>
                   <p className="text-[10px] text-[#8a8a8a]">Simulate school tracking blockades.</p>
                 </div>
-                <button type="button" onClick={() => setAcademicHold(!academicHold)} className={`px-3 py-1 text-[11px] font-bold border-2 transition ${academicHold ? 'bg-[#4a0000]/40 border-[#8b0000] text-[#ff6b6b]' : 'bg-[#4a0000]/40 border-[#8b0000] text-[#c85a17]'}`}>{academicHold ? 'HOLD ACTIVE' : 'CLEAR'}</button>
+                <button type="button" onClick={() => setAcademicHold(!academicHold)} className={`px-3 py-1 text-[11px] font-bold border-2 transition ${academicHold ? 'bg-[#4a0000]/40 border-[#8b4444] text-[#ff6b6b]' : 'bg-[#4a0000]/40 border-[#8b4444] text-[#d4a574]'}`}>{academicHold ? 'HOLD ACTIVE' : 'CLEAR'}</button>
               </div>
             </div>
           </div>
@@ -575,7 +575,7 @@ export default function AthleteWorkspace() {
       )}
 
       {/* MANDATORY FOOTER */}
-      <div className="bg-[#0f0f0f]/60 border-2 border-[#8b0000] p-4 text-[11px] font-mono text-[#8a8a8a] text-center">
+      <div className="bg-[#0f0f0f]/60 border-2 border-[#8b4444] p-4 text-[11px] font-mono text-[#8a8a8a] text-center">
         ⚖️ <strong>CORPORATE LEGAL STENCIL STAMP:</strong> Punxsy Prominence Boxing and Fitness | Registered Office: 204 PENNSYLVANIA AVE, BIG RUN(PA), PA 15715 | Enforcement Context: Production Build v21.0 Compliance Enforced
       </div>
     </div>

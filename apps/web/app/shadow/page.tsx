@@ -81,12 +81,12 @@ export default function ShadowChatPage() {
   return (
     <main className="min-h-screen bg-[#0a0a0a] text-[#e5e5e5]">
       {/* HEADER */}
-      <header className="border-b-4 border-[#8b0000] bg-[#1a1a1a] px-4 py-4 md:px-8 md:py-6">
+      <header className="border-b-4 border-[#8b4444] bg-[#1a1a1a] px-4 py-4 md:px-8 md:py-6">
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-4">
           <div>
             <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-[#dc2626]">The Scout</p>
-            <h1 className="font-display text-2xl font-black tracking-tight text-[#e5e5e5] md:text-3xl">SHADOW</h1>
-            <p className="mt-1 text-xs text-[#b0b0b0]">I'm in your corner.</p>
+            <h1 className="font-display text-2xl font-black tracking-tight text-[#e8d7c6] md:text-3xl">SHADOW</h1>
+            <p className="mt-1 text-xs text-[#b0a095]">I'm in your corner.</p>
           </div>
           <div className="text-right">
             <p className="font-mono text-[10px] text-[#8a8a8a]">Role: {userRole.toUpperCase()}</p>
@@ -97,7 +97,7 @@ export default function ShadowChatPage() {
 
       <div className="mx-auto max-w-4xl p-4 md:p-8">
         {/* CHAT BOX */}
-        <section className="border-4 border-[#8b0000] bg-[#0f0f0f] p-6 shadow-2xl shadow-black/60">
+        <section className="border-4 border-[#8b4444] bg-[#0f0f0f] p-6 shadow-2xl shadow-black/60">
           {/* Messages */}
           <div className="mb-6 max-h-[550px] space-y-4 overflow-y-auto bg-[#050505] p-4 font-mono text-sm">
             {messages.map((msg) => (
@@ -109,7 +109,7 @@ export default function ShadowChatPage() {
                   className={`max-w-md px-4 py-3 ${
                     msg.type === 'user'
                       ? 'border-2 border-[#dc2626] bg-[#2a1a1a] text-[#ff6b6b]'
-                      : 'border-2 border-[#b35806] bg-[#2a1f0f] text-[#e5e5e5]'
+                      : 'border-2 border-[#d4a574] bg-[#2a1f0f] text-[#e8d7c6]'
                   }`}
                 >
                   <p className="text-xs leading-6">{msg.text}</p>
@@ -127,11 +127,11 @@ export default function ShadowChatPage() {
               value={userInput}
               onChange={(e) => setUserInput(e.target.value)}
               placeholder="What do you need to know?"
-              className="flex-1 border-2 border-[#8b0000] bg-[#1a1a1a] px-4 py-3 text-sm text-[#e5e5e5] placeholder-[#666666] outline-none transition focus:border-[#dc2626] focus:bg-[#2a1a1a]"
+              className="flex-1 border-2 border-[#8b4444] bg-[#1a1a1a] px-4 py-3 text-sm text-[#e8d7c6] placeholder-[#6a5a4a] outline-none transition focus:border-[#dc2626] focus:bg-[#2a1a1a]"
             />
             <button
               type="submit"
-              className="border-2 border-[#8b0000] bg-[#2a1a1a] px-6 py-3 text-xs font-mono font-bold text-[#dc2626] transition hover:border-[#dc2626] hover:bg-[#3a2a2a] hover:text-[#ff6b6b]"
+              className="border-2 border-[#8b4444] bg-[#2a1a1a] px-6 py-3 text-xs font-mono font-bold text-[#dc2626] transition hover:border-[#dc2626] hover:bg-[#3a2a2a] hover:text-[#ff6b6b]"
             >
               Ask
             </button>
@@ -142,13 +142,13 @@ export default function ShadowChatPage() {
         <div className="mt-6 flex flex-wrap gap-3">
           <Link
             href="/research/chat"
-            className="border-2 border-[#b35806] bg-[#1f1f1f] px-4 py-2 text-xs font-mono text-[#c85a17] transition hover:border-[#c85a17] hover:bg-[#2a1f1f]"
+            className="border-2 border-[#d4a574] bg-[#1f1f1f] px-4 py-2 text-xs font-mono text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#2a1f1f]"
           >
             The Library
           </Link>
           <Link
             href="/admin/shadow"
-            className="border-2 border-[#8b0000] bg-[#1a1a1a] px-4 py-2 text-xs font-mono text-[#dc2626] transition hover:border-[#dc2626] hover:bg-[#2a1a1a]"
+            className="border-2 border-[#8b4444] bg-[#1a1a1a] px-4 py-2 text-xs font-mono text-[#dc2626] transition hover:border-[#dc2626] hover:bg-[#2a1a1a]"
           >
             The Office
           </Link>

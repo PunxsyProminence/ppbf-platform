@@ -77,9 +77,9 @@ export default function LaunchPortalPage() {
               </div>
             </section>
 
-            <section className="border-4 border-[#b35806] bg-[#0f0a08] p-6 text-sm text-[#e5e5e5]">
-              <h2 className="text-lg font-semibold text-[#c85a17]">Word</h2>
-              <p className="mt-3 leading-6 text-[#a0a0a0]">
+            <section className="border-4 border-[#d4a574] bg-[#0f0a08] p-6 text-sm text-[#e8d7c6]">
+              <h2 className="text-lg font-semibold text-[#d4a574]">Word</h2>
+              <p className="mt-3 leading-6 text-[#b0a095]">
                 The Launch Portal is live. Use this to monitor the platform and hand things off.
               </p>
             </section>
