@@ -1,11 +1,13 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import DevelopmentPipelineBanner, { type PipelineStageKey } from '@/components/DevelopmentPipelineBanner';
 
 interface FeatureSurfaceProps {
   eyebrow: string;
   title: string;
   description: string;
   status: string;
+  currentStage?: PipelineStageKey;
   primaryLinks: Array<{ label: string; href: string }>;
   stats: Array<{ label: string; value: string }>;
   children?: ReactNode;
@@ -16,6 +18,7 @@ export default function FeatureSurface({
   title,
   description,
   status,
+  currentStage,
   primaryLinks,
   stats,
   children,
@@ -39,6 +42,12 @@ export default function FeatureSurface({
             Status: {status}
           </div>
         </header>
+
+        {currentStage && (
+          <div className="mt-6">
+            <DevelopmentPipelineBanner currentStage={currentStage} />
+          </div>
+        )}
 
         <section className="mt-8 grid gap-6 lg:grid-cols-[1.35fr_0.85fr]">
           <div className="border-4 border-[#3d2817] bg-[#1a1a1a] p-6 shadow-2xl shadow-black/70">
