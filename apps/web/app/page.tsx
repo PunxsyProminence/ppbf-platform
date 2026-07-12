@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import AthleteWorkspace from '../components/AthleteWorkspace';
 import CoachWorkspace from '../components/CoachWorkspace';
 import AdminWorkspace from '../components/AdminWorkspace';
@@ -69,6 +70,12 @@ export default function PPBFMasterEcosystemConsole() {
           <h1 className="text-2xl font-black text-slate-50 tracking-tight">{corporateStencil.entity}</h1>
           <p className="text-xs text-slate-400 font-mono">{corporateStencil.version} | Tech Stack: {corporateStencil.infrastructure}</p>
         </div>
+        <Link
+          href="/launch"
+          className="inline-flex items-center justify-center rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-xs font-mono font-bold text-emerald-300 transition hover:bg-emerald-500/20 hover:text-emerald-200"
+        >
+          Open Launch Portal
+        </Link>
       </header>
 
       <div className="flex-1 flex flex-col lg:flex-row">
