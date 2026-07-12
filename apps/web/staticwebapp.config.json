@@ -1,6 +1,18 @@
 {
 	"routes": [
 		{
+			"route": "/public*",
+			"rewrite": "/public.html"
+		},
+		{
+			"route": "/board",
+			"rewrite": "/board.html"
+		},
+		{
+			"route": "/board*",
+			"rewrite": "/board.html"
+		},
+		{
 			"route": "/board/president*",
 			"rewrite": "/board/president.html"
 		},
