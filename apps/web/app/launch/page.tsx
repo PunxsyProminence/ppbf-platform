@@ -28,7 +28,7 @@ export default function LaunchPortalPage() {
             </p>
           </div>
           <div className="rounded-2xl border border-emerald-500/20 bg-slate-950/60 px-4 py-3 text-xs font-mono text-emerald-200 shadow-lg shadow-emerald-950/20">
-            Status: ready for review, pending deployment approval
+            Status: live in production
           </div>
         </header>
 
@@ -70,8 +70,8 @@ export default function LaunchPortalPage() {
             <section className="rounded-3xl border border-amber-500/20 bg-amber-500/10 p-6 text-sm text-amber-100">
               <h2 className="text-lg font-semibold text-amber-50">Go-live note</h2>
               <p className="mt-3 leading-6 text-amber-50/90">
-                The launch portal is now restored. If the public site still returns a 404, the remaining issue is deployment
-                wiring rather than the route surface itself.
+                The launch portal is restored and published. Use this surface as the canonical entry point for
+                production monitoring and operator handoff.
               </p>
             </section>
           </div>
