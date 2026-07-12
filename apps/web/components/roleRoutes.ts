@@ -1,6 +1,7 @@
 export type ClubRole =
   | 'athlete'
   | 'coach'
+  | 'parent'
   | 'admin'
   | 'board-president'
   | 'board-chair'
@@ -32,6 +33,12 @@ export const roleRoutes: RoleRoute[] = [
     label: 'Coach',
     description: 'Opens the coach review queue and intake workflow.',
     href: '/coach/review-queue',
+  },
+  {
+    role: 'parent',
+    label: 'Parent',
+    description: 'Opens the parent hub to track child training progress.',
+    href: '/parent/dashboard',
   },
   {
     role: 'admin',
