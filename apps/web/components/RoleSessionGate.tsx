@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { clearRoleSession, getPostLoginRoute, readRoleSession, type RoleSession } from './roleSession';
 import type { ClubRole } from './roleRoutes';
@@ -12,37 +12,36 @@ interface RoleSessionGateProps {
 
 export default function RoleSessionGate({ allowedRoles, children }: RoleSessionGateProps) {
   const router = useRouter();
-  const [session, setSession] = useState<RoleSession | null>(null);
-  const [ready, setReady] = useState(false);
+  const session = useMemo<RoleSession | null>(
+    () => (typeof window !== 'undefined' ? readRoleSession() : null),
+    [],
+  );
+  const allowed = !!session && (session.role === 'admin' || allowedRoles.includes(session.role));
 
   useEffect(() => {
-    const currentSession = readRoleSession();
-
-    if (!currentSession) {
+    if (!session) {
       clearRoleSession();
       router.replace('/login');
       return;
     }
 
-    if (currentSession.role !== 'admin' && !allowedRoles.includes(currentSession.role)) {
-      router.replace(getPostLoginRoute(currentSession));
+    if (!allowed) {
+      router.replace(getPostLoginRoute(session));
       return;
     }
 
-    setSession(currentSession);
-    setReady(true);
-  }, [allowedRoles, router]);
+  }, [allowed, router, session]);
 
-  if (!ready) {
+  if (!session || !allowed) {
     return (
-      <main className="min-h-screen bg-[#030712] text-slate-100 grid place-items-center px-6">
+      <main className="grid min-h-screen place-items-center bg-[#0a0a0a] px-6 text-[#e8d7c6]">
         <div className="text-center">
-          <p className="text-xs font-mono uppercase tracking-[0.35em] text-emerald-300/80">Secure Session</p>
-          <h1 className="mt-3 text-2xl font-black">Checking access</h1>
+          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[#d4a574]">Secure Session</p>
+          <h1 className="mt-3 font-display text-3xl tracking-tight">Checking access</h1>
         </div>
       </main>
     );
   }
 
-  return <>{session ? children : null}</>;
+  return <>{children}</>;
 }

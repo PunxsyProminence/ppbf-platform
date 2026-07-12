@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { ParentSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
+import { cx, ui } from './uiStyles';
 
 type TabID = 'overview' | 'parent-floor' | 'home-assignments' | 'observations' | 'family-goals' | 'messages' | 'attendance' | 'progress' | 'resources' | 'shadow';
 
@@ -36,6 +37,15 @@ interface FamilyGoal {
   targetDate: string;
 }
 
+interface ParentMessage {
+  id: string;
+  sender: 'coach';
+  subject: string;
+  body: string;
+  date: string;
+  read?: boolean;
+}
+
 export default function ParentHub() {
   const [activeTab, setActiveTab] = useState<TabID>('overview');
   const [expandedHelpTab, setExpandedHelpTab] = useState<TabID | null>(null);
@@ -66,7 +76,7 @@ export default function ParentHub() {
     { id: 'fg_3', title: 'Prepare for Belt Test', supportAction: 'Support home practice, nutrition', progress: 60, targetDate: '2026-08-15' }
   ]);
 
-  const [messages] = useState<any[]>([
+  const [messages] = useState<ParentMessage[]>([
     { id: 'm_1', sender: 'coach', subject: 'Great Progress This Week', body: 'Alex showed excellent focus during today\'s session. Footwork improvements are very noticeable.', date: '2026-07-11' },
     { id: 'm_2', sender: 'coach', subject: 'Upcoming Belt Test', body: 'Jordan is ready for the August test. Recommend continued focus on defensive combinations.', date: '2026-07-10' }
   ]);
@@ -85,7 +95,7 @@ export default function ParentHub() {
           <div>
             <p className="text-xs font-mono uppercase tracking-[0.15em] text-[#d4a574]">Parent Support Hub</p>
             <h1 className="text-3xl md:text-4xl font-black mt-2">Family Development Dashboard</h1>
-            <p className="text-base text-[#b0a095] mt-2">Support your child's boxing journey with at-home assignments, family goals, and coach communication.</p>
+            <p className="text-base text-[#b0a095] mt-2">Support your child&apos;s boxing journey with at-home assignments, family goals, and coach communication.</p>
           </div>
         </div>
 
@@ -99,16 +109,15 @@ export default function ParentHub() {
         />
 
         {/* CHILD SELECTOR */}
-        <div className="flex gap-2 border-2 border-[#8b4444] bg-[#0f0f0f] p-3 rounded flex-wrap">
+        <div className="flex flex-wrap gap-2 border-2 border-[#8b4444] bg-[#0f0f0f] p-3">
           {children.map(child => (
             <button
               key={child.id}
               onClick={() => setActiveChildId(child.id)}
-              className={`px-4 py-2 font-mono font-bold text-xs border-2 transition rounded ${
-                activeChildId === child.id
-                  ? 'bg-[#5a2a2a] border-[#8b4444] text-[#e8d7c6]'
-                  : 'bg-[#1a1a1a] border-[#4a4a4a] text-[#b0a095] hover:text-[#e8d7c6]'
-              }`}
+              className={cx(
+                ui.modeButtonBase,
+                activeChildId === child.id ? ui.modeButtonActive : ui.modeButtonInactive,
+              )}
             >
               {child.name}
             </button>
@@ -116,8 +125,8 @@ export default function ParentHub() {
         </div>
 
         {/* TAB NAVIGATION */}
-        <div className="border-2 border-[#8b4444] bg-[#0f0f0f]">
-          <div className="flex flex-wrap gap-1 p-2">
+        <div className={ui.tabContainer}>
+          <div className={ui.tabRow}>
             {[
               { id: 'overview', label: 'Overview' },
               { id: 'parent-floor', label: 'Parent Floor' },
@@ -133,11 +142,10 @@ export default function ParentHub() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as TabID)}
-                className={`px-3 py-2 text-xs font-semibold uppercase transition border-2 ${
-                  activeTab === tab.id
-                    ? 'bg-[#5a2a2a] border-[#8b4444] text-[#e8d7c6]'
-                    : 'bg-[#1a1a1a] border-[#4a4a4a] text-[#b0a095] hover:text-[#e8d7c6]'
-                }`}
+                className={cx(
+                  ui.tabButtonBase,
+                  activeTab === tab.id ? ui.tabButtonActive : ui.tabButtonInactive,
+                )}
               >
                 {tab.label}
               </button>
@@ -169,7 +177,7 @@ export default function ParentHub() {
 
               {activeChild && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded space-y-4">
+                  <div className={ui.panelSpaced}>
                     <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Current Status</h3>
                     <div className="space-y-3">
                       <div>
@@ -191,7 +199,7 @@ export default function ParentHub() {
                     </div>
                   </div>
 
-                  <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded space-y-4">
+                  <div className={ui.panelSpaced}>
                     <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">How to Support</h3>
                     <ul className="space-y-2 text-sm">
                       <li className="flex items-start gap-2">
@@ -237,8 +245,8 @@ export default function ParentHub() {
                 onAskShadow={() => {}}
               />
 
-              <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded space-y-4">
-                <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">This Week's Parent Support Tasks</h3>
+              <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4">
+                <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">This Week&apos;s Parent Support Tasks</h3>
 
                 <div className="space-y-3">
                   {[
@@ -257,10 +265,10 @@ export default function ParentHub() {
                   ))}
                 </div>
 
-                <div className="bg-[#0f0f0f] border-2 border-[#8b4444] p-4 rounded">
+                <div className="bg-[#0f0f0f] border-2 border-[#8b4444] p-4">
                   <p className="text-xs text-[#8a8a8a]">Progress: 40%</p>
-                  <div className="w-full bg-[#2a2a2a] rounded h-2 mt-2">
-                    <div className="bg-[#d4a574] h-2 rounded" style={{width: '40%'}}></div>
+                  <div className="w-full bg-[#2a2a2a] h-2 mt-2">
+                    <div className="bg-[#d4a574] h-2" style={{width: '40%'}}></div>
                   </div>
                 </div>
               </div>
@@ -334,15 +342,15 @@ export default function ParentHub() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {parentObservations.map(obs => (
-                  <div key={obs.id} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 rounded space-y-2">
+                  <div key={obs.id} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 space-y-2">
                     <h4 className="font-semibold">{obs.category}</h4>
                     <div>
                       <div className="flex justify-between text-xs mb-1">
                         <span className="text-[#b0a095]">Rating</span>
                         <span className="font-semibold">{obs.value}/10</span>
                       </div>
-                      <div className="w-full bg-[#4a4a4a] rounded h-2">
-                        <div className="bg-[#d4a574] h-2 rounded" style={{width: `${obs.value * 10}%`}}></div>
+                      <div className="w-full bg-[#4a4a4a] h-2">
+                        <div className="bg-[#d4a574] h-2" style={{width: `${obs.value * 10}%`}}></div>
                       </div>
                     </div>
                     {obs.notes && (
@@ -376,7 +384,7 @@ export default function ParentHub() {
 
               <div className="space-y-3">
                 {familyGoals.map(goal => (
-                  <div key={goal.id} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 rounded space-y-3">
+                  <div key={goal.id} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 space-y-3">
                     <div className="flex justify-between items-start">
                       <h4 className="font-semibold">{goal.title}</h4>
                       <span className="text-xs text-[#8a8a8a]">{goal.targetDate}</span>
@@ -387,8 +395,8 @@ export default function ParentHub() {
                         <span className="text-[#b0a095]">Progress</span>
                         <span className="font-semibold">{goal.progress}%</span>
                       </div>
-                      <div className="w-full bg-[#4a4a4a] rounded h-2">
-                        <div className="bg-[#d4a574] h-2 rounded" style={{width: `${goal.progress}%`}}></div>
+                      <div className="w-full bg-[#4a4a4a] h-2">
+                        <div className="bg-[#d4a574] h-2" style={{width: `${goal.progress}%`}}></div>
                       </div>
                     </div>
                   </div>
@@ -419,7 +427,7 @@ export default function ParentHub() {
 
               <div className="space-y-3 max-h-96 overflow-y-auto">
                 {messages.map(msg => (
-                  <div key={msg.id} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 rounded">
+                  <div key={msg.id} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
                     <div className="flex justify-between items-start mb-2">
                       <h4 className="font-semibold">{msg.subject}</h4>
                       <span className="text-xs text-[#8a8a8a]">From Coach</span>
@@ -430,15 +438,15 @@ export default function ParentHub() {
                 ))}
               </div>
 
-              <div className="border-2 border-[#d4a574] bg-[#0f0f0f] p-4 rounded space-y-3">
+              <div className="border-2 border-[#d4a574] bg-[#0f0f0f] p-4 space-y-3">
                 <h4 className="font-semibold text-[#d4a574]">Reply to Coach</h4>
                 <textarea
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
                   placeholder="Type your message..."
-                  className="w-full h-20 px-3 py-2 bg-[#1a1a1a] border-2 border-[#8b4444] rounded text-[#e8d7c6] focus:outline-none resize-none"
+                  className="w-full h-20 px-3 py-2 bg-[#1a1a1a] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none resize-none"
                 />
-                <button className="px-4 py-2 bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold rounded transition">
+                <button className="px-4 py-2 bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold transition">
                   Send Message
                 </button>
               </div>
@@ -447,7 +455,7 @@ export default function ParentHub() {
 
           {/* ATTENDANCE */}
           {activeTab === 'attendance' && (
-            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded space-y-4 animate-fadeIn">
+            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
               <h3 className="font-mono font-bold text-[#d4a574] uppercase">Attendance Tracking</h3>
               <p className="text-[#b0a095]">View attendance history and upcoming sessions.</p>
               <div className="text-sm text-[#8a8a8a]">Coming soon: Session-by-session attendance, makeup class scheduling, excused absence tracking.</div>
@@ -456,7 +464,7 @@ export default function ParentHub() {
 
           {/* PROGRESS */}
           {activeTab === 'progress' && (
-            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded space-y-4 animate-fadeIn">
+            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
               <h3 className="font-mono font-bold text-[#d4a574] uppercase">Progress & Achievements</h3>
               <p className="text-[#b0a095]">Track skill development and milestone achievements.</p>
               <div className="text-sm text-[#8a8a8a]">Coming soon: Skill progression charts, belt test preparation, achievement milestones, monthly reports.</div>
@@ -465,7 +473,7 @@ export default function ParentHub() {
 
           {/* RESOURCES */}
           {activeTab === 'resources' && (
-            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded space-y-4 animate-fadeIn">
+            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
               <h3 className="font-mono font-bold text-[#d4a574] uppercase">Parent Support Resources</h3>
               <p className="text-[#b0a095]">Guides, videos, and tips for supporting young athletes.</p>
               <div className="space-y-2">
@@ -476,7 +484,7 @@ export default function ParentHub() {
                   'Injury Prevention and Recovery',
                   'Motivation and Resilience Building'
                 ].map((resource, i) => (
-                  <div key={i} className="border-2 border-[#8b4444] bg-[#0f0f0f] p-3 rounded">
+                  <div key={i} className="border-2 border-[#8b4444] bg-[#0f0f0f] p-3">
                     <p className="font-semibold">{resource}</p>
                   </div>
                 ))}
@@ -499,3 +507,4 @@ export default function ParentHub() {
     </div>
   );
 }
+

@@ -188,8 +188,8 @@ export default function AdminShadowConsolePage() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
-  function handleManualDataEntry(type: string) {
-    const sampleData: Record<string, Record<string, unknown>> = {
+  function handleManualDataEntry(type: ImportedDataSet['type']) {
+    const sampleData: Partial<Record<ImportedDataSet['type'], Record<string, unknown>>> = {
       workout: { activity: 'Sparring', duration_minutes: 45, intensity: 'High', date: new Date().toISOString() },
       biometric: { heart_rate: 72, sleep_hours: 7.5, soreness_level: 3, date: new Date().toISOString() },
       'coach-note': { observation: 'Technique improvement noted', athlete_id: 'A001', date: new Date().toISOString() },
@@ -198,7 +198,7 @@ export default function AdminShadowConsolePage() {
     const data = sampleData[type] || { sample: 'data' };
 
     const newDataSet: ImportedDataSet = {
-      type: (type as any) || 'custom',
+      type,
       label: `Manual ${type} entry`,
       data,
       importedAt: new Date().toISOString(),

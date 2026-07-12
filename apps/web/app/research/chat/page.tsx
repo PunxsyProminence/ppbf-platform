@@ -110,7 +110,7 @@ export default function ResearchQAChatPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#0a0a0a] text-slate-100">
+    <main className="min-h-screen bg-[#0a0a0a] text-[#e8d7c6]">
       {/* ROUGH OLD-SCHOOL BOXING HEADER */}
       <header className="border-b-4 border-[#d4a574] bg-[#1a1a1a] px-4 py-4 md:px-8 md:py-6">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">

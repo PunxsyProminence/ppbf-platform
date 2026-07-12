@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { AdminSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
+import { cx, ui } from './uiStyles';
 
 type TabID = 'mission-control' | 'people' | 'gym-operations' | 'board-operations' | 'communications' | 'assignments' | 'governance' | 'shadow-control' | 'system-control' | 'reports' | 'audit';
 type ViewAsRole = 'Athlete' | 'Coach' | 'Parent' | 'Board' | 'Auditor' | 'Admin';
@@ -18,6 +19,14 @@ interface BoardAlert {
   title: string;
   status: 'Open' | 'Pending' | 'Resolved';
   dueDate: string;
+}
+
+interface Announcement {
+  id: string;
+  title: string;
+  recipient: string;
+  date: string;
+  delivered: boolean;
 }
 
 export default function AdminWorkspace() {
@@ -54,7 +63,7 @@ export default function AdminWorkspace() {
     { id: 'bm_3', name: 'David Lee', role: 'Secretary', status: 'Active' }
   ]);
 
-  const [announcements, setAnnouncements] = useState<any[]>([
+  const [announcements, setAnnouncements] = useState<Announcement[]>([
     { id: 'an_1', title: 'Summer Camp Registration Open', recipient: 'All Athletes', date: '2026-07-10', delivered: true },
     { id: 'an_2', title: 'New Class Schedule', recipient: 'Athletes & Parents', date: '2026-07-08', delivered: true }
   ]);
@@ -115,18 +124,19 @@ export default function AdminWorkspace() {
         />
 
         {/* VIEW AS ROLE SWITCHER */}
-        <div className="border-2 border-[#d4a574] bg-[#0f0f0f] p-4 rounded">
+        <div className="border-2 border-[#d4a574] bg-[#0f0f0f] p-4">
           <p className="text-xs font-mono uppercase text-[#d4a574] mb-2 font-bold">Test Mode: View As Role</p>
           <div className="flex flex-wrap gap-2">
             {(['Admin', 'Athlete', 'Coach', 'Parent', 'Board', 'Auditor'] as ViewAsRole[]).map(role => (
               <button
                 key={role}
                 onClick={() => setViewAsRole(role)}
-                className={`px-3 py-2 text-xs font-mono font-bold border-2 transition rounded ${
+                className={cx(
+                  ui.tabButtonBase,
                   viewAsRole === role
                     ? 'bg-[#5a2a2a] border-[#d4a574] text-[#e8d7c6]'
-                    : 'bg-[#1a1a1a] border-[#d4a574] text-[#b0a095] hover:text-[#e8d7c6]'
-                }`}
+                    : 'bg-[#1a1a1a] border-[#d4a574] text-[#b0a095] hover:text-[#e8d7c6]',
+                )}
               >
                 View as {role}
               </button>
@@ -136,8 +146,8 @@ export default function AdminWorkspace() {
         </div>
 
         {/* TAB NAVIGATION */}
-        <div className="border-2 border-[#8b4444] bg-[#0f0f0f] overflow-x-auto">
-          <div className="flex gap-1 p-2 min-w-min">
+        <div className="overflow-x-auto border-2 border-[#8b4444] bg-[#0f0f0f]">
+          <div className="flex min-w-min gap-1 p-2">
             {[
               { id: 'mission-control', label: 'Mission Control' },
               { id: 'people', label: 'People' },
@@ -154,11 +164,11 @@ export default function AdminWorkspace() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as TabID)}
-                className={`px-3 py-2 text-xs font-semibold uppercase transition border-2 whitespace-nowrap ${
-                  activeTab === tab.id
-                    ? 'bg-[#5a2a2a] border-[#8b4444] text-[#e8d7c6]'
-                    : 'bg-[#1a1a1a] border-[#4a4a4a] text-[#b0a095] hover:text-[#e8d7c6]'
-                }`}
+                className={cx(
+                  ui.tabButtonBase,
+                  'whitespace-nowrap',
+                  activeTab === tab.id ? ui.tabButtonActive : ui.tabButtonInactive,
+                )}
               >
                 {tab.label}
               </button>
@@ -180,13 +190,33 @@ export default function AdminWorkspace() {
               />
 
               <div className="flex gap-2 mb-4">
-                <button onClick={() => setMissionControlSide('GYM')} className={`px-4 py-2 font-mono font-bold text-xs border-2 transition ${missionControlSide === 'GYM' ? 'bg-[#5a2a2a] border-[#8b4444]' : 'bg-[#1a1a1a] border-[#4a4a4a]'}`}>GYM SIDE</button>
-                <button onClick={() => setMissionControlSide('BOARD')} className={`px-4 py-2 font-mono font-bold text-xs border-2 transition ${missionControlSide === 'BOARD' ? 'bg-[#5a2a2a] border-[#8b4444]' : 'bg-[#1a1a1a] border-[#4a4a4a]'}`}>BOARD SIDE</button>
+                <button
+                  onClick={() => setMissionControlSide('GYM')}
+                  className={cx(
+                    ui.modeButtonBase,
+                    missionControlSide === 'GYM'
+                      ? 'bg-[#5a2a2a] border-[#8b4444] text-[#e8d7c6]'
+                      : 'bg-[#1a1a1a] border-[#4a4a4a] text-[#b0a095] hover:text-[#e8d7c6]',
+                  )}
+                >
+                  GYM SIDE
+                </button>
+                <button
+                  onClick={() => setMissionControlSide('BOARD')}
+                  className={cx(
+                    ui.modeButtonBase,
+                    missionControlSide === 'BOARD'
+                      ? 'bg-[#5a2a2a] border-[#8b4444] text-[#e8d7c6]'
+                      : 'bg-[#1a1a1a] border-[#4a4a4a] text-[#b0a095] hover:text-[#e8d7c6]',
+                  )}
+                >
+                  BOARD SIDE
+                </button>
               </div>
 
               {missionControlSide === 'GYM' ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded space-y-3">
+                  <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-3">
                     <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Gym Statistics</h3>
                     <div className="grid grid-cols-2 gap-3 text-xs font-mono">
                       {[
@@ -203,7 +233,7 @@ export default function AdminWorkspace() {
                     </div>
                   </div>
 
-                  <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded space-y-3">
+                  <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-3">
                     <h3 className="font-mono text-sm font-bold uppercase text-[#ff6b6b]">Gym Alerts</h3>
                     <div className="space-y-2">
                       {gymAlerts.map(alert => (
@@ -217,7 +247,7 @@ export default function AdminWorkspace() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded space-y-3">
+                  <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-3">
                     <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Board Statistics</h3>
                     <div className="grid grid-cols-2 gap-3 text-xs font-mono">
                       {[
@@ -234,7 +264,7 @@ export default function AdminWorkspace() {
                     </div>
                   </div>
 
-                  <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded space-y-3">
+                  <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-3">
                     <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Board Items</h3>
                     <div className="space-y-2">
                       {boardAlerts.map(alert => (
@@ -256,11 +286,11 @@ export default function AdminWorkspace() {
               <HelpPanel title="People Command Center" description="Manage all roles by type." usage={['View members by role', 'Check status', 'Monitor assignments']} mistakes={['Missing status checks']} onAskShadow={() => {}} />
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded space-y-3">
+                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-3">
                   <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Athletes ({athletes.length})</h3>
                   <div className="space-y-2">
                     {athletes.map(a => (
-                      <div key={a.id} className="bg-[#0f0f0f] border-2 border-[#8b4444] p-3 rounded">
+                      <div key={a.id} className="bg-[#0f0f0f] border-2 border-[#8b4444] p-3">
                         <p className="font-semibold text-sm">{a.name}</p>
                         <p className="text-xs text-[#8a8a8a]">{a.track} • {a.status}</p>
                       </div>
@@ -268,11 +298,11 @@ export default function AdminWorkspace() {
                   </div>
                 </div>
 
-                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded space-y-3">
+                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-3">
                   <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Coaches ({coaches.length})</h3>
                   <div className="space-y-2">
                     {coaches.map(c => (
-                      <div key={c.id} className="bg-[#0f0f0f] border-2 border-[#8b4444] p-3 rounded">
+                      <div key={c.id} className="bg-[#0f0f0f] border-2 border-[#8b4444] p-3">
                         <p className="font-semibold text-sm">{c.name}</p>
                         <p className="text-xs text-[#8a8a8a]">{c.role} • {c.status}</p>
                       </div>
@@ -280,11 +310,11 @@ export default function AdminWorkspace() {
                   </div>
                 </div>
 
-                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded space-y-3">
+                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-3">
                   <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Board ({boardMembers.length})</h3>
                   <div className="space-y-2">
                     {boardMembers.map(bm => (
-                      <div key={bm.id} className="bg-[#0f0f0f] border-2 border-[#8b4444] p-3 rounded">
+                      <div key={bm.id} className="bg-[#0f0f0f] border-2 border-[#8b4444] p-3">
                         <p className="font-semibold text-sm">{bm.name}</p>
                         <p className="text-xs text-[#8a8a8a]">{bm.role} • {bm.status}</p>
                       </div>
@@ -300,28 +330,28 @@ export default function AdminWorkspace() {
             <div className="space-y-6 animate-fadeIn">
               <HelpPanel title="Gym Operations" description="Announcements, events, workouts, assignments." usage={['Create broadcasts', 'Select recipients', 'Track delivery']} mistakes={['Wrong recipient group']} onAskShadow={() => {}} />
 
-              <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded space-y-4">
+              <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4">
                 <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Broadcast Announcement</h3>
                 <div className="space-y-3">
-                  <input type="text" value={newAnnouncementTitle} onChange={(e) => setNewAnnouncementTitle(e.target.value)} placeholder="Announcement title..." className="w-full px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] rounded text-[#e8d7c6] text-sm" />
-                  <select value={newAnnouncementRecipient} onChange={(e) => setNewAnnouncementRecipient(e.target.value)} className="w-full px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] rounded text-[#e8d7c6] text-sm">
+                  <input type="text" value={newAnnouncementTitle} onChange={(e) => setNewAnnouncementTitle(e.target.value)} placeholder="Announcement title..." className="w-full px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] text-sm" />
+                  <select value={newAnnouncementRecipient} onChange={(e) => setNewAnnouncementRecipient(e.target.value)} className="w-full px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] text-sm">
                     <option>All Athletes</option>
                     <option>All Coaches</option>
                     <option>All Parents</option>
                     <option>All Members</option>
                   </select>
-                  <button onClick={handleAddAnnouncement} className="w-full bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold py-2 rounded">Broadcast</button>
+                  <button onClick={handleAddAnnouncement} className="w-full bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold py-2">Broadcast</button>
                 </div>
 
                 <div className="border-t border-[#8b4444] pt-4">
                   <h4 className="font-mono text-xs font-bold uppercase text-[#d4a574] mb-3">Recent Broadcasts</h4>
                   {announcements.map(ann => (
-                    <div key={ann.id} className="bg-[#0f0f0f] border-2 border-[#8b4444] p-3 rounded mb-2 flex justify-between">
+                    <div key={ann.id} className="bg-[#0f0f0f] border-2 border-[#8b4444] p-3 mb-2 flex justify-between">
                       <div>
                         <p className="font-semibold text-sm">{ann.title}</p>
                         <p className="text-xs text-[#8a8a8a]">To: {ann.recipient}</p>
                       </div>
-                      <span className="text-xs bg-green-900 text-green-200 px-2 py-1 rounded">✓</span>
+                      <span className="text-xs bg-green-900 text-green-200 px-2 py-1">✓</span>
                     </div>
                   ))}
                 </div>
@@ -331,7 +361,7 @@ export default function AdminWorkspace() {
 
           {/* REMAINING TABS */}
           {['board-operations', 'communications', 'assignments', 'governance', 'system-control', 'reports', 'audit'].includes(activeTab) && (
-            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded space-y-4 animate-fadeIn">
+            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
               <h3 className="font-mono font-bold text-[#d4a574] uppercase">{activeTab.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}</h3>
               <p className="text-[#b0a095]">Framework ready for backend integration.</p>
             </div>
@@ -348,3 +378,4 @@ export default function AdminWorkspace() {
     </div>
   );
 }
+

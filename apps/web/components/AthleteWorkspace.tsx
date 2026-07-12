@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { AthleteSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
+import { cx, ui } from './uiStyles';
 
 type TabID = 'my-dashboard' | 'athlete-floor' | 'smart-goals' | 'tracks' | 'assessments' | 'bio-checkin' | 'drill-library' | 'rabbit-holes' | 'message-coach' | 'schedule-session' | 'shadow';
 type ReadinessLevel = 'GREEN' | 'YELLOW' | 'RED';
@@ -44,6 +45,37 @@ interface Drill {
   minRank: string;
 }
 
+interface ShadowMessage {
+  id: string;
+  sender: 'athlete' | 'shadow';
+  text: string;
+  timestamp: string;
+}
+
+function createInitialShadowMessages(): ShadowMessage[] {
+  const now = Date.now();
+  return [
+    {
+      id: 'sm_1',
+      sender: 'shadow',
+      text: 'Hey! I\'m SHADOW, your AI athletic coach. How\'s your training going today?',
+      timestamp: new Date(now - 600000).toISOString(),
+    },
+    {
+      id: 'sm_2',
+      sender: 'athlete',
+      text: 'Pretty good, but my footwork felt off during drills',
+      timestamp: new Date(now - 540000).toISOString(),
+    },
+    {
+      id: 'sm_3',
+      sender: 'shadow',
+      text: 'Let\'s dig into that. What specific footwork drill were you working on?',
+      timestamp: new Date(now - 480000).toISOString(),
+    },
+  ];
+}
+
 export default function AthleteWorkspace() {
   const [activeTab, setActiveTab] = useState<TabID>('my-dashboard');
   const [expandedHelpTab, setExpandedHelpTab] = useState<TabID | null>(null);
@@ -61,7 +93,7 @@ export default function AthleteWorkspace() {
   const [showPainModal, setShowPainModal] = useState(false);
   const [currentPainType, setCurrentPainType] = useState<PainType>('Dull');
   const [currentPainSeverity, setCurrentPainSeverity] = useState(3);
-  const [painDescriptions, setPainDescriptions] = useState<Record<string, any>>({});
+  const [painDescriptions, setPainDescriptions] = useState<Record<string, string>>({});
 
   // Goals State
   const [smartGoals, setSmartGoals] = useState<SMARTGoal[]>([
@@ -92,11 +124,7 @@ export default function AthleteWorkspace() {
   const [completedDrills, setCompletedDrills] = useState<Record<string, boolean>>({});
 
   // Shadow State
-  const [shadowMessages, setShadowMessages] = useState<Array<{id: string; sender: 'athlete' | 'shadow'; text: string; timestamp: string}>>([
-    { id: 'sm_1', sender: 'shadow', text: 'Hey! I\'m SHADOW, your AI athletic coach. How\'s your training going today?', timestamp: new Date(Date.now() - 600000).toISOString() },
-    { id: 'sm_2', sender: 'athlete', text: 'Pretty good, but my footwork felt off during drills', timestamp: new Date(Date.now() - 540000).toISOString() },
-    { id: 'sm_3', sender: 'shadow', text: 'Let\'s dig into that. What specific footwork drill were you working on?', timestamp: new Date(Date.now() - 480000).toISOString() }
-  ]);
+  const [shadowMessages, setShadowMessages] = useState<ShadowMessage[]>(createInitialShadowMessages);
   const [shadowInput, setShadowInput] = useState('');
 
   // Session Log State
@@ -186,8 +214,8 @@ export default function AthleteWorkspace() {
         />
 
         {/* TAB NAVIGATION */}
-        <div className="border-2 border-[#8b4444] bg-[#0f0f0f]">
-          <div className="flex flex-wrap gap-1 p-2">
+        <div className={ui.tabContainer}>
+          <div className={ui.tabRow}>
             {[
               { id: 'my-dashboard', label: 'Dashboard' },
               { id: 'athlete-floor', label: 'Floor' },
@@ -204,11 +232,10 @@ export default function AthleteWorkspace() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as TabID)}
-                className={`px-3 py-2 text-xs font-semibold uppercase transition border-2 ${
-                  activeTab === tab.id
-                    ? 'bg-[#5a2a2a] border-[#8b4444] text-[#e8d7c6]'
-                    : 'bg-[#1a1a1a] border-[#4a4a4a] text-[#b0a095] hover:text-[#e8d7c6]'
-                }`}
+                className={cx(
+                  ui.tabButtonBase,
+                  activeTab === tab.id ? ui.tabButtonActive : ui.tabButtonInactive,
+                )}
               >
                 {tab.label}
               </button>
@@ -242,29 +269,29 @@ export default function AthleteWorkspace() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Readiness Card */}
-                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded">
+                <div className={ui.panel}>
                   <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574] mb-4">Current Readiness</h3>
                   <div className="space-y-4">
                     <div>
                       <label className="text-sm text-[#b0a095] block mb-2">Sleep (hours)</label>
-                      <input type="range" min="4" max="12" value={sleepHours} onChange={(e) => setSleepHours(parseInt(e.target.value))} className="w-full h-2 bg-[#4a4a4a] rounded accent-[#d4a574]" />
+                      <input type="range" min="4" max="12" value={sleepHours} onChange={(e) => setSleepHours(parseInt(e.target.value))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
                       <p className="text-xs text-[#8a8a8a] mt-1">{sleepHours} hours</p>
                     </div>
                     <div>
                       <label className="text-sm text-[#b0a095] block mb-2">Energy Level (1-10)</label>
-                      <input type="range" min="1" max="10" value={energyLevel} onChange={(e) => setEnergyLevel(parseInt(e.target.value))} className="w-full h-2 bg-[#4a4a4a] rounded accent-[#d4a574]" />
+                      <input type="range" min="1" max="10" value={energyLevel} onChange={(e) => setEnergyLevel(parseInt(e.target.value))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
                       <p className="text-xs text-[#8a8a8a] mt-1">{energyLevel}/10</p>
                     </div>
                     <div>
                       <label className="text-sm text-[#b0a095] block mb-2">Readiness to Train (1-10)</label>
-                      <input type="range" min="1" max="10" value={readinessToTrain} onChange={(e) => setReadinessToTrain(parseInt(e.target.value))} className="w-full h-2 bg-[#4a4a4a] rounded accent-[#d4a574]" />
+                      <input type="range" min="1" max="10" value={readinessToTrain} onChange={(e) => setReadinessToTrain(parseInt(e.target.value))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
                       <p className="text-xs text-[#8a8a8a] mt-1">{readinessToTrain}/10</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Pain/Injury Card */}
-                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded">
+                <div className={ui.panel}>
                   <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574] mb-4">Pain/Soreness Report</h3>
                   <div className="space-y-3">
                     <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -273,7 +300,7 @@ export default function AthleteWorkspace() {
                     </label>
                     <div>
                       <label className="text-sm text-[#b0a095] block mb-2">Soreness Level (1-10)</label>
-                      <input type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(parseInt(e.target.value))} className="w-full h-2 bg-[#4a4a4a] rounded accent-[#d4a574]" />
+                      <input type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(parseInt(e.target.value))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
                       <p className="text-xs text-[#8a8a8a] mt-1">{soreness}/10</p>
                     </div>
                     <div className="grid grid-cols-3 gap-2 pt-2">
@@ -295,10 +322,10 @@ export default function AthleteWorkspace() {
               </div>
 
               {/* Session Check-In/Out */}
-              <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded">
+              <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6">
                 <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574] mb-4">Session Log</h3>
                 {!sessionActive ? (
-                  <button onClick={handleCheckIn} className="w-full bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold py-2 px-4 rounded transition">
+                  <button onClick={handleCheckIn} className="w-full bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold py-2 px-4 transition">
                     ✅ Check In
                   </button>
                 ) : (
@@ -308,9 +335,9 @@ export default function AthleteWorkspace() {
                       value={checkInNotes}
                       onChange={(e) => setCheckInNotes(e.target.value)}
                       placeholder="Session notes..."
-                      className="w-full h-20 px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] rounded focus:outline-none"
+                      className="w-full h-20 px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none"
                     />
-                    <button onClick={handleCheckOut} className="w-full bg-red-700 hover:bg-red-800 text-white font-semibold py-2 px-4 rounded transition">
+                    <button onClick={handleCheckOut} className="w-full bg-red-700 hover:bg-red-800 text-white font-semibold py-2 px-4 transition">
                       ⏹️ Check Out
                     </button>
                   </div>
@@ -351,7 +378,7 @@ export default function AthleteWorkspace() {
                   >
                     <div className="flex items-start justify-between gap-3 mb-3">
                       <div>
-                        <span className="inline-block text-xs font-mono font-bold bg-[#4a4a4a] text-[#8a8a8a] px-2 py-1 rounded mb-2">{task.category}</span>
+                        <span className="inline-block text-xs font-mono font-bold bg-[#4a4a4a] text-[#8a8a8a] px-2 py-1 mb-2">{task.category}</span>
                         <h4 className="text-base font-semibold">{task.title}</h4>
                       </div>
                       <input
@@ -400,13 +427,13 @@ export default function AthleteWorkspace() {
 
               <button
                 onClick={() => setShowGoalForm(!showGoalForm)}
-                className="px-4 py-2 bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold rounded transition"
+                className="px-4 py-2 bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold transition"
               >
                 + New SMART Goal
               </button>
 
               {showGoalForm && (
-                <div className="border-2 border-[#d4a574] bg-[#1a1a1a] p-6 rounded space-y-4">
+                <div className="border-2 border-[#d4a574] bg-[#1a1a1a] p-6 space-y-4">
                   <h3 className="font-mono font-bold text-[#d4a574]">Create SMART Goal</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <input
@@ -414,12 +441,12 @@ export default function AthleteWorkspace() {
                       value={newGoalTitle}
                       onChange={(e) => setNewGoalTitle(e.target.value)}
                       placeholder="Goal title"
-                      className="px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] rounded text-[#e8d7c6] focus:outline-none"
+                      className="px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none"
                     />
                     <select
                       value={newGoalCategory}
                       onChange={(e) => setNewGoalCategory(e.target.value as SMARTCategory)}
-                      className="px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] rounded text-[#e8d7c6] focus:outline-none"
+                      className="px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none"
                     >
                       {(['Boxing', 'Fitness', 'Weight Loss', 'Weight Gain', 'Academics', 'Attendance', 'Recovery', 'Lifestyle', 'Leadership'] as SMARTCategory[]).map(cat => (
                         <option key={cat} value={cat}>{cat}</option>
@@ -429,26 +456,26 @@ export default function AthleteWorkspace() {
                       type="date"
                       value={newGoalTargetDate}
                       onChange={(e) => setNewGoalTargetDate(e.target.value)}
-                      className="px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] rounded text-[#e8d7c6] focus:outline-none"
+                      className="px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none"
                     />
                     <input
                       type="text"
                       value={newGoalSuccessMetric}
                       onChange={(e) => setNewGoalSuccessMetric(e.target.value)}
                       placeholder="Success metric"
-                      className="px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] rounded text-[#e8d7c6] focus:outline-none"
+                      className="px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none"
                     />
                   </div>
                   <div className="flex gap-2">
                     <button
                       onClick={handleCreateGoal}
-                      className="flex-1 bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold py-2 rounded transition"
+                      className="flex-1 bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold py-2 transition"
                     >
                       Create Goal
                     </button>
                     <button
                       onClick={() => setShowGoalForm(false)}
-                      className="flex-1 bg-[#4a4a4a] hover:bg-[#5a5a5a] text-white font-semibold py-2 rounded transition"
+                      className="flex-1 bg-[#4a4a4a] hover:bg-[#5a5a5a] text-white font-semibold py-2 transition"
                     >
                       Cancel
                     </button>
@@ -458,10 +485,10 @@ export default function AthleteWorkspace() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {smartGoals.map(goal => (
-                  <div key={goal.id} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 rounded space-y-3">
+                  <div key={goal.id} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 space-y-3">
                     <div className="flex justify-between items-start">
                       <div>
-                        <span className="inline-block text-xs font-mono font-bold bg-[#4a4a4a] text-[#8a8a8a] px-2 py-1 rounded mb-2">{goal.category}</span>
+                        <span className="inline-block text-xs font-mono font-bold bg-[#4a4a4a] text-[#8a8a8a] px-2 py-1 mb-2">{goal.category}</span>
                         <h4 className="text-base font-semibold">{goal.title}</h4>
                       </div>
                       <span className={`text-xs font-semibold px-2 py-1 rounded ${
@@ -477,8 +504,8 @@ export default function AthleteWorkspace() {
                         <span className="text-[#b0a095]">Progress</span>
                         <span className="font-semibold">{goal.progressPercent}%</span>
                       </div>
-                      <div className="w-full bg-[#4a4a4a] rounded h-2">
-                        <div className="bg-[#d4a574] h-2 rounded" style={{width: `${goal.progressPercent}%`}}></div>
+                      <div className="w-full bg-[#4a4a4a] h-2">
+                        <div className="bg-[#d4a574] h-2" style={{width: `${goal.progressPercent}%`}}></div>
                       </div>
                     </div>
                     <p className="text-sm text-[#b0a095]">Target: {goal.targetDate}</p>
@@ -491,10 +518,10 @@ export default function AthleteWorkspace() {
 
           {/* TRACKS - Placeholder */}
           {activeTab === 'tracks' && (
-            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded space-y-4 animate-fadeIn">
+            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
               <h3 className="font-mono font-bold text-[#d4a574] uppercase">Track Management</h3>
               <p className="text-[#b0a095]">View current track assignment and request upgrades as you progress.</p>
-              <div className="bg-[#0f0f0f] border-2 border-[#8b4444] p-4 rounded">
+              <div className="bg-[#0f0f0f] border-2 border-[#8b4444] p-4">
                 <p className="text-sm"><strong>Current Track:</strong> Non-Contact Foundations</p>
                 <p className="text-sm mt-2 text-[#b0a095]">Master basic stance, guard, jab, and gym discipline protocols.</p>
               </div>
@@ -503,14 +530,14 @@ export default function AthleteWorkspace() {
 
           {/* ASSESSMENTS - Placeholder */}
           {activeTab === 'assessments' && (
-            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded space-y-4 animate-fadeIn">
+            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
               <h3 className="font-mono font-bold text-[#d4a574] uppercase">Assessments</h3>
               <p className="text-[#b0a095]">Complete personality tests, surveys, and skill assessments.</p>
               <div className="space-y-3">
-                <div className="border-2 border-[#8b4444] bg-[#0f0f0f] p-4 rounded">
+                <div className="border-2 border-[#8b4444] bg-[#0f0f0f] p-4">
                   <p className="font-semibold">MBTI Personality Test</p>
                   <p className="text-sm text-[#b0a095] mt-1">Discover your personality type and learning style.</p>
-                  <button className="mt-3 px-3 py-1 bg-[#8b4444] hover:bg-[#5a2a2a] text-white text-sm rounded transition">Start Assessment</button>
+                  <button className="mt-3 px-3 py-1 bg-[#8b4444] hover:bg-[#5a2a2a] text-white text-sm transition">Start Assessment</button>
                 </div>
               </div>
             </div>
@@ -536,35 +563,35 @@ export default function AthleteWorkspace() {
                 onAskShadow={() => setShadowInput('What do these scores mean?')}
               />
 
-              <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded space-y-6">
+              <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-6">
                 <h3 className="font-mono font-bold text-[#d4a574] uppercase">Daily Biological Check-In</h3>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="text-sm font-semibold text-[#b0a095] block mb-2">Sleep (4-12 hours)</label>
-                    <input type="range" min="4" max="12" step="0.5" value={sleepHours} onChange={(e) => setSleepHours(parseFloat(e.target.value))} className="w-full h-2 bg-[#4a4a4a] rounded accent-[#d4a574]" />
+                    <input type="range" min="4" max="12" step="0.5" value={sleepHours} onChange={(e) => setSleepHours(parseFloat(e.target.value))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
                     <p className="text-xs text-[#8a8a8a] mt-1">{sleepHours} hours</p>
                   </div>
                   <div>
                     <label className="text-sm font-semibold text-[#b0a095] block mb-2">Hydration (1-10)</label>
-                    <input type="range" min="1" max="10" value={hydrationStatus} onChange={(e) => setHydrationStatus(parseInt(e.target.value))} className="w-full h-2 bg-[#4a4a4a] rounded accent-[#d4a574]" />
+                    <input type="range" min="1" max="10" value={hydrationStatus} onChange={(e) => setHydrationStatus(parseInt(e.target.value))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
                     <p className="text-xs text-[#8a8a8a] mt-1">{hydrationStatus}/10</p>
                   </div>
                   <div>
                     <label className="text-sm font-semibold text-[#b0a095] block mb-2">Motivation (1-10)</label>
-                    <input type="range" min="1" max="10" value={motivation} onChange={(e) => setMotivation(parseInt(e.target.value))} className="w-full h-2 bg-[#4a4a4a] rounded accent-[#d4a574]" />
+                    <input type="range" min="1" max="10" value={motivation} onChange={(e) => setMotivation(parseInt(e.target.value))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
                     <p className="text-xs text-[#8a8a8a] mt-1">{motivation}/10</p>
                   </div>
                   <div>
                     <label className="text-sm font-semibold text-[#b0a095] block mb-2">Soreness (0-10)</label>
-                    <input type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(parseInt(e.target.value))} className="w-full h-2 bg-[#4a4a4a] rounded accent-[#d4a574]" />
+                    <input type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(parseInt(e.target.value))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
                     <p className="text-xs text-[#8a8a8a] mt-1">{soreness}/10</p>
                   </div>
                 </div>
 
                 <button
                   onClick={() => setExpandedCheckIn(!expandedCheckIn)}
-                  className="w-full px-4 py-2 bg-[#4a4a4a] hover:bg-[#5a5a5a] text-[#e8d7c6] font-semibold rounded transition"
+                  className="w-full px-4 py-2 bg-[#4a4a4a] hover:bg-[#5a5a5a] text-[#e8d7c6] font-semibold transition"
                 >
                   {expandedCheckIn ? '− Collapse' : '+ Expand to Maximum Check-In'}
                 </button>
@@ -607,10 +634,10 @@ export default function AthleteWorkspace() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {drills.map(drill => (
-                  <div key={drill.id} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 rounded space-y-3">
+                  <div key={drill.id} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 space-y-3">
                     <div className="flex justify-between items-start">
                       <div>
-                        <span className="inline-block text-xs font-mono font-bold bg-[#4a4a4a] text-[#8a8a8a] px-2 py-1 rounded mb-2">{drill.category}</span>
+                        <span className="inline-block text-xs font-mono font-bold bg-[#4a4a4a] text-[#8a8a8a] px-2 py-1 mb-2">{drill.category}</span>
                         <h4 className="text-base font-semibold">{drill.name}</h4>
                       </div>
                       <span className="text-xs font-mono text-[#d4a574]">{drill.minRank}</span>
@@ -620,7 +647,7 @@ export default function AthleteWorkspace() {
                       <p className="text-xs font-semibold text-[#d4a574]">Coaching Cues:</p>
                       <div className="flex flex-wrap gap-1">
                         {drill.cues.map((cue, i) => (
-                          <span key={i} className="text-xs bg-[#4a4a4a] text-[#8a8a8a] px-2 py-1 rounded">⚡ {cue}</span>
+                          <span key={i} className="text-xs bg-[#4a4a4a] text-[#8a8a8a] px-2 py-1">⚡ {cue}</span>
                         ))}
                       </div>
                     </div>
@@ -659,10 +686,10 @@ export default function AthleteWorkspace() {
                 onAskShadow={() => setShadowInput('Can you explain biomechanics?')}
               />
 
-              <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded space-y-4 animate-fadeIn">
+              <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
                 <h3 className="font-semibold text-lg">Biomechanics of Kinetic Force Transfer</h3>
                 <p className="text-[#b0a095]"><strong>Concept:</strong> Power does not generate in the shoulders. Force begins with rear-foot ground rotation through hip rotation into target through clean wrist extension.</p>
-                <div className="bg-[#0f0f0f] border-2 border-[#8b4444] p-4 rounded">
+                <div className="bg-[#0f0f0f] border-2 border-[#8b4444] p-4">
                   <p className="text-sm text-[#e8d7c6]"><strong>Homework:</strong> Complete 30 slow shadowboxing crosses, holding full extension for 3 seconds to confirm your rear foot heel is rotated fully outward.</p>
                 </div>
               </div>
@@ -688,16 +715,16 @@ export default function AthleteWorkspace() {
                 onAskShadow={() => setShadowInput('How do I contact my coach?')}
               />
 
-              <div className="border-2 border-red-600 bg-red-900/20 p-4 rounded">
+              <div className="border-2 border-red-600 bg-red-900/20 p-4">
                 <p className="text-sm text-red-200">🔒 <strong>SafeSport Policy:</strong> All messages are logged and parent CC is active for all minor athletes.</p>
               </div>
 
-              <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded space-y-4">
+              <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4">
                 <h3 className="font-mono font-bold text-[#d4a574]">Send Message to Coach</h3>
                 <form className="space-y-4">
                   <div>
                     <label className="block text-sm font-semibold mb-2">Coach</label>
-                    <select className="w-full px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] rounded text-[#e8d7c6] focus:outline-none">
+                    <select className="w-full px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none">
                       <option>Coach Jason (Head Coach)</option>
                       <option>Coach Danielle (Fitness Director)</option>
                     </select>
@@ -706,10 +733,10 @@ export default function AthleteWorkspace() {
                     <label className="block text-sm font-semibold mb-2">Your Message</label>
                     <textarea
                       placeholder="Type your message..."
-                      className="w-full h-24 px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] rounded text-[#e8d7c6] focus:outline-none resize-none"
+                      className="w-full h-24 px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none resize-none"
                     />
                   </div>
-                  <button className="w-full bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold py-2 rounded transition">
+                  <button className="w-full bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold py-2 transition">
                     Send Message
                   </button>
                 </form>
@@ -738,9 +765,9 @@ export default function AthleteWorkspace() {
 
               <div className="space-y-4">
                 {['Mon-Thu 4:00 PM Youth Class', 'Mon-Thu 5:00 PM Intermediate', 'MWF 5:45 PM Adult Fitness'].map((session, i) => (
-                  <div key={i} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 rounded flex justify-between items-center">
+                  <div key={i} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 flex justify-between items-center">
                     <p className="font-semibold">{session}</p>
-                    <button className="px-4 py-2 bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold rounded transition">
+                    <button className="px-4 py-2 bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold transition">
                       Book
                     </button>
                   </div>
@@ -758,7 +785,7 @@ export default function AthleteWorkspace() {
                 response="Your next class is Youth Class on Mon-Thu 4:00-5:00 PM. Focus on Non-Contact developmental work: footwork, shadowboxing, neurocognitive drills."
               />
 
-              <div className="border-2 border-[#d4a574] bg-[#0f0f0f] p-6 rounded space-y-4">
+              <div className="border-2 border-[#d4a574] bg-[#0f0f0f] p-6 space-y-4">
                 <div className="space-y-3 max-h-96 overflow-y-auto">
                   {shadowMessages.map(msg => (
                     <div key={msg.id} className={`flex ${msg.sender === 'athlete' ? 'justify-end' : 'justify-start'}`}>
@@ -782,7 +809,7 @@ export default function AthleteWorkspace() {
                         <button
                           key={i}
                           onClick={() => setShadowInput(q)}
-                          className="text-left px-3 py-2 bg-[#1a1a1a] border-2 border-[#d4a574] hover:bg-[#2a2a2a] text-sm text-[#d4a574] rounded transition"
+                          className="text-left px-3 py-2 bg-[#1a1a1a] border-2 border-[#d4a574] hover:bg-[#2a2a2a] text-sm text-[#d4a574] transition"
                         >
                           {q}
                         </button>
@@ -796,16 +823,16 @@ export default function AthleteWorkspace() {
                       value={shadowInput}
                       onChange={(e) => setShadowInput(e.target.value)}
                       placeholder="Ask SHADOW a question..."
-                      className="flex-1 px-3 py-2 bg-[#1a1a1a] border-2 border-[#d4a574] rounded text-[#e8d7c6] focus:outline-none"
+                      className="flex-1 px-3 py-2 bg-[#1a1a1a] border-2 border-[#d4a574] text-[#e8d7c6] focus:outline-none"
                     />
-                    <button className="px-4 py-2 bg-[#d4a574] hover:bg-[#b08060] text-[#0a0a0a] font-semibold rounded transition">
+                    <button className="px-4 py-2 bg-[#d4a574] hover:bg-[#b08060] text-[#0a0a0a] font-semibold transition">
                       Send
                     </button>
                   </div>
                 </div>
               </div>
 
-              <div className="bg-yellow-900/20 border-2 border-yellow-700 p-4 rounded text-sm">
+              <div className="bg-yellow-900/20 border-2 border-yellow-700 p-4 text-sm">
                 <p className="text-yellow-200"><strong>Note:</strong> SHADOW cannot answer questions about other athletes, board operations, financial data, or provide medical/legal advice.</p>
               </div>
             </div>
@@ -815,12 +842,12 @@ export default function AthleteWorkspace() {
         {/* PAIN MODAL */}
         {showPainModal && selectedPainLocation && (
           <div className="fixed inset-0 bg-[#0a0a0a]/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-6 max-w-md w-full rounded space-y-4">
+            <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-6 max-w-md w-full space-y-4">
               <h3 className="text-lg font-bold">Soreness Details: {selectedPainLocation}</h3>
               <div className="space-y-3">
                 <div>
                   <label className="block text-sm font-semibold mb-2">Pain Type</label>
-                  <select value={currentPainType} onChange={(e) => setCurrentPainType(e.target.value as PainType)} className="w-full px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] rounded text-[#e8d7c6] focus:outline-none">
+                  <select value={currentPainType} onChange={(e) => setCurrentPainType(e.target.value as PainType)} className="w-full px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none">
                     {(['Sharp', 'Dull', 'Burning', 'Tight', 'Pulling', 'Throbbing', 'Swollen', 'Numbness/Tingling', 'Instability', 'Other'] as PainType[]).map(t => (
                       <option key={t} value={t}>{t}</option>
                     ))}
@@ -828,13 +855,13 @@ export default function AthleteWorkspace() {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold mb-2">Severity (1-10)</label>
-                  <input type="range" min="1" max="10" value={currentPainSeverity} onChange={(e) => setCurrentPainSeverity(parseInt(e.target.value))} className="w-full h-2 bg-[#4a4a4a] rounded accent-[#d4a574]" />
+                  <input type="range" min="1" max="10" value={currentPainSeverity} onChange={(e) => setCurrentPainSeverity(parseInt(e.target.value))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
                   <p className="text-xs text-[#8a8a8a] mt-1">{currentPainSeverity}/10</p>
                 </div>
               </div>
               <div className="flex gap-2">
-                <button onClick={() => setShowPainModal(false)} className="flex-1 bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold py-2 rounded transition">Save</button>
-                <button onClick={() => setShowPainModal(false)} className="flex-1 bg-[#4a4a4a] hover:bg-[#5a5a5a] text-white font-semibold py-2 rounded transition">Cancel</button>
+                <button onClick={() => setShowPainModal(false)} className="flex-1 bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold py-2 transition">Save</button>
+                <button onClick={() => setShowPainModal(false)} className="flex-1 bg-[#4a4a4a] hover:bg-[#5a5a5a] text-white font-semibold py-2 transition">Cancel</button>
               </div>
             </div>
           </div>
@@ -843,3 +870,4 @@ export default function AthleteWorkspace() {
     </div>
   );
 }
+

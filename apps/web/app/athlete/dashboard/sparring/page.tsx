@@ -26,76 +26,33 @@ export default function SparringTelemetryPage() {
         : 'High strain';
 
   return (
-    <main
-      style={{
-        minHeight: '100vh',
-        background: 'linear-gradient(180deg, #0a0a0a 0%, #0f0f0f 100%)',
-        color: '#e8d7c6',
-      }}
-    >
-      <header
-        style={{
-          background: 'rgba(9, 15, 33, 0.9)',
-          color: '#f9fafb',
-          padding: '18px 40px',
-          borderBottom: '1px solid #263150',
-          backdropFilter: 'blur(12px)',
-        }}
-      >
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between' }}>
+    <main className="min-h-screen bg-[#0a0a0a] text-[#e8d7c6]">
+      <header className="border-b-4 border-[#8b4444] bg-[#1a1a1a] px-10 py-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div style={{ fontSize: '0.72rem', letterSpacing: '0.24em', textTransform: 'uppercase', color: '#93c5fd' }}>
+            <div className="text-[0.72rem] uppercase tracking-[0.24em] text-[#d4a574] font-mono">
               Track D/E
             </div>
-            <div style={{ fontSize: '1.1rem', fontWeight: 800 }}>Combat Telemetry Log</div>
+            <div className="font-display text-2xl tracking-tight">Combat Telemetry Log</div>
           </div>
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '8px',
-              border: '1px solid rgba(96,165,250,0.35)',
-              background: 'rgba(30,64,175,0.2)',
-              color: '#bfdbfe',
-              borderRadius: '999px',
-              padding: '8px 12px',
-              fontSize: '0.82rem',
-            }}
-          >
+          <div className="inline-flex items-center gap-2 border-2 border-[#8b4444] bg-[#3d2817] px-3 py-2 text-xs font-mono text-[#e8d7c6]">
             Layer 20 AI Engine surface
           </div>
         </div>
       </header>
 
-      <form onSubmit={onSubmit} style={{ padding: '28px 40px 36px' }}>
-        <div
-          style={{
-            display: 'grid',
-            gap: '18px',
-            gridTemplateColumns: 'minmax(0, 1.2fr) minmax(320px, 0.8fr)',
-            alignItems: 'start',
-          }}
-        >
-          <section
-            style={{
-              display: 'grid',
-              gap: '16px',
-              padding: '22px',
-              border: '1px solid rgba(60,79,131,0.7)',
-              borderRadius: '18px',
-              background: 'rgba(17,25,54,0.88)',
-              boxShadow: '0 22px 60px rgba(0,0,0,0.28)',
-            }}
-          >
-            <div style={{ display: 'grid', gap: '6px' }}>
-              <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Session Capture</h2>
-              <p style={{ margin: 0, color: '#9ca3af', lineHeight: 1.5 }}>
+      <form onSubmit={onSubmit} className="px-10 py-7">
+        <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+          <section className="grid gap-4 border-4 border-[#8b4444] bg-[#1a1a1a] p-6 shadow-2xl shadow-black/70">
+            <div className="grid gap-1.5">
+              <h2 className="m-0 font-display text-2xl tracking-tight">Session Capture</h2>
+              <p className="m-0 leading-6 text-[#b0a095]">
                 Log the round count, stance, and damage absorption level for the coach review pipeline.
               </p>
             </div>
 
-            <div style={{ display: 'grid', gap: '8px' }}>
-              <label htmlFor="roundsCompleted" style={{ fontWeight: 700 }}>
+            <div className="grid gap-2">
+              <label htmlFor="roundsCompleted" className="font-semibold">
                 Total Rounds Completed
               </label>
               <input
@@ -105,34 +62,19 @@ export default function SparringTelemetryPage() {
                 max={12}
                 value={totalRoundsCompleted}
                 onChange={(event) => setTotalRoundsCompleted(Number(event.target.value))}
-                style={{
-                  padding: '12px 14px',
-                  border: '1px solid #3c4f83',
-                  borderRadius: '10px',
-                  background: '#0a1024',
-                  color: '#e5e7eb',
-                  width: '160px',
-                }}
+                className="w-40 border-2 border-[#8b4444] bg-[#0f0f0f] px-3.5 py-3 text-[#e8d7c6] outline-none transition focus:border-[#d4a574]"
               />
             </div>
 
-            <div style={{ display: 'grid', gap: '8px' }}>
-              <label htmlFor="opponentStance" style={{ fontWeight: 700 }}>
+            <div className="grid gap-2">
+              <label htmlFor="opponentStance" className="font-semibold">
                 Opponent Stance
               </label>
               <select
                 id="opponentStance"
                 value={opponentStance}
                 onChange={(event) => setOpponentStance(event.target.value as OpponentStance)}
-                style={{
-                  padding: '12px 14px',
-                  border: '1px solid #3c4f83',
-                  borderRadius: '10px',
-                  background: '#0a1024',
-                  color: '#e5e7eb',
-                  width: '100%',
-                  maxWidth: '280px',
-                }}
+                className="w-full max-w-[280px] border-2 border-[#8b4444] bg-[#0f0f0f] px-3.5 py-3 text-[#e8d7c6] outline-none transition focus:border-[#d4a574]"
               >
                 <option value="Orthodox">Orthodox</option>
                 <option value="Southpaw">Southpaw</option>
@@ -140,11 +82,11 @@ export default function SparringTelemetryPage() {
               </select>
             </div>
 
-            <div style={{ display: 'grid', gap: '10px' }}>
-              <label htmlFor="defensiveHitAbsorption" style={{ fontWeight: 700 }}>
+            <div className="grid gap-2.5">
+              <label htmlFor="defensiveHitAbsorption" className="font-semibold">
                 Defensive Hit Absorption
               </label>
-              <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: '12px', alignItems: 'center' }}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <input
                   id="defensiveHitAbsorption"
                   type="range"
@@ -153,20 +95,9 @@ export default function SparringTelemetryPage() {
                   step={1}
                   value={defensiveHitAbsorption}
                   onChange={(event) => setDefensiveHitAbsorption(Number(event.target.value))}
-                  style={{ accentColor: '#60a5fa', flex: '1 1 260px' }}
+                  style={{ accentColor: '#d4a574', flex: '1 1 260px' }}
                 />
-                <span
-                  style={{
-                    minWidth: '122px',
-                    textAlign: 'center',
-                    borderRadius: '999px',
-                    border: '1px solid rgba(96,165,250,0.35)',
-                    background: 'rgba(37,99,235,0.16)',
-                    color: '#bfdbfe',
-                    padding: '8px 12px',
-                    fontSize: '0.84rem',
-                  }}
-                >
+                <span className="min-w-[122px] border-2 border-[#8b4444] bg-[#3d2817] px-3 py-2 text-center text-sm text-[#e8d7c6]">
                   {defensiveHitAbsorption}/10 {readinessBand}
                 </span>
               </div>
@@ -174,82 +105,47 @@ export default function SparringTelemetryPage() {
 
             <button
               type="submit"
-              style={{
-                marginTop: '4px',
-                padding: '12px 16px',
-                borderRadius: '12px',
-                border: 'none',
-                background: 'linear-gradient(135deg, #2563eb, #60a5fa)',
-                color: '#f8fafc',
-                cursor: 'pointer',
-                width: 'fit-content',
-                fontWeight: 700,
-                boxShadow: '0 12px 30px rgba(37,99,235,0.28)',
-              }}
+              className="mt-1 w-fit border-2 border-[#8b4444] bg-[#5a2a2a] px-4 py-3 font-semibold text-[#e8d7c6] transition hover:border-[#d4a574] hover:bg-[#8b4444]"
             >
               Log Combat Session
             </button>
           </section>
 
-          <aside
-            style={{
-              display: 'grid',
-              gap: '16px',
-              padding: '22px',
-              border: '1px solid rgba(60,79,131,0.7)',
-              borderRadius: '18px',
-              background: 'rgba(9,15,33,0.92)',
-            }}
-          >
-            <div style={{ display: 'grid', gap: '8px' }}>
-              <div style={{ fontSize: '0.72rem', letterSpacing: '0.22em', textTransform: 'uppercase', color: '#93c5fd' }}>
+          <aside className="grid gap-4 border-4 border-[#3d2817] bg-[#1a1a1a] p-6">
+            <div className="grid gap-2">
+              <div className="font-mono text-[0.72rem] uppercase tracking-[0.22em] text-[#d4a574]">
                 AI/ML status
               </div>
-              <p style={{ margin: 0, lineHeight: 1.6, color: '#dbeafe' }}>{statusMessage}</p>
+              <p className="m-0 leading-6 text-[#e8d7c6]">{statusMessage}</p>
             </div>
 
-            <div
-              style={{
-                display: 'grid',
-                gap: '12px',
-                gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-              }}
-            >
-              <div style={{ borderRadius: '14px', background: 'rgba(17,25,54,0.92)', border: '1px solid rgba(60,79,131,0.7)', padding: '14px' }}>
-                <div style={{ fontSize: '0.75rem', color: '#93c5fd', textTransform: 'uppercase', letterSpacing: '0.16em' }}>Rounds</div>
-                <div style={{ marginTop: '8px', fontSize: '1.5rem', fontWeight: 800 }}>{totalRoundsCompleted}</div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="border-2 border-[#5a4a3a] bg-[#0f0f0f] p-3.5">
+                <div className="font-mono text-xs uppercase tracking-[0.16em] text-[#d4a574]">Rounds</div>
+                <div className="mt-2 text-2xl font-black text-[#e8d7c6]">{totalRoundsCompleted}</div>
               </div>
-              <div style={{ borderRadius: '14px', background: 'rgba(17,25,54,0.92)', border: '1px solid rgba(60,79,131,0.7)', padding: '14px' }}>
-                <div style={{ fontSize: '0.75rem', color: '#93c5fd', textTransform: 'uppercase', letterSpacing: '0.16em' }}>Stance</div>
-                <div style={{ marginTop: '8px', fontSize: '1.5rem', fontWeight: 800 }}>{opponentStance}</div>
+              <div className="border-2 border-[#5a4a3a] bg-[#0f0f0f] p-3.5">
+                <div className="font-mono text-xs uppercase tracking-[0.16em] text-[#d4a574]">Stance</div>
+                <div className="mt-2 text-2xl font-black text-[#e8d7c6]">{opponentStance}</div>
               </div>
-              <div style={{ borderRadius: '14px', background: 'rgba(17,25,54,0.92)', border: '1px solid rgba(60,79,131,0.7)', padding: '14px' }}>
-                <div style={{ fontSize: '0.75rem', color: '#93c5fd', textTransform: 'uppercase', letterSpacing: '0.16em' }}>Load</div>
-                <div style={{ marginTop: '8px', fontSize: '1.5rem', fontWeight: 800 }}>{readinessBand}</div>
+              <div className="border-2 border-[#5a4a3a] bg-[#0f0f0f] p-3.5">
+                <div className="font-mono text-xs uppercase tracking-[0.16em] text-[#d4a574]">Load</div>
+                <div className="mt-2 text-2xl font-black text-[#e8d7c6]">{readinessBand}</div>
               </div>
-              <div style={{ borderRadius: '14px', background: 'rgba(17,25,54,0.92)', border: '1px solid rgba(60,79,131,0.7)', padding: '14px' }}>
-                <div style={{ fontSize: '0.75rem', color: '#93c5fd', textTransform: 'uppercase', letterSpacing: '0.16em' }}>Last save</div>
-                <div style={{ marginTop: '8px', fontSize: '1.05rem', fontWeight: 800 }}>{lastSubmitted}</div>
+              <div className="border-2 border-[#5a4a3a] bg-[#0f0f0f] p-3.5">
+                <div className="font-mono text-xs uppercase tracking-[0.16em] text-[#d4a574]">Last save</div>
+                <div className="mt-2 text-lg font-black text-[#e8d7c6]">{lastSubmitted}</div>
               </div>
             </div>
 
-            <div
-              style={{
-                borderRadius: '14px',
-                border: '1px solid rgba(96,165,250,0.25)',
-                background: 'rgba(30,64,175,0.12)',
-                padding: '14px',
-                color: '#dbeafe',
-                lineHeight: 1.6,
-              }}
-            >
+            <div className="border-2 border-[#8b4444] bg-[#3d2817] p-3.5 leading-6 text-[#e8d7c6]">
               This is a v1 polished telemetry card: clear inputs, visible feedback, and a small analytics summary for the athlete floor.
             </div>
           </aside>
         </div>
       </form>
 
-      <footer style={{ padding: '0 40px 32px', fontSize: '0.85rem', color: '#9ca3af' }}>
+      <footer className="px-10 pb-8 text-sm text-[#8a8a8a]">
         Punxsy Prominence Boxing and Fitness, Registered Office: 204 PENNSYLVANIA AVE, BIG RUN(PA), PA 15715
       </footer>
     </main>

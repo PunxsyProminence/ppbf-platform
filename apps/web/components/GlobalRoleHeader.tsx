@@ -2,28 +2,16 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { clearRoleSession, readRoleSession, type RoleSession } from "./roleSession";
+import { useMemo } from "react";
+import { clearRoleSession, readRoleSession } from "./roleSession";
 
 export default function GlobalRoleHeader() {
   const router = useRouter();
   const pathname = usePathname();
-  const [session, setSession] = useState<RoleSession | null>(null);
-
-  useEffect(() => {
-    setSession(readRoleSession());
-  }, [pathname]);
-
-  useEffect(() => {
-    function handleStorageChange() {
-      setSession(readRoleSession());
-    }
-
-    window.addEventListener("storage", handleStorageChange);
-    return () => {
-      window.removeEventListener("storage", handleStorageChange);
-    };
-  }, []);
+  const session = useMemo(
+    () => (typeof window !== "undefined" ? readRoleSession() : null),
+    [pathname],
+  );
 
   if (!session || pathname === "/login") {
     return null;
@@ -31,7 +19,6 @@ export default function GlobalRoleHeader() {
 
   function signOut() {
     clearRoleSession();
-    setSession(null);
     router.replace("/login");
   }
 

@@ -14,7 +14,7 @@ interface ShadowMessage {
 
 export default function ShadowChatPage() {
   const router = useRouter();
-  const [userRole, setUserRole] = useState<string>('');
+  const [userRole] = useState<string>(() => (typeof window !== 'undefined' ? readRoleSession()?.role ?? '' : ''));
   const [messages, setMessages] = useState<ShadowMessage[]>([
     {
       id: '0',
@@ -30,9 +30,7 @@ export default function ShadowChatPage() {
     const session = readRoleSession();
     if (!session) {
       router.replace('/login');
-      return;
     }
-    setUserRole(session.role);
   }, [router]);
 
   useEffect(() => {
@@ -91,7 +89,7 @@ export default function ShadowChatPage() {
           <div>
             <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-[#dc2626]">The Scout</p>
             <h1 className="font-display text-2xl font-black tracking-tight text-[#e8d7c6] md:text-3xl">SHADOW</h1>
-            <p className="mt-1 text-xs text-[#b0a095]">I'm in your corner.</p>
+            <p className="mt-1 text-xs text-[#b0a095]">I&apos;m in your corner.</p>
           </div>
           <div className="flex items-center gap-4 text-right">
             <div>

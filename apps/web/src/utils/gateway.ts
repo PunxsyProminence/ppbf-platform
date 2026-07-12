@@ -1,6 +1,6 @@
 export type TrackType = "TRACK_A_YOUTH" | "TRACK_B_MULTIPROGRAM" | "TRACK_C_USA_BOXING" | "TRACK_D_A2P" | "TRACK_E_PRO";
 
-export async function stageDataTransaction(payload: any) {
+export async function stageDataTransaction(payload: Record<string, unknown>) {
   const stagedPayload = {
     ...payload,
     isApprovedByJason: false,

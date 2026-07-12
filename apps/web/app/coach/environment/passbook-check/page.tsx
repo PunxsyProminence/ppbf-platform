@@ -6,33 +6,14 @@ export default function PassbookCheckPage() {
   const [usaBoxingId, setUsaBoxingId] = useState('');
 
   return (
-    <main style={{ minHeight: '100vh', background: '#070b17', color: '#e5e7eb' }}>
-      <header
-        style={{
-          background: '#090f21',
-          color: '#f9fafb',
-          padding: '16px 40px',
-          borderBottom: '1px solid #263150',
-          fontWeight: 700,
-          letterSpacing: '0.02em',
-        }}
-      >
+    <main className="min-h-screen bg-[#0a0a0a] text-[#e8d7c6]">
+      <header className="border-b-4 border-[#8b4444] bg-[#1a1a1a] px-10 py-4 font-mono text-sm font-bold uppercase tracking-[0.08em] text-[#d4a574]">
         TRACK C: USA BOXING PASSBOOK VERIFICATION
       </header>
 
-      <div style={{ padding: '28px 40px', display: 'grid', gap: '18px' }}>
-        <section
-          style={{
-            display: 'grid',
-            gap: '12px',
-            padding: '18px',
-            border: '1px solid #2a3557',
-            borderRadius: '10px',
-            background: '#111936',
-            maxWidth: '640px',
-          }}
-        >
-          <label htmlFor="usa-boxing-id" style={{ fontWeight: 600 }}>
+      <div className="grid gap-5 px-10 py-7">
+        <section className="grid max-w-[640px] gap-3 border-4 border-[#3d2817] bg-[#1a1a1a] p-5">
+          <label htmlFor="usa-boxing-id" className="font-semibold text-[#e8d7c6]">
             Athlete USA Boxing ID
           </label>
           <input
@@ -41,50 +22,23 @@ export default function PassbookCheckPage() {
             value={usaBoxingId}
             onChange={(event) => setUsaBoxingId(event.target.value)}
             placeholder="Enter USA Boxing ID"
-            style={{
-              padding: '10px 12px',
-              border: '1px solid #3c4f83',
-              borderRadius: '8px',
-              background: '#0a1024',
-              color: '#e5e7eb',
-            }}
+            className="border-2 border-[#8b4444] bg-[#0f0f0f] px-3 py-2 text-[#e8d7c6] outline-none transition focus:border-[#d4a574]"
           />
         </section>
 
-        <section
-          style={{
-            display: 'grid',
-            gap: '14px',
-            padding: '22px',
-            border: '1px solid #41213a',
-            borderRadius: '14px',
-            background: '#1a1026',
-            maxWidth: '640px',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-            <span style={{ color: '#cbd5e1' }}>Physical Status: EXPIRED</span>
-            <span style={{ color: '#86efac' }}>Book Registration: ACTIVE</span>
+        <section className="grid max-w-[640px] gap-4 border-4 border-[#8b4444] bg-[#1a1a1a] p-6">
+          <div className="flex flex-wrap justify-between gap-3 text-sm font-mono">
+            <span className="text-[#b0a095]">Physical Status: EXPIRED</span>
+            <span className="text-[#d4a574]">Book Registration: ACTIVE</span>
           </div>
 
-          <div
-            style={{
-              borderRadius: '12px',
-              border: '1px solid #b91c1c',
-              background: '#450a0a',
-              color: '#fca5a5',
-              padding: '22px',
-              fontSize: '1.65rem',
-              fontWeight: 800,
-              lineHeight: 1.15,
-            }}
-          >
+          <div className="border-4 border-[#dc2626] bg-[#450a0a] p-6 font-display text-3xl leading-[1.15] text-[#fca5a5] md:text-[2rem]">
             DO NOT ALLOW ON MAT - INSURANCE LAPSE
           </div>
         </section>
       </div>
 
-      <footer style={{ padding: '0 40px 32px', fontSize: '0.85rem', color: '#9ca3af' }}>
+      <footer className="px-10 pb-8 text-sm text-[#8a8a8a]">
         Punxsy Prominence Boxing and Fitness, Registered Office: 204 PENNSYLVANIA AVE, BIG RUN(PA), PA 15715
       </footer>
     </main>

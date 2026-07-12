@@ -35,27 +35,27 @@ export default function TutorialView() {
   };
 
   return (
-    <div className="bg-[#0b0f19] border border-slate-800 rounded-xl p-6 space-y-6 animate-fadeIn">
+    <div className="animate-fadeIn space-y-6 border-2 border-[#8b4444] bg-[#1a1a1a] p-6">
       {/* Strict Warning Banner */}
-      <div className="bg-amber-600/10 border border-amber-500/20 px-4 py-2.5 rounded-lg text-xs font-mono text-amber-400">
+      <div className="border border-[#d4a574] bg-[#3d2817] px-4 py-2.5 text-xs font-mono text-[#e8d7c6]">
         ⚠️ <strong>TUTORIAL STATUS:</strong> PARTIALLY SCAFFOLDED (Mock UI Only). Training and guidance help content only. No safety, medical, governance, or sparring approval authority.
       </div>
 
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-800 pb-3">
+      <div className="flex flex-col items-start justify-between gap-2 border-b-2 border-[#8b4444] pb-3 sm:flex-row sm:items-center">
         <div>
-          <h3 className="text-base font-bold text-slate-200 font-mono">Guided Walkthrough Center</h3>
-          <p className="text-xs text-slate-400 font-mono mt-0.5">Role-driven system onboarding configurations</p>
+          <h3 className="font-mono text-base font-bold text-[#e8d7c6]">Guided Walkthrough Center</h3>
+          <p className="mt-0.5 font-mono text-xs text-[#b0a095]">Role-driven system onboarding configurations</p>
         </div>
-        <span className="text-[10px] bg-slate-900 border border-slate-800 px-2.5 py-1 rounded-full font-mono text-slate-400">PARTIALLY SCAFFOLDED</span>
+        <span className="border border-[#5a4a3a] bg-[#0f0f0f] px-2.5 py-1 font-mono text-[10px] text-[#b0a095]">PARTIALLY SCAFFOLDED</span>
       </div>
 
       {/* Role Switcher */}
-      <div className="flex flex-wrap gap-1.5 bg-[#111827] border border-slate-800 p-1 rounded-xl">
+      <div className="flex flex-wrap gap-1.5 border border-[#5a4a3a] bg-[#0f0f0f] p-1">
         {(Object.keys(guides) as UserRole[]).map(role => (
           <button
             key={role}
             onClick={() => setSelectedRole(role)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition ${selectedRole === role ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+            className={`px-3 py-1.5 text-xs font-mono font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a574] ${selectedRole === role ? 'bg-[#8b4444] text-[#e8d7c6]' : 'text-[#b0a095] hover:bg-[#3d2817] hover:text-[#e8d7c6]'}`}
           >
             {role} Shell
           </button>
@@ -64,13 +64,13 @@ export default function TutorialView() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {guides[selectedRole].map(g => (
-          <div key={g.step} className="bg-[#111827] border border-slate-800 p-4 rounded-xl space-y-2">
+          <div key={g.step} className="space-y-2 border border-[#5a4a3a] bg-[#0f0f0f] p-4">
             <div className="flex justify-between items-center">
-              <span className="text-[10px] font-mono bg-slate-800 px-2 py-0.5 rounded text-emerald-400 font-bold">STEP {g.step}</span>
+              <span className="border border-[#8b4444] bg-[#3d2817] px-2 py-0.5 font-mono text-[10px] font-bold text-[#d4a574]">STEP {g.step}</span>
               <span className="text-xs">📖</span>
             </div>
-            <h4 className="font-bold text-slate-200 text-sm tracking-tight">{g.title}</h4>
-            <p className="text-xs text-slate-400 leading-relaxed">{g.body}</p>
+            <h4 className="text-sm font-bold tracking-tight text-[#e8d7c6]">{g.title}</h4>
+            <p className="text-xs leading-relaxed text-[#b0a095]">{g.body}</p>
           </div>
         ))}
       </div>

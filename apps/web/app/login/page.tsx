@@ -10,14 +10,23 @@ type ActiveTab = 'login' | 'announcement';
 const ANNOUNCEMENT_STORAGE_KEY = 'ppbf-login-announcement';
 const DEFAULT_ANNOUNCEMENT = 'Welcome to PPBF. Check in with your coach before floor activity.';
 
+function getStoredAnnouncement(): string {
+  if (typeof window === 'undefined') {
+    return DEFAULT_ANNOUNCEMENT;
+  }
+
+  const savedAnnouncement = window.localStorage.getItem(ANNOUNCEMENT_STORAGE_KEY);
+  return savedAnnouncement && savedAnnouncement.trim() ? savedAnnouncement : DEFAULT_ANNOUNCEMENT;
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [pin, setPin] = useState('');
   const [selectedRole, setSelectedRole] = useState<ClubRole>('athlete');
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<ActiveTab>('login');
-  const [announcement, setAnnouncement] = useState(DEFAULT_ANNOUNCEMENT);
-  const [draftAnnouncement, setDraftAnnouncement] = useState(DEFAULT_ANNOUNCEMENT);
+  const [announcement, setAnnouncement] = useState(getStoredAnnouncement);
+  const [draftAnnouncement, setDraftAnnouncement] = useState(getStoredAnnouncement);
   const [adminPin, setAdminPin] = useState('');
   const [announcementError, setAnnouncementError] = useState('');
   const [announcementSavedAt, setAnnouncementSavedAt] = useState<string | null>(null);
@@ -35,11 +44,6 @@ export default function LoginPage() {
       router.replace(getPostLoginRoute(session));
     }
 
-    const savedAnnouncement = window.localStorage.getItem(ANNOUNCEMENT_STORAGE_KEY);
-    if (savedAnnouncement && savedAnnouncement.trim()) {
-      setAnnouncement(savedAnnouncement);
-      setDraftAnnouncement(savedAnnouncement);
-    }
   }, [router]);
 
   function signIn() {

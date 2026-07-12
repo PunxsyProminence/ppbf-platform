@@ -85,14 +85,11 @@ export default function AdminCapabilitiesPage() {
   const [name, setName] = useState('');
   const [group, setGroup] = useState('Core Platform');
   const [status, setStatus] = useState<CapabilityStatus>('DRAFT');
-  const [selectedAthleteId, setSelectedAthleteId] = useState(athleteProfiles[0].id);
-  const [trackAssignments, setTrackAssignments] = useState<TrackAssignments>({});
+  const [selectedAthleteId, setSelectedAthleteId] = useState(() => readActiveAthleteProfileId());
+  const [trackAssignments, setTrackAssignments] = useState<TrackAssignments>(() => loadTrackAssignments());
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    setTrackAssignments(loadTrackAssignments());
-    setSelectedAthleteId(readActiveAthleteProfileId());
-
     let mounted = true;
 
     async function loadCapabilities() {
@@ -209,6 +206,23 @@ export default function AdminCapabilitiesPage() {
     URL.revokeObjectURL(url);
   }
 
+  function setCapabilityStatus(id: number, nextStatus: CapabilityStatus) {
+    setCapabilities((current) =>
+      current.map((capability) =>
+        capability.id === id
+          ? {
+              ...capability,
+              status: nextStatus,
+            }
+          : capability,
+      ),
+    );
+  }
+
+  function removeCapability(id: number) {
+    setCapabilities((current) => current.filter((capability) => capability.id !== id));
+  }
+
   function toggleTrackAssignment(trackId: TrackID) {
     setTrackAssignments((current) => {
       const existing = current[selectedAthleteId] ?? [];
@@ -227,139 +241,49 @@ export default function AdminCapabilitiesPage() {
 
   return (
     <RoleSessionGate allowedRoles={['admin']}>
-    <main style={{ minHeight: '100vh', background: '#0a0a0a', color: '#e8d7c6' }}>
-      <header
-        style={{
-          background: '#1a1a1a',
-          color: '#e8d7c6',
-          padding: '12px 24px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          borderBottom: '4px solid #8b4444',
-          fontFamily: 'monospace',
-        }}
-      >
-        <div style={{ fontWeight: 'bold', fontSize: '1.1rem', letterSpacing: '0.1em' }}>PPBF ADMIN</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+      <main className="min-h-screen bg-[#0a0a0a] text-[#e8d7c6]">
+      <header className="flex items-center justify-between gap-3 border-b-4 border-[#8b4444] bg-[#1a1a1a] px-6 py-3 font-mono">
+        <div className="text-lg font-bold tracking-[0.1em]">PPBF ADMIN</div>
+        <div className="flex flex-wrap items-center gap-2">
           <Link
             href="/admin/shadow"
-            style={{
-              fontSize: '0.75rem',
-              border: '2px solid #8b4444',
-              background: '#5a2a2a',
-              color: '#d4a574',
-              padding: '6px 8px',
-              textDecoration: 'none',
-              fontWeight: 700,
-              fontFamily: 'monospace',
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-            }}
-            onMouseOver={(e) => {
-              (e.target as HTMLElement).style.background = '#8b4444';
-              (e.target as HTMLElement).style.borderColor = '#d4a574';
-              (e.target as HTMLElement).style.color = '#e8d7c6';
-            }}
-            onMouseOut={(e) => {
-              (e.target as HTMLElement).style.background = '#5a2a2a';
-              (e.target as HTMLElement).style.borderColor = '#8b4444';
-              (e.target as HTMLElement).style.color = '#d4a574';
-            }}
+            className="border-2 border-[#8b4444] bg-[#5a2a2a] px-2 py-1.5 text-xs font-bold text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#8b4444] hover:text-[#e8d7c6]"
           >
             SHADOW
           </Link>
           <Link
             href="/operations"
-            style={{
-              fontSize: '0.75rem',
-              border: '2px solid #8b4444',
-              background: '#1a1a1a',
-              color: '#b0a095',
-              padding: '6px 8px',
-              textDecoration: 'none',
-              fontWeight: 700,
-              fontFamily: 'monospace',
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-            }}
-            onMouseOver={(e) => {
-              (e.target as HTMLElement).style.background = '#4a4a4a';
-              (e.target as HTMLElement).style.borderColor = '#8a8a8a';
-            }}
-            onMouseOut={(e) => {
-              (e.target as HTMLElement).style.background = '#1a1a1a';
-              (e.target as HTMLElement).style.borderColor = '#8b4444';
-            }}
+            className="border-2 border-[#8b4444] bg-[#1a1a1a] px-2 py-1.5 text-xs font-bold text-[#b0a095] transition hover:border-[#8a8a8a] hover:bg-[#4a4a4a]"
           >
             OPS HUB
           </Link>
           <Link
             href="/research/chat"
-            style={{
-              fontSize: '0.75rem',
-              border: '2px solid #d4a574',
-              background: '#5a4a3a',
-              color: '#d4a574',
-              padding: '6px 8px',
-              textDecoration: 'none',
-              fontWeight: 700,
-              fontFamily: 'monospace',
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-            }}
-            onMouseOver={(e) => {
-              (e.target as HTMLElement).style.background = '#8b4444';
-              (e.target as HTMLElement).style.borderColor = '#d4a574';
-            }}
-            onMouseOut={(e) => {
-              (e.target as HTMLElement).style.background = '#5a4a3a';
-              (e.target as HTMLElement).style.borderColor = '#d4a574';
-            }}
+            className="border-2 border-[#d4a574] bg-[#5a4a3a] px-2 py-1.5 text-xs font-bold text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#8b4444]"
           >
             RESEARCH
           </Link>
         </div>
       </header>
 
-      <section
-        style={{
-          background: '#0f0f0f',
-          padding: '8px 24px',
-          fontSize: '0.75rem',
-          borderBottom: '2px solid #4a4a4a',
-          fontFamily: 'monospace',
-          letterSpacing: '0.05em',
-          color: '#b0a095',
-        }}
-      >
+      <section className="border-b-2 border-[#4a4a4a] bg-[#0f0f0f] px-6 py-2 font-mono text-xs tracking-[0.05em] text-[#b0a095]">
         All actions are logged. Jason approval required for production changes.
       </section>
 
-      <div style={{ padding: '32px 40px' }}>
-        <h1 style={{ marginBottom: '24px', fontSize: '2rem', color: '#e8d7c6' }}>Admin Dashboard - Capabilities</h1>
+      <div className="px-10 py-8">
+        <h1 className="mb-6 font-display text-4xl tracking-tight text-[#e8d7c6]">Admin Dashboard - Capabilities</h1>
 
-        <section
-          style={{
-            display: 'grid',
-            gap: '12px',
-            padding: '18px',
-            border: '2px solid #8b4444',
-            background: '#1a1a1a',
-            marginBottom: '18px',
-            color: '#e8d7c6',
-          }}
-        >
-          <h2 style={{ fontSize: '1.2rem', marginBottom: '4px', color: '#e8d7c6' }}>Athlete Track Assignment</h2>
+        <section className="mb-4 grid gap-3 border-2 border-[#8b4444] bg-[#1a1a1a] p-5 text-[#e8d7c6]">
+          <h2 className="mb-1 text-xl text-[#e8d7c6]">Athlete Track Assignment</h2>
 
-          <label style={{ fontSize: '0.85rem', color: '#a0a0a0' }} htmlFor="athleteProfile">
+          <label className="text-sm text-[#a0a0a0]" htmlFor="athleteProfile">
             Active athlete profile
           </label>
           <select
             id="athleteProfile"
             value={selectedAthleteId}
             onChange={(event) => setSelectedAthleteId(event.target.value)}
-            style={{ padding: '10px', border: '2px solid #8b4444', background: '#0f0f0f', color: '#e8d7c6', fontFamily: 'monospace' }}
+            className="border-2 border-[#8b4444] bg-[#0f0f0f] px-2.5 py-2.5 font-mono text-[#e8d7c6]"
           >
             {athleteProfiles.map((profile) => (
               <option key={profile.id} value={profile.id}>
@@ -368,7 +292,7 @@ export default function AdminCapabilitiesPage() {
             ))}
           </select>
 
-          <div style={{ display: 'grid', gap: '10px', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
+          <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fit,minmax(210px,1fr))]">
             {allTrackIds.map((trackId) => {
               const assigned = assignedTracks.includes(trackId);
               return (
@@ -376,80 +300,56 @@ export default function AdminCapabilitiesPage() {
                   key={trackId}
                   type="button"
                   onClick={() => toggleTrackAssignment(trackId)}
-                  style={{
-                    textAlign: 'left',
-                    border: assigned ? '2px solid #dc2626' : '2px solid #8b4444',
-                    background: assigned ? '#4a0000' : '#0f0f0f',
-                    color: assigned ? '#ff6b6b' : '#b0a095',
-                    padding: '12px',
-                    cursor: 'pointer',
-                    display: 'grid',
-                    gap: '4px',
-                    fontFamily: 'monospace',
-                  }}
+                  className={`grid cursor-pointer gap-1 border-2 p-3 text-left font-mono ${
+                    assigned
+                      ? 'border-[#dc2626] bg-[#4a0000] text-[#ff6b6b]'
+                      : 'border-[#8b4444] bg-[#0f0f0f] text-[#b0a095]'
+                  }`}
                 >
-                  <strong style={{ fontSize: '0.9rem' }}>{trackManifests[trackId].name}</strong>
-                  <span style={{ fontSize: '0.75rem', color: assigned ? '#d4a574' : '#8a8a8a' }}>{assigned ? 'Assigned' : 'Not assigned'}</span>
+                  <strong className="text-sm">{trackManifests[trackId].name}</strong>
+                  <span className={`text-xs ${assigned ? 'text-[#d4a574]' : 'text-[#8a8a8a]'}`}>{assigned ? 'Assigned' : 'Not assigned'}</span>
                 </button>
               );
             })}
           </div>
 
-          <p style={{ margin: 0, fontSize: '0.78rem', color: '#8a8a8a' }}>
+          <p className="m-0 text-xs text-[#8a8a8a]">
             Athlete dashboards now only surface assigned tracks. Athletes can still review the full track catalog in read-only mode.
           </p>
         </section>
 
-        <section
-          style={{
-            display: 'grid',
-            gap: '12px',
-            padding: '18px',
-            border: '2px solid #8b4444',
-            background: '#1a1a1a',
-            marginBottom: '18px',
-            color: '#e8d7c6',
-          }}
-        >
-          <h2 style={{ fontSize: '1.2rem', marginBottom: '4px', color: '#e8d7c6' }}>Add Capability</h2>
+        <section className="mb-4 grid gap-3 border-2 border-[#8b4444] bg-[#1a1a1a] p-5 text-[#e8d7c6]">
+          <h2 className="mb-1 text-xl text-[#e8d7c6]">Add Capability</h2>
 
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder="Capability name"
-            style={{ padding: '10px', border: '2px solid #8b4444', background: '#0f0f0f', color: '#e8d7c6', fontFamily: 'monospace' }}
+            className="border-2 border-[#8b4444] bg-[#0f0f0f] px-2.5 py-2.5 font-mono text-[#e8d7c6]"
           />
 
           <input
             value={group}
             onChange={(event) => setGroup(event.target.value)}
             placeholder="Capability group"
-            style={{ padding: '10px', border: '2px solid #8b4444', background: '#0f0f0f', color: '#e8d7c6', fontFamily: 'monospace' }}
+            className="border-2 border-[#8b4444] bg-[#0f0f0f] px-2.5 py-2.5 font-mono text-[#e8d7c6]"
           />
 
           <select
             value={status}
             onChange={(event) => setStatus(event.target.value as CapabilityStatus)}
-            style={{ padding: '10px', border: '2px solid #8b4444', background: '#0f0f0f', color: '#e8d7c6', fontFamily: 'monospace' }}
+            className="border-2 border-[#8b4444] bg-[#0f0f0f] px-2.5 py-2.5 font-mono text-[#e8d7c6]"
           >
             <option value="DRAFT">DRAFT</option>
             <option value="ACTIVE">ACTIVE</option>
             <option value="BLOCKED">BLOCKED</option>
           </select>
 
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <div className="flex flex-wrap gap-2.5">
             <button
               type="button"
               onClick={addCapability}
-              style={{
-                padding: '10px 14px',
-                border: '2px solid #8b4444',
-                background: '#dc2626',
-                color: '#e8d7c6',
-                cursor: 'pointer',
-                fontFamily: 'monospace',
-                fontWeight: 'bold',
-              }}
+              className="cursor-pointer border-2 border-[#8b4444] bg-[#dc2626] px-3.5 py-2.5 font-mono font-bold text-[#e8d7c6]"
             >
               Add Capability
             </button>
@@ -457,63 +357,80 @@ export default function AdminCapabilitiesPage() {
             <button
               type="button"
               onClick={exportCapabilities}
-              style={{
-                padding: '10px 14px',
-                border: '2px solid #8b4444',
-                background: '#0f0f0f',
-                color: '#d4a574',
-                cursor: 'pointer',
-                fontFamily: 'monospace',
-                fontWeight: 'bold',
-              }}
+              className="cursor-pointer border-2 border-[#8b4444] bg-[#0f0f0f] px-3.5 py-2.5 font-mono font-bold text-[#d4a574]"
             >
               Export JSON
             </button>
           </div>
         </section>
 
-        <section
-          style={{
-            border: '2px solid #8b4444',
-            background: '#1a1a1a',
-            padding: '18px',
-            color: '#e8d7c6',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-            <h2 style={{ fontSize: '1.2rem', color: '#e8d7c6' }}>Capability Catalog ({filteredCapabilities.length})</h2>
+        <section className="border-2 border-[#8b4444] bg-[#1a1a1a] p-5 text-[#e8d7c6]">
+          <div className="flex flex-wrap justify-between gap-3">
+            <h2 className="text-xl text-[#e8d7c6]">Capability Catalog ({filteredCapabilities.length})</h2>
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search by name, group, or status"
-              style={{ padding: '10px', border: '2px solid #8b4444', background: '#0f0f0f', color: '#e8d7c6', fontFamily: 'monospace', minWidth: '260px' }}
+              className="min-w-[260px] border-2 border-[#8b4444] bg-[#0f0f0f] px-2.5 py-2.5 font-mono text-[#e8d7c6]"
             />
           </div>
 
-          <div style={{ marginTop: '16px', display: 'grid', gap: '10px' }}>
-            {filteredCapabilities.map((capability) => (
-              <article
-                key={capability.id}
-                style={{
-                  border: '1px solid #4a4a4a',
-                  padding: '12px',
-                  display: 'grid',
-                  gap: '4px',
-                  background: '#0f0f0f',
-                  color: '#e8d7c6',
-                }}
-              >
-                <strong>
-                  #{capability.id} - {capability.name}
-                </strong>
-                <span style={{ color: '#b0a095' }}>Group: {capability.group}</span>
-                <span style={{ color: '#b0a095' }}>Status: <span style={{ color: capability.status === 'ACTIVE' ? '#dc2626' : capability.status === 'BLOCKED' ? '#ff6b6b' : '#d4a574' }}>{capability.status}</span></span>
-              </article>
-            ))}
+          <div className="mt-4 grid gap-2.5">
+            {filteredCapabilities.map((capability) => {
+              let statusClass = 'text-[#d4a574]';
+              if (capability.status === 'ACTIVE') {
+                statusClass = 'text-[#dc2626]';
+              } else if (capability.status === 'BLOCKED') {
+                statusClass = 'text-[#ff6b6b]';
+              }
+
+              return (
+                <article
+                  key={capability.id}
+                  className="grid gap-1 border border-[#4a4a4a] bg-[#0f0f0f] p-3 text-[#e8d7c6]"
+                >
+                  <strong>
+                    #{capability.id} - {capability.name}
+                  </strong>
+                  <span className="text-[#b0a095]">Group: {capability.group}</span>
+                  <span className="text-[#b0a095]">Status: <span className={statusClass}>{capability.status}</span></span>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCapabilityStatus(capability.id, 'DRAFT')}
+                      className="border border-[#5a4a3a] bg-[#1a1a1a] px-2 py-1 text-xs font-mono text-[#b0a095] transition hover:border-[#d4a574] hover:text-[#e8d7c6]"
+                    >
+                      Set DRAFT
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCapabilityStatus(capability.id, 'ACTIVE')}
+                      className="border border-[#8b4444] bg-[#5a2a2a] px-2 py-1 text-xs font-mono text-[#e8d7c6] transition hover:border-[#d4a574]"
+                    >
+                      Set ACTIVE
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCapabilityStatus(capability.id, 'BLOCKED')}
+                      className="border border-[#dc2626] bg-[#450a0a] px-2 py-1 text-xs font-mono text-[#fca5a5] transition hover:border-[#ff6b6b]"
+                    >
+                      Set BLOCKED
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeCapability(capability.id)}
+                      className="border border-[#4a4a4a] bg-[#0a0a0a] px-2 py-1 text-xs font-mono text-[#b0a095] transition hover:border-[#ff6b6b] hover:text-[#fca5a5]"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         </section>
       </div>
-    </main>
+      </main>
     </RoleSessionGate>
   );
 }
