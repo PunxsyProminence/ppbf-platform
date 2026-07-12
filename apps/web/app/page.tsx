@@ -19,11 +19,11 @@ export default function HomePage() {
   }, [router]);
 
   return (
-    <main className="min-h-screen bg-[#0a0a0a] text-[#e5e5e5]">
+    <main className="min-h-screen bg-[#0a0a0a] text-[#e8d7c6]">
       <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col items-center justify-center px-6 py-10 text-center lg:px-10">
-        <p className="text-xs font-mono uppercase tracking-[0.35em] text-[#c85a17]">PPBF Platform</p>
-        <h1 className="font-display mt-3 text-4xl font-black tracking-tight md:text-5xl">Taking You Where You Belong</h1>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-[#a0a0a0] md:text-base">Get your hands taped and head to your corner.</p>
+        <p className="text-xs font-mono uppercase tracking-[0.35em] text-[#d4a574]">PPBF Platform</p>
+        <h1 className="font-display mt-4 text-5xl font-black tracking-[0.05em] md:text-6xl">Taking You Where You Belong</h1>
+        <p className="mt-4 max-w-2xl text-sm leading-7 text-[#b0a095] md:text-base">Get your hands taped and head to your corner.</p>
       </div>
     </main>
   );
