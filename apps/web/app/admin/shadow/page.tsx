@@ -213,15 +213,15 @@ export default function AdminShadowConsolePage() {
     <RoleStandaloneView roleLabel="SHADOW Admin Console" routeLabel="/admin/shadow" allowedRoles={['admin']}>
       <main className="grid gap-6 lg:grid-cols-[1fr_380px]">
         {/* Chat Interface */}
-        <section className="border-4 border-[#8b0000] bg-[#0a0a0a]/70 p-6">
-          <div className="mb-6 border-b border-red-500/20 pb-4">
-            <p className="text-xs font-mono uppercase tracking-[0.2em] text-red-400">AI/ML Telemetry Scout</p>
-            <h2 className="mt-2 text-2xl font-black text-red-50">SHADOW Conversation Hub</h2>
-            <p className="mt-1 text-sm text-red-200/70">Data merge, platform intelligence, external source consolidation</p>
+        <section className="border-4 border-[#8b4444] bg-[#0a0a0a]/70 p-6">
+          <div className="mb-6 border-b border-[#8b4444]/20 pb-4">
+            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">AI/ML Telemetry Scout</p>
+            <h2 className="mt-2 text-2xl font-black text-[#e8d7c6]">SHADOW Conversation Hub</h2>
+            <p className="mt-1 text-sm text-[#d4a574]/70">Data merge, platform intelligence, external source consolidation</p>
           </div>
 
           {/* Messages */}
-          <div className="mb-6 max-h-[500px] space-y-4 overflow-y-auto bg-[#0f0f0f] p-4 border-4 border-[#8b0000]">
+          <div className="mb-6 max-h-[500px] space-y-4 overflow-y-auto bg-[#0f0f0f] p-4 border-4 border-[#8b4444]">
             {messages.map((msg) => (
               <div
                 key={msg.id}
@@ -230,10 +230,10 @@ export default function AdminShadowConsolePage() {
                 <div
                   className={`max-w-xs px-4 py-3 border-2 ${
                     msg.type === 'user'
-                      ? 'border-[#8b0000] bg-[#4a0000] text-[#e5e5e5]'
+                      ? 'border-[#8b4444] bg-[#5a2a2a] text-[#e8d7c6]'
                       : msg.type === 'system'
-                        ? 'border-[#b35806] bg-[#2a2a2a] text-[#e5e5e5]'
-                        : 'border-[#8b0000] bg-[#3a0000] text-[#e5e5e5]'
+                        ? 'border-[#d4a574] bg-[#2a2a2a] text-[#e8d7c6]'
+                        : 'border-[#8b4444] bg-[#4a2020] text-[#e8d7c6]'
                   }`}
                 >
                   <p className="text-sm leading-6">{msg.text}</p>
@@ -251,11 +251,11 @@ export default function AdminShadowConsolePage() {
               value={userInput}
               onChange={(e) => setUserInput(e.target.value)}
               placeholder="merge | status | list | clear ..."
-              className="flex-1 border-2 border-[#8b0000] bg-[#1a1a1a] px-4 py-3 text-sm text-[#e5e5e5] placeholder-[#b35806] outline-none transition focus:border-[#c85a17] focus:bg-[#2a2a2a]"
+              className="flex-1 border-2 border-[#8b4444] bg-[#1a1a1a] px-4 py-3 text-sm text-[#e8d7c6] placeholder-[#d4a574] outline-none transition focus:border-[#d4a574] focus:bg-[#2a2a2a]"
             />
             <button
               type="submit"
-              className="border-2 border-[#8b0000] bg-[#3a0000] px-6 py-3 text-sm font-mono font-bold text-[#e5e5e5] transition hover:border-[#c85a17] hover:bg-[#4a0000] hover:text-[#f5f5f5]"
+              className="border-2 border-[#8b4444] bg-[#4a2020] px-6 py-3 text-sm font-mono font-bold text-[#e8d7c6] transition hover:border-[#d4a574] hover:bg-[#5a3030] hover:text-[#f5f5f5]"
             >
               Send
             </button>
@@ -265,9 +265,9 @@ export default function AdminShadowConsolePage() {
         {/* Data Import & Merge Panel */}
         <aside className="space-y-4">
           {/* Import Section */}
-          <section className="border-4 border-[#b35806] bg-[#0a0a0a]/70 p-4">
-            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#c85a17]">Data Import</p>
-            <h3 className="mt-2 text-lg font-black text-[#f5f0e8]">External Sources</h3>
+          <section className="border-4 border-[#d4a574] bg-[#0a0a0a]/70 p-4">
+            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">Data Import</p>
+            <h3 className="mt-2 text-lg font-black text-[#e8d7c6]">External Sources</h3>
 
             <div className="mt-4 space-y-2">
               <input
@@ -279,39 +279,39 @@ export default function AdminShadowConsolePage() {
               />
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="w-full border-2 border-[#b35806] bg-[#2a1a0a] px-3 py-2 text-sm font-mono text-[#e5a87a] transition hover:border-[#c85a17] hover:bg-[#3a2a1a] hover:text-[#f5e5d0]"
+                className="w-full border-2 border-[#d4a574] bg-[#2a1a0a] px-3 py-2 text-sm font-mono text-[#d4a574] transition hover:border-[#e8d7c6] hover:bg-[#3a2a1a] hover:text-[#e8d7c6]"
               >
                 📁 Upload File
               </button>
               {uploadedFileName && (
-                <p className="text-[11px] text-[#e5a87a]/70">Last: {uploadedFileName}</p>
+                <p className="text-[11px] text-[#d4a574]/70">Last: {uploadedFileName}</p>
               )}
             </div>
 
-            <div className="mt-4 border-t border-[#b35806]/20 pt-3">
-              <p className="text-[11px] font-mono text-[#e5a87a]/60">Quick Add:</p>
+            <div className="mt-4 border-t border-[#d4a574]/20 pt-3">
+              <p className="text-[11px] font-mono text-[#d4a574]/60">Quick Add:</p>
               <div className="mt-2 grid grid-cols-2 gap-2">
                 <button
                   onClick={() => handleManualDataEntry('workout')}
-                  className="border-2 border-[#b35806] bg-[#2a1a0a] px-2 py-1 text-[11px] text-[#e5a87a] transition hover:border-[#c85a17] hover:bg-[#3a2a1a]"
+                  className="border-2 border-[#d4a574] bg-[#2a1a0a] px-2 py-1 text-[11px] text-[#d4a574] transition hover:border-[#e8d7c6] hover:bg-[#3a2a1a]"
                 >
                   Workout
                 </button>
                 <button
                   onClick={() => handleManualDataEntry('biometric')}
-                  className="border-2 border-[#b35806] bg-[#2a1a0a] px-2 py-1 text-[11px] text-[#e5a87a] transition hover:border-[#c85a17] hover:bg-[#3a2a1a]"
+                  className="border-2 border-[#d4a574] bg-[#2a1a0a] px-2 py-1 text-[11px] text-[#d4a574] transition hover:border-[#e8d7c6] hover:bg-[#3a2a1a]"
                 >
                   Biometric
                 </button>
                 <button
                   onClick={() => handleManualDataEntry('coach-note')}
-                  className="border-2 border-[#b35806] bg-[#2a1a0a] px-2 py-1 text-[11px] text-[#e5a87a] transition hover:border-[#c85a17] hover:bg-[#3a2a1a]"
+                  className="border-2 border-[#d4a574] bg-[#2a1a0a] px-2 py-1 text-[11px] text-[#d4a574] transition hover:border-[#e8d7c6] hover:bg-[#3a2a1a]"
                 >
                   Coach Note
                 </button>
                 <button
                   onClick={() => handleManualDataEntry('video')}
-                  className="border-2 border-[#b35806] bg-[#2a1a0a] px-2 py-1 text-[11px] text-[#e5a87a] transition hover:border-[#c85a17] hover:bg-[#3a2a1a]"
+                  className="border-2 border-[#d4a574] bg-[#2a1a0a] px-2 py-1 text-[11px] text-[#d4a574] transition hover:border-[#e8d7c6] hover:bg-[#3a2a1a]"
                 >
                   Video
                 </button>
@@ -321,13 +321,13 @@ export default function AdminShadowConsolePage() {
 
           {/* Imported Data */}
           {dataSets.length > 0 && (
-            <section className="border-4 border-[#8b0000] bg-[#0a0a0a]/70 p-4">
-              <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#c85a17]">Data Sets</p>
+            <section className="border-4 border-[#8b4444] bg-[#0a0a0a]/70 p-4">
+              <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">Data Sets</p>
               <div className="mt-3 space-y-2">
                 {dataSets.map((ds, idx) => (
-                  <div key={idx} className="border-2 border-[#8b0000] bg-[#1a1a1a]/20 p-2">
-                    <p className="text-xs font-mono text-[#e5a87a]">{ds.label}</p>
-                    <p className="text-[10px] text-[#c85a17]/70">
+                  <div key={idx} className="border-2 border-[#8b4444] bg-[#1a1a1a]/20 p-2">
+                    <p className="text-xs font-mono text-[#d4a574]">{ds.label}</p>
+                    <p className="text-[10px] text-[#d4a574]/70">
                       {ds.type} • {Object.keys(ds.data).length} records
                     </p>
                   </div>
@@ -338,11 +338,11 @@ export default function AdminShadowConsolePage() {
 
           {/* Merge Log */}
           {mergeLog.length > 0 && (
-            <section className="border-4 border-[#8b0000] bg-[#0a0a0a]/70 p-4">
-              <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#c85a17]">Merge Log</p>
+            <section className="border-4 border-[#8b4444] bg-[#0a0a0a]/70 p-4">
+              <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">Merge Log</p>
               <div className="mt-3 space-y-1 font-mono text-[10px]">
                 {mergeLog.map((log, idx) => (
-                  <p key={idx} className="text-[#e5a87a]/80">
+                  <p key={idx} className="text-[#d4a574]/80">
                     {log}
                   </p>
                 ))}

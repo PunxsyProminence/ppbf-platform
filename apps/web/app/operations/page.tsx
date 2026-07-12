@@ -27,29 +27,29 @@ const supportSurfaces = [
 export default function OperationsHubPage() {
   return (
     <RoleSessionGate allowedRoles={roleRoutes.map((route) => route.role)}>
-    <main className="min-h-screen bg-[#0a0a0a] text-[#e5e5e5]">
+    <main className="min-h-screen bg-[#0a0a0a] text-[#e8d7c6]">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-10 lg:px-10">
-        <header className="flex flex-col gap-4 border-b-4 border-[#8b0000] pb-6 md:flex-row md:items-end md:justify-between">
+        <header className="flex flex-col gap-4 border-b-4 border-[#8b4444] pb-6 md:flex-row md:items-end md:justify-between">
           <div className="space-y-3">
-            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[#c85a17]">The Office</p>
+            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[#d4a574]">The Office</p>
             <h1 className="font-display text-4xl font-black tracking-tight md:text-5xl">The Ring</h1>
-            <p className="max-w-3xl text-sm leading-6 text-[#c0c0c0] md:text-base">
+            <p className="max-w-3xl text-sm leading-6 text-[#e8d7c6] md:text-base">
               Every corner has its own view. Athlete. Coach. Board. Admin. Public.
             </p>
           </div>
           <Link
             href="/launch"
-            className="inline-flex items-center justify-center border-2 border-[#8b0000] bg-[#1a1a1a] px-4 py-2 text-xs font-mono font-bold text-[#dc2626] transition hover:border-[#dc2626] hover:bg-[#2a2a2a] hover:text-[#ff6b6b]"
+            className="inline-flex items-center justify-center border-2 border-[#8b4444] bg-[#1a1a1a] px-4 py-2 text-xs font-mono font-bold text-[#8b4444] transition hover:border-[#8b4444] hover:bg-[#2a2a2a] hover:text-[#d4a574]"
           >
             Jump In
           </Link>
         </header>
 
         <section className="mt-8 grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
-          <div className="border-4 border-[#8b0000] bg-[#1a1a1a] p-6 shadow-2xl shadow-black/60">
-            <div className="flex items-center justify-between gap-4 border-b-4 border-[#8b0000] pb-4">
-              <h2 className="font-display text-lg font-semibold text-[#e5e5e5]">The Boards</h2>
-              <span className="border-2 border-[#dc2626] bg-[#2a2a2a] px-3 py-1 text-[11px] font-mono text-[#dc2626]">
+          <div className="border-4 border-[#8b4444] bg-[#1a1a1a] p-6 shadow-2xl shadow-black/60">
+            <div className="flex items-center justify-between gap-4 border-b-4 border-[#8b4444] pb-4">
+              <h2 className="font-display text-lg font-semibold text-[#e8d7c6]">The Boards</h2>
+              <span className="border-2 border-[#8b4444] bg-[#2a2a2a] px-3 py-1 text-[11px] font-mono text-[#8b4444]">
                 Open to All
               </span>
             </div>
@@ -59,15 +59,15 @@ export default function OperationsHubPage() {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className="group border-2 border-[#8b0000] bg-[#0f0f0f] p-5 transition hover:border-[#dc2626] hover:bg-[#1f1f1f]"
+                  className="group border-2 border-[#8b4444] bg-[#0f0f0f] p-5 transition hover:border-[#d4a574] hover:bg-[#1f1f1f]"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#b35806] group-hover:text-[#dc2626]">Your Corner</p>
-                      <h3 className="font-display mt-2 text-xl font-black text-[#e5e5e5]">{item.label}</h3>
-                      <p className="mt-2 text-sm leading-6 text-[#a0a0a0] group-hover:text-[#c0c0c0]">{item.description}</p>
+                      <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574] group-hover:text-[#d4a574]">Your Corner</p>
+                      <h3 className="font-display mt-2 text-xl font-black text-[#e8d7c6]">{item.label}</h3>
+                      <p className="mt-2 text-sm leading-6 text-[#b0a095] group-hover:text-[#e8d7c6]">{item.description}</p>
                     </div>
-                    <span className="border-2 border-[#8b0000] bg-[#0a0a0a] px-3 py-1 text-[11px] font-mono text-[#b0b0b0]">
+                    <span className="border-2 border-[#8b4444] bg-[#0a0a0a] px-3 py-1 text-[11px] font-mono text-[#b0a095]">
                       Open
                     </span>
                   </div>
@@ -77,8 +77,8 @@ export default function OperationsHubPage() {
           </div>
 
           <aside className="grid gap-6">
-            <section className="border-4 border-[#8b0000] bg-[#1a1a1a] p-6">
-              <h2 className="font-display text-lg font-semibold text-[#e5e5e5]">Quick Counters</h2>
+            <section className="border-4 border-[#8b4444] bg-[#1a1a1a] p-6">
+              <h2 className="font-display text-lg font-semibold text-[#e8d7c6]">Quick Counters</h2>
               <div className="mt-4 grid gap-3">
                 {supportSurfaces.map((item) => (
                   <Link
@@ -86,8 +86,8 @@ export default function OperationsHubPage() {
                     href={item.href}
                     className={`border-2 px-4 py-3 text-sm transition ${
                       item.highlight
-                        ? 'border-[#dc2626] bg-[#2a1a1a] text-[#ff6b6b] hover:border-[#ff6b6b] hover:bg-[#3a2a2a] hover:text-[#ffaaaa]'
-                        : 'border-[#8b0000] bg-[#0f0f0f] text-[#c0c0c0] hover:border-[#dc2626] hover:bg-[#1a1a1a] hover:text-[#e5e5e5]'
+                        ? 'border-[#8b4444] bg-[#2a1a1a] text-[#d4a574] hover:border-[#d4a574] hover:bg-[#3a2a1a] hover:text-[#e8d7c6]'
+                        : 'border-[#8b4444] bg-[#0f0f0f] text-[#e8d7c6] hover:border-[#d4a574] hover:bg-[#1a1a1a] hover:text-[#e8d7c6]'
                     }`}
                   >
                     {item.label}
@@ -96,9 +96,9 @@ export default function OperationsHubPage() {
               </div>
             </section>
 
-            <section className="border-4 border-[#b35806] bg-[#1f1f1f] p-6 text-sm text-[#e5e5e5]">
-              <h2 className="font-display text-lg font-semibold text-[#c85a17]">Psst</h2>
-              <p className="mt-3 leading-6 text-[#a0a0a0]">
+            <section className="border-4 border-[#d4a574] bg-[#1f1f1f] p-6 text-sm text-[#e8d7c6]">
+              <h2 className="font-display text-lg font-semibold text-[#d4a574]">Psst</h2>
+              <p className="mt-3 leading-6 text-[#b0a095]">
                 Only members can see the full schedule. You gotta sign in first.
               </p>
             </section>
