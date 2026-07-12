@@ -21,13 +21,13 @@ export default function ResearchIntakePage() {
       ]}
     >
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="border-2 border-[#8b0000] bg-[#1a1a1a]/60 p-4">
-          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-[#c85a17]">Intake fields</p>
-          <p className="mt-2 text-sm leading-6 text-[#e5e5e5]">Use this page for note capture, citations, and project context before anything becomes governed content.</p>
+        <div className="border-2 border-[#8b4444] bg-[#1a1a1a]/60 p-4">
+          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-[#d4a574]">Intake fields</p>
+          <p className="mt-2 text-sm leading-6 text-[#e8d7c6]">Use this page for note capture, citations, and project context before anything becomes governed content.</p>
         </div>
-        <div className="border-2 border-[#8b0000] bg-[#1a1a1a]/60 p-4">
-          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-[#c85a17]">Q&A Chat</p>
-          <p className="mt-2 text-sm leading-6 text-[#e5e5e5]">Ask questions about training science, platform capabilities, SHADOW specs, and research methodology.</p>
+        <div className="border-2 border-[#8b4444] bg-[#1a1a1a]/60 p-4">
+          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-[#d4a574]">Q&A Chat</p>
+          <p className="mt-2 text-sm leading-6 text-[#e8d7c6]">Ask questions about training science, platform capabilities, SHADOW specs, and research methodology.</p>
         </div>
       </div>
     </FeatureSurface>

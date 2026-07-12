@@ -19,17 +19,17 @@ export default function PublicPortalPage() {
       ]}
     >
       <div className="grid gap-4 md:grid-cols-3">
-        <div className="border-2 border-[#8b0000] bg-[#1a1a1a]/60 p-4">
-          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-[#c85a17]">What it does</p>
-          <p className="mt-2 text-sm leading-6 text-[#e5e5e5]">Presents the organization, core programs, and a simple route into the platform.</p>
+        <div className="border-2 border-[#8b4444] bg-[#1a1a1a]/60 p-4">
+          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-[#d4a574]">What it does</p>
+          <p className="mt-2 text-sm leading-6 text-[#e8d7c6]">Presents the organization, core programs, and a simple route into the platform.</p>
         </div>
-        <div className="border-2 border-[#8b0000] bg-[#1a1a1a]/60 p-4">
-          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-[#c85a17]">Front door</p>
-          <p className="mt-2 text-sm leading-6 text-[#e5e5e5]">Designed as a non-transactional public surface with no private data exposure.</p>
+        <div className="border-2 border-[#8b4444] bg-[#1a1a1a]/60 p-4">
+          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-[#d4a574]">Front door</p>
+          <p className="mt-2 text-sm leading-6 text-[#e8d7c6]">Designed as a non-transactional public surface with no private data exposure.</p>
         </div>
-        <div className="border-2 border-[#8b0000] bg-[#1a1a1a]/60 p-4">
-          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-[#c85a17]">Next step</p>
-          <p className="mt-2 text-sm leading-6 text-[#e5e5e5]">Add contact intake, partner cards, or a public FAQ when you want to expand the story.</p>
+        <div className="border-2 border-[#8b4444] bg-[#1a1a1a]/60 p-4">
+          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-[#d4a574]">Next step</p>
+          <p className="mt-2 text-sm leading-6 text-[#e8d7c6]">Add contact intake, partner cards, or a public FAQ when you want to expand the story.</p>
         </div>
       </div>
     </FeatureSurface>

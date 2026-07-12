@@ -19,17 +19,17 @@ export default function GuardianPortalPage() {
       ]}
     >
       <div className="grid gap-4 lg:grid-cols-3">
-        <div className="border-2 border-[#8b0000] bg-[#1a1a1a]/60 p-4">
-          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-[#c85a17]">Attendance</p>
-          <p className="mt-2 text-sm leading-6 text-[#e5e5e5]">Shows check-ins, streaks, and whether the participant has met minimum participation expectations.</p>
+        <div className="border-2 border-[#8b4444] bg-[#1a1a1a]/60 p-4">
+          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-[#d4a574]">Attendance</p>
+          <p className="mt-2 text-sm leading-6 text-[#e8d7c6]">Shows check-ins, streaks, and whether the participant has met minimum participation expectations.</p>
         </div>
-        <div className="border-2 border-[#8b0000] bg-[#1a1a1a]/60 p-4">
-          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-[#c85a17]">Safety notes</p>
-          <p className="mt-2 text-sm leading-6 text-[#e5e5e5]">Surface for injury flags, recovery holds, and any restricted training guidance.</p>
+        <div className="border-2 border-[#8b4444] bg-[#1a1a1a]/60 p-4">
+          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-[#d4a574]">Safety notes</p>
+          <p className="mt-2 text-sm leading-6 text-[#e8d7c6]">Surface for injury flags, recovery holds, and any restricted training guidance.</p>
         </div>
-        <div className="border-2 border-[#8b0000] bg-[#1a1a1a]/60 p-4">
-          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-[#c85a17]">Home follow-up</p>
-          <p className="mt-2 text-sm leading-6 text-[#e5e5e5]">A place for at-home practice prompts, family reminders, and message acknowledgements.</p>
+        <div className="border-2 border-[#8b4444] bg-[#1a1a1a]/60 p-4">
+          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-[#d4a574]">Home follow-up</p>
+          <p className="mt-2 text-sm leading-6 text-[#e8d7c6]">A place for at-home practice prompts, family reminders, and message acknowledgements.</p>
         </div>
       </div>
     </FeatureSurface>
