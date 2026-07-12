@@ -399,10 +399,10 @@ export default function AthleteWorkspace() {
 
       {/* --- DRILL LIBRARY VIEW --- */}
       {activeTab === 'education' && (
-        <div className="bg-[#0a0a0a] border-2 border-[#8b0000] p-6 space-y-6 animate-fadeIn">
+        <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-6 space-y-6 animate-fadeIn">
           <div className="border-b border-[#4a4a4a] pb-3 flex flex-col md:flex-row justify-between md:items-center gap-3">
             <div>
-              <h3 className="text-base font-bold font-mono text-[#e5e5e5]">Layer 07: Drill Library & Physical Handouts</h3>
+              <h3 className="text-base font-bold font-mono text-[#e8d7c6]">Layer 07: Drill Library & Physical Handouts</h3>
               <p className="text-xs text-[#a0a0a0] font-mono mt-0.5">Explore physical lesson items, technical boxing drills, and biomechanical cues.</p>
             </div>
             <input

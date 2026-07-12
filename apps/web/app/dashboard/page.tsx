@@ -18,7 +18,7 @@ export default function DashboardEntryPage() {
   }, [router]);
 
   return (
-    <main className="min-h-screen bg-[#0a0a0a] text-[#e5e5e5]">
+    <main className="min-h-screen bg-[#0a0a0a] text-[#e8d7c6]">
       <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col items-center justify-center px-6 py-10 text-center lg:px-10">
         <p className="text-xs font-mono uppercase tracking-[0.35em] text-[#d4a574]">Dashboard Entry</p>
         <h1 className="mt-3 text-4xl font-black tracking-tight md:text-5xl">The Bell</h1>

@@ -30,7 +30,7 @@ export default function SparringTelemetryPage() {
       style={{
         minHeight: '100vh',
         background: 'linear-gradient(180deg, #0a0a0a 0%, #0f0f0f 100%)',
-        color: '#e5e5e5',
+        color: '#e8d7c6',
       }}
     >
       <header

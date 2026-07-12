@@ -350,7 +350,7 @@ export default function AdminCapabilitiesPage() {
             color: '#e8d7c6',
           }}
         >
-          <h2 style={{ fontSize: '1.2rem', marginBottom: '4px', color: '#e5e5e5' }}>Athlete Track Assignment</h2>
+          <h2 style={{ fontSize: '1.2rem', marginBottom: '4px', color: '#e8d7c6' }}>Athlete Track Assignment</h2>
 
           <label style={{ fontSize: '0.85rem', color: '#a0a0a0' }} htmlFor="athleteProfile">
             Active athlete profile

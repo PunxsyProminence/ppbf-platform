@@ -14,7 +14,7 @@ interface BoardMemberDashboardProps {
 export default function BoardMemberDashboard({ title, seatLabel, focus, metrics, links, allowedRoles }: BoardMemberDashboardProps) {
   return (
     <RoleSessionGate allowedRoles={allowedRoles}>
-      <main className="min-h-screen bg-linear-gradient(180deg,#0a0a0a 0%,#0f0f0f 100%) text-[#e5e5e5]">
+      <main className="min-h-screen bg-linear-gradient(180deg,#0a0a0a 0%,#0f0f0f 100%) text-[#e8d7c6]">
       <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-6 py-10 lg:px-10">
         <header className="flex flex-col gap-4 border-b border-[#8b4444] pb-6 md:flex-row md:items-end md:justify-between">
           <div className="space-y-3">
