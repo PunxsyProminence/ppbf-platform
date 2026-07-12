@@ -10,7 +10,7 @@ const launchMilestones = [
 const launchLinks = [
   { label: 'Member login', href: '/login' },
   { label: 'Dashboard entry', href: '/dashboard' },
-  { label: 'Master console', href: '/' },
+  { label: 'Operations Hub', href: '/operations' },
   { label: 'Athlete dashboard', href: '/athlete/dashboard' },
   { label: 'Coach review queue', href: '/coach/review-queue' },
   { label: 'Board hub', href: '/board' },
@@ -81,7 +81,7 @@ export default function LaunchPortalPage() {
             <section className="rounded-3xl border border-amber-500/20 bg-amber-500/10 p-6 text-sm text-amber-100">
               <h2 className="text-lg font-semibold text-amber-50">Go-live note</h2>
               <p className="mt-3 leading-6 text-amber-50/90">
-                The launch portal is restored and published. Use this surface as the canonical entry point for
+                The Launch Portal is restored and published. Use this surface as the canonical entry point for
                 production monitoring and operator handoff.
               </p>
             </section>

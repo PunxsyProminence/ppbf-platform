@@ -23,10 +23,10 @@ export default function BoardHubPage() {
             </p>
           </div>
           <Link
-            href="/"
+            href="/operations"
             className="inline-flex items-center justify-center rounded-2xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-xs font-mono font-bold text-emerald-300 transition hover:bg-emerald-500/20 hover:text-emerald-200"
           >
-            Main operation hub
+            Operations Hub
           </Link>
         </header>
 

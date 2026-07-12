@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
 
@@ -196,7 +197,38 @@ export default function AdminCapabilitiesPage() {
         <div>
           <strong>PPBF</strong> Platform
         </div>
-        <div style={{ fontSize: '0.9rem' }}>Governed by Layer 0</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <Link
+            href="/operations"
+            style={{
+              fontSize: '0.8rem',
+              border: '1px solid rgba(34,211,238,0.5)',
+              background: 'rgba(34,211,238,0.15)',
+              color: '#cffafe',
+              borderRadius: '8px',
+              padding: '6px 10px',
+              textDecoration: 'none',
+              fontWeight: 700,
+            }}
+          >
+            Operations Hub
+          </Link>
+          <Link
+            href="/launch"
+            style={{
+              fontSize: '0.8rem',
+              border: '1px solid #4b5563',
+              color: '#e5e7eb',
+              borderRadius: '8px',
+              padding: '6px 10px',
+              textDecoration: 'none',
+              fontWeight: 700,
+            }}
+          >
+            Launch Portal
+          </Link>
+          <div style={{ fontSize: '0.9rem' }}>Governed by Layer 0</div>
+        </div>
       </header>
 
       <section

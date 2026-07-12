@@ -20,6 +20,12 @@ export default function FeatureSurface({
   stats,
   children,
 }: FeatureSurfaceProps) {
+  const quickLinks = [
+    ...primaryLinks,
+    { label: 'Operations Hub', href: '/operations' },
+    { label: 'Launch Portal', href: '/launch' },
+  ].filter((link, index, all) => all.findIndex((item) => item.href === link.href) === index);
+
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.14),_transparent_32%),linear-gradient(180deg,#020617_0%,#0b1120_100%)] text-slate-100">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-10 lg:px-10">
@@ -54,7 +60,7 @@ export default function FeatureSurface({
             <section className="rounded-3xl border border-slate-800 bg-slate-950/70 p-6">
               <h2 className="text-lg font-semibold text-slate-100">Quick links</h2>
               <div className="mt-4 grid gap-3">
-                {primaryLinks.map((item) => (
+                {quickLinks.map((item) => (
                   <Link
                     key={item.href}
                     href={item.href}

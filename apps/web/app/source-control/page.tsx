@@ -9,7 +9,7 @@ export default function SourceControlPage() {
       status="ready"
       primaryLinks={[
         { label: 'Audit trace', href: '/audit' },
-        { label: 'Master console', href: '/' },
+        { label: 'Operations Hub', href: '/operations' },
       ]}
       stats={[
         { label: 'Drafts', value: 'Queued' },

@@ -113,8 +113,8 @@ export default function BoardMemberPage({ params }: { params: { member: string }
       ]}
       links={[
         { label: 'Board hub', href: '/board' },
-        { label: 'Main operation hub', href: '/' },
-        { label: 'Launch portal', href: '/launch' },
+        { label: 'Operations Hub', href: '/operations' },
+        { label: 'Launch Portal', href: '/launch' },
       ]}
     />
   );

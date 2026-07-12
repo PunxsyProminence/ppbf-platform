@@ -9,7 +9,7 @@ export default function GuardianPortalPage() {
       status="ready"
       primaryLinks={[
         { label: 'Athlete dashboard', href: '/athlete/dashboard' },
-        { label: 'Launch portal', href: '/launch' },
+        { label: 'Launch Portal', href: '/launch' },
       ]}
       stats={[
         { label: 'Audience', value: 'Guardians' },

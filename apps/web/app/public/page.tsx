@@ -8,8 +8,8 @@ export default function PublicPortalPage() {
       description="A lightweight public-facing landing surface for visitors, partners, and first-time participants."
       status="ready"
       primaryLinks={[
-        { label: 'Launch portal', href: '/launch' },
-        { label: 'Master console', href: '/' },
+        { label: 'Launch Portal', href: '/launch' },
+        { label: 'Operations Hub', href: '/operations' },
       ]}
       stats={[
         { label: 'Audience', value: 'Visitors' },

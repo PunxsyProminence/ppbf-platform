@@ -25,10 +25,16 @@ export default function RoleStandaloneView({ roleLabel, routeLabel, allowedRoles
                 {routeLabel}
               </span>
               <Link
+                href="/operations"
+                className="rounded-md border border-cyan-500/40 bg-cyan-500/10 px-3 py-1 text-[11px] font-mono text-cyan-200 transition hover:border-cyan-300/70 hover:text-cyan-100"
+              >
+                Operations Hub
+              </Link>
+              <Link
                 href="/launch"
                 className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1 text-[11px] font-mono text-slate-300 transition hover:border-slate-500 hover:text-slate-100"
               >
-                Launch
+                Launch Portal
               </Link>
             </div>
           </div>
