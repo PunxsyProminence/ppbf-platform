@@ -16,7 +16,7 @@ export default function ResearchQAChatPage() {
     {
       id: '0',
       type: 'system',
-      text: 'Research Q&A Chat initialized. Ask questions about training, techniques, science, or platform usage.',
+      text: "The library's open. Ask questions about training, techniques, science, or how this place works.",
       timestamp: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
     },
   ]);

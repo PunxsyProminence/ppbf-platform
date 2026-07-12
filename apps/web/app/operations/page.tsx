@@ -3,25 +3,25 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import { roleRoutes } from '@/components/roleRoutes';
 
 const primaryDashboards = [
-  { label: 'Athlete dashboard', href: '/athlete/dashboard', description: 'Personal training, readiness, and sparring surfaces.' },
-  { label: 'Coach dashboard', href: '/coach/review-queue', description: 'Review queue and intake workflow for daily coaching.' },
-  { label: 'Board hub', href: '/board', description: 'One dashboard per board seat for governance and oversight.' },
-  { label: 'Admin dashboard', href: '/admin', description: 'Capability control and platform governance.' },
+  { label: 'Athlete dashboard', href: '/athlete/dashboard', description: 'Your corner. Readiness, training log, sparring setup.' },
+  { label: 'Coach dashboard', href: '/coach/review-queue', description: 'Review your fighters, daily intake, game plans.' },
+  { label: 'Board hub', href: '/board', description: 'Governance and oversight—all board seats.' },
+  { label: 'Admin dashboard', href: '/admin', description: 'Train smart. Manage the gym.' },
 ];
 
 const supportSurfaces = [
-  { label: 'Member login', href: '/login' },
-  { label: 'Dashboard entry', href: '/dashboard' },
-  { label: 'Launch Portal', href: '/launch' },
-  { label: 'SHADOW Console (Admin)', href: '/admin/shadow', highlight: true },
-  { label: 'Public portal', href: '/public' },
-  { label: 'Guardian portal', href: '/guardian' },
-  { label: 'Research intake', href: '/research' },
-  { label: 'Evidence review', href: '/evidence' },
-  { label: 'Audit trace', href: '/audit' },
-  { label: 'Scenario simulator', href: '/simulator' },
-  { label: 'Knowledge graph', href: '/knowledge-graph' },
-  { label: 'Source control', href: '/source-control' },
+  { label: 'The Bell', href: '/login' },
+  { label: 'Entry Point', href: '/dashboard' },
+  { label: 'Jump In', href: '/launch' },
+  { label: 'The Office', href: '/admin/shadow', highlight: true },
+  { label: 'The Bleachers', href: '/public' },
+  { label: 'The Stands', href: '/guardian' },
+  { label: 'The Library', href: '/research' },
+  { label: 'Evidence Box', href: '/evidence' },
+  { label: 'The Book', href: '/audit' },
+  { label: 'Shadow Box', href: '/simulator' },
+  { label: 'The Encyclopedia', href: '/knowledge-graph' },
+  { label: 'The Archive', href: '/source-control' },
 ];
 
 export default function OperationsHubPage() {
@@ -31,26 +31,26 @@ export default function OperationsHubPage() {
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-10 lg:px-10">
         <header className="flex flex-col gap-4 border-b border-slate-800 pb-6 md:flex-row md:items-end md:justify-between">
           <div className="space-y-3">
-            <p className="text-xs font-mono uppercase tracking-[0.35em] text-emerald-300/80">Main Operation Hub</p>
-            <h1 className="text-4xl font-black tracking-tight md:text-5xl">PPBF platform dashboards</h1>
+            <p className="text-xs font-mono uppercase tracking-[0.35em] text-emerald-300/80">The Office</p>
+            <h1 className="text-4xl font-black tracking-tight md:text-5xl">The Ring: Your Dashboard</h1>
             <p className="max-w-3xl text-sm leading-6 text-slate-300 md:text-base">
-              One clean dashboard per user group: athlete, coach, board member, admin, plus supporting public and governance surfaces.
+              Every corner has its own view. Athlete. Coach. Board. Admin. Public.
             </p>
           </div>
           <Link
             href="/launch"
             className="inline-flex items-center justify-center rounded-2xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-xs font-mono font-bold text-emerald-300 transition hover:bg-emerald-500/20 hover:text-emerald-200"
           >
-            Launch Portal
+            Jump In
           </Link>
         </header>
 
         <section className="mt-8 grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
           <div className="rounded-3xl border border-slate-800 bg-slate-950/70 p-6 shadow-2xl shadow-black/20">
             <div className="flex items-center justify-between gap-4 border-b border-slate-800 pb-4">
-              <h2 className="text-lg font-semibold text-slate-100">Primary dashboards</h2>
+              <h2 className="text-lg font-semibold text-slate-100">The Boards</h2>
               <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[11px] font-mono text-emerald-300">
-                User friendly
+                Open to All
               </span>
             </div>
 
@@ -63,7 +63,7 @@ export default function OperationsHubPage() {
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <p className="text-xs font-mono uppercase tracking-[0.2em] text-slate-500 group-hover:text-emerald-300">Dashboard</p>
+                      <p className="text-xs font-mono uppercase tracking-[0.2em] text-slate-500 group-hover:text-emerald-300">Your Corner</p>
                       <h3 className="mt-2 text-xl font-black text-slate-100">{item.label}</h3>
                       <p className="mt-2 text-sm leading-6 text-slate-400 group-hover:text-slate-300">{item.description}</p>
                     </div>
@@ -78,7 +78,7 @@ export default function OperationsHubPage() {
 
           <aside className="grid gap-6">
             <section className="rounded-3xl border border-slate-800 bg-slate-950/70 p-6">
-              <h2 className="text-lg font-semibold text-slate-100">Support surfaces</h2>
+              <h2 className="text-lg font-semibold text-slate-100">Quick Counters</h2>
               <div className="mt-4 grid gap-3">
                 {supportSurfaces.map((item) => (
                   <Link
@@ -97,9 +97,9 @@ export default function OperationsHubPage() {
             </section>
 
             <section className="rounded-3xl border border-cyan-500/20 bg-cyan-500/10 p-6 text-sm text-cyan-50">
-              <h2 className="text-lg font-semibold text-cyan-50">Hub note</h2>
+              <h2 className="text-lg font-semibold text-cyan-50">Psst</h2>
               <p className="mt-3 leading-6 text-cyan-50/90">
-                This operations page is available after login-first routing from the home URL.
+                Only members can see the full schedule. You gotta sign in first.
               </p>
             </section>
           </aside>

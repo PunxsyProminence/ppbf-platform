@@ -19,7 +19,7 @@ export default function ShadowChatPage() {
     {
       id: '0',
       type: 'shadow',
-      text: 'SHADOW standing by. Ask me about readiness, RPE, drills, your performance, or platform features.',
+      text: "I'm in your corner. What's the damage? Ask me about readiness, work rate, technique, or anything about training.",
       timestamp: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
     },
   ]);
@@ -84,9 +84,9 @@ export default function ShadowChatPage() {
       <header className="border-b-4 border-red-900 bg-[#1a1a1a] px-4 py-4 md:px-8 md:py-6">
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-4">
           <div>
-            <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-red-400">AI/ML Telemetry Scout</p>
-            <h1 className="text-2xl font-black tracking-tight text-red-100 md:text-3xl">SHADOW Chat</h1>
-            <p className="mt-1 text-xs text-red-300/70">Ask. Learn. Train harder.</p>
+            <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-red-400">The Scout</p>
+            <h1 className="text-2xl font-black tracking-tight text-red-100 md:text-3xl">SHADOW</h1>
+            <p className="mt-1 text-xs text-red-300/70">I'm in your corner.</p>
           </div>
           <div className="text-right">
             <p className="font-mono text-[10px] text-slate-500">Role: {userRole.toUpperCase()}</p>
@@ -126,14 +126,14 @@ export default function ShadowChatPage() {
               type="text"
               value={userInput}
               onChange={(e) => setUserInput(e.target.value)}
-              placeholder="Ask SHADOW anything..."
+              placeholder="What do you need to know?"
               className="flex-1 rounded-lg border-2 border-red-700 bg-red-950/30 px-4 py-3 text-sm text-red-50 placeholder-red-600/40 outline-none transition focus:border-red-500 focus:bg-red-950/50"
             />
             <button
               type="submit"
               className="rounded-lg border-2 border-red-700 bg-red-950/50 px-6 py-3 text-xs font-mono font-bold text-red-300 transition hover:border-red-500 hover:bg-red-900/70 hover:text-red-100"
             >
-              Send
+              Ask
             </button>
           </form>
         </section>
@@ -144,13 +144,13 @@ export default function ShadowChatPage() {
             href="/research/chat"
             className="rounded-lg border-2 border-amber-800 bg-amber-950/30 px-4 py-2 text-xs font-mono text-amber-400 transition hover:border-amber-600 hover:bg-amber-950/50"
           >
-            Research Q&A
+            The Library
           </Link>
           <Link
             href="/admin/shadow"
             className="rounded-lg border-2 border-red-800 bg-red-950/40 px-4 py-2 text-xs font-mono text-red-400 transition hover:border-red-600 hover:bg-red-950/60"
           >
-            Admin Console
+            The Office
           </Link>
           <Link
             href="/operations"

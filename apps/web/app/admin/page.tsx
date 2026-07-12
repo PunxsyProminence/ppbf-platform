@@ -30,21 +30,21 @@ const STORAGE_KEY = 'ppbf-admin-capabilities-v1';
 const fallbackCapabilities: Capability[] = [
   {
     id: 1,
-    name: 'Multi-role portals',
+    name: 'Locker Rooms for Every Role',
     group: 'Core Platform',
     status: 'DRAFT',
     createdAt: new Date().toISOString(),
   },
   {
     id: 2,
-    name: 'Participant master record service',
+    name: 'The Card File',
     group: 'Core Platform',
     status: 'DRAFT',
     createdAt: new Date().toISOString(),
   },
   {
     id: 3,
-    name: 'Goal Intake -> Routing Service',
+    name: 'Map Your Fight',
     group: 'Routing & Development',
     status: 'DRAFT',
     createdAt: new Date().toISOString(),
