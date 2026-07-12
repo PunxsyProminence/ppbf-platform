@@ -5,7 +5,7 @@
 			"rewrite": "/public.html"
 		},
 		{
-			"route": "/board/",
+			"route": "/board",
 			"rewrite": "/board.html"
 		},
 		{
