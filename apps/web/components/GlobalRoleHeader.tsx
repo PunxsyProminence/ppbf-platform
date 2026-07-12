@@ -36,11 +36,11 @@ export default function GlobalRoleHeader() {
   }
 
   return (
-    <header className="sticky top-0 z-50 border-b border-slate-800 bg-[#0b0f19]/95 backdrop-blur">
+    <header className="sticky top-0 z-50 border-b-4 border-[#8b0000] bg-[#1a1a1a]">
       <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-4 px-6 py-3">
         <div className="flex items-center gap-3">
-          <span className="text-[10px] font-mono uppercase tracking-[0.3em] text-slate-500">Session Active</span>
-          <span className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-mono uppercase text-emerald-300">
+          <span className="text-[10px] font-mono uppercase tracking-[0.3em] text-[#8a8a8a]">Session Active</span>
+          <span className="border-2 border-[#dc2626] bg-[#2a1a1a] px-2.5 py-1 text-[11px] font-mono uppercase text-[#dc2626]">
             {session.role}
           </span>
         </div>
@@ -48,20 +48,20 @@ export default function GlobalRoleHeader() {
         <div className="flex items-center gap-2">
           <Link
             href="/operations"
-            className="rounded-md border border-cyan-500/40 bg-cyan-500/10 px-3 py-1 text-[11px] font-mono text-cyan-200 transition hover:border-cyan-300/70 hover:text-cyan-100"
+            className="border-2 border-[#b35806] bg-[#1f1f1f] px-3 py-1 text-[11px] font-mono text-[#c85a17] transition hover:border-[#c85a17] hover:bg-[#2a1f1f]"
           >
             Operations
           </Link>
           <Link
             href="/launch"
-            className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1 text-[11px] font-mono text-slate-300 transition hover:border-slate-500 hover:text-slate-100"
+            className="border-2 border-[#4a4a4a] bg-[#1a1a1a] px-3 py-1 text-[11px] font-mono text-[#b0b0b0] transition hover:border-[#8a8a8a] hover:text-[#e5e5e5]"
           >
             Launch
           </Link>
           <button
             type="button"
             onClick={signOut}
-            className="rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-1 text-[11px] font-mono text-rose-200 transition hover:bg-rose-500/20"
+            className="border-2 border-[#8b0000] bg-[#1a1a1a] px-3 py-1 text-[11px] font-mono text-[#dc2626] transition hover:border-[#dc2626] hover:bg-[#2a1a1a]"
           >
             Logout
           </button>
