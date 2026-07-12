@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build && node -e \"const path=require('path');const fs=require('fs');const members=['president','chair','vice-chair','treasurer','secretary','safety-director','community-director','at-large'];members.forEach(m=>{const htmlFile=path.join(__dirname,'out','board',m+'.html');const indexDir=path.join(__dirname,'out','board',m);if(fs.existsSync(htmlFile)){fs.mkdirSync(path.join(indexDir),{recursive:true});fs.copyFileSync(htmlFile,path.join(indexDir,'index.html'))}})\"",
+    "build": "next build && node -e \"const path=require('path');const fs=require('fs');const members=['president','chair','vice-chair','treasurer','secretary','safety-director','community-director','at-large'];members.forEach(m=>{const htmlFile=path.join(__dirname,'out','board',m+'.html');const indexDir=path.join(__dirname,'out','board',m);if(fs.existsSync(htmlFile)){fs.mkdirSync(path.join(indexDir),{recursive:true});fs.copyFileSync(htmlFile,path.join(indexDir,'index.html'))}});const configFile=path.join(__dirname,'staticwebapp.config.json');const outConfigFile=path.join(__dirname,'out','staticwebapp.config.json');if(fs.existsSync(configFile)){fs.copyFileSync(configFile,outConfigFile)}\"",
     "start": "next start",
     "lint": "eslint"
   },
