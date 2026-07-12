@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { roleRoutes, type ClubRole } from '@/components/roleRoutes';
-import { createRoleSession, getPostLoginRoute, OPERATOR_PIN, readRoleSession } from '@/components/roleSession';
+import { createRoleSession, getPostLoginRoute, OPERATOR_PIN, readRoleSession, clearRoleSession } from '@/components/roleSession';
 
 type ActiveTab = 'login' | 'announcement';
 
@@ -23,8 +23,15 @@ export default function LoginPage() {
   const [announcementSavedAt, setAnnouncementSavedAt] = useState<string | null>(null);
 
   useEffect(() => {
+    // Check URL params for logout/reset (client-side only)
+    const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+    const shouldLogout = params.get('logout') === 'true' || params.get('reset') === 'true';
+    if (shouldLogout) {
+      clearRoleSession();
+    }
+
     const session = readRoleSession();
-    if (session) {
+    if (session && !shouldLogout) {
       router.replace(getPostLoginRoute(session));
     }
 

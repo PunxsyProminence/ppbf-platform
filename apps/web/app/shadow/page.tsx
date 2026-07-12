@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { readRoleSession } from '@/components/roleSession';
+import { readRoleSession, clearRoleSession } from '@/components/roleSession';
 
 interface ShadowMessage {
   id: string;
@@ -49,6 +49,11 @@ export default function ShadowChatPage() {
     setMessages((prev) => [...prev, newMessage]);
   }
 
+  function handleLogout() {
+    clearRoleSession();
+    router.push('/login');
+  }
+
   function handleSendMessage(e: React.FormEvent) {
     e.preventDefault();
     if (!userInput.trim()) return;
@@ -88,9 +93,17 @@ export default function ShadowChatPage() {
             <h1 className="font-display text-2xl font-black tracking-tight text-[#e8d7c6] md:text-3xl">SHADOW</h1>
             <p className="mt-1 text-xs text-[#b0a095]">I'm in your corner.</p>
           </div>
-          <div className="text-right">
-            <p className="font-mono text-[10px] text-[#8a8a8a]">Role: {userRole.toUpperCase()}</p>
-            <p className="text-xs font-bold text-[#dc2626]">LIVE</p>
+          <div className="flex items-center gap-4 text-right">
+            <div>
+              <p className="font-mono text-[10px] text-[#8a8a8a]">Role: {userRole.toUpperCase()}</p>
+              <p className="text-xs font-bold text-[#dc2626]">LIVE</p>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="border-2 border-[#8b4444] bg-[#2a1a1a] px-3 py-2 text-xs font-semibold uppercase tracking-[0.1em] text-[#b0a095] transition hover:border-[#d4a574] hover:bg-[#3a2a2a] hover:text-[#e8d7c6]"
+            >
+              Logout
+            </button>
           </div>
         </div>
       </header>
