@@ -2,39 +2,39 @@
   "routes": [
     {
       "route": "/board/president*",
-      "serve": "/board/president.html"
+      "rewrite": "/board/president.html"
     },
     {
       "route": "/board/chair*",
-      "serve": "/board/chair.html"
+      "rewrite": "/board/chair.html"
     },
     {
       "route": "/board/vice-chair*",
-      "serve": "/board/vice-chair.html"
+      "rewrite": "/board/vice-chair.html"
     },
     {
       "route": "/board/treasurer*",
-      "serve": "/board/treasurer.html"
+      "rewrite": "/board/treasurer.html"
     },
     {
       "route": "/board/secretary*",
-      "serve": "/board/secretary.html"
+      "rewrite": "/board/secretary.html"
     },
     {
       "route": "/board/safety-director*",
-      "serve": "/board/safety-director.html"
+      "rewrite": "/board/safety-director.html"
     },
     {
       "route": "/board/community-director*",
-      "serve": "/board/community-director.html"
+      "rewrite": "/board/community-director.html"
     },
     {
       "route": "/board/at-large*",
-      "serve": "/board/at-large.html"
+      "rewrite": "/board/at-large.html"
     },
     {
       "route": "/*",
-      "serve": "/index.html",
+      "rewrite": "/index.html",
       "statusCode": 200
     }
   ],
