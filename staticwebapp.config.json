@@ -1,0 +1,22 @@
+{
+  "routes": [
+    {
+      "route": "/board/*",
+      "serve": "/board/[member]/index.html",
+      "statusCode": 200
+    },
+    {
+      "route": "/*",
+      "serve": "/index.html",
+      "statusCode": 200
+    }
+  ],
+  "navigationFallback": {
+    "rewrite": "/index.html",
+    "exclude": ["*.{css,scss,js,png,gif,ico,jpg,jpeg,svg,webp,woff,woff2}"]
+  },
+  "mimeTypes": {
+    "woff": "font/woff",
+    "woff2": "font/woff2"
+  }
+}
