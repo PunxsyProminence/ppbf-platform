@@ -13,7 +13,7 @@ const supportSurfaces = [
   { label: 'Member login', href: '/login' },
   { label: 'Dashboard entry', href: '/dashboard' },
   { label: 'Launch Portal', href: '/launch' },
-  { label: 'SHADOW Console', href: '/shadow', highlight: true },
+  { label: 'SHADOW Console (Admin)', href: '/admin/shadow', highlight: true },
   { label: 'Public portal', href: '/public' },
   { label: 'Guardian portal', href: '/guardian' },
   { label: 'Research intake', href: '/research' },

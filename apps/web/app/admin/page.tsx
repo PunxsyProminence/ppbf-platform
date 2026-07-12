@@ -243,6 +243,21 @@ export default function AdminCapabilitiesPage() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           <Link
+            href="/admin/shadow"
+            style={{
+              fontSize: '0.8rem',
+              border: '1px solid rgba(220,38,38,0.5)',
+              background: 'rgba(220,38,38,0.15)',
+              color: '#fca5a5',
+              borderRadius: '8px',
+              padding: '6px 10px',
+              textDecoration: 'none',
+              fontWeight: 700,
+            }}
+          >
+            SHADOW Console
+          </Link>
+          <Link
             href="/operations"
             style={{
               fontSize: '0.8rem',
