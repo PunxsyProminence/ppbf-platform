@@ -58,3 +58,7 @@ export function getRoleSessionRoute() {
   const session = readRoleSession();
   return session ? getRoleRoute(session.role) : '/login';
 }
+
+export function getPostLoginRoute(session: RoleSession) {
+  return session.role === 'admin' ? '/operations' : getRoleRoute(session.role);
+}

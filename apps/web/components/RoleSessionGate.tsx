@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { clearRoleSession, getRoleSessionRoute, readRoleSession, type RoleSession } from './roleSession';
+import { clearRoleSession, getPostLoginRoute, readRoleSession, type RoleSession } from './roleSession';
 import type { ClubRole } from './roleRoutes';
 
 interface RoleSessionGateProps {
@@ -24,8 +24,8 @@ export default function RoleSessionGate({ allowedRoles, children }: RoleSessionG
       return;
     }
 
-    if (!allowedRoles.includes(currentSession.role)) {
-      router.replace(getRoleSessionRoute());
+    if (currentSession.role !== 'admin' && !allowedRoles.includes(currentSession.role)) {
+      router.replace(getPostLoginRoute(currentSession));
       return;
     }
 
