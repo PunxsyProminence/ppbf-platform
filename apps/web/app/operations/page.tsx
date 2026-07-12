@@ -13,6 +13,7 @@ const supportSurfaces = [
   { label: 'Member login', href: '/login' },
   { label: 'Dashboard entry', href: '/dashboard' },
   { label: 'Launch Portal', href: '/launch' },
+  { label: 'SHADOW Console', href: '/shadow', highlight: true },
   { label: 'Public portal', href: '/public' },
   { label: 'Guardian portal', href: '/guardian' },
   { label: 'Research intake', href: '/research' },
@@ -83,7 +84,11 @@ export default function OperationsHubPage() {
                   <Link
                     key={item.href}
                     href={item.href}
-                    className="rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm text-slate-200 transition hover:border-emerald-500/30 hover:bg-emerald-500/10 hover:text-emerald-200"
+                    className={`rounded-2xl border px-4 py-3 text-sm transition ${
+                      item.highlight
+                        ? 'border-red-500/40 bg-red-500/10 text-red-200 hover:border-red-400/50 hover:bg-red-500/20 hover:text-red-100'
+                        : 'border-slate-800 bg-slate-900/60 text-slate-200 hover:border-emerald-500/30 hover:bg-emerald-500/10 hover:text-emerald-200'
+                    }`}
                   >
                     {item.label}
                   </Link>

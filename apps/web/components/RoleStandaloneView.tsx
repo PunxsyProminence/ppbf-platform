@@ -27,6 +27,12 @@ export default function RoleStandaloneView({ roleLabel, routeLabel, allowedRoles
                 {routeLabel}
               </span>
               <Link
+                href="/shadow"
+                className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-1 text-[11px] font-mono text-red-300 transition hover:border-red-400/70 hover:text-red-200"
+              >
+                SHADOW Console
+              </Link>
+              <Link
                 href="/operations"
                 className="rounded-md border border-cyan-500/40 bg-cyan-500/10 px-3 py-1 text-[11px] font-mono text-cyan-200 transition hover:border-cyan-300/70 hover:text-cyan-100"
               >
