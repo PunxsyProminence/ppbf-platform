@@ -27,29 +27,29 @@ const supportSurfaces = [
 export default function OperationsHubPage() {
   return (
     <RoleSessionGate allowedRoles={roleRoutes.map((route) => route.role)}>
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.14),_transparent_28%),linear-gradient(180deg,#020617_0%,#0b1120_100%)] text-slate-100">
+    <main className="min-h-screen bg-[#0a0a0a] text-[#e5e5e5]">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-10 lg:px-10">
-        <header className="flex flex-col gap-4 border-b border-slate-800 pb-6 md:flex-row md:items-end md:justify-between">
+        <header className="flex flex-col gap-4 border-b-4 border-[#8b0000] pb-6 md:flex-row md:items-end md:justify-between">
           <div className="space-y-3">
-            <p className="text-xs font-mono uppercase tracking-[0.35em] text-emerald-300/80">The Office</p>
-            <h1 className="text-4xl font-black tracking-tight md:text-5xl">The Ring: Your Dashboard</h1>
-            <p className="max-w-3xl text-sm leading-6 text-slate-300 md:text-base">
+            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[#c85a17]">The Office</p>
+            <h1 className="font-display text-4xl font-black tracking-tight md:text-5xl">The Ring</h1>
+            <p className="max-w-3xl text-sm leading-6 text-[#c0c0c0] md:text-base">
               Every corner has its own view. Athlete. Coach. Board. Admin. Public.
             </p>
           </div>
           <Link
             href="/launch"
-            className="inline-flex items-center justify-center rounded-2xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-xs font-mono font-bold text-emerald-300 transition hover:bg-emerald-500/20 hover:text-emerald-200"
+            className="inline-flex items-center justify-center border-2 border-[#8b0000] bg-[#1a1a1a] px-4 py-2 text-xs font-mono font-bold text-[#dc2626] transition hover:border-[#dc2626] hover:bg-[#2a2a2a] hover:text-[#ff6b6b]"
           >
             Jump In
           </Link>
         </header>
 
         <section className="mt-8 grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
-          <div className="rounded-3xl border border-slate-800 bg-slate-950/70 p-6 shadow-2xl shadow-black/20">
-            <div className="flex items-center justify-between gap-4 border-b border-slate-800 pb-4">
-              <h2 className="text-lg font-semibold text-slate-100">The Boards</h2>
-              <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[11px] font-mono text-emerald-300">
+          <div className="border-4 border-[#8b0000] bg-[#1a1a1a] p-6 shadow-2xl shadow-black/60">
+            <div className="flex items-center justify-between gap-4 border-b-4 border-[#8b0000] pb-4">
+              <h2 className="font-display text-lg font-semibold text-[#e5e5e5]">The Boards</h2>
+              <span className="border-2 border-[#dc2626] bg-[#2a2a2a] px-3 py-1 text-[11px] font-mono text-[#dc2626]">
                 Open to All
               </span>
             </div>
@@ -59,15 +59,15 @@ export default function OperationsHubPage() {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className="group rounded-3xl border border-slate-800 bg-slate-900/60 p-5 transition hover:border-emerald-500/30 hover:bg-emerald-500/10"
+                  className="group border-2 border-[#8b0000] bg-[#0f0f0f] p-5 transition hover:border-[#dc2626] hover:bg-[#1f1f1f]"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <p className="text-xs font-mono uppercase tracking-[0.2em] text-slate-500 group-hover:text-emerald-300">Your Corner</p>
-                      <h3 className="mt-2 text-xl font-black text-slate-100">{item.label}</h3>
-                      <p className="mt-2 text-sm leading-6 text-slate-400 group-hover:text-slate-300">{item.description}</p>
+                      <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#b35806] group-hover:text-[#dc2626]">Your Corner</p>
+                      <h3 className="font-display mt-2 text-xl font-black text-[#e5e5e5]">{item.label}</h3>
+                      <p className="mt-2 text-sm leading-6 text-[#a0a0a0] group-hover:text-[#c0c0c0]">{item.description}</p>
                     </div>
-                    <span className="rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1 text-[11px] font-mono text-slate-300">
+                    <span className="border-2 border-[#8b0000] bg-[#0a0a0a] px-3 py-1 text-[11px] font-mono text-[#b0b0b0]">
                       Open
                     </span>
                   </div>
@@ -77,17 +77,17 @@ export default function OperationsHubPage() {
           </div>
 
           <aside className="grid gap-6">
-            <section className="rounded-3xl border border-slate-800 bg-slate-950/70 p-6">
-              <h2 className="text-lg font-semibold text-slate-100">Quick Counters</h2>
+            <section className="border-4 border-[#8b0000] bg-[#1a1a1a] p-6">
+              <h2 className="font-display text-lg font-semibold text-[#e5e5e5]">Quick Counters</h2>
               <div className="mt-4 grid gap-3">
                 {supportSurfaces.map((item) => (
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`rounded-2xl border px-4 py-3 text-sm transition ${
+                    className={`border-2 px-4 py-3 text-sm transition ${
                       item.highlight
-                        ? 'border-red-500/40 bg-red-500/10 text-red-200 hover:border-red-400/50 hover:bg-red-500/20 hover:text-red-100'
-                        : 'border-slate-800 bg-slate-900/60 text-slate-200 hover:border-emerald-500/30 hover:bg-emerald-500/10 hover:text-emerald-200'
+                        ? 'border-[#dc2626] bg-[#2a1a1a] text-[#ff6b6b] hover:border-[#ff6b6b] hover:bg-[#3a2a2a] hover:text-[#ffaaaa]'
+                        : 'border-[#8b0000] bg-[#0f0f0f] text-[#c0c0c0] hover:border-[#dc2626] hover:bg-[#1a1a1a] hover:text-[#e5e5e5]'
                     }`}
                   >
                     {item.label}
@@ -96,9 +96,9 @@ export default function OperationsHubPage() {
               </div>
             </section>
 
-            <section className="rounded-3xl border border-cyan-500/20 bg-cyan-500/10 p-6 text-sm text-cyan-50">
-              <h2 className="text-lg font-semibold text-cyan-50">Psst</h2>
-              <p className="mt-3 leading-6 text-cyan-50/90">
+            <section className="border-4 border-[#b35806] bg-[#1f1f1f] p-6 text-sm text-[#e5e5e5]">
+              <h2 className="font-display text-lg font-semibold text-[#c85a17]">Psst</h2>
+              <p className="mt-3 leading-6 text-[#a0a0a0]">
                 Only members can see the full schedule. You gotta sign in first.
               </p>
             </section>

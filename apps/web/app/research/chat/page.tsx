@@ -112,40 +112,40 @@ export default function ResearchQAChatPage() {
   return (
     <main className="min-h-screen bg-[#0a0a0a] text-slate-100">
       {/* ROUGH OLD-SCHOOL BOXING HEADER */}
-      <header className="border-b-4 border-red-900 bg-[#1a1a1a] px-4 py-4 md:px-8 md:py-6">
+      <header className="border-b-4 border-[#b35806] bg-[#1a1a1a] px-4 py-4 md:px-8 md:py-6">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
           <div>
-            <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-red-400">Research Lab</p>
-            <h1 className="text-2xl font-black tracking-tight text-red-100 md:text-3xl">Q/A Research Chat</h1>
-            <p className="mt-1 text-xs text-red-300/70">Ask. Learn. Document. No corporate fluff.</p>
+            <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-[#c85a17]">Research Lab</p>
+            <h1 className="font-display text-2xl font-black tracking-tight text-[#e5e5e5] md:text-3xl">The Library</h1>
+            <p className="mt-1 text-xs text-[#a0a0a0]">Ask. Learn. Document. No fancy talk.</p>
           </div>
           <div className="text-right">
-            <p className="font-mono text-[10px] text-slate-500">PPBF Fight Card</p>
-            <p className="text-xs font-bold text-red-400">TOUGH</p>
+            <p className="font-mono text-[10px] text-[#8a8a8a]">PPBF Fight Card</p>
+            <p className="text-xs font-bold text-[#dc2626]">LIVE</p>
           </div>
         </div>
       </header>
 
       <div className="mx-auto grid max-w-6xl gap-6 p-4 lg:grid-cols-[1fr_300px] md:p-8">
         {/* CHAT */}
-        <section className="rounded-none border-4 border-slate-800 bg-[#0f0f0f] p-6 shadow-2xl shadow-black/60">
+        <section className="border-4 border-[#b35806] bg-[#0f0f0f] p-6 shadow-2xl shadow-black/60">
           {/* Messages */}
-          <div className="mb-6 max-h-[500px] space-y-3 overflow-y-auto rounded-lg bg-[#050505] p-4 font-mono text-sm">
+          <div className="mb-6 max-h-[500px] space-y-3 overflow-y-auto bg-[#050505] p-4 font-mono text-sm">
             {messages.map((msg) => (
               <div key={msg.id} className={`flex gap-3 ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div
-                  className={`max-w-xs rounded-lg px-3 py-2 ${
+                  className={`max-w-xs px-3 py-2 ${
                     msg.type === 'user'
-                      ? 'border border-red-700 bg-red-900/40 text-red-100'
+                      ? 'border-2 border-[#8b0000] bg-[#2a1a1a] text-[#ff6b6b]'
                       : msg.type === 'system'
-                        ? 'border border-slate-700 bg-slate-900/50 text-slate-300'
-                        : 'border border-red-600/60 bg-red-950/30 text-red-50'
+                        ? 'border-2 border-[#4a4a4a] bg-[#1a1a1a] text-[#a0a0a0]'
+                        : 'border-2 border-[#b35806] bg-[#2a1f0f] text-[#e5e5e5]'
                   }`}
                 >
                   <p className="text-xs leading-5">{msg.text}</p>
                   <div className="mt-1 flex items-center justify-between gap-2">
                     <p className="text-[9px] opacity-50">{msg.timestamp}</p>
-                    {msg.source && <p className="text-[9px] text-red-400/60">{msg.source}</p>}
+                    {msg.source && <p className="text-[9px] text-[#c85a17]">{msg.source}</p>}
                   </div>
                 </div>
               </div>
@@ -159,12 +159,12 @@ export default function ResearchQAChatPage() {
               type="text"
               value={userInput}
               onChange={(e) => setUserInput(e.target.value)}
-              placeholder="Ask about readiness, RPE, drills, injuries, roles..."
-              className="flex-1 rounded-lg border-2 border-red-700 bg-red-950/30 px-3 py-2 text-sm text-red-50 placeholder-red-600/40 outline-none transition focus:border-red-500 focus:bg-red-950/50"
+              placeholder="Ask about readiness, work rate, drills, injuries, roles..."
+              className="flex-1 border-2 border-[#b35806] bg-[#1a1a1a] px-3 py-2 text-sm text-[#e5e5e5] placeholder-[#666666] outline-none transition focus:border-[#c85a17] focus:bg-[#2a1f1f]"
             />
             <button
               type="submit"
-              className="rounded-lg border-2 border-red-700 bg-red-950/50 px-4 py-2 text-xs font-mono font-bold text-red-300 transition hover:border-red-500 hover:bg-red-900/70 hover:text-red-100"
+              className="border-2 border-[#b35806] bg-[#1f1f1f] px-4 py-2 text-xs font-mono font-bold text-[#c85a17] transition hover:border-[#c85a17] hover:bg-[#2a1f1f] hover:text-[#ff9933]"
             >
               Ask
             </button>
@@ -174,18 +174,18 @@ export default function ResearchQAChatPage() {
         {/* RIGHT PANEL: NOTES & LINKS */}
         <aside className="space-y-4">
           {/* Research Notes */}
-          <section className="rounded-lg border-3 border-amber-800 bg-[#0d0a08] p-4">
-            <p className="text-xs font-mono uppercase tracking-[0.2em] text-amber-600">Notes</p>
+          <section className="border-4 border-[#b35806] bg-[#0d0a08] p-4">
+            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#c85a17]">Notes</p>
             <form onSubmit={handleSaveNote} className="mt-3 space-y-2">
               <textarea
                 value={researchNotes}
                 onChange={(e) => setResearchNotes(e.target.value)}
                 placeholder="Write your findings..."
-                className="h-24 w-full rounded-lg border-2 border-amber-800 bg-amber-950/20 px-2 py-2 text-xs text-amber-50 placeholder-amber-600/40 outline-none transition focus:border-amber-600 focus:bg-amber-950/40 font-mono"
+                className="h-24 w-full border-2 border-[#b35806] bg-[#1a1a1a] px-2 py-2 text-xs text-[#e5e5e5] placeholder-[#666666] outline-none transition focus:border-[#c85a17] focus:bg-[#1f1f1f] font-mono"
               />
               <button
                 type="submit"
-                className="w-full rounded-lg border-2 border-amber-800 bg-amber-950/30 px-2 py-1 text-xs font-mono font-bold text-amber-300 transition hover:border-amber-600 hover:bg-amber-900/50 hover:text-amber-100"
+                className="w-full border-2 border-[#b35806] bg-[#1f1f1f] px-2 py-1 text-xs font-mono font-bold text-[#c85a17] transition hover:border-[#c85a17] hover:bg-[#2a1f1f] hover:text-[#ff9933]"
               >
                 Save Note
               </button>
@@ -193,30 +193,30 @@ export default function ResearchQAChatPage() {
           </section>
 
           {/* Quick Links */}
-          <section className="rounded-lg border-3 border-slate-700 bg-[#0a0a0a] p-4">
-            <p className="text-xs font-mono uppercase tracking-[0.2em] text-slate-500">Navigate</p>
+          <section className="border-4 border-[#4a4a4a] bg-[#0a0a0a] p-4">
+            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#8a8a8a]">Navigate</p>
             <div className="mt-3 space-y-2">
               <Link
                 href="/research"
-                className="block rounded-lg border-2 border-slate-700 bg-slate-950 px-2 py-1 text-xs font-mono text-slate-400 transition hover:border-slate-500 hover:bg-slate-900 hover:text-slate-200"
+                className="block border-2 border-[#4a4a4a] bg-[#0a0a0a] px-2 py-1 text-xs font-mono text-[#b0b0b0] transition hover:border-[#8a8a8a] hover:bg-[#1a1a1a] hover:text-[#e5e5e5]"
               >
                 Research Intake
               </Link>
               <Link
                 href="/evidence"
-                className="block rounded-lg border-2 border-slate-700 bg-slate-950 px-2 py-1 text-xs font-mono text-slate-400 transition hover:border-slate-500 hover:bg-slate-900 hover:text-slate-200"
+                className="block border-2 border-[#4a4a4a] bg-[#0a0a0a] px-2 py-1 text-xs font-mono text-[#b0b0b0] transition hover:border-[#8a8a8a] hover:bg-[#1a1a1a] hover:text-[#e5e5e5]"
               >
                 Evidence Review
               </Link>
               <Link
                 href="/operations"
-                className="block rounded-lg border-2 border-slate-700 bg-slate-950 px-2 py-1 text-xs font-mono text-slate-400 transition hover:border-slate-500 hover:bg-slate-900 hover:text-slate-200"
+                className="block border-2 border-[#4a4a4a] bg-[#0a0a0a] px-2 py-1 text-xs font-mono text-[#b0b0b0] transition hover:border-[#8a8a8a] hover:bg-[#1a1a1a] hover:text-[#e5e5e5]"
               >
                 Operations Hub
               </Link>
               <Link
                 href="/admin/shadow"
-                className="block rounded-lg border-2 border-red-800 bg-red-950/20 px-2 py-1 text-xs font-mono text-red-500 transition hover:border-red-600 hover:bg-red-950/40 hover:text-red-400"
+                className="block border-2 border-[#8b0000] bg-[#1a1a1a] px-2 py-1 text-xs font-mono text-[#dc2626] transition hover:border-[#dc2626] hover:bg-[#2a1a1a] hover:text-[#ff6b6b]"
               >
                 SHADOW (Admin)
               </Link>
