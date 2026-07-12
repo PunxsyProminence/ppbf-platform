@@ -1,10 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
-import { clearRoleSession } from '@/components/roleSession';
 import {
   allTrackIds,
   athleteProfiles,
@@ -82,7 +80,6 @@ function normalizeImportedCapabilities(input: unknown): Capability[] {
 }
 
 export default function AdminCapabilitiesPage() {
-  const router = useRouter();
   const [capabilities, setCapabilities] = useState<Capability[]>([]);
   const [query, setQuery] = useState('');
   const [name, setName] = useState('');
@@ -91,11 +88,6 @@ export default function AdminCapabilitiesPage() {
   const [selectedAthleteId, setSelectedAthleteId] = useState(athleteProfiles[0].id);
   const [trackAssignments, setTrackAssignments] = useState<TrackAssignments>({});
   const [ready, setReady] = useState(false);
-
-  function signOut() {
-    clearRoleSession();
-    router.replace('/login');
-  }
 
   useEffect(() => {
     setTrackAssignments(loadTrackAssignments());
@@ -279,22 +271,6 @@ export default function AdminCapabilitiesPage() {
           >
             Launch Portal
           </Link>
-          <button
-            type="button"
-            onClick={signOut}
-            style={{
-              fontSize: '0.8rem',
-              border: '1px solid #f87171',
-              color: '#fecaca',
-              borderRadius: '8px',
-              padding: '6px 10px',
-              background: 'rgba(127,29,29,0.45)',
-              fontWeight: 700,
-              cursor: 'pointer',
-            }}
-          >
-            Logout
-          </button>
           <div style={{ fontSize: '0.9rem' }}>Governed by Layer 0</div>
         </div>
       </header>
