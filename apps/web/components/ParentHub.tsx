@@ -1,265 +1,352 @@
 'use client';
 
 import React, { useState } from 'react';
+import { ParentSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 
-type MessageType = 'Note' | 'Question' | 'Concern' | 'Achievement' | 'Update';
-type RelationshipType = 'Parent' | 'Guardian' | 'Coach Contact';
+type TabID = 'overview' | 'parent-floor' | 'home-assignments' | 'observations' | 'family-goals' | 'messages' | 'attendance' | 'progress' | 'resources' | 'shadow';
 
-interface StudentProfile {
+interface Child {
   id: string;
   name: string;
   track: string;
-  joinDate: string;
-  attendance: number;
-  skillLevel: 'Beginner' | 'Intermediate' | 'Advanced' | 'Competitive';
-  recentProgress: string[];
-  currentGoals: string[];
-  upcomingEvents: string[];
+  attendancePercent: number;
+  currentProgress: string;
 }
 
-interface ParentMessage {
+interface HomeAssignment {
   id: string;
-  studentId: string;
-  sender: 'parent' | 'coach';
-  messageType: MessageType;
-  subject: string;
-  body: string;
-  timestamp: string;
-  read: boolean;
+  title: string;
+  dueDate: string;
+  status: 'Pending' | 'In Progress' | 'Completed';
+  description: string;
 }
 
-interface AttendanceRecord {
-  date: string;
-  sessionType: string;
-  attended: boolean;
-  performance?: string;
+interface ParentObservation {
+  id: string;
+  category: string;
+  value: number;
+  notes: string;
+}
+
+interface FamilyGoal {
+  id: string;
+  title: string;
+  supportAction: string;
+  progress: number;
+  targetDate: string;
 }
 
 export default function ParentHub() {
-  const [activeStudent, setActiveStudent] = useState<string>('student_001');
-  const [students, setStudents] = useState<StudentProfile[]>([
-    {
-      id: 'student_001',
-      name: 'Alex Thompson',
-      track: 'Foundations',
-      joinDate: '2025-09-15',
-      attendance: 92,
-      skillLevel: 'Beginner',
-      recentProgress: ['Improved stance mechanics', 'Better left jab accuracy', 'Increased cardio endurance', 'Mastered basic combinations'],
-      currentGoals: ['Perfect 5-punch combo', 'Build conditioning to 10 rounds', 'Improve defensive footwork'],
-      upcomingEvents: ['Youth Belt Test - Aug 20', 'Friendly Sparring - Aug 27', 'Summer Showcase - Sep 10']
-    },
-    {
-      id: 'student_002',
-      name: 'Jordan Chen',
-      track: 'Competition',
-      joinDate: '2025-08-01',
-      attendance: 88,
-      skillLevel: 'Intermediate',
-      recentProgress: ['Advanced ring IQ', 'Counter-punching techniques', 'Strategic round planning'],
-      currentGoals: ['Win 3 consecutive matches', 'Master head movement patterns', 'Build power in cross'],
-      upcomingEvents: ['Regional Tournament - Aug 25', 'Technical Workshop - Sep 5']
-    }
+  const [activeTab, setActiveTab] = useState<TabID>('overview');
+  const [expandedHelpTab, setExpandedHelpTab] = useState<TabID | null>(null);
+
+  const [children] = useState<Child[]>([
+    { id: 'c_1', name: 'Alex Thompson', track: 'Foundations', attendancePercent: 92, currentProgress: 'Strong footwork development' },
+    { id: 'c_2', name: 'Jordan Chen', track: 'Competition', attendancePercent: 88, currentProgress: 'Advanced ring IQ training' }
   ]);
 
-  const [messages, setMessages] = useState<ParentMessage[]>([
-    { id: 'pm_1', studentId: 'student_001', sender: 'coach', messageType: 'Achievement', subject: 'Great Progress This Week!', body: 'Alex showed excellent focus during today\'s session. His footwork has improved dramatically and he\'s taking feedback really well.', timestamp: new Date(Date.now() - 86400000).toISOString(), read: true },
-    { id: 'pm_2', studentId: 'student_001', sender: 'coach', messageType: 'Note', subject: 'Attendance Reminder', body: 'Just a friendly reminder about Friday\'s 5pm session. Let us know if there are any schedule conflicts.', timestamp: new Date(Date.now() - 172800000).toISOString(), read: true },
-    { id: 'pm_3', studentId: 'student_001', sender: 'parent', messageType: 'Question', subject: 'Sparring Gear', body: 'What protective equipment does Alex need before the friendly sparring session?', timestamp: new Date(Date.now() - 259200000).toISOString(), read: false }
+  const [activeChildId, setActiveChildId] = useState(children[0].id);
+
+  const [homeAssignments] = useState<HomeAssignment[]>([
+    { id: 'ha_1', title: 'Watch Footwork Fundamentals Video', dueDate: '2026-07-13', status: 'Pending', description: 'Coach Jason assigned - 12 minute instructional video' },
+    { id: 'ha_2', title: 'Record 2 Rounds of Shadowboxing', dueDate: '2026-07-14', status: 'In Progress', description: 'Evidence upload optional - form check focus' },
+    { id: 'ha_3', title: 'Complete Family Reflection Survey', dueDate: '2026-07-15', status: 'Pending', description: 'How is training affecting home life?' }
   ]);
 
-  const [attendanceHistory, setAttendanceHistory] = useState<AttendanceRecord[]>([
-    { date: '2026-07-11', sessionType: 'Youth Class', attended: true, performance: 'Great focus and effort' },
-    { date: '2026-07-10', sessionType: 'Open Gym', attended: true, performance: 'Worked on combinations' },
-    { date: '2026-07-09', sessionType: 'Youth Class', attended: false },
-    { date: '2026-07-08', sessionType: 'Conditioning', attended: true, performance: 'Strong performance' },
-    { date: '2026-07-07', sessionType: 'Youth Class', attended: true, performance: 'Excellent stance work' }
+  const [parentObservations] = useState<ParentObservation[]>([
+    { id: 'po_1', category: 'Energy Level', value: 7, notes: 'Seems energetic after training' },
+    { id: 'po_2', category: 'Sleep Quality', value: 8, notes: 'Good sleep patterns on training days' },
+    { id: 'po_3', category: 'Motivation', value: 8, notes: 'Excited about upcoming belt test' },
+    { id: 'po_4', category: 'Home Behavior', value: 7, notes: 'More focused on schoolwork' }
   ]);
 
-  const [showNewMessage, setShowNewMessage] = useState(false);
-  const [newMessageType, setNewMessageType] = useState<MessageType>('Note');
-  const [newMessageSubject, setNewMessageSubject] = useState('');
-  const [newMessageBody, setNewMessageBody] = useState('');
+  const [familyGoals] = useState<FamilyGoal[]>([
+    { id: 'fg_1', title: 'Attend 90% of Sessions', supportAction: 'Maintain consistent schedule', progress: 92, targetDate: '2026-12-31' },
+    { id: 'fg_2', title: 'Maintain Grade Average', supportAction: 'Check homework, reduce distractions', progress: 85, targetDate: '2026-12-31' },
+    { id: 'fg_3', title: 'Prepare for Belt Test', supportAction: 'Support home practice, nutrition', progress: 60, targetDate: '2026-08-15' }
+  ]);
 
-  const [selectedTab, setSelectedTab] = useState<'overview' | 'messages' | 'attendance' | 'progress' | 'resources'>('overview');
-  const [expandedMessage, setExpandedMessage] = useState<string | null>(null);
+  const [messages] = useState<any[]>([
+    { id: 'm_1', sender: 'coach', subject: 'Great Progress This Week', body: 'Alex showed excellent focus during today\'s session. Footwork improvements are very noticeable.', date: '2026-07-11' },
+    { id: 'm_2', sender: 'coach', subject: 'Upcoming Belt Test', body: 'Jordan is ready for the August test. Recommend continued focus on defensive combinations.', date: '2026-07-10' }
+  ]);
 
-  const currentStudent = students.find(s => s.id === activeStudent);
+  const [newMessage, setNewMessage] = useState('');
 
-  const handleSendMessage = () => {
-    if (!newMessageSubject || !newMessageBody || !activeStudent) return;
-    const newMsg: ParentMessage = {
-      id: `pm_${Date.now()}`,
-      studentId: activeStudent,
-      sender: 'parent',
-      messageType: newMessageType,
-      subject: newMessageSubject,
-      body: newMessageBody,
-      timestamp: new Date().toISOString(),
-      read: false
-    };
-    setMessages([...messages, newMsg]);
-    setNewMessageSubject('');
-    setNewMessageBody('');
-    setNewMessageType('Note');
-    setShowNewMessage(false);
-  };
-
-  const studentMessages = messages.filter(m => m.studentId === activeStudent);
-  const unreadCount = studentMessages.filter(m => !m.read && m.sender === 'coach').length;
+  const activeChild = children.find(c => c.id === activeChildId);
+  const tasksDue = homeAssignments.filter(a => a.status !== 'Completed').length;
+  const upcomingEvents = 3;
 
   return (
-    <div className="space-y-6 animate-fadeIn">
-      {/* HEADER */}
-      <div className="bg-[#1a1a1a] border-4 border-[#8b4444] p-4">
-        <div className="text-xs font-mono text-[#d4a574] font-bold uppercase">Parent Portal</div>
-        <h2 className="text-xl font-black font-mono text-[#e8d7c6]">My Child's Progress</h2>
-      </div>
+    <div className="min-h-screen bg-[#0a0a0a] text-[#e8d7c6] font-sans">
+      <div className="max-w-7xl mx-auto p-4 space-y-8">
+        {/* HEADER */}
+        <div className="border-b-2 border-[#8b4444] pb-6 space-y-4">
+          <div>
+            <p className="text-xs font-mono uppercase tracking-[0.15em] text-[#d4a574]">Parent Support Hub</p>
+            <h1 className="text-3xl md:text-4xl font-black mt-2">Family Development Dashboard</h1>
+            <p className="text-base text-[#b0a095] mt-2">Support your child's boxing journey with at-home assignments, family goals, and coach communication.</p>
+          </div>
+        </div>
 
-      {/* STUDENT SELECTOR */}
-      <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-4">
-        <h3 className="text-xs font-mono font-bold text-[#d4a574] uppercase mb-3">Select Student</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {students.map(student => (
+        {/* ROLE SUMMARY PANEL */}
+        <ParentSummaryPanel
+          childProgress={activeChild?.currentProgress || ''}
+          tasksDue={tasksDue}
+          upcomingEvents={upcomingEvents}
+          attendancePercent={activeChild?.attendancePercent || 0}
+          unreadMessages={messages.filter(m => !m.read).length}
+        />
+
+        {/* CHILD SELECTOR */}
+        <div className="flex gap-2 border-2 border-[#8b4444] bg-[#0f0f0f] p-3 rounded flex-wrap">
+          {children.map(child => (
             <button
-              key={student.id}
-              onClick={() => setActiveStudent(student.id)}
-              className={`p-3 border-2 transition text-left ${activeStudent === student.id ? 'bg-[#5a2a2a] border-[#8b4444] text-[#e8d7c6]' : 'bg-[#1a1a1a] border-[#8b4444]/50 text-[#b0a095] hover:text-[#e8d7c6]'}`}
+              key={child.id}
+              onClick={() => setActiveChildId(child.id)}
+              className={`px-4 py-2 font-mono font-bold text-xs border-2 transition rounded ${
+                activeChildId === child.id
+                  ? 'bg-[#5a2a2a] border-[#8b4444] text-[#e8d7c6]'
+                  : 'bg-[#1a1a1a] border-[#4a4a4a] text-[#b0a095] hover:text-[#e8d7c6]'
+              }`}
             >
-              <div className="font-bold font-mono text-sm">{student.name}</div>
-              <div className="text-xs font-mono text-[#8a8a8a] mt-1">{student.track} • {student.attendance}% Attendance</div>
+              {child.name}
             </button>
           ))}
         </div>
-      </div>
 
-      {currentStudent && (
-        <>
-          {/* QUICK STATS */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-4">
-              <div className="text-[#8a8a8a] text-[10px] font-mono mb-2">Skill Level</div>
-              <div className="text-[#e8d7c6] font-bold font-mono">{currentStudent.skillLevel}</div>
-            </div>
-            <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-4">
-              <div className="text-[#8a8a8a] text-[10px] font-mono mb-2">Attendance</div>
-              <div className="text-[#e8d7c6] font-bold font-mono">{currentStudent.attendance}%</div>
-            </div>
-            <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-4">
-              <div className="text-[#8a8a8a] text-[10px] font-mono mb-2">Member Since</div>
-              <div className="text-[#e8d7c6] font-bold font-mono">{new Date(currentStudent.joinDate).toLocaleDateString()}</div>
-            </div>
-            <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-4">
-              <div className="text-[#8a8a8a] text-[10px] font-mono mb-2">Track</div>
-              <div className="text-[#e8d7c6] font-bold font-mono">{currentStudent.track}</div>
-            </div>
-          </div>
-
-          {/* TAB NAVIGATION */}
-          <div className="flex flex-wrap gap-2 border-b-2 border-[#8b4444] pb-3">
-            {(['overview', 'messages', 'attendance', 'progress', 'resources'] as const).map(tab => (
+        {/* TAB NAVIGATION */}
+        <div className="border-2 border-[#8b4444] bg-[#0f0f0f]">
+          <div className="flex flex-wrap gap-1 p-2">
+            {[
+              { id: 'overview', label: 'Overview' },
+              { id: 'parent-floor', label: 'Parent Floor' },
+              { id: 'home-assignments', label: 'Assignments' },
+              { id: 'observations', label: 'Observations' },
+              { id: 'family-goals', label: 'Family Goals' },
+              { id: 'messages', label: 'Messages' },
+              { id: 'attendance', label: 'Attendance' },
+              { id: 'progress', label: 'Progress' },
+              { id: 'resources', label: 'Resources' },
+              { id: 'shadow', label: 'SHADOW AI' }
+            ].map(tab => (
               <button
-                key={tab}
-                onClick={() => setSelectedTab(tab)}
-                className={`px-4 py-2 font-mono text-xs font-bold transition border-b-2 ${selectedTab === tab ? 'text-[#e8d7c6] border-[#8b4444]' : 'text-[#b0a095] border-transparent hover:text-[#e8d7c6]'}`}
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as TabID)}
+                className={`px-3 py-2 text-xs font-semibold uppercase transition border-2 ${
+                  activeTab === tab.id
+                    ? 'bg-[#5a2a2a] border-[#8b4444] text-[#e8d7c6]'
+                    : 'bg-[#1a1a1a] border-[#4a4a4a] text-[#b0a095] hover:text-[#e8d7c6]'
+                }`}
               >
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                {tab.label}
               </button>
             ))}
           </div>
+        </div>
 
-          {/* OVERVIEW TAB */}
-          {selectedTab === 'overview' && (
-            <div className="space-y-4">
-              <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-6 space-y-4">
-                <h3 className="text-sm font-bold font-mono text-[#e8d7c6] uppercase">Recent Progress</h3>
-                <div className="space-y-2">
-                  {currentStudent.recentProgress.map((prog, idx) => (
-                    <div key={idx} className="bg-[#1a1a1a] border-l-4 border-[#2a6b2a] p-3 flex items-start gap-3">
-                      <span className="text-[#2a6b2a] font-bold">✓</span>
-                      <p className="text-sm font-mono text-[#e8d7c6]">{prog}</p>
+        {/* TAB CONTENT */}
+        <div className="space-y-6">
+          {/* OVERVIEW */}
+          {activeTab === 'overview' && (
+            <div className="space-y-6 animate-fadeIn">
+              <HelpPanel
+                title="Child Overview"
+                description="Quick snapshot of your child's current training status, progress, and upcoming events."
+                usage={[
+                  'Review current track and skill level',
+                  'Check attendance and progress summary',
+                  'See upcoming events and important dates',
+                  'Review coach messages'
+                ]}
+                mistakes={[
+                  'Not staying informed about upcoming events',
+                  'Missing coach communication',
+                  'Overlooking skill milestones'
+                ]}
+                onAskShadow={() => {}}
+              />
+
+              {activeChild && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded space-y-4">
+                    <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Current Status</h3>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs text-[#b0a095] block mb-1">Child Name</label>
+                        <p className="text-base font-semibold">{activeChild.name}</p>
+                      </div>
+                      <div>
+                        <label className="text-xs text-[#b0a095] block mb-1">Current Track</label>
+                        <p className="text-base font-semibold">{activeChild.track}</p>
+                      </div>
+                      <div>
+                        <label className="text-xs text-[#b0a095] block mb-1">Progress</label>
+                        <p className="text-base font-semibold">{activeChild.currentProgress}</p>
+                      </div>
+                      <div>
+                        <label className="text-xs text-[#b0a095] block mb-1">Attendance</label>
+                        <p className="text-base font-semibold text-green-400">{activeChild.attendancePercent}%</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded space-y-4">
+                    <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">How to Support</h3>
+                    <ul className="space-y-2 text-sm">
+                      <li className="flex items-start gap-2">
+                        <span>✓</span>
+                        <span>Attend training sessions consistently</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span>✓</span>
+                        <span>Support home assignments and drills</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span>✓</span>
+                        <span>Maintain nutrition and sleep</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span>✓</span>
+                        <span>Stay informed through coach messages</span>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* PARENT FLOOR */}
+          {activeTab === 'parent-floor' && (
+            <div className="space-y-6 animate-fadeIn">
+              <HelpPanel
+                title="Parent Floor"
+                description="Your at-home support tasks. Track drills, assignments, and parent verification items."
+                usage={[
+                  'Review this week\'s parent support tasks',
+                  'Help with assigned home drills',
+                  'Track completion status',
+                  'Report progress back to coaches'
+                ]}
+                mistakes={[
+                  'Forgetting to review home assignments',
+                  'Not providing dedicated practice time',
+                  'Missing reporting deadlines'
+                ]}
+                onAskShadow={() => {}}
+              />
+
+              <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded space-y-4">
+                <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">This Week's Parent Support Tasks</h3>
+
+                <div className="space-y-3">
+                  {[
+                    { task: 'Watch Jab Video', completed: false },
+                    { task: 'Record 2 Shadowboxing Rounds', completed: true },
+                    { task: 'Complete Family Reflection', completed: false },
+                    { task: 'Verify School Progress', completed: true },
+                    { task: 'Prepare for Saturday Session', completed: false }
+                  ].map((item, i) => (
+                    <div key={i} className={`border-2 p-3 rounded flex items-center gap-3 ${
+                      item.completed ? 'bg-green-900/20 border-green-700' : 'bg-[#0f0f0f] border-[#8b4444]'
+                    }`}>
+                      <input type="checkbox" checked={item.completed} className="w-4 h-4" />
+                      <span className="font-semibold">{item.task}</span>
                     </div>
                   ))}
                 </div>
-              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-6 space-y-3">
-                  <h3 className="text-xs font-bold font-mono text-[#d4a574] uppercase">Current Goals</h3>
-                  <div className="space-y-2">
-                    {currentStudent.currentGoals.map((goal, idx) => (
-                      <div key={idx} className="bg-[#1a1a1a] p-2 border-2 border-[#8b4444]/30 text-[10px] font-mono text-[#b0a095]">
-                        • {goal}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-6 space-y-3">
-                  <h3 className="text-xs font-bold font-mono text-[#d4a574] uppercase">Upcoming Events</h3>
-                  <div className="space-y-2">
-                    {currentStudent.upcomingEvents.map((event, idx) => (
-                      <div key={idx} className="bg-[#1a1a1a] p-2 border-2 border-[#8b4444]/30 text-[10px] font-mono text-[#e8d7c6]">
-                        📅 {event}
-                      </div>
-                    ))}
+                <div className="bg-[#0f0f0f] border-2 border-[#8b4444] p-4 rounded">
+                  <p className="text-xs text-[#8a8a8a]">Progress: 40%</p>
+                  <div className="w-full bg-[#2a2a2a] rounded h-2 mt-2">
+                    <div className="bg-[#d4a574] h-2 rounded" style={{width: '40%'}}></div>
                   </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* MESSAGES TAB */}
-          {selectedTab === 'messages' && (
-            <div className="space-y-4">
-              {!showNewMessage ? (
-                <button onClick={() => setShowNewMessage(true)} className="w-full bg-[#8b4444] hover:bg-[#5a2a2a] text-[#e8d7c6] font-mono font-bold text-xs py-2 border-2 border-[#8b4444] transition">
-                  + Send Message to Coach
-                </button>
-              ) : (
-                <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-4 space-y-3">
-                  <select value={newMessageType} onChange={(e) => setNewMessageType(e.target.value as MessageType)} className="w-full bg-[#1a1a1a] border-2 border-[#8b4444] px-3 py-2 text-xs font-mono text-[#e8d7c6] focus:outline-none">
-                    <option value="Note">Note</option>
-                    <option value="Question">Question</option>
-                    <option value="Concern">Concern</option>
-                    <option value="Achievement">Achievement</option>
-                    <option value="Update">Update</option>
-                  </select>
-                  <input type="text" value={newMessageSubject} onChange={(e) => setNewMessageSubject(e.target.value)} placeholder="Subject" className="w-full bg-[#1a1a1a] border-2 border-[#8b4444] px-3 py-2 text-xs font-mono text-[#e8d7c6] focus:outline-none" />
-                  <textarea value={newMessageBody} onChange={(e) => setNewMessageBody(e.target.value)} placeholder="Message body..." className="w-full h-20 bg-[#1a1a1a] border-2 border-[#8b4444] px-3 py-2 text-xs font-mono text-[#e8d7c6] focus:outline-none resize-none" />
-                  <div className="flex gap-2">
-                    <button onClick={handleSendMessage} className="flex-1 bg-[#2a6b2a] hover:bg-[#1a5a1a] text-[#e8d7c6] font-mono font-bold text-xs py-2 border-2 border-[#2a6b2a] transition">✅ Send</button>
-                    <button onClick={() => setShowNewMessage(false)} className="flex-1 bg-[#4a4a4a] hover:bg-[#3a3a3a] text-[#e8d7c6] font-mono font-bold text-xs py-2 border-2 border-[#4a4a4a] transition">Cancel</button>
-                  </div>
-                </div>
-              )}
+          {/* HOME ASSIGNMENTS */}
+          {activeTab === 'home-assignments' && (
+            <div className="space-y-6 animate-fadeIn">
+              <HelpPanel
+                title="Home Assignments"
+                description="Coach-assigned work for home practice. Videos, drills, reflections, and skill development."
+                usage={[
+                  'Review assignment details and due dates',
+                  'Support your child with execution',
+                  'Upload evidence if requested',
+                  'Mark completion status'
+                ]}
+                mistakes={[
+                  'Missing assignment deadlines',
+                  'Not understanding assignment goals',
+                  'Skipping optional evidence uploads'
+                ]}
+                onAskShadow={() => {}}
+              />
 
-              <div className="space-y-2">
-                {unreadCount > 0 && (
-                  <div className="bg-[#6b5a2a]/30 border-2 border-[#d4a574] p-2 text-xs font-mono text-[#d4a574] font-bold">
-                    🔔 {unreadCount} new message{unreadCount > 1 ? 's' : ''} from coach
+              <div className="space-y-3">
+                {homeAssignments.map(assignment => (
+                  <div key={assignment.id} className={`border-2 p-4 rounded ${
+                    assignment.status === 'Completed' ? 'bg-green-900/20 border-green-700' :
+                    assignment.status === 'In Progress' ? 'bg-yellow-900/20 border-yellow-700' :
+                    'bg-[#1a1a1a] border-[#8b4444]'
+                  }`}>
+                    <div className="flex justify-between items-start mb-2">
+                      <h4 className="font-semibold">{assignment.title}</h4>
+                      <span className={`text-xs px-2 py-1 rounded font-semibold ${
+                        assignment.status === 'Completed' ? 'bg-green-900 text-green-200' :
+                        assignment.status === 'In Progress' ? 'bg-yellow-900 text-yellow-200' :
+                        'bg-[#4a4a4a] text-[#8a8a8a]'
+                      }`}>
+                        {assignment.status}
+                      </span>
+                    </div>
+                    <p className="text-sm text-[#b0a095] mb-2">{assignment.description}</p>
+                    <p className="text-xs text-[#8a8a8a]">Due: {assignment.dueDate}</p>
                   </div>
-                )}
-                {studentMessages.map(msg => (
-                  <div key={msg.id} className="bg-[#0a0a0a] border-2 border-[#8b4444] overflow-hidden">
-                    <button onClick={() => setExpandedMessage(expandedMessage === msg.id ? null : msg.id)} className="w-full p-3 text-left hover:bg-[#1a1a1a] transition flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className={`text-[9px] font-bold px-1.5 py-0.5 ${msg.sender === 'coach' ? 'bg-[#2a5a6b]/30 text-[#7ab5c9]' : 'bg-[#5a3a1a]/30 text-[#d4a574]'}`}>
-                            {msg.sender === 'coach' ? '👨‍🏫 Coach' : '👤 You'}
-                          </span>
-                          <span className={`text-[9px] font-mono ${msg.messageType === 'Achievement' ? 'text-[#2a6b2a]' : msg.messageType === 'Concern' ? 'text-[#ff6b6b]' : 'text-[#d4a574]'}`}>{msg.messageType}</span>
-                          {!msg.read && msg.sender === 'coach' && <span className="w-2 h-2 bg-[#d4a574] rounded-full"></span>}
-                        </div>
-                        <div className="text-sm font-mono font-bold text-[#e8d7c6]">{msg.subject}</div>
-                        <div className="text-[10px] text-[#8a8a8a] font-mono mt-1">{new Date(msg.timestamp).toLocaleString()}</div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* OBSERVATIONS */}
+          {activeTab === 'observations' && (
+            <div className="space-y-6 animate-fadeIn">
+              <HelpPanel
+                title="Parent Observations"
+                description="Record what you notice at home about your child's energy, motivation, stress, and development."
+                usage={[
+                  'Note energy and motivation levels',
+                  'Track sleep and recovery',
+                  'Observe behavior changes',
+                  'Report concerns to coaches'
+                ]}
+                mistakes={[
+                  'Not reporting concerning changes',
+                  'Minimizing stress or pain mentions',
+                  'Not sharing positive observations'
+                ]}
+                onAskShadow={() => {}}
+              />
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {parentObservations.map(obs => (
+                  <div key={obs.id} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 rounded space-y-2">
+                    <h4 className="font-semibold">{obs.category}</h4>
+                    <div>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-[#b0a095]">Rating</span>
+                        <span className="font-semibold">{obs.value}/10</span>
                       </div>
-                      <div className="text-[#b0a095] ml-4">{expandedMessage === msg.id ? '▼' : '▶'}</div>
-                    </button>
-                    {expandedMessage === msg.id && (
-                      <div className="bg-[#1a1a1a] border-t-2 border-[#8b4444]/30 p-3 text-sm font-mono text-[#b0a095]">
-                        {msg.body}
+                      <div className="w-full bg-[#4a4a4a] rounded h-2">
+                        <div className="bg-[#d4a574] h-2 rounded" style={{width: `${obs.value * 10}%`}}></div>
                       </div>
+                    </div>
+                    {obs.notes && (
+                      <p className="text-xs text-[#b0a095] italic mt-2">{obs.notes}</p>
                     )}
                   </div>
                 ))}
@@ -267,82 +354,148 @@ export default function ParentHub() {
             </div>
           )}
 
-          {/* ATTENDANCE TAB */}
-          {selectedTab === 'attendance' && (
-            <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-6 space-y-4">
+          {/* FAMILY GOALS */}
+          {activeTab === 'family-goals' && (
+            <div className="space-y-6 animate-fadeIn">
+              <HelpPanel
+                title="Family Goals"
+                description="Collaborative family goals that support your child's boxing journey."
+                usage={[
+                  'Review family support goals',
+                  'Track progress toward goals',
+                  'Work together as a family',
+                  'Celebrate achievements'
+                ]}
+                mistakes={[
+                  'Setting unrealistic goals',
+                  'Not reviewing progress regularly',
+                  'Not involving the whole family'
+                ]}
+                onAskShadow={() => {}}
+              />
+
               <div className="space-y-3">
-                {attendanceHistory.map((record, idx) => (
-                  <div key={idx} className={`border-2 p-3 ${record.attended ? 'bg-[#2a5a2a]/20 border-[#2a6b2a]' : 'bg-[#5a2a2a]/20 border-[#8b4444]'}`}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-mono font-bold text-[#e8d7c6] text-sm">{record.sessionType}</span>
-                      <span className={`text-[9px] font-bold px-2 py-0.5 font-mono ${record.attended ? 'bg-[#2a6b2a] text-[#a0d0a0]' : 'bg-[#8b4444] text-[#e8d7c6]'}`}>
-                        {record.attended ? '✓ Present' : '✕ Absent'}
-                      </span>
+                {familyGoals.map(goal => (
+                  <div key={goal.id} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 rounded space-y-3">
+                    <div className="flex justify-between items-start">
+                      <h4 className="font-semibold">{goal.title}</h4>
+                      <span className="text-xs text-[#8a8a8a]">{goal.targetDate}</span>
                     </div>
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="font-mono text-[#8a8a8a]">{new Date(record.date).toLocaleDateString()}</span>
-                      {record.performance && <span className="font-mono text-[#b0a095]">{record.performance}</span>}
+                    <p className="text-sm text-[#b0a095]">{goal.supportAction}</p>
+                    <div>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-[#b0a095]">Progress</span>
+                        <span className="font-semibold">{goal.progress}%</span>
+                      </div>
+                      <div className="w-full bg-[#4a4a4a] rounded h-2">
+                        <div className="bg-[#d4a574] h-2 rounded" style={{width: `${goal.progress}%`}}></div>
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
-              <div className="bg-[#1a1a1a] border-2 border-[#8b4444]/30 p-3 text-center">
-                <div className="text-xs font-mono text-[#8a8a8a] mb-1">Overall Attendance</div>
-                <div className="text-2xl font-mono font-bold text-[#d4a574]">{currentStudent.attendance}%</div>
-              </div>
             </div>
           )}
 
-          {/* PROGRESS TAB */}
-          {selectedTab === 'progress' && (
-            <div className="space-y-4">
-              <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-6 space-y-4">
-                <h3 className="text-sm font-bold font-mono text-[#e8d7c6] uppercase">Skills Development</h3>
-                <div className="space-y-3">
-                  {['Footwork', 'Punching Technique', 'Defensive Skills', 'Conditioning', 'Boxing IQ', 'Discipline'].map((skill, idx) => (
-                    <div key={idx} className="space-y-1">
-                      <div className="flex justify-between text-xs font-mono">
-                        <span className="text-[#b0a095]">{skill}</span>
-                        <span className="text-[#d4a574] font-bold">{45 + idx * 10}%</span>
-                      </div>
-                      <div className="w-full bg-[#1a1a1a] border-2 border-[#8b4444]/30 h-2 overflow-hidden">
-                        <div className="bg-[#8b4444] h-full transition-all" style={{ width: `${45 + idx * 10}%` }}></div>
-                      </div>
+          {/* MESSAGES */}
+          {activeTab === 'messages' && (
+            <div className="space-y-6 animate-fadeIn">
+              <HelpPanel
+                title="Coach Messages"
+                description="Receive updates and messages from coaches about your child's progress."
+                usage={[
+                  'Check regularly for coach updates',
+                  'Respond to coach requests promptly',
+                  'Ask questions about training',
+                  'Share relevant home observations'
+                ]}
+                mistakes={[
+                  'Ignoring coach messages',
+                  'Delayed responses to urgent matters',
+                  'Not sharing important information'
+                ]}
+                onAskShadow={() => {}}
+              />
+
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {messages.map(msg => (
+                  <div key={msg.id} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 rounded">
+                    <div className="flex justify-between items-start mb-2">
+                      <h4 className="font-semibold">{msg.subject}</h4>
+                      <span className="text-xs text-[#8a8a8a]">From Coach</span>
                     </div>
-                  ))}
-                </div>
+                    <p className="text-sm text-[#b0a095] mb-2">{msg.body}</p>
+                    <p className="text-xs text-[#8a8a8a]">{msg.date}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="border-2 border-[#d4a574] bg-[#0f0f0f] p-4 rounded space-y-3">
+                <h4 className="font-semibold text-[#d4a574]">Reply to Coach</h4>
+                <textarea
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  placeholder="Type your message..."
+                  className="w-full h-20 px-3 py-2 bg-[#1a1a1a] border-2 border-[#8b4444] rounded text-[#e8d7c6] focus:outline-none resize-none"
+                />
+                <button className="px-4 py-2 bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold rounded transition">
+                  Send Message
+                </button>
               </div>
             </div>
           )}
 
-          {/* RESOURCES TAB */}
-          {selectedTab === 'resources' && (
-            <div className="space-y-4">
-              <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-6 space-y-4">
-                <h3 className="text-sm font-bold font-mono text-[#e8d7c6] uppercase mb-4">Helpful Resources</h3>
-                <div className="space-y-3">
-                  <div className="bg-[#1a1a1a] border-2 border-[#8b4444]/30 p-4">
-                    <div className="font-bold font-mono text-[#d4a574] mb-1">📋 Training Schedule</div>
-                    <p className="text-xs font-mono text-[#b0a095]">View class times and book sessions for your child</p>
+          {/* ATTENDANCE */}
+          {activeTab === 'attendance' && (
+            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded space-y-4 animate-fadeIn">
+              <h3 className="font-mono font-bold text-[#d4a574] uppercase">Attendance Tracking</h3>
+              <p className="text-[#b0a095]">View attendance history and upcoming sessions.</p>
+              <div className="text-sm text-[#8a8a8a]">Coming soon: Session-by-session attendance, makeup class scheduling, excused absence tracking.</div>
+            </div>
+          )}
+
+          {/* PROGRESS */}
+          {activeTab === 'progress' && (
+            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded space-y-4 animate-fadeIn">
+              <h3 className="font-mono font-bold text-[#d4a574] uppercase">Progress & Achievements</h3>
+              <p className="text-[#b0a095]">Track skill development and milestone achievements.</p>
+              <div className="text-sm text-[#8a8a8a]">Coming soon: Skill progression charts, belt test preparation, achievement milestones, monthly reports.</div>
+            </div>
+          )}
+
+          {/* RESOURCES */}
+          {activeTab === 'resources' && (
+            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 rounded space-y-4 animate-fadeIn">
+              <h3 className="font-mono font-bold text-[#d4a574] uppercase">Parent Support Resources</h3>
+              <p className="text-[#b0a095]">Guides, videos, and tips for supporting young athletes.</p>
+              <div className="space-y-2">
+                {[
+                  'Youth Sports Psychology Guide',
+                  'Nutrition Basics for Young Athletes',
+                  'Supporting Competition Preparation',
+                  'Injury Prevention and Recovery',
+                  'Motivation and Resilience Building'
+                ].map((resource, i) => (
+                  <div key={i} className="border-2 border-[#8b4444] bg-[#0f0f0f] p-3 rounded">
+                    <p className="font-semibold">{resource}</p>
                   </div>
-                  <div className="bg-[#1a1a1a] border-2 border-[#8b4444]/30 p-4">
-                    <div className="font-bold font-mono text-[#d4a574] mb-1">💪 Nutrition Guide</div>
-                    <p className="text-xs font-mono text-[#b0a095]">Best practices for fueling young athletes</p>
-                  </div>
-                  <div className="bg-[#1a1a1a] border-2 border-[#8b4444]/30 p-4">
-                    <div className="font-bold font-mono text-[#d4a574] mb-1">🛡️ Safety Information</div>
-                    <p className="text-xs font-mono text-[#b0a095]">Equipment requirements and injury prevention</p>
-                  </div>
-                  <div className="bg-[#1a1a1a] border-2 border-[#8b4444]/30 p-4">
-                    <div className="font-bold font-mono text-[#d4a574] mb-1">📞 Contact Information</div>
-                    <p className="text-xs font-mono text-[#b0a095]">Reach out to coaches and staff</p>
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
           )}
-        </>
-      )}
+
+          {/* SHADOW AI */}
+          {activeTab === 'shadow' && (
+            <div className="space-y-6 animate-fadeIn">
+              <RoleSpecificShadow
+                role="parent"
+                query="How can I support my child?"
+                response="Current focus: Footwork development and competition preparation. Support this week by: 1) Ensure practice sessions aren't interrupted, 2) Maintain healthy sleep schedule, 3) Support the home drill assignments, 4) Keep nutrition consistent. Child is progressing well - focus on consistent attendance and positive reinforcement."
+              />
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
