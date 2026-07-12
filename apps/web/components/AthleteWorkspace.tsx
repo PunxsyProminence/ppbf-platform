@@ -9,8 +9,15 @@ import {
   type TrackID,
 } from './trackAssignments';
 
-type TabID = 'dashboard' | 'education' | 'rabbitholes' | 'messaging' | 'scheduling';
+type TabID = 'dashboard' | 'education' | 'rabbitholes' | 'messaging' | 'scheduling' | 'floor' | 'smart-goals' | 'tracks' | 'assessments' | 'shadow';
 type LatinRank = 'TIRO' | 'DISCIPULUS' | 'PUGIL NOVUS' | 'PUGIL SCIENTIA' | 'PUGIL FORTIS' | 'PUGIL PRAECEPTOR';
+type SMARTCategory = 'Boxing' | 'Fitness' | 'Weight Loss' | 'Weight Gain' | 'Academics' | 'Attendance' | 'Recovery' | 'Lifestyle' | 'Leadership';
+type GoalStatus = 'Not Started' | 'Active' | 'Completed' | 'Paused';
+type TrackRequestStatus = 'Draft' | 'Submitted' | 'In Review' | 'Approved' | 'Denied';
+type AssessmentType = 'Personality Test' | 'Motivation Survey' | 'Confidence Survey' | 'Burnout/Stress' | 'Leadership Readiness' | 'Discipline Index' | 'Resilience Check' | 'Coach-Created';
+type PainType = 'Sharp' | 'Dull' | 'Burning' | 'Tight' | 'Pulling' | 'Throbbing' | 'Swollen' | 'Numbness/Tingling' | 'Instability' | 'Other';
+type BodySide = 'Left' | 'Right' | 'Both' | 'Center';
+type ReadinessLevel = 'GREEN' | 'YELLOW' | 'RED';
 
 interface Drill {
   id: string;
@@ -29,7 +36,105 @@ interface RabbitHole {
   homework: string;
 }
 
+interface SMARTGoal {
+  id: string;
+  title: string;
+  category: SMARTCategory;
+  specific: string;
+  measurable: string;
+  achievable: string;
+  relevant: string;
+  timeBound: string;
+  targetDate: string;
+  successMetric: string;
+  linkedWorkouts: string[];
+  linkedTasks: string[];
+  coachNotes: string;
+  athleteReflection: string;
+  status: GoalStatus;
+  progressPercent: number;
+}
+
+interface FloorTask {
+  id: string;
+  title: string;
+  category: string;
+  description: string;
+  dueTime: string;
+  completed: boolean;
+  priority: 'High' | 'Normal';
+  taskType?: 'Individual Workout' | 'Assigned Task' | 'Goal-Linked' | 'Coach Work' | 'Homework';
+  linkedGoalId?: string;
+  assignedBy?: string;
+  dueDate?: string;
+  completionStatus?: 'Not Started' | 'In Progress' | 'Completed';
+  completionNotes?: string;
+  evidenceUpload?: File;
+  progressIndicator?: number;
+}
+
+interface TrackRequest {
+  id: string;
+  trackName: string;
+  reason: string;
+  status: TrackRequestStatus;
+  submittedDate: string;
+  requestedTrack?: TrackID;
+  reasonForRequest?: string;
+  athleteStatement?: string;
+  currentReadiness?: number;
+  attendanceStatus?: 'Good' | 'Fair' | 'Needs Improvement';
+  dateSubmitted?: string;
+  coachReviewStatus?: 'Pending' | 'Reviewed' | 'Approved' | 'Denied';
+  coachNotes?: string;
+  approvalStatus?: 'Pending' | 'Approved' | 'Denied';
+}
+
+interface Assessment {
+  id: string;
+  name?: string;
+  title?: string;
+  type: AssessmentType;
+  description?: string;
+  duration?: number;
+  dateAssigned?: string;
+  dateCompleted?: string;
+  score?: number;
+  summary?: string;
+  coachVisible?: boolean;
+  athleteVisible?: boolean;
+  recommendedAction?: string;
+}
+
+interface PainLocationContext {
+  bodyRegion: string;
+  side: BodySide;
+  severity: number;
+  painType: PainType[];
+  triggerMovement: string;
+  startedWhen: string;
+  trend: 'Improving' | 'Same' | 'Worsening';
+  notes: string;
+  coachReviewNeeded: boolean;
+}
+
+interface TelemetryEvent {
+  eventType: string;
+  timestamp: string;
+  data: any;
+}
+
+interface ShadowMessage {
+  id: string;
+  role?: 'user' | 'shadow';
+  sender?: 'athlete' | 'shadow';
+  content?: string;
+  text?: string;
+  timestamp: string;
+}
+
 export default function AthleteWorkspace() {
+  // Tab & Navigation
   const [activeTab, setActiveTab] = useState<TabID>('dashboard');
   const [activeTrack, setActiveTrack] = useState<TrackID>('non_contact');
   const [assignedTrackIds, setAssignedTrackIds] = useState<TrackID[]>(['non_contact']);
@@ -39,7 +144,18 @@ export default function AthleteWorkspace() {
 
   // Daily Intake States
   const [sleepHours, setSleepHours] = useState<number>(8);
+  const [sleepQuality, setSleepQuality] = useState<number>(7);
+  const [energyLevel, setEnergyLevel] = useState<number>(7);
+  const [mood, setMood] = useState<number>(7);
+  const [stressLevel, setStressLevel] = useState<number>(3);
   const [soreness, setSoreness] = useState<number>(2);
+  const [bodyWeight, setBodyWeight] = useState<number>(150);
+  const [hydrationStatus, setHydrationStatus] = useState<number>(8);
+  const [injuryFlag, setInjuryFlag] = useState<boolean>(false);
+  const [readinessToTrain, setReadinessToTrain] = useState<number>(8);
+  const [expandedCheckIn, setExpandedCheckIn] = useState(false);
+  const [selectedPainLocation, setSelectedPainLocation] = useState<string | null>(null);
+  const [painLocationContexts, setPainLocationContexts] = useState<Record<string, PainLocationContext>>({});
   const [motivation, setMotivation] = useState<number>(7);
   const [rpeGoal, setRpeGoal] = useState<number>(6);
   const [workloadOverrideLevel, setWorkloadOverrideLevel] = useState<number>(0);
@@ -47,7 +163,11 @@ export default function AthleteWorkspace() {
   const [academicPassing, setAcademicPassing] = useState<boolean>(true);
   const [completedDrills, setCompletedDrills] = useState<Record<string, boolean>>({});
   const [drillSearch, setDrillSearch] = useState<string>('');
+
+  // Telemetry & Diagnostics
   const [telemetryLog, setTelemetryLog] = useState<any | null>(null);
+  const [telemetryEvents, setTelemetryEvents] = useState<TelemetryEvent[]>([]);
+  const [expandedDiagnostics, setExpandedDiagnostics] = useState(false);
 
   // SafeSport Messaging States
   const [messageRecipient, setMessageRecipient] = useState<string>("Coach Jason");
@@ -56,6 +176,57 @@ export default function AthleteWorkspace() {
 
   // Booking States
   const [academicHold, setAcademicHold] = useState<boolean>(false);
+
+  // Athlete Floor States
+  const [floorTasks, setFloorTasks] = useState<FloorTask[]>([
+    { id: 'ft_1', title: 'Morning Readiness Check-In', category: 'Check-In', description: 'Complete biological readiness survey', dueTime: '7:00 AM', completed: false, priority: 'High' },
+    { id: 'ft_2', title: 'Warmup Drills - Footwork', category: 'Training', description: 'Execute prescribed footwork progression', dueTime: '4:00 PM', completed: false, priority: 'High' },
+    { id: 'ft_3', title: 'Conditioning Block', category: 'Training', description: 'Complete 30-minute conditioning session', dueTime: '5:00 PM', completed: false, priority: 'Normal' },
+    { id: 'ft_4', title: 'Goal Review Journal', category: 'Homework', description: 'Reflect on weekly SMART goal progress', dueTime: '8:00 PM', completed: true, priority: 'Normal' }
+  ]);
+  const [newFloorTaskTitle, setNewFloorTaskTitle] = useState('');
+  const [newFloorTaskType, setNewFloorTaskType] = useState<'Individual Workout' | 'Assigned Task' | 'Goal-Linked' | 'Coach Work' | 'Homework'>('Individual Workout');
+  const [newFloorTaskDueDate, setNewFloorTaskDueDate] = useState('');
+
+  // SMART Goals States
+  const [smartGoals, setSmartGoals] = useState<SMARTGoal[]>([
+    { id: 'sg_1', title: 'Master 5-Punch Combination', category: 'Boxing', specific: 'Execute jab-cross-hook-uppercut-cross with 85% accuracy', measurable: 'Hit target pad 85 times out of 100 attempts', achievable: 'Aligns with current skill level', relevant: 'Foundation for sparring progression', timeBound: '30 days', targetDate: '2026-08-12', successMetric: '85% accuracy rate', linkedWorkouts: ['wd_2', 'wd_3'], linkedTasks: [], coachNotes: 'Focus on hip rotation for power', athleteReflection: 'Feeling good about combo drills', status: 'Active', progressPercent: 45 },
+    { id: 'sg_2', title: 'Build 10-Pound Muscle Mass', category: 'Fitness', specific: 'Gain 10 pounds of lean muscle through resistance training', measurable: 'Weekly bodyweight and body composition tracking', achievable: 'Realistic with 4x/week training and proper nutrition', relevant: 'Improves punch power and resilience', timeBound: '90 days', targetDate: '2026-10-12', successMetric: '10 lbs gain with <15% body fat increase', linkedWorkouts: ['wd_4'], linkedTasks: [], coachNotes: 'Increase protein intake to 1.2g per lb', athleteReflection: 'On track with meal prep', status: 'Active', progressPercent: 25 },
+    { id: 'sg_3', title: 'Maintain 4.0 GPA', category: 'Academics', specific: 'Keep all grades at A (90+) level', measurable: 'Report card GPA = 4.0', achievable: 'Balanced with training schedule', relevant: 'Required for scholarship eligibility', timeBound: 'This semester (18 weeks)', targetDate: '2026-12-15', successMetric: '4.0 GPA on report card', linkedWorkouts: [], linkedTasks: [], coachNotes: 'Time management is key', athleteReflection: 'Need to study more consistently', status: 'Active', progressPercent: 90 }
+  ]);
+  const [newGoalTitle, setNewGoalTitle] = useState('');
+  const [newGoalCategory, setNewGoalCategory] = useState<SMARTCategory>('Boxing');
+  const [newGoalTargetDate, setNewGoalTargetDate] = useState('');
+  const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
+
+  // Tracks States
+  const [trackRequests, setTrackRequests] = useState<TrackRequest[]>([
+    { id: 'tr_1', trackName: 'Pugil Scientia (Technical Boxing)', reason: 'Demonstrated mastery of fundamentals and ready for advanced techniques', status: 'Approved', submittedDate: '2026-07-01' },
+    { id: 'tr_2', trackName: 'Fitness Progression Track', reason: 'Want to focus more on strength and conditioning for boxing performance', status: 'Submitted', submittedDate: '2026-07-08' },
+    { id: 'tr_3', trackName: 'Leadership Development', reason: 'Interested in mentoring newer athletes', status: 'In Review', submittedDate: '2026-07-10' }
+  ]);
+  const [newTrackRequest, setNewTrackRequest] = useState<Partial<TrackRequest>>({});
+  const [showTrackRequestForm, setShowTrackRequestForm] = useState(false);
+
+  // Assessments States
+  const [completedAssessments, setCompletedAssessments] = useState<Assessment[]>([]);
+  const [selectedAssessment, setSelectedAssessment] = useState<string | null>(null);
+  const [assessmentAnswers, setAssessmentAnswers] = useState<Record<string, string | number>>({});
+
+  // SHADOW AI States
+  const [shadowChatHistory, setShadowChatHistory] = useState<ShadowMessage[]>([
+    { id: 'sm_1', sender: 'shadow', text: 'Hey! I\'m SHADOW, your AI athletic coach. How\'s your training going today?', timestamp: new Date(Date.now() - 600000).toISOString() },
+    { id: 'sm_2', sender: 'athlete', text: 'Pretty good, but my footwork felt off during drills', timestamp: new Date(Date.now() - 540000).toISOString() },
+    { id: 'sm_3', sender: 'shadow', text: 'Let\'s dig into that. What specific footwork drill were you working on?', timestamp: new Date(Date.now() - 480000).toISOString() },
+    { id: 'sm_4', sender: 'athlete', text: 'The pivot and angle adjustment from the technical boxing progression', timestamp: new Date(Date.now() - 420000).toISOString() },
+    { id: 'sm_5', sender: 'shadow', text: 'Good - try focusing on your weight transfer first. The angles will follow. Record a short video if you can.', timestamp: new Date(Date.now() - 360000).toISOString() }
+  ]);
+  const [shadowInput, setShadowInput] = useState('');
+  const [shadowOnline, setShadowOnline] = useState(true);
+  const [shadowRoleMode, setShadowRoleMode] = useState<'Athlete'>('Athlete');
+
+  // Help/Tutorial States
+  const [expandedHelpTab, setExpandedHelpTab] = useState<TabID | null>(null);
 
   // Ranks mapped directly to the Boxing program (Progrm Direction.docx)
   const rankDefinitions: Record<LatinRank, { label: string; desc: string }> = {
@@ -93,6 +264,156 @@ export default function AthleteWorkspace() {
     }
   ];
 
+  // Assessment Library
+  const assessmentLibrary: Assessment[] = [
+    {
+      id: 'ass_1',
+      name: 'MBTI Personality Test',
+      title: 'MBTI Personality Test',
+      type: 'Personality Test',
+      description: 'Discover your personality type and learning style through comprehensive assessment.',
+      duration: 15,
+      dateAssigned: new Date(Date.now() - 7*24*60*60*1000).toISOString().split('T')[0],
+      dateCompleted: undefined,
+      score: undefined,
+      coachVisible: true,
+      athleteVisible: true,
+      recommendedAction: 'Complete self-reflection session to understand communication strengths'
+    },
+    {
+      id: 'ass_2',
+      name: 'Motivation & Drive Survey',
+      title: 'Motivation & Drive Survey',
+      type: 'Motivation Survey',
+      description: 'Evaluate your intrinsic and extrinsic motivation factors in athletics.',
+      duration: 12,
+      dateAssigned: new Date(Date.now() - 5*24*60*60*1000).toISOString().split('T')[0],
+      dateCompleted: undefined,
+      score: undefined,
+      coachVisible: true,
+      athleteVisible: true,
+      recommendedAction: 'Identify intrinsic vs extrinsic motivation factors'
+    },
+    {
+      id: 'ass_3',
+      name: 'Burnout & Stress Screening',
+      title: 'Burnout & Stress Screening',
+      type: 'Burnout/Stress',
+      description: 'Screen for burnout signs and stress levels affecting your performance.',
+      duration: 10,
+      dateAssigned: new Date(Date.now() - 3*24*60*60*1000).toISOString().split('T')[0],
+      dateCompleted: undefined,
+      score: undefined,
+      coachVisible: true,
+      athleteVisible: false,
+      recommendedAction: 'Coach will review and plan recovery week if needed'
+    }
+  ];
+
+  // Help Content by Tab
+  const helpContent: Record<TabID, { title: string; description: string; tips: string[] }> = {
+    'dashboard': {
+      title: 'My Dashboard',
+      description: 'Your daily command center. Track readiness, complete biological check-in, view prescribed workload, and monitor academic status.',
+      tips: [
+        'Expand the biological check-in for detailed metrics',
+        'Readiness score (GREEN/YELLOW/RED) guides training intensity',
+        'Academic holds prevent session booking',
+        'Track soreness locations for coach awareness'
+      ]
+    },
+    'floor': {
+      title: 'Athlete Floor',
+      description: 'Your daily execution board. View workouts, assigned tasks, homework, and coaching work with completion status and due dates.',
+      tips: [
+        'Check daily for new tasks from Coach Jason',
+        'Link tasks to your SMART goals',
+        'Mark completion status as you work',
+        'Upload evidence or notes for accountability'
+      ]
+    },
+    'smart-goals': {
+      title: 'SMART Goals',
+      description: 'Create and track measurable goals using SMART framework. Monitor progress and connect workouts/tasks to your goals.',
+      tips: [
+        'Specific goals are concrete and clear',
+        'Measurable goals track progress with metrics',
+        'Set realistic timeframes in your target date',
+        'Regular reflection improves outcomes'
+      ]
+    },
+    'tracks': {
+      title: 'Tracks',
+      description: 'Manage your current track assignment and request new tracks as you progress through the boxing program.',
+      tips: [
+        'Current track shows your active training level',
+        'Review eligibility requirements before applying',
+        'Attend consistently to qualify for upgrades',
+        'Coach review takes 5-7 business days'
+      ]
+    },
+    'education': {
+      title: 'Drill Library',
+      description: 'Physical lesson items and technical boxing drills organized by category with coaching cues.',
+      tips: [
+        'Search by drill name or category',
+        'Coaching cues are keys to proper technique',
+        'Mark drills complete as you master them',
+        'Progressive complexity based on rank'
+      ]
+    },
+    'rabbitholes': {
+      title: 'Rabbit Holes',
+      description: 'Deep-dive research into biomechanics, neurology, and advanced boxing theory. Homework assignments included.',
+      tips: [
+        'Read the breakdown carefully',
+        'Complete homework to internalize concepts',
+        'Ask Coach Jason for clarification',
+        'Apply learnings to your training'
+      ]
+    },
+    'assessments': {
+      title: 'Assessments',
+      description: 'Complete personality tests, surveys, and skill assessments. Results inform coaching and personal development.',
+      tips: [
+        'Answer honestly for best insights',
+        'Some assessments are coach-visible only',
+        'Recommended actions guide your next steps',
+        'Retake annually to track growth'
+      ]
+    },
+    'messaging': {
+      title: 'Message Coach',
+      description: 'SafeSport-compliant messaging portal. Parent carbon copy active for all minor communications.',
+      tips: [
+        'Parent email CC is automatic for minors',
+        'Be clear and specific in your questions',
+        'Messages are logged for safety',
+        'Coach responds within 24 hours typically'
+      ]
+    },
+    'scheduling': {
+      title: 'Schedule Session',
+      description: 'Book training sessions, coaching appointments, and group classes. Academic holds prevent scheduling.',
+      tips: [
+        'Check your academic status first',
+        'Book early for preferred time slots',
+        'Cancellations require 24-hour notice',
+        'Readiness RED status may limit contact work'
+      ]
+    },
+    'shadow': {
+      title: 'SHADOW AI Assistant',
+      description: 'SHADOW (Systemic Holistic Analytics & Diagnostic Oversight Wing) provides answers to your training questions.',
+      tips: [
+        'SHADOW is athlete-only and cannot expose board/financial data',
+        'Ask about workouts, goals, tasks, readiness, tracks, and SMART goals',
+        'SHADOW refuses to answer about other athletes or admin data',
+        'Use suggested questions to get started'
+      ]
+    }
+  };
+
   const sorenessAreaOptions = [
     'Neck',
     'Shoulders',
@@ -104,6 +425,17 @@ export default function AthleteWorkspace() {
     'Hamstrings',
     'Calves',
     'Hands/Wrists',
+  ];
+
+  const suggestedShadowQuestions = [
+    'What workout is scheduled for today?',
+    'Why is my readiness score low?',
+    'What SMART goal am I working on this week?',
+    'Do I have any outstanding tasks?',
+    'What does soreness score mean for my training?',
+    'How do I request a track upgrade?',
+    'What are the steps to create a SMART goal?',
+    'What readiness level means I can do contact work?'
   ];
 
   useEffect(() => {
@@ -214,6 +546,11 @@ export default function AthleteWorkspace() {
           <button onClick={() => setActiveTab('rabbitholes')} className={`px-3 py-1.5 transition ${activeTab === 'rabbitholes' ? 'bg-[#5a2a2a] text-[#e8d7c6]' : 'hover:text-[#e8d7c6]'}`}>Rabbit Holes</button>
           <button onClick={() => setActiveTab('messaging')} className={`px-3 py-1.5 transition ${activeTab === 'messaging' ? 'bg-[#5a2a2a] text-[#e8d7c6]' : 'hover:text-[#e8d7c6]'}`}>Message Coach</button>
           <button onClick={() => setActiveTab('scheduling')} className={`px-3 py-1.5 transition ${activeTab === 'scheduling' ? 'bg-[#5a2a2a] text-[#e8d7c6]' : 'hover:text-[#e8d7c6]'}`}>Schedule Session</button>
+          <button onClick={() => setActiveTab('floor')} className={`px-3 py-1.5 transition ${activeTab === 'floor' ? 'bg-[#5a2a2a] text-[#e8d7c6]' : 'hover:text-[#e8d7c6]'}`}>Athlete Floor</button>
+          <button onClick={() => setActiveTab('smart-goals')} className={`px-3 py-1.5 transition ${activeTab === 'smart-goals' ? 'bg-[#5a2a2a] text-[#e8d7c6]' : 'hover:text-[#e8d7c6]'}`}>SMART Goals</button>
+          <button onClick={() => setActiveTab('tracks')} className={`px-3 py-1.5 transition ${activeTab === 'tracks' ? 'bg-[#5a2a2a] text-[#e8d7c6]' : 'hover:text-[#e8d7c6]'}`}>Track Upgrade</button>
+          <button onClick={() => setActiveTab('assessments')} className={`px-3 py-1.5 transition ${activeTab === 'assessments' ? 'bg-[#5a2a2a] text-[#e8d7c6]' : 'hover:text-[#e8d7c6]'}`}>Assessments</button>
+          <button onClick={() => setActiveTab('shadow')} className={`px-3 py-1.5 transition ${activeTab === 'shadow' ? 'bg-[#5a2a2a] text-[#e8d7c6]' : 'hover:text-[#e8d7c6]'}`}>SHADOW AI</button>
         </div>
       </div>
 
@@ -568,6 +905,157 @@ export default function AthleteWorkspace() {
                   <p className="text-[10px] text-[#8a8a8a]">Simulate school tracking blockades.</p>
                 </div>
                 <button type="button" onClick={() => setAcademicHold(!academicHold)} className={`px-3 py-1 text-[11px] font-bold border-2 transition ${academicHold ? 'bg-[#4a0000]/40 border-[#8b4444] text-[#ff6b6b]' : 'bg-[#4a0000]/40 border-[#8b4444] text-[#d4a574]'}`}>{academicHold ? 'HOLD ACTIVE' : 'CLEAR'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- ATHLETE FLOOR VIEW --- */}
+      {activeTab === 'floor' && (
+        <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-6 space-y-6 animate-fadeIn">
+          <div className="border-b border-[#4a4a4a] pb-3">
+            <h3 className="text-base font-bold font-mono text-[#e8d7c6]">Athlete Floor: Daily Execution Board</h3>
+            <p className="text-xs text-[#b0a095] font-mono mt-0.5">Track daily tasks, training blocks, and accountability checkpoints.</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {floorTasks.map(task => (
+              <div key={task.id} className={`border-2 p-4 space-y-3 ${task.completed ? 'bg-[#1a1a1a]/20 border-[#4a6a4a]' : 'bg-[#1a1a1a]/40 border-[#8b4444]'}`}>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <span className="text-[9px] font-mono font-bold bg-[#4a4a4a] text-[#e8d7c6] px-2 py-0.5 uppercase">{task.category}</span>
+                    <h4 className="text-sm font-bold font-mono text-[#e8d7c6] mt-2">{task.title}</h4>
+                  </div>
+                  <input type="checkbox" checked={task.completed} onChange={() => {
+                    setFloorTasks(floorTasks.map(t => t.id === task.id ? {...t, completed: !t.completed} : t));
+                  }} className="w-5 h-5 cursor-pointer" />
+                </div>
+                <p className="text-xs text-[#b0a095] font-mono">{task.description}</p>
+                <div className="flex items-center gap-2 text-[10px] font-mono text-[#8a8a8a]">
+                  <span>⏰ {task.dueTime}</span>
+                  <span className={`px-2 py-0.5 font-bold ${task.priority === 'High' ? 'bg-[#8b4444]/40 text-[#ff6b6b]' : 'bg-[#4a4a4a]/40 text-[#d4a574]'}`}>{task.priority}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* --- SMART GOALS VIEW --- */}
+      {activeTab === 'smart-goals' && (
+        <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-6 space-y-6 animate-fadeIn">
+          <div className="border-b border-[#4a4a4a] pb-3">
+            <h3 className="text-base font-bold font-mono text-[#e8d7c6]">SMART Goals Framework</h3>
+            <p className="text-xs text-[#b0a095] font-mono mt-0.5">Specific, Measurable, Achievable, Relevant, Time-bound goal tracking for athletic progression.</p>
+          </div>
+
+          <div className="space-y-4">
+            {smartGoals.map(goal => (
+              <div key={goal.id} className="bg-[#1a1a1a]/40 border-2 border-[#8b4444] p-5 space-y-3">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <span className="text-[9px] font-mono font-bold bg-[#4a4a4a] text-[#e8d7c6] px-2 py-0.5 uppercase">{goal.category}</span>
+                    <h4 className="text-sm font-bold font-mono text-[#e8d7c6] mt-2">{goal.title}</h4>
+                  </div>
+                  <span className={`text-[9px] font-bold px-2 py-1 border-2 font-mono ${goal.status === 'Active' ? 'bg-[#4a6a4a]/40 border-[#4a6a4a] text-[#4a9a4a]' : goal.status === 'Completed' ? 'bg-[#4a6a4a]/40 border-[#4a6a4a] text-[#6aaa6a]' : 'bg-[#4a4a4a]/40 border-[#8a8a8a] text-[#b0a095]'}`}>{goal.status}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs font-mono text-[#b0a095]">
+                  <span><strong>Target:</strong> {goal.successMetric}</span>
+                  <span><strong>Due:</strong> {goal.targetDate}</span>
+                </div>
+                <div className="w-full bg-[#0f0f0f] border-2 border-[#8b4444]/40 h-2 rounded">
+                  <div className="bg-[#8b4444] h-full" style={{ width: `${Math.min(100, (Math.random() * 60 + 20))}%` }}></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* --- TRACK REQUESTS VIEW --- */}
+      {activeTab === 'tracks' && (
+        <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-6 space-y-6 animate-fadeIn">
+          <div className="border-b border-[#4a4a4a] pb-3">
+            <h3 className="text-base font-bold font-mono text-[#e8d7c6]">Track Upgrade Applications</h3>
+            <p className="text-xs text-[#b0a095] font-mono mt-0.5">Apply for boxing and fitness track upgrades. Requires coach approval and demonstrated competency.</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {trackRequests.map(tr => (
+              <div key={tr.id} className="bg-[#1a1a1a]/40 border-2 border-[#8b4444] p-4 space-y-2">
+                <h4 className="text-sm font-bold font-mono text-[#e8d7c6]">{tr.trackName}</h4>
+                <p className="text-xs text-[#b0a095] font-mono">{tr.reason}</p>
+                <div className="flex justify-between items-center text-xs font-mono">
+                  <span className={`px-2 py-0.5 font-bold ${tr.status === 'Approved' ? 'bg-[#4a6a4a]/40 text-[#4a9a4a]' : tr.status === 'Denied' ? 'bg-[#8b4444]/40 text-[#ff6b6b]' : 'bg-[#4a4a4a]/40 text-[#b0a095]'}`}>{tr.status}</span>
+                  <span className="text-[#8a8a8a]">Submitted: {tr.submittedDate}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* --- ASSESSMENTS VIEW --- */}
+      {activeTab === 'assessments' && (
+        <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-6 space-y-6 animate-fadeIn">
+          <div className="border-b border-[#4a4a4a] pb-3">
+            <h3 className="text-base font-bold font-mono text-[#e8d7c6]">Athlete Assessments & Surveys</h3>
+            <p className="text-xs text-[#b0a095] font-mono mt-0.5">Complete personality tests, motivation surveys, burnout screening, and leadership readiness evaluations.</p>
+          </div>
+
+          <div className="space-y-4">
+            {assessmentLibrary.map(assess => (
+              <div key={assess.id} className="bg-[#1a1a1a]/40 border-2 border-[#8b4444] p-4">
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <span className="text-[9px] font-mono font-bold bg-[#4a4a4a] text-[#e8d7c6] px-2 py-0.5 uppercase">{assess.type}</span>
+                    <h4 className="text-sm font-bold font-mono text-[#e8d7c6] mt-2">{assess.name}</h4>
+                  </div>
+                  <span className="text-[10px] font-mono text-[#8a8a8a]">{assess.duration} min</span>
+                </div>
+                <p className="text-xs text-[#b0a095] font-mono mb-3">{assess.description}</p>
+                <button className="w-full bg-[#dc2626] hover:bg-[#8b4444] text-[#e8d7c6] font-mono font-bold text-xs py-2 transition uppercase tracking-wider border-2 border-[#8b4444]">
+                  Start Assessment
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* --- SHADOW AI CHAT VIEW --- */}
+      {activeTab === 'shadow' && (
+        <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-6 space-y-6 animate-fadeIn">
+          <div className="border-b border-[#4a4a4a] pb-3">
+            <h3 className="text-base font-bold font-mono text-[#e8d7c6]">SHADOW: AI Athletic Coach Assistant</h3>
+            <p className="text-xs text-[#b0a095] font-mono mt-0.5">Personalized AI coaching conversation for technique, motivation, recovery, and progression planning.</p>
+          </div>
+
+          <div className="bg-[#1a1a1a] border-2 border-[#8b4444] p-4 h-64 overflow-y-auto space-y-3 mb-4">
+            {shadowChatHistory.map((msg, idx) => (
+              <div key={idx} className={`flex ${msg.sender === 'athlete' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-xs px-3 py-2 rounded text-xs font-mono ${msg.sender === 'athlete' ? 'bg-[#8b4444] text-[#e8d7c6]' : 'bg-[#4a4a4a] text-[#e8d7c6]'}`}>
+                  {msg.text}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex gap-2">
+              <input
+                type="text" placeholder="Ask SHADOW about your training..."
+                className="flex-1 bg-[#1a1a1a] border-2 border-[#8b4444] px-3 py-2 text-xs font-mono text-[#e8d7c6] focus:outline-none focus:border-[#dc2626]"
+              />
+              <button className="px-4 py-2 bg-[#dc2626] hover:bg-[#8b4444] text-[#e8d7c6] font-mono font-bold text-xs border-2 border-[#8b4444] transition">Send</button>
+            </div>
+            <div className="border-t border-[#4a4a4a] pt-3">
+              <span className="text-[9px] font-bold font-mono text-[#8a8a8a] uppercase block mb-2">Suggested Questions:</span>
+              <div className="flex flex-wrap gap-2">
+                {['How can I improve my footwork?', 'What should I focus on this week?', 'Recovery recommendations?'].map((q, idx) => (
+                  <button key={idx} className="text-[9px] font-mono bg-[#4a4a4a] hover:bg-[#8b4444] text-[#e8d7c6] px-2 py-1 border-2 border-[#8b4444] transition">{q}</button>
+                ))}
               </div>
             </div>
           </div>
