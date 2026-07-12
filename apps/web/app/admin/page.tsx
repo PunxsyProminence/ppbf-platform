@@ -227,75 +227,107 @@ export default function AdminCapabilitiesPage() {
 
   return (
     <RoleSessionGate allowedRoles={['admin']}>
-    <main style={{ minHeight: '100vh', background: '#f8f9fa', color: '#111' }}>
+    <main style={{ minHeight: '100vh', background: '#0a0a0a', color: '#f0f0f0' }}>
       <header
         style={{
-          background: '#111',
+          background: '#1a1a1a',
           color: 'white',
-          padding: '16px 40px',
+          padding: '12px 24px',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
+          borderBottom: '4px solid #7f1d1d',
+          fontFamily: 'monospace',
         }}
       >
-        <div>
-          <strong>PPBF</strong> Platform
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+        <div style={{ fontWeight: 'bold', fontSize: '1.1rem', letterSpacing: '0.1em' }}>PPBF ADMIN</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <Link
             href="/admin/shadow"
             style={{
-              fontSize: '0.8rem',
-              border: '1px solid rgba(220,38,38,0.5)',
-              background: 'rgba(220,38,38,0.15)',
+              fontSize: '0.75rem',
+              border: '2px solid #991b1b',
+              background: '#7f1d1d',
               color: '#fca5a5',
-              borderRadius: '8px',
-              padding: '6px 10px',
+              padding: '6px 8px',
               textDecoration: 'none',
               fontWeight: 700,
+              fontFamily: 'monospace',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+            }}
+            onMouseOver={(e) => {
+              (e.target as HTMLElement).style.background = '#b91c1c';
+              (e.target as HTMLElement).style.borderColor = '#dc2626';
+            }}
+            onMouseOut={(e) => {
+              (e.target as HTMLElement).style.background = '#7f1d1d';
+              (e.target as HTMLElement).style.borderColor = '#991b1b';
             }}
           >
-            SHADOW Console
+            SHADOW
           </Link>
           <Link
             href="/operations"
             style={{
-              fontSize: '0.8rem',
-              border: '1px solid rgba(34,211,238,0.5)',
-              background: 'rgba(34,211,238,0.15)',
-              color: '#cffafe',
-              borderRadius: '8px',
-              padding: '6px 10px',
+              fontSize: '0.75rem',
+              border: '2px solid #374151',
+              background: '#1f2937',
+              color: '#d1d5db',
+              padding: '6px 8px',
               textDecoration: 'none',
               fontWeight: 700,
+              fontFamily: 'monospace',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+            }}
+            onMouseOver={(e) => {
+              (e.target as HTMLElement).style.background = '#374151';
+              (e.target as HTMLElement).style.borderColor = '#4b5563';
+            }}
+            onMouseOut={(e) => {
+              (e.target as HTMLElement).style.background = '#1f2937';
+              (e.target as HTMLElement).style.borderColor = '#374151';
             }}
           >
-            Operations Hub
+            OPS HUB
           </Link>
           <Link
-            href="/launch"
+            href="/research/chat"
             style={{
-              fontSize: '0.8rem',
-              border: '1px solid #4b5563',
-              color: '#e5e7eb',
-              borderRadius: '8px',
-              padding: '6px 10px',
+              fontSize: '0.75rem',
+              border: '2px solid #78350f',
+              background: '#92400e',
+              color: '#d97706',
+              padding: '6px 8px',
               textDecoration: 'none',
               fontWeight: 700,
+              fontFamily: 'monospace',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+            }}
+            onMouseOver={(e) => {
+              (e.target as HTMLElement).style.background = '#b45309';
+              (e.target as HTMLElement).style.borderColor = '#d97706';
+            }}
+            onMouseOut={(e) => {
+              (e.target as HTMLElement).style.background = '#92400e';
+              (e.target as HTMLElement).style.borderColor = '#78350f';
             }}
           >
-            Launch Portal
+            RESEARCH
           </Link>
-          <div style={{ fontSize: '0.9rem' }}>Governed by Layer 0</div>
         </div>
       </header>
 
       <section
         style={{
-          background: '#fefce8',
-          padding: '8px 40px',
-          fontSize: '0.875rem',
-          borderBottom: '1px solid #fde047',
+          background: '#0f0f0f',
+          padding: '8px 24px',
+          fontSize: '0.75rem',
+          borderBottom: '2px solid #333',
+          fontFamily: 'monospace',
+          letterSpacing: '0.05em',
         }}
       >
         All actions are logged. Jason approval required for production changes.
