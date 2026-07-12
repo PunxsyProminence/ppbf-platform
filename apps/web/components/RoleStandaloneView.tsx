@@ -1,7 +1,11 @@
+"use client";
+
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
 import RoleSessionGate from './RoleSessionGate';
 import type { ClubRole } from './roleRoutes';
+import { clearRoleSession } from './roleSession';
 
 interface RoleStandaloneViewProps {
   roleLabel: string;
@@ -11,6 +15,13 @@ interface RoleStandaloneViewProps {
 }
 
 export default function RoleStandaloneView({ roleLabel, routeLabel, allowedRoles, children }: RoleStandaloneViewProps) {
+  const router = useRouter();
+
+  function signOut() {
+    clearRoleSession();
+    router.replace('/login');
+  }
+
   return (
     <RoleSessionGate allowedRoles={allowedRoles}>
       <main className="min-h-screen bg-[#030712] text-slate-100">
@@ -36,6 +47,13 @@ export default function RoleStandaloneView({ roleLabel, routeLabel, allowedRoles
               >
                 Launch Portal
               </Link>
+              <button
+                type="button"
+                onClick={signOut}
+                className="rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-1 text-[11px] font-mono text-rose-200 transition hover:bg-rose-500/20"
+              >
+                Logout
+              </button>
             </div>
           </div>
         </header>

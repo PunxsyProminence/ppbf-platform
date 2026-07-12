@@ -1,8 +1,21 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
+import { clearRoleSession } from '@/components/roleSession';
+import {
+  allTrackIds,
+  athleteProfiles,
+  loadTrackAssignments,
+  readActiveAthleteProfileId,
+  saveActiveAthleteProfileId,
+  saveTrackAssignments,
+  trackManifests,
+  type TrackAssignments,
+  type TrackID,
+} from '@/components/trackAssignments';
 
 type CapabilityStatus = 'DRAFT' | 'ACTIVE' | 'BLOCKED';
 
@@ -69,14 +82,25 @@ function normalizeImportedCapabilities(input: unknown): Capability[] {
 }
 
 export default function AdminCapabilitiesPage() {
+  const router = useRouter();
   const [capabilities, setCapabilities] = useState<Capability[]>([]);
   const [query, setQuery] = useState('');
   const [name, setName] = useState('');
   const [group, setGroup] = useState('Core Platform');
   const [status, setStatus] = useState<CapabilityStatus>('DRAFT');
+  const [selectedAthleteId, setSelectedAthleteId] = useState(athleteProfiles[0].id);
+  const [trackAssignments, setTrackAssignments] = useState<TrackAssignments>({});
   const [ready, setReady] = useState(false);
 
+  function signOut() {
+    clearRoleSession();
+    router.replace('/login');
+  }
+
   useEffect(() => {
+    setTrackAssignments(loadTrackAssignments());
+    setSelectedAthleteId(readActiveAthleteProfileId());
+
     let mounted = true;
 
     async function loadCapabilities() {
@@ -120,6 +144,18 @@ export default function AdminCapabilitiesPage() {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (Object.keys(trackAssignments).length === 0) {
+      return;
+    }
+
+    saveTrackAssignments(trackAssignments);
+  }, [trackAssignments]);
+
+  useEffect(() => {
+    saveActiveAthleteProfileId(selectedAthleteId);
+  }, [selectedAthleteId]);
 
   useEffect(() => {
     if (!ready) {
@@ -181,6 +217,22 @@ export default function AdminCapabilitiesPage() {
     URL.revokeObjectURL(url);
   }
 
+  function toggleTrackAssignment(trackId: TrackID) {
+    setTrackAssignments((current) => {
+      const existing = current[selectedAthleteId] ?? [];
+      const next = existing.includes(trackId)
+        ? existing.filter((id) => id !== trackId)
+        : [...existing, trackId];
+
+      return {
+        ...current,
+        [selectedAthleteId]: next.length > 0 ? next : ['non_contact'],
+      };
+    });
+  }
+
+  const assignedTracks = trackAssignments[selectedAthleteId] ?? ['non_contact'];
+
   return (
     <RoleSessionGate allowedRoles={['admin']}>
     <main style={{ minHeight: '100vh', background: '#f8f9fa', color: '#111' }}>
@@ -227,6 +279,22 @@ export default function AdminCapabilitiesPage() {
           >
             Launch Portal
           </Link>
+          <button
+            type="button"
+            onClick={signOut}
+            style={{
+              fontSize: '0.8rem',
+              border: '1px solid #f87171',
+              color: '#fecaca',
+              borderRadius: '8px',
+              padding: '6px 10px',
+              background: 'rgba(127,29,29,0.45)',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            Logout
+          </button>
           <div style={{ fontSize: '0.9rem' }}>Governed by Layer 0</div>
         </div>
       </header>
@@ -244,6 +312,67 @@ export default function AdminCapabilitiesPage() {
 
       <div style={{ padding: '32px 40px' }}>
         <h1 style={{ marginBottom: '24px', fontSize: '2rem' }}>Admin Dashboard - Capabilities</h1>
+
+        <section
+          style={{
+            display: 'grid',
+            gap: '12px',
+            padding: '18px',
+            border: '1px solid #ddd',
+            borderRadius: '10px',
+            background: 'white',
+            marginBottom: '18px',
+          }}
+        >
+          <h2 style={{ fontSize: '1.2rem', marginBottom: '4px' }}>Athlete Track Assignment</h2>
+
+          <label style={{ fontSize: '0.85rem', color: '#4b5563' }} htmlFor="athleteProfile">
+            Active athlete profile
+          </label>
+          <select
+            id="athleteProfile"
+            value={selectedAthleteId}
+            onChange={(event) => setSelectedAthleteId(event.target.value)}
+            style={{ padding: '10px', border: '1px solid #ccc', borderRadius: '8px' }}
+          >
+            {athleteProfiles.map((profile) => (
+              <option key={profile.id} value={profile.id}>
+                {profile.label}
+              </option>
+            ))}
+          </select>
+
+          <div style={{ display: 'grid', gap: '10px', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
+            {allTrackIds.map((trackId) => {
+              const assigned = assignedTracks.includes(trackId);
+              return (
+                <button
+                  key={trackId}
+                  type="button"
+                  onClick={() => toggleTrackAssignment(trackId)}
+                  style={{
+                    textAlign: 'left',
+                    borderRadius: '10px',
+                    border: assigned ? '1px solid #16a34a' : '1px solid #d1d5db',
+                    background: assigned ? '#ecfdf3' : 'white',
+                    color: '#111827',
+                    padding: '12px',
+                    cursor: 'pointer',
+                    display: 'grid',
+                    gap: '4px',
+                  }}
+                >
+                  <strong style={{ fontSize: '0.9rem' }}>{trackManifests[trackId].name}</strong>
+                  <span style={{ fontSize: '0.75rem', color: '#4b5563' }}>{assigned ? 'Assigned' : 'Not assigned'}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <p style={{ margin: 0, fontSize: '0.78rem', color: '#6b7280' }}>
+            Athlete dashboards now only surface assigned tracks. Athletes can still review the full track catalog in read-only mode.
+          </p>
+        </section>
 
         <section
           style={{

@@ -1,9 +1,15 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  athleteProfiles,
+  loadTrackAssignments,
+  readActiveAthleteProfileId,
+  trackManifests,
+  type TrackID,
+} from './trackAssignments';
 
 type TabID = 'dashboard' | 'education' | 'rabbitholes' | 'messaging' | 'scheduling';
-type TrackID = 'non_contact' | 'usa_boxing' | 'a2p' | 'pro' | 'collegiate' | 'usa_masters' | 'spec_ops';
 type LatinRank = 'TIRO' | 'DISCIPULUS' | 'PUGIL NOVUS' | 'PUGIL SCIENTIA' | 'PUGIL FORTIS' | 'PUGIL PRAECEPTOR';
 
 interface Drill {
@@ -26,11 +32,18 @@ interface RabbitHole {
 export default function AthleteWorkspace() {
   const [activeTab, setActiveTab] = useState<TabID>('dashboard');
   const [activeTrack, setActiveTrack] = useState<TrackID>('non_contact');
+  const [assignedTrackIds, setAssignedTrackIds] = useState<TrackID[]>(['non_contact']);
+  const [activeAthleteProfileId, setActiveAthleteProfileId] = useState(athleteProfiles[0].id);
+  const [showTrackCatalog, setShowTrackCatalog] = useState(false);
   const [athleteRank, setAthleteRank] = useState<LatinRank>('TIRO');
 
   // Daily Intake States
   const [sleepHours, setSleepHours] = useState<number>(8);
   const [soreness, setSoreness] = useState<number>(2);
+  const [motivation, setMotivation] = useState<number>(7);
+  const [rpeGoal, setRpeGoal] = useState<number>(6);
+  const [workloadOverrideLevel, setWorkloadOverrideLevel] = useState<number>(0);
+  const [sorenessLocations, setSorenessLocations] = useState<string[]>([]);
   const [academicPassing, setAcademicPassing] = useState<boolean>(true);
   const [completedDrills, setCompletedDrills] = useState<Record<string, boolean>>({});
   const [drillSearch, setDrillSearch] = useState<string>('');
@@ -52,80 +65,6 @@ export default function AthleteWorkspace() {
     'PUGIL SCIENTIA': { label: "Skilled Boxer", desc: "Applying technical counters, generating target angles, and decision-making under fatigue indices." },
     'PUGIL FORTIS': { label: "Advanced Boxer", desc: "Adapting strategic block options, maintaining composure in live drilling, and modeling maturity." },
     'PUGIL PRAECEPTOR': { label: "Mentor Boxer", desc: "High boxing proficiency combined with youth mentorship and cultural leadership standards." }
-  };
-
-  // 6 Athletic Boxing Tracks + SpecOps Track Manifest
-  const trackManifests: Record<TrackID, { name: string; desc: string; focusWorkout: string[] }> = {
-    non_contact: {
-      name: "Non-Contact Track",
-      desc: "General athletic fitness, technical boxing biomechanics, and lifestyle accountability without live contact.",
-      focusWorkout: [
-        "Stance stability and core balance weight-distribution checks",
-        "15 minutes of dynamic shadowboxing focusing on clean jab mechanics",
-        "Reaction ball tracking responding to visual focus target changes",
-        "10-minute lifestyle and personal discipline reflection block"
-      ]
-    },
-    usa_boxing: {
-      name: "USA Boxing Track",
-      desc: "Amateur competitive track operating strictly under USA Boxing safety standards, red/blue books, and certified coach guidelines.",
-      focusWorkout: [
-        "Dynamic footwork agility and ring geometry movement drills",
-        "Partner defensive blocking utilizing approved padded shields",
-        "High-cadence punch output drills tracking extension and guard return",
-        "Review of safe athletic travel policies and SafeSport boundaries"
-      ]
-    },
-    a2p: {
-      name: "Amateur to Pro Track (A2P)",
-      desc: "Accelerated developmental track bridging high-level amateur skillsets with professional licensing requirements.",
-      focusWorkout: [
-        "Multi-round heavy bag intervals simulating professional rounds pacing",
-        "Slipping under the cord line with immediate counter-punch delivery",
-        "High-volume focus mitt combinations testing physical stamina limits",
-        "Metabolic recovery control breathing between round intervals"
-      ]
-    },
-    pro: {
-      name: "Pro Track",
-      desc: "Professional program monitoring high-volume training stress, round fatigue indexes, and recovery thresholds.",
-      focusWorkout: [
-        "12 rounds of targeted heavy bag drills utilizing complex punch combinations",
-        "Anatomical defensive shell checks against high-intensity focus shots",
-        "Reaction cue speed testing under severe localized muscle fatigue",
-        "Post-workout joint cooling and soreness index mapping logs"
-      ]
-    },
-    collegiate: {
-      name: "Collegiate Track",
-      desc: "Tailored for student-athletes. Enforces academic passing standards as a requirement for on-floor training access.",
-      focusWorkout: [
-        "Agility ladder footwork drills maintaining balance-width",
-        "Dynamic high-guard partner counter-movement drills",
-        "Conditioning sprints to maintain high athletic work-capacity",
-        "Mandatory 30-minute academic study or homework block (Layer 14)"
-      ]
-    },
-    usa_masters: {
-      name: "USA Masters Track",
-      desc: "Designed for competitive athletes aged 35+. Focuses on extended mobility prep, low-impact drills, and strict medical clearance logs.",
-      focusWorkout: [
-        "Mandatory 15-minute joint mobility and core activation warmup",
-        "Technical guard blocking drills keeping impact forces controlled",
-        "Targeted bag work focusing on timing rather than high anaerobic spikes",
-        "Extended muscle cooldown and joint-soreness feedback mapping"
-      ]
-    },
-    spec_ops: {
-      name: "Air Force SpecOps Track",
-      desc: "Specialized military prep track focused on tracking the 16 Task Dimensions and 11 Project Lifecycle statuses.",
-      focusWorkout: [
-        "Anatomical load carriage baseline pacing run",
-        "Water confidence pool prep (Dry land breath control drills)",
-        "Neuromuscular power tracking testing battery V1",
-        "Decision-making response testing under high localized physical fatigue"
-      ]
-    }
   };
 
   // Skill Items (Layer 07)
@@ -154,11 +93,48 @@ export default function AthleteWorkspace() {
     }
   ];
 
+  const sorenessAreaOptions = [
+    'Neck',
+    'Shoulders',
+    'Upper back',
+    'Lower back',
+    'Core',
+    'Hips',
+    'Quads',
+    'Hamstrings',
+    'Calves',
+    'Hands/Wrists',
+  ];
+
+  useEffect(() => {
+    const profileId = readActiveAthleteProfileId();
+    const assignments = loadTrackAssignments();
+    const assigned = assignments[profileId] ?? ['non_contact'];
+
+    setActiveAthleteProfileId(profileId);
+    setAssignedTrackIds(assigned);
+    setActiveTrack(assigned[0]);
+  }, []);
+
+  const activeAthleteProfileLabel = useMemo(
+    () => athleteProfiles.find((profile) => profile.id === activeAthleteProfileId)?.label ?? activeAthleteProfileId,
+    [activeAthleteProfileId],
+  );
+
   const toggleDrill = (id: string) => {
     setCompletedDrills(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const currentReadinessScore = Math.max(1, Math.min(10, (sleepHours * 1.25) - (soreness * 0.45)));
+  const toggleSorenessLocation = (location: string) => {
+    setSorenessLocations((current) =>
+      current.includes(location) ? current.filter((item) => item !== location) : [...current, location],
+    );
+  };
+
+  const currentReadinessScore = Math.max(
+    1,
+    Math.min(10, (sleepHours * 1.05) + (motivation * 0.55) - (soreness * 0.45) + (workloadOverrideLevel * 0.3)),
+  );
 
   const handleDispatchIntake = () => {
     const packet = {
@@ -166,9 +142,15 @@ export default function AthleteWorkspace() {
       stagingPath: "/system_control/pending/athlete_profile_checkin",
       data: {
         activeTrack,
+        assignedTracks: assignedTrackIds,
+        athleteProfileId: activeAthleteProfileId,
         activeRank: athleteRank,
         sleepHours,
+        motivation,
+        rpeGoal,
+        workloadOverrideLevel,
         sorenessLevel: soreness,
+        sorenessLocations,
         readinessScore: parseFloat(currentReadinessScore.toFixed(1)),
         academicPassing,
         completedDrillsCount: Object.keys(completedDrills).filter(k => completedDrills[k]).length,
@@ -243,11 +225,11 @@ export default function AthleteWorkspace() {
             <div className="bg-[#0b0f19] border border-slate-800 p-6 rounded-xl space-y-4">
               <div className="border-b border-slate-800 pb-2">
                 <h3 className="text-sm font-black font-mono text-slate-200 uppercase tracking-wide">Active Track Profile Selection</h3>
-                <p className="text-[11px] text-slate-400 font-mono">Select your customized active program pathway.</p>
+                <p className="text-[11px] text-slate-400 font-mono">Assigned profile: {activeAthleteProfileLabel}. Only admin-assigned tracks are selectable.</p>
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {(Object.keys(trackManifests) as TrackID[]).map(id => (
+                {assignedTrackIds.map(id => (
                   <button
                     key={id} onClick={() => setActiveTrack(id)}
                     className={`p-2.5 rounded-xl border text-left font-mono transition flex flex-col justify-between h-20 ${
@@ -260,6 +242,29 @@ export default function AthleteWorkspace() {
                 ))}
               </div>
 
+              <button
+                type="button"
+                onClick={() => setShowTrackCatalog((current) => !current)}
+                className="w-full rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-left text-[11px] font-mono text-cyan-100 transition hover:bg-cyan-500/20"
+              >
+                {showTrackCatalog ? 'Hide available tracks' : 'Review available tracks'}
+              </button>
+
+              {showTrackCatalog ? (
+                <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3 space-y-2">
+                  {(Object.keys(trackManifests) as TrackID[]).map((id) => (
+                    <div key={id} className="rounded-lg border border-slate-800 bg-[#111827]/50 p-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-mono text-slate-200">{trackManifests[id].name}</span>
+                        <span className={`text-[10px] font-mono ${assignedTrackIds.includes(id) ? 'text-emerald-400' : 'text-slate-500'}`}>
+                          {assignedTrackIds.includes(id) ? 'Assigned' : 'Available by admin assignment'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
               <div className="bg-slate-950 p-4 rounded-xl border border-slate-900 space-y-1">
                 <span className="text-xs font-mono font-bold text-slate-300">Selected Path Concept:</span>
                 <p className="text-[11px] text-slate-400 font-mono leading-relaxed">{trackManifests[activeTrack].desc}</p>
@@ -270,7 +275,10 @@ export default function AthleteWorkspace() {
             <div className="bg-[#0b0f19] border border-slate-800 p-6 rounded-xl space-y-4">
               <div className="border-b border-slate-800 pb-2 flex justify-between items-center">
                 <h3 className="text-sm font-black font-mono text-slate-200 uppercase tracking-wide">Prescribed Daily Workload Targets</h3>
-                <span className="text-[9px] bg-emerald-950/40 border border-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-mono font-bold uppercase">{trackManifests[activeTrack].name}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] bg-emerald-950/40 border border-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-mono font-bold uppercase">{trackManifests[activeTrack].name}</span>
+                  <span className="text-[9px] bg-cyan-950/40 border border-cyan-500/20 text-cyan-300 px-2 py-0.5 rounded font-mono font-bold uppercase">Override +{workloadOverrideLevel}</span>
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -297,6 +305,37 @@ export default function AthleteWorkspace() {
                 <div className="space-y-1.5">
                   <div className="flex justify-between text-xs font-mono"><span className="text-slate-400">Anatomical Soreness</span><span className="text-amber-400 font-bold">Level {soreness} / 10</span></div>
                   <input type="range" min="0" max="10" step="1" value={soreness} onChange={(e) => setSoreness(parseInt(e.target.value))} className="w-full accent-amber-500 h-1 bg-slate-800 rounded-lg appearance-none" />
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs font-mono"><span className="text-slate-400">Motivation</span><span className="text-cyan-300 font-bold">{motivation} / 10</span></div>
+                  <input type="range" min="1" max="10" step="1" value={motivation} onChange={(e) => setMotivation(parseInt(e.target.value))} className="w-full accent-cyan-400 h-1 bg-slate-800 rounded-lg appearance-none" />
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs font-mono"><span className="text-slate-400">RPE Goal</span><span className="text-fuchsia-300 font-bold">{rpeGoal} / 10</span></div>
+                  <input type="range" min="1" max="10" step="1" value={rpeGoal} onChange={(e) => setRpeGoal(parseInt(e.target.value))} className="w-full accent-fuchsia-400 h-1 bg-slate-800 rounded-lg appearance-none" />
+                </div>
+                <div className="sm:col-span-2 space-y-1.5">
+                  <div className="flex justify-between text-xs font-mono"><span className="text-slate-400">Daily Workload Override</span><span className="text-emerald-300 font-bold">+{workloadOverrideLevel} difficulty levels</span></div>
+                  <input type="range" min="0" max="4" step="1" value={workloadOverrideLevel} onChange={(e) => setWorkloadOverrideLevel(parseInt(e.target.value))} className="w-full accent-emerald-500 h-1 bg-slate-800 rounded-lg appearance-none" />
+                </div>
+              </div>
+
+              <div className="space-y-2 rounded-xl border border-slate-800 bg-[#111827]/50 p-3">
+                <span className="text-xs font-mono text-slate-300 font-bold">Soreness location mapping</span>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {sorenessAreaOptions.map((location) => {
+                    const selected = sorenessLocations.includes(location);
+                    return (
+                      <button
+                        key={location}
+                        type="button"
+                        onClick={() => toggleSorenessLocation(location)}
+                        className={`rounded-lg border px-2 py-1.5 text-[11px] font-mono text-left transition ${selected ? 'border-amber-500 bg-amber-950/30 text-amber-300' : 'border-slate-800 bg-slate-950 text-slate-400 hover:text-slate-200'}`}
+                      >
+                        {location}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
