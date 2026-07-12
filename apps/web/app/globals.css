@@ -2,17 +2,24 @@
 @import url('https://fonts.googleapis.com/css2?family=Anton:wght@400&family=JetBrains+Mono:wght@400;700&display=swap');
 
 :root {
-  /* Boxing Gym Palette */
+  /* Old Boxing Poster Palette - Tans + Red + Black */
   --background: #0a0a0a;
-  --foreground: #e5e5e5;
+  --foreground: #e8d7c6;
   --canvas: #1a1a1a;
   --concrete: #2a2a2a;
-  --blood-red: #8b0000;
-  --blood-red-light: #a41d1d;
-  --blood-red-bright: #dc2626;
-  --rust-orange: #b35806;
-  --rust-light: #c85a17;
-  --charcoal: #1f1f1f;
+  
+  /* Vintage Poster Colors */
+  --poster-cream: #e8d7c6;
+  --poster-tan: #d4a574;
+  --poster-leather: #5a4a3a;
+  --poster-dark-brown: #3d2817;
+  --post-sepia: #8B7355;
+  
+  /* Red & Black Accents */
+  --accent-red: #8b4444;
+  --accent-red-dark: #5a2a2a;
+  --accent-black: #0a0a0a;
+  --accent-maroon: #6b3a3a;
   --dust-gray: #4a4a4a;
 }
 
@@ -21,12 +28,15 @@
   --color-foreground: var(--foreground);
   --color-gym-canvas: var(--canvas);
   --color-gym-concrete: var(--concrete);
-  --color-gym-blood: var(--blood-red);
-  --color-gym-blood-light: var(--blood-red-light);
-  --color-gym-blood-bright: var(--blood-red-bright);
-  --color-gym-rust: var(--rust-orange);
-  --color-gym-rust-light: var(--rust-light);
-  --color-gym-charcoal: var(--charcoal);
+  --color-poster-cream: var(--poster-cream);
+  --color-poster-tan: var(--poster-tan);
+  --color-poster-leather: var(--poster-leather);
+  --color-poster-dark: var(--poster-dark-brown);
+  --color-sepia: var(--post-sepia);
+  --color-accent-red: var(--accent-red);
+  --color-accent-red-dark: var(--accent-red-dark);
+  --color-accent-black: var(--accent-black);
+  --color-accent-maroon: var(--accent-maroon);
   --color-gym-dust: var(--dust-gray);
   --font-display: "Anton", "Impact", sans-serif;
   --font-sans: var(--font-geist-sans);

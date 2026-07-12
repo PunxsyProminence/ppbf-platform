@@ -36,11 +36,11 @@ export default function GlobalRoleHeader() {
   }
 
   return (
-    <header className="sticky top-0 z-50 border-b-4 border-[#8b0000] bg-[#1a1a1a]">
+    <header className="sticky top-0 z-50 border-b-4 border-[#8b4444] bg-[#0a0a0a]">
       <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-4 px-6 py-3">
         <div className="flex items-center gap-3">
-          <span className="text-[10px] font-mono uppercase tracking-[0.3em] text-[#8a8a8a]">Session Active</span>
-          <span className="border-2 border-[#dc2626] bg-[#2a1a1a] px-2.5 py-1 text-[11px] font-mono uppercase text-[#dc2626]">
+          <span className="text-[10px] font-mono uppercase tracking-[0.35em] text-[#8a8a8a]">Session Active</span>
+          <span className="border-2 border-[#8b4444] bg-[#5a2a2a] px-2.5 py-1 text-[11px] font-mono uppercase text-[#d4a574]">
             {session.role}
           </span>
         </div>
@@ -48,20 +48,20 @@ export default function GlobalRoleHeader() {
         <div className="flex items-center gap-2">
           <Link
             href="/operations"
-            className="border-2 border-[#b35806] bg-[#4a4a4a] px-3 py-1 text-[11px] font-mono text-[#c85a17] transition hover:border-[#c85a17] hover:bg-[#5a5a5a]"
+            className="border-2 border-[#8b4444] bg-[#5a4a3a] px-3 py-1 text-[11px] font-mono text-[#e8d7c6] transition hover:border-[#d4a574] hover:bg-[#6b5a4a]"
           >
             Operations
           </Link>
           <Link
             href="/launch"
-            className="border-2 border-[#4a4a4a] bg-[#4a4a4a] px-3 py-1 text-[11px] font-mono text-[#b0b0b0] transition hover:border-[#8a8a8a] hover:bg-[#5a5a5a] hover:text-[#e5e5e5]"
+            className="border-2 border-[#5a4a3a] bg-[#4a4a4a] px-3 py-1 text-[11px] font-mono text-[#b0a095] transition hover:border-[#8b4444] hover:bg-[#5a5a5a] hover:text-[#e8d7c6]"
           >
             Launch
           </Link>
           <button
             type="button"
             onClick={signOut}
-            className="border-2 border-[#8b0000] bg-[#4a4a4a] px-3 py-1 text-[11px] font-mono text-[#dc2626] transition hover:border-[#dc2626] hover:bg-[#5a5a5a]"
+            className="border-2 border-[#8b4444] bg-[#4a4a4a] px-3 py-1 text-[11px] font-mono text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#5a5a5a]"
           >
             Logout
           </button>
