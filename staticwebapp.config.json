@@ -1,9 +1,36 @@
 {
   "routes": [
     {
-      "route": "/board/*",
-      "serve": "/board/[member]/index.html",
-      "statusCode": 200
+      "route": "/board/president*",
+      "serve": "/board/president.html"
+    },
+    {
+      "route": "/board/chair*",
+      "serve": "/board/chair.html"
+    },
+    {
+      "route": "/board/vice-chair*",
+      "serve": "/board/vice-chair.html"
+    },
+    {
+      "route": "/board/treasurer*",
+      "serve": "/board/treasurer.html"
+    },
+    {
+      "route": "/board/secretary*",
+      "serve": "/board/secretary.html"
+    },
+    {
+      "route": "/board/safety-director*",
+      "serve": "/board/safety-director.html"
+    },
+    {
+      "route": "/board/community-director*",
+      "serve": "/board/community-director.html"
+    },
+    {
+      "route": "/board/at-large*",
+      "serve": "/board/at-large.html"
     },
     {
       "route": "/*",
@@ -14,9 +41,6 @@
   "navigationFallback": {
     "rewrite": "/index.html",
     "exclude": ["*.{css,scss,js,png,gif,ico,jpg,jpeg,svg,webp,woff,woff2}"]
-  },
-  "mimeTypes": {
-    "woff": "font/woff",
-    "woff2": "font/woff2"
   }
 }
+
