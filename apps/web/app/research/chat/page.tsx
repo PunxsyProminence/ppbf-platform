@@ -112,23 +112,23 @@ export default function ResearchQAChatPage() {
   return (
     <main className="min-h-screen bg-[#0a0a0a] text-slate-100">
       {/* ROUGH OLD-SCHOOL BOXING HEADER */}
-      <header className="border-b-4 border-[#b35806] bg-[#1a1a1a] px-4 py-4 md:px-8 md:py-6">
+      <header className="border-b-4 border-[#d4a574] bg-[#1a1a1a] px-4 py-4 md:px-8 md:py-6">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
           <div>
-            <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-[#c85a17]">Research Lab</p>
-            <h1 className="font-display text-2xl font-black tracking-tight text-[#e5e5e5] md:text-3xl">The Library</h1>
-            <p className="mt-1 text-xs text-[#a0a0a0]">Ask. Learn. Document. No fancy talk.</p>
+            <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-[#d4a574]">Research Lab</p>
+            <h1 className="font-display text-2xl font-black tracking-tight text-[#e8d7c6] md:text-3xl">The Library</h1>
+            <p className="mt-1 text-xs text-[#b0a095]">Ask. Learn. Document. No fancy talk.</p>
           </div>
           <div className="text-right">
             <p className="font-mono text-[10px] text-[#8a8a8a]">PPBF Fight Card</p>
-            <p className="text-xs font-bold text-[#dc2626]">LIVE</p>
+            <p className="text-xs font-bold text-[#8b4444]">LIVE</p>
           </div>
         </div>
       </header>
 
       <div className="mx-auto grid max-w-6xl gap-6 p-4 lg:grid-cols-[1fr_300px] md:p-8">
         {/* CHAT */}
-        <section className="border-4 border-[#b35806] bg-[#0f0f0f] p-6 shadow-2xl shadow-black/60">
+        <section className="border-4 border-[#d4a574] bg-[#0f0f0f] p-6 shadow-2xl shadow-black/60">
           {/* Messages */}
           <div className="mb-6 max-h-[500px] space-y-3 overflow-y-auto bg-[#050505] p-4 font-mono text-sm">
             {messages.map((msg) => (
@@ -136,16 +136,16 @@ export default function ResearchQAChatPage() {
                 <div
                   className={`max-w-xs px-3 py-2 ${
                     msg.type === 'user'
-                      ? 'border-2 border-[#8b0000] bg-[#2a1a1a] text-[#ff6b6b]'
+                      ? 'border-2 border-[#8b4444] bg-[#3a2a2a] text-[#8b4444]'
                       : msg.type === 'system'
-                        ? 'border-2 border-[#4a4a4a] bg-[#1a1a1a] text-[#a0a0a0]'
-                        : 'border-2 border-[#b35806] bg-[#2a1f0f] text-[#e5e5e5]'
+                        ? 'border-2 border-[#4a4a4a] bg-[#1a1a1a] text-[#b0a095]'
+                        : 'border-2 border-[#d4a574] bg-[#3a3020] text-[#e8d7c6]'
                   }`}
                 >
                   <p className="text-xs leading-5">{msg.text}</p>
                   <div className="mt-1 flex items-center justify-between gap-2">
                     <p className="text-[9px] opacity-50">{msg.timestamp}</p>
-                    {msg.source && <p className="text-[9px] text-[#c85a17]">{msg.source}</p>}
+                    {msg.source && <p className="text-[9px] text-[#d4a574]">{msg.source}</p>}
                   </div>
                 </div>
               </div>
@@ -160,11 +160,11 @@ export default function ResearchQAChatPage() {
               value={userInput}
               onChange={(e) => setUserInput(e.target.value)}
               placeholder="Ask about readiness, work rate, drills, injuries, roles..."
-              className="flex-1 border-2 border-[#b35806] bg-[#1a1a1a] px-3 py-2 text-sm text-[#e5e5e5] placeholder-[#666666] outline-none transition focus:border-[#c85a17] focus:bg-[#2a1f1f]"
+              className="flex-1 border-2 border-[#d4a574] bg-[#1a1a1a] px-3 py-2 text-sm text-[#e8d7c6] placeholder-[#666666] outline-none transition focus:border-[#d4a574] focus:bg-[#3a3020]"
             />
             <button
               type="submit"
-              className="border-2 border-[#b35806] bg-[#1f1f1f] px-4 py-2 text-xs font-mono font-bold text-[#c85a17] transition hover:border-[#c85a17] hover:bg-[#2a1f1f] hover:text-[#ff9933]"
+              className="border-2 border-[#d4a574] bg-[#1f1f1f] px-4 py-2 text-xs font-mono font-bold text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#3a3020] hover:text-[#e8d7c6]"
             >
               Ask
             </button>
@@ -174,18 +174,18 @@ export default function ResearchQAChatPage() {
         {/* RIGHT PANEL: NOTES & LINKS */}
         <aside className="space-y-4">
           {/* Research Notes */}
-          <section className="border-4 border-[#b35806] bg-[#0d0a08] p-4">
-            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#c85a17]">Notes</p>
+          <section className="border-4 border-[#d4a574] bg-[#0d0a08] p-4">
+            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">Notes</p>
             <form onSubmit={handleSaveNote} className="mt-3 space-y-2">
               <textarea
                 value={researchNotes}
                 onChange={(e) => setResearchNotes(e.target.value)}
                 placeholder="Write your findings..."
-                className="h-24 w-full border-2 border-[#b35806] bg-[#1a1a1a] px-2 py-2 text-xs text-[#e5e5e5] placeholder-[#666666] outline-none transition focus:border-[#c85a17] focus:bg-[#1f1f1f] font-mono"
+                className="h-24 w-full border-2 border-[#d4a574] bg-[#1a1a1a] px-2 py-2 text-xs text-[#e8d7c6] placeholder-[#666666] outline-none transition focus:border-[#d4a574] focus:bg-[#3a3020] font-mono"
               />
               <button
                 type="submit"
-                className="w-full border-2 border-[#b35806] bg-[#1f1f1f] px-2 py-1 text-xs font-mono font-bold text-[#c85a17] transition hover:border-[#c85a17] hover:bg-[#2a1f1f] hover:text-[#ff9933]"
+                className="w-full border-2 border-[#d4a574] bg-[#1f1f1f] px-2 py-1 text-xs font-mono font-bold text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#3a3020] hover:text-[#e8d7c6]"
               >
                 Save Note
               </button>
@@ -198,25 +198,25 @@ export default function ResearchQAChatPage() {
             <div className="mt-3 space-y-2">
               <Link
                 href="/research"
-                className="block border-2 border-[#4a4a4a] bg-[#0a0a0a] px-2 py-1 text-xs font-mono text-[#b0b0b0] transition hover:border-[#8a8a8a] hover:bg-[#1a1a1a] hover:text-[#e5e5e5]"
+                className="block border-2 border-[#4a4a4a] bg-[#0a0a0a] px-2 py-1 text-xs font-mono text-[#b0b0b0] transition hover:border-[#8a8a8a] hover:bg-[#1a1a1a] hover:text-[#e8d7c6]"
               >
                 Research Intake
               </Link>
               <Link
                 href="/evidence"
-                className="block border-2 border-[#4a4a4a] bg-[#0a0a0a] px-2 py-1 text-xs font-mono text-[#b0b0b0] transition hover:border-[#8a8a8a] hover:bg-[#1a1a1a] hover:text-[#e5e5e5]"
+                className="block border-2 border-[#4a4a4a] bg-[#0a0a0a] px-2 py-1 text-xs font-mono text-[#b0b0b0] transition hover:border-[#8a8a8a] hover:bg-[#1a1a1a] hover:text-[#e8d7c6]"
               >
                 Evidence Review
               </Link>
               <Link
                 href="/operations"
-                className="block border-2 border-[#4a4a4a] bg-[#0a0a0a] px-2 py-1 text-xs font-mono text-[#b0b0b0] transition hover:border-[#8a8a8a] hover:bg-[#1a1a1a] hover:text-[#e5e5e5]"
+                className="block border-2 border-[#4a4a4a] bg-[#0a0a0a] px-2 py-1 text-xs font-mono text-[#b0b0b0] transition hover:border-[#8a8a8a] hover:bg-[#1a1a1a] hover:text-[#e8d7c6]"
               >
                 Operations Hub
               </Link>
               <Link
                 href="/admin/shadow"
-                className="block border-2 border-[#8b0000] bg-[#1a1a1a] px-2 py-1 text-xs font-mono text-[#dc2626] transition hover:border-[#dc2626] hover:bg-[#2a1a1a] hover:text-[#ff6b6b]"
+                className="block border-2 border-[#8b4444] bg-[#1a1a1a] px-2 py-1 text-xs font-mono text-[#8b4444] transition hover:border-[#8b4444] hover:bg-[#3a2a2a] hover:text-[#d4a574]"
               >
                 SHADOW (Admin)
               </Link>
