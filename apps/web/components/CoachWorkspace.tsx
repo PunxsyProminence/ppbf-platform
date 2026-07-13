@@ -40,6 +40,36 @@ interface CoachGoal {
   dueDate: string;
 }
 
+function readinessDotClass(readiness: Athlete['readiness']): string {
+  if (readiness === 'GREEN') return 'bg-green-500';
+  if (readiness === 'YELLOW') return 'bg-yellow-500';
+  return 'bg-red-500';
+}
+
+function priorityTone(priority: CoachTask['priority']): string {
+  if (priority === 'High') return 'bg-red-900 text-red-200';
+  if (priority === 'Normal') return 'bg-yellow-900 text-yellow-200';
+  return 'bg-blue-900 text-blue-200';
+}
+
+function taskStatusTone(status: CoachTask['status']): string {
+  if (status === 'Open') return 'bg-[#6b4a2a] text-[#d4a574]';
+  if (status === 'In Progress') return 'bg-[#4a6b2a] text-[#b4d474]';
+  return 'bg-[#4a4a6b] text-[#a4a4d4]';
+}
+
+function blockCardTone(status: WorkoutBlock['status']): string {
+  if (status === 'Completed') return 'bg-green-900/20 border-green-700';
+  if (status === 'In Progress') return 'bg-yellow-900/20 border-yellow-700';
+  return 'bg-[#0f0f0f] border-[#8b4444]';
+}
+
+function blockStatusTone(status: WorkoutBlock['status']): string {
+  if (status === 'Completed') return 'bg-green-900 text-green-200';
+  if (status === 'In Progress') return 'bg-yellow-900 text-yellow-200';
+  return 'bg-[#4a4a4a] text-[#8a8a8a]';
+}
+
 export default function CoachWorkspace() {
   const [activeTab, setActiveTab] = useState<TabID>('dashboard');
   const [sessionMode, setSessionMode] = useState<SessionMode>('Group');
@@ -174,19 +204,19 @@ export default function CoachWorkspace() {
                   <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Today&apos;s Session</h3>
                   <div className="space-y-3">
                     <div>
-                      <label className="text-xs text-[#b0a095] block mb-1">Session Name</label>
+                      <p className="text-xs text-[#b0a095] block mb-1">Session Name</p>
                       <p className="text-base font-semibold">Youth Non-Contact Development</p>
                     </div>
                     <div>
-                      <label className="text-xs text-[#b0a095] block mb-1">Time</label>
+                      <p className="text-xs text-[#b0a095] block mb-1">Time</p>
                       <p className="text-base font-semibold">4:00 PM - 5:00 PM</p>
                     </div>
                     <div>
-                      <label className="text-xs text-[#b0a095] block mb-1">Status</label>
+                      <p className="text-xs text-[#b0a095] block mb-1">Status</p>
                       <p className="text-base font-semibold text-green-400">In Progress</p>
                     </div>
                     <div>
-                      <label className="text-xs text-[#b0a095] block mb-1">Athletes Present</label>
+                      <p className="text-xs text-[#b0a095] block mb-1">Athletes Present</p>
                       <p className="text-base font-semibold">{activeAthletes}/{athletes.length}</p>
                     </div>
                   </div>
@@ -197,10 +227,11 @@ export default function CoachWorkspace() {
                   <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Athlete Roster</h3>
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {athletes.map(athlete => (
-                      <div
+                      <button
+                        type="button"
                         key={athlete.id}
                         onClick={() => setSelectedAthleteId(athlete.id)}
-                        className={`p-3 border-2 rounded cursor-pointer transition ${
+                        className={`w-full p-3 border-2 rounded cursor-pointer transition text-left ${
                           selectedAthleteId === athlete.id
                             ? 'bg-[#2a2a2a] border-[#8b4444]'
                             : 'bg-[#0f0f0f] border-[#4a4a4a] hover:border-[#8b4444]'
@@ -208,10 +239,7 @@ export default function CoachWorkspace() {
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <div className={`w-2 h-2 rounded-full ${
-                              athlete.readiness === 'GREEN' ? 'bg-green-500' :
-                              athlete.readiness === 'YELLOW' ? 'bg-yellow-500' : 'bg-red-500'
-                            }`}></div>
+                            <div className={`w-2 h-2 rounded-full ${readinessDotClass(athlete.readiness)}`}></div>
                             <span className="font-semibold">{athlete.name}</span>
                           </div>
                           <span className="text-xs text-[#8a8a8a]">{athlete.attendance}</span>
@@ -219,7 +247,7 @@ export default function CoachWorkspace() {
                         {athlete.injuryFlag && (
                           <p className="text-xs text-red-400 mt-1">🚨 Injury flag active</p>
                         )}
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -232,11 +260,7 @@ export default function CoachWorkspace() {
                       <div key={task.id} className="border-2 border-[#8b4444] bg-[#0f0f0f] p-3">
                         <div className="flex justify-between items-start mb-2">
                           <h4 className="font-semibold">{task.title}</h4>
-                          <span className={`text-xs px-2 py-1 rounded font-semibold ${
-                            task.priority === 'High' ? 'bg-red-900 text-red-200' :
-                            task.priority === 'Normal' ? 'bg-yellow-900 text-yellow-200' :
-                            'bg-blue-900 text-blue-200'
-                          }`}>
+                          <span className={`text-xs px-2 py-1 rounded font-semibold ${priorityTone(task.priority)}`}>
                             {task.priority}
                           </span>
                         </div>
@@ -275,21 +299,13 @@ export default function CoachWorkspace() {
 
                 <div className="space-y-2">
                   {workoutBlocks.map((block) => (
-                    <div key={block.id} className={`border-2 p-3 rounded ${
-                      block.status === 'Completed' ? 'bg-green-900/20 border-green-700' :
-                      block.status === 'In Progress' ? 'bg-yellow-900/20 border-yellow-700' :
-                      'bg-[#0f0f0f] border-[#8b4444]'
-                    }`}>
+                    <div key={block.id} className={`border-2 p-3 rounded ${blockCardTone(block.status)} `}>
                       <div className="flex justify-between items-center">
                         <div>
                           <p className="font-semibold">{block.title}</p>
                           <p className="text-xs text-[#b0a095]">{block.duration} minutes</p>
                         </div>
-                        <span className={`text-xs px-2 py-1 rounded font-semibold ${
-                          block.status === 'Completed' ? 'bg-green-900 text-green-200' :
-                          block.status === 'In Progress' ? 'bg-yellow-900 text-yellow-200' :
-                          'bg-[#4a4a4a] text-[#8a8a8a]'
-                        }`}>
+                        <span className={`text-xs px-2 py-1 rounded font-semibold ${blockStatusTone(block.status)}`}>
                           {block.status}
                         </span>
                       </div>
@@ -352,8 +368,8 @@ export default function CoachWorkspace() {
                       'Injury Prevention Basics',
                       'Class Management Skills',
                       'Adaptive Coaching'
-                    ].map((topic, i) => (
-                      <label key={i} className="flex items-center gap-2 cursor-pointer p-2 border-2 border-[#8b4444] bg-[#0f0f0f] hover:bg-[#1a1a1a]">
+                    ].map((topic) => (
+                      <label key={topic} className="flex items-center gap-2 cursor-pointer p-2 border-2 border-[#8b4444] bg-[#0f0f0f] hover:bg-[#1a1a1a]">
                         <input type="checkbox" className="w-4 h-4" />
                         <span className="text-sm">{topic}</span>
                       </label>
@@ -438,18 +454,10 @@ export default function CoachWorkspace() {
                         <p className="text-xs text-[#b0a095] mt-1">Due: {task.dueDate}</p>
                       </div>
                       <div className="flex gap-2">
-                        <span className={`text-xs px-2 py-1 rounded font-semibold ${
-                          task.priority === 'High' ? 'bg-red-900 text-red-200' :
-                          task.priority === 'Normal' ? 'bg-yellow-900 text-yellow-200' :
-                          'bg-blue-900 text-blue-200'
-                        }`}>
+                        <span className={`text-xs px-2 py-1 rounded font-semibold ${priorityTone(task.priority)}`}>
                           {task.priority}
                         </span>
-                        <span className={`text-xs px-2 py-1 rounded font-semibold ${
-                          task.status === 'Open' ? 'bg-[#6b4a2a] text-[#d4a574]' :
-                          task.status === 'In Progress' ? 'bg-[#4a6b2a] text-[#b4d474]' :
-                          'bg-[#4a4a6b] text-[#a4a4d4]'
-                        }`}>
+                        <span className={`text-xs px-2 py-1 rounded font-semibold ${taskStatusTone(task.status)}`}>
                           {task.status}
                         </span>
                       </div>

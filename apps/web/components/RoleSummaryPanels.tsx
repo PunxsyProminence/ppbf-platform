@@ -2,6 +2,58 @@
 
 import React from 'react';
 
+interface AthleteSummaryPanelProps {
+  readiness: 'GREEN' | 'YELLOW' | 'RED';
+  tasksDue: number;
+  goalsActive: number;
+  upcomingSession?: string;
+  unreadMessages: number;
+}
+
+interface CoachSummaryPanelProps {
+  sessionStatus: string;
+  activeAthletes: number;
+  injuryFlags: number;
+  reviewsNeeded: number;
+  assignmentsDue: number;
+}
+
+interface ParentSummaryPanelProps {
+  childProgress: string;
+  tasksDue: number;
+  upcomingEvents: number;
+  attendancePercent: number;
+  unreadMessages: number;
+}
+
+interface AdminSummaryPanelProps {
+  gymAlerts: number;
+  boardAlerts: number;
+  openAssignments: number;
+  complianceItems: number;
+  pendingReviews: number;
+}
+
+interface HelpPanelProps {
+  title: string;
+  description: string;
+  usage: string[];
+  mistakes: string[];
+  onAskShadow: () => void;
+}
+
+interface RoleSpecificShadowProps {
+  role: 'athlete' | 'coach' | 'parent' | 'admin';
+  query: string;
+  response: string;
+}
+
+function getAttendanceColor(attendancePercent: number): string {
+  if (attendancePercent >= 90) return 'bg-green-900/30 border-green-600';
+  if (attendancePercent >= 75) return 'bg-yellow-900/30 border-yellow-600';
+  return 'bg-red-900/30 border-red-600';
+}
+
 // ATHLETE SUMMARY PANEL
 export function AthleteSummaryPanel({
   readiness,
@@ -9,13 +61,7 @@ export function AthleteSummaryPanel({
   goalsActive,
   upcomingSession,
   unreadMessages
-}: {
-  readiness: 'GREEN' | 'YELLOW' | 'RED';
-  tasksDue: number;
-  goalsActive: number;
-  upcomingSession?: string;
-  unreadMessages: number;
-}) {
+}: Readonly<AthleteSummaryPanelProps>) {
   const readinessColor = {
     GREEN: 'bg-green-900/30 border-green-600',
     YELLOW: 'bg-yellow-900/30 border-yellow-600',
@@ -70,13 +116,7 @@ export function CoachSummaryPanel({
   injuryFlags,
   reviewsNeeded,
   assignmentsDue
-}: {
-  sessionStatus: string;
-  activeAthletes: number;
-  injuryFlags: number;
-  reviewsNeeded: number;
-  assignmentsDue: number;
-}) {
+}: Readonly<CoachSummaryPanelProps>) {
   const injuryAlert = injuryFlags > 0 ? 'bg-red-900/30 border-red-600' : 'border-[#8b4444] bg-[#0f0f0f]';
 
   return (
@@ -121,14 +161,8 @@ export function ParentSummaryPanel({
   upcomingEvents,
   attendancePercent,
   unreadMessages
-}: {
-  childProgress: string;
-  tasksDue: number;
-  upcomingEvents: number;
-  attendancePercent: number;
-  unreadMessages: number;
-}) {
-  const attendanceColor = attendancePercent >= 90 ? 'bg-green-900/30 border-green-600' : attendancePercent >= 75 ? 'bg-yellow-900/30 border-yellow-600' : 'bg-red-900/30 border-red-600';
+}: Readonly<ParentSummaryPanelProps>) {
+  const attendanceColor = getAttendanceColor(attendancePercent);
 
   return (
     <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-5">
@@ -172,13 +206,7 @@ export function AdminSummaryPanel({
   openAssignments,
   complianceItems,
   pendingReviews
-}: {
-  gymAlerts: number;
-  boardAlerts: number;
-  openAssignments: number;
-  complianceItems: number;
-  pendingReviews: number;
-}) {
+}: Readonly<AdminSummaryPanelProps>) {
   const gymAlert = gymAlerts > 0 ? 'bg-red-900/30 border-red-600' : 'border-[#8b4444] bg-[#0f0f0f]';
   const boardAlert = boardAlerts > 0 ? 'bg-yellow-900/30 border-yellow-600' : 'border-[#8b4444] bg-[#0f0f0f]';
 
@@ -224,13 +252,7 @@ export function HelpPanel({
   usage,
   mistakes,
   onAskShadow
-}: {
-  title: string;
-  description: string;
-  usage: string[];
-  mistakes: string[];
-  onAskShadow: () => void;
-}) {
+}: Readonly<HelpPanelProps>) {
   const [expanded, setExpanded] = React.useState(false);
 
   return (
@@ -252,16 +274,16 @@ export function HelpPanel({
           <div>
             <p className="font-semibold text-[#e8d7c6]">How to use:</p>
             <ul className="list-inside list-disc space-y-1">
-              {usage.map((item, i) => (
-                <li key={i}>{item}</li>
+              {usage.map((item) => (
+                <li key={item}>{item}</li>
               ))}
             </ul>
           </div>
           <div>
             <p className="font-semibold text-[#e8d7c6]">Common mistakes:</p>
             <ul className="list-inside list-disc space-y-1">
-              {mistakes.map((item, i) => (
-                <li key={i}>{item}</li>
+              {mistakes.map((item) => (
+                <li key={item}>{item}</li>
               ))}
             </ul>
           </div>
@@ -282,11 +304,7 @@ export function RoleSpecificShadow({
   role,
   query,
   response
-}: {
-  role: 'athlete' | 'coach' | 'parent' | 'admin';
-  query: string;
-  response: string;
-}) {
+}: Readonly<RoleSpecificShadowProps>) {
   const roleIdentity = {
     athlete: 'SHADOW (ATHLETE MODE)',
     coach: 'SHADOW (COACH MODE)',

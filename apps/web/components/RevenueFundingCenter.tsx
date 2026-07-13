@@ -74,6 +74,21 @@ interface RevenueItem {
   notes: string;
 }
 
+type DonationFrequency = 'One-Time' | 'Monthly' | 'Quarterly' | 'Annual';
+type DonationLifecycleStatus = 'Pending Review' | 'Pledged' | 'Active' | 'Closed';
+
+interface DonationRecord {
+  id: string;
+  donorName: string;
+  amount: number;
+  frequency: DonationFrequency;
+  designation: string;
+  receiptNeeded: boolean;
+  status: DonationLifecycleStatus;
+  notes: string;
+  createdAt: string;
+}
+
 interface PaymentIntegrationPlaceholder {
   provider: string;
   status: 'Not Connected';
@@ -81,17 +96,6 @@ interface PaymentIntegrationPlaceholder {
   notes: string;
   futureBackendRequired: true;
 }
-
-const summaryStrip = [
-  { label: 'Memberships', value: 0 },
-  { label: 'Donations', value: 0 },
-  { label: 'Sponsors', value: 0 },
-  { label: 'B2B Accounts', value: 0 },
-  { label: 'Wholesale Accounts', value: 0 },
-  { label: 'Grants', value: 0 },
-  { label: 'Scholarships', value: 0 },
-  { label: 'Pending Reviews', value: 0 },
-];
 
 const revenueAccounts: RevenueAccount[] = [
   {
@@ -183,6 +187,31 @@ const paymentIntegrations: PaymentIntegrationPlaceholder[] = [
   { provider: 'Microsoft / Power Platform Placeholder', status: 'Not Connected', connected: false, notes: 'Future Integration | Requires Backend | Requires Compliance Review', futureBackendRequired: true },
 ];
 
+const initialDonationRecords: DonationRecord[] = [
+  {
+    id: 'don_001',
+    donorName: 'Community Donor A',
+    amount: 250,
+    frequency: 'One-Time',
+    designation: 'Youth Program Support',
+    receiptNeeded: true,
+    status: 'Pledged',
+    notes: 'Awaiting receipt confirmation.',
+    createdAt: '2026-07-12',
+  },
+  {
+    id: 'don_002',
+    donorName: 'Sponsor Family B',
+    amount: 75,
+    frequency: 'Monthly',
+    designation: 'Scholarship Support',
+    receiptNeeded: true,
+    status: 'Active',
+    notes: 'Recurring pledge started.',
+    createdAt: '2026-07-11',
+  },
+];
+
 const tabs: Array<{ id: RevenueFundingTab; label: string }> = [
   { id: 'overview', label: 'Overview' },
   { id: 'memberships', label: 'Memberships' },
@@ -211,6 +240,10 @@ function statusTone(status: string): string {
   return 'text-[#cfbfae] border-[#4a3a2a] bg-[#171515]';
 }
 
+function formatCurrency(value: number): string {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+}
+
 function SectionCard({ title, children }: Readonly<{ title: string; children: React.ReactNode }>) {
   return (
     <section className="border border-[#3a3a3a] bg-[#161616] p-5">
@@ -222,16 +255,84 @@ function SectionCard({ title, children }: Readonly<{ title: string; children: Re
 
 export default function RevenueFundingCenter() {
   const [activeTab, setActiveTab] = useState<RevenueFundingTab>('overview');
+  const [donationRecords, setDonationRecords] = useState<DonationRecord[]>(initialDonationRecords);
 
-  const pendingItems = useMemo(() => revenueItems.filter((item) => item.reviewNeeded), []);
+  const [donorName, setDonorName] = useState('');
+  const [donationAmount, setDonationAmount] = useState('');
+  const [donationFrequency, setDonationFrequency] = useState<DonationFrequency>('One-Time');
+  const [donationDesignation, setDonationDesignation] = useState('General Donation');
+  const [donationReceiptNeeded, setDonationReceiptNeeded] = useState(true);
+  const [donationNotes, setDonationNotes] = useState('');
+
+  const pendingItems = useMemo(() => {
+    const revenuePending = revenueItems.filter((item) => item.reviewNeeded);
+    const donationPending = donationRecords
+      .filter((item) => item.status === 'Pending Review' || item.status === 'Pledged')
+      .map((item) => ({
+        id: item.id,
+        title: item.donorName,
+        revenueType: 'Donation',
+        amountPlaceholder: formatCurrency(item.amount),
+        status: item.status,
+      }));
+
+    return [...revenuePending, ...donationPending];
+  }, [donationRecords]);
+
+  const summaryStrip = useMemo(() => {
+    const donationPendingCount = donationRecords.filter((item) => item.status === 'Pending Review' || item.status === 'Pledged').length;
+    const revenuePendingCount = revenueItems.filter((item) => item.reviewNeeded).length;
+
+    return [
+      { label: 'Memberships', value: 2 },
+      { label: 'Donations', value: donationRecords.length },
+      { label: 'Sponsors', value: 1 },
+      { label: 'B2B Accounts', value: 1 },
+      { label: 'Wholesale Accounts', value: 1 },
+      { label: 'Grants', value: 1 },
+      { label: 'Scholarships', value: 1 },
+      { label: 'Pending Reviews', value: donationPendingCount + revenuePendingCount },
+    ];
+  }, [donationRecords]);
+
+  function resetDonationForm() {
+    setDonorName('');
+    setDonationAmount('');
+    setDonationFrequency('One-Time');
+    setDonationDesignation('General Donation');
+    setDonationReceiptNeeded(true);
+    setDonationNotes('');
+  }
+
+  function handleAddDonation() {
+    const amount = Number.parseFloat(donationAmount);
+    if (!donorName.trim() || Number.isNaN(amount) || amount <= 0) {
+      return;
+    }
+
+    const next: DonationRecord = {
+      id: `don_${Date.now()}`,
+      donorName: donorName.trim(),
+      amount,
+      frequency: donationFrequency,
+      designation: donationDesignation.trim() || 'General Donation',
+      receiptNeeded: donationReceiptNeeded,
+      status: 'Pending Review',
+      notes: donationNotes.trim() || 'No additional notes.',
+      createdAt: new Date().toISOString().slice(0, 10),
+    };
+
+    setDonationRecords((current) => [next, ...current]);
+    resetDonationForm();
+  }
+
+  function updateDonationStatus(id: string, status: DonationLifecycleStatus) {
+    setDonationRecords((current) => current.map((item) => (item.id === id ? { ...item, status } : item)));
+  }
 
   const membershipRows = [
     ['Member Name Placeholder', 'Family / Guardian Placeholder', 'Youth Athlete', '$0.00', 'Pending', 'Start Date Placeholder', 'No card data stored.', 'Yes'],
     ['Member Name Placeholder', 'Family / Guardian Placeholder', 'Scholarship / Waived', '$0.00', 'Scholarship', 'Start Date Placeholder', 'Review scholarship lane.', 'Yes'],
-  ];
-
-  const donationRows = [
-    ['Donor Name Placeholder', 'General Donation', '$0.00', 'One-Time Placeholder', 'Unrestricted Placeholder', 'General Donation', 'Receipt Needed Placeholder', 'Pledged / Pending Review', 'No receipts issued here.'],
   ];
 
   const sponsorRows = [
@@ -403,18 +504,123 @@ export default function RevenueFundingCenter() {
 
       {activeTab === 'donations' && (
         <SectionCard title="Donation Tracking">
-          <div className="space-y-3">
-            {donationRows.map((row) => (
-              <div key={row.join('|')} className="border border-[#3a3a3a] bg-[#101010] p-4">
-                <p className="text-lg font-bold text-[#f2e7da]">{row[0]}</p>
-                <p className="text-base">Type: {row[1]} | Amount Placeholder: {row[2]} | One-Time / Recurring: {row[3]}</p>
-                <p className="text-base">Restricted / Unrestricted: {row[4]} | Program Designation: {row[5]}</p>
-                <p className="text-base">Receipt Needed: {row[6]} | Status: {row[7]}</p>
-                <p className="text-base">Notes: {row[8]}</p>
+          <div className="space-y-4">
+            <div className="border border-[#3a3a3a] bg-[#101010] p-4">
+              <p className="text-lg font-bold text-[#f2e7da]">Add Donation Entry</p>
+              <p className="mt-1 text-[14px] text-[#bfb3a6]">Tracks donation intent and review status for operations and treasurer visibility.</p>
+
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <div>
+                  <label htmlFor="donor-name" className="mb-1 block text-[14px] font-semibold text-[#cfbfae]">Donor Name</label>
+                  <input
+                    id="donor-name"
+                    value={donorName}
+                    onChange={(event) => setDonorName(event.target.value)}
+                    className="h-11 w-full border border-[#3a3a3a] bg-[#0f0f0f] px-3 text-[16px] text-[#f2e7da]"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="donation-amount" className="mb-1 block text-[14px] font-semibold text-[#cfbfae]">Amount (USD)</label>
+                  <input
+                    id="donation-amount"
+                    type="number"
+                    min="1"
+                    step="0.01"
+                    value={donationAmount}
+                    onChange={(event) => setDonationAmount(event.target.value)}
+                    className="h-11 w-full border border-[#3a3a3a] bg-[#0f0f0f] px-3 text-[16px] text-[#f2e7da]"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="donation-frequency" className="mb-1 block text-[14px] font-semibold text-[#cfbfae]">Frequency</label>
+                  <select
+                    id="donation-frequency"
+                    value={donationFrequency}
+                    onChange={(event) => setDonationFrequency(event.target.value as DonationFrequency)}
+                    className="h-11 w-full border border-[#3a3a3a] bg-[#0f0f0f] px-3 text-[16px] text-[#f2e7da]"
+                  >
+                    <option value="One-Time">One-Time</option>
+                    <option value="Monthly">Monthly</option>
+                    <option value="Quarterly">Quarterly</option>
+                    <option value="Annual">Annual</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="donation-designation" className="mb-1 block text-[14px] font-semibold text-[#cfbfae]">Designation</label>
+                  <input
+                    id="donation-designation"
+                    value={donationDesignation}
+                    onChange={(event) => setDonationDesignation(event.target.value)}
+                    className="h-11 w-full border border-[#3a3a3a] bg-[#0f0f0f] px-3 text-[16px] text-[#f2e7da]"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label htmlFor="donation-notes" className="mb-1 block text-[14px] font-semibold text-[#cfbfae]">Notes</label>
+                  <textarea
+                    id="donation-notes"
+                    value={donationNotes}
+                    onChange={(event) => setDonationNotes(event.target.value)}
+                    className="min-h-[90px] w-full border border-[#3a3a3a] bg-[#0f0f0f] px-3 py-2 text-[16px] text-[#f2e7da]"
+                  />
+                </div>
+                <label className="flex items-center gap-2 text-[14px] text-[#cfbfae] md:col-span-2">
+                  <input
+                    type="checkbox"
+                    checked={donationReceiptNeeded}
+                    onChange={(event) => setDonationReceiptNeeded(event.target.checked)}
+                  />
+                  <span>Receipt needed</span>
+                </label>
               </div>
-            ))}
-            <p className="text-[14px] text-[#cfbfae]">Donation types: General Donation, Youth Program Support, Equipment Support, Scholarship Support, Facility Support, Event Support, Memorial / Honorary Placeholder.</p>
-            <p className="border border-[#8b4444] bg-[#2b1a12] p-3 text-[14px] text-[#d4a574]">Front-end tracking only. This does not process donations or issue tax receipts.</p>
+
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleAddDonation}
+                  className="h-11 border border-[#8b4444] bg-[#5a2a2a] px-4 text-[14px] font-bold text-[#f2e7da]"
+                >
+                  Add Donation
+                </button>
+                <button
+                  type="button"
+                  onClick={resetDonationForm}
+                  className="h-11 border border-[#3a3a3a] bg-[#1a1a1a] px-4 text-[14px] font-bold text-[#cfbfae]"
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {donationRecords.map((row) => (
+                <div key={row.id} className="border border-[#3a3a3a] bg-[#101010] p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-lg font-bold text-[#f2e7da]">{row.donorName}</p>
+                      <p className="text-base">Designation: {row.designation} | Amount: {formatCurrency(row.amount)} | Frequency: {row.frequency}</p>
+                      <p className="text-base">Receipt Needed: {row.receiptNeeded ? 'Yes' : 'No'} | Added: {row.createdAt}</p>
+                      <p className="text-base">Notes: {row.notes}</p>
+                    </div>
+                    <div className="space-y-2">
+                      <span className={`inline-block border px-2 py-1 text-[14px] font-semibold ${statusTone(row.status)}`}>{row.status}</span>
+                      <select
+                        value={row.status}
+                        onChange={(event) => updateDonationStatus(row.id, event.target.value as DonationLifecycleStatus)}
+                        className="h-10 border border-[#3a3a3a] bg-[#0f0f0f] px-2 text-[14px] text-[#f2e7da]"
+                      >
+                        <option value="Pending Review">Pending Review</option>
+                        <option value="Pledged">Pledged</option>
+                        <option value="Active">Active</option>
+                        <option value="Closed">Closed</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <p className="text-[14px] text-[#cfbfae]">Donation types supported in this lane: General Donation, Youth Program Support, Equipment Support, Scholarship Support, Facility Support, Event Support.</p>
+            <p className="border border-[#8b4444] bg-[#2b1a12] p-3 text-[14px] text-[#d4a574]">Operational tracking only. Payment processing and tax receipt issuance still require backend integration.</p>
           </div>
         </SectionCard>
       )}
@@ -547,6 +753,15 @@ export default function RevenueFundingCenter() {
                 <p className="text-base">Notes: {item[4]}</p>
               </div>
             ))}
+            {donationRecords
+              .filter((item) => item.status === 'Pending Review' || item.status === 'Pledged')
+              .map((item) => (
+                <div key={`treasurer-${item.id}`} className="border border-[#3a3a3a] bg-[#101010] p-3">
+                  <p className="text-lg font-semibold text-[#f2e7da]">Donation Review - {item.donorName}</p>
+                  <p className="text-base">Category: Donations | Status: {item.status} | Review Needed: Yes</p>
+                  <p className="text-base">Amount: {formatCurrency(item.amount)} | Designation: {item.designation}</p>
+                </div>
+              ))}
           </div>
         </SectionCard>
       )}
@@ -563,8 +778,9 @@ export default function RevenueFundingCenter() {
         <div className="mt-3 space-y-2 text-[14px] text-[#cfbfae]">
           <p>RevenueAccount: id, name, accountType, contactName, emailPlaceholder, phonePlaceholder, category, status, assignedOwner, notes, createdAt, updatedAt.</p>
           <p>RevenueItem: id, title, revenueType, amountPlaceholder, status, relatedAccountId, restrictedPurpose, reviewNeeded, notes.</p>
+          <p>DonationRecord: id, donorName, amount, frequency, designation, receiptNeeded, status, notes, createdAt.</p>
           <p>PaymentIntegrationPlaceholder: provider, status, connected, notes, futureBackendRequired.</p>
-          <p>Loaded Accounts: {revenueAccounts.length} | Loaded Items: {revenueItems.length} | Loaded Integrations: {paymentIntegrations.length}</p>
+          <p>Loaded Accounts: {revenueAccounts.length} | Loaded Items: {revenueItems.length} | Loaded Donations: {donationRecords.length} | Loaded Integrations: {paymentIntegrations.length}</p>
         </div>
       </details>
     </section>

@@ -46,6 +46,39 @@ interface ParentMessage {
   read?: boolean;
 }
 
+interface AttendanceEntry {
+  id: string;
+  childId: string;
+  date: string;
+  session: string;
+  status: 'Present' | 'Excused' | 'Absent';
+}
+
+interface UpcomingSession {
+  id: string;
+  date: string;
+  time: string;
+  title: string;
+  focus: string;
+}
+
+interface ProgressMilestone {
+  id: string;
+  childId: string;
+  category: string;
+  title: string;
+  percent: number;
+  status: 'On Track' | 'Needs Work' | 'Achieved';
+}
+
+interface ParentResource {
+  id: string;
+  title: string;
+  type: 'Guide' | 'Checklist' | 'Video' | 'Policy';
+  summary: string;
+  actionLabel: string;
+}
+
 function assignmentCardTone(status: HomeAssignment['status']): string {
   if (status === 'Completed') return 'bg-green-900/20 border-green-700';
   if (status === 'In Progress') return 'bg-yellow-900/20 border-yellow-700';
@@ -92,11 +125,70 @@ export default function ParentHub() {
     { id: 'm_2', sender: 'coach', subject: 'Upcoming Belt Test', body: 'Jordan is ready for the August test. Recommend continued focus on defensive combinations.', date: '2026-07-10' }
   ]);
 
+  const [attendanceEntries] = useState<AttendanceEntry[]>([
+    { id: 'att_1', childId: 'c_1', date: '2026-07-08', session: 'Youth Class 4:00 PM', status: 'Present' },
+    { id: 'att_2', childId: 'c_1', date: '2026-07-09', session: 'Youth Class 4:00 PM', status: 'Present' },
+    { id: 'att_3', childId: 'c_1', date: '2026-07-10', session: 'Youth Class 4:00 PM', status: 'Excused' },
+    { id: 'att_4', childId: 'c_2', date: '2026-07-08', session: 'Competition 5:00 PM', status: 'Present' },
+    { id: 'att_5', childId: 'c_2', date: '2026-07-10', session: 'Competition 5:00 PM', status: 'Absent' },
+  ]);
+
+  const [upcomingSessions] = useState<UpcomingSession[]>([
+    { id: 'up_1', date: '2026-07-14', time: '4:00 PM', title: 'Youth Class', focus: 'Footwork and guard discipline' },
+    { id: 'up_2', date: '2026-07-16', time: '5:00 PM', title: 'Competition Track', focus: 'Combination defense and ring movement' },
+    { id: 'up_3', date: '2026-07-18', time: '10:00 AM', title: 'Saturday Skills', focus: 'Conditioning and spar prep' },
+  ]);
+
+  const [progressMilestones] = useState<ProgressMilestone[]>([
+    { id: 'pm_1', childId: 'c_1', category: 'Technical', title: 'Jab and guard consistency', percent: 82, status: 'On Track' },
+    { id: 'pm_2', childId: 'c_1', category: 'Conditioning', title: 'Round stamina development', percent: 71, status: 'On Track' },
+    { id: 'pm_3', childId: 'c_2', category: 'Technical', title: 'Counter-defense transitions', percent: 64, status: 'Needs Work' },
+    { id: 'pm_4', childId: 'c_2', category: 'Academics', title: 'School attendance compliance', percent: 95, status: 'Achieved' },
+  ]);
+
+  const [parentResources] = useState<ParentResource[]>([
+    {
+      id: 'res_1',
+      title: 'Weekly Parent Support Checklist',
+      type: 'Checklist',
+      summary: 'Simple weekly checklist for attendance, hydration, nutrition, and home drills.',
+      actionLabel: 'Use Checklist',
+    },
+    {
+      id: 'res_2',
+      title: 'SafeSport Family Communication Guidelines',
+      type: 'Policy',
+      summary: 'Family-facing communication boundaries and safety escalation path.',
+      actionLabel: 'Review Policy',
+    },
+    {
+      id: 'res_3',
+      title: 'At-Home Fundamentals Video Pack',
+      type: 'Video',
+      summary: 'Short video references for stance, footwork, and basic combinations.',
+      actionLabel: 'Open Video Pack',
+    },
+  ]);
+
   const [newMessage, setNewMessage] = useState('');
 
   const activeChild = children.find(c => c.id === activeChildId);
   const tasksDue = homeAssignments.filter(a => a.status !== 'Completed').length;
   const upcomingEvents = 3;
+  const activeAttendanceEntries = attendanceEntries.filter((entry) => entry.childId === activeChildId);
+  const activeProgressMilestones = progressMilestones.filter((item) => item.childId === activeChildId);
+
+  function milestoneStatusTone(status: ProgressMilestone['status']): string {
+    if (status === 'Achieved') return 'border-green-700 bg-green-900/20 text-green-200';
+    if (status === 'Needs Work') return 'border-yellow-700 bg-yellow-900/20 text-yellow-200';
+    return 'border-[#8b4444] bg-[#1a1a1a] text-[#e8d7c6]';
+  }
+
+  function attendanceStatusTone(status: AttendanceEntry['status']): string {
+    if (status === 'Present') return 'text-green-300';
+    if (status === 'Excused') return 'text-yellow-300';
+    return 'text-red-300';
+  }
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-[#e8d7c6] font-sans">
@@ -477,7 +569,27 @@ export default function ParentHub() {
             <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
               <h3 className="font-mono font-bold text-[#d4a574] uppercase">Attendance Tracking</h3>
               <p className="text-[#b0a095]">View attendance history and upcoming sessions.</p>
-              <div className="text-sm text-[#8a8a8a]">Coming soon: Session-by-session attendance, makeup class scheduling, excused absence tracking.</div>
+
+              <div className="space-y-2">
+                {activeAttendanceEntries.map((entry) => (
+                  <div key={entry.id} className="border border-[#3a3a3a] bg-[#101010] p-3 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-[#f2e7da]">{entry.date} | {entry.session}</p>
+                    </div>
+                    <span className={`text-sm font-semibold ${attendanceStatusTone(entry.status)}`}>{entry.status}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="border border-[#3a3a3a] bg-[#101010] p-4 space-y-2">
+                <h4 className="font-semibold text-[#f2e7da]">Upcoming Sessions</h4>
+                {upcomingSessions.map((session) => (
+                  <div key={session.id} className="text-sm text-[#cfbfae]">
+                    <p><strong>{session.date} {session.time}</strong> - {session.title}</p>
+                    <p>Focus: {session.focus}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -486,7 +598,26 @@ export default function ParentHub() {
             <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
               <h3 className="font-mono font-bold text-[#d4a574] uppercase">Progress & Achievements</h3>
               <p className="text-[#b0a095]">Track skill development and milestone achievements.</p>
-              <div className="text-sm text-[#8a8a8a]">Coming soon: Skill progression charts, belt test preparation, achievement milestones, monthly reports.</div>
+
+              <div className="space-y-3">
+                {activeProgressMilestones.map((milestone) => (
+                  <div key={milestone.id} className={`border p-4 ${milestoneStatusTone(milestone.status)}`}>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-semibold">{milestone.category}: {milestone.title}</p>
+                      <span className="text-xs font-bold uppercase">{milestone.status}</span>
+                    </div>
+                    <div className="mt-2">
+                      <div className="flex justify-between text-xs mb-1">
+                        <span>Progress</span>
+                        <span>{milestone.percent}%</span>
+                      </div>
+                      <div className="w-full bg-[#2a2a2a] h-2">
+                        <div className="bg-[#d4a574] h-2" style={{ width: `${milestone.percent}%` }}></div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -496,15 +627,14 @@ export default function ParentHub() {
               <h3 className="font-mono font-bold text-[#d4a574] uppercase">Parent Support Resources</h3>
               <p className="text-[#b0a095]">Guides, videos, and tips for supporting young athletes.</p>
               <div className="space-y-2">
-                {[
-                  'Youth Sports Psychology Guide',
-                  'Nutrition Basics for Young Athletes',
-                  'Supporting Competition Preparation',
-                  'Injury Prevention and Recovery',
-                  'Motivation and Resilience Building'
-                ].map((resource) => (
-                  <div key={resource} className="border-2 border-[#8b4444] bg-[#0f0f0f] p-3">
-                    <p className="font-semibold">{resource}</p>
+                {parentResources.map((resource) => (
+                  <div key={resource.id} className="border-2 border-[#8b4444] bg-[#0f0f0f] p-3">
+                    <p className="font-semibold">{resource.title}</p>
+                    <p className="text-sm text-[#b0a095] mt-1">Type: {resource.type}</p>
+                    <p className="text-sm text-[#cfbfae] mt-1">{resource.summary}</p>
+                    <button className="mt-2 px-3 py-1 bg-[#8b4444] hover:bg-[#5a2a2a] text-white text-sm font-semibold transition">
+                      {resource.actionLabel}
+                    </button>
                   </div>
                 ))}
               </div>
