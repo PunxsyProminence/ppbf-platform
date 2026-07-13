@@ -92,14 +92,14 @@ const INTEGRATION_STUBS = [
   'Track-capability mapping service (replace preview map)',
 ];
 
-const TAB_KEYS: TabKey[] = ['overview', 'library', 'matrix', 'builder', 'revenue'];
+const TAB_KEY_SET = new Set<TabKey>(['overview', 'library', 'matrix', 'builder', 'revenue']);
 
 function parseTabKey(raw: string | null): TabKey | null {
   if (!raw) {
     return null;
   }
 
-  return TAB_KEYS.includes(raw as TabKey) ? (raw as TabKey) : null;
+  return TAB_KEY_SET.has(raw as TabKey) ? (raw as TabKey) : null;
 }
 
 const fallbackCapabilities: Capability[] = [
@@ -167,34 +167,47 @@ function toRoleList(raw: unknown): RoleName[] {
   return raw.filter((role): role is RoleName => ROLE_OPTIONS.includes(role as RoleName));
 }
 
+function withFallback(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') return fallback;
+  const trimmed = value.trim();
+  return trimmed || fallback;
+}
+
+function toCapabilityId(raw: unknown, index: number): string {
+  return withFallback(raw, `CAP-${String(index + 1).padStart(3, '0')}`);
+}
+
+function toVisibility(raw: unknown): CapabilityVisibility {
+  if (raw === 'Internal' || raw === 'Role-Bound' || raw === 'Public Placeholder') {
+    return raw;
+  }
+  return 'Role-Bound';
+}
+
+function toIsoDate(raw: unknown, fallbackIso: string): string {
+  return typeof raw === 'string' ? raw : fallbackIso;
+}
+
 function hydrateCapability(source: Partial<Capability>, index: number): Capability {
   const nowIso = new Date().toISOString();
-  const capabilityName = typeof source.name === 'string' && source.name.trim() ? source.name.trim() : `Capability ${index + 1}`;
+  const capabilityName = withFallback(source.name, `Capability ${index + 1}`);
+  const status = toCapabilityStatus(source.status);
   const assignedRoles = toRoleList(source.assignedRoles);
   return {
     id: typeof source.id === 'number' ? source.id : index + 1,
-    capabilityId:
-      typeof source.capabilityId === 'string' && source.capabilityId.trim()
-        ? source.capabilityId.trim()
-        : `CAP-${String(index + 1).padStart(3, '0')}`,
+    capabilityId: toCapabilityId(source.capabilityId, index),
     name: capabilityName,
-    group: typeof source.group === 'string' && source.group.trim() ? source.group.trim() : 'General',
-    status: toCapabilityStatus(source.status),
-    visibility:
-      source.visibility === 'Internal' || source.visibility === 'Role-Bound' || source.visibility === 'Public Placeholder'
-        ? source.visibility
-        : 'Role-Bound',
-    owner: typeof source.owner === 'string' && source.owner.trim() ? source.owner.trim() : 'Operations',
+    group: withFallback(source.group, 'General'),
+    status,
+    visibility: toVisibility(source.visibility),
+    owner: withFallback(source.owner, 'Operations'),
     assignedRoles,
-    description:
-      typeof source.description === 'string' && source.description.trim()
-        ? source.description.trim()
-        : `${capabilityName} capability definition pending detailed admin notes.`,
+    description: withFallback(source.description, `${capabilityName} capability definition pending detailed admin notes.`),
     dependencies: typeof source.dependencies === 'string' ? source.dependencies : '',
     notes: typeof source.notes === 'string' ? source.notes : '',
-    reviewNeeded: typeof source.reviewNeeded === 'boolean' ? source.reviewNeeded : toCapabilityStatus(source.status) === 'DRAFT',
-    createdAt: typeof source.createdAt === 'string' ? source.createdAt : nowIso,
-    updatedAt: typeof source.updatedAt === 'string' ? source.updatedAt : nowIso,
+    reviewNeeded: typeof source.reviewNeeded === 'boolean' ? source.reviewNeeded : status === 'DRAFT',
+    createdAt: toIsoDate(source.createdAt, nowIso),
+    updatedAt: toIsoDate(source.updatedAt, nowIso),
   };
 }
 
@@ -1146,20 +1159,23 @@ export default function AdminCapabilitiesPage() {
                         {ROLE_OPTIONS.map((role) => {
                           const assigned = capability.assignedRoles.includes(role);
                           const needsReview = assigned && capability.status === 'DRAFT';
+                          let assignmentClass = 'border-[#2d2d2d] bg-[#1a1a1a] text-[#cfbfae]';
+                          let marker = '—';
+                          if (needsReview) {
+                            assignmentClass = 'border-[#8b4444] bg-[#3a1414] text-[#f2e7da]';
+                            marker = '⚠';
+                          } else if (assigned) {
+                            assignmentClass = 'border-[#8b4444] bg-[#5a2a2a] text-[#f2e7da]';
+                            marker = '✓';
+                          }
                           return (
                             <td key={role} className="px-3 py-3">
                               <button
                                 type="button"
                                 onClick={() => toggleCapabilityRole(capability.id, role)}
-                                className={`h-11 min-w-[90px] border px-2 text-[13px] font-bold ${
-                                  needsReview
-                                    ? 'border-[#8b4444] bg-[#3a1414] text-[#f2e7da]'
-                                    : assigned
-                                      ? 'border-[#8b4444] bg-[#5a2a2a] text-[#f2e7da]'
-                                      : 'border-[#2d2d2d] bg-[#1a1a1a] text-[#cfbfae]'
-                                }`}
+                                className={`h-11 min-w-[90px] border px-2 text-[13px] font-bold ${assignmentClass}`}
                               >
-                                {needsReview ? '⚠' : assigned ? '✓' : '—'}
+                                {marker}
                               </button>
                             </td>
                           );
@@ -1182,8 +1198,9 @@ export default function AdminCapabilitiesPage() {
 
                 <div className="mt-4 grid gap-4 lg:grid-cols-2">
                   <div>
-                    <label className="mb-2 block text-[14px] font-semibold text-[#cfbfae]">Capability Name</label>
+                    <label className="mb-2 block text-[14px] font-semibold text-[#cfbfae]" htmlFor="builder-name">Capability Name</label>
                     <input
+                      id="builder-name"
                       value={builderName}
                       onChange={(event) => setBuilderName(event.target.value)}
                       className="h-11 w-full border border-[#3a3a3a] bg-[#0f0f0f] px-3 text-[16px] text-[#f2e7da]"
@@ -1191,8 +1208,9 @@ export default function AdminCapabilitiesPage() {
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-[14px] font-semibold text-[#cfbfae]">Capability ID</label>
+                    <label className="mb-2 block text-[14px] font-semibold text-[#cfbfae]" htmlFor="builder-capability-id">Capability ID</label>
                     <input
+                      id="builder-capability-id"
                       value={builderCapabilityId}
                       onChange={(event) => setBuilderCapabilityId(event.target.value)}
                       placeholder="CAP-###"
@@ -1201,8 +1219,9 @@ export default function AdminCapabilitiesPage() {
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-[14px] font-semibold text-[#cfbfae]">Category</label>
+                    <label className="mb-2 block text-[14px] font-semibold text-[#cfbfae]" htmlFor="builder-category">Category</label>
                     <input
+                      id="builder-category"
                       value={builderCategory}
                       onChange={(event) => setBuilderCategory(event.target.value)}
                       className="h-11 w-full border border-[#3a3a3a] bg-[#0f0f0f] px-3 text-[16px] text-[#f2e7da]"
@@ -1210,8 +1229,9 @@ export default function AdminCapabilitiesPage() {
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-[14px] font-semibold text-[#cfbfae]">Owner / Steward</label>
+                    <label className="mb-2 block text-[14px] font-semibold text-[#cfbfae]" htmlFor="builder-owner">Owner / Steward</label>
                     <input
+                      id="builder-owner"
                       value={builderOwner}
                       onChange={(event) => setBuilderOwner(event.target.value)}
                       className="h-11 w-full border border-[#3a3a3a] bg-[#0f0f0f] px-3 text-[16px] text-[#f2e7da]"
@@ -1219,8 +1239,9 @@ export default function AdminCapabilitiesPage() {
                   </div>
 
                   <div className="lg:col-span-2">
-                    <label className="mb-2 block text-[14px] font-semibold text-[#cfbfae]">Description</label>
+                    <label className="mb-2 block text-[14px] font-semibold text-[#cfbfae]" htmlFor="builder-description">Description</label>
                     <textarea
+                      id="builder-description"
                       value={builderDescription}
                       onChange={(event) => setBuilderDescription(event.target.value)}
                       className="min-h-[110px] w-full border border-[#3a3a3a] bg-[#0f0f0f] px-3 py-2 text-[16px] text-[#f2e7da]"
@@ -1228,8 +1249,9 @@ export default function AdminCapabilitiesPage() {
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-[14px] font-semibold text-[#cfbfae]">Primary Role</label>
+                    <label className="mb-2 block text-[14px] font-semibold text-[#cfbfae]" htmlFor="builder-primary-role">Primary Role</label>
                     <select
+                      id="builder-primary-role"
                       value={builderPrimaryRole}
                       onChange={(event) => setBuilderPrimaryRole(event.target.value as RoleName)}
                       className="h-11 w-full border border-[#3a3a3a] bg-[#0f0f0f] px-3 text-[16px] text-[#f2e7da]"
@@ -1243,8 +1265,9 @@ export default function AdminCapabilitiesPage() {
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-[14px] font-semibold text-[#cfbfae]">Status</label>
+                    <label className="mb-2 block text-[14px] font-semibold text-[#cfbfae]" htmlFor="builder-status">Status</label>
                     <select
+                      id="builder-status"
                       value={builderStatus}
                       onChange={(event) => setBuilderStatus(event.target.value as CapabilityStatus)}
                       className="h-11 w-full border border-[#3a3a3a] bg-[#0f0f0f] px-3 text-[16px] text-[#f2e7da]"
@@ -1257,8 +1280,9 @@ export default function AdminCapabilitiesPage() {
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-[14px] font-semibold text-[#cfbfae]">Visibility</label>
+                    <label className="mb-2 block text-[14px] font-semibold text-[#cfbfae]" htmlFor="builder-visibility">Visibility</label>
                     <select
+                      id="builder-visibility"
                       value={builderVisibility}
                       onChange={(event) => setBuilderVisibility(event.target.value as CapabilityVisibility)}
                       className="h-11 w-full border border-[#3a3a3a] bg-[#0f0f0f] px-3 text-[16px] text-[#f2e7da]"
@@ -1270,8 +1294,9 @@ export default function AdminCapabilitiesPage() {
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-[14px] font-semibold text-[#cfbfae]">Dependencies</label>
+                    <label className="mb-2 block text-[14px] font-semibold text-[#cfbfae]" htmlFor="builder-dependencies">Dependencies</label>
                     <input
+                      id="builder-dependencies"
                       value={builderDependencies}
                       onChange={(event) => setBuilderDependencies(event.target.value)}
                       className="h-11 w-full border border-[#3a3a3a] bg-[#0f0f0f] px-3 text-[16px] text-[#f2e7da]"
@@ -1279,7 +1304,7 @@ export default function AdminCapabilitiesPage() {
                   </div>
 
                   <div className="lg:col-span-2">
-                    <label className="mb-2 block text-[14px] font-semibold text-[#cfbfae]">Secondary Roles</label>
+                    <p className="mb-2 block text-[14px] font-semibold text-[#cfbfae]">Secondary Roles</p>
                     <div className="flex flex-wrap gap-2">
                       {ROLE_OPTIONS.filter((role) => role !== builderPrimaryRole).map((role) => {
                         const selected = builderSecondaryRoles.includes(role);
@@ -1303,8 +1328,9 @@ export default function AdminCapabilitiesPage() {
                   </div>
 
                   <div className="lg:col-span-2">
-                    <label className="mb-2 block text-[14px] font-semibold text-[#cfbfae]">Notes</label>
+                    <label className="mb-2 block text-[14px] font-semibold text-[#cfbfae]" htmlFor="builder-notes">Notes</label>
                     <textarea
+                      id="builder-notes"
                       value={builderNotes}
                       onChange={(event) => setBuilderNotes(event.target.value)}
                       className="min-h-[90px] w-full border border-[#3a3a3a] bg-[#0f0f0f] px-3 py-2 text-[16px] text-[#f2e7da]"

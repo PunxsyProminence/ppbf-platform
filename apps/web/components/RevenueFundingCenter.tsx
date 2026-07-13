@@ -211,7 +211,7 @@ function statusTone(status: string): string {
   return 'text-[#cfbfae] border-[#4a3a2a] bg-[#171515]';
 }
 
-function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
+function SectionCard({ title, children }: Readonly<{ title: string; children: React.ReactNode }>) {
   return (
     <section className="border border-[#3a3a3a] bg-[#161616] p-5">
       <h3 className="text-lg font-bold text-[#f2e7da]">{title}</h3>

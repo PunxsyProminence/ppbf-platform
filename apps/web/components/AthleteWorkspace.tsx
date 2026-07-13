@@ -52,6 +52,18 @@ interface ShadowMessage {
   timestamp: string;
 }
 
+function getReadinessLevel(readinessToTrain: number): ReadinessLevel {
+  if (readinessToTrain >= 7) return 'GREEN';
+  if (readinessToTrain >= 5) return 'YELLOW';
+  return 'RED';
+}
+
+function getGoalStatusTone(status: GoalStatus): string {
+  if (status === 'Active') return 'bg-blue-900 text-blue-200';
+  if (status === 'Completed') return 'bg-green-900 text-green-200';
+  return 'bg-yellow-900 text-yellow-200';
+}
+
 function createInitialShadowMessages(): ShadowMessage[] {
   const now = Date.now();
   return [
@@ -134,7 +146,7 @@ export default function AthleteWorkspace() {
   const [checkInTime, setCheckInTime] = useState<string | null>(null);
   const [checkInNotes, setCheckInNotes] = useState('');
 
-  const currentReadiness: ReadinessLevel = readinessToTrain >= 7 ? 'GREEN' : readinessToTrain >= 5 ? 'YELLOW' : 'RED';
+  const currentReadiness: ReadinessLevel = getReadinessLevel(readinessToTrain);
   const tasksDue = floorTasks.filter(t => !t.completed).length;
   const goalsActive = smartGoals.filter(g => g.status === 'Active').length;
 
@@ -271,18 +283,18 @@ export default function AthleteWorkspace() {
                   <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574] mb-4">Current Readiness</h3>
                   <div className="space-y-4">
                     <div>
-                      <label className="text-sm text-[#b0a095] block mb-2">Sleep (hours)</label>
-                      <input type="range" min="4" max="12" value={sleepHours} onChange={(e) => setSleepHours(parseInt(e.target.value))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
+                      <label className="text-sm text-[#b0a095] block mb-2" htmlFor="readiness-sleep-hours">Sleep (hours)</label>
+                      <input id="readiness-sleep-hours" type="range" min="4" max="12" value={sleepHours} onChange={(e) => setSleepHours(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
                       <p className="text-xs text-[#8a8a8a] mt-1">{sleepHours} hours</p>
                     </div>
                     <div>
-                      <label className="text-sm text-[#b0a095] block mb-2">Energy Level (1-10)</label>
-                      <input type="range" min="1" max="10" value={energyLevel} onChange={(e) => setEnergyLevel(parseInt(e.target.value))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
+                      <label className="text-sm text-[#b0a095] block mb-2" htmlFor="readiness-energy-level">Energy Level (1-10)</label>
+                      <input id="readiness-energy-level" type="range" min="1" max="10" value={energyLevel} onChange={(e) => setEnergyLevel(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
                       <p className="text-xs text-[#8a8a8a] mt-1">{energyLevel}/10</p>
                     </div>
                     <div>
-                      <label className="text-sm text-[#b0a095] block mb-2">Readiness to Train (1-10)</label>
-                      <input type="range" min="1" max="10" value={readinessToTrain} onChange={(e) => setReadinessToTrain(parseInt(e.target.value))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
+                      <label className="text-sm text-[#b0a095] block mb-2" htmlFor="readiness-train">Readiness to Train (1-10)</label>
+                      <input id="readiness-train" type="range" min="1" max="10" value={readinessToTrain} onChange={(e) => setReadinessToTrain(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
                       <p className="text-xs text-[#8a8a8a] mt-1">{readinessToTrain}/10</p>
                     </div>
                   </div>
@@ -297,8 +309,8 @@ export default function AthleteWorkspace() {
                       <span>Injury or Pain Flag</span>
                     </label>
                     <div>
-                      <label className="text-sm text-[#b0a095] block mb-2">Soreness Level (1-10)</label>
-                      <input type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(parseInt(e.target.value))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
+                      <label className="text-sm text-[#b0a095] block mb-2" htmlFor="readiness-soreness">Soreness Level (1-10)</label>
+                      <input id="readiness-soreness" type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
                       <p className="text-xs text-[#8a8a8a] mt-1">{soreness}/10</p>
                     </div>
                     <div className="grid grid-cols-3 gap-2 pt-2">
@@ -489,11 +501,7 @@ export default function AthleteWorkspace() {
                         <span className="inline-block text-xs font-mono font-bold bg-[#4a4a4a] text-[#8a8a8a] px-2 py-1 mb-2">{goal.category}</span>
                         <h4 className="text-base font-semibold">{goal.title}</h4>
                       </div>
-                      <span className={`text-xs font-semibold px-2 py-1 rounded ${
-                        goal.status === 'Active' ? 'bg-blue-900 text-blue-200' :
-                        goal.status === 'Completed' ? 'bg-green-900 text-green-200' :
-                        'bg-yellow-900 text-yellow-200'
-                      }`}>
+                      <span className={`text-xs font-semibold px-2 py-1 rounded ${getGoalStatusTone(goal.status)}`}>
                         {goal.status}
                       </span>
                     </div>
@@ -570,23 +578,23 @@ export default function AthleteWorkspace() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-sm font-semibold text-[#b0a095] block mb-2">Sleep (4-12 hours)</label>
-                    <input type="range" min="4" max="12" step="0.5" value={sleepHours} onChange={(e) => setSleepHours(parseFloat(e.target.value))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
+                    <label className="text-sm font-semibold text-[#b0a095] block mb-2" htmlFor="bio-sleep-hours">Sleep (4-12 hours)</label>
+                    <input id="bio-sleep-hours" type="range" min="4" max="12" step="0.5" value={sleepHours} onChange={(e) => setSleepHours(Number.parseFloat(e.target.value))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
                     <p className="text-xs text-[#8a8a8a] mt-1">{sleepHours} hours</p>
                   </div>
                   <div>
-                    <label className="text-sm font-semibold text-[#b0a095] block mb-2">Hydration (1-10)</label>
-                    <input type="range" min="1" max="10" value={hydrationStatus} onChange={(e) => setHydrationStatus(parseInt(e.target.value))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
+                    <label className="text-sm font-semibold text-[#b0a095] block mb-2" htmlFor="bio-hydration">Hydration (1-10)</label>
+                    <input id="bio-hydration" type="range" min="1" max="10" value={hydrationStatus} onChange={(e) => setHydrationStatus(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
                     <p className="text-xs text-[#8a8a8a] mt-1">{hydrationStatus}/10</p>
                   </div>
                   <div>
-                    <label className="text-sm font-semibold text-[#b0a095] block mb-2">Motivation (1-10)</label>
-                    <input type="range" min="1" max="10" value={motivation} onChange={(e) => setMotivation(parseInt(e.target.value))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
+                    <label className="text-sm font-semibold text-[#b0a095] block mb-2" htmlFor="bio-motivation">Motivation (1-10)</label>
+                    <input id="bio-motivation" type="range" min="1" max="10" value={motivation} onChange={(e) => setMotivation(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
                     <p className="text-xs text-[#8a8a8a] mt-1">{motivation}/10</p>
                   </div>
                   <div>
-                    <label className="text-sm font-semibold text-[#b0a095] block mb-2">Soreness (0-10)</label>
-                    <input type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(parseInt(e.target.value))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
+                    <label className="text-sm font-semibold text-[#b0a095] block mb-2" htmlFor="bio-soreness">Soreness (0-10)</label>
+                    <input id="bio-soreness" type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
                     <p className="text-xs text-[#8a8a8a] mt-1">{soreness}/10</p>
                   </div>
                 </div>
@@ -648,8 +656,8 @@ export default function AthleteWorkspace() {
                     <div className="space-y-1">
                       <p className="text-xs font-semibold text-[#d4a574]">Coaching Cues:</p>
                       <div className="flex flex-wrap gap-1">
-                        {drill.cues.map((cue, i) => (
-                          <span key={i} className="text-xs bg-[#4a4a4a] text-[#8a8a8a] px-2 py-1">⚡ {cue}</span>
+                        {drill.cues.map((cue) => (
+                          <span key={`${drill.id}-${cue}`} className="text-xs bg-[#4a4a4a] text-[#8a8a8a] px-2 py-1">⚡ {cue}</span>
                         ))}
                       </div>
                     </div>
@@ -725,15 +733,16 @@ export default function AthleteWorkspace() {
                 <h3 className="font-mono font-bold text-[#d4a574]">Send Message to Coach</h3>
                 <form className="space-y-4">
                   <div>
-                    <label className="block text-sm font-semibold mb-2">Coach</label>
-                    <select className="w-full px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none">
+                    <label className="block text-sm font-semibold mb-2" htmlFor="message-coach-select">Coach</label>
+                    <select id="message-coach-select" className="w-full px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none">
                       <option>Coach Jason (Head Coach)</option>
                       <option>Coach Danielle (Fitness Director)</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold mb-2">Your Message</label>
+                    <label className="block text-sm font-semibold mb-2" htmlFor="message-coach-body">Your Message</label>
                     <textarea
+                      id="message-coach-body"
                       placeholder="Type your message..."
                       className="w-full h-24 px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none resize-none"
                     />
@@ -766,8 +775,8 @@ export default function AthleteWorkspace() {
               />
 
               <div className="space-y-4">
-                {['Mon-Thu 4:00 PM Youth Class', 'Mon-Thu 5:00 PM Intermediate', 'MWF 5:45 PM Adult Fitness'].map((session, i) => (
-                  <div key={i} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 flex justify-between items-center">
+                {['Mon-Thu 4:00 PM Youth Class', 'Mon-Thu 5:00 PM Intermediate', 'MWF 5:45 PM Adult Fitness'].map((session) => (
+                  <div key={session} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 flex justify-between items-center">
                     <p className="font-semibold">{session}</p>
                     <button className="px-4 py-2 bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold transition">
                       Book
@@ -807,9 +816,9 @@ export default function AthleteWorkspace() {
                   <div className="space-y-2">
                     <p className="text-sm font-semibold text-[#d4a574]">Suggested Questions:</p>
                     <div className="grid grid-cols-1 gap-2">
-                      {suggestedQuestions.map((q, i) => (
+                      {suggestedQuestions.map((q) => (
                         <button
-                          key={i}
+                          key={q}
                           onClick={() => setShadowInput(q)}
                           className="text-left px-3 py-2 bg-[#1a1a1a] border-2 border-[#d4a574] hover:bg-[#2a2a2a] text-sm text-[#d4a574] transition"
                         >
@@ -848,16 +857,16 @@ export default function AthleteWorkspace() {
               <h3 className="text-lg font-bold">Soreness Details: {selectedPainLocation}</h3>
               <div className="space-y-3">
                 <div>
-                  <label className="block text-sm font-semibold mb-2">Pain Type</label>
-                  <select value={currentPainType} onChange={(e) => setCurrentPainType(e.target.value as PainType)} className="w-full px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none">
+                  <label className="block text-sm font-semibold mb-2" htmlFor="pain-type-select">Pain Type</label>
+                  <select id="pain-type-select" value={currentPainType} onChange={(e) => setCurrentPainType(e.target.value as PainType)} className="w-full px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none">
                     {(['Sharp', 'Dull', 'Burning', 'Tight', 'Pulling', 'Throbbing', 'Swollen', 'Numbness/Tingling', 'Instability', 'Other'] as PainType[]).map(t => (
                       <option key={t} value={t}>{t}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold mb-2">Severity (1-10)</label>
-                  <input type="range" min="1" max="10" value={currentPainSeverity} onChange={(e) => setCurrentPainSeverity(parseInt(e.target.value))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
+                  <label className="block text-sm font-semibold mb-2" htmlFor="pain-severity-range">Severity (1-10)</label>
+                  <input id="pain-severity-range" type="range" min="1" max="10" value={currentPainSeverity} onChange={(e) => setCurrentPainSeverity(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
                   <p className="text-xs text-[#8a8a8a] mt-1">{currentPainSeverity}/10</p>
                 </div>
               </div>

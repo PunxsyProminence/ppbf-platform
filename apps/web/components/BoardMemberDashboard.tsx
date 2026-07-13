@@ -166,7 +166,7 @@ function sharedTabCards(tab: WorkspaceTab) {
   return cardsByTab[tab];
 }
 
-export default function BoardMemberDashboard({ seat, overviewMetrics, links, allowedRoles }: BoardMemberDashboardProps) {
+export default function BoardMemberDashboard({ seat, overviewMetrics, links, allowedRoles }: Readonly<BoardMemberDashboardProps>) {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('Overview');
   const modules = roleModulesBySeat[seat.slug];
   const shadowSignals = boardShadowSignals[seat.slug];

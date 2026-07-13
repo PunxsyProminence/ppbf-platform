@@ -46,6 +46,18 @@ interface ParentMessage {
   read?: boolean;
 }
 
+function assignmentCardTone(status: HomeAssignment['status']): string {
+  if (status === 'Completed') return 'bg-green-900/20 border-green-700';
+  if (status === 'In Progress') return 'bg-yellow-900/20 border-yellow-700';
+  return 'bg-[#1a1a1a] border-[#8b4444]';
+}
+
+function assignmentBadgeTone(status: HomeAssignment['status']): string {
+  if (status === 'Completed') return 'bg-green-900 text-green-200';
+  if (status === 'In Progress') return 'bg-yellow-900 text-yellow-200';
+  return 'bg-[#4a4a4a] text-[#8a8a8a]';
+}
+
 export default function ParentHub() {
   const [activeTab, setActiveTab] = useState<TabID>('overview');
 
@@ -180,35 +192,35 @@ export default function ParentHub() {
                     <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Current Status</h3>
                     <div className="space-y-3">
                       <div>
-                        <label className="text-xs text-[#b0a095] block mb-1">Child Name</label>
+                        <p className="text-xs text-[#b0a095] block mb-1">Child Name</p>
                         <p className="text-base font-semibold">{activeChild.name}</p>
                       </div>
                       <div>
-                        <label className="text-xs text-[#b0a095] block mb-1">Current Track</label>
+                        <p className="text-xs text-[#b0a095] block mb-1">Current Track</p>
                         <p className="text-base font-semibold">{activeChild.track}</p>
                       </div>
                       <div>
-                        <label className="text-xs text-[#b0a095] block mb-1">Progress</label>
+                        <p className="text-xs text-[#b0a095] block mb-1">Progress</p>
                         <p className="text-base font-semibold">{activeChild.currentProgress}</p>
                       </div>
                       <div>
-                        <label className="text-xs text-[#b0a095] block mb-1">Attendance</label>
+                        <p className="text-xs text-[#b0a095] block mb-1">Attendance</p>
                         <p className="text-base font-semibold text-green-400">{activeChild.attendancePercent}%</p>
                       </div>
                       <div>
-                        <label className="text-xs text-[#b0a095] block mb-1">Membership Status</label>
+                        <p className="text-xs text-[#b0a095] block mb-1">Membership Status</p>
                         <p className="text-base font-semibold">Active Member</p>
                       </div>
                       <div>
-                        <label className="text-xs text-[#b0a095] block mb-1">Support Status</label>
+                        <p className="text-xs text-[#b0a095] block mb-1">Support Status</p>
                         <p className="text-base font-semibold">Scholarship Supported</p>
                       </div>
                       <div>
-                        <label className="text-xs text-[#b0a095] block mb-1">Scholarship Status</label>
+                        <p className="text-xs text-[#b0a095] block mb-1">Scholarship Status</p>
                         <p className="text-base font-semibold">Scholarship Supported</p>
                       </div>
                       <div>
-                        <label className="text-xs text-[#b0a095] block mb-1">Community Service Support Status</label>
+                        <p className="text-xs text-[#b0a095] block mb-1">Community Service Support Status</p>
                         <p className="text-base font-semibold">Community Service Supported</p>
                       </div>
                     </div>
@@ -270,8 +282,8 @@ export default function ParentHub() {
                     { task: 'Complete Family Reflection', completed: false },
                     { task: 'Verify School Progress', completed: true },
                     { task: 'Prepare for Saturday Session', completed: false }
-                  ].map((item, i) => (
-                    <div key={i} className={`border-2 p-3 rounded flex items-center gap-3 ${
+                  ].map((item) => (
+                    <div key={item.task} className={`border-2 p-3 rounded flex items-center gap-3 ${
                       item.completed ? 'bg-green-900/20 border-green-700' : 'bg-[#0f0f0f] border-[#8b4444]'
                     }`}>
                       <input type="checkbox" checked={item.completed} readOnly aria-label={`${item.task} completion`} className="w-4 h-4" />
@@ -312,18 +324,10 @@ export default function ParentHub() {
 
               <div className="space-y-3">
                 {homeAssignments.map(assignment => (
-                  <div key={assignment.id} className={`border-2 p-4 rounded ${
-                    assignment.status === 'Completed' ? 'bg-green-900/20 border-green-700' :
-                    assignment.status === 'In Progress' ? 'bg-yellow-900/20 border-yellow-700' :
-                    'bg-[#1a1a1a] border-[#8b4444]'
-                  }`}>
+                  <div key={assignment.id} className={`border-2 p-4 rounded ${assignmentCardTone(assignment.status)}`}>
                     <div className="flex justify-between items-start mb-2">
                       <h4 className="font-semibold">{assignment.title}</h4>
-                      <span className={`text-xs px-2 py-1 rounded font-semibold ${
-                        assignment.status === 'Completed' ? 'bg-green-900 text-green-200' :
-                        assignment.status === 'In Progress' ? 'bg-yellow-900 text-yellow-200' :
-                        'bg-[#4a4a4a] text-[#8a8a8a]'
-                      }`}>
+                      <span className={`text-xs px-2 py-1 rounded font-semibold ${assignmentBadgeTone(assignment.status)}`}>
                         {assignment.status}
                       </span>
                     </div>
@@ -498,8 +502,8 @@ export default function ParentHub() {
                   'Supporting Competition Preparation',
                   'Injury Prevention and Recovery',
                   'Motivation and Resilience Building'
-                ].map((resource, i) => (
-                  <div key={i} className="border-2 border-[#8b4444] bg-[#0f0f0f] p-3">
+                ].map((resource) => (
+                  <div key={resource} className="border-2 border-[#8b4444] bg-[#0f0f0f] p-3">
                     <p className="font-semibold">{resource}</p>
                   </div>
                 ))}
