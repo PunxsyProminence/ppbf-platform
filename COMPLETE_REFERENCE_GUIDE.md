@@ -4,7 +4,6 @@
 - docs/                    → Master blueprint and governance rules
 - packages/                → Core logic (governance, routing, execution, intelligence, continuity)
 - apps/web                 → Main Next.js portal
-- apps/coach-review        → Coach Review Queue
 - infra/supabase           → Database schema
 - Various .ps1 scripts     → Automation and governance tools
 

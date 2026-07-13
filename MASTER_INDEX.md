@@ -32,7 +32,7 @@
 
 ## Core Code
 - packages/ (governance, routing, execution, intelligence, continuity, portals) — including goalProgress, reflectionAnalyzer, NotificationBanner
-- apps/web and apps/coach-review
+- apps/web
 - infra/supabase/schema.sql
 - PPBF_CAPABILITIES.json
 
