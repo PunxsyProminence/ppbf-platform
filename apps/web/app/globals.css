@@ -1,58 +1,219 @@
-@import url('https://fonts.googleapis.com/css2?family=Anton:wght@400&family=JetBrains+Mono:wght@400;700&display=swap');
 @import "tailwindcss";
 
 :root {
-  /* Old Boxing Poster Palette - Tans + Red + Black */
-  --background: #0a0a0a;
-  --foreground: #e8d7c6;
-  --canvas: #1a1a1a;
-  --concrete: #2a2a2a;
-  
-  /* Vintage Poster Colors */
-  --poster-cream: #e8d7c6;
-  --poster-tan: #d4a574;
-  --poster-leather: #5a4a3a;
-  --poster-dark-brown: #3d2817;
-  --post-sepia: #8B7355;
-  
-  /* Red & Black Accents */
-  --accent-red: #8b4444;
-  --accent-red-dark: #5a2a2a;
-  --accent-black: #0a0a0a;
-  --accent-maroon: #6b3a3a;
-  --dust-gray: #4a4a4a;
+  --canvas-tan: #d4c4a8;
+  --canvas-tan-light: #e5d9c3;
+  --canvas-tan-dark: #8b7355;
+
+  --olive-dark: #3d3d2e;
+  --black: #1a1a1a;
+  --gray-dark: #2a2a2a;
+  --gray-medium: #4a4a4a;
+  --white: #f5f5f5;
+  --white-off: #e8e8e8;
+
+  --red-primary: #8b0000;
+  --red-highlight: #a52a2a;
+  --red-blood: #660000;
+
+  --status-ready: #4a5d23;
+  --status-warning: #8b6914;
+  --status-critical: var(--red-primary);
+  --status-inactive: var(--gray-medium);
+
+  --font-stencil: var(--font-tactical-display), "Impact", "Arial Black", sans-serif;
+  --font-body: var(--font-tactical-body), "Arial Narrow", Arial, sans-serif;
+  --font-mono: var(--font-geist-mono), "Courier New", "Courier", monospace;
+
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 14px;
+  --text-lg: 16px;
+  --text-xl: 18px;
+  --text-2xl: 24px;
+  --text-3xl: 32px;
+  --text-4xl: 48px;
+
+  --leading-tight: 1.2;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.75;
+
+  --tracking-wide: 1px;
+  --tracking-wider: 2px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  --border-thin: 1px;
+  --border-medium: 2px;
+  --border-thick: 3px;
+
+  --shadow-sm: 2px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-md: 4px 4px 0 rgba(0, 0, 0, 0.4);
+  --shadow-lg: 6px 6px 0 rgba(0, 0, 0, 0.5);
+
+  --background: var(--canvas-tan);
+  --foreground: var(--black);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-gym-canvas: var(--canvas);
-  --color-gym-concrete: var(--concrete);
-  --color-poster-cream: var(--poster-cream);
-  --color-poster-tan: var(--poster-tan);
-  --color-poster-leather: var(--poster-leather);
-  --color-poster-dark: var(--poster-dark-brown);
-  --color-sepia: var(--post-sepia);
-  --color-accent-red: var(--accent-red);
-  --color-accent-red-dark: var(--accent-red-dark);
-  --color-accent-black: var(--accent-black);
-  --color-accent-maroon: var(--accent-maroon);
-  --color-gym-dust: var(--dust-gray);
-  --font-display: "Anton", "Impact", sans-serif;
-  --font-sans: var(--font-geist-sans);
-  --font-mono: "JetBrains Mono", "Courier New", monospace;
+  --color-canvas-tan: var(--canvas-tan);
+  --color-canvas-tan-light: var(--canvas-tan-light);
+  --color-canvas-tan-dark: var(--canvas-tan-dark);
+  --color-olive-dark: var(--olive-dark);
+  --color-black: var(--black);
+  --color-gray-dark: var(--gray-dark);
+  --color-gray-medium: var(--gray-medium);
+  --color-white: var(--white);
+  --color-white-off: var(--white-off);
+  --color-red-primary: var(--red-primary);
+  --color-red-highlight: var(--red-highlight);
+  --color-red-blood: var(--red-blood);
+  --font-display: var(--font-stencil);
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #e5e5e5;
-  }
+* {
+  box-sizing: border-box;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), sans-serif;
-  letter-spacing: 0.025em;
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='noise'><feTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='2'/></filter><rect width='180' height='180' filter='url(%23noise)' opacity='0.06'/></svg>");
+}
+
+body > * {
+  position: relative;
+  z-index: 2;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-stencil);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
+  line-height: var(--leading-tight);
+}
+
+a {
+  color: var(--red-primary);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--red-highlight);
+  text-decoration: underline;
+}
+
+:focus-visible {
+  outline: var(--border-medium) solid var(--red-primary);
+  outline-offset: 2px;
+}
+
+.tactical-panel {
+  background: var(--canvas-tan);
+  border: var(--border-medium) solid var(--black);
+  box-shadow: var(--shadow-sm);
+}
+
+.tactical-panel-dark {
+  background: var(--gray-dark);
+  color: var(--white-off);
+  border: var(--border-medium) solid var(--black);
+  box-shadow: var(--shadow-sm);
+}
+
+.tactical-chip {
+  display: inline-block;
+  padding: var(--space-1) var(--space-2);
+  border: var(--border-thin) solid var(--black);
+  background: var(--canvas-tan-light);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
+
+.tactical-chip-critical {
+  background: var(--red-primary);
+  color: var(--white);
+  border-color: var(--black);
+}
+
+.tactical-btn {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-2) var(--space-4);
+  border: var(--border-medium) solid var(--black);
+  background: var(--canvas-tan-dark);
+  color: var(--black);
+  font-family: var(--font-stencil);
+  font-size: var(--text-sm);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  box-shadow: var(--shadow-sm);
+}
+
+.tactical-btn:hover {
+  background: var(--olive-dark);
+  color: var(--white);
+}
+
+.tactical-btn-critical {
+  background: var(--red-primary);
+  color: var(--white);
+}
+
+.tactical-btn-critical:hover {
+  background: var(--red-highlight);
+}
+
+.tactical-input {
+  width: 100%;
+  min-height: 44px;
+  border: var(--border-medium) solid var(--black);
+  background: var(--canvas-tan-light);
+  color: var(--black);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-base);
+}
+
+.tactical-input:focus {
+  border-color: var(--red-primary);
+  box-shadow: 0 0 0 2px rgba(139, 0, 0, 0.15);
+}
+
+.tactical-alert-critical {
+  background: #f0d6d6;
+  color: var(--red-primary);
+  border: var(--border-medium) solid var(--red-primary);
+  padding: var(--space-3);
 }

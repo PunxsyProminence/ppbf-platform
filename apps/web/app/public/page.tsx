@@ -203,17 +203,17 @@ export default function PublicPortalPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#0a0a0a] text-[#e8d7c6]">
+    <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-10 lg:px-10">
-        <header className="flex flex-col gap-4 border-b-4 border-[#8b4444] pb-6 md:flex-row md:items-end md:justify-between">
+        <header className="flex flex-col gap-4 border-b-[3px] border-[var(--black)] pb-6 md:flex-row md:items-end md:justify-between">
           <div className="space-y-3">
-            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[#d4a574]">PUBLIC PORTAL</p>
-            <h1 className="font-display text-4xl tracking-tight text-[#e8d7c6] md:text-5xl">PPBF Public Entry + Interest Intake</h1>
-            <p className="max-w-4xl text-sm leading-7 text-[#cbb8a8] md:text-base">
+            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--red-primary)]">PUBLIC PORTAL</p>
+            <h1 className="font-display text-4xl tracking-tight text-[var(--black)] md:text-5xl">PPBF Public Entry + Interest Intake</h1>
+            <p className="max-w-4xl text-sm leading-7 text-[var(--gray-dark)] md:text-base">
               The public-facing front door for awareness, trust building, community introduction, public interest intake, volunteer recruitment, partner engagement, and future athlete enrollment.
             </p>
           </div>
-          <div className="border-2 border-[#8b4444] bg-[#1a1a1a] px-4 py-3 text-xs font-mono text-[#e8d7c6] shadow-2xl shadow-black/70">
+          <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 py-3 text-xs font-mono text-[var(--black)] shadow-[var(--shadow-sm)]">
             Status: ready
           </div>
         </header>
@@ -224,45 +224,45 @@ export default function PublicPortalPage() {
             { label: 'Purpose', value: 'Awareness + Interest Intake' },
             { label: 'Access', value: 'Public / Read-only' },
           ].map((item) => (
-            <div key={item.label} className="border-2 border-[#5a4a3a] bg-[#101010] p-4">
-              <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-[#b0a095]">{item.label}</p>
-              <p className="mt-2 text-xl font-black text-[#e8d7c6]">{item.value}</p>
+            <div key={item.label} className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4 shadow-[var(--shadow-sm)]">
+              <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-[var(--gray-medium)]">{item.label}</p>
+              <p className="mt-2 text-xl font-black text-[var(--black)]">{item.value}</p>
             </div>
           ))}
         </section>
 
-        <section className="mt-6 border-2 border-[#d4a574] bg-[#22150f] p-5 shadow-2xl shadow-black/70">
-          <p className="text-xs font-mono uppercase tracking-[0.25em] text-[#f0cfaa]">Identity</p>
+        <section className="mt-6 border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-md)]">
+          <p className="text-xs font-mono uppercase tracking-[0.25em] text-[var(--red-primary)]">Identity</p>
           <div className="mt-4 grid gap-3 md:grid-cols-3">
             {['VETERAN-OWNED', '501(c)(3) PUBLIC CHARITY', 'COMMUNITY IMPACT DRIVEN'].map((item) => (
-              <div key={item} className="border border-[#d4a574] bg-[#101010] p-4 text-center">
-                <p className="text-lg font-black tracking-[0.18em] text-[#f3dcc1]">{item}</p>
+              <div key={item} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4 text-center">
+                <p className="text-lg font-black tracking-[0.18em] text-[var(--black)]">{item}</p>
               </div>
             ))}
           </div>
         </section>
 
-        <section className="mt-6 border-2 border-[#8b4444] bg-[#141414] p-5">
-          <h2 className="text-[20px] font-black text-[#e8d7c6]">PUBLIC PORTAL PURPOSE</h2>
-          <p className="mt-3 text-[16px] leading-7 text-[#cfbfae]">
+        <section className="mt-6 border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-sm)]">
+          <h2 className="text-[20px] font-black text-[var(--black)]">PUBLIC PORTAL PURPOSE</h2>
+          <p className="mt-3 text-[16px] leading-7 text-[var(--gray-dark)]">
             This portal is for public awareness and contact interest only. It does not route users into internal systems.
           </p>
         </section>
 
         <div className="mt-6 space-y-6">
-        <section id="volunteer-recruitment" className="border border-[#8b4444] bg-[#141414] p-5">
-          <h2 className="text-[20px] font-black text-[#e8d7c6]">CHOOSE YOUR PATH</h2>
+        <section id="volunteer-recruitment" className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-sm)]">
+          <h2 className="text-[20px] font-black text-[var(--black)]">CHOOSE YOUR PATH</h2>
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {pathwayCards.map((path) => {
               const selected = selectedPath === path.visitorType;
               return (
-                <article key={path.title} className={`border p-4 ${selected ? 'border-[#d4a574] bg-[#261c12]' : 'border-[#5a4a3a] bg-[#111111]'}`}>
-                  <p className="text-[18px] font-bold text-[#e8d7c6]">{path.title}</p>
-                  <p className="mt-2 text-[14px] leading-6 text-[#cfbfae]">{path.description}</p>
+                <article key={path.title} className={`border-2 p-4 ${selected ? 'border-[var(--red-primary)] bg-[var(--canvas-tan-dark)]' : 'border-[var(--black)] bg-[var(--canvas-tan)]'}`}>
+                  <p className="text-[18px] font-bold text-[var(--black)]">{path.title}</p>
+                  <p className="mt-2 text-[14px] leading-6 text-[var(--gray-dark)]">{path.description}</p>
                   <button
                     type="button"
                     onClick={() => selectPath(path.visitorType)}
-                    className="mt-3 min-h-[44px] border border-[#8b4444] bg-[#2a1414] px-3 text-[14px] font-bold text-[#e8d7c6] transition hover:border-[#d4a574]"
+                    className="mt-3 min-h-[44px] border-2 border-[var(--black)] bg-[var(--red-primary)] px-3 text-[14px] font-bold text-[var(--white)] transition hover:bg-[var(--red-highlight)]"
                   >
                     Select
                   </button>
@@ -272,8 +272,8 @@ export default function PublicPortalPage() {
           </div>
         </section>
 
-        <section id="interest-intake" className="border border-[#8b4444] bg-[#141414] p-5">
-          <h2 className="text-[20px] font-black text-[#e8d7c6]">PUBLIC INTEREST INTAKE</h2>
+        <section id="interest-intake" className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-sm)]">
+          <h2 className="text-[20px] font-black text-[var(--black)]">PUBLIC INTEREST INTAKE</h2>
           <form className="mt-4 grid gap-3" onSubmit={handleSubmit}>
             <input
               value={fullName}
@@ -282,7 +282,7 @@ export default function PublicPortalPage() {
                 setFullName(e.target.value);
               }}
               placeholder="Full Name"
-              className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-[16px] text-[#e8d7c6]"
+              className="min-h-[44px] border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-[16px] text-[var(--black)]"
               required
             />
             <input
@@ -293,7 +293,7 @@ export default function PublicPortalPage() {
                 setEmail(e.target.value);
               }}
               placeholder="Email"
-              className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-[16px] text-[#e8d7c6]"
+              className="min-h-[44px] border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-[16px] text-[var(--black)]"
               required
             />
             <input
@@ -303,7 +303,7 @@ export default function PublicPortalPage() {
                 setPhone(e.target.value);
               }}
               placeholder="Phone (optional)"
-              className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-[16px] text-[#e8d7c6]"
+              className="min-h-[44px] border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-[16px] text-[var(--black)]"
             />
 
             <select
@@ -312,7 +312,7 @@ export default function PublicPortalPage() {
                 startFormIfNeeded();
                 setVisitorType(e.target.value as VisitorType);
               }}
-              className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-[16px] text-[#e8d7c6]"
+              className="min-h-[44px] border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-[16px] text-[var(--black)]"
             >
               {visitorTypeOptions.map((option) => (
                 <option key={option} value={option}>
@@ -327,7 +327,7 @@ export default function PublicPortalPage() {
                 startFormIfNeeded();
                 setProgramInterest(e.target.value as (typeof programInterestOptions)[number]);
               }}
-              className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-[16px] text-[#e8d7c6]"
+              className="min-h-[44px] border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-[16px] text-[var(--black)]"
             >
               {programInterestOptions.map((option) => (
                 <option key={option} value={option}>
@@ -342,7 +342,7 @@ export default function PublicPortalPage() {
                 startFormIfNeeded();
                 setPreferredContactMethod(e.target.value as (typeof contactMethodOptions)[number]);
               }}
-              className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-[16px] text-[#e8d7c6]"
+              className="min-h-[44px] border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-[16px] text-[var(--black)]"
             >
               {contactMethodOptions.map((option) => (
                 <option key={option} value={option}>
@@ -358,10 +358,10 @@ export default function PublicPortalPage() {
                 setMessage(e.target.value);
               }}
               placeholder="Message / Notes"
-              className="min-h-[110px] border border-[#5a4a3a] bg-[#101010] px-3 py-2 text-[16px] text-[#e8d7c6]"
+              className="min-h-[110px] border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-2 text-[16px] text-[var(--black)]"
             />
 
-            <label className="flex items-center gap-2 text-[14px] text-[#cfbfae]">
+            <label className="flex items-center gap-2 text-[14px] text-[var(--gray-dark)]">
               <input
                 type="checkbox"
                 checked={consentToContact}
@@ -375,36 +375,36 @@ export default function PublicPortalPage() {
 
             <button
               type="submit"
-              className="min-h-[44px] border border-[#8b4444] bg-[#2a1414] px-4 text-[14px] font-bold text-[#e8d7c6] transition hover:border-[#d4a574]"
+              className="min-h-[44px] border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 text-[14px] font-bold text-[var(--white)] transition hover:bg-[var(--red-highlight)]"
             >
               Submit Interest
             </button>
 
-            {confirmation && <p className="text-[14px] text-[#d4a574]">{confirmation}</p>}
+            {confirmation && <p className="text-[14px] text-[var(--red-primary)]">{confirmation}</p>}
           </form>
         </section>
 
-        <section id="partner-engagement" className="border border-[#8b4444] bg-[#141414] p-5">
-          <h2 className="text-[20px] font-black text-[#e8d7c6]">PROGRAM PREVIEW</h2>
+        <section id="partner-engagement" className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-sm)]">
+          <h2 className="text-[20px] font-black text-[var(--black)]">PROGRAM PREVIEW</h2>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             {programCards.map((program) => (
-              <article key={program.title} className="border border-[#5a4a3a] bg-[#111111] p-4">
-                <p className="text-[18px] font-bold text-[#e8d7c6]">{program.title}</p>
-                <p className="mt-2 text-[14px] leading-6 text-[#cfbfae]">What it is: {program.whatItIs}</p>
-                <p className="mt-1 text-[14px] leading-6 text-[#cfbfae]">Who it is for: {program.whoFor}</p>
-                <p className="mt-1 text-[14px] leading-6 text-[#cfbfae]">Next step: {program.nextStep}</p>
+              <article key={program.title} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
+                <p className="text-[18px] font-bold text-[var(--black)]">{program.title}</p>
+                <p className="mt-2 text-[14px] leading-6 text-[var(--gray-dark)]">What it is: {program.whatItIs}</p>
+                <p className="mt-1 text-[14px] leading-6 text-[var(--gray-dark)]">Who it is for: {program.whoFor}</p>
+                <p className="mt-1 text-[14px] leading-6 text-[var(--gray-dark)]">Next step: {program.nextStep}</p>
               </article>
             ))}
           </div>
         </section>
 
-        <section id="public-faq" className="border border-[#8b4444] bg-[#141414] p-5">
-          <h2 className="text-[20px] font-black text-[#e8d7c6]">PUBLIC FAQ</h2>
+        <section id="public-faq" className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-sm)]">
+          <h2 className="text-[20px] font-black text-[var(--black)]">PUBLIC FAQ</h2>
           <div className="mt-4 space-y-2">
             {faqItems.map((item) => {
               const expanded = openFaq === item.question;
               return (
-                <article key={item.question} className="border border-[#5a4a3a] bg-[#111111]">
+                <article key={item.question} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)]">
                   <button
                     type="button"
                     onClick={() => toggleFaq(item.question)}
@@ -412,13 +412,13 @@ export default function PublicPortalPage() {
                     aria-controls={`faq-panel-${item.question.replace(/[^a-z0-9]/gi, '-').toLowerCase()}`}
                     className="flex min-h-[44px] w-full items-center justify-between px-4 py-2 text-left"
                   >
-                    <span className="text-[16px] font-semibold text-[#e8d7c6]">{item.question}</span>
-                    <span className="font-mono text-[#d4a574]">{expanded ? '−' : '+'}</span>
+                    <span className="text-[16px] font-semibold text-[var(--black)]">{item.question}</span>
+                    <span className="font-mono text-[var(--red-primary)]">{expanded ? '−' : '+'}</span>
                   </button>
                   {expanded && (
                     <p
                       id={`faq-panel-${item.question.replace(/[^a-z0-9]/gi, '-').toLowerCase()}`}
-                      className="border-t border-[#5a4a3a] px-4 py-3 text-[14px] leading-6 text-[#cfbfae]"
+                      className="border-t-2 border-[var(--black)] px-4 py-3 text-[14px] leading-6 text-[var(--gray-dark)]"
                     >
                       {item.answer}
                     </p>
@@ -429,16 +429,16 @@ export default function PublicPortalPage() {
           </div>
         </section>
 
-        <section className="border border-[#8b4444] bg-[#141414] p-5">
-          <h2 className="text-[20px] font-black text-[#e8d7c6]">PUBLIC ACCESS BOUNDARY</h2>
-          <p className="mt-3 text-[16px] leading-7 text-[#cfbfae]">
+        <section className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-sm)]">
+          <h2 className="text-[20px] font-black text-[var(--black)]">PUBLIC ACCESS BOUNDARY</h2>
+          <p className="mt-3 text-[16px] leading-7 text-[var(--gray-dark)]">
             This public portal is for awareness and interest intake only. It does not expose private athlete data, coach notes, parent records, board materials, admin controls, or internal SHADOW data.
           </p>
         </section>
 
-        <section className="border border-[#8b4444] bg-[#141414] p-5">
-          <h2 className="text-[20px] font-black text-[#e8d7c6]">NEXT STEP AFTER SUBMISSION</h2>
-          <div className="mt-3 grid gap-2 text-[14px] font-mono text-[#d4a574]">
+        <section className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-sm)]">
+          <h2 className="text-[20px] font-black text-[var(--black)]">NEXT STEP AFTER SUBMISSION</h2>
+          <div className="mt-3 grid gap-2 text-[14px] font-mono text-[var(--red-primary)]">
             <p>Interest Submitted</p>
             <p>↓</p>
             <p>Pending Admin Review</p>
@@ -449,8 +449,8 @@ export default function PublicPortalPage() {
           </div>
         </section>
 
-        <section className="border border-[#8b4444] bg-[#141414] p-5">
-          <h2 className="text-[20px] font-black text-[#e8d7c6]">PUBLIC QUICK LINKS</h2>
+        <section className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-sm)]">
+          <h2 className="text-[20px] font-black text-[var(--black)]">PUBLIC QUICK LINKS</h2>
           <div className="mt-3 flex flex-wrap gap-2">
             {[
               { label: 'Public FAQ', href: '/public#public-faq' },
@@ -462,7 +462,7 @@ export default function PublicPortalPage() {
                 key={link.label}
                 href={link.href}
                 onClick={() => addTrace('quick link clicked', `${link.label} -> ${link.href}`)}
-                className="inline-flex min-h-[44px] items-center border border-[#8b4444] bg-[#2a1414] px-4 text-[14px] font-bold text-[#e8d7c6] transition hover:border-[#d4a574]"
+                className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 text-[14px] font-bold text-[var(--white)] transition hover:bg-[var(--red-highlight)]"
               >
                 {link.label}
               </a>
@@ -470,13 +470,13 @@ export default function PublicPortalPage() {
           </div>
         </section>
 
-        <section className="border border-[#8b4444] bg-[#141414] p-5">
-          <h2 className="text-[18px] font-black text-[#e8d7c6]">LOCAL PUBLIC TELEMETRY</h2>
-          <div className="mt-3 max-h-[220px] space-y-2 overflow-y-auto border border-[#5a4a3a] bg-[#101010] p-3">
-            {telemetryTraces.length === 0 && <p className="text-[14px] text-[#cfbfae]">No local traces yet.</p>}
+        <section className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-sm)]">
+          <h2 className="text-[18px] font-black text-[var(--black)]">LOCAL PUBLIC TELEMETRY</h2>
+          <div className="mt-3 max-h-[220px] space-y-2 overflow-y-auto border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-3">
+            {telemetryTraces.length === 0 && <p className="text-[14px] text-[var(--gray-dark)]">No local traces yet.</p>}
             {telemetryTraces.map((trace, idx) => (
-              <div key={`${trace.timestamp}-${idx}`} className="border border-[#5a4a3a] bg-[#161616] p-2 text-[13px] text-[#cfbfae]">
-                <p className="font-mono text-[#d4a574]">[{trace.timestamp}]</p>
+              <div key={`${trace.timestamp}-${idx}`} className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-2 text-[13px] text-[var(--gray-dark)]">
+                <p className="font-mono text-[var(--red-primary)]">[{trace.timestamp}]</p>
                 <p>{trace.event}</p>
                 <p>{trace.detail}</p>
               </div>

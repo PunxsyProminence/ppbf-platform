@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { clearRoleSession, readRoleSession } from "./roleSession";
+import { useSyncExternalStore } from "react";
+import { clearRoleSession, getRoleSessionSnapshot, subscribeRoleSession } from "./roleSession";
 
 export default function GlobalRoleHeader() {
   const router = useRouter();
   const pathname = usePathname();
-  const session = typeof window !== "undefined" ? readRoleSession() : null;
+  const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
 
   if (!session || pathname === "/login") {
     return null;
@@ -19,11 +20,11 @@ export default function GlobalRoleHeader() {
   }
 
   return (
-    <header className="sticky top-0 z-50 border-b-4 border-[#8b4444] bg-[#0a0a0a]">
+    <header className="sticky top-0 z-50 border-b-[3px] border-[var(--black)] bg-[var(--canvas-tan-dark)] shadow-[var(--shadow-sm)]">
       <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-4 px-6 py-3">
         <div className="flex items-center gap-3">
-          <span className="text-[10px] font-mono uppercase tracking-[0.35em] text-[#8a8a8a]">Session Active</span>
-          <span className="border-2 border-[#8b4444] bg-[#5a2a2a] px-2.5 py-1 text-[11px] font-mono uppercase text-[#d4a574]">
+          <span className="text-[10px] font-mono uppercase tracking-[0.35em] text-[var(--black)]">Session Active</span>
+          <span className="border-2 border-[var(--black)] bg-[var(--red-primary)] px-2.5 py-1 text-[11px] font-mono uppercase text-[var(--white)]">
             {session.role}
           </span>
         </div>
@@ -31,20 +32,20 @@ export default function GlobalRoleHeader() {
         <div className="flex items-center gap-2">
           <Link
             href="/operations"
-            className="border-2 border-[#8b4444] bg-[#5a4a3a] px-3 py-1 text-[11px] font-mono text-[#e8d7c6] transition hover:border-[#d4a574] hover:bg-[#6b5a4a]"
+            className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-1 text-[11px] font-mono text-[var(--black)] transition hover:bg-[var(--olive-dark)] hover:text-[var(--white)]"
           >
             Operations
           </Link>
           <Link
             href="/login"
-            className="border-2 border-[#5a4a3a] bg-[#4a4a4a] px-3 py-1 text-[11px] font-mono text-[#b0a095] transition hover:border-[#8b4444] hover:bg-[#5a5a5a] hover:text-[#e8d7c6]"
+            className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-1 text-[11px] font-mono text-[var(--black)] transition hover:bg-[var(--canvas-tan)]"
           >
             Bell
           </Link>
           <button
             type="button"
             onClick={signOut}
-            className="border-2 border-[#8b4444] bg-[#4a4a4a] px-3 py-1 text-[11px] font-mono text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#5a5a5a]"
+            className="border-2 border-[var(--black)] bg-[var(--red-primary)] px-3 py-1 text-[11px] font-mono text-[var(--white)] transition hover:bg-[var(--red-highlight)]"
           >
             Logout
           </button>

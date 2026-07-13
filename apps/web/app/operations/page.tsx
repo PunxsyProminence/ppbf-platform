@@ -30,11 +30,11 @@ const priorityLanes = [
 ];
 
 const systemStatus = [
-  { label: 'Safety Gates', value: 'Live', tone: 'text-[#d4a574]' },
-  { label: 'Continuity Ledger', value: 'Logging', tone: 'text-[#d4a574]' },
-  { label: 'Context Boundaries', value: 'Enforced', tone: 'text-[#d4a574]' },
-  { label: 'SHADOW', value: 'Operational', tone: 'text-[#d4a574]' },
-  { label: 'Validation Status', value: 'Stable', tone: 'text-[#d4a574]' },
+  { label: 'Safety Gates', value: 'Live', tone: 'text-[var(--status-ready)]' },
+  { label: 'Continuity Ledger', value: 'Logging', tone: 'text-[var(--status-ready)]' },
+  { label: 'Context Boundaries', value: 'Enforced', tone: 'text-[var(--status-ready)]' },
+  { label: 'SHADOW', value: 'Operational', tone: 'text-[var(--status-warning)]' },
+  { label: 'Validation Status', value: 'Stable', tone: 'text-[var(--status-ready)]' },
 ];
 
 const workspaces = [
@@ -96,27 +96,27 @@ const utilityLinks = [
 export default function OperationsHubPage() {
   return (
     <RoleSessionGate allowedRoles={roleRoutes.map((route) => route.role)}>
-      <main className="min-h-screen bg-[#0a0a0a] text-[#f2e7da]">
+      <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
         <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-8 px-6 py-10 lg:px-10">
-          <header className="space-y-5 border-b-2 border-[#8b4444] pb-8">
-            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[#d4a574]">Mission Control</p>
+          <header className="space-y-5 border-b-[3px] border-[var(--black)] pb-8">
+            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--red-primary)]">Mission Control</p>
             <h1 className="font-display text-5xl font-black tracking-tight md:text-6xl">The Ring</h1>
-            <p className="max-w-4xl text-base leading-7 text-[#e8d7c6] md:text-lg">
+            <p className="max-w-4xl text-base leading-7 text-[var(--gray-dark)] md:text-lg">
               Every corner has its own view. Athlete. Coach. Parent. Board. Admin. Public.
             </p>
           </header>
 
-          <section className="space-y-4 rounded-sm bg-[#131313] px-6 py-6">
-            <h2 className="font-display text-2xl font-bold tracking-tight text-[#f2e7da]">Role Selector</h2>
+          <section className="space-y-4 border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-6 shadow-[var(--shadow-sm)]">
+            <h2 className="font-display text-2xl font-bold tracking-tight text-[var(--black)]">Role Selector</h2>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {roleSelector.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className="flex items-center justify-between bg-[#1c1c1c] px-4 py-4 transition hover:bg-[#2a1f1a]"
+                  className="flex items-center justify-between border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-4 transition hover:bg-[var(--canvas-tan-dark)]"
                 >
-                  <span className="text-lg font-semibold text-[#f2e7da]">{item.role}</span>
-                  <span className="text-xs font-mono uppercase tracking-[0.15em] text-[#d4a574]">{item.status}</span>
+                  <span className="text-lg font-semibold text-[var(--black)]">{item.role}</span>
+                  <span className="text-xs font-mono uppercase tracking-[0.15em] text-[var(--red-primary)]">{item.status}</span>
                 </Link>
               ))}
             </div>
@@ -124,32 +124,32 @@ export default function OperationsHubPage() {
 
           <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
             <div className="space-y-6">
-              <section className="space-y-4 rounded-sm bg-[#131313] px-6 py-6">
-                <h2 className="font-display text-2xl font-bold tracking-tight text-[#f2e7da]">MY PRIORITIES TODAY</h2>
+              <section className="space-y-4 border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-6 shadow-[var(--shadow-sm)]">
+                <h2 className="font-display text-2xl font-bold tracking-tight text-[var(--black)]">MY PRIORITIES TODAY</h2>
                 <div className="grid gap-3 md:grid-cols-3">
                   {priorityLanes.map((lane) => (
-                    <article key={lane.lane} className="bg-[#1c1c1c] px-4 py-4">
-                      <p className="text-xs font-mono uppercase tracking-[0.18em] text-[#d4a574]">{lane.lane}</p>
-                      <p className="mt-2 text-3xl font-black text-[#f2e7da]">{lane.count}</p>
-                      <p className="mt-2 text-sm leading-6 text-[#cfbfae]">{lane.summary}</p>
+                    <article key={lane.lane} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-4">
+                      <p className="text-xs font-mono uppercase tracking-[0.18em] text-[var(--red-primary)]">{lane.lane}</p>
+                      <p className="mt-2 text-3xl font-black text-[var(--black)]">{lane.count}</p>
+                      <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">{lane.summary}</p>
                     </article>
                   ))}
                 </div>
               </section>
 
-              <section className="space-y-4 rounded-sm bg-[#131313] px-6 py-6">
-                <h2 className="font-display text-2xl font-bold tracking-tight text-[#f2e7da]">WORKSPACES</h2>
+              <section className="space-y-4 border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-6 shadow-[var(--shadow-sm)]">
+                <h2 className="font-display text-2xl font-bold tracking-tight text-[var(--black)]">WORKSPACES</h2>
                 <div className="grid gap-3">
                   {workspaces.map((workspace) => (
-                    <article key={workspace.href} className="grid gap-3 bg-[#1c1c1c] px-4 py-4 md:grid-cols-[1fr_auto_auto] md:items-center">
+                    <article key={workspace.href} className="grid gap-3 border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-4 md:grid-cols-[1fr_auto_auto] md:items-center">
                       <div>
-                        <h3 className="text-lg font-bold text-[#f2e7da]">{workspace.label}</h3>
-                        <p className="mt-1 text-sm leading-6 text-[#cfbfae]">{workspace.note}</p>
+                        <h3 className="text-lg font-bold text-[var(--black)]">{workspace.label}</h3>
+                        <p className="mt-1 text-sm leading-6 text-[var(--gray-dark)]">{workspace.note}</p>
                       </div>
-                      <p className="text-sm font-mono uppercase tracking-[0.14em] text-[#d4a574]">{workspace.openCount} open</p>
+                      <p className="text-sm font-mono uppercase tracking-[0.14em] text-[var(--red-primary)]">{workspace.openCount} open</p>
                       <Link
                         href={workspace.href}
-                        className="inline-flex items-center justify-center bg-[#5a2a2a] px-4 py-2 text-xs font-mono font-bold uppercase tracking-[0.14em] text-[#f2e7da] transition hover:bg-[#7a3737]"
+                        className="inline-flex min-h-[44px] items-center justify-center border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 py-2 text-xs font-mono font-bold uppercase tracking-[0.14em] text-[var(--white)] transition hover:bg-[var(--red-highlight)]"
                       >
                         Open
                       </Link>
@@ -158,14 +158,14 @@ export default function OperationsHubPage() {
                 </div>
               </section>
 
-              <section className="space-y-4 rounded-sm bg-[#131313] px-6 py-6">
-                <h2 className="font-display text-2xl font-bold tracking-tight text-[#f2e7da]">DEVELOPMENT LAB</h2>
+              <section className="space-y-4 border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-6 shadow-[var(--shadow-sm)]">
+                <h2 className="font-display text-2xl font-bold tracking-tight text-[var(--black)]">DEVELOPMENT LAB</h2>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {developmentLab.map((item) => (
                     <Link
                       key={item.href}
                       href={item.href}
-                      className="bg-[#1c1c1c] px-4 py-4 text-base font-semibold text-[#f2e7da] transition hover:bg-[#2a1f1a]"
+                      className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-4 text-base font-semibold text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"
                     >
                       {item.label}
                     </Link>
@@ -175,46 +175,46 @@ export default function OperationsHubPage() {
             </div>
 
             <aside className="space-y-6">
-              <section className="space-y-4 rounded-sm bg-[#131313] px-6 py-6">
-                <h2 className="font-display text-2xl font-bold tracking-tight text-[#f2e7da]">SYSTEM STATUS</h2>
+              <section className="space-y-4 border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-6 shadow-[var(--shadow-sm)]">
+                <h2 className="font-display text-2xl font-bold tracking-tight text-[var(--black)]">SYSTEM STATUS</h2>
                 <div className="grid gap-2">
                   {systemStatus.map((item) => (
-                    <div key={item.label} className="flex items-center justify-between bg-[#1c1c1c] px-4 py-3">
-                      <span className="text-sm font-semibold text-[#f2e7da]">{item.label}</span>
+                    <div key={item.label} className="flex items-center justify-between border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3">
+                      <span className="text-sm font-semibold text-[var(--black)]">{item.label}</span>
                       <span className={`text-xs font-mono uppercase tracking-[0.15em] ${item.tone}`}>{item.value}</span>
                     </div>
                   ))}
                 </div>
               </section>
 
-              <section className="space-y-4 rounded-sm bg-[#131313] px-6 py-6">
-                <h2 className="font-display text-2xl font-bold tracking-tight text-[#f2e7da]">SHADOW COMMAND NODE</h2>
-                <p className="text-sm leading-6 text-[#cfbfae]">
+              <section className="space-y-4 border-[3px] border-[var(--black)] bg-[var(--red-primary)] px-6 py-6 text-[var(--white)] shadow-[var(--shadow-sm)]">
+                <h2 className="font-display text-2xl font-bold tracking-tight text-[var(--white)]">SHADOW COMMAND NODE</h2>
+                <p className="text-sm leading-6 text-[var(--white-off)]">
                   Operational alert stream only. No chat layer. No narrative assistant mode.
                 </p>
                 <div className="grid gap-2">
                   {shadowOperationalAlerts.map((alert) => (
-                    <div key={alert} className="bg-[#2a1a1a] px-4 py-3 text-sm leading-6 text-[#f2e7da]">
+                    <div key={alert} className="border-2 border-[var(--black)] bg-[var(--red-blood)] px-4 py-3 text-sm leading-6 text-[var(--white)]">
                       {alert}
                     </div>
                   ))}
                 </div>
                 <Link
                   href="/admin/shadow"
-                  className="inline-flex items-center justify-center bg-[#5a2a2a] px-4 py-2 text-xs font-mono font-bold uppercase tracking-[0.14em] text-[#f2e7da] transition hover:bg-[#7a3737]"
+                  className="inline-flex min-h-[44px] items-center justify-center border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-2 text-xs font-mono font-bold uppercase tracking-[0.14em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"
                 >
                   Open SHADOW Ops
                 </Link>
               </section>
 
-              <section className="space-y-3 rounded-sm bg-[#131313] px-6 py-6">
-                <h2 className="font-display text-xl font-bold tracking-tight text-[#f2e7da]">Utility Routes</h2>
+              <section className="space-y-3 border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-6 shadow-[var(--shadow-sm)]">
+                <h2 className="font-display text-xl font-bold tracking-tight text-[var(--black)]">Utility Routes</h2>
                 <div className="grid gap-2">
                   {utilityLinks.map((item) => (
                     <Link
                       key={item.href}
                       href={item.href}
-                      className="bg-[#1c1c1c] px-4 py-3 text-sm font-semibold text-[#f2e7da] transition hover:bg-[#2a1f1a]"
+                      className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-sm font-semibold text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"
                     >
                       {item.label}
                     </Link>

@@ -15,26 +15,26 @@ interface RoleStandaloneViewProps {
 export default function RoleStandaloneView({ roleLabel, routeLabel, allowedRoles, children }: RoleStandaloneViewProps) {
   return (
     <RoleSessionGate allowedRoles={allowedRoles}>
-      <main className="min-h-screen bg-[#0a0a0a] text-[#e8d7c6]">
-        <header className="border-b-4 border-[#8b4444] bg-[#1a1a1a] px-6 py-5">
+      <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
+        <header className="border-b-[3px] border-[var(--black)] bg-[var(--canvas-tan-dark)] px-6 py-5 shadow-[var(--shadow-sm)]">
           <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-4">
             <div>
-              <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-[#8a8a8a]">Role Workspace</p>
-              <h1 className="font-display text-lg font-black tracking-wide text-[#e8d7c6]">{roleLabel}</h1>
+              <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-[var(--gray-dark)]">Role Workspace</p>
+              <h1 className="font-display text-lg font-black tracking-wide text-[var(--black)]">{roleLabel}</h1>
             </div>
             <div className="flex items-center gap-3">
-              <span className="border-2 border-[#8b4444] bg-[#0f0f0f] px-3 py-1 text-[11px] font-mono text-[#b0a095]">
+              <span className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-1 text-[11px] font-mono text-[var(--gray-dark)]">
                 {routeLabel}
               </span>
               <Link
                 href="/operations"
-                className="border-2 border-[#8b4444] bg-[#5a4a3a] px-3 py-1 text-[11px] font-mono text-[#e8d7c6] transition hover:border-[#d4a574] hover:bg-[#6b5a4a]"
+                className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-1 text-[11px] font-mono text-[var(--black)] transition hover:bg-[var(--olive-dark)] hover:text-[var(--white)]"
               >
                 Operations
               </Link>
               <Link
                 href="/login"
-                className="border-2 border-[#5a4a3a] bg-[#4a4a4a] px-3 py-1 text-[11px] font-mono text-[#b0a095] transition hover:border-[#8b4444] hover:bg-[#5a5a5a] hover:text-[#e8d7c6]"
+                className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-1 text-[11px] font-mono text-[var(--black)] transition hover:bg-[var(--canvas-tan)]"
               >
                 Bell
               </Link>
