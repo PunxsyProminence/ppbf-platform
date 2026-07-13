@@ -43,7 +43,6 @@ interface CoachGoal {
 export default function CoachWorkspace() {
   const [activeTab, setActiveTab] = useState<TabID>('dashboard');
   const [sessionMode, setSessionMode] = useState<SessionMode>('Group');
-  const [expandedHelpTab, setExpandedHelpTab] = useState<TabID | null>(null);
 
   // Dashboard data
   const [athletes] = useState<Athlete[]>([
@@ -54,7 +53,7 @@ export default function CoachWorkspace() {
 
   const [selectedAthleteId, setSelectedAthleteId] = useState<string | null>('a_1');
 
-  const [coachTasks, setCoachTasks] = useState<CoachTask[]>([
+  const [coachTasks] = useState<CoachTask[]>([
     { id: 't_1', title: 'Review athlete goals - Marcus', dueDate: '2026-07-13', priority: 'High', status: 'Open', relatedAthlete: 'a_1' },
     { id: 't_2', title: 'Approve track application - Sophia', dueDate: '2026-07-14', priority: 'High', status: 'Open', relatedAthlete: 'a_2' },
     { id: 't_3', title: 'Conduct athlete evaluation', dueDate: '2026-07-15', priority: 'Normal', status: 'In Progress' },
@@ -275,7 +274,7 @@ export default function CoachWorkspace() {
                 <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Session Workout Plan</h3>
 
                 <div className="space-y-2">
-                  {workoutBlocks.map((block, idx) => (
+                  {workoutBlocks.map((block) => (
                     <div key={block.id} className={`border-2 p-3 rounded ${
                       block.status === 'Completed' ? 'bg-green-900/20 border-green-700' :
                       block.status === 'In Progress' ? 'bg-yellow-900/20 border-yellow-700' :

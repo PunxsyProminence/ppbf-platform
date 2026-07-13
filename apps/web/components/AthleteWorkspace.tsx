@@ -78,7 +78,6 @@ function createInitialShadowMessages(): ShadowMessage[] {
 
 export default function AthleteWorkspace() {
   const [activeTab, setActiveTab] = useState<TabID>('my-dashboard');
-  const [expandedHelpTab, setExpandedHelpTab] = useState<TabID | null>(null);
 
   // Bio Check-In State
   const [sleepHours, setSleepHours] = useState(8);
@@ -93,7 +92,6 @@ export default function AthleteWorkspace() {
   const [showPainModal, setShowPainModal] = useState(false);
   const [currentPainType, setCurrentPainType] = useState<PainType>('Dull');
   const [currentPainSeverity, setCurrentPainSeverity] = useState(3);
-  const [painDescriptions, setPainDescriptions] = useState<Record<string, string>>({});
 
   // Goals State
   const [smartGoals, setSmartGoals] = useState<SMARTGoal[]>([
@@ -124,7 +122,7 @@ export default function AthleteWorkspace() {
   const [completedDrills, setCompletedDrills] = useState<Record<string, boolean>>({});
 
   // Shadow State
-  const [shadowMessages, setShadowMessages] = useState<ShadowMessage[]>(createInitialShadowMessages);
+  const [shadowMessages] = useState<ShadowMessage[]>(createInitialShadowMessages);
   const [shadowInput, setShadowInput] = useState('');
 
   // Session Log State

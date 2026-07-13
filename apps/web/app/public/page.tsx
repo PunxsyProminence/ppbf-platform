@@ -408,12 +408,21 @@ export default function PublicPortalPage() {
                   <button
                     type="button"
                     onClick={() => toggleFaq(item.question)}
+                    aria-expanded={expanded}
+                    aria-controls={`faq-panel-${item.question.replace(/[^a-z0-9]/gi, '-').toLowerCase()}`}
                     className="flex min-h-[44px] w-full items-center justify-between px-4 py-2 text-left"
                   >
                     <span className="text-[16px] font-semibold text-[#e8d7c6]">{item.question}</span>
                     <span className="font-mono text-[#d4a574]">{expanded ? '−' : '+'}</span>
                   </button>
-                  {expanded && <p className="border-t border-[#5a4a3a] px-4 py-3 text-[14px] leading-6 text-[#cfbfae]">{item.answer}</p>}
+                  {expanded && (
+                    <p
+                      id={`faq-panel-${item.question.replace(/[^a-z0-9]/gi, '-').toLowerCase()}`}
+                      className="border-t border-[#5a4a3a] px-4 py-3 text-[14px] leading-6 text-[#cfbfae]"
+                    >
+                      {item.answer}
+                    </p>
+                  )}
                 </article>
               );
             })}

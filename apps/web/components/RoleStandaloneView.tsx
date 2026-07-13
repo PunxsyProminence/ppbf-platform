@@ -33,10 +33,10 @@ export default function RoleStandaloneView({ roleLabel, routeLabel, allowedRoles
                 Operations
               </Link>
               <Link
-                href="/launch"
+                href="/login"
                 className="border-2 border-[#5a4a3a] bg-[#4a4a4a] px-3 py-1 text-[11px] font-mono text-[#b0a095] transition hover:border-[#8b4444] hover:bg-[#5a5a5a] hover:text-[#e8d7c6]"
               >
-                Launch
+                Bell
               </Link>
             </div>
           </div>

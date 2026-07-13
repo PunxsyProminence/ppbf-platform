@@ -75,7 +75,7 @@ export default function BoardHubPage() {
               </div>
 
               <Link
-                href={`/board/${seat.slug}/`}
+                href={`/board/${seat.slug}`}
                 className="mt-4 inline-flex min-h-[44px] items-center justify-center border-2 border-[#8b4444] bg-[#2f1717] px-4 text-sm font-mono font-bold uppercase tracking-[0.14em] text-[#e8d7c6] transition hover:border-[#d4a574] hover:text-[#d4a574]"
               >
                 Open Workspace

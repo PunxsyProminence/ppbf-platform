@@ -48,7 +48,6 @@ interface ParentMessage {
 
 export default function ParentHub() {
   const [activeTab, setActiveTab] = useState<TabID>('overview');
-  const [expandedHelpTab, setExpandedHelpTab] = useState<TabID | null>(null);
 
   const [children] = useState<Child[]>([
     { id: 'c_1', name: 'Alex Thompson', track: 'Foundations', attendancePercent: 92, currentProgress: 'Strong footwork development' },
@@ -259,7 +258,7 @@ export default function ParentHub() {
                     <div key={i} className={`border-2 p-3 rounded flex items-center gap-3 ${
                       item.completed ? 'bg-green-900/20 border-green-700' : 'bg-[#0f0f0f] border-[#8b4444]'
                     }`}>
-                      <input type="checkbox" checked={item.completed} className="w-4 h-4" />
+                      <input type="checkbox" checked={item.completed} readOnly aria-label={`${item.task} completion`} className="w-4 h-4" />
                       <span className="font-semibold">{item.task}</span>
                     </div>
                   ))}

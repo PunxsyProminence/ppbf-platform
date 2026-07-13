@@ -809,18 +809,143 @@ export default function AdminCapabilitiesPage() {
               </article>
 
               <article className="border border-[#3a3a3a] bg-[#141414] p-0">
-                <div className="grid grid-cols-[100px_minmax(200px,1.3fr)_minmax(160px,1fr)_minmax(150px,1fr)_120px_130px_150px_170px] gap-2 border-b border-[#3a3a3a] bg-[#181818] px-4 py-3 text-[14px] font-semibold text-[#cfbfae]">
-                  <span>ID</span>
-                  <span>Capability</span>
-                  <span>Category</span>
-                  <span>Assigned Role(s)</span>
-                  <span>Status</span>
-                  <span>Visibility</span>
-                  <span>Owner</span>
-                  <span>Actions</span>
+                <div className="divide-y divide-[#2a2a2a] lg:hidden">
+                  {filteredCapabilities.map((capability) => {
+                    const expanded = expandedCapabilityId === capability.id;
+                    const assignmentFocused = assignmentFocusId === capability.id;
+                    return (
+                      <div key={capability.id} className="space-y-3 px-4 py-4">
+                        <div className="space-y-2">
+                          <p className="text-[13px] font-mono uppercase tracking-[0.1em] text-[#d4a574]">{capability.capabilityId}</p>
+                          <h3 className="text-[18px] font-bold text-[#f2e7da]">{capability.name}</h3>
+                          <p className="text-[14px] text-[#bfb3a6]">Last updated: {formatDateLabel(capability.updatedAt)}</p>
+                          <p className="text-[14px] text-[#cfbfae]">Category: {capability.group}</p>
+                          <p className="text-[14px] text-[#cfbfae]">Roles: {capability.assignedRoles.length > 0 ? capability.assignedRoles.join(', ') : 'Unassigned'}</p>
+                          <p className="text-[14px] text-[#cfbfae]">Status: {capability.status} | Visibility: {capability.visibility}</p>
+                          <p className="text-[14px] text-[#cfbfae]">Owner: {capability.owner}</p>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setExpandedCapabilityId(expanded ? null : capability.id);
+                              logTrace('capability viewed', capability.capabilityId);
+                            }}
+                            className="h-11 border border-[#3a3a3a] bg-[#1c1c1c] px-3 text-[12px] font-bold text-[#cfbfae]"
+                          >
+                            VIEW
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => beginEdit(capability)}
+                            className="h-11 border border-[#3a3a3a] bg-[#1c1c1c] px-3 text-[12px] font-bold text-[#cfbfae]"
+                          >
+                            EDIT
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setExpandedCapabilityId(capability.id);
+                              setAssignmentFocusId(capability.id);
+                              logTrace('capability assigned', `Open assignment panel for ${capability.capabilityId}`);
+                            }}
+                            className="h-11 border border-[#8b4444] bg-[#2e1717] px-3 text-[12px] font-bold text-[#f2e7da]"
+                          >
+                            ASSIGN
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCapabilityStatus(capability.id, 'ARCHIVED')}
+                            className="h-11 border border-[#8b4444] bg-[#3a1414] px-3 text-[12px] font-bold text-[#f2e7da]"
+                          >
+                            ARCHIVE
+                          </button>
+                        </div>
+
+                        {expanded && (
+                          <div className="border border-[#2a2a2a] bg-[#111111] px-4 py-4">
+                            <p className="text-[16px] text-[#cfbfae]">{capability.description}</p>
+                            <p className="mt-2 text-[14px] text-[#b9ab9d]">Dependencies: {capability.dependencies || 'None listed'}</p>
+                            <p className="mt-1 text-[14px] text-[#b9ab9d]">Notes: {capability.notes || 'No additional notes'}</p>
+
+                            {assignmentFocused && (
+                              <div className="mt-4 space-y-2">
+                                <p className="text-[14px] font-semibold uppercase tracking-[0.12em] text-[#d4a574]">Role Assignment Controls</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {ROLE_OPTIONS.map((role) => {
+                                    const assigned = capability.assignedRoles.includes(role);
+                                    return (
+                                      <button
+                                        key={role}
+                                        type="button"
+                                        onClick={() => toggleCapabilityRole(capability.id, role)}
+                                        className={`h-11 border px-3 text-[13px] font-bold ${
+                                          assigned
+                                            ? 'border-[#8b4444] bg-[#5a2a2a] text-[#f2e7da]'
+                                            : 'border-[#3a3a3a] bg-[#1a1a1a] text-[#cfbfae]'
+                                        }`}
+                                      >
+                                        {assigned ? '✓ ' : '— '}
+                                        {role}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="mt-4 flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setCapabilityStatus(capability.id, 'DRAFT')}
+                                className="h-11 border border-[#3a3a3a] bg-[#1a1a1a] px-3 text-[13px] font-bold text-[#cfbfae]"
+                              >
+                                SET DRAFT
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setCapabilityStatus(capability.id, 'ACTIVE')}
+                                className="h-11 border border-[#8b4444] bg-[#5a2a2a] px-3 text-[13px] font-bold text-[#f2e7da]"
+                              >
+                                SET ACTIVE
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setCapabilityStatus(capability.id, 'BLOCKED')}
+                                className="h-11 border border-[#8b4444] bg-[#3a1414] px-3 text-[13px] font-bold text-[#f2e7da]"
+                              >
+                                SET BLOCKED
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => removeCapability(capability.id)}
+                                className="h-11 border border-[#8b4444] bg-[#2b1010] px-3 text-[13px] font-bold text-[#f2e7da]"
+                              >
+                                DELETE
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
 
-                <div className="divide-y divide-[#2a2a2a]">
+                <div className="hidden overflow-x-auto lg:block">
+                  <div className="min-w-[1260px]">
+                    <div className="grid grid-cols-[100px_minmax(200px,1.3fr)_minmax(160px,1fr)_minmax(150px,1fr)_120px_130px_150px_170px] gap-2 border-b border-[#3a3a3a] bg-[#181818] px-4 py-3 text-[14px] font-semibold text-[#cfbfae]">
+                      <span>ID</span>
+                      <span>Capability</span>
+                      <span>Category</span>
+                      <span>Assigned Role(s)</span>
+                      <span>Status</span>
+                      <span>Visibility</span>
+                      <span>Owner</span>
+                      <span>Actions</span>
+                    </div>
+
+                    <div className="divide-y divide-[#2a2a2a]">
                   {filteredCapabilities.map((capability) => {
                     const expanded = expandedCapabilityId === capability.id;
                     const assignmentFocused = assignmentFocusId === capability.id;
@@ -943,6 +1068,8 @@ export default function AdminCapabilitiesPage() {
                       </div>
                     );
                   })}
+                    </div>
+                  </div>
                 </div>
               </article>
             </section>

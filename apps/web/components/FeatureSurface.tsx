@@ -26,7 +26,7 @@ export default function FeatureSurface({
   const quickLinks = [
     ...primaryLinks,
     { label: 'Operations Hub', href: '/operations' },
-    { label: 'Launch Portal', href: '/launch' },
+    { label: 'Member Access', href: '/login' },
   ].filter((link, index, all) => all.findIndex((item) => item.href === link.href) === index);
 
   return (
