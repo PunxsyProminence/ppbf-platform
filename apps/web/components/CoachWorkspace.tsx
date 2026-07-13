@@ -166,7 +166,7 @@ export default function CoachWorkspace() {
               { id: 'assessments', label: 'Assessments' },
               { id: 'film-study', label: 'Film Study' },
               { id: 'athlete-reviews', label: 'Athlete Reviews' },
-              { id: 'shadow', label: 'SHADOW AI' }
+              { id: 'shadow', label: 'SHADOW Intel' }
             ].map(tab => (
               <button
                 key={tab.id}

@@ -243,7 +243,7 @@ export default function AthleteWorkspace() {
               { id: 'rabbit-holes', label: 'Learning' },
               { id: 'message-coach', label: 'Messages' },
               { id: 'schedule-session', label: 'Schedule' },
-              { id: 'shadow', label: 'SHADOW AI' }
+              { id: 'shadow', label: 'SHADOW Intel' }
             ].map(tab => (
               <button
                 key={tab.id}

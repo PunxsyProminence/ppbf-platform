@@ -93,6 +93,33 @@ const utilityLinks = [
   { label: 'The Stands', href: '/guardian' },
 ];
 
+type CapabilityState = 'EXISTS' | 'PARTIAL' | 'PLACEHOLDER' | 'MISSING';
+
+const capabilityRadar: Array<{ name: string; state: CapabilityState; href?: string; notes: string }> = [
+  { name: 'Athlete Readiness', state: 'EXISTS', href: '/athlete/dashboard', notes: 'Readiness check-ins, session logs, and goals are active.' },
+  { name: 'Coach Intelligence', state: 'EXISTS', href: '/coach/review-queue', notes: 'Coach workspace, review queue, and floor controls are available.' },
+  { name: 'Research Intelligence', state: 'EXISTS', href: '/research', notes: 'Research intake and Q&A workflow are available.' },
+  { name: 'Knowledge Graph', state: 'EXISTS', href: '/knowledge-graph', notes: 'Knowledge and relationship view is available.' },
+  { name: 'Scenario Simulation', state: 'EXISTS', href: '/simulator', notes: 'What-if simulator and promotion flow links are available.' },
+  { name: 'Source Governance', state: 'EXISTS', href: '/source-control', notes: 'Audit-to-source-control publication flow is visible.' },
+  { name: 'Funding Intelligence', state: 'PARTIAL', href: '/admin?tab=revenue', notes: 'Revenue center exists as front-end workflow without backend integration.' },
+  { name: 'Scholarship Tracking', state: 'PARTIAL', href: '/admin?tab=revenue', notes: 'Scholarship support status is visible in front-end lanes.' },
+  { name: 'Membership Tracking', state: 'PARTIAL', href: '/admin?tab=revenue', notes: 'Program membership lanes are present in planning mode.' },
+  { name: 'SHADOW Monitoring', state: 'PARTIAL', href: '/shadow', notes: 'SHADOW interaction exists with front-end role surfaces.' },
+  { name: 'AI Video Analysis', state: 'PLACEHOLDER', notes: 'Planned capability placeholder only. Not yet implemented.' },
+  { name: 'Video Review Intelligence', state: 'PLACEHOLDER', notes: 'Planned capability placeholder only. Not yet implemented.' },
+  { name: 'Performance Analytics', state: 'PLACEHOLDER', notes: 'Planned capability placeholder only. Not yet implemented.' },
+  { name: 'Grant Compliance Intelligence', state: 'PLACEHOLDER', notes: 'Planned capability placeholder only. Not yet implemented.' },
+  { name: 'Publication Workflow Automation', state: 'MISSING', notes: 'No automation workflow yet. Current flow is manual and front-end staged.' },
+];
+
+function capabilityTone(state: CapabilityState): string {
+  if (state === 'EXISTS') return 'border-[var(--status-ready)] bg-[#dce7ca] text-[var(--black)]';
+  if (state === 'PARTIAL') return 'border-[var(--status-warning)] bg-[#efe3c4] text-[var(--black)]';
+  if (state === 'PLACEHOLDER') return 'border-[var(--red-primary)] bg-[#f1d6d1] text-[var(--black)]';
+  return 'border-[var(--gray-medium)] bg-[var(--canvas-tan)] text-[var(--black)]';
+}
+
 export default function OperationsHubPage() {
   return (
     <RoleSessionGate allowedRoles={roleRoutes.map((route) => route.role)}>
@@ -172,6 +199,42 @@ export default function OperationsHubPage() {
                   ))}
                 </div>
               </section>
+
+              <section className="space-y-4 border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-6 shadow-[var(--shadow-sm)]">
+                <h2 className="font-display text-2xl font-bold tracking-tight text-[var(--black)]">Capability Visibility Map</h2>
+                <p className="text-sm leading-6 text-[var(--gray-dark)]">
+                  Reality-based map of major PPBF capabilities. Placeholders are roadmap visibility only and are not implemented.
+                </p>
+                <div className="grid gap-3 md:grid-cols-2">
+                  {capabilityRadar.map((item) => (
+                    <article key={item.name} className={`border-2 p-4 ${capabilityTone(item.state)}`}>
+                      <div className="flex items-center justify-between gap-3">
+                        <h3 className="text-[15px] font-bold uppercase tracking-[0.05em]">{item.name}</h3>
+                        <span className="border border-[var(--black)] bg-[var(--canvas-tan-light)] px-2 py-0.5 text-[10px] font-mono font-bold uppercase">
+                          {item.state}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-sm leading-6">{item.notes}</p>
+                      {item.href ? (
+                        <Link
+                          href={item.href}
+                          className="mt-3 inline-flex min-h-[38px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"
+                        >
+                          Open Capability
+                        </Link>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled
+                          className="mt-3 inline-flex min-h-[38px] cursor-not-allowed items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--red-primary)] opacity-80"
+                        >
+                          Planned Capability
+                        </button>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              </section>
             </div>
 
             <aside className="space-y-6">
@@ -208,7 +271,7 @@ export default function OperationsHubPage() {
               </section>
 
               <section className="space-y-3 border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-6 shadow-[var(--shadow-sm)]">
-                <h2 className="font-display text-xl font-bold tracking-tight text-[var(--black)]">Utility Routes</h2>
+                <h2 className="font-display text-xl font-bold tracking-tight text-[var(--black)]">Platform Shortcuts</h2>
                 <div className="grid gap-2">
                   {utilityLinks.map((item) => (
                     <Link

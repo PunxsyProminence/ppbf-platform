@@ -246,7 +246,7 @@ export default function ParentHub() {
               { id: 'attendance', label: 'Attendance' },
               { id: 'progress', label: 'Progress' },
               { id: 'resources', label: 'Resources' },
-              { id: 'shadow', label: 'SHADOW AI' }
+              { id: 'shadow', label: 'SHADOW Intel' }
             ].map(tab => (
               <button
                 key={tab.id}
