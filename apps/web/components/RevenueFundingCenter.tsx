@@ -426,7 +426,11 @@ export default function RevenueFundingCenter() {
               {item.tab ? (
                 <button
                   type="button"
-                  onClick={() => setActiveTab(item.tab)}
+                  onClick={() => {
+                    if (item.tab) {
+                      setActiveTab(item.tab)
+                    }
+                  }}
                   className="mt-3 inline-flex min-h-[38px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]"
                 >
                   Open Capability
