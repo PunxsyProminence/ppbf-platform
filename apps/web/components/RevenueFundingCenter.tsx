@@ -361,7 +361,7 @@ export default function RevenueFundingCenter() {
           </SectionCard>
 
           <SectionCard title="Scholarship Support Summary">
-            <p>Support lanes include full scholarship, partial scholarship, dues waiver, equipment assistance, and program support placeholders.</p>
+            <p>Support lanes include full scholarship, partial scholarship, participation support waiver, equipment assistance, and program support placeholders.</p>
           </SectionCard>
 
           <SectionCard title="Treasurer Review Queue">
@@ -448,7 +448,7 @@ export default function RevenueFundingCenter() {
                 <p className="text-base">Notes: {row[8]}</p>
               </div>
             ))}
-            <p className="text-[14px] text-[#cfbfae]">B2B account types: School, Youth Agency, Municipality, Veterans Organization, Community Organization, Corporate Wellness, Partner Gym, Athletic Club, Other.</p>
+            <p className="text-[14px] text-[#cfbfae]">B2B account types: School, Youth Agency, Municipality, Veterans Organization, Community Organization, Corporate Wellness, Partner Training Center, Athletic Club, Other.</p>
             <p className="text-[14px] text-[#cfbfae]">Lead statuses: Lead, Contacted, Proposal Needed, Negotiating, Active, Inactive, Closed.</p>
           </div>
         </SectionCard>
@@ -465,7 +465,7 @@ export default function RevenueFundingCenter() {
                 <p className="text-base">Notes: {row[7]}</p>
               </div>
             ))}
-            <p className="text-[14px] text-[#cfbfae]">Wholesale account types: Retail Partner, Club Partner, School Program, Gym / Fitness Facility, Event Vendor, Fundraising Partner.</p>
+            <p className="text-[14px] text-[#cfbfae]">Wholesale account types: Retail Partner, Club Partner, School Program, Training / Fitness Facility, Event Vendor, Fundraising Partner.</p>
             <p className="text-[14px] text-[#cfbfae]">Statuses: Prospect, Active, Pending Review, Needs Quote, Inactive.</p>
           </div>
         </SectionCard>
@@ -498,7 +498,7 @@ export default function RevenueFundingCenter() {
                 <p className="text-base">Notes: {row[6]}</p>
               </div>
             ))}
-            <p className="text-[14px] text-[#cfbfae]">Support types: Full Scholarship, Partial Scholarship, Dues Waiver, Equipment Assistance, Competition Fee Support, Travel Support, Program Support.</p>
+            <p className="text-[14px] text-[#cfbfae]">Support types: Full Scholarship, Partial Scholarship, Participation Support Waiver, Equipment Assistance, Competition Participation Support, Travel Support, Program Support.</p>
             <p className="border border-[#8b4444] bg-[#2b1a12] p-3 text-[14px] text-[#d4a574]">Scholarship tracking is for internal review only and does not expose private financial data to public users.</p>
           </div>
         </SectionCard>
@@ -537,8 +537,8 @@ export default function RevenueFundingCenter() {
       )}
 
       {activeTab === 'treasurer-review' && (
-        <SectionCard title="Treasurer Review Queue">
-          <p className="text-base">Treasurer Oversight View - Future Board Integration.</p>
+        <SectionCard title="Membership Oversight Queue">
+          <p className="text-base">Membership Oversight View - Future Board Integration.</p>
           <div className="mt-3 space-y-2">
             {treasurerQueue.map((item) => (
               <div key={item.join('|')} className="border border-[#3a3a3a] bg-[#101010] p-3">

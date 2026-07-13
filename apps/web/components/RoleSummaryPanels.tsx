@@ -184,9 +184,9 @@ export function AdminSummaryPanel({
 
   return (
     <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-5">
-      {/* Gym Alerts */}
+      {/* Program Alerts */}
       <div className={`border-2 p-4 ${gymAlert}`}>
-        <p className="text-xs font-mono uppercase tracking-widest text-[#d4a574]">Gym</p>
+        <p className="text-xs font-mono uppercase tracking-widest text-[#d4a574]">Program</p>
         <p className="mt-2 text-3xl font-black text-[#e8d7c6]">{gymAlerts}</p>
       </div>
 

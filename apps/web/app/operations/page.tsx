@@ -13,7 +13,7 @@ const roleSelector = [
 
 const priorityLanes = [
   {
-    lane: 'GYM',
+    lane: 'PROGRAM',
     count: 9,
     summary: 'Floor coverage, readiness signals, and session execution windows.',
   },

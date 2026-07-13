@@ -521,7 +521,11 @@ export default function AthleteWorkspace() {
               <p className="text-[#b0a095]">View current track assignment and request upgrades as you progress.</p>
               <div className="bg-[#0f0f0f] border-2 border-[#8b4444] p-4">
                 <p className="text-sm"><strong>Current Track:</strong> Non-Contact Foundations</p>
-                <p className="text-sm mt-2 text-[#b0a095]">Master basic stance, guard, jab, and gym discipline protocols.</p>
+                <p className="text-sm mt-2 text-[#b0a095]">Master basic stance, guard, jab, and program discipline protocols.</p>
+                <p className="text-sm mt-2 text-[#b0a095]"><strong>Program Membership:</strong> Active Member</p>
+                <p className="text-sm mt-1 text-[#b0a095]"><strong>Participation Status:</strong> Scholarship Supported</p>
+                <p className="text-sm mt-1 text-[#b0a095]"><strong>Support Status:</strong> Member Support Active</p>
+                <p className="text-sm mt-1 text-[#b0a095]"><strong>Community Service Credits:</strong> 0 (Display Placeholder)</p>
               </div>
             </div>
           )}

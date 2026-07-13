@@ -195,6 +195,22 @@ export default function ParentHub() {
                         <label className="text-xs text-[#b0a095] block mb-1">Attendance</label>
                         <p className="text-base font-semibold text-green-400">{activeChild.attendancePercent}%</p>
                       </div>
+                      <div>
+                        <label className="text-xs text-[#b0a095] block mb-1">Membership Status</label>
+                        <p className="text-base font-semibold">Active Member</p>
+                      </div>
+                      <div>
+                        <label className="text-xs text-[#b0a095] block mb-1">Support Status</label>
+                        <p className="text-base font-semibold">Scholarship Supported</p>
+                      </div>
+                      <div>
+                        <label className="text-xs text-[#b0a095] block mb-1">Scholarship Status</label>
+                        <p className="text-base font-semibold">Scholarship Supported</p>
+                      </div>
+                      <div>
+                        <label className="text-xs text-[#b0a095] block mb-1">Community Service Support Status</label>
+                        <p className="text-base font-semibold">Community Service Supported</p>
+                      </div>
                     </div>
                   </div>
 

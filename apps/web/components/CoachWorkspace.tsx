@@ -89,7 +89,7 @@ export default function CoachWorkspace() {
           <div>
             <p className="text-xs font-mono uppercase tracking-[0.15em] text-[#d4a574]">Coach Development Workspace</p>
             <h1 className="text-3xl md:text-4xl font-black mt-2">Live Session Management</h1>
-            <p className="text-base text-[#b0a095] mt-2">Manage your gym floor, develop yourself, and track athlete progress with SMART goals and assessments.</p>
+            <p className="text-base text-[#b0a095] mt-2">Manage your program floor, develop yourself, and track athlete progress with SMART goals and assessments.</p>
           </div>
         </div>
 
