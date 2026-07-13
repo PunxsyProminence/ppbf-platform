@@ -110,6 +110,10 @@ const capabilityRadar: Array<{ name: string; state: CapabilityState; href?: stri
   { name: 'Video Review Intelligence', state: 'PLACEHOLDER', notes: 'Planned capability placeholder only. Not yet implemented.' },
   { name: 'Performance Analytics', state: 'PLACEHOLDER', notes: 'Planned capability placeholder only. Not yet implemented.' },
   { name: 'Grant Compliance Intelligence', state: 'PLACEHOLDER', notes: 'Planned capability placeholder only. Not yet implemented.' },
+  { name: 'Sports Medicine', state: 'PLACEHOLDER', href: '/coach/sports-medicine', notes: 'Front-end scaffold only. Planned capability and not yet implemented.' },
+  { name: 'Volunteer Management', state: 'PLACEHOLDER', href: '/admin/volunteer-management', notes: 'Front-end scaffold only. Planned capability and not yet implemented.' },
+  { name: 'Wrestling League Management', state: 'PLACEHOLDER', href: '/operations/wrestling-league', notes: 'Front-end scaffold only. Planned capability and not yet implemented.' },
+  { name: 'External Competition Platform', state: 'PLACEHOLDER', href: '/operations/external-competition', notes: 'Front-end scaffold only. Planned capability and not yet implemented.' },
   { name: 'Publication Workflow Automation', state: 'MISSING', notes: 'No automation workflow yet. Current flow is manual and front-end staged.' },
 ];
 

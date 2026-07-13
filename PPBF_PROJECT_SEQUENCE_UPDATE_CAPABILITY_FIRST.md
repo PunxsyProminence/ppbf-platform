@@ -4,6 +4,9 @@ Project: PPBF_BACKEND_READINESS_PROJECT
 Mode: Architecture + Front-End Readiness Audit Only
 Date: 2026-07-13
 
+Step 1 Approval State: APPROVED
+Step 1 Baseline: LOCKED (see PPBF_STEP1_APPROVAL_LOCK.md)
+
 ## Sequence Correction
 
 The project sequence is formally updated to:

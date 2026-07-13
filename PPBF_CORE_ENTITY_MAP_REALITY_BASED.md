@@ -6,7 +6,9 @@ Date: 2026-07-13
 
 ## Sequence Gate Notice
 
-This document is gated and must not be treated as active implementation input unless all Step 1 artifacts are complete and an explicit proceed decision is recorded.
+Gate status: CLEARED
+
+This document is now active for Step 2 because Step 1 artifacts are complete, approved, and locked.
 
 Required Step 1 artifacts:
 
@@ -14,7 +16,9 @@ Required Step 1 artifacts:
 - PPBF_MISSING_CAPABILITY_REGISTER_REALITY_BASED.md
 - PPBF_CAPABILITY_MAP_SELF_AUDIT.md
 
-Rule: Do not create or advance Core Entity Map work before Step 1 is complete.
+Proceed decision recorded: Step 1 APPROVED + LOCKED (see `PPBF_STEP1_APPROVAL_LOCK.md`).
+
+Rule remains: if Step 1 is unlocked or changed, Step 2 must be revalidated.
 
 Prerequisite: `PPBF_CAPABILITY_MAP_REALITY_BASED.md` (Step 1)
 
@@ -43,6 +47,23 @@ Guardrails applied:
 - Mock arrays do not establish backend entities.
 - SQL drafts in `infra/supabase/*` are treated as quarantined reference material only.
 - Jason Neale approval is final authority for promotion/build decisions.
+
+## Missing Capability Register Controls (Step 1 Lock Alignment)
+
+The following capability areas are explicitly excluded from current authoritative entity creation unless separately approved as future candidates:
+
+- AI/ML Video Analysis (MISSING)
+- Video Review Intelligence (PLACEHOLDER)
+- Performance Analytics Intelligence (PLACEHOLDER)
+- Grant Compliance Intelligence (PLACEHOLDER)
+- Automated Publication Workflow (MISSING)
+- Automated Compliance Monitoring (MISSING)
+- Closed-Loop Progression Intelligence (MISSING)
+
+Handling rule:
+
+- These remain roadmap and front-end visibility items at this stage.
+- They may inform future candidate notes, but must not create current canonical entities by assumption.
 
 ---
 

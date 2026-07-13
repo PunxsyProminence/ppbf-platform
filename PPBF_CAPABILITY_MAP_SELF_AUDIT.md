@@ -38,3 +38,5 @@ Status: COMPLETE
 - Self-Audit: COMPLETE
 
 Gate outcome: Core Entity Map creation is permitted only after explicit approval to proceed.
+
+Approval update: Step 1 is approved and locked.

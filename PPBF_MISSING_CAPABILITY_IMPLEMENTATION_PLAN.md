@@ -257,6 +257,8 @@ Implementation Priority:
 
 All routes below are planning scaffolds only and should show PLANNED + NOT YET IMPLEMENTED banners.
 
+Current scaffold status: CREATED (front-end placeholder pages only)
+
 - /coach/video-intelligence
 - /development/video-analysis-studio
 - /admin/compliance-monitor
@@ -265,6 +267,10 @@ All routes below are planning scaffolds only and should show PLANNED + NOT YET I
 - /coach/progression-intelligence
 - /source-control/publication-workflow
 - /research/publication-review
+- /coach/sports-medicine
+- /admin/volunteer-management
+- /operations/wrestling-league
+- /operations/external-competition
 
 ## Required Global Navigation Additions (Planning Only)
 
