@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
+import RevenueFundingCenter from '@/components/RevenueFundingCenter';
 import {
   allTrackIds,
   athleteProfiles,
@@ -17,7 +18,7 @@ import {
 
 type CapabilityStatus = 'DRAFT' | 'ACTIVE' | 'BLOCKED' | 'ARCHIVED';
 type CapabilityVisibility = 'Internal' | 'Role-Bound' | 'Public Placeholder';
-type TabKey = 'overview' | 'library' | 'matrix' | 'builder';
+type TabKey = 'overview' | 'library' | 'matrix' | 'builder' | 'revenue';
 type AssignmentFilter = 'all' | 'assigned' | 'unassigned';
 type MatrixFilter = 'all' | 'unassigned' | 'multi-role' | 'draft' | 'active';
 
@@ -586,6 +587,7 @@ export default function AdminCapabilitiesPage() {
               { id: 'library', label: 'Capability Library' },
               { id: 'matrix', label: 'Assignment Matrix' },
               { id: 'builder', label: 'Capability Builder' },
+              { id: 'revenue', label: 'Revenue & Funding Center' },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -1323,6 +1325,8 @@ export default function AdminCapabilitiesPage() {
               </article>
             </section>
           )}
+
+          {activeTab === 'revenue' && <RevenueFundingCenter />}
 
           <section className="border border-[#3a3a3a] bg-[#141414] p-4">
             <button

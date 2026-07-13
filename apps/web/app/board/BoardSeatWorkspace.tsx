@@ -20,8 +20,8 @@ export default function BoardSeatWorkspace({ member }: BoardSeatWorkspaceProps) 
       allowedRoles={[seat.allowedRole]}
       links={[
         { label: 'Board hub', href: '/board' },
-        { label: 'Operations Hub', href: '/operations' },
-        { label: 'The Ring', href: '/operations' },
+        { label: 'Governance Operations', href: '/operations' },
+        { label: 'Board Operations Floor', href: '/operations' },
       ]}
     />
   );

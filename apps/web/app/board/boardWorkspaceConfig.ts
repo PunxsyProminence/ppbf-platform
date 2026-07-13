@@ -28,20 +28,22 @@ export interface BoardOverviewMetric {
 }
 
 export const boardOverviewStrip: BoardOverviewMetric[] = [
-  { label: 'Seats Filled', value: '8 / 8' },
-  { label: 'Open Tasks', value: '29' },
-  { label: 'Policies Under Review', value: '6' },
-  { label: 'Meetings Scheduled', value: '4' },
-  { label: 'Compliance Items', value: '9' },
-  { label: 'Upcoming Votes', value: '5' },
+  { label: 'Mission Health', value: 'Stable' },
+  { label: 'Policy Reviews Due', value: '6' },
+  { label: 'Compliance Calendar Events', value: '4' },
+  { label: 'Grant Oversight Items', value: '5' },
+  { label: 'Board Actions Pending', value: '12' },
+  { label: 'Strategic Objectives Active', value: '7' },
+  { label: 'Annual Filings Status', value: 'On Track' },
+  { label: 'Risk Review Items', value: '3' },
 ];
 
 export const boardSeatConfigs: BoardSeatConfig[] = [
   {
     slug: 'president',
     seatLabel: 'President',
-    roleDescription: 'Executive leadership and organizational oversight.',
-    primaryResponsibilities: ['Strategic direction', 'Organizational health', 'Executive action alignment'],
+    roleDescription: 'Mission stewardship, governance leadership, and executive accountability for a veteran-owned 501(c)(3) public charity.',
+    primaryResponsibilities: ['Mission stewardship', 'Strategic direction', 'Board effectiveness', 'Executive accountability'],
     openTasksCount: 6,
     pendingReviewsCount: 3,
     meetingItemsCount: 5,
@@ -51,8 +53,8 @@ export const boardSeatConfigs: BoardSeatConfig[] = [
   {
     slug: 'chair',
     seatLabel: 'Board Chair',
-    roleDescription: 'Strategic direction and governance meeting leadership.',
-    primaryResponsibilities: ['Agenda leadership', 'Governance continuity', 'Vote facilitation'],
+    roleDescription: 'Governance oversight, meeting governance quality, committee leadership, and board development.',
+    primaryResponsibilities: ['Governance oversight', 'Meeting governance', 'Committee leadership', 'Board development'],
     openTasksCount: 4,
     pendingReviewsCount: 4,
     meetingItemsCount: 6,
@@ -62,8 +64,8 @@ export const boardSeatConfigs: BoardSeatConfig[] = [
   {
     slug: 'vice-chair',
     seatLabel: 'Vice Chair',
-    roleDescription: 'Continuity planning, committee support, and leadership backup.',
-    primaryResponsibilities: ['Committee coordination', 'Continuity planning', 'Meeting support'],
+    roleDescription: 'Succession planning, governance continuity, leadership development, and committee coordination.',
+    primaryResponsibilities: ['Succession planning', 'Governance continuity', 'Leadership development', 'Committee coordination'],
     openTasksCount: 3,
     pendingReviewsCount: 2,
     meetingItemsCount: 4,
@@ -73,8 +75,8 @@ export const boardSeatConfigs: BoardSeatConfig[] = [
   {
     slug: 'treasurer',
     seatLabel: 'Treasurer',
-    roleDescription: 'Budget integrity, financial tracking, and grant visibility.',
-    primaryResponsibilities: ['Budget review', 'Financial tracking', 'Grant monitoring'],
+    roleDescription: 'Financial stewardship, grant oversight, reserve monitoring, and funding sustainability governance.',
+    primaryResponsibilities: ['Financial stewardship', 'Grant oversight', 'Reserve monitoring', 'Funding sustainability'],
     openTasksCount: 5,
     pendingReviewsCount: 3,
     meetingItemsCount: 3,
@@ -84,8 +86,8 @@ export const boardSeatConfigs: BoardSeatConfig[] = [
   {
     slug: 'secretary',
     seatLabel: 'Secretary',
-    roleDescription: 'Minutes, records, and official governance documentation.',
-    primaryResponsibilities: ['Minutes management', 'Record retention', 'Resolution registry updates'],
+    roleDescription: 'Governance records stewardship, board action register integrity, and annual filing calendar management.',
+    primaryResponsibilities: ['Governance records', 'Board action register', 'Annual filing calendar', 'Document integrity'],
     openTasksCount: 4,
     pendingReviewsCount: 2,
     meetingItemsCount: 7,
@@ -95,8 +97,8 @@ export const boardSeatConfigs: BoardSeatConfig[] = [
   {
     slug: 'safety-director',
     seatLabel: 'Program & Safety Director',
-    roleDescription: 'Program safety oversight, youth protection, and compliance review.',
-    primaryResponsibilities: ['Safety reviews', 'Incident oversight', 'Youth protection controls'],
+    roleDescription: 'Youth protection leadership, program compliance governance, risk management, and safety governance oversight.',
+    primaryResponsibilities: ['Youth protection', 'Program compliance', 'Risk management', 'Safety governance'],
     openTasksCount: 3,
     pendingReviewsCount: 4,
     meetingItemsCount: 2,
@@ -106,8 +108,8 @@ export const boardSeatConfigs: BoardSeatConfig[] = [
   {
     slug: 'community-director',
     seatLabel: 'Community & Development Director',
-    roleDescription: 'Partnerships, fundraising lanes, and grant opportunity growth.',
-    primaryResponsibilities: ['Partnership development', 'Fundraising strategy', 'Volunteer development'],
+    roleDescription: 'Community impact stewardship, partner development, fundraising oversight, and volunteer engagement governance.',
+    primaryResponsibilities: ['Community impact', 'Partner development', 'Fundraising oversight', 'Volunteer engagement'],
     openTasksCount: 2,
     pendingReviewsCount: 2,
     meetingItemsCount: 3,
@@ -117,8 +119,8 @@ export const boardSeatConfigs: BoardSeatConfig[] = [
   {
     slug: 'at-large',
     seatLabel: 'Director-at-Large',
-    roleDescription: 'Independent oversight, voting input, and special project support.',
-    primaryResponsibilities: ['Voting participation', 'Special projects', 'General oversight'],
+    roleDescription: 'Independent oversight with strategic project reviews and board accountability support.',
+    primaryResponsibilities: ['Independent oversight', 'Strategic projects', 'Special reviews', 'Board accountability'],
     openTasksCount: 2,
     pendingReviewsCount: 1,
     meetingItemsCount: 2,

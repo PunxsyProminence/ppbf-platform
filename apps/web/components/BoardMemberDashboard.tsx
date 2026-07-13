@@ -8,6 +8,8 @@ import type { BoardOverviewMetric, BoardSeatConfig, BoardSeatSlug } from '@/app/
 
 type WorkspaceTab =
   | 'Overview'
+  | 'Governance'
+  | 'Strategy'
   | 'Meetings'
   | 'Tasks'
   | 'Policies'
@@ -29,74 +31,95 @@ interface ModuleGroup {
   items: string[];
 }
 
-const tabs: WorkspaceTab[] = ['Overview', 'Meetings', 'Tasks', 'Policies', 'Resolutions', 'Committees', 'Compliance', 'Documents', 'SHADOW'];
+const tabs: WorkspaceTab[] = ['Overview', 'Governance', 'Strategy', 'Meetings', 'Tasks', 'Policies', 'Resolutions', 'Committees', 'Compliance', 'Documents', 'SHADOW'];
 
 const roleModulesBySeat: Record<BoardSeatSlug, ModuleGroup[]> = {
   president: [
-    { title: 'Strategic Priorities', items: ['Annual goals alignment', 'Cross-seat priority alignment', 'Quarterly governance cadence'] },
-    { title: 'Organizational Health', items: ['Seat workload balance', 'Governance risk posture', 'Stability checkpoint reviews'] },
-    { title: 'Meeting Oversight', items: ['Meeting agenda validation', 'Vote readiness checks', 'Facilitation checkpoints'] },
-    { title: 'Executive Actions', items: ['Executive follow-up queue', 'Escalation approvals', 'Board execution sign-off'] },
+    { title: 'Mission Stewardship', items: ['Mission stewardship checkpoints', 'Mission alignment reviews', 'Mission drift prevention cadence'] },
+    { title: 'Strategic Direction', items: ['Strategic objective oversight', 'Board-level priority alignment', 'Quarterly strategy cycle governance'] },
+    { title: 'Board Effectiveness', items: ['Board readiness assessment', 'Committee effectiveness scan', 'Governance quality scorecard'] },
+    { title: 'Executive Accountability', items: ['Executive oversight register', 'Action accountability reviews', 'Leadership accountability follow-ups'] },
   ],
   chair: [
-    { title: 'Strategic Priorities', items: ['Board direction continuity', 'Meeting governance quality', 'Decision-flow consistency'] },
-    { title: 'Organizational Health', items: ['Open issue visibility', 'Board readiness pulse', 'Role coordination health'] },
-    { title: 'Meeting Oversight', items: ['Agenda sequencing', 'Timebox and quorum checks', 'Decision closure tracking'] },
-    { title: 'Executive Actions', items: ['Action owner assignment', 'Post-meeting execution', 'Cross-seat resolution flow'] },
+    { title: 'Governance Oversight', items: ['Bylaws and policy posture', 'Governance compliance pulse', 'Oversight continuity checks'] },
+    { title: 'Meeting Governance', items: ['Agenda governance quality', 'Quorum and voting readiness', 'Decision integrity tracking'] },
+    { title: 'Committee Leadership', items: ['Committee leadership cadence', 'Committee output oversight', 'Cross-committee governance alignment'] },
+    { title: 'Board Development', items: ['Board development roadmap', 'Board education planning', 'Governance maturity progress'] },
   ],
   'vice-chair': [
-    { title: 'Committee Coordination', items: ['Committee cadence map', 'Owner follow-up coverage', 'Cross-committee dependency tracking'] },
-    { title: 'Continuity Planning', items: ['Leadership backup routes', 'Meeting continuity protocol', 'Critical process handoff status'] },
-    { title: 'Meeting Support', items: ['Agenda readiness support', 'Vote logistics support', 'Follow-up packaging support'] },
+    { title: 'Succession Planning', items: ['Leadership succession pipeline', 'Succession risk review', 'Role transition readiness'] },
+    { title: 'Governance Continuity', items: ['Governance continuity protocol', 'Critical governance handoff map', 'Continuity risk controls'] },
+    { title: 'Leadership Development', items: ['Board leadership growth plans', 'Mentorship checkpoints', 'Future leadership readiness'] },
+    { title: 'Committee Coordination', items: ['Committee coordination calendar', 'Inter-committee dependencies', 'Committee support governance'] },
   ],
   treasurer: [
-    { title: 'Budget Review', items: ['Budget variance watchlist', 'Program allocation review', 'Monthly budget check cycle'] },
-    { title: 'Financial Tracking', items: ['Ledger control checkpoints', 'Financial status snapshots', 'Spending verification queue'] },
-    { title: 'Grant Monitoring', items: ['Grant timeline milestones', 'Funding compliance watch', 'Grant report readiness'] },
-    { title: 'Financial Tasks', items: ['Actionable finance tasks', 'Approval queue', 'Financial follow-up ledger'] },
+    { title: 'Financial Stewardship', items: ['Stewardship dashboard', 'Spending integrity governance', 'Financial policy compliance'] },
+    { title: 'Grant Oversight', items: ['Grant oversight register', 'Restricted-funds compliance checks', 'Grant reporting governance'] },
+    { title: 'Reserve Monitoring', items: ['Reserve posture tracking', 'Reserve risk alerts', 'Reserve policy adherence'] },
+    { title: 'Funding Sustainability', items: ['Funding sustainability scan', 'Revenue diversity governance', 'Long-range funding scenarios'] },
   ],
   secretary: [
-    { title: 'Minutes', items: ['Draft minutes queue', 'Approval-ready minutes', 'Distribution readiness'] },
-    { title: 'Meeting Records', items: ['Attendance register', 'Meeting archive quality', 'Session index updates'] },
-    { title: 'Resolution Registry', items: ['Resolution indexing', 'Resolution state tracking', 'Resolution publication checks'] },
-    { title: 'Document Management', items: ['Governance document lifecycle', 'Version check queue', 'Record retention checkpoints'] },
+    { title: 'Governance Records', items: ['Governance record quality controls', 'Meeting record integrity checks', 'Record retention posture'] },
+    { title: 'Board Action Register', items: ['Action register maintenance', 'Action closure integrity', 'Action accountability logging'] },
+    { title: 'Annual Filing Calendar', items: ['Annual filing schedule', 'Deadline readiness checks', 'Filing completion tracking'] },
+    { title: 'Document Integrity', items: ['Document version governance', 'Bylaws/resolution integrity checks', 'Archival controls'] },
   ],
   'safety-director': [
-    { title: 'Safety Reviews', items: ['Safety protocol reviews', 'Critical safety follow-ups', 'Readiness gate checks'] },
-    { title: 'Incident Oversight', items: ['Incident review queue', 'Corrective action oversight', 'Incident closeout tracking'] },
-    { title: 'Compliance Review', items: ['Policy-to-practice checks', 'Safety compliance readiness', 'Review backlog governance'] },
-    { title: 'Youth Protection', items: ['Youth protection checklist', 'Sensitive process safeguards', 'Protection policy status'] },
+    { title: 'Youth Protection', items: ['Youth protection governance controls', 'Protection policy readiness', 'Protection escalation reviews'] },
+    { title: 'Program Compliance', items: ['Program compliance checkpoints', 'Compliance calendar oversight', 'Compliance closure tracking'] },
+    { title: 'Risk Management', items: ['Risk register updates', 'Risk mitigation oversight', 'Risk review cycles'] },
+    { title: 'Safety Governance', items: ['Safety governance standards', 'Safety policy lifecycle', 'Safety accountability register'] },
   ],
   'community-director': [
-    { title: 'Partnerships', items: ['Partnership pipeline', 'Partner action follow-ups', 'Partner governance coordination'] },
-    { title: 'Fundraising', items: ['Campaign planning status', 'Contribution tracking visibility', 'Execution checkpoint tracking'] },
-    { title: 'Grant Opportunities', items: ['Opportunity watchlist', 'Submission calendar alignment', 'Grant readiness tasks'] },
-    { title: 'Volunteer Development', items: ['Volunteer lane coordination', 'Volunteer readiness signals', 'Support development tasks'] },
+    { title: 'Community Impact', items: ['Impact outcomes review', 'Community impact scorecard', 'Mission impact alignment'] },
+    { title: 'Partner Development', items: ['Partner relationship pipeline', 'Partner stewardship cadence', 'Partner alignment checkpoints'] },
+    { title: 'Fundraising Oversight', items: ['Fundraising governance checks', 'Campaign oversight reviews', 'Funding ethics alignment'] },
+    { title: 'Volunteer Engagement', items: ['Volunteer engagement governance', 'Volunteer support readiness', 'Volunteer participation trends'] },
   ],
   'at-large': [
-    { title: 'Voting Items', items: ['Vote packet review', 'Vote timeline watchlist', 'Vote readiness tracking'] },
-    { title: 'Special Projects', items: ['Special project backlog', 'Independent project oversight', 'Cross-role support tasks'] },
-    { title: 'General Oversight', items: ['Cross-workspace health scan', 'Policy and task alignment scan', 'Governance gap watch'] },
+    { title: 'Independent Oversight', items: ['Independent oversight register', 'Oversight escalation reviews', 'Governance integrity checks'] },
+    { title: 'Strategic Projects', items: ['Strategic project governance', 'Project oversight checkpoints', 'Cross-seat strategic alignment'] },
+    { title: 'Special Reviews', items: ['Special review queue', 'Targeted governance investigations', 'Special review outcomes tracking'] },
+    { title: 'Board Accountability', items: ['Accountability scorecard', 'Board accountability follow-ups', 'Governance gap remediation'] },
   ],
 };
 
 const boardShadowSignals: Record<BoardSeatSlug, string[]> = {
-  president: ['Task deadline: Annual strategy actions due in 4 days', 'Meeting item: Agenda approval packet awaiting sign-off', 'Policy review: Governance escalation policy requires final pass'],
-  chair: ['Meeting item: Quorum planning reminders for next session', 'Committee action: Committee updates pending consolidation', 'Task deadline: Action owner assignment due in 2 days'],
-  'vice-chair': ['Committee action: Cross-committee sync pending', 'Task deadline: Continuity protocol review due tomorrow', 'Meeting item: Backup facilitation checklist incomplete'],
-  treasurer: ['Task deadline: Budget variance review due in 3 days', 'Compliance reminder: Grant financial control checklist pending', 'Policy review: Financial policy addendum in review queue'],
-  secretary: ['Meeting item: Minutes approval pending for prior session', 'Task deadline: Resolution registry update due in 1 day', 'Policy review: Record retention policy open for edits'],
-  'safety-director': ['Compliance reminder: Youth safety checklist requires closeout', 'Task deadline: Incident follow-up due in 24 hours', 'Policy review: Safety gate policy under revision'],
-  'community-director': ['Committee action: Partnership follow-up tasks due this week', 'Task deadline: Fundraising status update due in 2 days', 'Compliance reminder: Grant documentation prep pending'],
-  'at-large': ['Voting item: Special project vote packet pending review', 'Task deadline: Independent oversight note due in 3 days', 'Policy review: General governance policy currently open'],
+  president: ['Policy review reminder: Mission governance policy cycle due this week', 'Governance deadline: Strategic review session in 4 days', 'Resolution follow-up: Executive accountability resolution awaiting closeout'],
+  chair: ['Committee oversight alert: Governance committee report pending', 'Governance deadline: Meeting governance checklist due in 2 days', 'Policy review reminder: Bylaws update packet requires chair review'],
+  'vice-chair': ['Governance continuity alert: Succession planning review due tomorrow', 'Committee oversight alert: Cross-committee alignment update pending', 'Strategic cycle reminder: Leadership development review approaching'],
+  treasurer: ['Compliance alert: Grant oversight review window opens in 3 days', 'Filing deadline reminder: Annual finance filing placeholder approaching', 'Risk alert: Reserve monitoring threshold review pending'],
+  secretary: ['Filing deadline reminder: Annual filing calendar update due', 'Resolution follow-up: Board action register entries need closeout notes', 'Governance deadline: Document integrity review scheduled this week'],
+  'safety-director': ['Compliance alert: Program compliance checkpoint due in 24 hours', 'Risk alert: Safety governance review item requires follow-up', 'Policy review reminder: Youth protection policy cycle is active'],
+  'community-director': ['Committee oversight alert: Community impact report pending', 'Governance deadline: Fundraising oversight review due in 2 days', 'Strategic cycle reminder: Partner development review approaching'],
+  'at-large': ['Special review alert: Independent oversight memo pending', 'Risk alert: Strategic project oversight item flagged for review', 'Governance deadline: Board accountability checkpoint due this week'],
 };
 
 function sharedTabCards(tab: WorkspaceTab) {
   const cardsByTab: Record<WorkspaceTab, Array<{ title: string; detail: string }>> = {
     Overview: [
-      { title: 'Board Seat Context', detail: 'Role-aware governance modules with one shared board workspace shell.' },
-      { title: 'Governance Workflow', detail: 'Unified meeting, policy, task, and compliance operations across all seats.' },
-      { title: 'Visibility Boundary', detail: 'Board SHADOW exposes governance-only reminders and no athlete, coach, parent, or admin-only data.' },
+      { title: 'Mission Alignment', detail: 'Current strategic priorities and mission stewardship checks across the board.' },
+      { title: 'Board Action Register', detail: 'Open resolutions and governance actions requiring board-level follow-up.' },
+      { title: 'Organizational Health', detail: 'Board participation, committee activity, and governance readiness indicators.' },
+      { title: 'Annual Governance Calendar', detail: 'Required meetings, filings, reports, and governance review milestones.' },
+      { title: 'Compliance Snapshot', detail: 'Nonprofit obligations and compliance review status in one governance view.' },
+    ],
+    Governance: [
+      { title: 'Bylaws', detail: 'Bylaws review posture and governance update cycle visibility.' },
+      { title: 'Resolutions', detail: 'Resolution register with draft, active, and closeout governance states.' },
+      { title: 'Governance Policies', detail: 'Policy oversight and scheduled review cadence for board governance.' },
+      { title: 'Strategic Plans', detail: 'Board-approved strategic plans and governance milestone checkpoints.' },
+      { title: 'Annual Reports', detail: 'Annual report readiness and board review progress indicators.' },
+      { title: 'Board Action Register', detail: 'Unified board governance action logging and accountability tracking.' },
+    ],
+    Strategy: [
+      { title: 'Strategic Priorities', detail: 'Active strategic priorities and board-level review cadence.' },
+      { title: 'Mission Advancement', detail: 'Mission advancement outcomes and governance steering checkpoints.' },
+      { title: 'Community Impact', detail: 'Community impact oversight indicators aligned to nonprofit mission.' },
+      { title: 'Program Growth', detail: 'Program growth oversight trends and strategic governance implications.' },
+      { title: 'Facility Development', detail: 'Facility development oversight and long-range governance planning.' },
+      { title: 'Funding Sustainability', detail: 'Funding sustainability reviews in support of mission continuity.' },
+      { title: 'Volunteer Development', detail: 'Volunteer development strategy oversight and support pathways.' },
     ],
     Meetings: [
       { title: 'Meeting Calendar', detail: 'Upcoming meetings, agenda readiness, and governance prep checkpoints.' },
@@ -134,7 +157,7 @@ function sharedTabCards(tab: WorkspaceTab) {
       { title: 'Retention Controls', detail: 'Governance record lifecycle controls visible to relevant seats.' },
     ],
     SHADOW: [
-      { title: 'Governance SHADOW Feed', detail: 'Task deadlines, meeting items, policy reviews, committee actions, and compliance reminders.' },
+      { title: 'Governance SHADOW Feed', detail: 'Policy review reminders, governance deadlines, resolution follow-ups, committee oversight, and compliance alerts.' },
       { title: 'Boundary Enforcement', detail: 'No athlete data, coach data, parent records, or admin-only controls in this board SHADOW view.' },
       { title: 'Role-Aware Signals', detail: 'Each seat sees only governance signals that match role responsibilities.' },
     ],
@@ -157,10 +180,21 @@ export default function BoardMemberDashboard({ seat, overviewMetrics, links, all
             <div className="space-y-3">
               <p className="text-xs font-mono uppercase tracking-[0.35em] text-[#d4a574]/80">Board Workspace Framework</p>
               <h1 className="text-4xl font-black tracking-tight md:text-5xl">{seat.seatLabel} Workspace</h1>
-              <p className="max-w-4xl text-base leading-7 text-[#d9c8b8] md:text-lg">One board workspace shell with role-specific visibility. No duplicated task, document, or SHADOW systems.</p>
+              <p className="max-w-4xl text-base leading-7 text-[#d9c8b8] md:text-lg">One board workspace shell with role-specific visibility for nonprofit governance, mission stewardship, and strategic oversight.</p>
             </div>
             <div className="border-2 border-[#8b4444] bg-[#1a1a1a]/60 px-4 py-3 text-sm font-mono text-[#d4a574]">{seat.seatLabel}</div>
           </header>
+
+          <section className="mt-6 border-2 border-[#8b4444] bg-[#19130f] p-5">
+            <p className="text-xs font-mono uppercase tracking-[0.22em] text-[#d4a574]">Nonprofit Identity</p>
+            <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+              {['Veteran-Owned', '501(c)(3) Public Charity', 'Mission-Focused Governance', 'Community Impact Oversight'].map((item) => (
+                <div key={item} className="border border-[#654535] bg-[#121212] px-3 py-3 text-[16px] font-semibold text-[#e8d7c6]">
+                  {item}
+                </div>
+              ))}
+            </div>
+          </section>
 
           <section className="mt-6 border-2 border-[#8b4444] bg-[#121212] p-5">
             <p className="text-xs font-mono uppercase tracking-[0.25em] text-[#d4a574]">Board Overview Strip</p>
@@ -175,8 +209,8 @@ export default function BoardMemberDashboard({ seat, overviewMetrics, links, all
           </section>
 
           <section className="mt-6 border-2 border-[#8b4444] bg-[#121212] p-5">
-            <p className="text-xs font-mono uppercase tracking-[0.25em] text-[#d4a574]">Unified Tabs</p>
-            <div className="mt-4 grid gap-2 sm:grid-cols-3 xl:grid-cols-9">
+            <p className="text-xs font-mono uppercase tracking-[0.25em] text-[#d4a574]">Unified Governance Tabs</p>
+            <div className="mt-4 grid gap-2 sm:grid-cols-3 xl:grid-cols-11">
               {tabs.map((tab) => (
                 <button
                   key={tab}
@@ -238,7 +272,7 @@ export default function BoardMemberDashboard({ seat, overviewMetrics, links, all
 
               <article className="border-2 border-[#8b4444] bg-[#121212] p-5">
                 <h2 className="text-2xl font-black text-[#e8d7c6]">Board SHADOW (Governance Only)</h2>
-                <p className="mt-2 text-base leading-7 text-[#cbb8a8]">Role-specific governance SHADOW can surface task deadlines, meeting items, policy reviews, committee actions, and compliance reminders.</p>
+                <p className="mt-2 text-base leading-7 text-[#cbb8a8]">Role-specific governance SHADOW can surface policy review reminders, governance deadlines, resolution follow-ups, committee oversight, compliance alerts, filing deadlines, strategic review cycles, and risk alerts.</p>
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
                   <div className="border border-[#694838] bg-[#101010] p-4">
                     <p className="text-[13px] font-mono uppercase tracking-[0.14em] text-[#d4a574]">Active Signals</p>
@@ -263,22 +297,22 @@ export default function BoardMemberDashboard({ seat, overviewMetrics, links, all
 
             <aside className="grid gap-6">
               <section className="border-2 border-[#8b4444] bg-[#121212] p-5">
-                <h2 className="text-xl font-black text-[#e8d7c6]">Seat Workload</h2>
+                <h2 className="text-xl font-black text-[#e8d7c6]">Governance Snapshot</h2>
                 <div className="mt-4 grid gap-2">
                   <div className="border border-[#694838] bg-[#101010] p-3">
-                    <p className="text-xs font-mono uppercase tracking-[0.13em] text-[#a89181]">Open Tasks</p>
+                    <p className="text-xs font-mono uppercase tracking-[0.13em] text-[#a89181]">Board Actions Pending</p>
                     <p className="mt-1 text-2xl font-black text-[#e8d7c6]">{seat.openTasksCount}</p>
                   </div>
                   <div className="border border-[#694838] bg-[#101010] p-3">
-                    <p className="text-xs font-mono uppercase tracking-[0.13em] text-[#a89181]">Pending Reviews</p>
+                    <p className="text-xs font-mono uppercase tracking-[0.13em] text-[#a89181]">Policy Reviews Due</p>
                     <p className="mt-1 text-2xl font-black text-[#e8d7c6]">{seat.pendingReviewsCount}</p>
                   </div>
                   <div className="border border-[#694838] bg-[#101010] p-3">
-                    <p className="text-xs font-mono uppercase tracking-[0.13em] text-[#a89181]">Meeting Items</p>
+                    <p className="text-xs font-mono uppercase tracking-[0.13em] text-[#a89181]">Compliance Calendar Events</p>
                     <p className="mt-1 text-2xl font-black text-[#e8d7c6]">{seat.meetingItemsCount}</p>
                   </div>
                   <div className="border border-[#694838] bg-[#101010] p-3">
-                    <p className="text-xs font-mono uppercase tracking-[0.13em] text-[#a89181]">Compliance Items</p>
+                    <p className="text-xs font-mono uppercase tracking-[0.13em] text-[#a89181]">Risk Review Items</p>
                     <p className="mt-1 text-2xl font-black text-[#e8d7c6]">{seat.complianceItemsCount}</p>
                   </div>
                 </div>
