@@ -5,7 +5,7 @@ import RoleStandaloneView from '@/components/RoleStandaloneView';
 
 export default function AthleteDashboardPage() {
   return (
-    <RoleStandaloneView roleLabel="Athlete Workspace" routeLabel="/athlete/dashboard" allowedRoles={['athlete']}>
+    <RoleStandaloneView roleLabel="Athlete Workspace" routeLabel="/athlete/dashboard" allowedRoles={['athlete']} showShellHeader={false}>
       <AthleteWorkspace />
     </RoleStandaloneView>
   );

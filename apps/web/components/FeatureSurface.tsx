@@ -3,14 +3,14 @@ import type { ReactNode } from 'react';
 import DevelopmentPipelineBanner, { type PipelineStageKey } from '@/components/DevelopmentPipelineBanner';
 
 interface FeatureSurfaceProps {
-  eyebrow: string;
-  title: string;
-  description: string;
-  status: string;
-  currentStage?: PipelineStageKey;
-  primaryLinks: Array<{ label: string; href: string }>;
-  stats: Array<{ label: string; value: string }>;
-  children?: ReactNode;
+  readonly eyebrow: string;
+  readonly title: string;
+  readonly description: string;
+  readonly status: string;
+  readonly currentStage?: PipelineStageKey;
+  readonly primaryLinks: Array<{ label: string; href: string }>;
+  readonly stats: Array<{ label: string; value: string }>;
+  readonly children?: ReactNode;
 }
 
 export default function FeatureSurface({

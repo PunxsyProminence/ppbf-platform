@@ -1,11 +1,28 @@
 'use client';
 
-import React, { useState } from 'react';
+import Link from 'next/link';
+import React, { useEffect, useMemo, useState } from 'react';
 import { CoachSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import { cx, ui } from './uiStyles';
 
-type TabID = 'dashboard' | 'floor' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
+type TabID = 'dashboard' | 'floor' | 'athlete-floor-plans' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
 type SessionMode = 'Group' | 'One-on-One';
+
+interface CoachAthleteFloorPlan {
+  athleteName: string;
+  readiness: 'GREEN' | 'YELLOW' | 'RED';
+  generatedAt: string;
+  tasks: Array<{
+    id: string;
+    title: string;
+    category: string;
+    description: string;
+    dueDate: string;
+    priority: 'High' | 'Normal';
+  }>;
+}
+
+const ATHLETE_FLOOR_PLAN_STORAGE_KEY = 'ppbf-athlete-floor-plans';
 
 interface Athlete {
   id: string;
@@ -21,6 +38,9 @@ interface WorkoutBlock {
   title: string;
   duration: number;
   status: 'Not Started' | 'In Progress' | 'Completed' | 'Skipped';
+  objective: string;
+  trainingItems: string[];
+  coachingCues: string[];
 }
 
 interface CoachTask {
@@ -73,6 +93,7 @@ function blockStatusTone(status: WorkoutBlock['status']): string {
 export default function CoachWorkspace() {
   const [activeTab, setActiveTab] = useState<TabID>('dashboard');
   const [sessionMode, setSessionMode] = useState<SessionMode>('Group');
+  const [athleteFloorPlans, setAthleteFloorPlans] = useState<CoachAthleteFloorPlan[]>([]);
 
   // Dashboard data
   const [athletes] = useState<Athlete[]>([
@@ -91,13 +112,137 @@ export default function CoachWorkspace() {
     { id: 't_5', title: 'Submit monthly coach report', dueDate: '2026-07-20', priority: 'Normal', status: 'Open' }
   ]);
 
-  const [workoutBlocks] = useState<WorkoutBlock[]>([
-    { id: 'wb_1', title: 'Warmup', duration: 10, status: 'Completed' },
-    { id: 'wb_2', title: 'Footwork Drills', duration: 15, status: 'In Progress' },
-    { id: 'wb_3', title: 'Defense Combinations', duration: 15, status: 'Not Started' },
-    { id: 'wb_4', title: 'Conditioning', duration: 15, status: 'Not Started' },
-    { id: 'wb_5', title: 'Cooldown', duration: 5, status: 'Not Started' }
-  ]);
+  const workoutBlocks = useMemo<WorkoutBlock[]>(() => {
+    if (sessionMode === 'One-on-One') {
+      return [
+        {
+          id: 'wb_1',
+          title: 'Individual Warmup + Movement Prep',
+          duration: 10,
+          status: 'Completed',
+          objective: 'Prime mechanics and movement quality before technical rounds.',
+          trainingItems: [
+            '2 rounds jump rope x 2:00 with 0:30 reset',
+            'Hip/ankle mobility circuit x 6 minutes',
+            'Mirror stance checks and guard alignment x 2 minutes',
+          ],
+          coachingCues: ['Nose over toes in stance', 'Shoulders relaxed, guard alive'],
+        },
+        {
+          id: 'wb_2',
+          title: 'Footwork and Angle Entry',
+          duration: 15,
+          status: 'In Progress',
+          objective: 'Build clean entries and exits from jab range.',
+          trainingItems: [
+            '4 x 2:00 ladder step + pivot (inside/outside)',
+            'Cone angle entry drill 3 x 90s',
+            'Reactive call-outs: left exit/right exit x 4 sets',
+          ],
+          coachingCues: ['Push from rear foot, do not hop', 'Exit with hands home'],
+        },
+        {
+          id: 'wb_3',
+          title: 'Targeted Technical Rounds',
+          duration: 15,
+          status: 'Not Started',
+          objective: 'Refine high-value combinations with defensive responsibility.',
+          trainingItems: [
+            'Pad rounds: 3 x 3:00 (jab-cross-slip-cross focus)',
+            'Defense return drill: slip-counter x 3 sets',
+            '30-second burst finisher each round',
+          ],
+          coachingCues: ['Exhale on impact', 'Head off center after second shot'],
+        },
+        {
+          id: 'wb_4',
+          title: 'Conditioning Micro-Block',
+          duration: 10,
+          status: 'Not Started',
+          objective: 'Support repeat power without technique breakdown.',
+          trainingItems: [
+            'Battle rope intervals 6 x 30:30',
+            'Med-ball rotational throws 3 x 8 each side',
+            'Core brace plank ladder 3 sets',
+          ],
+          coachingCues: ['Quality over speed', 'Maintain posture under fatigue'],
+        },
+        {
+          id: 'wb_5',
+          title: 'Cooldown + Review',
+          duration: 5,
+          status: 'Not Started',
+          objective: 'Recover and lock one technical takeaway.',
+          trainingItems: ['Breath downshift x 2 minutes', 'Stretch reset x 3 minutes'],
+          coachingCues: ['Identify one repeatable win from session'],
+        },
+      ];
+    }
+
+    return [
+      {
+        id: 'wb_1',
+        title: 'Group Warmup Flow',
+        duration: 10,
+        status: 'Completed',
+        objective: 'Raise heart rate and establish class rhythm safely.',
+        trainingItems: [
+          'Jump rope cadence ladder: 3 x 90s',
+          'Dynamic mobility line drills: hips, thoracic, ankles',
+          'Guard and stance shadow round x 2:00',
+        ],
+        coachingCues: ['Eyes up, shoulders down', 'Move with stance integrity'],
+      },
+      {
+        id: 'wb_2',
+        title: 'Footwork Pods',
+        duration: 15,
+        status: 'In Progress',
+        objective: 'Install directional movement under control and spacing.',
+        trainingItems: [
+          'Station A: forward/backward step-and-stop x 3 sets',
+          'Station B: lateral shuffle + pivot x 3 sets',
+          'Station C: partner mirror footwork x 3 sets',
+        ],
+        coachingCues: ['Stay balanced at every stop', 'Hands in position during movement'],
+      },
+      {
+        id: 'wb_3',
+        title: 'Defense + Combo Circuit',
+        duration: 15,
+        status: 'Not Started',
+        objective: 'Connect defensive reactions to simple scoring combinations.',
+        trainingItems: [
+          'Slip line: jab-slip-jab x 3 rounds',
+          'Partner feed: parry-cross-hook x 3 rounds',
+          'Coach call reaction: block/roll/return x 6 sets',
+        ],
+        coachingCues: ['Defense first, then fire', 'Reset feet before second phase'],
+      },
+      {
+        id: 'wb_4',
+        title: 'Group Conditioning',
+        duration: 15,
+        status: 'Not Started',
+        objective: 'Build engine while preserving technical form standards.',
+        trainingItems: [
+          'Bag intervals 5 x 2:00 (45s active recovery)',
+          'Bodyweight circuit: squat, pushup, mountain climber x 3 rounds',
+          'Finisher: 60-second nonstop straight punches',
+        ],
+        coachingCues: ['Form before pace', 'Match breathing to output'],
+      },
+      {
+        id: 'wb_5',
+        title: 'Cooldown + Team Debrief',
+        duration: 5,
+        status: 'Not Started',
+        objective: 'Return to baseline and reinforce key class lesson.',
+        trainingItems: ['Guided breathing x 2 minutes', 'Mobility reset x 2 minutes', 'Team takeaway x 1 minute'],
+        coachingCues: ['Name one technical habit to repeat next session'],
+      },
+    ];
+  }, [sessionMode]);
 
   const [coachGoals] = useState<CoachGoal[]>([
     { id: 'cg_1', title: 'Complete 10 athlete film reviews', category: 'Development', progress: 30, dueDate: '2026-09-30' },
@@ -110,6 +255,37 @@ export default function CoachWorkspace() {
   const injuryFlags = athletes.filter(a => a.injuryFlag).length;
   const reviewsNeeded = coachTasks.filter(t => t.status === 'Open' && t.title.includes('Review')).length;
   const assignmentsDue = coachTasks.filter(t => t.status === 'Open').length;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const readPlans = () => {
+      const raw = window.localStorage.getItem(ATHLETE_FLOOR_PLAN_STORAGE_KEY);
+      if (!raw) {
+        setAthleteFloorPlans([]);
+        return;
+      }
+
+      try {
+        setAthleteFloorPlans(JSON.parse(raw) as CoachAthleteFloorPlan[]);
+      } catch {
+        setAthleteFloorPlans([]);
+      }
+    };
+
+    readPlans();
+
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === ATHLETE_FLOOR_PLAN_STORAGE_KEY) {
+        readPlans();
+      }
+    };
+
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-[#e8d7c6] font-sans">
@@ -160,6 +336,7 @@ export default function CoachWorkspace() {
             {[
               { id: 'dashboard', label: 'Dashboard' },
               { id: 'floor', label: 'Floor' },
+              { id: 'athlete-floor-plans', label: 'Athlete Floor Plans' },
               { id: 'development', label: 'Development' },
               { id: 'goals', label: 'Goals' },
               { id: 'tasks', label: 'Tasks' },
@@ -279,6 +456,73 @@ export default function CoachWorkspace() {
             </div>
           )}
 
+          {/* ATHLETE FLOOR PLANS */}
+          {activeTab === 'athlete-floor-plans' && (
+            <div className="space-y-6 animate-fadeIn">
+              <HelpPanel
+                title="Athlete Floor Plans"
+                description="Individual athlete workout plans generated at athlete check-in. Separate from coach group and one-on-one floor operations."
+                usage={[
+                  'Review each athlete\'s generated plan before live coaching decisions',
+                  'Use readiness color to adjust coaching intensity',
+                  'Confirm task order and due-time pacing',
+                  'Use this tab as individual plan intake, not class block control'
+                ]}
+                mistakes={[
+                  'Treating individual plans as group-session block plan',
+                  'Ignoring RED readiness plans during live coaching',
+                  'Overwriting individual targets with one-size-fits-all flow'
+                ]}
+                onAskShadow={() => {}}
+              />
+
+              {athleteFloorPlans.length === 0 ? (
+                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6">
+                  <p className="text-sm text-[#d4a574] font-semibold">No athlete floor plans received yet.</p>
+                  <p className="mt-2 text-sm text-[#b0a095]">Once an athlete checks in and their floor plan auto-generates, it will appear here as an individual coach review tab.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {athleteFloorPlans.map((plan, index) => (
+                    <article key={`${plan.athleteName}-${plan.generatedAt}-${index}`} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-5 space-y-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Individual Plan</p>
+                          <h4 className="text-lg font-semibold text-[#e8d7c6]">{plan.athleteName}</h4>
+                          <p className="text-xs text-[#8a8a8a]">Generated {new Date(plan.generatedAt).toLocaleString()}</p>
+                        </div>
+                        <span className={`inline-flex items-center rounded px-2 py-1 text-xs font-bold ${
+                          plan.readiness === 'GREEN'
+                            ? 'bg-green-900 text-green-200'
+                            : plan.readiness === 'YELLOW'
+                              ? 'bg-yellow-900 text-yellow-200'
+                              : 'bg-red-900 text-red-200'
+                        }`}>
+                          {plan.readiness}
+                        </span>
+                      </div>
+
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {plan.tasks.map((task) => (
+                          <div key={task.id} className="border border-[#694838] bg-[#0f0f0f] p-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-sm font-semibold text-[#e8d7c6]">{task.title}</p>
+                              <span className={`text-[11px] font-semibold px-2 py-1 rounded ${task.priority === 'High' ? 'bg-red-900 text-red-200' : 'bg-yellow-900 text-yellow-200'}`}>
+                                {task.priority}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs text-[#d4a574]">{task.category} - {task.dueDate}</p>
+                            <p className="mt-2 text-xs text-[#b0a095]">{task.description}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* FLOOR */}
           {activeTab === 'floor' && (
             <div className="space-y-6 animate-fadeIn">
@@ -310,10 +554,29 @@ export default function CoachWorkspace() {
                         <div>
                           <p className="font-semibold">{block.title}</p>
                           <p className="text-xs text-[#b0a095]">{block.duration} minutes</p>
+                          <p className="text-xs text-[#d4a574] mt-1">{block.objective}</p>
                         </div>
                         <span className={`text-xs px-2 py-1 rounded font-semibold ${blockStatusTone(block.status)}`}>
                           {block.status}
                         </span>
+                      </div>
+                      <div className="mt-3 grid gap-2 md:grid-cols-2">
+                        <div className="border border-[#694838] bg-[#111111] p-2">
+                          <p className="text-[11px] font-mono uppercase tracking-[0.08em] text-[#d4a574]">Actual Training</p>
+                          <ul className="mt-1 space-y-1 text-xs text-[#cfbfae]">
+                            {block.trainingItems.map((item) => (
+                              <li key={item}>- {item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                        <div className="border border-[#694838] bg-[#111111] p-2">
+                          <p className="text-[11px] font-mono uppercase tracking-[0.08em] text-[#d4a574]">Coach Cues</p>
+                          <ul className="mt-1 space-y-1 text-xs text-[#cfbfae]">
+                            {block.coachingCues.map((cue) => (
+                              <li key={cue}>- {cue}</li>
+                            ))}
+                          </ul>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -508,6 +771,18 @@ export default function CoachWorkspace() {
               <h3 className="font-mono font-bold text-[#d4a574] uppercase">Film Study</h3>
               <p className="text-[#b0a095]">Record observations from training videos and self-evaluations.</p>
               <div className="text-sm text-[#8a8a8a]">Coming soon: Video upload, timestamp annotations, technical analysis tools.</div>
+              <div className="border border-[#5a4a3a] bg-[#101010] p-3">
+                <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">AI Video Analysis - Planned</p>
+                <p className="mt-1 text-xs text-[#cfbfae]">Video Upload: FRONT-END PLACEHOLDER | Skill Recognition: BACKEND REQUIRED | Technique Scoring: ML REQUIRED</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Link href="/coach/video-analysis" className="border border-[#8b4444] bg-[#2a1414] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[#e8d7c6]">
+                    Open Video Analysis Surface
+                  </Link>
+                  <Link href="/athlete/video-analysis" className="border border-[#4a4a4a] bg-[#1a1a1a] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[#cfbfae]">
+                    Athlete Feedback Surface
+                  </Link>
+                </div>
+              </div>
             </div>
           )}
 
@@ -517,6 +792,13 @@ export default function CoachWorkspace() {
               <h3 className="font-mono font-bold text-[#d4a574] uppercase">Athlete Performance Reviews</h3>
               <p className="text-[#b0a095]">Comprehensive athlete progress tracking and performance feedback.</p>
               <div className="text-sm text-[#8a8a8a]">Coming soon: Technical progression reports, readiness trends, goal achievement tracking.</div>
+              <div className="border border-[#5a4a3a] bg-[#101010] p-3">
+                <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Closed-Loop Progression Intelligence - Planned</p>
+                <p className="mt-1 text-xs text-[#cfbfae]">Development Recommendation: PLACEHOLDER | Coach Review Required | Human Review Required</p>
+                <Link href="/coach/progression-intelligence" className="mt-2 inline-flex border border-[#8b4444] bg-[#2a1414] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[#e8d7c6]">
+                  Open Progression Intelligence Surface
+                </Link>
+              </div>
             </div>
           )}
         </div>

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import React, { useState } from 'react';
 import { ParentSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import { cx, ui } from './uiStyles';
@@ -604,6 +605,16 @@ export default function ParentHub() {
             <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
               <h3 className="font-mono font-bold text-[#d4a574] uppercase">Progress & Achievements</h3>
               <p className="text-[#b0a095]">Track skill development and milestone achievements.</p>
+
+              <div className="border border-[#5a4a3a] bg-[#101010] p-3">
+                <p className="text-sm font-semibold text-[#e8d7c6]">Parent-Support Visibility Placeholder</p>
+                <p className="mt-1 text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">
+                  CLOSED-LOOP PROGRESSION INTELLIGENCE - PLANNED | FRONT-END PLACEHOLDER | BACKEND REQUIRED
+                </p>
+                <Link href="/parent/progression-visibility" className="mt-2 inline-flex border border-[#8b4444] bg-[#2a1414] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[#e8d7c6]">
+                  Open Parent Progression Visibility
+                </Link>
+              </div>
 
               <div className="space-y-3">
                 {activeProgressMilestones.map((milestone) => (

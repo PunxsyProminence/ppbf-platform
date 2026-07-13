@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import FeatureSurface from '@/components/FeatureSurface';
 
 const stateLanes: Array<{
@@ -45,6 +46,21 @@ const versionHistory = [
   { version: 'v1.9', note: 'Pre-validation snapshot', date: '2026-06-28' },
 ];
 
+const automationWorkflowPanels = [
+  'Publication Workflow Overview',
+  'Source Review',
+  'Approval Queue',
+  'Publication Queue',
+  'Publication History',
+  'Destination Registry',
+  'Source Status',
+  'Version Status',
+  'Approved Build Input Placeholder',
+  'Publish to Ecosystem Placeholder',
+  'Human Approval Gate',
+  'Jason Approval',
+];
+
 export default function SourceControlPage() {
   return (
     <FeatureSurface
@@ -56,6 +72,7 @@ export default function SourceControlPage() {
       primaryLinks={[
         { label: 'Audit trace', href: '/audit' },
         { label: 'Research intake', href: '/research' },
+        { label: 'Publication workflow surface', href: '/source-control/publication-workflow' },
       ]}
       stats={[
         { label: 'Current Stage', value: 'Source Control' },
@@ -106,6 +123,28 @@ export default function SourceControlPage() {
               <p className="mt-1 text-[14px] text-[#cfbfae]">Canonical Source: PPBF Development Library / v2.1</p>
             </div>
           </article>
+        </section>
+
+        <section className="border-2 border-[#8b4444] bg-[#151515] p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-[12px] font-mono uppercase tracking-[0.16em] text-[#d4a574]">AUTOMATED PUBLICATION WORKFLOW - PLANNED</p>
+            <Link
+              href="/source-control/publication-workflow"
+              className="inline-flex min-h-[40px] items-center border border-[#8b4444] bg-[#2a1414] px-3 text-[11px] font-mono font-bold uppercase tracking-[0.1em] text-[#e8d7c6]"
+            >
+              Open Workflow Surface
+            </Link>
+          </div>
+          <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {automationWorkflowPanels.map((panel) => (
+              <article key={panel} className="border border-[#5a4a3a] bg-[#101010] p-3">
+                <p className="text-[14px] font-semibold text-[#e8d7c6]">{panel}</p>
+                <p className="mt-1 text-[11px] font-mono uppercase tracking-[0.09em] text-[#d4a574]">
+                  PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED
+                </p>
+              </article>
+            ))}
+          </div>
         </section>
 
         <section id="publish" className="border-2 border-[#8b4444] bg-[#151515] p-4">

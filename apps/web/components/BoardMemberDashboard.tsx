@@ -147,9 +147,17 @@ function sharedTabCards(tab: WorkspaceTab) {
       { title: 'Coordination Signals', detail: 'Inter-committee dependency visibility for continuity planning.' },
     ],
     Compliance: [
+      { title: 'Compliance Dashboard', detail: 'Board-level compliance posture snapshot with review windows and governance pressure points.' },
       { title: 'Compliance Watchlist', detail: 'Open compliance items, due-date pressure, and status progression.' },
-      { title: 'Risk Signals', detail: 'Governance risk reminders aligned with policy and safety obligations.' },
-      { title: 'Remediation Routing', detail: 'Compliance tasks route to responsible seat modules in one system.' },
+      { title: 'Policy Review Queue', detail: 'Policy review flow with required review dates and board escalation visibility.' },
+      { title: 'Required Review Dates', detail: 'Date-bound compliance obligations for board cycle planning and closeout checks.' },
+      { title: 'Board Compliance Alerts', detail: 'Front-end board alert feed for compliance exceptions and governance reminders.' },
+      { title: 'Safety Governance Monitoring', detail: 'Safety governance monitor lane for youth safety and policy integrity checks.' },
+      { title: 'Public Charity Compliance Placeholder', detail: 'PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED.' },
+      { title: 'Annual Filing Placeholder', detail: 'PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED.' },
+      { title: 'Conflict of Interest Review Placeholder', detail: 'PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED.' },
+      { title: 'Youth Safety Review Placeholder', detail: 'PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED.' },
+      { title: 'Audit Monitoring Placeholder', detail: 'PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED.' },
     ],
     Documents: [
       { title: 'Document Registry', detail: 'Unified board documentation and record index.' },
@@ -330,6 +338,12 @@ export default function BoardMemberDashboard({ seat, overviewMetrics, links, all
                       {link.label}
                     </Link>
                   ))}
+                  <Link
+                    href="/board/compliance-monitoring"
+                    className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-sm font-bold text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"
+                  >
+                    Compliance Monitoring (Planned)
+                  </Link>
                 </div>
               </section>
 

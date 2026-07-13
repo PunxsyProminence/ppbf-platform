@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import React, { useState } from 'react';
 import { AthleteSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import { cx, ui } from './uiStyles';
@@ -35,6 +36,29 @@ interface FloorTask {
   priority: 'High' | 'Normal';
   linkedGoalId?: string;
 }
+
+interface WorkoutBuildInput {
+  readiness: ReadinessLevel;
+  checkInAt: Date;
+  activeGoal?: SMARTGoal;
+}
+
+interface StoredAthleteFloorPlan {
+  athleteName: string;
+  readiness: ReadinessLevel;
+  generatedAt: string;
+  tasks: Array<{
+    id: string;
+    title: string;
+    category: string;
+    description: string;
+    dueDate: string;
+    priority: 'High' | 'Normal';
+    linkedGoalId?: string;
+  }>;
+}
+
+const ATHLETE_FLOOR_PLAN_STORAGE_KEY = 'ppbf-athlete-floor-plans';
 
 interface Drill {
   id: string;
@@ -86,6 +110,77 @@ function createInitialShadowMessages(): ShadowMessage[] {
       timestamp: new Date(now - 480000).toISOString(),
     },
   ];
+}
+
+function formatDueTime(checkInAt: Date, offsetMinutes: number): string {
+  const due = new Date(checkInAt.getTime() + offsetMinutes * 60000);
+  return due.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function buildWorkoutFloorTasks({ readiness, checkInAt, activeGoal }: WorkoutBuildInput): FloorTask[] {
+  const core: FloorTask[] = [
+    {
+      id: `wf_${Date.now()}_1`,
+      title: 'Dynamic Warmup + Mobility',
+      category: 'Training',
+      description: '10-12 minute activation block: hips, shoulders, ankles, and core bracing.',
+      dueDate: formatDueTime(checkInAt, 10),
+      completed: false,
+      priority: 'High',
+    },
+    {
+      id: `wf_${Date.now()}_2`,
+      title: 'Technical Boxing Block',
+      category: 'Training',
+      description: readiness === 'GREEN'
+        ? 'Footwork progression + combination reps at normal intensity.'
+        : 'Controlled technical reps with clean form and reduced impact output.',
+      dueDate: formatDueTime(checkInAt, 30),
+      completed: false,
+      priority: 'High',
+      linkedGoalId: activeGoal?.id,
+    },
+  ];
+
+  const readinessSpecific: FloorTask[] =
+    readiness === 'GREEN'
+      ? [
+          {
+            id: `wf_${Date.now()}_3`,
+            title: 'Conditioning Finisher',
+            category: 'Training',
+            description: 'High-output intervals: 6 rounds x 90s on / 60s active recovery.',
+            dueDate: formatDueTime(checkInAt, 55),
+            completed: false,
+            priority: 'Normal',
+          },
+        ]
+      : [
+          {
+            id: `wf_${Date.now()}_3`,
+            title: 'Recovery Conditioning',
+            category: 'Recovery',
+            description: 'Low-impact aerobic work and breath control. Keep intensity below threshold.',
+            dueDate: formatDueTime(checkInAt, 55),
+            completed: false,
+            priority: 'Normal',
+          },
+        ];
+
+  const closeout: FloorTask[] = [
+    {
+      id: `wf_${Date.now()}_4`,
+      title: 'Cooldown + Session Journal',
+      category: 'Homework',
+      description: 'Log notes, recovery signals, and one improvement point for next session.',
+      dueDate: formatDueTime(checkInAt, 80),
+      completed: false,
+      priority: 'Normal',
+      linkedGoalId: activeGoal?.id,
+    },
+  ];
+
+  return [...core, ...readinessSpecific, ...closeout];
 }
 
 export default function AthleteWorkspace() {
@@ -145,6 +240,7 @@ export default function AthleteWorkspace() {
   const [sessionActive, setSessionActive] = useState(false);
   const [checkInTime, setCheckInTime] = useState<string | null>(null);
   const [checkInNotes, setCheckInNotes] = useState('');
+  const [lastWorkoutBuildNote, setLastWorkoutBuildNote] = useState<string | null>(null);
 
   const currentReadiness: ReadinessLevel = getReadinessLevel(readinessToTrain);
   const tasksDue = floorTasks.filter(t => !t.completed).length;
@@ -174,8 +270,46 @@ export default function AthleteWorkspace() {
   };
 
   const handleCheckIn = () => {
+    const now = new Date();
+    const readiness = getReadinessLevel(readinessToTrain);
+    const activeGoal = smartGoals.find((goal) => goal.status === 'Active');
+    const generatedTasks = buildWorkoutFloorTasks({
+      readiness,
+      checkInAt: now,
+      activeGoal,
+    });
+
     setSessionActive(true);
-    setCheckInTime(new Date().toLocaleString());
+    setCheckInTime(now.toLocaleString());
+    setFloorTasks((current) => {
+      const keepCompleted = current.filter((task) => task.completed);
+      return [...generatedTasks, ...keepCompleted];
+    });
+
+    if (typeof window !== 'undefined') {
+      const payload: StoredAthleteFloorPlan = {
+        athleteName: 'Current Athlete',
+        readiness,
+        generatedAt: now.toISOString(),
+        tasks: generatedTasks.map((task) => ({
+          id: task.id,
+          title: task.title,
+          category: task.category,
+          description: task.description,
+          dueDate: task.dueDate,
+          priority: task.priority,
+          linkedGoalId: task.linkedGoalId,
+        })),
+      };
+
+      const existing = window.localStorage.getItem(ATHLETE_FLOOR_PLAN_STORAGE_KEY);
+      const parsed: StoredAthleteFloorPlan[] = existing ? (JSON.parse(existing) as StoredAthleteFloorPlan[]) : [];
+      const updated = [payload, ...parsed].slice(0, 25);
+      window.localStorage.setItem(ATHLETE_FLOOR_PLAN_STORAGE_KEY, JSON.stringify(updated));
+    }
+
+    setLastWorkoutBuildNote(`Workout auto-generated on check-in (${readiness} readiness).`);
+    setActiveTab('athlete-floor');
   };
 
   const handleCheckOut = () => {
@@ -228,6 +362,26 @@ export default function AthleteWorkspace() {
           upcomingSession="Youth Class 4:00 PM"
           unreadMessages={0}
         />
+
+        <section className="border-2 border-[#8b4444] bg-[#111111] p-4">
+          <p className="text-xs font-mono uppercase tracking-[0.12em] text-[#d4a574]">Critical Capability Surfaces</p>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            <article className="border border-[#5a4a3a] bg-[#101010] p-3">
+              <p className="text-sm font-semibold text-[#e8d7c6]">AI/ML Video Analysis - Planned</p>
+              <p className="mt-1 text-xs text-[#cfbfae]">Video feedback and comparison are front-end placeholders only.</p>
+              <Link href="/athlete/video-analysis" className="mt-2 inline-flex border border-[#8b4444] bg-[#2a1414] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[#e8d7c6]">
+                Open Athlete Video Surface
+              </Link>
+            </article>
+            <article className="border border-[#5a4a3a] bg-[#101010] p-3">
+              <p className="text-sm font-semibold text-[#e8d7c6]">Closed-Loop Progression Intelligence - Planned</p>
+              <p className="mt-1 text-xs text-[#cfbfae]">Recommendation and scoring logic are not automated in this pass.</p>
+              <Link href="/athlete/progression-intelligence" className="mt-2 inline-flex border border-[#8b4444] bg-[#2a1414] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[#e8d7c6]">
+                Open Progression Intelligence
+              </Link>
+            </article>
+          </div>
+        </section>
 
         {/* TAB NAVIGATION */}
         <div className={ui.tabContainer}>
@@ -365,6 +519,12 @@ export default function AthleteWorkspace() {
           {/* ATHLETE FLOOR */}
           {activeTab === 'athlete-floor' && (
             <div className="space-y-6 animate-fadeIn">
+              {lastWorkoutBuildNote && (
+                <div className="border border-[#694838] bg-[#14100d] p-3">
+                  <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Workout Wiring</p>
+                  <p className="mt-1 text-sm text-[#cfbfae]">{lastWorkoutBuildNote}</p>
+                </div>
+              )}
               <HelpPanel
                 title="Athlete Floor"
                 description="Execute your daily assignments. Track training, homework, and goal-linked work with completion status."

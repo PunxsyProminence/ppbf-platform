@@ -578,6 +578,12 @@ export default function AdminCapabilitiesPage() {
               >
                 MISSION CONTROL
               </Link>
+              <Link
+                href="/admin/compliance-center"
+                className="inline-flex h-11 items-center border border-[#8b4444] bg-[#1a1a1a] px-4 text-[14px] font-bold text-[#d4a574] transition hover:bg-[#2a1a1a]"
+              >
+                COMPLIANCE CENTER (PLANNED)
+              </Link>
               <button
                 type="button"
                 onClick={exportCapabilities}
@@ -678,6 +684,21 @@ export default function AdminCapabilitiesPage() {
                     <p className="text-[18px] font-semibold text-[#f2e7da]">Capabilities Marked Draft</p>
                     <p className="mt-2 text-[28px] font-black text-[#d4a574]">{draftCapabilities.length}</p>
                   </div>
+                </div>
+              </article>
+
+              <article className="border border-[#8b4444] bg-[#141414] p-6">
+                <h2 className="text-[20px] font-bold text-[#f2e7da]">Critical Missing Capability Front-End Surfaces</h2>
+                <p className="mt-2 text-[14px] leading-6 text-[#bfb3a6]">
+                  PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED
+                </p>
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <Link href="/admin/compliance-center" className="inline-flex min-h-[44px] items-center border border-[#8b4444] bg-[#1a1a1a] px-3 text-[13px] font-bold text-[#f2e7da] transition hover:bg-[#2a1a1a]">
+                    Automated Compliance Monitoring Surface
+                  </Link>
+                  <Link href="/source-control/publication-workflow" className="inline-flex min-h-[44px] items-center border border-[#8b4444] bg-[#1a1a1a] px-3 text-[13px] font-bold text-[#f2e7da] transition hover:bg-[#2a1a1a]">
+                    Automated Publication Workflow Surface
+                  </Link>
                 </div>
               </article>
 

@@ -169,6 +169,30 @@ export default function ShadowChatPage() {
           >
             Operations
           </Link>
+          <Link
+            href="/coach/video-analysis"
+            className="border-2 border-[#8b4444] bg-[#1a1a1a] px-4 py-2 text-xs font-mono text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#2a1a1a]"
+          >
+            AI Video Analysis (Planned)
+          </Link>
+          <Link
+            href="/board/compliance-monitoring"
+            className="border-2 border-[#8b4444] bg-[#1a1a1a] px-4 py-2 text-xs font-mono text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#2a1a1a]"
+          >
+            Compliance Monitoring (Planned)
+          </Link>
+          <Link
+            href="/athlete/progression-intelligence"
+            className="border-2 border-[#8b4444] bg-[#1a1a1a] px-4 py-2 text-xs font-mono text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#2a1a1a]"
+          >
+            Progression Intelligence (Planned)
+          </Link>
+          <Link
+            href="/source-control/publication-workflow"
+            className="border-2 border-[#8b4444] bg-[#1a1a1a] px-4 py-2 text-xs font-mono text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#2a1a1a]"
+          >
+            Publication Workflow (Planned)
+          </Link>
         </div>
       </div>
     </main>

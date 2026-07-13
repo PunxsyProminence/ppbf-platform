@@ -73,6 +73,30 @@ interface TelemetryEvent {
   payload: Record<string, unknown>;
 }
 
+interface DocumentIngestApiResponse {
+  status: 'ok';
+  fileName: string;
+  classification: {
+    detectedType: string;
+    confidence: ConfidenceLevel;
+    destination: string;
+    destinationRoute: string;
+    reason: string;
+  };
+  dataverse: {
+    tableName: string;
+    recordId: string;
+  };
+  sharepoint: {
+    itemId: string;
+    webUrl?: string;
+  };
+  googleDrive: {
+    fileId: string;
+    webViewLink?: string;
+  };
+}
+
 type QueueSort = 'newest' | 'oldest' | 'status';
 type HistorySort = 'newest' | 'oldest';
 
@@ -102,7 +126,10 @@ const QUICK_ADD_OPTIONS: Array<{ label: DataType; source: string; destination: I
 ];
 
 function newId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-fallback-id`;
 }
 
 function nowIso(): string {
@@ -150,6 +177,31 @@ function statusChipClasses(status: IntakeStatus): string {
   return 'border-[#46809b] bg-[#15242e] text-[#c8e6f2]';
 }
 
+function toDataType(value: string): DataType {
+  const known: DataType[] = [
+    'System',
+    'Command',
+    'Workout',
+    'Biometric',
+    'Coach Note',
+    'Video',
+    'Athlete Check-In',
+    'Parent Observation',
+    'Board Document',
+    'Policy Draft',
+    'Incident Note',
+    'Assessment Result',
+    'File Intake',
+  ];
+  return known.includes(value as DataType) ? (value as DataType) : 'File Intake';
+}
+
+function toDestination(value: string): IntakeDestination {
+  return DESTINATION_OPTIONS.includes(value as IntakeDestination)
+    ? (value as IntakeDestination)
+    : 'SHADOW Local State';
+}
+
 export default function AdminShadowConsolePage() {
   const [consoleLogs, setConsoleLogs] = useState<ConsoleLogEntry[]>([
     {
@@ -177,6 +229,10 @@ export default function AdminShadowConsolePage() {
   const [historySort, setHistorySort] = useState<HistorySort>('newest');
   const [telemetryEvents, setTelemetryEvents] = useState<TelemetryEvent[]>([]);
   const [showTelemetry, setShowTelemetry] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const [lastIngestSummary, setLastIngestSummary] = useState<DocumentIngestApiResponse | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const handleItemActionRef = useRef(handleItemAction);
@@ -334,7 +390,7 @@ export default function AdminShadowConsolePage() {
     });
   }
 
-  function handleCommandSubmit(e: React.FormEvent) {
+  function handleCommandSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     const submitted = commandInput.trim().toLowerCase();
     if (!submitted) {
@@ -420,45 +476,107 @@ export default function AdminShadowConsolePage() {
     fileInputRef.current?.click();
   }
 
+  async function processUploadedPdf(file: File) {
+    setUploadError('');
+
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+      setUploadError('Only PDF files are accepted.');
+      appendConsoleLog({
+        source: 'SHADOW',
+        dataType: 'File Intake',
+        status: 'Validation Failed',
+        message: `Rejected upload ${file.name}. Only PDF files are supported.`,
+        destination: 'SHADOW Local State',
+      });
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadedFileName(file.name);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('source', 'Admin Upload');
+
+      const response = await fetch('/api/document-ingest', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const payload = (await response.json()) as DocumentIngestApiResponse | { error?: string };
+
+      if (!response.ok || !('status' in payload)) {
+        const errorMessage = 'error' in payload && payload.error ? payload.error : 'Ingest request failed';
+        throw new Error(errorMessage);
+      }
+
+      const destination = toDestination(payload.classification.destination);
+      const detectedType = toDataType(payload.classification.detectedType);
+      const now = nowIso();
+
+      const newItem: IntakeItem = {
+        id: newId(),
+        itemName: payload.fileName,
+        dataType: 'File Intake',
+        source: 'Admin Upload',
+        suggestedDestination: destination,
+        status: 'Pending',
+        reviewNeeded: true,
+        requiresJasonReview: true,
+        detectedType,
+        confidence: payload.classification.confidence,
+        notes: `Processed to Dataverse ${payload.dataverse.tableName} (${payload.dataverse.recordId || 'record id unavailable'}). SharePoint item ${payload.sharepoint.itemId}. Google file ${payload.googleDrive.fileId}.`,
+        destinationRoute: payload.classification.destinationRoute || routeForDestination(destination),
+        timestamp: now,
+        lastUpdatedAt: now,
+      };
+
+      setPendingQueue((prev) => [newItem, ...prev]);
+      setSelectedItemId(newItem.id);
+      setLastIngestSummary(payload);
+
+      appendConsoleLog({
+        source: 'SHADOW',
+        dataType: 'File Intake',
+        status: 'Processed',
+        message: `PDF processed and staged: ${payload.fileName}. Routed to ${destination}.`,
+        destination,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown upload failure';
+      setUploadError(message);
+      appendConsoleLog({
+        source: 'SHADOW',
+        dataType: 'File Intake',
+        status: 'Error',
+        message: `Upload processing failed: ${message}`,
+        destination: 'SHADOW Local State',
+      });
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  }
+
   function handleFileUploadChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) {
       return;
     }
+    void processUploadedPdf(file);
+  }
 
-    setUploadedFileName(file.name);
-
-    const now = nowIso();
-    const newItem: IntakeItem = {
-      id: newId(),
-      itemName: file.name,
-      dataType: 'File Intake',
-      source: 'Admin Upload',
-      suggestedDestination: 'SHADOW Local State',
-      status: 'Pending',
-      reviewNeeded: true,
-      requiresJasonReview: true,
-      detectedType: 'File Intake',
-      confidence: 'Low',
-      notes: 'File registered in front-end intake queue. Parsing/import is intentionally disabled in this phase.',
-      destinationRoute: '/admin/shadow',
-      timestamp: now,
-      lastUpdatedAt: now,
-    };
-
-    setPendingQueue((prev) => [newItem, ...prev]);
-    setSelectedItemId(newItem.id);
-    appendConsoleLog({
-      source: 'Admin',
-      dataType: 'File Intake',
-      status: 'Pending',
-      message: `Upload clicked and file staged: ${file.name}`,
-      destination: 'SHADOW Local State',
-    });
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+  function handleFileDrop(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setIsDragOver(false);
+    const file = event.dataTransfer.files?.[0];
+    if (!file) {
+      return;
     }
+    void processUploadedPdf(file);
   }
 
   function handleQuickAdd(dataType: DataType, source: string, destination: IntakeDestination, route: string) {
@@ -571,7 +689,7 @@ export default function AdminShadowConsolePage() {
   const commandHints = ['merge', 'status', 'list', 'clear', 'summarize', 'classify', 'stage', 'approve', 'reject'];
 
   return (
-    <RoleStandaloneView roleLabel="SHADOW Admin Console" routeLabel="/admin/shadow" allowedRoles={['admin']}>
+    <RoleStandaloneView roleLabel="SHADOW Admin Console" routeLabel="/admin/shadow" allowedRoles={['admin']} showShellHeader={false}>
       <main className="grid gap-6 xl:grid-cols-[1.25fr_0.95fr]">
         <section className="space-y-6 border-4 border-[#8b4444] bg-[#0a0a0a]/70 p-6">
           <div className="mb-6 border-b border-[#8b4444]/20 pb-4">
@@ -731,22 +849,46 @@ export default function AdminShadowConsolePage() {
             <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">Data Intake Sources</p>
             <h3 className="mt-2 text-xl font-black text-[#e8d7c6]">External Sources</h3>
 
-            <div className="mt-4 space-y-2">
+            <div
+              className={`mt-4 space-y-2 rounded border-2 border-dashed p-3 transition ${
+                isDragOver ? 'border-[#e8d7c6] bg-[#3a2a1a]' : 'border-[#8b5a2b] bg-[#1a120a]'
+              }`}
+              onDragOver={(event) => {
+                event.preventDefault();
+                setIsDragOver(true);
+              }}
+              onDragLeave={() => setIsDragOver(false)}
+              onDrop={handleFileDrop}
+            >
+              <p className="text-[12px] font-mono uppercase tracking-[0.08em] text-[#d4a574]">
+                Drop PDF here or use the upload button
+              </p>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".json,.csv,.txt"
+                accept=".pdf,application/pdf"
                 onChange={handleFileUploadChange}
                 className="hidden"
               />
               <button
                 type="button"
                 onClick={handleUploadButtonClick}
+                disabled={isUploading}
                 className="h-11 w-full border-2 border-[#d4a574] bg-[#2a1a0a] px-3 text-[14px] font-mono text-[#d4a574] transition hover:border-[#e8d7c6] hover:bg-[#3a2a1a] hover:text-[#e8d7c6]"
               >
-                Upload File
+                {isUploading ? 'Processing PDF...' : 'Upload PDF'}
               </button>
               {uploadedFileName && <p className="text-[14px] text-[#d4a574]/80">Last staged file: {uploadedFileName}</p>}
+              {uploadError && <p className="text-[13px] text-[#f2c3c3]">{uploadError}</p>}
+              {lastIngestSummary && (
+                <div className="border border-[#8b5a2b] bg-[#21160d] p-2 text-[12px] text-[#e8d7c6]">
+                  <p>Detected Type: {lastIngestSummary.classification.detectedType}</p>
+                  <p>Destination: {lastIngestSummary.classification.destination}</p>
+                  <p>Dataverse: {lastIngestSummary.dataverse.tableName} {lastIngestSummary.dataverse.recordId ? `(${lastIngestSummary.dataverse.recordId})` : ''}</p>
+                  <p>SharePoint Item: {lastIngestSummary.sharepoint.itemId}</p>
+                  <p>Google File: {lastIngestSummary.googleDrive.fileId}</p>
+                </div>
+              )}
             </div>
 
             <div className="mt-4 border-t border-[#d4a574]/20 pt-3">

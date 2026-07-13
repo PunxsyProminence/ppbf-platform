@@ -83,6 +83,10 @@ const developmentLab = [
   { label: 'Scenario Simulator', href: '/simulator' },
   { label: 'Audit Trace', href: '/audit' },
   { label: 'Source Control', href: '/source-control' },
+  { label: 'AI/ML Video Analysis', href: '/coach/video-analysis' },
+  { label: 'Compliance Monitoring', href: '/board/compliance-monitoring' },
+  { label: 'Progression Intelligence', href: '/athlete/progression-intelligence' },
+  { label: 'Publication Workflow', href: '/source-control/publication-workflow' },
 ];
 
 const utilityLinks = [
@@ -106,15 +110,16 @@ const capabilityRadar: Array<{ name: string; state: CapabilityState; href?: stri
   { name: 'Scholarship Tracking', state: 'PARTIAL', href: '/admin?tab=revenue', notes: 'Scholarship support status is visible in front-end lanes.' },
   { name: 'Membership Tracking', state: 'PARTIAL', href: '/admin?tab=revenue', notes: 'Program membership lanes are present in planning mode.' },
   { name: 'SHADOW Monitoring', state: 'PARTIAL', href: '/shadow', notes: 'SHADOW interaction exists with front-end role surfaces.' },
-  { name: 'AI Video Analysis', state: 'PLACEHOLDER', notes: 'Planned capability placeholder only. Not yet implemented.' },
+  { name: 'AI Video Analysis', state: 'PLACEHOLDER', href: '/coach/video-analysis', notes: 'Planned surface with mock-only video analysis cards. FRONT-END PLACEHOLDER, NOT YET AUTOMATED, BACKEND REQUIRED.' },
   { name: 'Video Review Intelligence', state: 'PLACEHOLDER', notes: 'Planned capability placeholder only. Not yet implemented.' },
   { name: 'Performance Analytics', state: 'PLACEHOLDER', notes: 'Planned capability placeholder only. Not yet implemented.' },
-  { name: 'Grant Compliance Intelligence', state: 'PLACEHOLDER', notes: 'Planned capability placeholder only. Not yet implemented.' },
+  { name: 'Grant Compliance Intelligence', state: 'PLACEHOLDER', href: '/board/compliance-monitoring', notes: 'Planned board/admin compliance watch surfaces. FRONT-END PLACEHOLDER, NOT YET AUTOMATED, BACKEND REQUIRED.' },
+  { name: 'Closed-Loop Progression Intelligence', state: 'PLACEHOLDER', href: '/athlete/progression-intelligence', notes: 'Planned progression intelligence surfaces for athlete/coach/parent visibility.' },
   { name: 'Sports Medicine', state: 'PLACEHOLDER', href: '/coach/sports-medicine', notes: 'Front-end scaffold only. Planned capability and not yet implemented.' },
   { name: 'Volunteer Management', state: 'PLACEHOLDER', href: '/admin/volunteer-management', notes: 'Front-end scaffold only. Planned capability and not yet implemented.' },
   { name: 'Wrestling League Management', state: 'PLACEHOLDER', href: '/operations/wrestling-league', notes: 'Front-end scaffold only. Planned capability and not yet implemented.' },
   { name: 'External Competition Platform', state: 'PLACEHOLDER', href: '/operations/external-competition', notes: 'Front-end scaffold only. Planned capability and not yet implemented.' },
-  { name: 'Publication Workflow Automation', state: 'MISSING', notes: 'No automation workflow yet. Current flow is manual and front-end staged.' },
+  { name: 'Publication Workflow Automation', state: 'PLACEHOLDER', href: '/source-control/publication-workflow', notes: 'Planned publication workflow surface is now visible as front-end placeholder. Not yet automated.' },
 ];
 
 function capabilityTone(state: CapabilityState): string {

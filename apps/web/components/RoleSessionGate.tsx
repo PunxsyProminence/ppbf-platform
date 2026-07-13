@@ -6,8 +6,8 @@ import { clearRoleSession, getPostLoginRoute, getRoleSessionSnapshot, subscribeR
 import type { ClubRole } from './roleRoutes';
 
 interface RoleSessionGateProps {
-  allowedRoles: ClubRole[];
-  children: ReactNode;
+  readonly allowedRoles: ClubRole[];
+  readonly children: ReactNode;
 }
 
 export default function RoleSessionGate({ allowedRoles, children }: RoleSessionGateProps) {
@@ -25,7 +25,6 @@ export default function RoleSessionGate({ allowedRoles, children }: RoleSessionG
 
     if (!allowed) {
       router.replace(getPostLoginRoute(session));
-      return;
     }
 
   }, [allowed, router, session]);

@@ -16,7 +16,7 @@ function getStoredAnnouncement(): string {
   }
 
   const savedAnnouncement = window.localStorage.getItem(ANNOUNCEMENT_STORAGE_KEY);
-  return savedAnnouncement && savedAnnouncement.trim() ? savedAnnouncement : DEFAULT_ANNOUNCEMENT;
+  return savedAnnouncement?.trim() ? savedAnnouncement : DEFAULT_ANNOUNCEMENT;
 }
 
 export default function LoginPage() {
