@@ -1,20 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Anton:wght@400&family=JetBrains+Mono:wght@400;700&display=swap');
 @import "tailwindcss";
 
-a {
-  text-decoration: none;
-  color: #464feb;
-}
-
-tr th,
-tr td {
-  border: 1px solid #e6e6e6;
-}
-
-tr th {
-  background-color: #f5f5f5;
-}
-
 :root {
   /* Old Boxing Poster Palette - Tans + Red + Black */
   --background: #0a0a0a;

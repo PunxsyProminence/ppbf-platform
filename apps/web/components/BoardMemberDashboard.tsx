@@ -210,7 +210,7 @@ export default function BoardMemberDashboard({ seat, overviewMetrics, links, all
 
           <section className="mt-6 border-2 border-[#8b4444] bg-[#121212] p-5">
             <p className="text-xs font-mono uppercase tracking-[0.25em] text-[#d4a574]">Unified Governance Tabs</p>
-            <div className="mt-4 grid gap-2 sm:grid-cols-3 xl:grid-cols-11">
+            <div className="mt-4 grid gap-2 sm:grid-cols-3 xl:grid-cols-9">
               {tabs.map((tab) => (
                 <button
                   key={tab}

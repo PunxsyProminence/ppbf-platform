@@ -200,13 +200,13 @@ const tabs: Array<{ id: RevenueFundingTab; label: string }> = [
 function statusTone(status: string): string {
   const normalized = status.toLowerCase();
   if (normalized.includes('active') || normalized.includes('received') || normalized.includes('awarded')) {
-    return 'text-[#8dd79a] border-[#365640] bg-[#17231a]';
+    return 'text-[#e8d7c6] border-[#8b4444] bg-[#2b1a12]';
   }
   if (normalized.includes('pending') || normalized.includes('review') || normalized.includes('draft') || normalized.includes('submitted')) {
-    return 'text-[#e7cf82] border-[#6a5727] bg-[#29220f]';
+    return 'text-[#d4a574] border-[#694838] bg-[#101010]';
   }
   if (normalized.includes('past due') || normalized.includes('declined') || normalized.includes('not connected')) {
-    return 'text-[#f29c9c] border-[#6b2f2f] bg-[#2a1414]';
+    return 'text-[#e8d7c6] border-[#8b4444] bg-[#2f1717]';
   }
   return 'text-[#cfbfae] border-[#4a3a2a] bg-[#171515]';
 }
@@ -214,8 +214,8 @@ function statusTone(status: string): string {
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="border border-[#3a3a3a] bg-[#161616] p-5">
-      <h3 className="text-[18px] font-bold text-[#f2e7da]">{title}</h3>
-      <div className="mt-3 text-[16px] text-[#cfbfae]">{children}</div>
+      <h3 className="text-lg font-bold text-[#f2e7da]">{title}</h3>
+      <div className="mt-3 text-base text-[#cfbfae]">{children}</div>
     </section>
   );
 }
@@ -274,7 +274,7 @@ export default function RevenueFundingCenter() {
       <article className="border-2 border-[#8b4444] bg-[#151515] p-6">
         <p className="text-[14px] font-mono uppercase tracking-[0.14em] text-[#d4a574]">Revenue Operations</p>
         <h2 className="mt-2 text-[34px] font-black text-[#f2e7da]">Revenue & Funding Center</h2>
-        <p className="mt-3 text-[16px] leading-7 text-[#cfbfae]">
+        <p className="mt-3 text-base leading-7 text-[#cfbfae]">
           Front-end control surface for memberships, donations, sponsors, B2B accounts, wholesale accounts, grants, scholarships, and funding workflows.
         </p>
       </article>
@@ -310,8 +310,8 @@ export default function RevenueFundingCenter() {
           <SectionCard title="Revenue Lane Summary">
             <div className="grid gap-3 md:grid-cols-2">
               <div className="border border-[#3a3a3a] bg-[#101010] p-4">
-                <p className="text-[18px] font-bold text-[#f2e7da]">Operational Revenue</p>
-                <ul className="mt-2 space-y-1 text-[16px]">
+                <p className="text-lg font-bold text-[#f2e7da]">Operational Revenue</p>
+                <ul className="mt-2 space-y-1 text-base">
                   <li>Memberships</li>
                   <li>Products / Equipment</li>
                   <li>Wholesale Accounts</li>
@@ -319,8 +319,8 @@ export default function RevenueFundingCenter() {
                 </ul>
               </div>
               <div className="border border-[#3a3a3a] bg-[#101010] p-4">
-                <p className="text-[18px] font-bold text-[#f2e7da]">Philanthropic / Nonprofit Funding</p>
-                <ul className="mt-2 space-y-1 text-[16px]">
+                <p className="text-lg font-bold text-[#f2e7da]">Philanthropic / Nonprofit Funding</p>
+                <ul className="mt-2 space-y-1 text-base">
                   <li>Donations</li>
                   <li>Sponsors</li>
                   <li>Grants</li>
@@ -335,7 +335,7 @@ export default function RevenueFundingCenter() {
               {pendingItems.map((item) => (
                 <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 border border-[#3a3a3a] bg-[#101010] p-3">
                   <div>
-                    <p className="text-[16px] font-semibold text-[#f2e7da]">{item.title}</p>
+                    <p className="text-base font-semibold text-[#f2e7da]">{item.title}</p>
                     <p className="text-[14px] text-[#bfb3a6]">{item.revenueType} | {item.amountPlaceholder}</p>
                   </div>
                   <span className={`border px-2 py-1 text-[14px] font-semibold ${statusTone(item.status)}`}>{item.status}</span>
@@ -369,7 +369,7 @@ export default function RevenueFundingCenter() {
           </SectionCard>
 
           <SectionCard title="SHADOW FUNDING WATCH">
-            <ul className="space-y-2 text-[16px]">
+            <ul className="space-y-2 text-base">
               <li>- Donation review pending</li>
               <li>- Grant reporting placeholder</li>
               <li>- Sponsor follow-up needed</li>
@@ -390,10 +390,10 @@ export default function RevenueFundingCenter() {
           <div className="space-y-3">
             {membershipRows.map((row) => (
               <div key={row.join('|')} className="border border-[#3a3a3a] bg-[#101010] p-4">
-                <p className="text-[18px] font-bold text-[#f2e7da]">{row[0]}</p>
+                <p className="text-lg font-bold text-[#f2e7da]">{row[0]}</p>
                 <p className="text-[14px] text-[#bfb3a6]">{row[1]} | Membership Type: {row[2]} | Amount Placeholder: {row[3]}</p>
-                <p className="mt-1 text-[16px]">Status: {row[4]} | Start Date: {row[5]}</p>
-                <p className="mt-1 text-[16px]">Notes: {row[6]} | Admin Review Needed: {row[7]}</p>
+                <p className="mt-1 text-base">Status: {row[4]} | Start Date: {row[5]}</p>
+                <p className="mt-1 text-base">Notes: {row[6]} | Admin Review Needed: {row[7]}</p>
               </div>
             ))}
             <p className="text-[14px] text-[#cfbfae]">Membership types: Youth Athlete, Adult Fitness, Competition Track, Adaptive Training, Family Membership, Scholarship / Waived, Custom.</p>
@@ -406,15 +406,15 @@ export default function RevenueFundingCenter() {
           <div className="space-y-3">
             {donationRows.map((row) => (
               <div key={row.join('|')} className="border border-[#3a3a3a] bg-[#101010] p-4">
-                <p className="text-[18px] font-bold text-[#f2e7da]">{row[0]}</p>
-                <p className="text-[16px]">Type: {row[1]} | Amount Placeholder: {row[2]} | One-Time / Recurring: {row[3]}</p>
-                <p className="text-[16px]">Restricted / Unrestricted: {row[4]} | Program Designation: {row[5]}</p>
-                <p className="text-[16px]">Receipt Needed: {row[6]} | Status: {row[7]}</p>
-                <p className="text-[16px]">Notes: {row[8]}</p>
+                <p className="text-lg font-bold text-[#f2e7da]">{row[0]}</p>
+                <p className="text-base">Type: {row[1]} | Amount Placeholder: {row[2]} | One-Time / Recurring: {row[3]}</p>
+                <p className="text-base">Restricted / Unrestricted: {row[4]} | Program Designation: {row[5]}</p>
+                <p className="text-base">Receipt Needed: {row[6]} | Status: {row[7]}</p>
+                <p className="text-base">Notes: {row[8]}</p>
               </div>
             ))}
             <p className="text-[14px] text-[#cfbfae]">Donation types: General Donation, Youth Program Support, Equipment Support, Scholarship Support, Facility Support, Event Support, Memorial / Honorary Placeholder.</p>
-            <p className="border border-[#6a5727] bg-[#2a2411] p-3 text-[14px] text-[#e7cf82]">Front-end tracking only. This does not process donations or issue tax receipts.</p>
+            <p className="border border-[#8b4444] bg-[#2b1a12] p-3 text-[14px] text-[#d4a574]">Front-end tracking only. This does not process donations or issue tax receipts.</p>
           </div>
         </SectionCard>
       )}
@@ -424,10 +424,10 @@ export default function RevenueFundingCenter() {
           <div className="space-y-3">
             {sponsorRows.map((row) => (
               <div key={row.join('|')} className="border border-[#3a3a3a] bg-[#101010] p-4">
-                <p className="text-[18px] font-bold text-[#f2e7da]">{row[0]}</p>
-                <p className="text-[16px]">Contact: {row[1]} | Sponsor Type: {row[2]} | Support Type: {row[3]}</p>
-                <p className="text-[16px]">Program Supported: {row[4]} | Status: {row[5]} | Renewal Date: {row[6]}</p>
-                <p className="text-[16px]">Notes: {row[7]}</p>
+                <p className="text-lg font-bold text-[#f2e7da]">{row[0]}</p>
+                <p className="text-base">Contact: {row[1]} | Sponsor Type: {row[2]} | Support Type: {row[3]}</p>
+                <p className="text-base">Program Supported: {row[4]} | Status: {row[5]} | Renewal Date: {row[6]}</p>
+                <p className="text-base">Notes: {row[7]}</p>
               </div>
             ))}
             <p className="text-[14px] text-[#cfbfae]">Sponsor types: Local Business, Community Partner, Veteran Organization, School Partner, Event Sponsor, Equipment Sponsor, General Sponsor.</p>
@@ -441,11 +441,11 @@ export default function RevenueFundingCenter() {
           <div className="space-y-3">
             {b2bRows.map((row) => (
               <div key={row.join('|')} className="border border-[#3a3a3a] bg-[#101010] p-4">
-                <p className="text-[18px] font-bold text-[#f2e7da]">{row[0]}</p>
-                <p className="text-[16px]">Contact: {row[1]} | Account Type: {row[2]} | Lead Status: {row[3]}</p>
-                <p className="text-[16px]">Program Interest: {row[4]} | Estimated Value Placeholder: {row[5]}</p>
-                <p className="text-[16px]">Contract / Agreement: {row[6]} | Next Step: {row[7]}</p>
-                <p className="text-[16px]">Notes: {row[8]}</p>
+                <p className="text-lg font-bold text-[#f2e7da]">{row[0]}</p>
+                <p className="text-base">Contact: {row[1]} | Account Type: {row[2]} | Lead Status: {row[3]}</p>
+                <p className="text-base">Program Interest: {row[4]} | Estimated Value Placeholder: {row[5]}</p>
+                <p className="text-base">Contract / Agreement: {row[6]} | Next Step: {row[7]}</p>
+                <p className="text-base">Notes: {row[8]}</p>
               </div>
             ))}
             <p className="text-[14px] text-[#cfbfae]">B2B account types: School, Youth Agency, Municipality, Veterans Organization, Community Organization, Corporate Wellness, Partner Gym, Athletic Club, Other.</p>
@@ -459,10 +459,10 @@ export default function RevenueFundingCenter() {
           <div className="space-y-3">
             {wholesaleRows.map((row) => (
               <div key={row.join('|')} className="border border-[#3a3a3a] bg-[#101010] p-4">
-                <p className="text-[18px] font-bold text-[#f2e7da]">{row[0]}</p>
-                <p className="text-[16px]">Account Type: {row[1]} | Contact: {row[2]} | Product Interest: {row[3]}</p>
-                <p className="text-[16px]">Pricing Tier: {row[4]} | Minimum Order: {row[5]} | Status: {row[6]}</p>
-                <p className="text-[16px]">Notes: {row[7]}</p>
+                <p className="text-lg font-bold text-[#f2e7da]">{row[0]}</p>
+                <p className="text-base">Account Type: {row[1]} | Contact: {row[2]} | Product Interest: {row[3]}</p>
+                <p className="text-base">Pricing Tier: {row[4]} | Minimum Order: {row[5]} | Status: {row[6]}</p>
+                <p className="text-base">Notes: {row[7]}</p>
               </div>
             ))}
             <p className="text-[14px] text-[#cfbfae]">Wholesale account types: Retail Partner, Club Partner, School Program, Gym / Fitness Facility, Event Vendor, Fundraising Partner.</p>
@@ -476,10 +476,10 @@ export default function RevenueFundingCenter() {
           <div className="space-y-3">
             {grantRows.map((row) => (
               <div key={row.join('|')} className="border border-[#3a3a3a] bg-[#101010] p-4">
-                <p className="text-[18px] font-bold text-[#f2e7da]">{row[0]}</p>
-                <p className="text-[16px]">Funder: {row[1]} | Program Area: {row[2]} | Amount Placeholder: {row[3]}</p>
-                <p className="text-[16px]">Status: {row[4]} | Due Date: {row[5]} | Restricted Purpose: {row[6]}</p>
-                <p className="text-[16px]">Reporting Required: {row[7]} | Notes: {row[8]}</p>
+                <p className="text-lg font-bold text-[#f2e7da]">{row[0]}</p>
+                <p className="text-base">Funder: {row[1]} | Program Area: {row[2]} | Amount Placeholder: {row[3]}</p>
+                <p className="text-base">Status: {row[4]} | Due Date: {row[5]} | Restricted Purpose: {row[6]}</p>
+                <p className="text-base">Reporting Required: {row[7]} | Notes: {row[8]}</p>
               </div>
             ))}
             <p className="text-[14px] text-[#cfbfae]">Program areas: Youth Development, Fitness / Wellness, Veteran-Owned Community Work, Facility, Equipment, Technology, Safety, Education, Adaptive Training.</p>
@@ -492,14 +492,14 @@ export default function RevenueFundingCenter() {
           <div className="space-y-3">
             {scholarshipRows.map((row) => (
               <div key={row.join('|')} className="border border-[#3a3a3a] bg-[#101010] p-4">
-                <p className="text-[18px] font-bold text-[#f2e7da]">{row[0]}</p>
-                <p className="text-[16px]">Support Type: {row[1]} | Amount Placeholder: {row[2]}</p>
-                <p className="text-[16px]">Sponsor / Funding Source: {row[3]} | Status: {row[4]} | Review Needed: {row[5]}</p>
-                <p className="text-[16px]">Notes: {row[6]}</p>
+                <p className="text-lg font-bold text-[#f2e7da]">{row[0]}</p>
+                <p className="text-base">Support Type: {row[1]} | Amount Placeholder: {row[2]}</p>
+                <p className="text-base">Sponsor / Funding Source: {row[3]} | Status: {row[4]} | Review Needed: {row[5]}</p>
+                <p className="text-base">Notes: {row[6]}</p>
               </div>
             ))}
             <p className="text-[14px] text-[#cfbfae]">Support types: Full Scholarship, Partial Scholarship, Dues Waiver, Equipment Assistance, Competition Fee Support, Travel Support, Program Support.</p>
-            <p className="border border-[#6a5727] bg-[#2a2411] p-3 text-[14px] text-[#e7cf82]">Scholarship tracking is for internal review only and does not expose private financial data to public users.</p>
+            <p className="border border-[#8b4444] bg-[#2b1a12] p-3 text-[14px] text-[#d4a574]">Scholarship tracking is for internal review only and does not expose private financial data to public users.</p>
           </div>
         </SectionCard>
       )}
@@ -509,10 +509,10 @@ export default function RevenueFundingCenter() {
           <div className="space-y-3">
             {productRows.map((row) => (
               <div key={row.join('|')} className="border border-[#3a3a3a] bg-[#101010] p-4">
-                <p className="text-[18px] font-bold text-[#f2e7da]">{row[0]}</p>
-                <p className="text-[16px]">Category: {row[1]} | Retail Price Placeholder: {row[2]} | Wholesale Price Placeholder: {row[3]}</p>
-                <p className="text-[16px]">Inventory Placeholder: {row[4]} | Status: {row[5]}</p>
-                <p className="text-[16px]">Notes: {row[6]}</p>
+                <p className="text-lg font-bold text-[#f2e7da]">{row[0]}</p>
+                <p className="text-base">Category: {row[1]} | Retail Price Placeholder: {row[2]} | Wholesale Price Placeholder: {row[3]}</p>
+                <p className="text-base">Inventory Placeholder: {row[4]} | Status: {row[5]}</p>
+                <p className="text-base">Notes: {row[6]}</p>
               </div>
             ))}
             <p className="text-[14px] text-[#cfbfae]">Categories: Gloves, Wraps, Apparel, Training Gear, Club Packages, Fundraiser Items, Wholesale Bundles.</p>
@@ -525,26 +525,26 @@ export default function RevenueFundingCenter() {
         <SectionCard title="Payment Settings Placeholder">
           <div className="grid gap-3 md:grid-cols-2">
             {paymentIntegrations.map((integration) => (
-              <article key={integration.provider} className="border border-[#6b2f2f] bg-[#2a1414] p-4">
-                <p className="text-[18px] font-bold text-[#f2e7da]">{integration.provider}</p>
-                <p className="mt-2 text-[16px] text-[#f29c9c]">{integration.status}</p>
+              <article key={integration.provider} className="border border-[#8b4444] bg-[#2f1717] p-4">
+                <p className="text-lg font-bold text-[#f2e7da]">{integration.provider}</p>
+                <p className="mt-2 text-base text-[#d4a574]">{integration.status}</p>
                 <p className="text-[14px] text-[#cfbfae]">{integration.notes}</p>
               </article>
             ))}
           </div>
-          <p className="mt-4 border border-[#6b2f2f] bg-[#2a1414] p-3 text-[14px] text-[#f29c9c]">No payment processor is connected. This application does not currently process real payments.</p>
+          <p className="mt-4 border border-[#8b4444] bg-[#2f1717] p-3 text-[14px] text-[#d4a574]">No payment processor is connected. This application does not currently process real payments.</p>
         </SectionCard>
       )}
 
       {activeTab === 'treasurer-review' && (
         <SectionCard title="Treasurer Review Queue">
-          <p className="text-[16px]">Treasurer Oversight View - Future Board Integration.</p>
+          <p className="text-base">Treasurer Oversight View - Future Board Integration.</p>
           <div className="mt-3 space-y-2">
             {treasurerQueue.map((item) => (
               <div key={item.join('|')} className="border border-[#3a3a3a] bg-[#101010] p-3">
-                <p className="text-[18px] font-semibold text-[#f2e7da]">{item[0]}</p>
-                <p className="text-[16px]">Category: {item[1]} | Status: {item[2]} | Review Needed: {item[3]}</p>
-                <p className="text-[16px]">Notes: {item[4]}</p>
+                <p className="text-lg font-semibold text-[#f2e7da]">{item[0]}</p>
+                <p className="text-base">Category: {item[1]} | Status: {item[2]} | Review Needed: {item[3]}</p>
+                <p className="text-base">Notes: {item[4]}</p>
               </div>
             ))}
           </div>
@@ -552,14 +552,14 @@ export default function RevenueFundingCenter() {
       )}
 
       <section className="border-2 border-[#8b4444] bg-[#1a1a1a] p-5">
-        <h3 className="text-[18px] font-bold text-[#f2e7da]">Compliance Boundary</h3>
-        <p className="mt-2 text-[16px] leading-7 text-[#cfbfae]">
+        <h3 className="text-lg font-bold text-[#f2e7da]">Compliance Boundary</h3>
+        <p className="mt-2 text-base leading-7 text-[#cfbfae]">
           Front-end planning tool only. This screen does not process payments, issue receipts, create invoices, calculate taxes, store card data, or provide legal/financial advice.
         </p>
       </section>
 
       <details className="border border-[#3a3a3a] bg-[#141414] p-4">
-        <summary className="cursor-pointer text-[16px] font-semibold text-[#f2e7da]">Local Placeholder Data Structures</summary>
+        <summary className="cursor-pointer text-base font-semibold text-[#f2e7da]">Local Placeholder Data Structures</summary>
         <div className="mt-3 space-y-2 text-[14px] text-[#cfbfae]">
           <p>RevenueAccount: id, name, accountType, contactName, emailPlaceholder, phonePlaceholder, category, status, assignedOwner, notes, createdAt, updatedAt.</p>
           <p>RevenueItem: id, title, revenueType, amountPlaceholder, status, relatedAccountId, restrictedPurpose, reviewNeeded, notes.</p>
@@ -570,3 +570,4 @@ export default function RevenueFundingCenter() {
     </section>
   );
 }
+

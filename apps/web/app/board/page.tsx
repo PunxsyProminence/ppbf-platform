@@ -23,7 +23,7 @@ export default function BoardHubPage() {
 
         <section className="mt-8 border-2 border-[#8b4444] bg-[#121212] p-5">
           <p className="text-xs font-mono uppercase tracking-[0.28em] text-[#d4a574]">Board Overview Strip</p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
             {boardOverviewStrip.map((item) => (
               <article key={item.label} className="border border-[#654535] bg-[#0d0d0d] p-3">
                 <p className="text-[12px] font-mono uppercase tracking-[0.14em] text-[#aa9484]">{item.label}</p>
