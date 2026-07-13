@@ -88,6 +88,7 @@ const developmentLab = [
 const utilityLinks = [
   { label: 'The Bell', href: '/login' },
   { label: 'Entry Point', href: '/dashboard' },
+  { label: 'Revenue Center', href: '/admin?tab=revenue' },
   { label: 'The Office', href: '/admin/shadow' },
   { label: 'The Stands', href: '/guardian' },
 ];

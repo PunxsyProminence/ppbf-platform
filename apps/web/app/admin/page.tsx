@@ -92,6 +92,16 @@ const INTEGRATION_STUBS = [
   'Track-capability mapping service (replace preview map)',
 ];
 
+const TAB_KEYS: TabKey[] = ['overview', 'library', 'matrix', 'builder', 'revenue'];
+
+function parseTabKey(raw: string | null): TabKey | null {
+  if (!raw) {
+    return null;
+  }
+
+  return TAB_KEYS.includes(raw as TabKey) ? (raw as TabKey) : null;
+}
+
 const fallbackCapabilities: Capability[] = [
   {
     id: 1,
@@ -229,7 +239,13 @@ const localCapabilityRepository: CapabilityRepository = {
 
 export default function AdminCapabilitiesPage() {
   const [capabilities, setCapabilities] = useState<Capability[]>(() => localCapabilityRepository.load());
-  const [activeTab, setActiveTab] = useState<TabKey>('overview');
+  const [activeTab, setActiveTab] = useState<TabKey>(() => {
+    if (typeof window === 'undefined') {
+      return 'overview';
+    }
+
+    return parseTabKey(new URLSearchParams(window.location.search).get('tab')) ?? 'overview';
+  });
   const [selectedAthleteId, setSelectedAthleteId] = useState(() => readActiveAthleteProfileId());
   const [trackAssignments, setTrackAssignments] = useState<TrackAssignments>(() => loadTrackAssignments());
 
