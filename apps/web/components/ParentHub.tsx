@@ -199,7 +199,13 @@ export default function ParentHub() {
             <p className="text-xs font-mono uppercase tracking-[0.15em] text-[#d4a574]">Parent Support Hub</p>
             <h1 className="text-3xl md:text-4xl font-black mt-2">Family Development Dashboard</h1>
             <p className="text-base text-[#b0a095] mt-2">Support your child&apos;s boxing journey with at-home assignments, family goals, and coach communication.</p>
+            <p className="text-sm font-mono uppercase tracking-[0.14em] text-[#cfbfae] mt-2">Old Gauze | Sweat | Grit | Grind | Dedication | Motivation</p>
           </div>
+        </div>
+
+        <div className="border border-[#694838] bg-[#14100d] p-4">
+          <p className="text-sm text-[#d4a574] font-semibold">Family Commitment</p>
+          <p className="mt-1 text-sm text-[#cfbfae]">Consistency at home builds confidence in the gym. Every ride, reminder, and check-in strengthens grit and motivation.</p>
         </div>
 
         {/* ROLE SUMMARY PANEL */}

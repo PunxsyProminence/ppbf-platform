@@ -211,7 +211,13 @@ export default function AthleteWorkspace() {
             <p className="text-xs font-mono uppercase tracking-[0.15em] text-[#d4a574]">Athlete Development Workspace</p>
             <h1 className="text-3xl md:text-4xl font-black mt-2">My Training Dashboard</h1>
             <p className="text-base text-[#b0a095] mt-2">Track readiness, execute daily work, develop your boxing skills, and achieve SMART goals.</p>
+            <p className="text-sm font-mono uppercase tracking-[0.14em] text-[#cfbfae] mt-2">Old Gauze | Sweat | Grit | Grind | Dedication | Motivation</p>
           </div>
+        </div>
+
+        <div className="border border-[#694838] bg-[#14100d] p-4">
+          <p className="text-sm text-[#d4a574] font-semibold">Daily Reminder</p>
+          <p className="mt-1 text-sm text-[#cfbfae]">Show up. Do the hard rounds. Own the details. Progress is earned through consistent grit and disciplined effort.</p>
         </div>
 
         {/* ROLE SUMMARY PANEL */}

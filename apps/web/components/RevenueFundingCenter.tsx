@@ -378,7 +378,13 @@ export default function RevenueFundingCenter() {
         <p className="mt-3 text-base leading-7 text-[#cfbfae]">
           Front-end control surface for memberships, donations, sponsors, B2B accounts, wholesale accounts, grants, scholarships, and funding workflows.
         </p>
+        <p className="mt-3 text-sm font-mono uppercase tracking-[0.14em] text-[#cfbfae]">Old Gauze | Sweat | Grit | Grind | Dedication | Motivation</p>
       </article>
+
+      <section className="border border-[#694838] bg-[#14100d] p-4">
+        <p className="text-sm text-[#d4a574] font-semibold">Mission Funding Mindset</p>
+        <p className="mt-1 text-sm text-[#cfbfae]">Every dollar supports discipline, safety, and long-term growth. Keep the work clean, accountable, and purpose-driven.</p>
+      </section>
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {summaryStrip.map((item) => (

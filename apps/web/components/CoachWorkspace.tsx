@@ -120,7 +120,13 @@ export default function CoachWorkspace() {
             <p className="text-xs font-mono uppercase tracking-[0.15em] text-[#d4a574]">Coach Development Workspace</p>
             <h1 className="text-3xl md:text-4xl font-black mt-2">Live Session Management</h1>
             <p className="text-base text-[#b0a095] mt-2">Manage your program floor, develop yourself, and track athlete progress with SMART goals and assessments.</p>
+            <p className="text-sm font-mono uppercase tracking-[0.14em] text-[#cfbfae] mt-2">Old Gauze | Sweat | Grit | Grind | Dedication | Motivation</p>
           </div>
+        </div>
+
+        <div className="border border-[#694838] bg-[#14100d] p-4">
+          <p className="text-sm text-[#d4a574] font-semibold">Coach Standard</p>
+          <p className="mt-1 text-sm text-[#cfbfae]">Lead with discipline, protect the culture, and model the grind. The room rises when the coach stays locked in.</p>
         </div>
 
         {/* ROLE SUMMARY PANEL */}
