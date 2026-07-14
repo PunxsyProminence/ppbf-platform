@@ -14,8 +14,9 @@ A nonprofit, safety-first, adaptive performance platform using boxing as the mai
 
 ## Quick Start
 1. Run .\setup.ps1
-2. Apply infra/supabase/schema.sql in Supabase
-3. Start building features
+2. Configure Azure grant route env in apps/web (.env.local)
+3. Apply infra/azure/pilot_slice_postgres.sql using npm run pilot:apply-schema from apps/web
+4. Run npm run pilot:preflight and npm run gate:pilot from apps/web
 
 ## Governance
 All changes go through Layer 0. Jason final approval required.

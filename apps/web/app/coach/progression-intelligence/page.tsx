@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 
+const capabilityStatus = 'PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED | HUMAN REVIEW REQUIRED';
+
 const coachTrendPanels = [
   { title: 'Readiness Trends', note: 'Mock trend line placeholder for weekly readiness variation.', label: 'FRONT-END PLACEHOLDER' },
   { title: 'Coach Review Trends', note: 'Review cadence and pending trend checks (mock display).', label: 'COACH REVIEW REQUIRED' },
@@ -28,7 +30,7 @@ export default function CoachProgressionIntelligencePage() {
             Front-end visibility only. Recommendation logic, predictive scoring, and automation are not implemented.
           </p>
           <p className="mt-2 text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">
-            PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED
+            {capabilityStatus}
           </p>
         </header>
 
@@ -48,7 +50,7 @@ export default function CoachProgressionIntelligencePage() {
             {queueItems.map((item) => (
               <div key={item} className="border border-[#5a4a3a] bg-[#101010] p-3">
                 <p className="text-sm font-semibold text-[#e8d7c6]">{item}</p>
-                <p className="mt-1 text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">PLANNED | NOT YET AUTOMATED | BACKEND REQUIRED</p>
+                <p className="mt-1 text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">{capabilityStatus}</p>
               </div>
             ))}
           </div>

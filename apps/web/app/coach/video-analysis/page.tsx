@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 
+const capabilityStatus = 'PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED | HUMAN REVIEW REQUIRED';
+
 const videoLibrary = [
   { title: 'Session 2026-07-10 | Footwork Pod A', status: 'FRONT-END PLACEHOLDER', source: 'Coach Upload Placeholder' },
   { title: 'Session 2026-07-09 | Defense Circuit', status: 'FRONT-END PLACEHOLDER', source: 'Athlete Upload Placeholder' },
@@ -10,28 +12,28 @@ const videoLibrary = [
 ];
 
 const analysisPanels = [
-  { title: 'Skill Recognition Placeholder', detail: 'PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED' },
-  { title: 'Punch Detection Placeholder', detail: 'PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED' },
-  { title: 'Footwork Analysis Placeholder', detail: 'PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED' },
-  { title: 'Technique Scoring Placeholder', detail: 'PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | ML REQUIRED | BACKEND REQUIRED' },
-  { title: 'Movement Analysis Placeholder', detail: 'PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED' },
+  { title: 'Skill Recognition Placeholder', detail: capabilityStatus },
+  { title: 'Punch Detection Placeholder', detail: capabilityStatus },
+  { title: 'Footwork Analysis Placeholder', detail: capabilityStatus },
+  { title: 'Technique Scoring Placeholder', detail: `${capabilityStatus} | ML REQUIRED` },
+  { title: 'Movement Analysis Placeholder', detail: capabilityStatus },
 ];
 
 const reviewComparisons = [
   {
     title: 'Session Comparison',
     body: 'Compare Session A vs Session B clips, coaching notes, and mock trend flags.',
-    state: 'NOT YET AUTOMATED | BACKEND REQUIRED',
+    state: capabilityStatus,
   },
   {
     title: 'Before / After Comparison',
     body: 'Side-by-side frame placeholder for earlier and current training cycle clips.',
-    state: 'NOT YET AUTOMATED | BACKEND REQUIRED',
+    state: capabilityStatus,
   },
   {
     title: 'Analysis History',
     body: 'Mock history of analysis runs, reviewer notes, and role-attributed review checkpoints.',
-    state: 'NOT YET AUTOMATED | BACKEND REQUIRED',
+    state: capabilityStatus,
   },
 ];
 
@@ -46,7 +48,7 @@ export default function CoachVideoAnalysisPage() {
             AI Video Analysis - Planned. All results in this route are mock display only.
           </p>
           <p className="mt-2 text-xs font-mono uppercase tracking-[0.09em] text-[#d4a574]">
-            PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED
+            {capabilityStatus}
           </p>
         </header>
 
@@ -70,7 +72,7 @@ export default function CoachVideoAnalysisPage() {
               <p className="text-sm text-[#e8d7c6]">Upload interaction is front-end placeholder only in this pass.</p>
               <p className="mt-2 text-xs text-[#cfbfae]">No video processing, no ML inference, and no computer-vision code is running.</p>
               <p className="mt-2 text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">
-                PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED
+                {capabilityStatus}
               </p>
             </div>
           </article>

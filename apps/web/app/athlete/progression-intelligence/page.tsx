@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 
+const capabilityStatus = 'PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED | HUMAN REVIEW REQUIRED';
+
 const overviewStats = [
   { label: 'Progression Intelligence Overview', value: 'PLANNED' },
   { label: 'Assessment History', value: 'FRONT-END PLACEHOLDER' },
@@ -19,10 +21,10 @@ const timelineItems = [
 ];
 
 const recommendationCards = [
-  { title: 'Development Recommendation Placeholder', state: 'PLANNED | NOT YET AUTOMATED | BACKEND REQUIRED' },
-  { title: 'Closed-Loop Feedback Placeholder', state: 'PLANNED | NOT YET AUTOMATED | BACKEND REQUIRED' },
-  { title: 'Coach Action Queue Placeholder', state: 'PLANNED | NOT YET AUTOMATED | BACKEND REQUIRED' },
-  { title: 'Parent-Support Visibility Placeholder', state: 'PLANNED | FRONT-END PLACEHOLDER | BACKEND REQUIRED' },
+  { title: 'Development Recommendation Placeholder', state: capabilityStatus },
+  { title: 'Closed-Loop Feedback Placeholder', state: capabilityStatus },
+  { title: 'Coach Action Queue Placeholder', state: capabilityStatus },
+  { title: 'Parent-Support Visibility Placeholder', state: capabilityStatus },
 ];
 
 export default function AthleteProgressionIntelligencePage() {
@@ -36,7 +38,7 @@ export default function AthleteProgressionIntelligencePage() {
             Closed-Loop Progression Intelligence - Planned. Recommendation and scoring logic is not automated in this pass.
           </p>
           <p className="mt-2 text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">
-            PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED
+            {capabilityStatus}
           </p>
         </header>
 

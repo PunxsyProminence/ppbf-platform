@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 
+const capabilityStatus = 'PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED | HUMAN REVIEW REQUIRED';
+
 const familyPanels = [
   'Parent-Support Visibility Placeholder',
   'Athlete Development Timeline (Family View)',
@@ -21,7 +23,7 @@ export default function ParentProgressionVisibilityPage() {
             Family-facing progression surface for support visibility only.
           </p>
           <p className="mt-2 text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">
-            PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED
+            {capabilityStatus}
           </p>
         </header>
 
@@ -30,7 +32,7 @@ export default function ParentProgressionVisibilityPage() {
             <article key={panel} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
               <p className="text-sm font-semibold text-[#e8d7c6]">{panel}</p>
               <p className="mt-1 text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">
-                FRONT-END PLACEHOLDER | BACKEND REQUIRED
+                {capabilityStatus}
               </p>
             </article>
           ))}

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { roleRoutes, type ClubRole } from '@/components/roleRoutes';
-import { createRoleSession, getPostLoginRoute, OPERATOR_PIN, readRoleSession, clearRoleSession } from '@/components/roleSession';
+import { createPersistentRoleSession, createRoleSession, getPostLoginRoute, OPERATOR_PIN, readRoleSession, clearRoleSession } from '@/components/roleSession';
 
 type ActiveTab = 'login' | 'announcement';
 
@@ -21,6 +21,7 @@ function getStoredAnnouncement(): string {
 
 export default function LoginPage() {
   const router = useRouter();
+  const [athleteId, setAthleteId] = useState('');
   const [pin, setPin] = useState('');
   const [selectedRole, setSelectedRole] = useState<ClubRole>('athlete');
   const [error, setError] = useState('');
@@ -37,16 +38,58 @@ export default function LoginPage() {
     const shouldLogout = params.get('logout') === 'true' || params.get('reset') === 'true';
     if (shouldLogout) {
       clearRoleSession();
+      void fetch('/api/pilot/auth/logout', { method: 'POST' });
     }
 
     const session = readRoleSession();
-    if (session && !shouldLogout) {
-      router.replace(getPostLoginRoute(session));
+    if (!session || shouldLogout) {
+      return;
     }
+
+    if (session.role === 'athlete') {
+      void (async () => {
+        const response = await fetch('/api/pilot/auth/session', { method: 'POST' });
+        const payload = (await response.json().catch(() => ({ authenticated: false }))) as { authenticated?: boolean };
+        if (payload.authenticated) {
+          router.replace(getPostLoginRoute(session));
+          return;
+        }
+        clearRoleSession();
+      })();
+      return;
+    }
+
+    router.replace(getPostLoginRoute(session));
 
   }, [router]);
 
-  function signIn() {
+  async function signIn() {
+    if (selectedRole === 'athlete') {
+      const accountId = athleteId.trim();
+      if (!accountId) {
+        setError('Athlete ID is required.');
+        return;
+      }
+
+      const response = await fetch('/api/pilot/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: accountId, pin }),
+      });
+
+      if (!response.ok) {
+        const result = (await response.json().catch(() => ({ error: 'Invalid credentials' }))) as { error?: string };
+        setError(result.error || 'Invalid credentials');
+        return;
+      }
+
+      const result = (await response.json()) as { role: ClubRole };
+      const session = createPersistentRoleSession(result.role);
+      setError('');
+      router.push(getPostLoginRoute(session));
+      return;
+    }
+
     const result = createRoleSession(selectedRole, pin);
 
     if (!result.ok) {
@@ -137,6 +180,21 @@ export default function LoginPage() {
                 <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="pin">
                   PIN
                 </label>
+                {selectedRole === 'athlete' ? (
+                  <>
+                    <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="athlete-id">
+                      Athlete ID
+                    </label>
+                    <input
+                      id="athlete-id"
+                      type="text"
+                      value={athleteId}
+                      onChange={(event) => setAthleteId(event.target.value)}
+                      placeholder="Enter Athlete ID"
+                      className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
+                    />
+                  </>
+                ) : null}
                 <input
                   id="pin"
                   type="password"

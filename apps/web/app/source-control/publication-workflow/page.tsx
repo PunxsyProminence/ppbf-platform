@@ -1,5 +1,7 @@
 import FeatureSurface from '@/components/FeatureSurface';
 
+const capabilityStatus = 'PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED | HUMAN REVIEW REQUIRED';
+
 const publicationStages = [
   'Publication Workflow Overview',
   'Source Review',
@@ -21,7 +23,7 @@ export default function PublicationWorkflowPage() {
       eyebrow="Publication Workflow"
       title="Automated Publication Workflow"
       description="Source-control publication surface for the PPBF ecosystem. This pass is front-end visibility only."
-      status="PLANNED | FRONT-END PLACEHOLDER"
+      status={capabilityStatus}
       currentStage="publish"
       primaryLinks={[
         { label: 'Source control', href: '/source-control' },
@@ -31,7 +33,7 @@ export default function PublicationWorkflowPage() {
       stats={[
         { label: 'Automation State', value: 'NOT YET AUTOMATED' },
         { label: 'Execution Engine', value: 'BACKEND REQUIRED' },
-        { label: 'Approval Model', value: 'Human Approval Gate' },
+        { label: 'Approval Model', value: 'HUMAN REVIEW REQUIRED' },
         { label: 'Release Control', value: 'Jason Approval' },
       ]}
     >
@@ -43,7 +45,7 @@ export default function PublicationWorkflowPage() {
               <article key={stage} className="border border-[#5a4a3a] bg-[#101010] p-3">
                 <p className="text-[14px] font-semibold text-[#e8d7c6]">{stage}</p>
                 <p className="mt-1 text-[11px] font-mono uppercase tracking-[0.09em] text-[#d4a574]">
-                  PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED
+                  {capabilityStatus}
                 </p>
               </article>
             ))}

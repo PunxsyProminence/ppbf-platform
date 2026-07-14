@@ -10,7 +10,7 @@ let cachedRoleSessionValue: RoleSession | null = null;
 
 export interface RoleSession {
   role: ClubRole;
-  expiresAt: number;
+  expiresAt?: number;
 }
 
 export function createRoleSession(role: ClubRole, pin: string) {
@@ -38,20 +38,28 @@ export function readRoleSession(): RoleSession | null {
 
   try {
     const parsed = JSON.parse(raw) as Partial<RoleSession>;
-    if (!parsed.role || typeof parsed.expiresAt !== 'number') {
+    if (!parsed.role) {
       return null;
     }
 
-    if (parsed.expiresAt < Date.now()) {
+    if (typeof parsed.expiresAt === 'number' && parsed.expiresAt < Date.now()) {
       clearRoleSession();
       return null;
     }
 
-    return { role: parsed.role, expiresAt: parsed.expiresAt };
+    return typeof parsed.expiresAt === 'number' ? { role: parsed.role, expiresAt: parsed.expiresAt } : { role: parsed.role };
   } catch {
     clearRoleSession();
     return null;
   }
+}
+
+export function createPersistentRoleSession(role: ClubRole) {
+  const session: RoleSession = { role };
+  window.localStorage.setItem(ROLE_SESSION_KEY, JSON.stringify(session));
+  window.localStorage.setItem('ppbf-club-role', role);
+  window.dispatchEvent(new Event(ROLE_SESSION_CHANGE_EVENT));
+  return session;
 }
 
 export function getRoleSessionSnapshot(): RoleSession | null {
@@ -73,12 +81,17 @@ export function getRoleSessionSnapshot(): RoleSession | null {
 
   try {
     const parsed = JSON.parse(raw) as Partial<RoleSession>;
-    if (!parsed.role || typeof parsed.expiresAt !== 'number' || parsed.expiresAt < Date.now()) {
+    if (!parsed.role) {
       cachedRoleSessionValue = null;
       return cachedRoleSessionValue;
     }
 
-    cachedRoleSessionValue = { role: parsed.role, expiresAt: parsed.expiresAt };
+    if (typeof parsed.expiresAt === 'number' && parsed.expiresAt < Date.now()) {
+      cachedRoleSessionValue = null;
+      return cachedRoleSessionValue;
+    }
+
+    cachedRoleSessionValue = typeof parsed.expiresAt === 'number' ? { role: parsed.role, expiresAt: parsed.expiresAt } : { role: parsed.role };
     return cachedRoleSessionValue;
   } catch {
     cachedRoleSessionValue = null;

@@ -15,6 +15,7 @@ export default function GlobalRoleHeader() {
   }
 
   function signOut() {
+    void fetch('/api/pilot/auth/logout', { method: 'POST' });
     clearRoleSession();
     router.replace("/login");
   }

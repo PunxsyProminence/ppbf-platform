@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 
+const capabilityStatus = 'PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED | HUMAN REVIEW REQUIRED';
+
 const athletePanels = [
   'Athlete Feedback',
   'Film Review',
@@ -22,7 +24,7 @@ export default function AthleteVideoAnalysisPage() {
           <h1 className="mt-2 text-3xl font-black text-[#f2e7da]">Athlete Film Feedback Lane</h1>
           <p className="mt-2 text-sm text-[#cfbfae]">Athlete-facing video review and feedback visibility surface.</p>
           <p className="mt-2 text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">
-            PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED
+            {capabilityStatus}
           </p>
         </header>
 
@@ -30,7 +32,7 @@ export default function AthleteVideoAnalysisPage() {
           {athletePanels.map((panel) => (
             <article key={panel} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
               <p className="text-sm font-semibold text-[#e8d7c6]">{panel}</p>
-              <p className="mt-1 text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">FRONT-END PLACEHOLDER | BACKEND REQUIRED</p>
+              <p className="mt-1 text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">{capabilityStatus}</p>
             </article>
           ))}
         </section>

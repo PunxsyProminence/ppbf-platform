@@ -2,6 +2,7 @@
 
 ## Documentation
 - README.md
+- BACKEND_SLICE_EXECUTION_SPEC.md
 - FINAL_DOCUMENTATION.md
 - COMPLETE_BUILD_SUMMARY.md
 - FINAL_RECOMMENDATIONS.md
@@ -28,6 +29,7 @@
 - packages/ (governance, routing, execution, intelligence, continuity)
 - apps/web
 - infra/supabase/schema.sql
+- infra/azure/pilot_slice_postgres.sql
 - PPBF_CAPABILITIES.json
 
 This index gives you quick access to everything built across 30 batches.

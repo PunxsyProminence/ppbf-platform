@@ -19,7 +19,10 @@ Use .\master-runner.ps1 only when you want the top-level sequence runner.
 Use .\ppbf-cli.ps1 status or .\ppbf-cli.ps1 health for quick daily checks.
 
 ## Step 3: Environment
-Copy .env.example to .env.local and fill in Supabase credentials.
+Copy apps/web/.env.example to apps/web/.env.local and fill in Azure pilot credentials:
+- AZURE_POSTGRES_CONNECTION_STRING
+- AZURE_STORAGE_CONNECTION_STRING
+- PPBF_PILOT_BOOTSTRAP_KEY
 
 ## Step 4: Governance
 All development must follow Layer 0 rules. Get Jason approval before promoting anything to ACTIVE.
