@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
 type RevenueFundingTab =
@@ -396,6 +397,20 @@ export default function RevenueFundingCenter() {
           Front-end control surface for memberships, donations, sponsors, B2B accounts, wholesale accounts, grants, scholarships, and funding workflows.
         </p>
         <p className="mt-3 text-sm font-mono uppercase tracking-[0.14em] text-[var(--gray-dark)]">Old Gauze | Sweat | Grit | Grind | Dedication | Motivation</p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Link
+            href="/help#revenue-guide"
+            className="inline-flex min-h-[40px] items-center justify-center border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"
+          >
+            HOW THIS WORKS
+          </Link>
+          <Link
+            href="/help#planned-capabilities-guide"
+            className="inline-flex min-h-[40px] items-center justify-center border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"
+          >
+            Planned Systems
+          </Link>
+        </div>
       </article>
 
       <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">

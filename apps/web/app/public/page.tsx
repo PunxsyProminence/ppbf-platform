@@ -1,6 +1,8 @@
 'use client';
 
+import Link from 'next/link';
 import { useState, type SyntheticEvent } from 'react';
+import TutorialButton from '@/components/TutorialButton';
 
 type VisitorType =
   | 'Athlete / Participant'
@@ -213,8 +215,17 @@ export default function PublicPortalPage() {
               The public-facing front door for awareness, trust building, community introduction, public interest intake, volunteer recruitment, partner engagement, and future athlete enrollment.
             </p>
           </div>
-          <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 py-3 text-xs font-mono text-[var(--black)] shadow-[var(--shadow-sm)]">
-            Status: ready
+          <div className="flex flex-wrap items-center gap-2">
+            <TutorialButton anchor="public-portal-guide" />
+            <Link
+              href="/help#tester-guide"
+              className="inline-flex min-h-[40px] items-center justify-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"
+            >
+              Tester Guide
+            </Link>
+            <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 py-3 text-xs font-mono text-[var(--black)] shadow-[var(--shadow-sm)]">
+              Status: ready
+            </div>
           </div>
         </header>
 

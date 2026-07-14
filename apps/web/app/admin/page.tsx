@@ -4,6 +4,9 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import RevenueFundingCenter from '@/components/RevenueFundingCenter';
+import TutorialButton from '@/components/TutorialButton';
+import TutorialCard from '@/components/TutorialCard';
+import { masterTutorialCards } from '@/components/helpContent';
 import {
   allTrackIds,
   athleteProfiles,
@@ -566,6 +569,7 @@ export default function AdminCapabilitiesPage() {
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
+              <TutorialButton anchor="admin-guide" />
               <Link
                 href="/admin/shadow"
                 className="inline-flex h-11 items-center border border-[#8b4444] bg-[#5a2a2a] px-4 text-[14px] font-bold text-[#f2e7da] transition hover:bg-[#7a3a3a]"
@@ -644,6 +648,23 @@ export default function AdminCapabilitiesPage() {
 
           {activeTab === 'overview' && (
             <section className="grid gap-6">
+              <article className="border border-[#8b4444] bg-[#141414] p-6">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-[24px] font-bold text-[#f2e7da]">PPBF MASTER TUTORIAL</h2>
+                    <p className="mt-2 text-[14px] leading-6 text-[#bfb3a6]">
+                      Learn how to navigate the PPBF platform, understand each workspace, and test current capabilities safely.
+                    </p>
+                  </div>
+                  <TutorialButton anchor="start-here" />
+                </div>
+                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {masterTutorialCards.map((card) => (
+                    <TutorialCard key={card.id} card={card} />
+                  ))}
+                </div>
+              </article>
+
               <article className="border border-[#3a3a3a] bg-[#141414] p-6">
                 <h2 className="text-[20px] font-bold text-[#f2e7da]">Operational Overview</h2>
                 <div className="mt-4 grid gap-4 lg:grid-cols-2">

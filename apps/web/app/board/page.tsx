@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import TutorialButton from '@/components/TutorialButton';
 import { boardOverviewStrip, boardSeatConfigs } from './boardWorkspaceConfig';
 
 export default function BoardHubPage() {
@@ -19,6 +20,7 @@ export default function BoardHubPage() {
           >
             Governance Operations
           </Link>
+          <TutorialButton anchor="board-guide" className="border-[#8b4444] bg-[#5a2a2a]/10 text-[#d4a574] hover:bg-[#5a2a2a]/20 hover:text-[#d4a574]" />
         </header>
 
         <section className="mt-8 border-2 border-[#8b4444] bg-[#121212] p-5">

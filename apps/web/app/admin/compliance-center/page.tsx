@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
+import TutorialButton from '@/components/TutorialButton';
 
 const adminPanels = [
   'Compliance Dashboard',
@@ -26,6 +27,7 @@ export default function AdminComplianceCenterPage() {
             <p className="max-w-4xl text-sm leading-6 text-[#cfbfae]">
               Admin operational companion to board compliance monitoring. No legal automation, no filing automation, and no backend reminders are active in this pass.
             </p>
+            <TutorialButton anchor="planned-capabilities-guide" className="border-[#8b4444] bg-[#1a1a1a] text-[#d4a574] hover:bg-[#2a1a1a]" />
           </header>
 
           <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">

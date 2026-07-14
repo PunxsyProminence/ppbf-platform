@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { readRoleSession, clearRoleSession } from '@/components/roleSession';
+import TutorialButton from '@/components/TutorialButton';
 
 interface ShadowMessage {
   id: string;
@@ -151,6 +152,7 @@ export default function ShadowChatPage() {
 
         {/* NAV LINKS */}
         <div className="mt-6 flex flex-wrap gap-3">
+          <TutorialButton anchor="shadow-guide" className="border-[#8b4444] bg-[#1a1a1a] text-[#d4a574] hover:border-[#d4a574] hover:bg-[#2a1a1a]" />
           <Link
             href="/research/chat"
             className="border-2 border-[#d4a574] bg-[#1f1f1f] px-4 py-2 text-xs font-mono text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#2a1f1f]"

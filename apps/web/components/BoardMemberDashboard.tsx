@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import RoleSessionGate from './RoleSessionGate';
+import TutorialButton from './TutorialButton';
 import type { ClubRole } from './roleRoutes';
 import type { BoardOverviewMetric, BoardSeatConfig, BoardSeatSlug } from '@/app/board/boardWorkspaceConfig';
 
@@ -328,6 +329,9 @@ export default function BoardMemberDashboard({ seat, overviewMetrics, links, all
 
               <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
                 <h2 className="text-xl font-black text-[var(--black)]">Workspace Links</h2>
+                <div className="mt-3">
+                  <TutorialButton anchor="board-guide" />
+                </div>
                 <div className="mt-4 grid gap-2">
                   {links.map((link) => (
                     <Link

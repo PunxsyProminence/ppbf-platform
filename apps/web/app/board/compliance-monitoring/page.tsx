@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
+import TutorialButton from '@/components/TutorialButton';
 import { roleRoutes, type ClubRole } from '@/components/roleRoutes';
 
 const boardRoles = roleRoutes
@@ -34,6 +35,7 @@ export default function BoardComplianceMonitoringPage() {
             <p className="max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
               Board compliance watch and governance monitoring surface. This route is static/front-end only and does not run compliance automation.
             </p>
+            <TutorialButton anchor="planned-capabilities-guide" />
           </header>
 
           <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">

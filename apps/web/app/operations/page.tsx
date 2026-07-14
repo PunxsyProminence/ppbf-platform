@@ -1,5 +1,8 @@
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
+import TutorialButton from '@/components/TutorialButton';
+import TutorialCard from '@/components/TutorialCard';
+import { masterTutorialCards } from '@/components/helpContent';
 import { roleRoutes } from '@/components/roleRoutes';
 
 const roleSelector = [
@@ -140,7 +143,25 @@ export default function OperationsHubPage() {
             <p className="max-w-4xl text-base leading-7 text-[var(--gray-dark)] md:text-lg">
               Every corner has its own view. Athlete. Coach. Parent. Board. Admin. Public.
             </p>
+            <TutorialButton anchor="mission-control-overview" />
           </header>
+
+          <section className="space-y-4 border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-6 shadow-[var(--shadow-sm)]">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="font-display text-2xl font-bold tracking-tight text-[var(--black)]">PPBF MASTER TUTORIAL</h2>
+                <p className="mt-1 max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
+                  Learn how to navigate the PPBF platform, understand each workspace, and test current capabilities safely.
+                </p>
+              </div>
+              <TutorialButton anchor="start-here" />
+            </div>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {masterTutorialCards.map((card) => (
+                <TutorialCard key={card.id} card={card} />
+              ))}
+            </div>
+          </section>
 
           <section className="space-y-4 border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-6 shadow-[var(--shadow-sm)]">
             <h2 className="font-display text-2xl font-bold tracking-tight text-[var(--black)]">Role Selector</h2>
