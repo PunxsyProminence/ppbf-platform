@@ -80,7 +80,7 @@ jobs:
 
       - name: Install Web Dependencies For Gate
         run: |
-          npm ci --prefix apps/web
+          npm install --prefix apps/web
 
       - name: Run SHADOW E2E Gate
         env:
