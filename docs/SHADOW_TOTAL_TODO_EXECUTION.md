@@ -121,7 +121,7 @@ Status Key:
 
 ## 11) Coach/Athlete Full De-Placeholder (Non-SHADOW Spine)
 
-- Status: PENDING
+- Status: DONE
 - Owner: Product + Backend + Frontend
 - Target Date: 2026-07-22
 - Task: remove seeded local state from coach/athlete workspaces and complete backend-driven data flows.
@@ -153,3 +153,6 @@ Status Key:
 - `gh workflow run deploy-staging.yml --ref main` => dispatched run `29414990400`
 - run `29414990400` => SUCCESS
 - `PILOT_GATE_BASE_URL=https://app-ppbf-staging.purpledesert-3a75d580.eastus.azurecontainerapps.io npm --prefix apps/web run gate:pilot:shadow-e2e` => PASS
+- `npm --prefix apps/web run lint` => PASS
+- `PILOT_GATE_BASE_URL=https://app-ppbf-staging.purpledesert-3a75d580.eastus.azurecontainerapps.io PILOT_ADMIN_ACCOUNT_ID=org_admin_shadow PILOT_ADMIN_PIN=15715 PPBF_PILOT_BOOTSTRAP_KEY=<set> npm --prefix apps/web run gate:pilot` => PASS
+- `PILOT_GATE_BASE_URL=https://app-ppbf-staging.purpledesert-3a75d580.eastus.azurecontainerapps.io PPBF_PILOT_BOOTSTRAP_KEY=<set> npm --prefix apps/web run gate:pilot:multiorg` => PASS
