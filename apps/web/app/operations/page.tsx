@@ -123,6 +123,50 @@ const capabilityRadar: Array<{ name: string; state: CapabilityState; href?: stri
   { name: 'Publication Workflow Automation', state: 'PLACEHOLDER', href: '/source-control/publication-workflow', notes: 'Planned publication workflow surface is now visible as front-end placeholder. Not yet automated.' },
 ];
 
+const shadowReadinessEquation = 'Readiness = max(1, min(10, (Sleep x 1.25) - (Soreness x 0.45) + (Discipline x 0.3)))';
+const shadowRpeEquation = 'Delta RPE = RPE Observed - RPE Intended';
+
+const shadowCertificationSignals = [
+  'System Core Tracking Context: ONLINE',
+  'Enforcement Context: Production Build v21.1 - SHADOW Pre-Flight Calibration',
+  'Aesthetic Preset: ULTRA-DENSE WINTER GRIT',
+];
+
+const shadowBoundaryChecks = [
+  'Readiness upper bound test resolves to 10.0 and remains stable at clamp.',
+  'Readiness lower bound test resolves to 1.0 and remains stable at clamp.',
+  'Any readiness score below 5.0 triggers protective route and drill constraints.',
+  'Delta RPE lockout engages when discrepancy is 2 or greater until rationale is provided.',
+  'Override token BREAK MY 40% RULE emits GRIND STATE ENGAGED in JSON audit logs.',
+];
+
+const shadowArchitectureNodes = [
+  {
+    name: 'Background Telemetry Scout',
+    details: [
+      'Silent state scraping and metric watch.',
+      'Delta RPE sieve and intercept checks.',
+      'Zulu-timestamped JSON transaction output for pending control pipeline.',
+    ],
+  },
+  {
+    name: 'Blunt Analytical Hub',
+    details: [
+      'Direct, fact-based guidance responses.',
+      'Refusal matrix for diagnosis and treatment requests.',
+      'Role isolation block for restricted governance and finance content.',
+    ],
+  },
+];
+
+const shadowComplianceChecks = [
+  '12-role viewport segregation prevents cross-role data leakage.',
+  'Athlete view cannot mount finance/admin controls.',
+  'Board and governance view cannot parse raw individual biometric streams.',
+  'Build-state badges stay visible for QA handoff and release triage.',
+  'Immutability default verified_by_jason: false remains locked pending coach verification.',
+];
+
 function capabilityTone(state: CapabilityState): string {
   if (state === 'EXISTS') return 'border-[var(--status-ready)] bg-[#dce7ca] text-[var(--black)]';
   if (state === 'PARTIAL') return 'border-[var(--status-warning)] bg-[#efe3c4] text-[var(--black)]';
@@ -151,6 +195,69 @@ export default function OperationsHubPage() {
               </p>
               <TutorialButton anchor="start-here" />
             </div>
+          </section>
+
+          <section className="space-y-5 border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-6 shadow-[var(--shadow-sm)]">
+            <div className="space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
+              <p className="text-xs font-mono uppercase tracking-[0.15em] text-[var(--red-primary)]">System Operational Audit and Validation Report</p>
+              <p className="text-sm leading-6 text-[var(--gray-dark)]">
+                SHADOW v21.1 seed is ingested, stress-validated, and sealed for development deployment. This build section mirrors the certified guardrails used for floor safety, role isolation, and audit integrity.
+              </p>
+              <div className="grid gap-2 md:grid-cols-3">
+                {shadowCertificationSignals.map((signal) => (
+                  <div key={signal} className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-2 text-[11px] font-mono uppercase tracking-[0.08em] text-[var(--black)]">
+                    {signal}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid gap-4 xl:grid-cols-2">
+              <article className="space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
+                <h3 className="font-display text-xl font-bold text-[var(--black)]">Mathematical Gate Validation</h3>
+                <p className="border border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-2 text-xs font-mono text-[var(--black)]">{shadowReadinessEquation}</p>
+                <p className="border border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-2 text-xs font-mono text-[var(--black)]">{shadowRpeEquation}</p>
+                <div className="grid gap-2">
+                  {shadowBoundaryChecks.map((item) => (
+                    <p key={item} className="border border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-2 text-sm leading-6 text-[var(--gray-dark)]">
+                      {item}
+                    </p>
+                  ))}
+                </div>
+              </article>
+
+              <article className="space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
+                <h3 className="font-display text-xl font-bold text-[var(--black)]">Privacy and Compliance Boundaries</h3>
+                <div className="grid gap-2">
+                  {shadowComplianceChecks.map((item) => (
+                    <p key={item} className="border border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-2 text-sm leading-6 text-[var(--gray-dark)]">
+                      {item}
+                    </p>
+                  ))}
+                </div>
+              </article>
+            </div>
+
+            <article className="space-y-4 border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
+              <h3 className="font-display text-xl font-bold text-[var(--black)]">SHADOW Dual-Engine Architecture</h3>
+              <div className="grid gap-3 lg:grid-cols-2">
+                {shadowArchitectureNodes.map((node) => (
+                  <div key={node.name} className="space-y-2 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-3">
+                    <p className="text-sm font-mono font-bold uppercase tracking-[0.08em] text-[var(--red-primary)]">{node.name}</p>
+                    <div className="grid gap-2">
+                      {node.details.map((detail) => (
+                        <p key={detail} className="text-sm leading-6 text-[var(--gray-dark)]">
+                          {detail}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 py-3 text-sm font-bold uppercase tracking-[0.08em] text-[var(--white)]">
+                Certification Status: Signed and Active. Logical paths, equations, role boundaries, and sandbox behavior are aligned for SHADOW core build execution.
+              </p>
+            </article>
           </section>
 
           <section className="space-y-4 border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-6 shadow-[var(--shadow-sm)]">

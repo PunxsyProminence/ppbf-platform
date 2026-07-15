@@ -390,71 +390,62 @@ export default function AdminShadowConsolePage() {
     return promotePayload;
   }
 
-  async function handleItemAction(itemId: string, action: 'VIEW' | 'CLASSIFY' | 'STAGE' | 'APPROVE' | 'REJECT' | 'IMPORT') {
-    const item = pendingQueue.find((entry) => entry.id === itemId);
-    if (!item) {
-      return;
-    }
+  function handleViewAction(item: IntakeItem, itemId: string) {
+    setSelectedItemId(itemId);
+    appendConsoleLog({
+      source: 'Admin',
+      dataType: item.dataType,
+      status: 'Viewed',
+      message: `Viewing intake item ${item.itemName}.`,
+      destination: item.suggestedDestination,
+    });
+  }
 
-    if (action === 'VIEW') {
-      setSelectedItemId(itemId);
-      appendConsoleLog({
-        source: 'Admin',
-        dataType: item.dataType,
-        status: 'Viewed',
-        message: `Viewing intake item ${item.itemName}.`,
-        destination: item.suggestedDestination,
-      });
-      return;
-    }
+  function handleClassifyAction(item: IntakeItem, itemId: string) {
+    const updated = { ...item, status: 'Classified' as const, lastUpdatedAt: nowIso() };
+    applyQueueUpdate(itemId, () => updated);
+    saveHistorySnapshot(updated);
+    appendTelemetry('item classified', { itemId: item.id, itemName: item.itemName, dataType: item.dataType });
+    appendConsoleLog({
+      source: 'SHADOW',
+      dataType: item.dataType,
+      status: 'Classified',
+      message: `Item ${item.itemName} classified as ${updated.detectedType}.`,
+      destination: updated.suggestedDestination,
+    });
+  }
 
-    if (action === 'CLASSIFY') {
-      const updated = { ...item, status: 'Classified' as const, lastUpdatedAt: nowIso() };
-      applyQueueUpdate(itemId, () => updated);
-      saveHistorySnapshot(updated);
-      appendTelemetry('item classified', { itemId: item.id, itemName: item.itemName, dataType: item.dataType });
-      appendConsoleLog({
-        source: 'SHADOW',
-        dataType: item.dataType,
-        status: 'Classified',
-        message: `Item ${item.itemName} classified as ${updated.detectedType}.`,
-        destination: updated.suggestedDestination,
-      });
-      return;
-    }
+  function handleStageAction(item: IntakeItem, itemId: string) {
+    const updated = { ...item, status: 'Staged' as const, reviewNeeded: true, requiresJasonReview: true, lastUpdatedAt: nowIso() };
+    applyQueueUpdate(itemId, () => updated);
+    saveHistorySnapshot(updated);
+    appendTelemetry('item staged', { itemId: item.id, itemName: item.itemName });
+    appendConsoleLog({
+      source: 'SHADOW',
+      dataType: item.dataType,
+      status: 'Staged',
+      message: `Item ${item.itemName} staged and awaiting Jason/Admin review.`,
+      destination: updated.suggestedDestination,
+    });
+  }
 
-    if (action === 'STAGE') {
-      const updated = { ...item, status: 'Staged' as const, reviewNeeded: true, requiresJasonReview: true, lastUpdatedAt: nowIso() };
-      applyQueueUpdate(itemId, () => updated);
-      saveHistorySnapshot(updated);
-      appendTelemetry('item staged', { itemId: item.id, itemName: item.itemName });
-      appendConsoleLog({
-        source: 'SHADOW',
-        dataType: item.dataType,
-        status: 'Staged',
-        message: `Item ${item.itemName} staged and awaiting Jason/Admin review.`,
-        destination: updated.suggestedDestination,
-      });
-      return;
-    }
+  async function handleReviewAction(item: IntakeItem, action: 'APPROVE' | 'REJECT') {
+    const isApprove = action === 'APPROVE';
+    const backendAction = isApprove ? 'approve' : 'reject';
+    await processReviewAction(item, backendAction);
+    appendTelemetry(isApprove ? 'item approved' : 'item rejected', { itemId: item.id, itemName: item.itemName });
+    appendConsoleLog({
+      source: 'Admin',
+      dataType: item.dataType,
+      status: isApprove ? 'Approved' : 'Rejected',
+      message: isApprove
+        ? `Backend approval recorded for intake case ${item.intakeCaseId}.`
+        : `Backend rejection recorded for intake case ${item.intakeCaseId}.`,
+      destination: item.suggestedDestination,
+    });
+  }
 
-    if (action === 'APPROVE' || action === 'REJECT') {
-      const backendAction = action === 'APPROVE' ? 'approve' : 'reject';
-      await processReviewAction(item, backendAction);
-      appendTelemetry(action === 'APPROVE' ? 'item approved' : 'item rejected', { itemId: item.id, itemName: item.itemName });
-      appendConsoleLog({
-        source: 'Admin',
-        dataType: item.dataType,
-        status: action === 'APPROVE' ? 'Approved' : 'Rejected',
-        message:
-          action === 'APPROVE'
-            ? `Backend approval recorded for intake case ${item.intakeCaseId}.`
-            : `Backend rejection recorded for intake case ${item.intakeCaseId}.`,
-        destination: item.suggestedDestination,
-      });
-      return;
-    }
-
+  async function handleImportAction(item: IntakeItem) {
     if (item.status !== 'Approved') {
       appendConsoleLog({
         source: 'SHADOW',
@@ -470,6 +461,7 @@ export default function AdminShadowConsolePage() {
     if (!promotePayload) {
       return;
     }
+
     appendTelemetry('item imported', { itemId: item.id, itemName: item.itemName, destination: item.suggestedDestination });
     const promotedAthleteMessage = promotePayload.athlete_id ? ` for athlete ${promotePayload.athlete_id}` : '';
     appendConsoleLog({
@@ -479,6 +471,35 @@ export default function AdminShadowConsolePage() {
       message: `Case ${item.intakeCaseId} promoted to domain records${promotedAthleteMessage}.`,
       destination: item.suggestedDestination,
     });
+  }
+
+  async function handleItemAction(itemId: string, action: 'VIEW' | 'CLASSIFY' | 'STAGE' | 'APPROVE' | 'REJECT' | 'IMPORT') {
+    const item = pendingQueue.find((entry) => entry.id === itemId);
+    if (!item) {
+      return;
+    }
+
+    if (action === 'VIEW') {
+      handleViewAction(item, itemId);
+      return;
+    }
+
+    if (action === 'CLASSIFY') {
+      handleClassifyAction(item, itemId);
+      return;
+    }
+
+    if (action === 'STAGE') {
+      handleStageAction(item, itemId);
+      return;
+    }
+
+    if (action === 'APPROVE' || action === 'REJECT') {
+      await handleReviewAction(item, action);
+      return;
+    }
+
+    await handleImportAction(item);
   }
 
   function handleCommandSubmit(e: React.SyntheticEvent<HTMLFormElement>) {

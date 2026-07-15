@@ -1,22 +1,299 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactElement } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { roleRoutes, type ClubRole } from '@/components/roleRoutes';
 import { createPersistentRoleSession, createRoleSession, getPostLoginRoute, OPERATOR_PIN, readRoleSession, clearRoleSession } from '@/components/roleSession';
 
 type ActiveTab = 'login' | 'register' | 'announcement';
 
-const ANNOUNCEMENT_STORAGE_KEY = 'ppbf-login-announcement';
-const DEFAULT_ANNOUNCEMENT = 'Welcome to PPBF. Check in with your coach before floor activity.';
+interface LoginAnnouncement {
+  id: string;
+  message: string;
+  authorName: string;
+  authorRole: ClubRole | 'system';
+  createdAt: string;
+}
 
-function getStoredAnnouncement(): string {
-  if (typeof window === 'undefined') {
-    return DEFAULT_ANNOUNCEMENT;
+const DEFAULT_ANNOUNCEMENT: LoginAnnouncement = {
+  id: 'system-default',
+  message: 'Welcome to PPBF. Check in with your coach before floor activity.',
+  authorName: 'System',
+  authorRole: 'system',
+  createdAt: 'Operational Baseline',
+};
+
+function canPublishAnnouncement(role: ClubRole): boolean {
+  return role === 'coach' || role === 'admin' || role.startsWith('board-');
+}
+
+function validateAnnouncementPublishInput(params: {
+  selectedRole: ClubRole;
+  announcementPin: string;
+  draftAnnouncement: string;
+  announcementAuthorName: string;
+}): string | null {
+  if (!canPublishAnnouncement(params.selectedRole)) {
+    return 'Only Coach, Admin, or Board roles can publish announcements.';
   }
 
-  const savedAnnouncement = window.localStorage.getItem(ANNOUNCEMENT_STORAGE_KEY);
-  return savedAnnouncement?.trim() ? savedAnnouncement : DEFAULT_ANNOUNCEMENT;
+  if (params.announcementPin.trim() !== OPERATOR_PIN) {
+    return 'Invalid access PIN.';
+  }
+
+  if (!params.draftAnnouncement.trim()) {
+    return 'Announcement cannot be empty.';
+  }
+
+  if (!params.announcementAuthorName.trim()) {
+    return 'Author name is required.';
+  }
+
+  return null;
+}
+
+function AnnouncementCard({ item }: Readonly<{ item: LoginAnnouncement }>) {
+  return (
+    <article className="border border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-2">
+      <p className="text-sm leading-6 text-[var(--black)]">{item.message}</p>
+      <p className="mt-2 text-[11px] font-mono uppercase tracking-[0.08em] text-[var(--gray-medium)]">
+        By {item.authorName} ({item.authorRole}) - {item.createdAt}
+      </p>
+    </article>
+  );
+}
+
+interface LoginTabProps {
+  announcements: LoginAnnouncement[];
+  selectedRole: ClubRole;
+  setSelectedRole: (role: ClubRole) => void;
+  athleteId: string;
+  setAthleteId: (value: string) => void;
+  pin: string;
+  setPin: (value: string) => void;
+  error: string;
+  signIn: () => Promise<void>;
+}
+
+function LoginTabContent(props: Readonly<LoginTabProps>) {
+  return (
+    <>
+      <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">Announcements</p>
+        <div className="mt-3 grid gap-3">
+          {props.announcements.slice(0, 3).map((item) => (
+            <AnnouncementCard key={item.id} item={item} />
+          ))}
+        </div>
+      </div>
+
+      <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="role">
+        Your Role
+      </label>
+      <select
+        id="role"
+        value={props.selectedRole}
+        onChange={(event) => props.setSelectedRole(event.target.value as ClubRole)}
+        className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
+      >
+        {roleRoutes.map((item) => (
+          <option key={item.role} value={item.role}>
+            {item.label}
+          </option>
+        ))}
+      </select>
+
+      <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="pin">
+        PIN
+      </label>
+      {props.selectedRole === 'athlete' ? (
+        <>
+          <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="athlete-id">
+            Athlete ID
+          </label>
+          <input
+            id="athlete-id"
+            type="text"
+            value={props.athleteId}
+            onChange={(event) => props.setAthleteId(event.target.value)}
+            placeholder="Enter Athlete ID"
+            className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
+          />
+        </>
+      ) : null}
+      <input
+        id="pin"
+        type="password"
+        inputMode="numeric"
+        value={props.pin}
+        onChange={(event) => props.setPin(event.target.value)}
+        placeholder="Enter PIN"
+        className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
+      />
+
+      {props.error ? <p className="text-sm text-[var(--red-primary)]">{props.error}</p> : null}
+
+      <button
+        type="button"
+        onClick={() => void props.signIn()}
+        className="mt-4 inline-flex w-full items-center justify-center border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 py-3 text-sm font-black uppercase tracking-[0.2em] text-[var(--white)] transition hover:bg-[var(--red-highlight)]"
+      >
+        Sign In
+      </button>
+    </>
+  );
+}
+
+interface RegisterTabProps {
+  registerAccountId: string;
+  setRegisterAccountId: (value: string) => void;
+  registerAthleteId: string;
+  setRegisterAthleteId: (value: string) => void;
+  registerPin: string;
+  setRegisterPin: (value: string) => void;
+  registerError: string;
+  registerSuccess: string;
+  registerBusy: boolean;
+  registerAthlete: () => Promise<void>;
+}
+
+function RegisterTabContent(props: Readonly<RegisterTabProps>) {
+  return (
+    <>
+      <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">Registration</p>
+        <p className="mt-3 text-sm leading-6 text-[var(--black)]">Creates an athlete account through the existing backend account API.</p>
+      </div>
+
+      <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="register-account-id">
+        Account ID
+      </label>
+      <input
+        id="register-account-id"
+        type="text"
+        value={props.registerAccountId}
+        onChange={(event) => props.setRegisterAccountId(event.target.value)}
+        placeholder="athlete-account-id"
+        className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
+      />
+
+      <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="register-athlete-id">
+        Athlete ID
+      </label>
+      <input
+        id="register-athlete-id"
+        type="text"
+        value={props.registerAthleteId}
+        onChange={(event) => props.setRegisterAthleteId(event.target.value)}
+        placeholder="athlete-id"
+        className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
+      />
+
+      <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="register-pin">
+        PIN
+      </label>
+      <input
+        id="register-pin"
+        type="password"
+        inputMode="numeric"
+        value={props.registerPin}
+        onChange={(event) => props.setRegisterPin(event.target.value)}
+        placeholder="Create PIN"
+        className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
+      />
+
+      {props.registerError ? <p className="text-sm text-[var(--red-primary)]">{props.registerError}</p> : null}
+      {props.registerSuccess ? <p className="text-sm text-[var(--olive-dark)]">{props.registerSuccess}</p> : null}
+
+      <button
+        type="button"
+        disabled={props.registerBusy}
+        onClick={() => void props.registerAthlete()}
+        className="mt-4 inline-flex w-full items-center justify-center border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 py-3 text-sm font-black uppercase tracking-[0.2em] text-[var(--white)] transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-70"
+      >
+        {props.registerBusy ? 'Registering...' : 'Register Athlete'}
+      </button>
+    </>
+  );
+}
+
+interface AnnouncementTabProps {
+  announcements: LoginAnnouncement[];
+  announcementAuthorName: string;
+  setAnnouncementAuthorName: (value: string) => void;
+  draftAnnouncement: string;
+  setDraftAnnouncement: (value: string) => void;
+  announcementPin: string;
+  setAnnouncementPin: (value: string) => void;
+  announcementError: string;
+  announcementSavedAt: string | null;
+  publishAnnouncement: () => Promise<void>;
+}
+
+function AnnouncementTabContent(props: Readonly<AnnouncementTabProps>) {
+  return (
+    <>
+      <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">Message Feed</p>
+        <div className="mt-3 grid gap-3">
+          {props.announcements.map((item) => (
+            <AnnouncementCard key={item.id} item={item} />
+          ))}
+        </div>
+      </div>
+
+      <p className="text-xs uppercase tracking-[0.18em] text-[var(--gray-medium)]">Coach, Admin, and Board can publish</p>
+
+      <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-[var(--black)]" htmlFor="announcement-author-name">
+        Your Name
+      </label>
+      <input
+        id="announcement-author-name"
+        type="text"
+        value={props.announcementAuthorName}
+        onChange={(event) => props.setAnnouncementAuthorName(event.target.value)}
+        placeholder="Name shown on announcement"
+        className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
+      />
+
+      <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-[var(--black)]" htmlFor="announcement-draft">
+        Announcement
+      </label>
+      <textarea
+        id="announcement-draft"
+        value={props.draftAnnouncement}
+        onChange={(event) => props.setDraftAnnouncement(event.target.value)}
+        rows={4}
+        className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
+        placeholder="Type message for members..."
+      />
+
+      <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-[var(--black)]" htmlFor="announcement-pin">
+        Access PIN
+      </label>
+      <input
+        id="announcement-pin"
+        type="password"
+        inputMode="numeric"
+        value={props.announcementPin}
+        onChange={(event) => props.setAnnouncementPin(event.target.value)}
+        placeholder="Enter access PIN"
+        className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
+      />
+
+      {props.announcementError ? <p className="text-sm text-[var(--red-primary)]">{props.announcementError}</p> : null}
+      {props.announcementSavedAt ? <p className="text-[11px] font-mono text-[var(--gray-medium)]">Last posted: {props.announcementSavedAt}</p> : null}
+
+      <button
+        type="button"
+        onClick={() => void props.publishAnnouncement()}
+        className="mt-2 inline-flex w-full items-center justify-center border-2 border-[var(--black)] bg-[var(--gray-dark)] px-4 py-3 text-sm font-black uppercase tracking-[0.2em] text-[var(--white)] transition hover:bg-[var(--black)]"
+      >
+        Post
+      </button>
+    </>
+  );
 }
 
 export default function LoginPage() {
@@ -26,9 +303,10 @@ export default function LoginPage() {
   const [selectedRole, setSelectedRole] = useState<ClubRole>('athlete');
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<ActiveTab>('login');
-  const [announcement, setAnnouncement] = useState(getStoredAnnouncement);
-  const [draftAnnouncement, setDraftAnnouncement] = useState(getStoredAnnouncement);
-  const [adminPin, setAdminPin] = useState('');
+  const [announcements, setAnnouncements] = useState<LoginAnnouncement[]>([DEFAULT_ANNOUNCEMENT]);
+  const [draftAnnouncement, setDraftAnnouncement] = useState('');
+  const [announcementAuthorName, setAnnouncementAuthorName] = useState('');
+  const [announcementPin, setAnnouncementPin] = useState('');
   const [announcementError, setAnnouncementError] = useState('');
   const [announcementSavedAt, setAnnouncementSavedAt] = useState<string | null>(null);
   const [registerAccountId, setRegisterAccountId] = useState('');
@@ -69,35 +347,72 @@ export default function LoginPage() {
 
   }, [router]);
 
-  async function signIn() {
-    if (selectedRole === 'athlete') {
-      const accountId = athleteId.trim();
-      if (!accountId) {
-        setError('Athlete ID is required.');
-        return;
-      }
-
-      const response = await fetch('/api/pilot/auth/login', {
+  useEffect(() => {
+    void (async () => {
+      const response = await fetch('/api/pilot/announcements/get', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ account_id: accountId, pin }),
+        body: JSON.stringify({ limit: 12 }),
       });
 
       if (!response.ok) {
-        const result = (await response.json().catch(() => ({ error: 'Invalid credentials' }))) as { error?: string };
-        setError(result.error || 'Invalid credentials');
         return;
       }
 
-      const result = (await response.json()) as { role: ClubRole };
-      const session = createPersistentRoleSession(result.role);
-      setError('');
-      router.push(getPostLoginRoute(session));
+      const payload = (await response.json().catch(() => ({ ok: false }))) as {
+        ok?: boolean;
+        announcements?: Array<{
+          announcement_id: string;
+          message: string;
+          author_name: string;
+          author_role: ClubRole | 'system';
+          created_at: string;
+        }>;
+      };
+
+      if (!payload.ok || !Array.isArray(payload.announcements) || payload.announcements.length === 0) {
+        return;
+      }
+
+      const normalized: LoginAnnouncement[] = payload.announcements.map((item) => ({
+        id: item.announcement_id,
+        message: item.message,
+        authorName: item.author_name,
+        authorRole: item.author_role,
+        createdAt: new Date(item.created_at).toLocaleString(),
+      }));
+
+      setAnnouncements(normalized);
+    })();
+  }, []);
+
+  async function signInAthlete() {
+    const accountId = athleteId.trim();
+    if (!accountId) {
+      setError('Athlete ID is required.');
       return;
     }
 
-    const result = createRoleSession(selectedRole, pin);
+    const response = await fetch('/api/pilot/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: accountId, pin }),
+    });
 
+    if (!response.ok) {
+      const result = (await response.json().catch(() => ({ error: 'Invalid credentials' }))) as { error?: string };
+      setError(result.error || 'Invalid credentials');
+      return;
+    }
+
+    const result = (await response.json()) as { role: ClubRole };
+    const session = createPersistentRoleSession(result.role);
+    setError('');
+    router.push(getPostLoginRoute(session));
+  }
+
+  function signInOperator() {
+    const result = createRoleSession(selectedRole, pin);
     if (!result.ok) {
       setError(result.reason);
       return;
@@ -107,28 +422,74 @@ export default function LoginPage() {
     router.push(getPostLoginRoute(result.session));
   }
 
-  function publishAnnouncement() {
-    if (selectedRole !== 'admin') {
-      setAnnouncementError('Select Admin role to publish announcements.');
+  async function signIn() {
+    if (selectedRole === 'athlete') {
+      await signInAthlete();
       return;
     }
 
-    if (adminPin.trim() !== OPERATOR_PIN) {
-      setAnnouncementError('Invalid admin PIN.');
+    signInOperator();
+  }
+
+  async function publishAnnouncement() {
+    const validationError = validateAnnouncementPublishInput({
+      selectedRole,
+      announcementPin,
+      draftAnnouncement,
+      announcementAuthorName,
+    });
+
+    if (validationError) {
+      setAnnouncementError(validationError);
       return;
     }
 
-    const next = draftAnnouncement.trim();
-    if (!next) {
-      setAnnouncementError('Announcement cannot be empty.');
+    const response = await fetch('/api/pilot/announcements/post', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: draftAnnouncement.trim(),
+        author_name: announcementAuthorName.trim(),
+        author_role: selectedRole,
+        access_pin: announcementPin.trim(),
+      }),
+    });
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({ error: 'Failed to post announcement.' }))) as { error?: string };
+      setAnnouncementError(payload.error || 'Failed to post announcement.');
       return;
     }
 
-    setAnnouncement(next);
-    window.localStorage.setItem(ANNOUNCEMENT_STORAGE_KEY, next);
+    const payload = (await response.json()) as {
+      announcement?: {
+        announcement_id: string;
+        message: string;
+        author_name: string;
+        author_role: ClubRole;
+        created_at: string;
+      };
+    };
+
+    const created = payload.announcement;
+    if (!created) {
+      setAnnouncementError('Announcement response missing record.');
+      return;
+    }
+
+    const record: LoginAnnouncement = {
+      id: created.announcement_id,
+      message: created.message,
+      authorName: created.author_name,
+      authorRole: created.author_role,
+      createdAt: new Date(created.created_at).toLocaleString(),
+    };
+
+    setAnnouncements((current) => [record, ...current].slice(0, 12));
     setAnnouncementError('');
-    setAdminPin('');
-    setAnnouncementSavedAt(new Date().toLocaleString());
+    setAnnouncementPin('');
+    setDraftAnnouncement('');
+    setAnnouncementSavedAt(record.createdAt);
   }
 
   async function registerAthlete() {
@@ -174,12 +535,66 @@ export default function LoginPage() {
     }
   }
 
+  const tabContentMap: Record<ActiveTab, ReactElement> = {
+    login: (
+      <LoginTabContent
+        announcements={announcements}
+        selectedRole={selectedRole}
+        setSelectedRole={setSelectedRole}
+        athleteId={athleteId}
+        setAthleteId={setAthleteId}
+        pin={pin}
+        setPin={setPin}
+        error={error}
+        signIn={signIn}
+      />
+    ),
+    register: (
+      <RegisterTabContent
+        registerAccountId={registerAccountId}
+        setRegisterAccountId={setRegisterAccountId}
+        registerAthleteId={registerAthleteId}
+        setRegisterAthleteId={setRegisterAthleteId}
+        registerPin={registerPin}
+        setRegisterPin={setRegisterPin}
+        registerError={registerError}
+        registerSuccess={registerSuccess}
+        registerBusy={registerBusy}
+        registerAthlete={registerAthlete}
+      />
+    ),
+    announcement: (
+      <AnnouncementTabContent
+        announcements={announcements}
+        announcementAuthorName={announcementAuthorName}
+        setAnnouncementAuthorName={setAnnouncementAuthorName}
+        draftAnnouncement={draftAnnouncement}
+        setDraftAnnouncement={setDraftAnnouncement}
+        announcementPin={announcementPin}
+        setAnnouncementPin={setAnnouncementPin}
+        announcementError={announcementError}
+        announcementSavedAt={announcementSavedAt}
+        publishAnnouncement={publishAnnouncement}
+      />
+    ),
+  };
+
+  const activeTabContent = tabContentMap[activeTab];
+
   return (
     <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       <div className="mx-auto grid min-h-screen w-full max-w-4xl place-items-center px-6 py-10 lg:px-10">
         <section className="w-full max-w-xl border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] shadow-[var(--shadow-lg)]">
           <div className="border-b-[3px] border-[var(--black)] bg-[var(--canvas-tan-dark)] px-8 py-8">
-            <p className="text-[10px] font-mono uppercase tracking-[0.4em] text-[var(--gray-dark)]">Member Access</p>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[10px] font-mono uppercase tracking-[0.4em] text-[var(--gray-dark)]">Member Access</p>
+              <Link
+                href="/public"
+                className="inline-flex min-h-[34px] items-center justify-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-[10px] font-mono font-bold uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]"
+              >
+                Public Page
+              </Link>
+            </div>
             <h1 className="mt-4 text-4xl font-black tracking-[0.1em] text-[var(--black)] md:text-5xl">The Bell</h1>
             <p className="mt-3 text-sm leading-relaxed text-[var(--gray-dark)]">Pick your corner, punch in your PIN, step into the ring.</p>
           </div>
@@ -217,168 +632,7 @@ export default function LoginPage() {
           </div>
 
           <div className="space-y-6 px-8 py-8">
-            {activeTab === 'login' ? (
-              <>
-                <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="role">
-                  Your Role
-                </label>
-                <select
-                  id="role"
-                  value={selectedRole}
-                  onChange={(event) => setSelectedRole(event.target.value as ClubRole)}
-                  className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
-                >
-                  {roleRoutes.map((item) => (
-                    <option key={item.role} value={item.role}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-
-                <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="pin">
-                  PIN
-                </label>
-                {selectedRole === 'athlete' ? (
-                  <>
-                    <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="athlete-id">
-                      Athlete ID
-                    </label>
-                    <input
-                      id="athlete-id"
-                      type="text"
-                      value={athleteId}
-                      onChange={(event) => setAthleteId(event.target.value)}
-                      placeholder="Enter Athlete ID"
-                      className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
-                    />
-                  </>
-                ) : null}
-                <input
-                  id="pin"
-                  type="password"
-                  inputMode="numeric"
-                  value={pin}
-                  onChange={(event) => setPin(event.target.value)}
-                  placeholder="Enter PIN"
-                  className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
-                />
-
-                {error ? <p className="text-sm text-[var(--red-primary)]">{error}</p> : null}
-
-                <button
-                  type="button"
-                  onClick={signIn}
-                  className="mt-4 inline-flex w-full items-center justify-center border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 py-3 text-sm font-black uppercase tracking-[0.2em] text-[var(--white)] transition hover:bg-[var(--red-highlight)]"
-                >
-                  Sign In
-                </button>
-              </>
-            ) : activeTab === 'register' ? (
-              <>
-                <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">Registration</p>
-                  <p className="mt-3 text-sm leading-6 text-[var(--black)]">
-                    Creates an athlete account through the existing backend account API.
-                  </p>
-                </div>
-
-                <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="register-account-id">
-                  Account ID
-                </label>
-                <input
-                  id="register-account-id"
-                  type="text"
-                  value={registerAccountId}
-                  onChange={(event) => setRegisterAccountId(event.target.value)}
-                  placeholder="athlete-account-id"
-                  className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
-                />
-
-                <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="register-athlete-id">
-                  Athlete ID
-                </label>
-                <input
-                  id="register-athlete-id"
-                  type="text"
-                  value={registerAthleteId}
-                  onChange={(event) => setRegisterAthleteId(event.target.value)}
-                  placeholder="athlete-id"
-                  className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
-                />
-
-                <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="register-pin">
-                  PIN
-                </label>
-                <input
-                  id="register-pin"
-                  type="password"
-                  inputMode="numeric"
-                  value={registerPin}
-                  onChange={(event) => setRegisterPin(event.target.value)}
-                  placeholder="Create PIN"
-                  className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
-                />
-
-                {registerError ? <p className="text-sm text-[var(--red-primary)]">{registerError}</p> : null}
-                {registerSuccess ? <p className="text-sm text-[var(--olive-dark)]">{registerSuccess}</p> : null}
-
-                <button
-                  type="button"
-                  disabled={registerBusy}
-                  onClick={registerAthlete}
-                  className="mt-4 inline-flex w-full items-center justify-center border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 py-3 text-sm font-black uppercase tracking-[0.2em] text-[var(--white)] transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  {registerBusy ? 'Registering...' : 'Register Athlete'}
-                </button>
-              </>
-            ) : (
-              <>
-                <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">Message</p>
-                  <p className="mt-3 text-sm leading-6 text-[var(--black)]">{announcement}</p>
-                  {announcementSavedAt ? (
-                    <p className="mt-3 text-[11px] font-mono text-[var(--gray-medium)]">Updated: {announcementSavedAt}</p>
-                  ) : null}
-                </div>
-
-                <p className="text-xs uppercase tracking-[0.18em] text-[var(--gray-medium)]">Admin only</p>
-
-                <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-[var(--black)]" htmlFor="announcement-draft">
-                  Announcement
-                </label>
-                <textarea
-                  id="announcement-draft"
-                  value={draftAnnouncement}
-                  onChange={(event) => setDraftAnnouncement(event.target.value)}
-                  rows={4}
-                  className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
-                  placeholder="Type message for members..."
-                />
-
-                <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-[var(--black)]" htmlFor="admin-pin">
-                  Admin PIN
-                </label>
-                <input
-                  id="admin-pin"
-                  type="password"
-                  inputMode="numeric"
-                  value={adminPin}
-                  onChange={(event) => setAdminPin(event.target.value)}
-                  placeholder="Enter admin PIN"
-                  className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
-                />
-
-                {announcementError ? <p className="text-sm text-[var(--red-primary)]">{announcementError}</p> : null}
-
-                <button
-                  type="button"
-                  onClick={publishAnnouncement}
-                  className="mt-2 inline-flex w-full items-center justify-center border-2 border-[var(--black)] bg-[var(--gray-dark)] px-4 py-3 text-sm font-black uppercase tracking-[0.2em] text-[var(--white)] transition hover:bg-[var(--black)]"
-                >
-                  Post
-                </button>
-              </>
-            )}
+            {activeTabContent}
           </div>
         </section>
       </div>

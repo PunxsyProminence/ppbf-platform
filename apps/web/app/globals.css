@@ -22,12 +22,12 @@
   --status-inactive: var(--gray-medium);
 
   --font-stencil: var(--font-tactical-display), "Impact", "Arial Black", sans-serif;
-  --font-body: var(--font-tactical-body), "Arial Narrow", Arial, sans-serif;
+  --font-body: var(--font-tactical-body), "Segoe UI", "Arial Narrow", Arial, sans-serif;
   --font-mono: var(--font-geist-mono), "Courier New", "Courier", monospace;
 
   --text-xs: 11px;
   --text-sm: 12px;
-  --text-base: 14px;
+  --text-base: 15px;
   --text-lg: 16px;
   --text-xl: 18px;
   --text-2xl: 24px;
@@ -61,24 +61,17 @@
   --foreground: var(--black);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-canvas-tan: var(--canvas-tan);
-  --color-canvas-tan-light: var(--canvas-tan-light);
-  --color-canvas-tan-dark: var(--canvas-tan-dark);
-  --color-olive-dark: var(--olive-dark);
-  --color-black: var(--black);
-  --color-gray-dark: var(--gray-dark);
-  --color-gray-medium: var(--gray-medium);
-  --color-white: var(--white);
-  --color-white-off: var(--white-off);
-  --color-red-primary: var(--red-primary);
-  --color-red-highlight: var(--red-highlight);
-  --color-red-blood: var(--red-blood);
-  --font-display: var(--font-stencil);
-  --font-sans: var(--font-body);
-  --font-mono: var(--font-mono);
+
+.font-display {
+  font-family: var(--font-stencil);
+}
+
+.font-sans {
+  font-family: var(--font-body);
+}
+
+.font-mono {
+  font-family: var(--font-mono);
 }
 
 * {
@@ -116,8 +109,8 @@ h4,
 h5,
 h6 {
   font-family: var(--font-stencil);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-wider);
+  text-transform: none;
+  letter-spacing: var(--tracking-wide);
   line-height: var(--leading-tight);
 }
 

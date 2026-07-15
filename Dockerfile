@@ -22,8 +22,7 @@ ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 # Create low-privilege system user
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 
 # Pull standalone output configuration and static assets
 COPY --from=builder /app/apps/web/.next/standalone ./

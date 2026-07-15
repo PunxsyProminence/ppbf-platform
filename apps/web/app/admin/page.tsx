@@ -707,6 +707,12 @@ export default function AdminCapabilitiesPage() {
                   PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED
                 </p>
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <Link href="/public" className="inline-flex min-h-[44px] items-center border border-[#8b4444] bg-[#1a1a1a] px-3 text-[13px] font-bold text-[#f2e7da] transition hover:bg-[#2a1a1a]">
+                    Edit Public Page Surface
+                  </Link>
+                  <Link href="/login" className="inline-flex min-h-[44px] items-center border border-[#8b4444] bg-[#1a1a1a] px-3 text-[13px] font-bold text-[#f2e7da] transition hover:bg-[#2a1a1a]">
+                    Manage Login Announcements
+                  </Link>
                   <Link href="/admin/compliance-center" className="inline-flex min-h-[44px] items-center border border-[#8b4444] bg-[#1a1a1a] px-3 text-[13px] font-bold text-[#f2e7da] transition hover:bg-[#2a1a1a]">
                     Automated Compliance Monitoring Surface
                   </Link>

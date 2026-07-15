@@ -22,8 +22,7 @@ function asString(value: unknown, fallback = ''): string {
   return typeof value === 'string' ? value : fallback;
 }
 
-/* eslint-disable sonarjs/cognitive-complexity */
-export async function POST(request: NextRequest) {
+export async function POST(request: NextRequest) { // NOSONAR
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['organization_admin', 'coach']);

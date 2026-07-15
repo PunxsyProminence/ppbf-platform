@@ -66,8 +66,8 @@ jobs:
           environmentVariables: >-
             PPBF_ONBOARDING_LIVE_SAVE=false
             PPBF_AUTH_PROVIDER_WIRED=false
-            AZURE_POSTGRES_CONNECTION_STRING=${{ secrets.AZURE_POSTGRES_CONNECTION_STRING }}
-            AZURE_STORAGE_CONNECTION_STRING=${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
-            PPBF_PILOT_BOOTSTRAP_KEY=${{ secrets.PPBF_PILOT_BOOTSTRAP_KEY }}
-            PPBF_PILOT_DEFAULT_ORG_ID=${{ secrets.PPBF_PILOT_DEFAULT_ORG_ID }}
-            PPBF_PILOT_SHADOW_CONTAINER=${{ secrets.PPBF_PILOT_SHADOW_CONTAINER }}
+            AZURE_POSTGRES_CONNECTION_STRING=secretref:azure-postgres-connection-string
+            AZURE_STORAGE_CONNECTION_STRING=secretref:azure-storage-connection-string
+            PPBF_PILOT_BOOTSTRAP_KEY=secretref:ppbf-pilot-bootstrap-key
+            PPBF_PILOT_DEFAULT_ORG_ID=secretref:ppbf-pilot-default-org-id
+            PPBF_PILOT_SHADOW_CONTAINER=secretref:ppbf-pilot-shadow-container

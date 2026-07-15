@@ -5,9 +5,7 @@ import { getAzureStorageConnectionString, getPilotShadowContainerName } from './
 let blobClient: BlobServiceClient | null = null;
 
 function getBlobServiceClient(): BlobServiceClient {
-  if (!blobClient) {
-    blobClient = BlobServiceClient.fromConnectionString(getAzureStorageConnectionString());
-  }
+  blobClient ??= BlobServiceClient.fromConnectionString(getAzureStorageConnectionString());
   return blobClient;
 }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { readRoleSession, clearRoleSession } from '@/components/roleSession';
@@ -53,7 +53,7 @@ export default function ShadowChatPage() {
     router.push('/login');
   }
 
-  function handleSendMessage(e: React.FormEvent) {
+  function handleSendMessage(e: SyntheticEvent) {
     e.preventDefault();
     if (!userInput.trim()) return;
 

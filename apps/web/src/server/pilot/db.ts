@@ -5,13 +5,11 @@ import { getAzurePostgresConnectionString } from './env';
 let pool: Pool | null = null;
 
 function getPool(): Pool {
-  if (!pool) {
-    pool = new Pool({
-      connectionString: getAzurePostgresConnectionString(),
-      ssl: { rejectUnauthorized: false },
-      max: 10,
-    });
-  }
+  pool ??= new Pool({
+    connectionString: getAzurePostgresConnectionString(),
+    ssl: { rejectUnauthorized: false },
+    max: 10,
+  });
 
   return pool;
 }

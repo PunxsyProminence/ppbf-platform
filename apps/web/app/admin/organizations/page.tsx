@@ -3,6 +3,19 @@
 import { useState } from 'react';
 import Link from 'next/link';
 
+async function postJson(path: string, body: Record<string, unknown>) {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  const payload = (await response.json().catch(() => ({}))) as { error?: string };
+  if (!response.ok) {
+    throw new Error(payload.error || `Request failed: ${path}`);
+  }
+}
+
 export default function AdminOrganizationsPage() {
   const [organizationId, setOrganizationId] = useState('');
   const [organizationName, setOrganizationName] = useState('');
@@ -11,19 +24,6 @@ export default function AdminOrganizationsPage() {
   const [assignAccountId, setAssignAccountId] = useState('');
   const [assignOrgId, setAssignOrgId] = useState('');
   const [message, setMessage] = useState('');
-
-  async function postJson(path: string, body: Record<string, unknown>) {
-    const response = await fetch(path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-
-    const payload = (await response.json().catch(() => ({}))) as { error?: string };
-    if (!response.ok) {
-      throw new Error(payload.error || `Request failed: ${path}`);
-    }
-  }
 
   async function createOrganization() {
     await postJson('/api/pilot/platform/organizations', {

@@ -6,8 +6,6 @@
   - Verify retrieval and audit trail
 */
 
-/* eslint-disable sonarjs/cognitive-complexity */
-
 import fs from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import os from 'node:os';
@@ -105,24 +103,10 @@ async function maybeBootstrapAdmin() {
   });
 }
 
-async function run() {
-  const admin = createClient('shadow-admin');
-  const athlete = createClient('shadow-athlete');
-  const guardian = createClient('shadow-guardian');
-
-  await maybeBootstrapAdmin();
-
-  console.log('1) Admin login');
-  await admin.call('/api/pilot/auth/login', {
-    method: 'POST',
-    body: { account_id: adminAccountId, pin: adminPin },
-  });
-
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ppbf-shadow-intake-'));
+async function uploadRequiredDocuments(admin, tempDir) {
   const uploaded = [];
   let intakeCaseId = '';
 
-  console.log('2) Generate and upload required PDF document types');
   for (const docInfo of documentMatrix) {
     const fileName = `${docInfo.type}.pdf`;
     const filePath = path.join(tempDir, fileName);
@@ -162,12 +146,71 @@ async function run() {
     throw new Error('No intake case id returned from uploads');
   }
 
-  console.log('3) Verify review queue contains case');
-  const queue = await admin.call('/api/pilot/intake/review-queue', { method: 'POST', body: {} });
+  return { intakeCaseId, uploaded };
+}
+
+function assertQueueContainsCase(queue, intakeCaseId) {
   const queueContainsCase = queue.queue.some((item) => item.intake_case_id === intakeCaseId);
   if (!queueContainsCase) {
     throw new Error('Uploaded intake case not present in review queue');
   }
+}
+
+function assertAggregateReady(aggregate) {
+  if (!aggregate?.found) {
+    throw new Error('Intake case aggregate not found');
+  }
+
+  const aggregateDocs = aggregate.aggregate?.documents || [];
+  if (aggregateDocs.length < documentMatrix.length) {
+    throw new Error(`Expected ${documentMatrix.length} documents in case aggregate, found ${aggregateDocs.length}`);
+  }
+}
+
+function assertDomainPersistence(domain) {
+  if (!domain.emergency_contacts?.length) throw new Error('Missing emergency_contacts persistence');
+  if (!domain.medical_intake?.length) throw new Error('Missing medical_intake persistence');
+  if (!domain.waivers?.length) throw new Error('Missing waivers persistence');
+  if (!domain.assessments?.length) throw new Error('Missing assessments persistence');
+  if (!domain.attendance?.length) throw new Error('Missing attendance persistence');
+  if (!domain.readiness?.length) throw new Error('Missing readiness persistence');
+  if (!domain.coach_observations?.length) throw new Error('Missing coach observations persistence');
+  if (!domain.guardians?.length) throw new Error('Missing guardian linkage persistence');
+}
+
+function assertAuditPromotionEvent(audit) {
+  if (!audit.events?.some((row) => row.entity_type === 'intake_case_promotion')) {
+    throw new Error('Missing intake_case_promotion audit event');
+  }
+}
+
+function assertAthleteSession(athleteSession) {
+  if (!athleteSession.authenticated || athleteSession.athlete_id !== athleteId) {
+    throw new Error('Athlete login/session verification failed');
+  }
+}
+
+async function run() {
+  const admin = createClient('shadow-admin');
+  const athlete = createClient('shadow-athlete');
+  const guardian = createClient('shadow-guardian');
+
+  await maybeBootstrapAdmin();
+
+  console.log('1) Admin login');
+  await admin.call('/api/pilot/auth/login', {
+    method: 'POST',
+    body: { account_id: adminAccountId, pin: adminPin },
+  });
+
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ppbf-shadow-intake-'));
+
+  console.log('2) Generate and upload required PDF document types');
+  const { intakeCaseId, uploaded } = await uploadRequiredDocuments(admin, tempDir);
+
+  console.log('3) Verify review queue contains case');
+  const queue = await admin.call('/api/pilot/intake/review-queue', { method: 'POST', body: {} });
+  assertQueueContainsCase(queue, intakeCaseId);
 
   console.log('4) Approve case');
   await admin.call('/api/pilot/intake/review-action', {
@@ -261,40 +304,21 @@ async function run() {
     method: 'POST',
     body: { intake_case_id: intakeCaseId },
   });
-
-  if (!aggregate?.found) {
-    throw new Error('Intake case aggregate not found');
-  }
-
-  const aggregateDocs = aggregate.aggregate?.documents || [];
-  if (aggregateDocs.length < documentMatrix.length) {
-    throw new Error(`Expected ${documentMatrix.length} documents in case aggregate, found ${aggregateDocs.length}`);
-  }
+  assertAggregateReady(aggregate);
 
   console.log('7) Verify domain retrieval endpoint');
   const domain = await admin.call('/api/pilot/intake/domain-get', {
     method: 'POST',
     body: { athlete_id: athleteId },
   });
-
-  if (!domain.emergency_contacts?.length) throw new Error('Missing emergency_contacts persistence');
-  if (!domain.medical_intake?.length) throw new Error('Missing medical_intake persistence');
-  if (!domain.waivers?.length) throw new Error('Missing waivers persistence');
-  if (!domain.assessments?.length) throw new Error('Missing assessments persistence');
-  if (!domain.attendance?.length) throw new Error('Missing attendance persistence');
-  if (!domain.readiness?.length) throw new Error('Missing readiness persistence');
-  if (!domain.coach_observations?.length) throw new Error('Missing coach observations persistence');
-  if (!domain.guardians?.length) throw new Error('Missing guardian linkage persistence');
+  assertDomainPersistence(domain);
 
   console.log('8) Verify audit trail exists');
   const audit = await admin.call('/api/pilot/audit/get', {
     method: 'POST',
     body: { entity_id: intakeCaseId, limit: 100 },
   });
-
-  if (!audit.events?.some((row) => row.entity_type === 'intake_case_promotion')) {
-    throw new Error('Missing intake_case_promotion audit event');
-  }
+  assertAuditPromotionEvent(audit);
 
   console.log('9) Verify athlete login and retrieval');
   await athlete.call('/api/pilot/auth/login', {
@@ -303,9 +327,7 @@ async function run() {
   });
 
   const athleteSession = await athlete.call('/api/pilot/auth/session', { method: 'POST', body: {} });
-  if (!athleteSession.authenticated || athleteSession.athlete_id !== athleteId) {
-    throw new Error('Athlete login/session verification failed');
-  }
+  assertAthleteSession(athleteSession);
 
   const athleteRead = await athlete.call('/api/pilot/athletes/get', {
     method: 'POST',

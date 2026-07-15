@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, type SyntheticEvent } from 'react';
+import { useEffect, useState, type SyntheticEvent } from 'react';
 import TutorialButton from '@/components/TutorialButton';
+import { readRoleSession, subscribeRoleSession } from '@/components/roleSession';
 
 type VisitorType =
   | 'Athlete / Participant'
@@ -157,6 +158,7 @@ const programInterestOptions = [
 const contactMethodOptions = ['Email', 'Phone', 'Either'] as const;
 
 export default function PublicPortalPage() {
+  const [activeRole, setActiveRole] = useState<string | null>(null);
   const [selectedPath, setSelectedPath] = useState<VisitorType>('General Visitor');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -170,6 +172,16 @@ export default function PublicPortalPage() {
   const [confirmation, setConfirmation] = useState('');
   const [openFaq, setOpenFaq] = useState<string | null>(null);
   const [telemetryTraces, setTelemetryTraces] = useState<TelemetryTrace[]>([]);
+
+  useEffect(() => {
+    const syncRole = () => {
+      const session = readRoleSession();
+      setActiveRole(session?.role ?? null);
+    };
+
+    syncRole();
+    return subscribeRoleSession(syncRole);
+  }, []);
 
   function addTrace(event: TelemetryTrace['event'], detail: string) {
     setTelemetryTraces((prev) => [{ timestamp: new Date().toISOString(), event, detail }, ...prev].slice(0, 80));
@@ -216,6 +228,12 @@ export default function PublicPortalPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/login"
+              className="inline-flex min-h-[40px] items-center justify-center border-2 border-[var(--black)] bg-[var(--red-primary)] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--white)] transition hover:bg-[var(--red-highlight)]"
+            >
+              Member Login
+            </Link>
             <TutorialButton anchor="public-portal-guide" />
             <Link
               href="/help#tester-guide"
@@ -241,6 +259,27 @@ export default function PublicPortalPage() {
             </div>
           ))}
         </section>
+
+        {activeRole === 'admin' && (
+          <section className="mt-6 border-[3px] border-[var(--black)] bg-[var(--red-primary)] p-5 text-[var(--white)] shadow-[var(--shadow-md)]">
+            <p className="text-xs font-mono uppercase tracking-[0.24em] text-[var(--canvas-tan-light)]">Admin Editing Mode</p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <p className="text-sm leading-6 text-[var(--white)]">You are viewing the public surface as an admin. Use these links to manage visitor-facing content and announcements.</p>
+              <Link
+                href="/admin"
+                className="inline-flex min-h-[40px] items-center justify-center border-2 border-[var(--white)] bg-transparent px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--white)] transition hover:bg-[var(--white)] hover:text-[var(--red-primary)]"
+              >
+                Open Admin Workspace
+              </Link>
+              <Link
+                href="/login"
+                className="inline-flex min-h-[40px] items-center justify-center border-2 border-[var(--white)] bg-[var(--canvas-tan-light)] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--white)]"
+              >
+                Manage Announcements
+              </Link>
+            </div>
+          </section>
+        )}
 
         <section className="mt-6 border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-md)]">
           <p className="text-xs font-mono uppercase tracking-[0.25em] text-[var(--red-primary)]">Identity</p>

@@ -343,6 +343,16 @@ export async function POST(request: NextRequest) {
         constraint pilot_coach_observations_pk primary key (organization_id, note_id),
         constraint pilot_coach_observations_athlete_fk foreign key (organization_id, athlete_id) references pilot.athletes(organization_id, athlete_id) on delete cascade
       )`,
+      `create table if not exists pilot.announcements (
+        organization_id text not null references pilot.organizations(organization_id),
+        announcement_id uuid not null,
+        message text not null,
+        author_name text not null,
+        author_role text not null,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now(),
+        constraint pilot_announcements_pk primary key (organization_id, announcement_id)
+      )`,
       `create index if not exists idx_pilot_intake_cases_org_status on pilot.intake_cases(organization_id, status, updated_at desc)`,
       `create index if not exists idx_pilot_intake_documents_org_case on pilot.intake_documents(organization_id, intake_case_id, created_at desc)`,
       `create index if not exists idx_pilot_documents_owner on pilot.documents(organization_id, owner_entity_type, owner_entity_id, created_at desc)`,
@@ -354,6 +364,7 @@ export async function POST(request: NextRequest) {
       `create index if not exists idx_pilot_attendance_org_athlete on pilot.attendance(organization_id, athlete_id, attendance_date desc)`,
       `create index if not exists idx_pilot_readiness_org_athlete on pilot.readiness(organization_id, athlete_id, measured_at desc)`,
       `create index if not exists idx_pilot_coach_observations_org_athlete on pilot.coach_observations(organization_id, athlete_id, created_at desc)`,
+      `create index if not exists idx_pilot_announcements_org_created on pilot.announcements(organization_id, created_at desc)`,
     ];
 
     const client = new Client({
