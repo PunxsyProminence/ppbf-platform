@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import TutorialButton from '@/components/TutorialButton';
@@ -23,7 +26,42 @@ const complianceCards = [
 
 const capabilityStatus = 'PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED | HUMAN REVIEW REQUIRED';
 
+interface ShadowRequirementItem {
+  research_requirement_id: number;
+  status: 'open' | 'resolved';
+}
+
 export default function BoardComplianceMonitoringPage() {
+  const [requirements, setRequirements] = useState<ShadowRequirementItem[]>([]);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch('/api/pilot/shadow/research-requirements');
+        if (!response.ok) {
+          throw new Error('Unable to load SHADOW research requirements.');
+        }
+
+        const payload = (await response.json()) as { items?: ShadowRequirementItem[] };
+        setRequirements(payload.items ?? []);
+        setErrorMessage('');
+      } catch (error) {
+        setRequirements([]);
+        setErrorMessage(error instanceof Error ? error.message : 'Unable to load SHADOW research requirements.');
+      }
+    })();
+  }, []);
+
+  const cards = useMemo(
+    () => [
+      ...complianceCards,
+      `Open SHADOW Requirements (${requirements.filter((item) => item.status === 'open').length})`,
+      `Resolved SHADOW Requirements (${requirements.filter((item) => item.status === 'resolved').length})`,
+    ],
+    [requirements],
+  );
+
   return (
     <RoleSessionGate allowedRoles={boardRoles}>
       <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
@@ -35,11 +73,12 @@ export default function BoardComplianceMonitoringPage() {
             <p className="max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
               Board compliance watch and governance monitoring surface. This route is static/front-end only and does not run compliance automation.
             </p>
+            {errorMessage ? <p className="text-sm text-[var(--red-primary)]">{errorMessage}</p> : null}
             <TutorialButton anchor="planned-capabilities-guide" />
           </header>
 
           <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {complianceCards.map((card) => (
+            {cards.map((card) => (
               <article key={card} className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
                 <h2 className="text-sm font-bold uppercase tracking-[0.08em]">{card}</h2>
                 <p className="mt-2 text-xs font-mono uppercase tracking-[0.08em] text-[var(--red-primary)]">

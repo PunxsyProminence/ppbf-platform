@@ -1,25 +1,81 @@
 'use client';
 
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 
 const capabilityStatus = 'PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED | HUMAN REVIEW REQUIRED';
 
-const coachTrendPanels = [
-  { title: 'Readiness Trends', note: 'Mock trend line placeholder for weekly readiness variation.', label: 'FRONT-END PLACEHOLDER' },
-  { title: 'Coach Review Trends', note: 'Review cadence and pending trend checks (mock display).', label: 'COACH REVIEW REQUIRED' },
-  { title: 'Goal Progression', note: 'Goal completion path with mock checkpoint markers.', label: 'HUMAN REVIEW REQUIRED' },
-  { title: 'Skill Progression', note: 'Technique development lane with static sample status cards.', label: 'FRONT-END PLACEHOLDER' },
-];
+interface ShadowObservationItem {
+  id: string;
+  source: 'event' | 'telemetry';
+  label: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  review_state: 'pending_review' | 'approved' | 'rejected' | 'promoted' | 'unknown';
+  created_at: string;
+}
 
-const queueItems = [
-  'Coach Action Queue Placeholder',
-  'Closed-Loop Feedback Placeholder',
-  'Development Recommendation Placeholder',
-  'Assessment History Placeholder',
-];
+interface ShadowReviewItem {
+  intake_case_id: string;
+  status: 'pending_review' | 'approved' | 'rejected' | 'promoted';
+  summary: string;
+  primary_athlete_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 export default function CoachProgressionIntelligencePage() {
+  const [observations, setObservations] = useState<ShadowObservationItem[]>([]);
+  const [reviews, setReviews] = useState<ShadowReviewItem[]>([]);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const [observationResponse, reviewResponse] = await Promise.all([
+          fetch('/api/pilot/shadow/observation-projection', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 10 }) }),
+          fetch('/api/pilot/shadow/review-projection', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 10 }) }),
+        ]);
+
+        if (!observationResponse.ok || !reviewResponse.ok) {
+          throw new Error('Unable to load live coach progression signals.');
+        }
+
+        const observationPayload = (await observationResponse.json()) as { items?: ShadowObservationItem[] };
+        const reviewPayload = (await reviewResponse.json()) as { queue?: ShadowReviewItem[] };
+
+        setObservations(observationPayload.items ?? []);
+        setReviews(reviewPayload.queue ?? []);
+        setErrorMessage('');
+      } catch (error) {
+        setObservations([]);
+        setReviews([]);
+        setErrorMessage(error instanceof Error ? error.message : 'Unable to load live coach progression signals.');
+      }
+    })();
+  }, []);
+
+  const coachTrendPanels = useMemo(
+    () => [
+      { title: 'Readiness Trends', note: observations.length > 0 ? `${observations.length} live observations available.` : 'No live observations yet.', label: observations.length > 0 ? 'LIVE' : 'EMPTY' },
+      { title: 'Coach Review Trends', note: reviews.length > 0 ? `${reviews.length} items in review projection.` : 'No review items yet.', label: reviews.some((item) => item.status === 'pending_review') ? 'COACH REVIEW REQUIRED' : 'LIVE' },
+      { title: 'Goal Progression', note: observations.some((item) => item.review_state === 'approved') ? 'Approved signals are present in the projection.' : 'Goal progression remains observational.', label: 'HUMAN REVIEW REQUIRED' },
+      { title: 'Skill Progression', note: observations.some((item) => item.label.toLowerCase().includes('skill')) ? 'Skill-related signals detected.' : 'No skill-specific signals yet.', label: 'LIVE' },
+    ],
+    [observations, reviews],
+  );
+
+  const queueItems = useMemo(
+    () => [
+      reviews.some((item) => item.status === 'pending_review') ? 'Coach Action Queue Live' : 'Coach Action Queue Clear',
+      observations.length > 0 ? 'Closed-Loop Feedback Visible' : 'Closed-Loop Feedback Waiting',
+      reviews.length > 0 ? 'Development Recommendation Stream Live' : 'Development Recommendation Stream Empty',
+      observations.length > 0 ? 'Assessment History Stream Live' : 'Assessment History Stream Empty',
+    ],
+    [observations, reviews],
+  );
+
   return (
     <RoleStandaloneView roleLabel="Coach Workspace" routeLabel="/coach/progression-intelligence" allowedRoles={['coach']} showShellHeader={false}>
       <div className="space-y-6">
@@ -32,6 +88,7 @@ export default function CoachProgressionIntelligencePage() {
           <p className="mt-2 text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">
             {capabilityStatus}
           </p>
+          {errorMessage ? <p className="mt-2 text-xs text-[#f0c4c4]">{errorMessage}</p> : null}
         </header>
 
         <section className="grid gap-4 lg:grid-cols-2">

@@ -11,6 +11,7 @@ import { createIntakeCase, createIntakeDocument, type IntakeDocumentType } from 
 import { assertShadowAuthority, type ShadowAutomationMode } from '@/src/server/pilot/shadowAuthority';
 import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
+import { createShadowResearchRequirement } from '@/src/server/pilot/shadowResearch';
 import { writeShadowTelemetryEvent } from '@/src/server/pilot/shadowTelemetry';
 import { buildUploadResearchFields, classifyShadowDocument, routeShadowClassification } from '@/src/server/pilot/shadow';
 
@@ -52,6 +53,8 @@ export async function POST(request: NextRequest) {
       action: 'intake.shadow_upload',
       automationMode,
       confidenceTier: 'SUFFICIENT_FOR_REVIEW',
+      sourceConfidenceTier: 'SUFFICIENT_FOR_REVIEW',
+      sourceVerificationState: 'unverified',
       lowRisk: true,
       reversible: true,
       withinApprovedOptions: true,
@@ -152,6 +155,29 @@ export async function POST(request: NextRequest) {
         research_requirement: researchFields.researchRequirement,
         knowledge_gap: researchFields.knowledgeGap,
         source_status: researchFields.sourceStatus,
+        source_verification_state: researchFields.sourceVerificationState,
+      },
+    });
+
+    await createShadowResearchRequirement({
+      organizationId: principal.organizationId,
+      sourceEventName: 'SHADOW_UPLOAD_CLASSIFIED_AND_ROUTED',
+      sourceEntityType: 'shadow_intake',
+      sourceEntityId: intakeId,
+      researchRequirement: researchFields.researchRequirement,
+      knowledgeGap: researchFields.knowledgeGap,
+      evidenceLabel: classification,
+      sourceStatus: researchFields.sourceStatus,
+      sourceConfidenceTier: 'SUFFICIENT_FOR_REVIEW',
+      sourceVerificationState: researchFields.sourceVerificationState,
+      createdByAccountId: principal.accountId,
+      createdByRole: principal.role,
+      metadata: {
+        file_name: uploaded.name,
+        intake_case_id: intakeCaseId,
+        intake_document_id: intakeDocumentId,
+        document_type: documentType,
+        routed_queue: routedQueue,
       },
     });
 
@@ -165,6 +191,7 @@ export async function POST(request: NextRequest) {
         classification,
         routed_queue: routedQueue,
         automation_mode: automationMode,
+        source_verification_state: researchFields.sourceVerificationState,
       },
     });
 

@@ -1,33 +1,93 @@
 'use client';
 
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 
 const capabilityStatus = 'PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED | HUMAN REVIEW REQUIRED';
 
-const overviewStats = [
-  { label: 'Progression Intelligence Overview', value: 'PLANNED' },
-  { label: 'Assessment History', value: 'FRONT-END PLACEHOLDER' },
-  { label: 'Goal Progression', value: 'Visible' },
-  { label: 'Skill Progression', value: 'Visible' },
-  { label: 'Readiness Trends', value: 'Visible (Mock)' },
-  { label: 'Coach Review Trends', value: 'Coach Review Required' },
-];
+interface ShadowObservationItem {
+  id: string;
+  source: 'event' | 'telemetry';
+  label: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  review_state: 'pending_review' | 'approved' | 'rejected' | 'promoted' | 'unknown';
+  created_at: string;
+}
 
-const timelineItems = [
-  { period: 'Week 1', note: 'Baseline readiness and movement assessment logged (mock).', status: 'FRONT-END PLACEHOLDER' },
-  { period: 'Week 2', note: 'Skill progression checkpoint and coach note registered (mock).', status: 'HUMAN REVIEW REQUIRED' },
-  { period: 'Week 3', note: 'Goal progression adjustment and training plan revision (mock).', status: 'COACH REVIEW REQUIRED' },
-];
-
-const recommendationCards = [
-  { title: 'Development Recommendation Placeholder', state: capabilityStatus },
-  { title: 'Closed-Loop Feedback Placeholder', state: capabilityStatus },
-  { title: 'Coach Action Queue Placeholder', state: capabilityStatus },
-  { title: 'Parent-Support Visibility Placeholder', state: capabilityStatus },
-];
+interface ShadowReviewItem {
+  intake_case_id: string;
+  status: 'pending_review' | 'approved' | 'rejected' | 'promoted';
+  summary: string;
+  primary_athlete_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 export default function AthleteProgressionIntelligencePage() {
+  const [observations, setObservations] = useState<ShadowObservationItem[]>([]);
+  const [reviews, setReviews] = useState<ShadowReviewItem[]>([]);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const [observationResponse, reviewResponse] = await Promise.all([
+          fetch('/api/pilot/shadow/observation-projection', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 12 }) }),
+          fetch('/api/pilot/shadow/review-projection', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 8 }) }),
+        ]);
+
+        if (!observationResponse.ok || !reviewResponse.ok) {
+          throw new Error('Unable to load live progression signals.');
+        }
+
+        const observationPayload = (await observationResponse.json()) as { items?: ShadowObservationItem[] };
+        const reviewPayload = (await reviewResponse.json()) as { queue?: ShadowReviewItem[] };
+
+        setObservations(observationPayload.items ?? []);
+        setReviews(reviewPayload.queue ?? []);
+        setErrorMessage('');
+      } catch (error) {
+        setObservations([]);
+        setReviews([]);
+        setErrorMessage(error instanceof Error ? error.message : 'Unable to load live progression signals.');
+      }
+    })();
+  }, []);
+
+  const overviewStats = useMemo(
+    () => [
+      { label: 'Progression Intelligence Overview', value: observations.length > 0 ? 'LIVE' : 'EMPTY' },
+      { label: 'Assessment History', value: String(observations.length) },
+      { label: 'Goal Progression', value: reviews.some((item) => item.status === 'approved') ? 'In Review' : 'Observed' },
+      { label: 'Skill Progression', value: observations.some((item) => item.review_state === 'approved') ? 'Validated' : 'Observed' },
+      { label: 'Readiness Trends', value: observations.length > 0 ? 'Live' : 'Waiting' },
+      { label: 'Coach Review Trends', value: String(reviews.length) },
+    ],
+    [observations, reviews],
+  );
+
+  const timelineItems = useMemo(
+    () =>
+      observations.slice(0, 3).map((item, index) => ({
+        period: `Signal ${index + 1}`,
+        note: item.label,
+        status: item.review_state.toUpperCase(),
+      })),
+    [observations],
+  );
+
+  const recommendationCards = useMemo(
+    () => [
+      { title: 'Development Recommendation Queue', state: reviews.length > 0 ? `${reviews.length} active` : 'No active queue' },
+      { title: 'Closed-Loop Feedback', state: observations.length > 0 ? 'Visible in projection' : 'No projection data' },
+      { title: 'Coach Action Queue', state: reviews.some((item) => item.status === 'pending_review') ? 'Pending review' : 'Clear' },
+      { title: 'Parent-Support Visibility', state: observations.length > 0 ? 'Available' : 'Not yet observed' },
+    ],
+    [observations, reviews],
+  );
+
   return (
     <RoleStandaloneView roleLabel="Athlete Workspace" routeLabel="/athlete/progression-intelligence" allowedRoles={['athlete']} showShellHeader={false}>
       <div className="space-y-6">
@@ -40,6 +100,7 @@ export default function AthleteProgressionIntelligencePage() {
           <p className="mt-2 text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">
             {capabilityStatus}
           </p>
+          {errorMessage ? <p className="mt-2 text-xs text-[#f0c4c4]">{errorMessage}</p> : null}
         </header>
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">

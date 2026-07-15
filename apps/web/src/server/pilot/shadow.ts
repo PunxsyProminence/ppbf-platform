@@ -12,6 +12,8 @@ export type ShadowQueue =
 
 export type ShadowSourceStatus = 'observed' | 'approved' | 'rejected' | 'promoted';
 
+export type ShadowSourceVerificationState = 'verified' | 'partially_verified' | 'unverified' | 'unknown';
+
 export function classifyShadowDocument(fileName: string, hint?: string): ShadowClassification {
   const candidate = `${fileName} ${hint || ''}`.toLowerCase();
 
@@ -71,11 +73,13 @@ export function buildUploadResearchFields(params: {
   researchRequirement: string;
   knowledgeGap: string;
   sourceStatus: ShadowSourceStatus;
+  sourceVerificationState: ShadowSourceVerificationState;
 } {
   return {
     researchRequirement: `Review ${params.documentType} (${params.fileName}) and validate routing to ${params.routedQueue}.`,
     knowledgeGap: inferKnowledgeGap(params.classification),
     sourceStatus: 'observed',
+    sourceVerificationState: 'unverified',
   };
 }
 
@@ -86,12 +90,14 @@ export function buildReviewResearchFields(params: {
   researchRequirement: string;
   knowledgeGap: string;
   sourceStatus: ShadowSourceStatus;
+  sourceVerificationState: ShadowSourceVerificationState;
 } {
   if (params.action === 'approve') {
     return {
       researchRequirement: `Approved intake case ${params.intakeCaseId} must be validated for promotion readiness.`,
       knowledgeGap: 'Approval granted, but lineage and downstream consistency still require confirmation.',
       sourceStatus: 'approved',
+      sourceVerificationState: 'partially_verified',
     };
   }
 
@@ -100,6 +106,7 @@ export function buildReviewResearchFields(params: {
       researchRequirement: `Rejected intake case ${params.intakeCaseId} should document remediation requirements before resubmission.`,
       knowledgeGap: 'Rejection reason resolved status is unknown until new evidence is submitted.',
       sourceStatus: 'rejected',
+      sourceVerificationState: 'unverified',
     };
   }
 
@@ -107,5 +114,6 @@ export function buildReviewResearchFields(params: {
     researchRequirement: `Promoted intake case ${params.intakeCaseId} requires post-promotion verification of operational records.`,
     knowledgeGap: 'Promotion complete, but ongoing quality verification and correction readiness are still required.',
     sourceStatus: 'promoted',
+    sourceVerificationState: 'verified',
   };
 }

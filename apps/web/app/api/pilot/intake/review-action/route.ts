@@ -9,6 +9,7 @@ import { assertShadowAuthority, type ShadowAutomationMode } from '@/src/server/p
 import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import { buildReviewResearchFields } from '@/src/server/pilot/shadow';
+import { createShadowResearchRequirement } from '@/src/server/pilot/shadowResearch';
 import { writeShadowTelemetryEvent } from '@/src/server/pilot/shadowTelemetry';
 import {
   bindIntakeDocumentsToOwner,
@@ -133,6 +134,27 @@ export async function POST(request: NextRequest) { // NOSONAR
           research_requirement: researchFields.researchRequirement,
           knowledge_gap: researchFields.knowledgeGap,
           source_status: researchFields.sourceStatus,
+          source_verification_state: researchFields.sourceVerificationState,
+        },
+      });
+
+      await createShadowResearchRequirement({
+        organizationId: principal.organizationId,
+        sourceEventName: 'SHADOW_INTAKE_CASE_REJECTED',
+        sourceEntityType: 'intake_case',
+        sourceEntityId: intakeCaseId,
+        researchRequirement: researchFields.researchRequirement,
+        knowledgeGap: researchFields.knowledgeGap,
+        evidenceLabel: null,
+        sourceStatus: researchFields.sourceStatus,
+        sourceConfidenceTier: 'LIMITED',
+        sourceVerificationState: researchFields.sourceVerificationState,
+        createdByAccountId: principal.accountId,
+        createdByRole: principal.role,
+        metadata: {
+          action: 'reject',
+          notes: body.notes ?? '',
+          athlete_id: intakeCase.primary_athlete_id,
         },
       });
 
@@ -185,6 +207,27 @@ export async function POST(request: NextRequest) { // NOSONAR
           research_requirement: researchFields.researchRequirement,
           knowledge_gap: researchFields.knowledgeGap,
           source_status: researchFields.sourceStatus,
+          source_verification_state: researchFields.sourceVerificationState,
+        },
+      });
+
+      await createShadowResearchRequirement({
+        organizationId: principal.organizationId,
+        sourceEventName: 'SHADOW_INTAKE_CASE_APPROVED',
+        sourceEntityType: 'intake_case',
+        sourceEntityId: intakeCaseId,
+        researchRequirement: researchFields.researchRequirement,
+        knowledgeGap: researchFields.knowledgeGap,
+        evidenceLabel: null,
+        sourceStatus: researchFields.sourceStatus,
+        sourceConfidenceTier: 'SUFFICIENT_FOR_REVIEW',
+        sourceVerificationState: researchFields.sourceVerificationState,
+        createdByAccountId: principal.accountId,
+        createdByRole: principal.role,
+        metadata: {
+          action: 'approve',
+          notes: body.notes ?? '',
+          athlete_id: intakeCase.primary_athlete_id,
         },
       });
 
@@ -394,6 +437,27 @@ export async function POST(request: NextRequest) { // NOSONAR
         research_requirement: researchFields.researchRequirement,
         knowledge_gap: researchFields.knowledgeGap,
         source_status: researchFields.sourceStatus,
+        source_verification_state: researchFields.sourceVerificationState,
+      },
+    });
+
+    await createShadowResearchRequirement({
+      organizationId: principal.organizationId,
+      sourceEventName: 'SHADOW_INTAKE_CASE_PROMOTED',
+      sourceEntityType: 'intake_case',
+      sourceEntityId: intakeCaseId,
+      researchRequirement: researchFields.researchRequirement,
+      knowledgeGap: researchFields.knowledgeGap,
+      evidenceLabel: null,
+      sourceStatus: researchFields.sourceStatus,
+      sourceConfidenceTier: 'SUFFICIENT_FOR_REVIEW',
+      sourceVerificationState: researchFields.sourceVerificationState,
+      createdByAccountId: principal.accountId,
+      createdByRole: principal.role,
+      metadata: {
+        action: 'promote',
+        notes: body.notes ?? '',
+        athlete_id: promotion.athlete.athlete_id,
       },
     });
 

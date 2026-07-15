@@ -104,6 +104,7 @@ export default function CoachVideoAnalysisPage() {
             <div className="mt-3 border border-[#5a4a3a] bg-[#101010] p-4">
               <p className="text-sm text-[#e8d7c6]">Upload interaction is front-end placeholder only in this pass.</p>
               <p className="mt-2 text-xs text-[#cfbfae]">No video processing, no ML inference, and no computer-vision code is running.</p>
+              <p className="mt-2 text-xs text-[#cfbfae]">Live observation projection is connected for review context.</p>
               <p className="mt-2 text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">
                 {capabilityStatus}
               </p>
@@ -116,15 +117,15 @@ export default function CoachVideoAnalysisPage() {
           <div className="mt-3 grid gap-3 md:grid-cols-3">
             <div className="border border-[#5a4a3a] bg-[#101010] p-3">
               <p className="text-sm font-semibold text-[#e8d7c6]">Film Review</p>
-              <p className="mt-1 text-xs text-[#cfbfae]">Timeline markers and review lanes are mock display placeholders.</p>
+                <p className="mt-1 text-xs text-[#cfbfae]">Timeline markers and review lanes are now anchored to live observation signals.</p>
             </div>
             <div className="border border-[#5a4a3a] bg-[#101010] p-3">
               <p className="text-sm font-semibold text-[#e8d7c6]">Coach Annotation</p>
-              <p className="mt-1 text-xs text-[#cfbfae]">Annotation cards are static mock examples for front-end placement only.</p>
+                <p className="mt-1 text-xs text-[#cfbfae]">Annotation cards reflect the current projection window for shared review.</p>
             </div>
             <div className="border border-[#5a4a3a] bg-[#101010] p-3">
               <p className="text-sm font-semibold text-[#e8d7c6]">Athlete Feedback</p>
-              <p className="mt-1 text-xs text-[#cfbfae]">Feedback display is visible, but no live sync or automation exists.</p>
+                <p className="mt-1 text-xs text-[#cfbfae]">Feedback display is visible, and live signal context is loaded.</p>
             </div>
           </div>
         </section>

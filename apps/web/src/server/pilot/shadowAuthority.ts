@@ -17,6 +17,8 @@ export interface ShadowAuthorityCheckInput {
   action: string;
   automationMode: ShadowAutomationMode;
   confidenceTier: ShadowConfidenceTier;
+  sourceConfidenceTier?: ShadowConfidenceTier;
+  sourceVerificationState?: 'verified' | 'partially_verified' | 'unverified' | 'unknown';
   lowRisk: boolean;
   reversible: boolean;
   withinApprovedOptions: boolean;
@@ -45,6 +47,8 @@ async function ensureShadowAuthorityTable(): Promise<void> {
       action text not null,
       automation_mode text not null,
       confidence_tier text not null,
+      source_confidence_tier text null,
+      source_verification_state text null,
       allowed boolean not null,
       reason text not null,
       metadata jsonb not null default '{}'::jsonb,
@@ -56,6 +60,9 @@ async function ensureShadowAuthorityTable(): Promise<void> {
     `create index if not exists idx_shadow_authority_checks_org_created
      on pilot.shadow_authority_checks(organization_id, created_at desc)`,
   );
+
+  await query(`alter table pilot.shadow_authority_checks add column if not exists source_confidence_tier text null`);
+  await query(`alter table pilot.shadow_authority_checks add column if not exists source_verification_state text null`);
 
   ensured = true;
 }
@@ -105,8 +112,8 @@ export async function assertShadowAuthority(input: ShadowAuthorityCheckInput): P
   await ensureShadowAuthorityTable();
   await query(
     `insert into pilot.shadow_authority_checks
-     (organization_id, actor_account_id, actor_role, action, automation_mode, confidence_tier, allowed, reason, metadata)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)`,
+     (organization_id, actor_account_id, actor_role, action, automation_mode, confidence_tier, source_confidence_tier, source_verification_state, allowed, reason, metadata)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb)`,
     [
       input.organizationId,
       input.actor.accountId,
@@ -114,6 +121,8 @@ export async function assertShadowAuthority(input: ShadowAuthorityCheckInput): P
       input.action,
       input.automationMode,
       input.confidenceTier,
+      input.sourceConfidenceTier ?? null,
+      input.sourceVerificationState ?? null,
       decision.allowed,
       decision.reason,
       JSON.stringify(input.metadata ?? {}),
