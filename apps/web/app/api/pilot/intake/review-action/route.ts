@@ -5,6 +5,9 @@ import { createAthleteAccount, createParentAccount } from '@/src/server/pilot/au
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { upsertAthlete } from '@/src/server/pilot/entities';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { assertShadowAuthority, type ShadowAutomationMode } from '@/src/server/pilot/shadowAuthority';
+import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
+import { writeShadowTelemetryEvent } from '@/src/server/pilot/shadowTelemetry';
 import {
   bindIntakeDocumentsToOwner,
   createAssessment,
@@ -40,13 +43,30 @@ export async function POST(request: NextRequest) { // NOSONAR
       action?: 'approve' | 'reject' | 'promote';
       notes?: string;
       promotion?: IntakePromotionPayload;
+      automation_mode?: ShadowAutomationMode;
     };
 
     const intakeCaseId = requireString(body.intake_case_id, 'intake_case_id');
     const action = body.action;
+    const automationMode = body.automation_mode ?? 'assisted';
     if (!action || !['approve', 'reject', 'promote'].includes(action)) {
       throw new Error('Unsupported action');
     }
+
+    await assertShadowAuthority({
+      actor: principal,
+      organizationId: principal.organizationId,
+      action: `intake.review_action.${action}`,
+      automationMode,
+      confidenceTier: action === 'promote' ? 'SUFFICIENT_FOR_REVIEW' : 'SUFFICIENT_FOR_LOW_RISK_ACTION',
+      lowRisk: action !== 'promote',
+      reversible: action !== 'promote',
+      withinApprovedOptions: true,
+      restrictionConflict: false,
+      metadata: {
+        intake_case_id: intakeCaseId,
+      },
+    });
 
     const intakeCase = await getIntakeCaseById(principal.organizationId, intakeCaseId);
     if (!intakeCase) {
@@ -76,6 +96,28 @@ export async function POST(request: NextRequest) { // NOSONAR
         details: { action: 'reject', notes: body.notes ?? '' },
       });
 
+      await emitShadowEvent({
+        organizationId: principal.organizationId,
+        eventName: 'SHADOW_INTAKE_CASE_REJECTED',
+        entityType: 'intake_case',
+        entityId: intakeCaseId,
+        actorAccountId: principal.accountId,
+        actorRole: principal.role,
+        payload: {
+          automation_mode: automationMode,
+        },
+      });
+
+      await writeShadowTelemetryEvent({
+        organizationId: principal.organizationId,
+        metricName: 'shadow.intake.review.reject',
+        actorAccountId: principal.accountId,
+        actorRole: principal.role,
+        dimensions: {
+          automation_mode: automationMode,
+        },
+      });
+
       return NextResponse.json({ ok: true, intake_case_id: intakeCaseId, status: 'rejected' });
     }
 
@@ -98,12 +140,38 @@ export async function POST(request: NextRequest) { // NOSONAR
         details: { action: 'approve', notes: body.notes ?? '' },
       });
 
+      await emitShadowEvent({
+        organizationId: principal.organizationId,
+        eventName: 'SHADOW_INTAKE_CASE_APPROVED',
+        entityType: 'intake_case',
+        entityId: intakeCaseId,
+        actorAccountId: principal.accountId,
+        actorRole: principal.role,
+        payload: {
+          automation_mode: automationMode,
+        },
+      });
+
+      await writeShadowTelemetryEvent({
+        organizationId: principal.organizationId,
+        metricName: 'shadow.intake.review.approve',
+        actorAccountId: principal.accountId,
+        actorRole: principal.role,
+        dimensions: {
+          automation_mode: automationMode,
+        },
+      });
+
       return NextResponse.json({ ok: true, intake_case_id: intakeCaseId, status: 'approved' });
     }
 
     const promotion = body.promotion;
     if (!promotion) {
       throw new Error('Missing promotion payload');
+    }
+
+    if (automationMode === 'automatic') {
+      throw new Error('Forbidden: automatic intake promotion is not allowed');
     }
 
     if (principal.role !== 'organization_admin') {
@@ -270,6 +338,30 @@ export async function POST(request: NextRequest) { // NOSONAR
         athlete_account_id: promotion.athlete.account_id ?? null,
         guardian_parent_id: promotion.guardian?.parent_id ?? null,
         guardian_account_id: promotion.guardian?.account_id ?? null,
+      },
+    });
+
+    await emitShadowEvent({
+      organizationId: principal.organizationId,
+      eventName: 'SHADOW_INTAKE_CASE_PROMOTED',
+      entityType: 'intake_case',
+      entityId: intakeCaseId,
+      actorAccountId: principal.accountId,
+      actorRole: principal.role,
+      payload: {
+        athlete_id: promotion.athlete.athlete_id,
+        automation_mode: automationMode,
+      },
+    });
+
+    await writeShadowTelemetryEvent({
+      organizationId: principal.organizationId,
+      metricName: 'shadow.intake.review.promote',
+      actorAccountId: principal.accountId,
+      actorRole: principal.role,
+      dimensions: {
+        automation_mode: automationMode,
+        has_guardian: Boolean(promotion.guardian),
       },
     });
 

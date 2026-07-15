@@ -3,6 +3,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { assertShadowAuthority, type ShadowAutomationMode } from '@/src/server/pilot/shadowAuthority';
+import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
+import { writeShadowTelemetryEvent } from '@/src/server/pilot/shadowTelemetry';
 import {
   createAssessment,
   createAttendance,
@@ -31,13 +34,30 @@ export async function POST(request: NextRequest) { // NOSONAR
       entity_type?: 'emergency_contact' | 'medical' | 'waiver' | 'assessment' | 'attendance' | 'readiness' | 'coach_note' | 'guardian_link';
       athlete_id?: string;
       payload?: Record<string, unknown>;
+      automation_mode?: ShadowAutomationMode;
     };
 
     const entityType = body.entity_type;
     const athleteId = body.athlete_id?.trim() || '';
+    const automationMode = body.automation_mode ?? 'assisted';
     if (!entityType || !athleteId || !body.payload) {
       throw new Error('Missing entity_type, athlete_id, or payload');
     }
+
+    await assertShadowAuthority({
+      actor: principal,
+      organizationId: principal.organizationId,
+      action: `intake.domain_upsert.${entityType}`,
+      automationMode,
+      confidenceTier: 'SUFFICIENT_FOR_REVIEW',
+      lowRisk: true,
+      reversible: true,
+      withinApprovedOptions: true,
+      restrictionConflict: false,
+      metadata: {
+        athlete_id: athleteId,
+      },
+    });
 
     await assertActorCanAccessAthlete(principal, athleteId);
 
@@ -144,6 +164,30 @@ export async function POST(request: NextRequest) { // NOSONAR
       entity_type: `intake_${entityType}`,
       entity_id: entityId || athleteId,
       details: { athlete_id: athleteId },
+    });
+
+    await emitShadowEvent({
+      organizationId: principal.organizationId,
+      eventName: 'SHADOW_INTAKE_DOMAIN_UPSERTED',
+      entityType: `intake_${entityType}`,
+      entityId: entityId || athleteId,
+      actorAccountId: principal.accountId,
+      actorRole: principal.role,
+      payload: {
+        athlete_id: athleteId,
+        automation_mode: automationMode,
+      },
+    });
+
+    await writeShadowTelemetryEvent({
+      organizationId: principal.organizationId,
+      metricName: 'shadow.intake.domain_upsert',
+      actorAccountId: principal.accountId,
+      actorRole: principal.role,
+      dimensions: {
+        entity_type: entityType,
+        automation_mode: automationMode,
+      },
     });
 
     return NextResponse.json({ ok: true, entity_type: entityType, entity_id: entityId, athlete_id: athleteId });

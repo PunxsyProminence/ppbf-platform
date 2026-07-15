@@ -365,6 +365,42 @@ export async function POST(request: NextRequest) {
       `create index if not exists idx_pilot_readiness_org_athlete on pilot.readiness(organization_id, athlete_id, measured_at desc)`,
       `create index if not exists idx_pilot_coach_observations_org_athlete on pilot.coach_observations(organization_id, athlete_id, created_at desc)`,
       `create index if not exists idx_pilot_announcements_org_created on pilot.announcements(organization_id, created_at desc)`,
+      `create table if not exists pilot.shadow_authority_checks (
+        authority_check_id bigserial primary key,
+        organization_id text not null,
+        actor_account_id text null,
+        actor_role text null,
+        action text not null,
+        automation_mode text not null,
+        confidence_tier text not null,
+        allowed boolean not null,
+        reason text not null,
+        metadata jsonb not null default '{}'::jsonb,
+        created_at timestamptz not null default now()
+      )`,
+      `create index if not exists idx_shadow_authority_checks_org_created on pilot.shadow_authority_checks(organization_id, created_at desc)`,
+      `create table if not exists pilot.shadow_events (
+        shadow_event_id bigserial primary key,
+        organization_id text not null,
+        event_name text not null,
+        entity_type text not null,
+        entity_id text not null,
+        actor_account_id text null,
+        actor_role text null,
+        payload jsonb not null default '{}'::jsonb,
+        created_at timestamptz not null default now()
+      )`,
+      `create index if not exists idx_shadow_events_org_created on pilot.shadow_events(organization_id, created_at desc)`,
+      `create table if not exists pilot.shadow_telemetry_events (
+        shadow_telemetry_event_id bigserial primary key,
+        organization_id text not null,
+        metric_name text not null,
+        actor_account_id text null,
+        actor_role text null,
+        dimensions jsonb not null default '{}'::jsonb,
+        created_at timestamptz not null default now()
+      )`,
+      `create index if not exists idx_shadow_telemetry_org_created on pilot.shadow_telemetry_events(organization_id, created_at desc)`,
     ];
 
     const client = new Client({
