@@ -11,17 +11,13 @@ Status Key:
 
 ## 1) Deploy-Target E2E Validation
 
-- Status: BLOCKED_EXTERNAL
+- Status: DONE
 - Owner: Platform/DevOps
 - Target Date: 2026-07-16
 - Task: run SHADOW E2E gate against deployed backend endpoint and archive evidence.
 - Verification Command:
   - `PILOT_GATE_BASE_URL=https://<deployed-api-host> npm --prefix apps/web run gate:pilot:shadow-e2e`
 - Evidence Output:
-  - Latest execution (2026-07-15) against `https://app-ppbf-staging.purpledesert-3a75d580.eastus.azurecontainerapps.io` failed:
-    - `Error: shadow-admin: POST /api/pilot/shadow/events failed (404) {}`
-  - Required for PASS: `SHADOW INTAKE GATE PASS`
- - Remediation Status (2026-07-15):
   - Initial staging redeploy run `29410768581` failed due to missing secret ref `azure-postgres-connection-string`.
   - Secret refs were restored directly on `app-ppbf-staging`:
     - `azure-postgres-connection-string`
@@ -29,10 +25,10 @@ Status Key:
     - `ppbf-pilot-bootstrap-key`
     - `ppbf-pilot-default-org-id`
     - `ppbf-pilot-shadow-container`
-  - Validation:
-    - Subsequent deploy run `29411738160` completed successfully.
-  - Remaining blocker:
-    - Staging gate still fails with `POST /api/pilot/shadow/events` returning `404`, indicating deployed image/runtime does not yet contain expected SHADOW route implementation.
+  - Subsequent deploy run `29411738160` completed successfully.
+  - Workflow run `29414990400` completed successfully after installing web dependencies for the gate.
+  - Final deployed validation:
+    - `PILOT_GATE_BASE_URL=https://app-ppbf-staging.purpledesert-3a75d580.eastus.azurecontainerapps.io npm --prefix apps/web run gate:pilot:shadow-e2e` => `SHADOW INTAKE GATE PASS`
 
 ## 2) CI Required Gate
 
@@ -154,3 +150,6 @@ Status Key:
 - `gh workflow run deploy-staging.yml --ref main` => dispatched run `29411738160`
 - run `29411738160` => SUCCESS
 - `PILOT_GATE_BASE_URL=https://app-ppbf-staging.purpledesert-3a75d580.eastus.azurecontainerapps.io npm --prefix apps/web run gate:pilot:shadow-e2e` => FAIL (`POST /api/pilot/shadow/events` returned 404)
+- `gh workflow run deploy-staging.yml --ref main` => dispatched run `29414990400`
+- run `29414990400` => SUCCESS
+- `PILOT_GATE_BASE_URL=https://app-ppbf-staging.purpledesert-3a75d580.eastus.azurecontainerapps.io npm --prefix apps/web run gate:pilot:shadow-e2e` => PASS
