@@ -78,6 +78,10 @@ jobs:
           test -n "$FQDN"
           echo "PILOT_GATE_BASE_URL=https://$FQDN" >> "$GITHUB_ENV"
 
+      - name: Install Web Dependencies For Gate
+        run: |
+          npm ci --prefix apps/web
+
       - name: Run SHADOW E2E Gate
         env:
           PPBF_PILOT_BOOTSTRAP_KEY: ${{ secrets.PPBF_PILOT_BOOTSTRAP_KEY }}
