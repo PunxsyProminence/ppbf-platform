@@ -60,6 +60,22 @@ interface CoachGoal {
   dueDate: string;
 }
 
+interface ShadowReviewQueueItem {
+  intake_case_id: string;
+  status: 'pending_review' | 'approved' | 'rejected' | 'promoted';
+  summary: string;
+  document_count: number;
+  updated_at: string;
+}
+
+interface ShadowObservationItem {
+  id: string;
+  source: 'event' | 'telemetry';
+  label: string;
+  review_state: 'pending_review' | 'approved' | 'rejected' | 'promoted' | 'unknown';
+  created_at: string;
+}
+
 function readinessDotClass(readiness: Athlete['readiness']): string {
   if (readiness === 'GREEN') return 'bg-green-500';
   if (readiness === 'YELLOW') return 'bg-yellow-500';
@@ -105,6 +121,9 @@ export default function CoachWorkspace() {
   const [reviewDecision, setReviewDecision] = useState('approved');
   const [reviewNotes, setReviewNotes] = useState('');
   const [reviewSyncMessage, setReviewSyncMessage] = useState('');
+  const [shadowQueue, setShadowQueue] = useState<ShadowReviewQueueItem[]>([]);
+  const [shadowObservations, setShadowObservations] = useState<ShadowObservationItem[]>([]);
+  const [shadowReadError, setShadowReadError] = useState('');
 
   // Dashboard data
   const [athletes] = useState<Athlete[]>([
@@ -308,6 +327,63 @@ export default function CoachWorkspace() {
         }
       } catch {
         // Leave manual entry available if auth session is unavailable.
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const [queueResult, observationResult] = await Promise.allSettled([
+          fetch('/api/pilot/shadow/review-projection', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ limit: 20 }),
+          }),
+          fetch('/api/pilot/shadow/observation-projection', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ limit: 20 }),
+          }),
+        ]);
+
+        let queueError = '';
+        let observationError = '';
+
+        if (queueResult.status === 'fulfilled') {
+          if (queueResult.value.ok) {
+            const queuePayload = (await queueResult.value.json()) as {
+              queue?: ShadowReviewQueueItem[];
+            };
+            setShadowQueue(queuePayload.queue ?? []);
+          } else {
+            queueError = 'review projection';
+          }
+        } else {
+          queueError = 'review projection';
+        }
+
+        if (observationResult.status === 'fulfilled') {
+          if (observationResult.value.ok) {
+            const observationPayload = (await observationResult.value.json()) as {
+              items?: ShadowObservationItem[];
+            };
+            setShadowObservations(observationPayload.items ?? []);
+          } else {
+            observationError = 'observation projection';
+          }
+        } else {
+          observationError = 'observation projection';
+        }
+
+        if (queueError || observationError) {
+          const failed = [queueError, observationError].filter(Boolean).join(' and ');
+          setShadowReadError(`Unable to load SHADOW ${failed}.`);
+        } else {
+          setShadowReadError('');
+        }
+      } catch (error) {
+        setShadowReadError(error instanceof Error ? error.message : 'Unable to load SHADOW read models.');
       }
     })();
   }, []);
@@ -810,6 +886,44 @@ export default function CoachWorkspace() {
                 <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">SHADOW Coach Assistant</h3>
                 <p className="text-sm text-[#b0a095]">Ask questions about session management, athlete readiness, goals, tasks, or coaching strategy.</p>
               </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
+                  <h3 className="font-mono text-xs font-bold uppercase tracking-[0.08em] text-[#d4a574]">SHADOW Review Projection</h3>
+                  {shadowQueue.length === 0 ? (
+                    <p className="mt-2 text-xs text-[#b0a095]">No SHADOW queue items returned.</p>
+                  ) : (
+                    <div className="mt-2 space-y-2">
+                      {shadowQueue.slice(0, 6).map((item) => (
+                        <div key={item.intake_case_id} className="border border-[#5a4a3a] bg-[#101010] p-2 text-xs text-[#cfbfae]">
+                          <p className="font-semibold text-[#e8d7c6]">{item.summary}</p>
+                          <p>Status: {item.status}</p>
+                          <p>Documents: {item.document_count}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
+                  <h3 className="font-mono text-xs font-bold uppercase tracking-[0.08em] text-[#d4a574]">SHADOW Observation Projection</h3>
+                  {shadowObservations.length === 0 ? (
+                    <p className="mt-2 text-xs text-[#b0a095]">No SHADOW observation items returned.</p>
+                  ) : (
+                    <div className="mt-2 space-y-2">
+                      {shadowObservations.slice(0, 6).map((item) => (
+                        <div key={item.id} className="border border-[#5a4a3a] bg-[#101010] p-2 text-xs text-[#cfbfae]">
+                          <p className="font-semibold text-[#e8d7c6]">{item.label}</p>
+                          <p>Source: {item.source}</p>
+                          <p>State: {item.review_state}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {shadowReadError ? <p className="text-xs text-[#f0c4c4]">{shadowReadError}</p> : null}
             </div>
           )}
 

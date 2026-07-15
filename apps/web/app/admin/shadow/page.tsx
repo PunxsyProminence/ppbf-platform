@@ -95,6 +95,32 @@ interface ReviewQueueApiResponse {
     created_at: string;
     updated_at: string;
     document_count: number;
+    shadow_event_name?: string | null;
+    shadow_event_at?: string | null;
+  }>;
+}
+
+interface ShadowTelemetryApiResponse {
+  ok: boolean;
+  telemetry: Array<{
+    shadow_telemetry_event_id: number;
+    metric_name: string;
+    actor_account_id: string | null;
+    actor_role: string | null;
+    dimensions: Record<string, unknown>;
+    created_at: string;
+  }>;
+}
+
+interface ShadowAuthorityApiResponse {
+  ok: boolean;
+  authority_checks: Array<{
+    authority_check_id: number;
+    action: string;
+    allowed: boolean;
+    reason: string;
+    actor_role: string | null;
+    created_at: string;
   }>;
 }
 
@@ -162,27 +188,6 @@ function parsePromotionPayloadFromNotes(notes: string): Record<string, unknown> 
   }
 }
 
-function createMockIntakeItem(dataType: DataType, source: string, destination: IntakeDestination, route?: string): IntakeItem {
-  const timestamp = nowIso();
-  return {
-    id: newId(),
-    intakeCaseId: newId(),
-    itemName: `${dataType} Intake ${timestamp.slice(11, 19)}`,
-    dataType,
-    source,
-    suggestedDestination: destination,
-    status: 'Pending',
-    reviewNeeded: true,
-    requiresJasonReview: true,
-    detectedType: dataType,
-    confidence: 'Medium',
-    notes: 'Pending classification review by SHADOW admin.',
-    destinationRoute: route ?? routeForDestination(destination),
-    timestamp,
-    lastUpdatedAt: timestamp,
-  };
-}
-
 function statusChipClasses(status: IntakeStatus): string {
   if (status === 'Pending') return 'border-[#8b4444] bg-[#341515] text-[#f0c4c4]';
   if (status === 'Classified') return 'border-[#a66424] bg-[#2d2214] text-[#f7d9b0]';
@@ -237,10 +242,8 @@ export default function AdminShadowConsolePage() {
     },
   ]);
   const [commandInput, setCommandInput] = useState('');
-  const [pendingQueue, setPendingQueue] = useState<IntakeItem[]>([
-    createMockIntakeItem('Policy Draft', 'Admin', 'Capability Registry', '/admin'),
-    createMockIntakeItem('Incident Note', 'Safety', 'Incident / Safety Log', '/audit'),
-  ]);
+  const [pendingQueue, setPendingQueue] = useState<IntakeItem[]>([]);
+  const [backendQueueReady, setBackendQueueReady] = useState(false);
   const [importHistory, setImportHistory] = useState<IntakeItem[]>([]);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [uploadedFileName, setUploadedFileName] = useState('');
@@ -251,6 +254,8 @@ export default function AdminShadowConsolePage() {
   const [historySort, setHistorySort] = useState<HistorySort>('newest');
   const [telemetryEvents, setTelemetryEvents] = useState<TelemetryEvent[]>([]);
   const [showTelemetry, setShowTelemetry] = useState(false);
+  const [shadowTelemetry, setShadowTelemetry] = useState<ShadowTelemetryApiResponse['telemetry']>([]);
+  const [shadowAuthorityChecks, setShadowAuthorityChecks] = useState<ShadowAuthorityApiResponse['authority_checks']>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploadError, setUploadError] = useState('');
@@ -269,6 +274,8 @@ export default function AdminShadowConsolePage() {
 
   useEffect(() => {
     void refreshBackendQueue().catch((error) => {
+      setBackendQueueReady(false);
+      setPendingQueue([]);
       appendConsoleLog({
         source: 'SHADOW',
         dataType: 'System',
@@ -277,12 +284,16 @@ export default function AdminShadowConsolePage() {
         destination: 'SHADOW Local State',
       });
     });
+
+    void refreshShadowOperationalReads().catch(() => {
+      // Keep console operational when SHADOW telemetry/authority reads are unavailable.
+    });
   }, []);
 
   const selectedItem = useMemo(() => pendingQueue.find((item) => item.id === selectedItemId) ?? null, [pendingQueue, selectedItemId]);
 
   async function refreshBackendQueue() {
-    const response = await fetch('/api/pilot/intake/review-queue', {
+    const response = await fetch('/api/pilot/shadow/review-projection', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
@@ -296,6 +307,7 @@ export default function AdminShadowConsolePage() {
 
     const mapped: IntakeItem[] = payload.queue.map((entry) => {
       const athleteSuffix = entry.primary_athlete_id ? ` | Athlete: ${entry.primary_athlete_id}` : '';
+      const eventSuffix = entry.shadow_event_name ? ` | Event: ${entry.shadow_event_name}` : '';
 
       return {
       id: entry.intake_case_id,
@@ -309,7 +321,7 @@ export default function AdminShadowConsolePage() {
       requiresJasonReview: entry.status === 'pending_review',
       detectedType: 'File Intake',
       confidence: 'Medium',
-      notes: `Documents in case: ${entry.document_count}${athleteSuffix}`,
+      notes: `Documents in case: ${entry.document_count}${athleteSuffix}${eventSuffix}`,
       destinationRoute: '/admin/shadow',
       timestamp: entry.created_at,
       lastUpdatedAt: entry.updated_at,
@@ -317,6 +329,32 @@ export default function AdminShadowConsolePage() {
     });
 
     setPendingQueue(mapped);
+    setBackendQueueReady(true);
+  }
+
+  async function refreshShadowOperationalReads() {
+    const [telemetryResponse, authorityResponse] = await Promise.all([
+      fetch('/api/pilot/shadow/telemetry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 40 }),
+      }),
+      fetch('/api/pilot/shadow/authority', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 40 }),
+      }),
+    ]);
+
+    if (telemetryResponse.ok) {
+      const telemetryPayload = (await telemetryResponse.json()) as ShadowTelemetryApiResponse;
+      setShadowTelemetry(telemetryPayload.telemetry ?? []);
+    }
+
+    if (authorityResponse.ok) {
+      const authorityPayload = (await authorityResponse.json()) as ShadowAuthorityApiResponse;
+      setShadowAuthorityChecks(authorityPayload.authority_checks ?? []);
+    }
   }
 
   function appendTelemetry(event: TelemetryEvent['event'], payload: Record<string, unknown>) {
@@ -343,6 +381,10 @@ export default function AdminShadowConsolePage() {
   }
 
   async function processReviewAction(item: IntakeItem, backendAction: 'approve' | 'reject') {
+    if (!backendQueueReady) {
+      throw new Error('Review action blocked: backend review queue is unavailable.');
+    }
+
     const response = await fetch('/api/pilot/intake/review-action', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -355,9 +397,14 @@ export default function AdminShadowConsolePage() {
     }
 
     await refreshBackendQueue();
+    await refreshShadowOperationalReads();
   }
 
   async function processPromotion(item: IntakeItem) {
+    if (!backendQueueReady) {
+      throw new Error('Promotion blocked: backend review queue is unavailable.');
+    }
+
     const promotionPayload = parsePromotionPayloadFromNotes(item.notes);
     if (!promotionPayload) {
       appendConsoleLog({
@@ -387,6 +434,7 @@ export default function AdminShadowConsolePage() {
     }
 
     await refreshBackendQueue();
+    await refreshShadowOperationalReads();
     return promotePayload;
   }
 
@@ -651,6 +699,7 @@ export default function AdminShadowConsolePage() {
       setLastIngestSummary(payload);
 
       await refreshBackendQueue();
+      await refreshShadowOperationalReads();
 
       appendConsoleLog({
         source: 'SHADOW',
@@ -696,16 +745,12 @@ export default function AdminShadowConsolePage() {
   }
 
   function handleQuickAdd(dataType: DataType, source: string, destination: IntakeDestination, route: string) {
-    const newItem = createMockIntakeItem(dataType, source, destination, route);
-    setPendingQueue((prev) => [newItem, ...prev]);
-    setSelectedItemId(newItem.id);
-    appendTelemetry('quick add created', { dataType, source, destination });
     appendConsoleLog({
-      source,
-      dataType,
-      status: 'Pending',
-      message: `Quick-add intake created for ${dataType}.`,
-      destination,
+      source: 'SHADOW',
+      dataType: 'Command',
+      status: 'Blocked',
+      message: `Quick Add disabled in backend-required mode (${dataType} from ${source} to ${destination} via ${route}). Use Upload File so actions are persisted.`,
+      destination: 'SHADOW Local State',
     });
   }
 
@@ -884,7 +929,7 @@ export default function AdminShadowConsolePage() {
           <section className="border-4 border-[#8b4444] bg-[#101010] p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
               <h3 className="text-[18px] font-black text-[#e8d7c6]">PENDING IMPORT QUEUE</h3>
-              <p className="font-mono text-[13px] uppercase tracking-[0.1em] text-[#d4a574]">Backed by pilot intake review queue</p>
+              <p className="font-mono text-[13px] uppercase tracking-[0.1em] text-[#d4a574]">Backed by SHADOW review projection</p>
             </div>
 
             <div className="mb-4 grid gap-2 md:grid-cols-2">
@@ -1179,7 +1224,7 @@ export default function AdminShadowConsolePage() {
               onClick={() => setShowTelemetry((current) => !current)}
               className="h-11 w-full border-2 border-[#8b4444] bg-[#2a1414] text-[14px] font-bold text-[#e8d7c6] transition hover:border-[#d4a574]"
             >
-              {showTelemetry ? 'Hide' : 'Show'} local telemetry events
+              {showTelemetry ? 'Hide' : 'Show'} telemetry and authority streams
             </button>
             {showTelemetry && (
               <div className="mt-3 max-h-[220px] space-y-2 overflow-y-auto border border-[#8b4444]/60 bg-[#111111] p-2 font-mono text-[12px] text-[#d4a574]">
@@ -1189,6 +1234,26 @@ export default function AdminShadowConsolePage() {
 {JSON.stringify(event, null, 2)}
                   </pre>
                 ))}
+
+                <div className="border-t border-[#8b4444]/60 pt-2">
+                  <p className="mb-2 text-xs uppercase tracking-[0.08em] text-[#e8d7c6]">SHADOW telemetry read model</p>
+                  {shadowTelemetry.length === 0 && <p className="p-2 text-[#d4a574]/75">No SHADOW telemetry events returned.</p>}
+                  {shadowTelemetry.map((event) => (
+                    <pre key={`shadow-telemetry-${event.shadow_telemetry_event_id}`} className="whitespace-pre-wrap border border-[#3a4f2c] bg-[#102010] p-2 text-[#b5ddb1]">
+{JSON.stringify(event, null, 2)}
+                    </pre>
+                  ))}
+                </div>
+
+                <div className="border-t border-[#8b4444]/60 pt-2">
+                  <p className="mb-2 text-xs uppercase tracking-[0.08em] text-[#e8d7c6]">SHADOW authority read model</p>
+                  {shadowAuthorityChecks.length === 0 && <p className="p-2 text-[#d4a574]/75">No SHADOW authority checks returned.</p>}
+                  {shadowAuthorityChecks.map((check) => (
+                    <pre key={`shadow-authority-${check.authority_check_id}`} className="whitespace-pre-wrap border border-[#4f3428] bg-[#201510] p-2 text-[#e6c3a9]">
+{JSON.stringify(check, null, 2)}
+                    </pre>
+                  ))}
+                </div>
               </div>
             )}
           </section>

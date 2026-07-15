@@ -1,15 +1,20 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 
 const capabilityStatus = 'PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED | HUMAN REVIEW REQUIRED';
 
-const videoLibrary = [
-  { title: 'Session 2026-07-10 | Footwork Pod A', status: 'FRONT-END PLACEHOLDER', source: 'Coach Upload Placeholder' },
-  { title: 'Session 2026-07-09 | Defense Circuit', status: 'FRONT-END PLACEHOLDER', source: 'Athlete Upload Placeholder' },
-  { title: 'Session 2026-07-08 | Combo Timing', status: 'FRONT-END PLACEHOLDER', source: 'Drill Camera Placeholder' },
-];
+interface ShadowObservationItem {
+  id: string;
+  source: 'event' | 'telemetry';
+  label: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  review_state: 'pending_review' | 'approved' | 'rejected' | 'promoted' | 'unknown';
+  created_at: string;
+}
 
 const analysisPanels = [
   { title: 'Skill Recognition Placeholder', detail: capabilityStatus },
@@ -38,6 +43,32 @@ const reviewComparisons = [
 ];
 
 export default function CoachVideoAnalysisPage() {
+  const [observations, setObservations] = useState<ShadowObservationItem[]>([]);
+  const [observationError, setObservationError] = useState('');
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch('/api/pilot/shadow/observation-projection', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ limit: 30 }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Unable to load SHADOW observation projection.');
+        }
+
+        const payload = (await response.json()) as { items?: ShadowObservationItem[] };
+        setObservations(payload.items ?? []);
+        setObservationError('');
+      } catch (error) {
+        setObservations([]);
+        setObservationError(error instanceof Error ? error.message : 'Unable to load SHADOW observation projection.');
+      }
+    })();
+  }, []);
+
   return (
     <RoleStandaloneView roleLabel="Coach Workspace" routeLabel="/coach/video-analysis" allowedRoles={['coach']} showShellHeader={false}>
       <div className="space-y-6">
@@ -54,13 +85,15 @@ export default function CoachVideoAnalysisPage() {
 
         <section className="grid gap-4 lg:grid-cols-2">
           <article className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
-            <h2 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Video Library</h2>
+            <h2 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Video Observation Stream</h2>
             <div className="mt-3 space-y-2">
-              {videoLibrary.map((clip) => (
-                <div key={clip.title} className="border border-[#5a4a3a] bg-[#101010] p-3">
-                  <p className="text-sm font-semibold text-[#e8d7c6]">{clip.title}</p>
-                  <p className="mt-1 text-xs text-[#cfbfae]">{clip.source}</p>
-                  <p className="mt-1 text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">{clip.status}</p>
+              {observationError ? <p className="text-xs text-[#f0c4c4]">{observationError}</p> : null}
+              {!observationError && observations.length === 0 ? <p className="text-xs text-[#cfbfae]">No SHADOW observations available.</p> : null}
+              {observations.slice(0, 6).map((item) => (
+                <div key={item.id} className="border border-[#5a4a3a] bg-[#101010] p-3">
+                  <p className="text-sm font-semibold text-[#e8d7c6]">{item.label}</p>
+                  <p className="mt-1 text-xs text-[#cfbfae]">Source: {item.source}</p>
+                  <p className="mt-1 text-xs text-[#cfbfae]">Review State: {item.review_state}</p>
                 </div>
               ))}
             </div>

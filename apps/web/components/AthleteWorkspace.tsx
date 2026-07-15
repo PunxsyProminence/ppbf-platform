@@ -76,6 +76,14 @@ interface ShadowMessage {
   timestamp: string;
 }
 
+interface ShadowObservationItem {
+  id: string;
+  source: 'event' | 'telemetry';
+  label: string;
+  review_state: 'pending_review' | 'approved' | 'rejected' | 'promoted' | 'unknown';
+  created_at: string;
+}
+
 function getReadinessLevel(readinessToTrain: number): ReadinessLevel {
   if (readinessToTrain >= 7) return 'GREEN';
   if (readinessToTrain >= 5) return 'YELLOW';
@@ -233,6 +241,8 @@ export default function AthleteWorkspace() {
   // Shadow State
   const [shadowMessages] = useState<ShadowMessage[]>(createInitialShadowMessages);
   const [shadowInput, setShadowInput] = useState('');
+  const [shadowObservations, setShadowObservations] = useState<ShadowObservationItem[]>([]);
+  const [shadowObservationError, setShadowObservationError] = useState('');
 
   // Session Log State
   const [sessionLog, setSessionLog] = useState<Array<{id: string; checkInTime: string; checkOutTime?: string; notes: string}>>([
@@ -258,6 +268,28 @@ export default function AthleteWorkspace() {
         }
       } catch {
         // Keep workspace usable in local-only mode when backend session is unavailable.
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch('/api/pilot/shadow/observation-projection', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ limit: 20 }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Unable to load SHADOW observation stream.');
+        }
+
+        const payload = (await response.json()) as { items?: ShadowObservationItem[] };
+        setShadowObservations(payload.items ?? []);
+        setShadowObservationError('');
+      } catch (error) {
+        setShadowObservationError(error instanceof Error ? error.message : 'Unable to load SHADOW observation stream.');
       }
     })();
   }, []);
@@ -1085,6 +1117,23 @@ export default function AthleteWorkspace() {
 
               <div className="bg-yellow-900/20 border-2 border-yellow-700 p-4 text-sm">
                 <p className="text-yellow-200"><strong>Note:</strong> SHADOW cannot answer questions about other athletes, board operations, financial data, or provide medical/legal advice.</p>
+              </div>
+
+              <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
+                <h3 className="font-mono text-xs font-bold uppercase tracking-[0.08em] text-[#d4a574]">SHADOW Observation Projection</h3>
+                {shadowObservationError ? <p className="mt-2 text-xs text-[#f0c4c4]">{shadowObservationError}</p> : null}
+                {!shadowObservationError && shadowObservations.length === 0 ? (
+                  <p className="mt-2 text-xs text-[#b0a095]">No SHADOW observations available yet.</p>
+                ) : null}
+                <div className="mt-2 space-y-2">
+                  {shadowObservations.slice(0, 6).map((item) => (
+                    <div key={item.id} className="border border-[#5a4a3a] bg-[#101010] p-2 text-xs text-[#cfbfae]">
+                      <p className="font-semibold text-[#e8d7c6]">{item.label}</p>
+                      <p>Source: {item.source}</p>
+                      <p>State: {item.review_state}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           )}

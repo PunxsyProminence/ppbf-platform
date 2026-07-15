@@ -1,19 +1,59 @@
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
 import FeatureSurface from '@/components/FeatureSurface';
 
-const nodeTypes = ['Drill', 'Goal', 'Capability', 'Assessment', 'Track', 'Evidence', 'Research', 'Safety', 'Policy'];
-
-const relationshipChains = [
-  ['Research', 'Evidence', 'Drill', 'Goal', 'Track'],
-  ['Policy', 'Safety', 'Assessment', 'Capability'],
-  ['Research', 'Evidence', 'Capability', 'Track'],
-];
+interface ShadowKnowledgeNode {
+  type: 'Observation' | 'Pattern' | 'Finding' | 'Validated Lesson';
+  title: string;
+  source_event_name: string;
+  entity_type: string;
+  entity_id: string;
+  review_state: 'pending_review' | 'approved' | 'rejected' | 'promoted' | 'unknown';
+  created_at: string;
+}
 
 export default function KnowledgeGraphPage() {
+  const [nodes, setNodes] = useState<ShadowKnowledgeNode[]>([]);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch('/api/pilot/shadow/knowledge-projection', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ limit: 120 }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Unable to load SHADOW knowledge projection.');
+        }
+
+        const payload = (await response.json()) as { items?: ShadowKnowledgeNode[] };
+        setNodes(payload.items ?? []);
+        setErrorMessage('');
+      } catch (error) {
+        setNodes([]);
+        setErrorMessage(error instanceof Error ? error.message : 'Unable to load SHADOW knowledge projection.');
+      }
+    })();
+  }, []);
+
+  const grouped = useMemo(() => {
+    return {
+      observation: nodes.filter((item) => item.type === 'Observation'),
+      pattern: nodes.filter((item) => item.type === 'Pattern'),
+      finding: nodes.filter((item) => item.type === 'Finding'),
+      validated: nodes.filter((item) => item.type === 'Validated Lesson'),
+    };
+  }, [nodes]);
+
   return (
     <FeatureSurface
       eyebrow="Knowledge Graph"
       title="Concept relationship map"
-      description="Visualize how research, evidence, drills, goals, assessments, and policies connect before validation and governance stages."
+      description="SHADOW event-derived knowledge projection for observation, pattern, finding, and validated lesson streams."
       status="ready"
       currentStage="knowledge"
       primaryLinks={[
@@ -23,43 +63,46 @@ export default function KnowledgeGraphPage() {
       ]}
       stats={[
         { label: 'Current Stage', value: 'Knowledge Graph' },
-        { label: 'Next Stage', value: 'Scenario Simulator' },
-        { label: 'Node Types', value: '9' },
-        { label: 'Mode', value: 'Relationship View' },
+        { label: 'Source', value: 'SHADOW Projection' },
+        { label: 'Node Count', value: String(nodes.length) },
+        { label: 'Mode', value: 'Read Model' },
       ]}
     >
       <div className="space-y-4">
-        <section className="border-2 border-[#8b4444] bg-[#1a1a1a]/60 p-4">
-          <p className="text-[12px] font-mono uppercase tracking-[0.16em] text-[#d4a574]">Node Types</p>
-          <div className="mt-3 grid gap-2 sm:grid-cols-3 lg:grid-cols-5">
-            {nodeTypes.map((type) => (
-              <div key={type} className="border border-[#5a4a3a] bg-[#101010] px-3 py-2 text-[14px] text-[#e8d7c6]">
-                {type}
-              </div>
-            ))}
-          </div>
-        </section>
+        {errorMessage ? (
+          <section className="border-2 border-[#8b4444] bg-[#1a1a1a]/60 p-4 text-sm text-[#f0c4c4]">{errorMessage}</section>
+        ) : null}
 
-        <section className="grid gap-4 lg:grid-cols-3">
-          {relationshipChains.map((chain, index) => (
-            <article key={index} className="border-2 border-[#8b4444] bg-[#1a1a1a]/60 p-4">
-              <p className="text-[12px] font-mono uppercase tracking-[0.16em] text-[#d4a574]">Relationship Chain {index + 1}</p>
+        {!errorMessage && nodes.length === 0 ? (
+          <section className="border-2 border-[#8b4444] bg-[#1a1a1a]/60 p-4">
+            <p className="text-[12px] font-mono uppercase tracking-[0.16em] text-[#d4a574]">Empty State</p>
+            <p className="mt-2 text-[14px] text-[#cfbfae]">No SHADOW knowledge projection data exists for this organization yet.</p>
+          </section>
+        ) : null}
+
+        {[
+          { title: 'Observation', items: grouped.observation },
+          { title: 'Pattern', items: grouped.pattern },
+          { title: 'Finding', items: grouped.finding },
+          { title: 'Validated Lesson', items: grouped.validated },
+        ].map((group) => (
+          <section key={group.title} className="border-2 border-[#8b4444] bg-[#1a1a1a]/60 p-4">
+            <p className="text-[12px] font-mono uppercase tracking-[0.16em] text-[#d4a574]">{group.title}</p>
+            {group.items.length === 0 ? (
+              <p className="mt-2 text-sm text-[#b0a095]">No items.</p>
+            ) : (
               <div className="mt-3 space-y-2">
-                {chain.map((node, nodeIndex) => (
-                  <div key={`${node}-${nodeIndex}`}>
-                    <div className="border border-[#5a4a3a] bg-[#101010] px-3 py-2 text-[14px] text-[#e8d7c6]">{node}</div>
-                    {nodeIndex < chain.length - 1 && <p className="py-1 text-center font-mono text-[#d4a574]">↓</p>}
-                  </div>
+                {group.items.map((item) => (
+                  <article key={`${item.entity_type}-${item.entity_id}-${item.created_at}`} className="border border-[#5a4a3a] bg-[#101010] px-3 py-2 text-[14px] text-[#e8d7c6]">
+                    <p className="font-semibold">{item.title}</p>
+                    <p className="mt-1 text-xs text-[#cfbfae]">{item.entity_type} / {item.entity_id}</p>
+                    <p className="text-xs text-[#cfbfae]">Review State: {item.review_state}</p>
+                  </article>
                 ))}
               </div>
-            </article>
-          ))}
-        </section>
-
-        <div className="border-2 border-[#8b4444] bg-[#121212] p-4">
-          <p className="font-mono text-[12px] uppercase tracking-[0.15em] text-[#d4a574]">Flow Direction</p>
-          <p className="mt-2 text-[16px] leading-7 text-[#e8d7c6]">Mapped concepts move to Scenario Simulator where outcomes and risk are tested before governance.</p>
-        </div>
+            )}
+          </section>
+        ))}
       </div>
     </FeatureSurface>
   );

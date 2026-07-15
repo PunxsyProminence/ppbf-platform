@@ -11,6 +11,14 @@ interface QAMessage {
   source?: string;
 }
 
+interface ShadowResearchSignal {
+  event_id: number;
+  source_event_name: string;
+  evidence_label: string | null;
+  source_status: string;
+  review_state: 'pending_review' | 'approved' | 'rejected' | 'promoted' | 'unknown';
+}
+
 export default function ResearchQAChatPage() {
   const [messages, setMessages] = useState<QAMessage[]>([
     {
@@ -22,11 +30,36 @@ export default function ResearchQAChatPage() {
   ]);
   const [userInput, setUserInput] = useState('');
   const [researchNotes, setResearchNotes] = useState<string>('');
+  const [shadowSignals, setShadowSignals] = useState<ShadowResearchSignal[]>([]);
+  const [signalError, setSignalError] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch('/api/pilot/shadow/research-projection', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ limit: 20 }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Unable to load SHADOW research stream.');
+        }
+
+        const payload = (await response.json()) as { items?: ShadowResearchSignal[] };
+        setShadowSignals(payload.items ?? []);
+        setSignalError('');
+      } catch (error) {
+        setShadowSignals([]);
+        setSignalError(error instanceof Error ? error.message : 'Unable to load SHADOW research stream.');
+      }
+    })();
+  }, []);
 
   function addMessage(type: QAMessage['type'], text: string, source?: string) {
     const newMessage: QAMessage = {
@@ -39,7 +72,7 @@ export default function ResearchQAChatPage() {
     setMessages((prev) => [...prev, newMessage]);
   }
 
-  function handleSendMessage(e: React.FormEvent) {
+  function handleSendMessage(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!userInput.trim()) return;
 
@@ -100,7 +133,7 @@ export default function ResearchQAChatPage() {
     setUserInput('');
   }
 
-  function handleSaveNote(e: React.FormEvent) {
+  function handleSaveNote(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!researchNotes.trim()) return;
 
@@ -131,17 +164,17 @@ export default function ResearchQAChatPage() {
         <section className="border-4 border-[#d4a574] bg-[#0f0f0f] p-6 shadow-2xl shadow-black/60">
           {/* Messages */}
           <div className="mb-6 max-h-[500px] space-y-3 overflow-y-auto bg-[#050505] p-4 font-mono text-sm">
-            {messages.map((msg) => (
+            {messages.map((msg) => {
+              let messageTone = 'border-2 border-[#d4a574] bg-[#3a3020] text-[#e8d7c6]';
+              if (msg.type === 'user') {
+                messageTone = 'border-2 border-[#8b4444] bg-[#3a2a2a] text-[#8b4444]';
+              } else if (msg.type === 'system') {
+                messageTone = 'border-2 border-[#4a4a4a] bg-[#1a1a1a] text-[#b0a095]';
+              }
+
+              return (
               <div key={msg.id} className={`flex gap-3 ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div
-                  className={`max-w-xs px-3 py-2 ${
-                    msg.type === 'user'
-                      ? 'border-2 border-[#8b4444] bg-[#3a2a2a] text-[#8b4444]'
-                      : msg.type === 'system'
-                        ? 'border-2 border-[#4a4a4a] bg-[#1a1a1a] text-[#b0a095]'
-                        : 'border-2 border-[#d4a574] bg-[#3a3020] text-[#e8d7c6]'
-                  }`}
-                >
+                <div className={`max-w-xs px-3 py-2 ${messageTone}`}>
                   <p className="text-xs leading-5">{msg.text}</p>
                   <div className="mt-1 flex items-center justify-between gap-2">
                     <p className="text-[9px] opacity-50">{msg.timestamp}</p>
@@ -149,7 +182,8 @@ export default function ResearchQAChatPage() {
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
             <div ref={messagesEndRef} />
           </div>
 
@@ -220,6 +254,22 @@ export default function ResearchQAChatPage() {
               >
                 SHADOW (Admin)
               </Link>
+            </div>
+          </section>
+
+          <section className="border-4 border-[#4a4a4a] bg-[#0a0a0a] p-4">
+            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#8a8a8a]">SHADOW Research Stream</p>
+            {signalError ? <p className="mt-2 text-xs text-[#f0c4c4]">{signalError}</p> : null}
+            {!signalError && shadowSignals.length === 0 ? <p className="mt-2 text-xs text-[#b0a095]">No SHADOW research signals available.</p> : null}
+            <div className="mt-2 space-y-2">
+              {shadowSignals.slice(0, 6).map((signal) => (
+                <div key={signal.event_id} className="border border-[#4a4a4a] bg-[#101010] px-2 py-1 text-[11px] text-[#cfbfae]">
+                  <p className="font-semibold text-[#e8d7c6]">{signal.source_event_name}</p>
+                  <p>Label: {signal.evidence_label || 'none'}</p>
+                  <p>Source: {signal.source_status}</p>
+                  <p>State: {signal.review_state}</p>
+                </div>
+              ))}
             </div>
           </section>
         </aside>
