@@ -16,6 +16,7 @@
 - CLOSING_RECOMMENDATIONS.md
 - THANK_YOU_CLOSING.md
 - ULTIMATE_CLOSING_DOCUMENT.md
+- docs/SHADOW_V1_BUILD_PROMPT_FOR_VS.md
 
 ## Key Scripts
 - scripts/init.ps1, master-runner.ps1, scripts/ultimate-summary.ps1
