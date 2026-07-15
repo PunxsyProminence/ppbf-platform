@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { roleRoutes, type ClubRole } from '@/components/roleRoutes';
 import { createPersistentRoleSession, createRoleSession, getPostLoginRoute, OPERATOR_PIN, readRoleSession, clearRoleSession } from '@/components/roleSession';
 
-type ActiveTab = 'login' | 'announcement';
+type ActiveTab = 'login' | 'register' | 'announcement';
 
 const ANNOUNCEMENT_STORAGE_KEY = 'ppbf-login-announcement';
 const DEFAULT_ANNOUNCEMENT = 'Welcome to PPBF. Check in with your coach before floor activity.';
@@ -31,6 +31,12 @@ export default function LoginPage() {
   const [adminPin, setAdminPin] = useState('');
   const [announcementError, setAnnouncementError] = useState('');
   const [announcementSavedAt, setAnnouncementSavedAt] = useState<string | null>(null);
+  const [registerAccountId, setRegisterAccountId] = useState('');
+  const [registerAthleteId, setRegisterAthleteId] = useState('');
+  const [registerPin, setRegisterPin] = useState('');
+  const [registerError, setRegisterError] = useState('');
+  const [registerSuccess, setRegisterSuccess] = useState('');
+  const [registerBusy, setRegisterBusy] = useState(false);
 
   useEffect(() => {
     // Check URL params for logout/reset (client-side only)
@@ -125,6 +131,49 @@ export default function LoginPage() {
     setAnnouncementSavedAt(new Date().toLocaleString());
   }
 
+  async function registerAthlete() {
+    const accountId = registerAccountId.trim();
+    const athleteIdValue = registerAthleteId.trim();
+    const pinValue = registerPin.trim();
+
+    if (!accountId || !athleteIdValue || !pinValue) {
+      setRegisterError('Account ID, Athlete ID, and PIN are required.');
+      setRegisterSuccess('');
+      return;
+    }
+
+    setRegisterBusy(true);
+    setRegisterError('');
+    setRegisterSuccess('');
+
+    try {
+      const response = await fetch('/api/pilot/admin/athlete-accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          account_id: accountId,
+          athlete_id: athleteIdValue,
+          pin: pinValue,
+        }),
+      });
+
+      if (!response.ok) {
+        const result = (await response.json().catch(() => ({ error: 'Registration failed' }))) as { error?: string };
+        setRegisterError(result.error || 'Registration failed');
+        return;
+      }
+
+      setRegisterSuccess('Athlete account created. You can now sign in with Athlete role.');
+      setRegisterAccountId('');
+      setRegisterAthleteId('');
+      setRegisterPin('');
+      setAthleteId(accountId);
+      setSelectedRole('athlete');
+    } finally {
+      setRegisterBusy(false);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       <div className="mx-auto grid min-h-screen w-full max-w-4xl place-items-center px-6 py-10 lg:px-10">
@@ -136,7 +185,7 @@ export default function LoginPage() {
           </div>
 
           <div className="border-b-2 border-[var(--black)] bg-[var(--canvas-tan)] px-8 py-6">
-            <div className="grid grid-cols-2 gap-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-2">
+            <div className="grid grid-cols-3 gap-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-2">
               <button
                 type="button"
                 onClick={() => setActiveTab('login')}
@@ -145,6 +194,15 @@ export default function LoginPage() {
                 }`}
               >
                 Login
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('register')}
+                className={`px-4 py-3 text-xs font-black uppercase tracking-[0.2em] transition ${
+                  activeTab === 'register' ? 'border-2 border-[var(--black)] bg-[var(--red-primary)] text-[var(--white)]' : 'border-2 border-[var(--black)] bg-[var(--canvas-tan)] text-[var(--gray-dark)] hover:bg-[var(--canvas-tan-dark)]'
+                }`}
+              >
+                Register
               </button>
               <button
                 type="button"
@@ -213,6 +271,64 @@ export default function LoginPage() {
                   className="mt-4 inline-flex w-full items-center justify-center border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 py-3 text-sm font-black uppercase tracking-[0.2em] text-[var(--white)] transition hover:bg-[var(--red-highlight)]"
                 >
                   Sign In
+                </button>
+              </>
+            ) : activeTab === 'register' ? (
+              <>
+                <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">Registration</p>
+                  <p className="mt-3 text-sm leading-6 text-[var(--black)]">
+                    Creates an athlete account through the existing backend account API.
+                  </p>
+                </div>
+
+                <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="register-account-id">
+                  Account ID
+                </label>
+                <input
+                  id="register-account-id"
+                  type="text"
+                  value={registerAccountId}
+                  onChange={(event) => setRegisterAccountId(event.target.value)}
+                  placeholder="athlete-account-id"
+                  className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
+                />
+
+                <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="register-athlete-id">
+                  Athlete ID
+                </label>
+                <input
+                  id="register-athlete-id"
+                  type="text"
+                  value={registerAthleteId}
+                  onChange={(event) => setRegisterAthleteId(event.target.value)}
+                  placeholder="athlete-id"
+                  className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
+                />
+
+                <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="register-pin">
+                  PIN
+                </label>
+                <input
+                  id="register-pin"
+                  type="password"
+                  inputMode="numeric"
+                  value={registerPin}
+                  onChange={(event) => setRegisterPin(event.target.value)}
+                  placeholder="Create PIN"
+                  className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
+                />
+
+                {registerError ? <p className="text-sm text-[var(--red-primary)]">{registerError}</p> : null}
+                {registerSuccess ? <p className="text-sm text-[var(--olive-dark)]">{registerSuccess}</p> : null}
+
+                <button
+                  type="button"
+                  disabled={registerBusy}
+                  onClick={registerAthlete}
+                  className="mt-4 inline-flex w-full items-center justify-center border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 py-3 text-sm font-black uppercase tracking-[0.2em] text-[var(--white)] transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {registerBusy ? 'Registering...' : 'Register Athlete'}
                 </button>
               </>
             ) : (

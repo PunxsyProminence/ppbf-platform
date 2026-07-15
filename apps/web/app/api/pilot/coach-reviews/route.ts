@@ -11,7 +11,7 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['admin', 'coach']);
+    requireRole(principal, ['organization_admin', 'coach']);
 
     const payload = validateCoachReviewPayload(await request.json());
 
@@ -19,18 +19,19 @@ export async function POST(request: NextRequest) {
       throw new Error('Forbidden: coach can only create own reviews');
     }
 
-    const athleteId = await getSessionAthleteId(payload.session_id);
+    const athleteId = await getSessionAthleteId(principal.organizationId, payload.session_id);
     if (!athleteId) {
       throw new Error('Missing session for coach review');
     }
 
     await assertActorCanAccessAthlete(principal, athleteId);
-    await upsertCoachReview(payload);
+    await upsertCoachReview(principal.organizationId, payload);
 
     await writePilotAuditEvent({
       event_type: 'create',
       actor_account_id: principal.accountId,
       actor_role: principal.role,
+      organization_id: principal.organizationId,
       entity_type: 'coach_review',
       entity_id: payload.review_id,
       details: { session_id: payload.session_id },

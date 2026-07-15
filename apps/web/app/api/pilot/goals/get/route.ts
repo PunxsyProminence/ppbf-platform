@@ -9,7 +9,7 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['admin', 'coach', 'athlete']);
+    requireRole(principal, ['organization_admin', 'coach', 'athlete']);
 
     const body = (await request.json()) as { goal_id?: string };
     const goalId = body.goal_id?.trim() || '';
@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
       throw new Error('Missing goal_id');
     }
 
-    const goal = await getGoalById(goalId);
+    const goal = await getGoalById(principal.organizationId, goalId);
     if (!goal) {
       return NextResponse.json({ found: false });
     }

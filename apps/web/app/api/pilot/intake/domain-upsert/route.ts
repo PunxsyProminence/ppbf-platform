@@ -1,0 +1,154 @@
+import { NextResponse, type NextRequest } from 'next/server';
+
+import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
+import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import {
+  createAssessment,
+  createAttendance,
+  createCoachObservation,
+  createReadiness,
+  linkGuardianAthlete,
+  upsertEmergencyContact,
+  upsertGuardian,
+  upsertMedicalIntake,
+  upsertWaiver,
+} from '@/src/server/pilot/intake';
+
+export const runtime = 'nodejs';
+
+
+function asString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+/* eslint-disable sonarjs/cognitive-complexity */
+export async function POST(request: NextRequest) {
+  try {
+    const principal = await requirePrincipal(request);
+    requireRole(principal, ['organization_admin', 'coach']);
+
+    const body = (await request.json()) as {
+      entity_type?: 'emergency_contact' | 'medical' | 'waiver' | 'assessment' | 'attendance' | 'readiness' | 'coach_note' | 'guardian_link';
+      athlete_id?: string;
+      payload?: Record<string, unknown>;
+    };
+
+    const entityType = body.entity_type;
+    const athleteId = body.athlete_id?.trim() || '';
+    if (!entityType || !athleteId || !body.payload) {
+      throw new Error('Missing entity_type, athlete_id, or payload');
+    }
+
+    await assertActorCanAccessAthlete(principal, athleteId);
+
+    let entityId = '';
+
+    if (entityType === 'emergency_contact') {
+      entityId = await upsertEmergencyContact({
+        organizationId: principal.organizationId,
+        athleteId,
+        fullName: asString(body.payload.full_name),
+        relationshipToAthlete: asString(body.payload.relationship_to_athlete, 'guardian'),
+        phone: asString(body.payload.phone),
+        email: typeof body.payload.email === 'string' ? body.payload.email : undefined,
+        isPrimary: Boolean(body.payload.is_primary ?? true),
+        notes: typeof body.payload.notes === 'string' ? body.payload.notes : undefined,
+      });
+    } else if (entityType === 'medical') {
+      entityId = await upsertMedicalIntake({
+        organizationId: principal.organizationId,
+        athleteId,
+        conditions: typeof body.payload.conditions === 'string' ? body.payload.conditions : undefined,
+        medications: typeof body.payload.medications === 'string' ? body.payload.medications : undefined,
+        allergies: typeof body.payload.allergies === 'string' ? body.payload.allergies : undefined,
+        physicianName: typeof body.payload.physician_name === 'string' ? body.payload.physician_name : undefined,
+        physicianPhone: typeof body.payload.physician_phone === 'string' ? body.payload.physician_phone : undefined,
+        clearanceStatus: typeof body.payload.clearance_status === 'string' ? body.payload.clearance_status : undefined,
+        notes: typeof body.payload.notes === 'string' ? body.payload.notes : undefined,
+      });
+    } else if (entityType === 'waiver') {
+      entityId = await upsertWaiver({
+        organizationId: principal.organizationId,
+        athleteId,
+        waiverType: asString(body.payload.waiver_type, 'general'),
+        signedByName: asString(body.payload.signed_by_name),
+        signedByRole: asString(body.payload.signed_by_role, 'guardian'),
+        signedAt: asString(body.payload.signed_at, new Date().toISOString()),
+        consentVersion: asString(body.payload.consent_version, 'v1'),
+        status: asString(body.payload.status, 'signed'),
+        notes: typeof body.payload.notes === 'string' ? body.payload.notes : undefined,
+      });
+    } else if (entityType === 'assessment') {
+      entityId = await createAssessment({
+        organizationId: principal.organizationId,
+        athleteId,
+        assessorAccountId: principal.accountId,
+        assessmentType: asString(body.payload.assessment_type, 'intake_assessment'),
+        result: (body.payload.result as Record<string, unknown>) || {},
+      });
+    } else if (entityType === 'attendance') {
+      entityId = await createAttendance({
+        organizationId: principal.organizationId,
+        athleteId,
+        attendanceDate: asString(body.payload.attendance_date, new Date().toISOString().slice(0, 10)),
+        status: asString(body.payload.status, 'present'),
+        notes: typeof body.payload.notes === 'string' ? body.payload.notes : undefined,
+      });
+    } else if (entityType === 'readiness') {
+      entityId = await createReadiness({
+        organizationId: principal.organizationId,
+        athleteId,
+        score: Number(body.payload.score || 0),
+        category: asString(body.payload.category, 'general'),
+        measuredAt: asString(body.payload.measured_at, new Date().toISOString()),
+      });
+    } else if (entityType === 'coach_note') {
+      entityId = await createCoachObservation({
+        organizationId: principal.organizationId,
+        athleteId,
+        coachAccountId: principal.accountId,
+        noteType: asString(body.payload.note_type, 'coach_observation'),
+        noteText: asString(body.payload.note_text),
+      });
+    } else if (entityType === 'guardian_link') {
+      const parentId = asString(body.payload.parent_id);
+      if (!parentId) {
+        throw new Error('Missing parent_id for guardian link');
+      }
+
+      await upsertGuardian({
+        organizationId: principal.organizationId,
+        parentId,
+        accountId: typeof body.payload.account_id === 'string' ? body.payload.account_id : undefined,
+        fullName: asString(body.payload.full_name, 'Guardian'),
+        phone: typeof body.payload.phone === 'string' ? body.payload.phone : undefined,
+        email: typeof body.payload.email === 'string' ? body.payload.email : undefined,
+      });
+
+      await linkGuardianAthlete({
+        organizationId: principal.organizationId,
+        parentId,
+        athleteId,
+        relationshipToAthlete: asString(body.payload.relationship_to_athlete, 'guardian'),
+      });
+      entityId = `${parentId}:${athleteId}`;
+    } else {
+      throw new Error('Unsupported entity_type');
+    }
+
+    await writePilotAuditEvent({
+      event_type: 'create',
+      actor_account_id: principal.accountId,
+      actor_role: principal.role,
+      organization_id: principal.organizationId,
+      entity_type: `intake_${entityType}`,
+      entity_id: entityId || athleteId,
+      details: { athlete_id: athleteId },
+    });
+
+    return NextResponse.json({ ok: true, entity_type: entityType, entity_id: entityId, athlete_id: athleteId });
+  } catch (error) {
+    return jsonError(error);
+  }
+}

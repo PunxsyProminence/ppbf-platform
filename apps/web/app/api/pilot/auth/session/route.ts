@@ -16,6 +16,7 @@ export async function POST(request: NextRequest) {
       authenticated: true,
       account_id: principal.accountId,
       role: principal.role,
+      organization_id: principal.organizationId,
       athlete_id: principal.athleteId,
     });
   } catch (error) {

@@ -11,7 +11,7 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['admin', 'coach']);
+    requireRole(principal, ['organization_admin', 'coach']);
 
     const body = await request.json();
     const payload = validateAthletePayload(body);
@@ -20,12 +20,13 @@ export async function POST(request: NextRequest) {
       throw new Error('Forbidden: coach can only create athletes assigned to self');
     }
 
-    await upsertAthlete(payload);
+    await upsertAthlete(principal.organizationId, payload);
 
     await writePilotAuditEvent({
       event_type: 'create',
       actor_account_id: principal.accountId,
       actor_role: principal.role,
+      organization_id: principal.organizationId,
       entity_type: 'athlete',
       entity_id: payload.athlete_id,
       details: { coach_id: payload.coach_id },

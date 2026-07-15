@@ -45,5 +45,7 @@ function copySwaConfig() {
   fs.copyFileSync(configFile, outConfigFile);
 }
 
-ensureBoardIndexAliases();
-copySwaConfig();
+if (fs.existsSync(outRoot)) {
+  ensureBoardIndexAliases();
+  copySwaConfig();
+}

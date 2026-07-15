@@ -5,8 +5,6 @@ import { useEffect, useMemo, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import RevenueFundingCenter from '@/components/RevenueFundingCenter';
 import TutorialButton from '@/components/TutorialButton';
-import TutorialCard from '@/components/TutorialCard';
-import { masterTutorialCards } from '@/components/helpContent';
 import {
   allTrackIds,
   athleteProfiles,
@@ -651,17 +649,12 @@ export default function AdminCapabilitiesPage() {
               <article className="border border-[#8b4444] bg-[#141414] p-6">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <h2 className="text-[24px] font-bold text-[#f2e7da]">PPBF MASTER TUTORIAL</h2>
+                    <h2 className="text-[24px] font-bold text-[#f2e7da]">Tutorial Access</h2>
                     <p className="mt-2 text-[14px] leading-6 text-[#bfb3a6]">
-                      Learn how to navigate the PPBF platform, understand each workspace, and test current capabilities safely.
+                      Open the full tutorial center from this button when needed. Tutorial cards are no longer rendered inline in Admin.
                     </p>
                   </div>
                   <TutorialButton anchor="start-here" />
-                </div>
-                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {masterTutorialCards.map((card) => (
-                    <TutorialCard key={card.id} card={card} />
-                  ))}
                 </div>
               </article>
 

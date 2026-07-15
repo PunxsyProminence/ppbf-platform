@@ -9,7 +9,10 @@
     "lint": "eslint",
     "pilot:preflight": "node scripts/pilot-preflight.mjs",
     "pilot:apply-schema": "node scripts/pilot-apply-schema.mjs",
+    "pilot:apply-multiorg": "node scripts/pilot-apply-multiorg-migration.mjs",
     "gate:pilot": "node scripts/pilot-gate.mjs",
+    "gate:pilot:multiorg": "node scripts/pilot-multiorg-gate.mjs",
+    "gate:pilot:shadow-intake": "node scripts/pilot-shadow-intake-gate.mjs",
     "audit:mock-ingest": "tsx scripts/run-mock-ingest.ts",
     "test:e2e:board": "playwright test e2e/board-governance.spec.ts",
     "test:e2e:board:update": "playwright test e2e/board-governance.spec.ts --update-snapshots"

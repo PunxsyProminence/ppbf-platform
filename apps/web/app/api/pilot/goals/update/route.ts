@@ -11,10 +11,10 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['admin', 'coach', 'athlete']);
+    requireRole(principal, ['organization_admin', 'coach', 'athlete']);
 
     const payload = validateGoalPayload(await request.json());
-    const current = await getGoalById(payload.goal_id);
+    const current = await getGoalById(principal.organizationId, payload.goal_id);
     if (!current) {
       throw new Error('Missing goal record');
     }
@@ -22,12 +22,13 @@ export async function POST(request: NextRequest) {
     await assertActorCanAccessAthlete(principal, current.athlete_id);
     await assertActorCanAccessAthlete(principal, payload.athlete_id);
 
-    await upsertGoal(payload);
+    await upsertGoal(principal.organizationId, payload);
 
     await writePilotAuditEvent({
       event_type: 'update',
       actor_account_id: principal.accountId,
       actor_role: principal.role,
+      organization_id: principal.organizationId,
       entity_type: 'goal',
       entity_id: payload.goal_id,
       details: { athlete_id: payload.athlete_id },

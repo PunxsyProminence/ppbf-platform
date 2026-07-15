@@ -19,3 +19,7 @@ export function getAzureStorageConnectionString(): string {
 export function getPilotShadowContainerName(): string {
   return process.env.PPBF_PILOT_SHADOW_CONTAINER?.trim() || 'ppbf-pilot-shadow';
 }
+
+export function getPilotDefaultOrganizationId(): string {
+  return process.env.PPBF_PILOT_DEFAULT_ORG_ID?.trim() || 'ppbf-default-org';
+}

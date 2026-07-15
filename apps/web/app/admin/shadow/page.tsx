@@ -44,6 +44,7 @@ interface ConsoleLogEntry {
 
 interface IntakeItem {
   id: string;
+  intakeCaseId: string;
   itemName: string;
   dataType: DataType;
   source: string;
@@ -73,28 +74,28 @@ interface TelemetryEvent {
   payload: Record<string, unknown>;
 }
 
-interface DocumentIngestApiResponse {
-  status: 'ok';
-  fileName: string;
-  classification: {
-    detectedType: string;
-    confidence: ConfidenceLevel;
-    destination: string;
-    destinationRoute: string;
-    reason: string;
-  };
-  dataverse: {
-    tableName: string;
-    recordId: string;
-  };
-  sharepoint: {
-    itemId: string;
-    webUrl?: string;
-  };
-  googleDrive: {
-    fileId: string;
-    webViewLink?: string;
-  };
+interface ShadowUploadResponse {
+  ok: boolean;
+  intake_id: string;
+  intake_case_id: string;
+  intake_document_id: string;
+  document_type: string;
+  classification: string;
+  routed_queue: string;
+  review_status: string;
+}
+
+interface ReviewQueueApiResponse {
+  ok: boolean;
+  queue: Array<{
+    intake_case_id: string;
+    status: 'pending_review' | 'approved' | 'rejected' | 'promoted';
+    summary: string;
+    primary_athlete_id: string | null;
+    created_at: string;
+    updated_at: string;
+    document_count: number;
+  }>;
 }
 
 type QueueSort = 'newest' | 'oldest' | 'status';
@@ -148,10 +149,24 @@ function routeForDestination(destination: IntakeDestination): string {
   return '/admin/shadow';
 }
 
+function parsePromotionPayloadFromNotes(notes: string): Record<string, unknown> | null {
+  const trimmed = notes.trim();
+  if (!trimmed.startsWith('{')) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(trimmed) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
 function createMockIntakeItem(dataType: DataType, source: string, destination: IntakeDestination, route?: string): IntakeItem {
   const timestamp = nowIso();
   return {
     id: newId(),
+    intakeCaseId: newId(),
     itemName: `${dataType} Intake ${timestamp.slice(11, 19)}`,
     dataType,
     source,
@@ -202,6 +217,13 @@ function toDestination(value: string): IntakeDestination {
     : 'SHADOW Local State';
 }
 
+function fromBackendStatus(status: 'pending_review' | 'approved' | 'rejected' | 'promoted'): IntakeStatus {
+  if (status === 'approved') return 'Approved';
+  if (status === 'rejected') return 'Rejected';
+  if (status === 'promoted') return 'Imported';
+  return 'Pending';
+}
+
 export default function AdminShadowConsolePage() {
   const [consoleLogs, setConsoleLogs] = useState<ConsoleLogEntry[]>([
     {
@@ -232,7 +254,7 @@ export default function AdminShadowConsolePage() {
   const [isUploading, setIsUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploadError, setUploadError] = useState('');
-  const [lastIngestSummary, setLastIngestSummary] = useState<DocumentIngestApiResponse | null>(null);
+  const [lastIngestSummary, setLastIngestSummary] = useState<ShadowUploadResponse | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const handleItemActionRef = useRef(handleItemAction);
@@ -245,7 +267,57 @@ export default function AdminShadowConsolePage() {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [consoleLogs]);
 
+  useEffect(() => {
+    void refreshBackendQueue().catch((error) => {
+      appendConsoleLog({
+        source: 'SHADOW',
+        dataType: 'System',
+        status: 'Queue Load Failed',
+        message: error instanceof Error ? error.message : 'Failed to load backend queue',
+        destination: 'SHADOW Local State',
+      });
+    });
+  }, []);
+
   const selectedItem = useMemo(() => pendingQueue.find((item) => item.id === selectedItemId) ?? null, [pendingQueue, selectedItemId]);
+
+  async function refreshBackendQueue() {
+    const response = await fetch('/api/pilot/intake/review-queue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+
+    const payload = (await response.json()) as ReviewQueueApiResponse | { error?: string };
+    if (!response.ok || !('ok' in payload)) {
+      const message = 'error' in payload && payload.error ? payload.error : 'Failed to load review queue';
+      throw new Error(message);
+    }
+
+    const mapped: IntakeItem[] = payload.queue.map((entry) => {
+      const athleteSuffix = entry.primary_athlete_id ? ` | Athlete: ${entry.primary_athlete_id}` : '';
+
+      return {
+      id: entry.intake_case_id,
+      intakeCaseId: entry.intake_case_id,
+      itemName: entry.summary,
+      dataType: 'File Intake',
+      source: 'SHADOW Upload',
+      suggestedDestination: 'Admin Hub',
+      status: fromBackendStatus(entry.status),
+      reviewNeeded: entry.status === 'pending_review',
+      requiresJasonReview: entry.status === 'pending_review',
+      detectedType: 'File Intake',
+      confidence: 'Medium',
+      notes: `Documents in case: ${entry.document_count}${athleteSuffix}`,
+      destinationRoute: '/admin/shadow',
+      timestamp: entry.created_at,
+      lastUpdatedAt: entry.updated_at,
+      };
+    });
+
+    setPendingQueue(mapped);
+  }
 
   function appendTelemetry(event: TelemetryEvent['event'], payload: Record<string, unknown>) {
     setTelemetryEvents((prev) => [{ timestamp: nowIso(), event, payload }, ...prev].slice(0, 200));
@@ -270,7 +342,55 @@ export default function AdminShadowConsolePage() {
     setImportHistory((prev) => [{ ...item }, ...prev].slice(0, 80));
   }
 
-  function handleItemAction(itemId: string, action: 'VIEW' | 'CLASSIFY' | 'STAGE' | 'APPROVE' | 'REJECT' | 'IMPORT') {
+  async function processReviewAction(item: IntakeItem, backendAction: 'approve' | 'reject') {
+    const response = await fetch('/api/pilot/intake/review-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ intake_case_id: item.intakeCaseId, action: backendAction, notes: item.notes }),
+    });
+
+    const payload = (await response.json()) as { error?: string };
+    if (!response.ok) {
+      throw new Error(payload.error || `Failed to ${backendAction} intake case`);
+    }
+
+    await refreshBackendQueue();
+  }
+
+  async function processPromotion(item: IntakeItem) {
+    const promotionPayload = parsePromotionPayloadFromNotes(item.notes);
+    if (!promotionPayload) {
+      appendConsoleLog({
+        source: 'SHADOW',
+        dataType: item.dataType,
+        status: 'Promotion Blocked',
+        message: 'To promote, set Notes to a valid JSON promotion payload.',
+        destination: item.suggestedDestination,
+      });
+      return null;
+    }
+
+    const promoteResponse = await fetch('/api/pilot/intake/review-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        intake_case_id: item.intakeCaseId,
+        action: 'promote',
+        notes: 'Promoted from SHADOW Admin Console',
+        promotion: promotionPayload,
+      }),
+    });
+
+    const promotePayload = (await promoteResponse.json()) as { error?: string; athlete_id?: string };
+    if (!promoteResponse.ok) {
+      throw new Error(promotePayload.error || 'Promotion failed');
+    }
+
+    await refreshBackendQueue();
+    return promotePayload;
+  }
+
+  async function handleItemAction(itemId: string, action: 'VIEW' | 'CLASSIFY' | 'STAGE' | 'APPROVE' | 'REJECT' | 'IMPORT') {
     const item = pendingQueue.find((entry) => entry.id === itemId);
     if (!item) {
       return;
@@ -318,46 +438,18 @@ export default function AdminShadowConsolePage() {
       return;
     }
 
-    if (action === 'APPROVE') {
-      const updated = {
-        ...item,
-        status: 'Approved' as const,
-        reviewNeeded: false,
-        requiresJasonReview: false,
-        lastUpdatedAt: nowIso(),
-      };
-      applyQueueUpdate(itemId, () => updated);
-      saveHistorySnapshot(updated);
-      appendTelemetry('item approved', { itemId: item.id, itemName: item.itemName });
+    if (action === 'APPROVE' || action === 'REJECT') {
+      const backendAction = action === 'APPROVE' ? 'approve' : 'reject';
+      await processReviewAction(item, backendAction);
+      appendTelemetry(action === 'APPROVE' ? 'item approved' : 'item rejected', { itemId: item.id, itemName: item.itemName });
       appendConsoleLog({
         source: 'Admin',
         dataType: item.dataType,
-        status: 'Approved',
-        message: `Jason/Admin approval marked for ${item.itemName}.`,
-        destination: updated.suggestedDestination,
-      });
-      return;
-    }
-
-    if (action === 'REJECT') {
-      const updated = {
-        ...item,
-        status: 'Rejected' as const,
-        reviewNeeded: false,
-        requiresJasonReview: false,
-        lastUpdatedAt: nowIso(),
-      };
-      setPendingQueue((current) => current.filter((entry) => entry.id !== itemId));
-      if (selectedItemId === itemId) {
-        setSelectedItemId(null);
-      }
-      saveHistorySnapshot(updated);
-      appendTelemetry('item rejected', { itemId: item.id, itemName: item.itemName });
-      appendConsoleLog({
-        source: 'Admin',
-        dataType: item.dataType,
-        status: 'Rejected',
-        message: `Intake item ${item.itemName} rejected and moved to import history.`,
+        status: action === 'APPROVE' ? 'Approved' : 'Rejected',
+        message:
+          action === 'APPROVE'
+            ? `Backend approval recorded for intake case ${item.intakeCaseId}.`
+            : `Backend rejection recorded for intake case ${item.intakeCaseId}.`,
         destination: item.suggestedDestination,
       });
       return;
@@ -374,18 +466,17 @@ export default function AdminShadowConsolePage() {
       return;
     }
 
-    const updated = { ...item, status: 'Imported' as const, lastUpdatedAt: nowIso() };
-    setPendingQueue((current) => current.filter((entry) => entry.id !== itemId));
-    if (selectedItemId === itemId) {
-      setSelectedItemId(null);
+    const promotePayload = await processPromotion(item);
+    if (!promotePayload) {
+      return;
     }
-    saveHistorySnapshot(updated);
     appendTelemetry('item imported', { itemId: item.id, itemName: item.itemName, destination: item.suggestedDestination });
+    const promotedAthleteMessage = promotePayload.athlete_id ? ` for athlete ${promotePayload.athlete_id}` : '';
     appendConsoleLog({
       source: 'SHADOW',
       dataType: item.dataType,
       status: 'Imported',
-      message: `Item ${item.itemName} marked imported to ${item.suggestedDestination}.`,
+      message: `Case ${item.intakeCaseId} promoted to domain records${promotedAthleteMessage}.`,
       destination: item.suggestedDestination,
     });
   }
@@ -456,7 +547,7 @@ export default function AdminShadowConsolePage() {
         });
       } else {
         const action = submitted.toUpperCase() as 'CLASSIFY' | 'STAGE' | 'APPROVE' | 'REJECT';
-        handleItemAction(selectedItem.id, action);
+        void handleItemAction(selectedItem.id, action);
       }
     } else {
       appendConsoleLog({
@@ -497,27 +588,29 @@ export default function AdminShadowConsolePage() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('source', 'Admin Upload');
+      formData.append('hint', 'admin-upload');
+      formData.append('document_type', 'general_intake');
 
-      const response = await fetch('/api/document-ingest', {
+      const response = await fetch('/api/pilot/shadow/upload', {
         method: 'POST',
         body: formData,
       });
 
-      const payload = (await response.json()) as DocumentIngestApiResponse | { error?: string };
+      const payload = (await response.json()) as ShadowUploadResponse | { error?: string };
 
-      if (!response.ok || !('status' in payload)) {
+      if (!response.ok || !('ok' in payload)) {
         const errorMessage = 'error' in payload && payload.error ? payload.error : 'Ingest request failed';
         throw new Error(errorMessage);
       }
 
-      const destination = toDestination(payload.classification.destination);
-      const detectedType = toDataType(payload.classification.detectedType);
+      const destination = toDestination('Admin Hub');
+      const detectedType = toDataType('File Intake');
       const now = nowIso();
 
       const newItem: IntakeItem = {
-        id: newId(),
-        itemName: payload.fileName,
+        id: payload.intake_case_id,
+        intakeCaseId: payload.intake_case_id,
+        itemName: file.name,
         dataType: 'File Intake',
         source: 'Admin Upload',
         suggestedDestination: destination,
@@ -525,22 +618,24 @@ export default function AdminShadowConsolePage() {
         reviewNeeded: true,
         requiresJasonReview: true,
         detectedType,
-        confidence: payload.classification.confidence,
-        notes: `Processed to Dataverse ${payload.dataverse.tableName} (${payload.dataverse.recordId || 'record id unavailable'}). SharePoint item ${payload.sharepoint.itemId}. Google file ${payload.googleDrive.fileId}.`,
-        destinationRoute: payload.classification.destinationRoute || routeForDestination(destination),
+        confidence: 'Medium',
+        notes: `Classification=${payload.classification}; Queue=${payload.routed_queue}; DocumentType=${payload.document_type}`,
+        destinationRoute: routeForDestination(destination),
         timestamp: now,
         lastUpdatedAt: now,
       };
 
-      setPendingQueue((prev) => [newItem, ...prev]);
+      setPendingQueue((prev) => [newItem, ...prev.filter((entry) => entry.intakeCaseId !== newItem.intakeCaseId)]);
       setSelectedItemId(newItem.id);
       setLastIngestSummary(payload);
+
+      await refreshBackendQueue();
 
       appendConsoleLog({
         source: 'SHADOW',
         dataType: 'File Intake',
         status: 'Processed',
-        message: `PDF processed and staged: ${payload.fileName}. Routed to ${destination}.`,
+        message: `PDF processed and staged as case ${payload.intake_case_id}.`,
         destination,
       });
     } catch (error) {
@@ -624,7 +719,7 @@ export default function AdminShadowConsolePage() {
         if (!selectedItemId) {
           return;
         }
-        handleItemActionRef.current(selectedItemId, action);
+        void handleItemActionRef.current(selectedItemId, action);
       };
 
       if (key === 'c') {
@@ -644,7 +739,7 @@ export default function AdminShadowConsolePage() {
         runAction('IMPORT');
       } else if (key === 'v' && selectedItemId) {
         event.preventDefault();
-        handleItemActionRef.current(selectedItemId, 'VIEW');
+        void handleItemActionRef.current(selectedItemId, 'VIEW');
       }
     }
 
@@ -768,7 +863,7 @@ export default function AdminShadowConsolePage() {
           <section className="border-4 border-[#8b4444] bg-[#101010] p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
               <h3 className="text-[18px] font-black text-[#e8d7c6]">PENDING IMPORT QUEUE</h3>
-              <p className="font-mono text-[13px] uppercase tracking-[0.1em] text-[#d4a574]">Front-end local state only</p>
+              <p className="font-mono text-[13px] uppercase tracking-[0.1em] text-[#d4a574]">Backed by pilot intake review queue</p>
             </div>
 
             <div className="mb-4 grid gap-2 md:grid-cols-2">
@@ -829,7 +924,7 @@ export default function AdminShadowConsolePage() {
                         <button
                           key={action}
                           type="button"
-                          onClick={() => handleItemAction(item.id, action)}
+                          onClick={() => void handleItemAction(item.id, action)}
                           disabled={action === 'IMPORT' && item.status !== 'Approved'}
                           className="h-11 border-2 border-[#8b4444] bg-[#2a1414] px-3 text-[13px] font-bold text-[#e8d7c6] transition hover:border-[#d4a574] disabled:cursor-not-allowed disabled:opacity-40"
                         >
@@ -882,11 +977,11 @@ export default function AdminShadowConsolePage() {
               {uploadError && <p className="text-[13px] text-[#f2c3c3]">{uploadError}</p>}
               {lastIngestSummary && (
                 <div className="border border-[#8b5a2b] bg-[#21160d] p-2 text-[12px] text-[#e8d7c6]">
-                  <p>Detected Type: {lastIngestSummary.classification.detectedType}</p>
-                  <p>Destination: {lastIngestSummary.classification.destination}</p>
-                  <p>Dataverse: {lastIngestSummary.dataverse.tableName} {lastIngestSummary.dataverse.recordId ? `(${lastIngestSummary.dataverse.recordId})` : ''}</p>
-                  <p>SharePoint Item: {lastIngestSummary.sharepoint.itemId}</p>
-                  <p>Google File: {lastIngestSummary.googleDrive.fileId}</p>
+                  <p>Intake Case: {lastIngestSummary.intake_case_id}</p>
+                  <p>Intake Document: {lastIngestSummary.intake_document_id}</p>
+                  <p>Classification: {lastIngestSummary.classification}</p>
+                  <p>Queue: {lastIngestSummary.routed_queue}</p>
+                  <p>Review Status: {lastIngestSummary.review_status}</p>
                 </div>
               )}
             </div>

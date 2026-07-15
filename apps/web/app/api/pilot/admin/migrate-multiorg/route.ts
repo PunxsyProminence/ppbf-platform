@@ -1,0 +1,382 @@
+import { NextResponse, type NextRequest } from 'next/server';
+import { Client } from 'pg';
+
+import { getAzurePostgresConnectionString } from '@/src/server/pilot/env';
+import { jsonError } from '@/src/server/pilot/http';
+
+export const runtime = 'nodejs';
+
+export async function POST(request: NextRequest) {
+  try {
+    const bootstrapKey = process.env.PPBF_PILOT_BOOTSTRAP_KEY?.trim() || '';
+    const providedKey = request.headers.get('x-ppbf-bootstrap-key')?.trim() || '';
+
+    if (!bootstrapKey) {
+      throw new Error('Missing PPBF_PILOT_BOOTSTRAP_KEY');
+    }
+
+    if (!providedKey || providedKey !== bootstrapKey) {
+      throw new Error('Forbidden: invalid bootstrap key');
+    }
+
+    const statements = [
+      `create schema if not exists pilot`,
+      `create table if not exists pilot.organizations (
+        organization_id text primary key,
+        organization_name text not null,
+        status text not null default 'active' check (status in ('active', 'inactive', 'suspended', 'pending')),
+        created_by_account_id text null,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      )`,
+      `create table if not exists pilot.organization_memberships (
+        account_id text not null,
+        organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+        role text not null check (role in ('platform_owner', 'organization_admin', 'admin', 'coach', 'athlete', 'parent', 'volunteer', 'staff')),
+        active_flag boolean not null default true,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now(),
+        primary key (account_id, organization_id)
+      )`,
+      `alter table pilot.accounts add column if not exists organization_id text`,
+      `alter table pilot.accounts add column if not exists is_platform_owner boolean not null default false`,
+      `alter table pilot.session_tokens add column if not exists organization_id text`,
+      `alter table pilot.athletes add column if not exists organization_id text`,
+      `alter table pilot.goals add column if not exists organization_id text`,
+      `alter table pilot.sessions add column if not exists organization_id text`,
+      `alter table pilot.coach_reviews add column if not exists organization_id text`,
+      `alter table pilot.shadow_intake add column if not exists organization_id text`,
+      `alter table pilot.audit_events add column if not exists organization_id text`,
+      `insert into pilot.organizations (organization_id, organization_name, status)
+       values ('ppbf-default-org', 'PPBF Default Organization', 'active')
+       on conflict (organization_id) do nothing`,
+      `update pilot.accounts set organization_id='ppbf-default-org' where organization_id is null`,
+      `update pilot.athletes set organization_id='ppbf-default-org' where organization_id is null`,
+      `update pilot.goals set organization_id='ppbf-default-org' where organization_id is null`,
+      `update pilot.sessions set organization_id='ppbf-default-org' where organization_id is null`,
+      `update pilot.coach_reviews set organization_id='ppbf-default-org' where organization_id is null`,
+      `update pilot.shadow_intake set organization_id='ppbf-default-org' where organization_id is null`,
+      `update pilot.audit_events set organization_id='ppbf-default-org' where organization_id is null`,
+      `alter table pilot.athletes alter column organization_id set not null`,
+      `do $$
+       begin
+         if exists (
+           select 1
+           from pg_constraint c
+           join pg_class r on r.oid = c.conrelid
+           join pg_namespace n on n.oid = r.relnamespace
+           where n.nspname = 'pilot'
+             and r.relname = 'athletes'
+             and c.conname = 'athletes_pkey'
+         ) then
+           execute 'alter table pilot.athletes drop constraint athletes_pkey cascade';
+         end if;
+
+         if exists (
+           select 1
+           from pg_constraint c
+           join pg_class r on r.oid = c.conrelid
+           join pg_namespace n on n.oid = r.relnamespace
+           where n.nspname = 'pilot'
+             and r.relname = 'athletes'
+             and c.conname = 'pilot_athletes_pk'
+         ) then
+           execute 'alter table pilot.athletes drop constraint pilot_athletes_pk cascade';
+         end if;
+       end $$`,
+      `do $$
+       begin
+         alter table pilot.athletes add constraint pilot_athletes_pk primary key (organization_id, athlete_id);
+       exception when duplicate_object then
+         null;
+       end $$`,
+      `do $$
+       begin
+         if exists (
+           select 1
+           from pg_constraint c
+           join pg_class r on r.oid = c.conrelid
+           join pg_namespace n on n.oid = r.relnamespace
+           where n.nspname = 'pilot'
+             and r.relname = 'goals'
+             and c.conname in ('goals_pkey', 'pilot_goals_pk')
+         ) then
+           alter table pilot.goals drop constraint if exists goals_pkey cascade;
+           alter table pilot.goals drop constraint if exists pilot_goals_pk cascade;
+         end if;
+       end $$`,
+      `do $$
+       begin
+         alter table pilot.goals add constraint pilot_goals_pk primary key (organization_id, goal_id);
+       exception when duplicate_object then
+         null;
+       end $$`,
+      `do $$
+       begin
+         if exists (
+           select 1
+           from pg_constraint c
+           join pg_class r on r.oid = c.conrelid
+           join pg_namespace n on n.oid = r.relnamespace
+           where n.nspname = 'pilot'
+             and r.relname = 'sessions'
+             and c.conname in ('sessions_pkey', 'pilot_sessions_pk')
+         ) then
+           alter table pilot.sessions drop constraint if exists sessions_pkey cascade;
+           alter table pilot.sessions drop constraint if exists pilot_sessions_pk cascade;
+         end if;
+       end $$`,
+      `do $$
+       begin
+         alter table pilot.sessions add constraint pilot_sessions_pk primary key (organization_id, session_id);
+       exception when duplicate_object then
+         null;
+       end $$`,
+      `do $$
+       begin
+         if exists (
+           select 1
+           from pg_constraint c
+           join pg_class r on r.oid = c.conrelid
+           join pg_namespace n on n.oid = r.relnamespace
+           where n.nspname = 'pilot'
+             and r.relname = 'coach_reviews'
+             and c.conname in ('coach_reviews_pkey', 'pilot_coach_reviews_pk')
+         ) then
+           alter table pilot.coach_reviews drop constraint if exists coach_reviews_pkey cascade;
+           alter table pilot.coach_reviews drop constraint if exists pilot_coach_reviews_pk cascade;
+         end if;
+       end $$`,
+      `do $$
+       begin
+         alter table pilot.coach_reviews add constraint pilot_coach_reviews_pk primary key (organization_id, review_id);
+       exception when duplicate_object then
+         null;
+       end $$`,
+      `do $$
+       begin
+         if exists (
+           select 1
+           from pg_constraint c
+           join pg_class r on r.oid = c.conrelid
+           join pg_namespace n on n.oid = r.relnamespace
+           where n.nspname = 'pilot'
+             and r.relname = 'shadow_intake'
+             and c.conname in ('shadow_intake_pkey', 'pilot_shadow_intake_pk')
+         ) then
+           alter table pilot.shadow_intake drop constraint if exists shadow_intake_pkey cascade;
+           alter table pilot.shadow_intake drop constraint if exists pilot_shadow_intake_pk cascade;
+         end if;
+       end $$`,
+      `do $$
+       begin
+         alter table pilot.shadow_intake add constraint pilot_shadow_intake_pk primary key (organization_id, intake_id);
+       exception when duplicate_object then
+         null;
+       end $$`,
+      `alter table pilot.accounts drop constraint if exists accounts_role_check`,
+      `alter table pilot.accounts add constraint accounts_role_check check (role in ('platform_owner', 'organization_admin', 'admin', 'coach', 'athlete', 'parent', 'volunteer', 'staff'))`,
+      `create unique index if not exists uq_pilot_accounts_org_account on pilot.accounts(organization_id, account_id)`,
+      `create unique index if not exists uq_pilot_athletes_org_athlete on pilot.athletes(organization_id, athlete_id)`,
+      `create table if not exists pilot.intake_cases (
+        organization_id text not null references pilot.organizations(organization_id),
+        intake_case_id uuid not null,
+        status text not null check (status in ('pending_review', 'approved', 'rejected', 'promoted')),
+        primary_athlete_id text null,
+        source_shadow_intake_id uuid null,
+        summary text not null,
+        submitted_by_account_id text not null references pilot.accounts(account_id),
+        reviewed_by_account_id text null references pilot.accounts(account_id),
+        review_notes text null,
+        promoted_at timestamptz null,
+        rejected_at timestamptz null,
+        payload jsonb not null default '{}'::jsonb,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now(),
+        constraint pilot_intake_cases_pk primary key (organization_id, intake_case_id)
+      )`,
+      `create table if not exists pilot.intake_documents (
+        organization_id text not null references pilot.organizations(organization_id),
+        intake_document_id uuid not null,
+        intake_case_id uuid not null,
+        shadow_intake_id uuid null,
+        document_type text not null check (document_type in ('athlete_registration', 'emergency_contact', 'medical_form', 'waiver_consent', 'assessment_document', 'general_intake')),
+        file_name text not null,
+        blob_path text not null,
+        classification text not null,
+        review_status text not null check (review_status in ('pending_review', 'approved', 'rejected', 'promoted')),
+        owner_entity_type text null,
+        owner_entity_id text null,
+        metadata jsonb not null default '{}'::jsonb,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now(),
+        constraint pilot_intake_documents_pk primary key (organization_id, intake_document_id),
+        constraint pilot_intake_documents_case_fk foreign key (organization_id, intake_case_id) references pilot.intake_cases(organization_id, intake_case_id) on delete cascade
+      )`,
+      `create table if not exists pilot.documents (
+        organization_id text not null references pilot.organizations(organization_id),
+        document_id uuid not null,
+        owner_entity_type text not null,
+        owner_entity_id text not null,
+        storage_path text not null,
+        classification text not null,
+        created_by_account_id text not null references pilot.accounts(account_id),
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now(),
+        constraint pilot_documents_pk primary key (organization_id, document_id)
+      )`,
+      `create table if not exists pilot.emergency_contacts (
+        organization_id text not null references pilot.organizations(organization_id),
+        contact_id uuid not null,
+        athlete_id text not null,
+        full_name text not null,
+        relationship_to_athlete text not null,
+        phone text not null,
+        email text null,
+        is_primary boolean not null default true,
+        notes text not null default '',
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now(),
+        constraint pilot_emergency_contacts_pk primary key (organization_id, contact_id),
+        constraint pilot_emergency_contacts_athlete_fk foreign key (organization_id, athlete_id) references pilot.athletes(organization_id, athlete_id) on delete cascade
+      )`,
+      `create table if not exists pilot.medical_intake (
+        organization_id text not null references pilot.organizations(organization_id),
+        medical_id uuid not null,
+        athlete_id text not null,
+        conditions text not null default '',
+        medications text not null default '',
+        allergies text not null default '',
+        physician_name text not null default '',
+        physician_phone text not null default '',
+        clearance_status text not null default 'pending',
+        notes text not null default '',
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now(),
+        constraint pilot_medical_intake_pk primary key (organization_id, medical_id),
+        constraint pilot_medical_intake_athlete_fk foreign key (organization_id, athlete_id) references pilot.athletes(organization_id, athlete_id) on delete cascade
+      )`,
+      `create table if not exists pilot.waivers (
+        organization_id text not null references pilot.organizations(organization_id),
+        waiver_id uuid not null,
+        athlete_id text not null,
+        waiver_type text not null,
+        signed_by_name text not null,
+        signed_by_role text not null,
+        signed_at timestamptz not null,
+        consent_version text not null,
+        status text not null,
+        notes text not null default '',
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now(),
+        constraint pilot_waivers_pk primary key (organization_id, waiver_id),
+        constraint pilot_waivers_athlete_fk foreign key (organization_id, athlete_id) references pilot.athletes(organization_id, athlete_id) on delete cascade
+      )`,
+      `create table if not exists pilot.parents (
+        organization_id text not null references pilot.organizations(organization_id),
+        parent_id text not null,
+        account_id text null references pilot.accounts(account_id),
+        full_name text not null,
+        phone text null,
+        email text null,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now(),
+        primary key (organization_id, parent_id)
+      )`,
+      `create table if not exists pilot.guardian_links (
+        organization_id text not null references pilot.organizations(organization_id),
+        parent_id text not null,
+        athlete_id text not null,
+        relationship_to_athlete text not null,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now(),
+        constraint pilot_guardian_links_pk primary key (organization_id, parent_id, athlete_id),
+        constraint pilot_guardian_links_parent_fk foreign key (organization_id, parent_id) references pilot.parents(organization_id, parent_id) on delete cascade,
+        constraint pilot_guardian_links_athlete_fk foreign key (organization_id, athlete_id) references pilot.athletes(organization_id, athlete_id) on delete cascade
+      )`,
+      `create table if not exists pilot.assessments (
+        organization_id text not null references pilot.organizations(organization_id),
+        assessment_id uuid not null,
+        athlete_id text not null,
+        assessor_account_id text not null references pilot.accounts(account_id),
+        assessment_type text not null,
+        result jsonb not null default '{}'::jsonb,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now(),
+        constraint pilot_assessments_pk primary key (organization_id, assessment_id),
+        constraint pilot_assessments_athlete_fk foreign key (organization_id, athlete_id) references pilot.athletes(organization_id, athlete_id) on delete cascade
+      )`,
+      `create table if not exists pilot.attendance (
+        organization_id text not null references pilot.organizations(organization_id),
+        attendance_id uuid not null,
+        athlete_id text not null,
+        attendance_date date not null,
+        status text not null,
+        notes text not null default '',
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now(),
+        constraint pilot_attendance_pk primary key (organization_id, attendance_id),
+        constraint pilot_attendance_athlete_fk foreign key (organization_id, athlete_id) references pilot.athletes(organization_id, athlete_id) on delete cascade
+      )`,
+      `create table if not exists pilot.readiness (
+        organization_id text not null references pilot.organizations(organization_id),
+        readiness_id uuid not null,
+        athlete_id text not null,
+        score numeric(5,2) not null,
+        category text not null,
+        measured_at timestamptz not null,
+        recovery_notes text not null default '',
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now(),
+        constraint pilot_readiness_pk primary key (organization_id, readiness_id),
+        constraint pilot_readiness_athlete_fk foreign key (organization_id, athlete_id) references pilot.athletes(organization_id, athlete_id) on delete cascade
+      )`,
+      `create table if not exists pilot.coach_observations (
+        organization_id text not null references pilot.organizations(organization_id),
+        note_id uuid not null,
+        athlete_id text not null,
+        coach_account_id text not null references pilot.accounts(account_id),
+        note_type text not null,
+        note_text text not null,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now(),
+        constraint pilot_coach_observations_pk primary key (organization_id, note_id),
+        constraint pilot_coach_observations_athlete_fk foreign key (organization_id, athlete_id) references pilot.athletes(organization_id, athlete_id) on delete cascade
+      )`,
+      `create index if not exists idx_pilot_intake_cases_org_status on pilot.intake_cases(organization_id, status, updated_at desc)`,
+      `create index if not exists idx_pilot_intake_documents_org_case on pilot.intake_documents(organization_id, intake_case_id, created_at desc)`,
+      `create index if not exists idx_pilot_documents_owner on pilot.documents(organization_id, owner_entity_type, owner_entity_id, created_at desc)`,
+      `create index if not exists idx_pilot_emergency_contacts_org_athlete on pilot.emergency_contacts(organization_id, athlete_id, created_at desc)`,
+      `create index if not exists idx_pilot_medical_intake_org_athlete on pilot.medical_intake(organization_id, athlete_id, created_at desc)`,
+      `create index if not exists idx_pilot_waivers_org_athlete on pilot.waivers(organization_id, athlete_id, created_at desc)`,
+      `create index if not exists idx_pilot_guardian_links_org_athlete on pilot.guardian_links(organization_id, athlete_id)`,
+      `create index if not exists idx_pilot_assessments_org_athlete on pilot.assessments(organization_id, athlete_id, created_at desc)`,
+      `create index if not exists idx_pilot_attendance_org_athlete on pilot.attendance(organization_id, athlete_id, attendance_date desc)`,
+      `create index if not exists idx_pilot_readiness_org_athlete on pilot.readiness(organization_id, athlete_id, measured_at desc)`,
+      `create index if not exists idx_pilot_coach_observations_org_athlete on pilot.coach_observations(organization_id, athlete_id, created_at desc)`,
+    ];
+
+    const client = new Client({
+      connectionString: getAzurePostgresConnectionString(),
+      ssl: { rejectUnauthorized: false },
+    });
+
+    await client.connect();
+    try {
+      for (const statement of statements) {
+        try {
+          await client.query(statement);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          throw new Error(`Migration statement failed: ${statement}. Error: ${message}`);
+        }
+      }
+    } finally {
+      await client.end();
+    }
+
+    return NextResponse.json({ ok: true, applied: 'core_multiorg_ddl' });
+  } catch (error) {
+    return jsonError(error);
+  }
+}

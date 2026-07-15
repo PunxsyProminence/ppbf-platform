@@ -9,7 +9,7 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['admin', 'coach', 'athlete']);
+    requireRole(principal, ['organization_admin', 'coach', 'athlete']);
 
     const body = (await request.json()) as { athlete_id?: string };
     const athleteId = body.athlete_id?.trim() || '';
@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     }
 
     await assertActorCanAccessAthlete(principal, athleteId);
-    const athlete = await getAthleteById(athleteId);
+    const athlete = await getAthleteById(principal.organizationId, athleteId);
     if (!athlete) {
       return NextResponse.json({ found: false });
     }

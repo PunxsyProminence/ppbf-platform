@@ -11,15 +11,15 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['admin', 'coach']);
+    requireRole(principal, ['organization_admin', 'coach']);
 
     const payload = validateCoachReviewPayload(await request.json());
-    const current = await getCoachReviewById(payload.review_id);
+    const current = await getCoachReviewById(principal.organizationId, payload.review_id);
     if (!current) {
       throw new Error('Missing coach review record');
     }
 
-    const currentAthleteId = await getSessionAthleteId(current.session_id);
+    const currentAthleteId = await getSessionAthleteId(principal.organizationId, current.session_id);
     if (!currentAthleteId) {
       throw new Error('Missing session for existing coach review');
     }
@@ -30,18 +30,19 @@ export async function POST(request: NextRequest) {
       throw new Error('Forbidden: coach can only save own reviews');
     }
 
-    const payloadAthleteId = await getSessionAthleteId(payload.session_id);
+    const payloadAthleteId = await getSessionAthleteId(principal.organizationId, payload.session_id);
     if (!payloadAthleteId) {
       throw new Error('Missing session for coach review payload');
     }
 
     await assertActorCanAccessAthlete(principal, payloadAthleteId);
-    await upsertCoachReview(payload);
+    await upsertCoachReview(principal.organizationId, payload);
 
     await writePilotAuditEvent({
       event_type: 'update',
       actor_account_id: principal.accountId,
       actor_role: principal.role,
+      organization_id: principal.organizationId,
       entity_type: 'coach_review',
       entity_id: payload.review_id,
       details: { session_id: payload.session_id },

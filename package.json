@@ -7,9 +7,9 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "npm --workspace web run dev --",
+    "build": "npm --workspace web run build",
+    "start": "npm --workspace web run start --",
     "test": "powershell -ExecutionPolicy Bypass -File ./scripts/run-tests.ps1"
   }
 }

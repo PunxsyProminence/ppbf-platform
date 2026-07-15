@@ -43,7 +43,7 @@
 	],
 	"navigationFallback": {
 		"rewrite": "/index.html",
-		"exclude": ["*.{css,scss,js,png,gif,ico,jpg,jpeg,svg,webp,woff,woff2}"]
+		"exclude": ["/api/*", "*.{css,scss,js,png,gif,ico,jpg,jpeg,svg,webp,woff,woff2}"]
 	}
 }
 

@@ -9,7 +9,7 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['admin', 'coach']);
+    requireRole(principal, ['organization_admin', 'coach']);
 
     const body = (await request.json()) as { review_id?: string };
     const reviewId = body.review_id?.trim() || '';
@@ -17,12 +17,12 @@ export async function POST(request: NextRequest) {
       throw new Error('Missing review_id');
     }
 
-    const review = await getCoachReviewById(reviewId);
+    const review = await getCoachReviewById(principal.organizationId, reviewId);
     if (!review) {
       return NextResponse.json({ found: false });
     }
 
-    const athleteId = await getSessionAthleteId(review.session_id);
+    const athleteId = await getSessionAthleteId(principal.organizationId, review.session_id);
     if (!athleteId) {
       throw new Error('Missing session for coach review');
     }

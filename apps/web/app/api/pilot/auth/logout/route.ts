@@ -20,6 +20,7 @@ export async function POST(request: NextRequest) {
       event_type: 'logout',
       actor_account_id: principal.accountId,
       actor_role: principal.role,
+      organization_id: principal.organizationId,
       entity_type: 'account',
       entity_id: principal.accountId,
       details: {},

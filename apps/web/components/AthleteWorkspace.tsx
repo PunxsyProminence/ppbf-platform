@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AthleteSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import { cx, ui } from './uiStyles';
 
@@ -185,6 +185,8 @@ function buildWorkoutFloorTasks({ readiness, checkInAt, activeGoal }: WorkoutBui
 
 export default function AthleteWorkspace() {
   const [activeTab, setActiveTab] = useState<TabID>('my-dashboard');
+  const [backendAthleteId, setBackendAthleteId] = useState<string | null>(null);
+  const [backendSyncMessage, setBackendSyncMessage] = useState('');
 
   // Bio Check-In State
   const [sleepHours, setSleepHours] = useState(8);
@@ -246,10 +248,53 @@ export default function AthleteWorkspace() {
   const tasksDue = floorTasks.filter(t => !t.completed).length;
   const goalsActive = smartGoals.filter(g => g.status === 'Active').length;
 
-  const handleCreateGoal = () => {
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch('/api/pilot/auth/session', { method: 'POST' });
+        const payload = (await response.json()) as { authenticated?: boolean; athlete_id?: string };
+        if (response.ok && payload.authenticated && payload.athlete_id) {
+          setBackendAthleteId(payload.athlete_id);
+        }
+      } catch {
+        // Keep workspace usable in local-only mode when backend session is unavailable.
+      }
+    })();
+  }, []);
+
+  const handleCreateGoal = async () => {
     if (!newGoalTitle || !newGoalTargetDate || !newGoalSuccessMetric) return;
+    if (!backendAthleteId) {
+      setBackendSyncMessage('Goal saved locally. Backend athlete session not found.');
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const goalId = `goal_${Date.now()}`;
+
+    const response = await fetch('/api/pilot/goals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        goal_id: goalId,
+        athlete_id: backendAthleteId,
+        title: newGoalTitle,
+        target_date: newGoalTargetDate,
+        metric: newGoalSuccessMetric,
+        status: 'active',
+        created_at: now,
+        updated_at: now,
+      }),
+    });
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({ error: 'Goal persistence failed' }))) as { error?: string };
+      setBackendSyncMessage(payload.error || 'Goal persistence failed');
+      return;
+    }
+
     const newGoal: SMARTGoal = {
-      id: `sg_${Date.now()}`,
+      id: goalId,
       title: newGoalTitle,
       category: newGoalCategory,
       targetDate: newGoalTargetDate,
@@ -267,9 +312,10 @@ export default function AthleteWorkspace() {
     setNewGoalTargetDate('');
     setNewGoalSuccessMetric('');
     setShowGoalForm(false);
+    setBackendSyncMessage('Goal persisted to pilot backend.');
   };
 
-  const handleCheckIn = () => {
+  const handleCheckIn = async () => {
     const now = new Date();
     const readiness = getReadinessLevel(readinessToTrain);
     const activeGoal = smartGoals.find((goal) => goal.status === 'Active');
@@ -310,6 +356,33 @@ export default function AthleteWorkspace() {
 
     setLastWorkoutBuildNote(`Workout auto-generated on check-in (${readiness} readiness).`);
     setActiveTab('athlete-floor');
+
+    if (!backendAthleteId) {
+      setBackendSyncMessage('Session generated locally. Backend athlete session not found.');
+      return;
+    }
+
+    const sessionResponse = await fetch('/api/pilot/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        session_id: `session_${Date.now()}`,
+        athlete_id: backendAthleteId,
+        date: now.toISOString().slice(0, 10),
+        rpe: readinessToTrain,
+        notes: checkInNotes || `Auto check-in readiness ${readiness}`,
+        completed_flag: false,
+        created_at: now.toISOString(),
+        updated_at: now.toISOString(),
+      }),
+    });
+
+    if (sessionResponse.ok) {
+      setBackendSyncMessage('Session check-in persisted to pilot backend.');
+    } else {
+      const payload = (await sessionResponse.json().catch(() => ({ error: 'Session persistence failed' }))) as { error?: string };
+      setBackendSyncMessage(payload.error || 'Session persistence failed');
+    }
   };
 
   const handleCheckOut = () => {
@@ -352,6 +425,7 @@ export default function AthleteWorkspace() {
         <div className="border border-[#694838] bg-[#14100d] p-4">
           <p className="text-sm text-[#d4a574] font-semibold">Daily Reminder</p>
           <p className="mt-1 text-sm text-[#cfbfae]">Show up. Do the hard rounds. Own the details. Progress is earned through consistent grit and disciplined effort.</p>
+          {backendSyncMessage ? <p className="mt-2 text-xs text-[#d4a574]">Backend Sync: {backendSyncMessage}</p> : null}
         </div>
 
         {/* ROLE SUMMARY PANEL */}

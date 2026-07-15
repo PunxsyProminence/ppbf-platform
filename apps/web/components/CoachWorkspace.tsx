@@ -90,10 +90,21 @@ function blockStatusTone(status: WorkoutBlock['status']): string {
   return 'bg-[#4a4a4a] text-[#8a8a8a]';
 }
 
+function readinessBadgeTone(readiness: Athlete['readiness']): string {
+  if (readiness === 'GREEN') return 'bg-green-900 text-green-200';
+  if (readiness === 'YELLOW') return 'bg-yellow-900 text-yellow-200';
+  return 'bg-red-900 text-red-200';
+}
+
 export default function CoachWorkspace() {
   const [activeTab, setActiveTab] = useState<TabID>('dashboard');
   const [sessionMode, setSessionMode] = useState<SessionMode>('Group');
   const [athleteFloorPlans, setAthleteFloorPlans] = useState<CoachAthleteFloorPlan[]>([]);
+  const [coachAccountId, setCoachAccountId] = useState('');
+  const [reviewSessionId, setReviewSessionId] = useState('');
+  const [reviewDecision, setReviewDecision] = useState('approved');
+  const [reviewNotes, setReviewNotes] = useState('');
+  const [reviewSyncMessage, setReviewSyncMessage] = useState('');
 
   // Dashboard data
   const [athletes] = useState<Athlete[]>([
@@ -286,6 +297,58 @@ export default function CoachWorkspace() {
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
   }, []);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch('/api/pilot/auth/session', { method: 'POST' });
+        const payload = (await response.json()) as { authenticated?: boolean; account_id?: string };
+        if (response.ok && payload.authenticated && payload.account_id) {
+          setCoachAccountId(payload.account_id);
+        }
+      } catch {
+        // Leave manual entry available if auth session is unavailable.
+      }
+    })();
+  }, []);
+
+  async function submitCoachReview() {
+    if (!reviewSessionId.trim()) {
+      setReviewSyncMessage('Session ID is required.');
+      return;
+    }
+
+    if (!coachAccountId.trim()) {
+      setReviewSyncMessage('Coach account session not found.');
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const reviewId = `review_${Date.now()}`;
+
+    const response = await fetch('/api/pilot/coach-reviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        review_id: reviewId,
+        session_id: reviewSessionId.trim(),
+        coach_id: coachAccountId,
+        decision: reviewDecision,
+        notes: reviewNotes || 'Coach review from Coach Workspace',
+        approved_flag: reviewDecision === 'approved',
+        created_at: now,
+        updated_at: now,
+      }),
+    });
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({ error: 'Coach review persistence failed' }))) as { error?: string };
+      setReviewSyncMessage(payload.error || 'Coach review persistence failed');
+      return;
+    }
+
+    setReviewSyncMessage(`Coach review persisted (${reviewId}).`);
+  }
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-[#e8d7c6] font-sans">
@@ -491,13 +554,7 @@ export default function CoachWorkspace() {
                           <h4 className="text-lg font-semibold text-[#e8d7c6]">{plan.athleteName}</h4>
                           <p className="text-xs text-[#8a8a8a]">Generated {new Date(plan.generatedAt).toLocaleString()}</p>
                         </div>
-                        <span className={`inline-flex items-center rounded px-2 py-1 text-xs font-bold ${
-                          plan.readiness === 'GREEN'
-                            ? 'bg-green-900 text-green-200'
-                            : plan.readiness === 'YELLOW'
-                              ? 'bg-yellow-900 text-yellow-200'
-                              : 'bg-red-900 text-red-200'
-                        }`}>
+                        <span className={`inline-flex items-center rounded px-2 py-1 text-xs font-bold ${readinessBadgeTone(plan.readiness)}`}>
                           {plan.readiness}
                         </span>
                       </div>
@@ -791,7 +848,38 @@ export default function CoachWorkspace() {
             <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
               <h3 className="font-mono font-bold text-[#d4a574] uppercase">Athlete Performance Reviews</h3>
               <p className="text-[#b0a095]">Comprehensive athlete progress tracking and performance feedback.</p>
-              <div className="text-sm text-[#8a8a8a]">Coming soon: Technical progression reports, readiness trends, goal achievement tracking.</div>
+              <div className="border border-[#5a4a3a] bg-[#101010] p-3 space-y-3">
+                <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Persist Coach Review</p>
+                <input
+                  value={reviewSessionId}
+                  onChange={(event) => setReviewSessionId(event.target.value)}
+                  placeholder="Session ID (from persisted session)"
+                  className="h-11 w-full border border-[#8b4444] bg-[#141414] px-3 text-sm text-[#e8d7c6]"
+                />
+                <select
+                  value={reviewDecision}
+                  onChange={(event) => setReviewDecision(event.target.value)}
+                  className="h-11 w-full border border-[#8b4444] bg-[#141414] px-3 text-sm text-[#e8d7c6]"
+                >
+                  <option value="approved">approved</option>
+                  <option value="follow_up">follow_up</option>
+                  <option value="hold">hold</option>
+                </select>
+                <textarea
+                  value={reviewNotes}
+                  onChange={(event) => setReviewNotes(event.target.value)}
+                  placeholder="Review notes"
+                  className="min-h-[84px] w-full border border-[#8b4444] bg-[#141414] px-3 py-2 text-sm text-[#e8d7c6]"
+                />
+                <button
+                  type="button"
+                  onClick={() => void submitCoachReview()}
+                  className="h-11 border-2 border-[#8b4444] bg-[#2a1414] px-4 text-xs font-mono font-bold uppercase tracking-[0.08em] text-[#e8d7c6] transition hover:border-[#d4a574]"
+                >
+                  Save Coach Review
+                </button>
+                {reviewSyncMessage ? <p className="text-xs text-[#d4a574]">{reviewSyncMessage}</p> : null}
+              </div>
               <div className="border border-[#5a4a3a] bg-[#101010] p-3">
                 <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Closed-Loop Progression Intelligence - Planned</p>
                 <p className="mt-1 text-xs text-[#cfbfae]">Development Recommendation: PLACEHOLDER | Coach Review Required | Human Review Required</p>

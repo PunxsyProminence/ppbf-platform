@@ -26,6 +26,7 @@ export async function POST(request: Request) {
       event_type: 'login',
       actor_account_id: loginResult.principal.accountId,
       actor_role: loginResult.principal.role,
+      organization_id: loginResult.principal.organizationId,
       entity_type: 'account',
       entity_id: loginResult.principal.accountId,
       details: { athlete_id: loginResult.principal.athleteId },
@@ -35,6 +36,7 @@ export async function POST(request: Request) {
       ok: true,
       account_id: loginResult.principal.accountId,
       role: loginResult.principal.role,
+      organization_id: loginResult.principal.organizationId,
       athlete_id: loginResult.principal.athleteId,
     });
 

@@ -1,4 +1,12 @@
-export type PilotRole = 'admin' | 'coach' | 'athlete';
+export type PilotRole =
+  | 'platform_owner'
+  | 'organization_admin'
+  | 'admin'
+  | 'coach'
+  | 'athlete'
+  | 'parent'
+  | 'volunteer'
+  | 'staff';
 
 export interface PilotAthlete {
   athlete_id: string;

@@ -9,7 +9,7 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['admin', 'coach', 'athlete']);
+    requireRole(principal, ['organization_admin', 'coach', 'athlete']);
 
     const body = (await request.json()) as { session_id?: string };
     const sessionId = body.session_id?.trim() || '';
@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
       throw new Error('Missing session_id');
     }
 
-    const sessionRecord = await getSessionById(sessionId);
+    const sessionRecord = await getSessionById(principal.organizationId, sessionId);
     if (!sessionRecord) {
       return NextResponse.json({ found: false });
     }

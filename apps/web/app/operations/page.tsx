@@ -1,8 +1,6 @@
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import TutorialButton from '@/components/TutorialButton';
-import TutorialCard from '@/components/TutorialCard';
-import { masterTutorialCards } from '@/components/helpContent';
 import { roleRoutes } from '@/components/roleRoutes';
 
 const roleSelector = [
@@ -146,20 +144,12 @@ export default function OperationsHubPage() {
             <TutorialButton anchor="mission-control-overview" />
           </header>
 
-          <section className="space-y-4 border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-6 shadow-[var(--shadow-sm)]">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="font-display text-2xl font-bold tracking-tight text-[var(--black)]">PPBF MASTER TUTORIAL</h2>
-                <p className="mt-1 max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
-                  Learn how to navigate the PPBF platform, understand each workspace, and test current capabilities safely.
-                </p>
-              </div>
+          <section className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-5 shadow-[var(--shadow-sm)]">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
+                Need orientation? Open the full tutorial center from one button instead of rendering all tutorial content inline.
+              </p>
               <TutorialButton anchor="start-here" />
-            </div>
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {masterTutorialCards.map((card) => (
-                <TutorialCard key={card.id} card={card} />
-              ))}
             </div>
           </section>
 

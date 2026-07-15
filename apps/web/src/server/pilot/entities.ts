@@ -1,15 +1,15 @@
 import type { PilotAthlete, PilotCoachReview, PilotGoal, PilotSession } from './contracts';
 import { query, queryOne } from './db';
 
-export async function getAthleteById(athleteId: string): Promise<PilotAthlete | null> {
-  return queryOne<PilotAthlete>('select * from pilot.athletes where athlete_id = $1', [athleteId]);
+export async function getAthleteById(organizationId: string, athleteId: string): Promise<PilotAthlete | null> {
+  return queryOne<PilotAthlete>('select * from pilot.athletes where organization_id = $1 and athlete_id = $2', [organizationId, athleteId]);
 }
 
-export async function upsertAthlete(payload: PilotAthlete): Promise<void> {
+export async function upsertAthlete(organizationId: string, payload: PilotAthlete): Promise<void> {
   await query(
-    `insert into pilot.athletes (athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-     on conflict (athlete_id) do update set
+    `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+     on conflict (organization_id, athlete_id) do update set
        full_name = excluded.full_name,
        dob = excluded.dob,
        weight_class = excluded.weight_class,
@@ -17,9 +17,9 @@ export async function upsertAthlete(payload: PilotAthlete): Promise<void> {
        emergency_contact = excluded.emergency_contact,
        active_flag = excluded.active_flag,
        coach_id = excluded.coach_id,
-       created_at = excluded.created_at,
        updated_at = excluded.updated_at`,
     [
+      organizationId,
       payload.athlete_id,
       payload.full_name,
       payload.dob,
@@ -34,43 +34,90 @@ export async function upsertAthlete(payload: PilotAthlete): Promise<void> {
   );
 }
 
-export async function getGoalById(goalId: string): Promise<PilotGoal | null> {
-  return queryOne<PilotGoal>('select * from pilot.goals where goal_id = $1', [goalId]);
+export async function getGoalById(organizationId: string, goalId: string): Promise<PilotGoal | null> {
+  return queryOne<PilotGoal>('select * from pilot.goals where organization_id = $1 and goal_id = $2', [organizationId, goalId]);
 }
 
-export async function upsertGoal(payload: PilotGoal): Promise<void> {
+export async function upsertGoal(organizationId: string, payload: PilotGoal): Promise<void> {
+  const updated = await query<{ goal_id: string }>(
+    `update pilot.goals
+     set athlete_id = $3,
+         title = $4,
+         target_date = $5,
+         metric = $6,
+         status = $7,
+         updated_at = $8
+     where organization_id = $1 and goal_id = $2
+     returning goal_id`,
+    [
+      organizationId,
+      payload.goal_id,
+      payload.athlete_id,
+      payload.title,
+      payload.target_date,
+      payload.metric,
+      payload.status,
+      payload.updated_at,
+    ],
+  );
+
+  if (updated.length > 0) {
+    return;
+  }
+
   await query(
-    `insert into pilot.goals (goal_id, athlete_id, title, target_date, metric, status, created_at, updated_at)
-     values ($1,$2,$3,$4,$5,$6,$7,$8)
-     on conflict (goal_id) do update set
-       athlete_id = excluded.athlete_id,
-       title = excluded.title,
-       target_date = excluded.target_date,
-       metric = excluded.metric,
-       status = excluded.status,
-       created_at = excluded.created_at,
-       updated_at = excluded.updated_at`,
-    [payload.goal_id, payload.athlete_id, payload.title, payload.target_date, payload.metric, payload.status, payload.created_at, payload.updated_at],
+    `insert into pilot.goals (organization_id, goal_id, athlete_id, title, target_date, metric, status, created_at, updated_at)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+    [
+      organizationId,
+      payload.goal_id,
+      payload.athlete_id,
+      payload.title,
+      payload.target_date,
+      payload.metric,
+      payload.status,
+      payload.created_at,
+      payload.updated_at,
+    ],
   );
 }
 
-export async function getSessionById(sessionId: string): Promise<PilotSession | null> {
-  return queryOne<PilotSession>('select * from pilot.sessions where session_id = $1', [sessionId]);
+export async function getSessionById(organizationId: string, sessionId: string): Promise<PilotSession | null> {
+  return queryOne<PilotSession>('select * from pilot.sessions where organization_id = $1 and session_id = $2', [organizationId, sessionId]);
 }
 
-export async function upsertSession(payload: PilotSession): Promise<void> {
-  await query(
-    `insert into pilot.sessions (session_id, athlete_id, date, rpe, notes, completed_flag, created_at, updated_at)
-     values ($1,$2,$3,$4,$5,$6,$7,$8)
-     on conflict (session_id) do update set
-       athlete_id = excluded.athlete_id,
-       date = excluded.date,
-       rpe = excluded.rpe,
-       notes = excluded.notes,
-       completed_flag = excluded.completed_flag,
-       created_at = excluded.created_at,
-       updated_at = excluded.updated_at`,
+export async function upsertSession(organizationId: string, payload: PilotSession): Promise<void> {
+  const updated = await query<{ session_id: string }>(
+    `update pilot.sessions
+     set athlete_id = $3,
+         date = $4,
+         rpe = $5,
+         notes = $6,
+         completed_flag = $7,
+         updated_at = $8
+     where organization_id = $1 and session_id = $2
+     returning session_id`,
     [
+      organizationId,
+      payload.session_id,
+      payload.athlete_id,
+      payload.date,
+      payload.rpe,
+      payload.notes,
+      payload.completed_flag,
+      payload.updated_at,
+    ],
+  );
+
+  if (updated.length > 0) {
+    return;
+  }
+
+  await query(
+    `insert into pilot.sessions (organization_id, session_id, athlete_id, date, rpe, notes, completed_flag, created_at, updated_at)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+    [
+      organizationId,
       payload.session_id,
       payload.athlete_id,
       payload.date,
@@ -83,28 +130,47 @@ export async function upsertSession(payload: PilotSession): Promise<void> {
   );
 }
 
-export async function getCoachReviewById(reviewId: string): Promise<PilotCoachReview | null> {
-  return queryOne<PilotCoachReview>('select * from pilot.coach_reviews where review_id = $1', [reviewId]);
+export async function getCoachReviewById(organizationId: string, reviewId: string): Promise<PilotCoachReview | null> {
+  return queryOne<PilotCoachReview>('select * from pilot.coach_reviews where organization_id = $1 and review_id = $2', [organizationId, reviewId]);
 }
 
-export async function getSessionAthleteId(sessionId: string): Promise<string | null> {
-  const row = await queryOne<{ athlete_id: string }>('select athlete_id from pilot.sessions where session_id = $1', [sessionId]);
+export async function getSessionAthleteId(organizationId: string, sessionId: string): Promise<string | null> {
+  const row = await queryOne<{ athlete_id: string }>('select athlete_id from pilot.sessions where organization_id = $1 and session_id = $2', [organizationId, sessionId]);
   return row?.athlete_id ?? null;
 }
 
-export async function upsertCoachReview(payload: PilotCoachReview): Promise<void> {
-  await query(
-    `insert into pilot.coach_reviews (review_id, session_id, coach_id, decision, notes, approved_flag, created_at, updated_at)
-     values ($1,$2,$3,$4,$5,$6,$7,$8)
-     on conflict (review_id) do update set
-       session_id = excluded.session_id,
-       coach_id = excluded.coach_id,
-       decision = excluded.decision,
-       notes = excluded.notes,
-       approved_flag = excluded.approved_flag,
-       created_at = excluded.created_at,
-       updated_at = excluded.updated_at`,
+export async function upsertCoachReview(organizationId: string, payload: PilotCoachReview): Promise<void> {
+  const updated = await query<{ review_id: string }>(
+    `update pilot.coach_reviews
+     set session_id = $3,
+         coach_id = $4,
+         decision = $5,
+         notes = $6,
+         approved_flag = $7,
+         updated_at = $8
+     where organization_id = $1 and review_id = $2
+     returning review_id`,
     [
+      organizationId,
+      payload.review_id,
+      payload.session_id,
+      payload.coach_id,
+      payload.decision,
+      payload.notes,
+      payload.approved_flag,
+      payload.updated_at,
+    ],
+  );
+
+  if (updated.length > 0) {
+    return;
+  }
+
+  await query(
+    `insert into pilot.coach_reviews (organization_id, review_id, session_id, coach_id, decision, notes, approved_flag, created_at, updated_at)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+    [
+      organizationId,
       payload.review_id,
       payload.session_id,
       payload.coach_id,
