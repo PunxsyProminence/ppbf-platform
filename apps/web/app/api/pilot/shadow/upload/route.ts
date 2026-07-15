@@ -8,6 +8,9 @@ import { uploadPilotShadowFile } from '@/src/server/pilot/blob';
 import { query } from '@/src/server/pilot/db';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { createIntakeCase, createIntakeDocument, type IntakeDocumentType } from '@/src/server/pilot/intake';
+import { assertShadowAuthority, type ShadowAutomationMode } from '@/src/server/pilot/shadowAuthority';
+import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
+import { writeShadowTelemetryEvent } from '@/src/server/pilot/shadowTelemetry';
 import { classifyShadowDocument, routeShadowClassification } from '@/src/server/pilot/shadow';
 
 export const runtime = 'nodejs';
@@ -22,8 +25,13 @@ export async function POST(request: NextRequest) {
     const hintValue = formData.get('hint');
     const intakeCaseIdValue = formData.get('intake_case_id');
     const documentTypeValue = formData.get('document_type');
+    const automationModeValue = formData.get('automation_mode');
     const hint = typeof hintValue === 'string' ? hintValue : undefined;
     const intakeCaseIdInput = typeof intakeCaseIdValue === 'string' ? intakeCaseIdValue.trim() : '';
+    const automationMode: ShadowAutomationMode =
+      automationModeValue === 'automatic' || automationModeValue === 'manual'
+        ? automationModeValue
+        : 'assisted';
     const documentType: IntakeDocumentType =
       typeof documentTypeValue === 'string' && documentTypeValue.trim()
         ? (documentTypeValue.trim() as IntakeDocumentType)
@@ -32,6 +40,22 @@ export async function POST(request: NextRequest) {
     if (!(uploaded instanceof File)) {
       throw new TypeError('Missing file upload payload');
     }
+
+    await assertShadowAuthority({
+      actor: principal,
+      organizationId: principal.organizationId,
+      action: 'intake.shadow_upload',
+      automationMode,
+      confidenceTier: 'SUFFICIENT_FOR_REVIEW',
+      lowRisk: true,
+      reversible: true,
+      withinApprovedOptions: true,
+      restrictionConflict: false,
+      metadata: {
+        file_name: uploaded.name,
+        document_type: documentType,
+      },
+    });
 
     const intakeId = randomUUID();
     const filePath = `${intakeId}/${uploaded.name}`;
@@ -95,6 +119,37 @@ export async function POST(request: NextRequest) {
       entity_type: 'shadow_intake',
       entity_id: intakeId,
       details: { routed_queue: routedQueue, intake_case_id: intakeCaseId, intake_document_id: intakeDocumentId },
+    });
+
+    await emitShadowEvent({
+      organizationId: principal.organizationId,
+      eventName: 'SHADOW_UPLOAD_CLASSIFIED_AND_ROUTED',
+      entityType: 'shadow_intake',
+      entityId: intakeId,
+      actorAccountId: principal.accountId,
+      actorRole: principal.role,
+      payload: {
+        file_name: uploaded.name,
+        intake_case_id: intakeCaseId,
+        intake_document_id: intakeDocumentId,
+        document_type: documentType,
+        classification,
+        routed_queue: routedQueue,
+        automation_mode: automationMode,
+      },
+    });
+
+    await writeShadowTelemetryEvent({
+      organizationId: principal.organizationId,
+      metricName: 'shadow.intake.upload',
+      actorAccountId: principal.accountId,
+      actorRole: principal.role,
+      dimensions: {
+        document_type: documentType,
+        classification,
+        routed_queue: routedQueue,
+        automation_mode: automationMode,
+      },
     });
 
     return NextResponse.json({
