@@ -164,6 +164,7 @@ export async function POST(request: NextRequest) { // NOSONAR
       entity_type: `intake_${entityType}`,
       entity_id: entityId || athleteId,
       details: { athlete_id: athleteId },
+      shadow_mirror: false,
     });
 
     await emitShadowEvent({

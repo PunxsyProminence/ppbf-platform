@@ -109,6 +109,7 @@ export async function POST(request: NextRequest) {
       entity_type: 'shadow_intake',
       entity_id: intakeId,
       details: { classification, intake_case_id: intakeCaseId, intake_document_id: intakeDocumentId, document_type: documentType },
+      shadow_mirror: false,
     });
 
     await writePilotAuditEvent({
@@ -119,6 +120,7 @@ export async function POST(request: NextRequest) {
       entity_type: 'shadow_intake',
       entity_id: intakeId,
       details: { routed_queue: routedQueue, intake_case_id: intakeCaseId, intake_document_id: intakeDocumentId },
+      shadow_mirror: false,
     });
 
     await emitShadowEvent({

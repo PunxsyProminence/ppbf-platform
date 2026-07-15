@@ -1,5 +1,7 @@
 import type { PilotRole } from './contracts';
 import { query } from './db';
+import { emitShadowEvent } from './shadowEvents';
+import { writeShadowTelemetryEvent } from './shadowTelemetry';
 
 export interface PilotAuditEvent {
   event_type: 'create' | 'update' | 'login' | 'logout' | 'shadow_classification' | 'shadow_routing';
@@ -9,6 +11,7 @@ export interface PilotAuditEvent {
   entity_type: string;
   entity_id: string;
   details: Record<string, unknown>;
+  shadow_mirror?: boolean;
 }
 
 export async function writePilotAuditEvent(event: PilotAuditEvent): Promise<void> {
@@ -25,4 +28,34 @@ export async function writePilotAuditEvent(event: PilotAuditEvent): Promise<void
       JSON.stringify(event.details),
     ],
   );
+
+  if (!event.organization_id || event.shadow_mirror === false) {
+    return;
+  }
+
+  const normalizedEventType = event.event_type.toUpperCase();
+  const normalizedEntityType = event.entity_type.toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+
+  await emitShadowEvent({
+    organizationId: event.organization_id,
+    eventName: `SHADOW_AUDIT_${normalizedEventType}_${normalizedEntityType}`,
+    entityType: event.entity_type,
+    entityId: event.entity_id,
+    actorAccountId: event.actor_account_id,
+    actorRole: event.actor_role,
+    payload: {
+      event_type: event.event_type,
+      details: event.details,
+    },
+  });
+
+  await writeShadowTelemetryEvent({
+    organizationId: event.organization_id,
+    metricName: `shadow.audit.${event.event_type}`,
+    actorAccountId: event.actor_account_id,
+    actorRole: event.actor_role,
+    dimensions: {
+      entity_type: event.entity_type,
+    },
+  });
 }

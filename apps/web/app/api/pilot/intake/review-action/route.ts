@@ -94,6 +94,7 @@ export async function POST(request: NextRequest) { // NOSONAR
         entity_type: 'intake_case',
         entity_id: intakeCaseId,
         details: { action: 'reject', notes: body.notes ?? '' },
+        shadow_mirror: false,
       });
 
       await emitShadowEvent({
@@ -138,6 +139,7 @@ export async function POST(request: NextRequest) { // NOSONAR
         entity_type: 'intake_case',
         entity_id: intakeCaseId,
         details: { action: 'approve', notes: body.notes ?? '' },
+        shadow_mirror: false,
       });
 
       await emitShadowEvent({
@@ -339,6 +341,7 @@ export async function POST(request: NextRequest) { // NOSONAR
         guardian_parent_id: promotion.guardian?.parent_id ?? null,
         guardian_account_id: promotion.guardian?.account_id ?? null,
       },
+      shadow_mirror: false,
     });
 
     await emitShadowEvent({
