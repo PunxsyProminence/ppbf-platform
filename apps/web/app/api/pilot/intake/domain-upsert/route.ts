@@ -188,6 +188,7 @@ export async function POST(request: NextRequest) { // NOSONAR
       dimensions: {
         entity_type: entityType,
         automation_mode: automationMode,
+        athlete_id: athleteId,
       },
     });
 

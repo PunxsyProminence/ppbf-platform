@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
+import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
+import { getShadowEventTimeline, getShadowReviewProjection } from './shadowReadModels';
 
 export type IntakeDocumentType =
   | 'athlete_registration'
@@ -183,7 +185,10 @@ export async function createIntakeDocument(params: {
   return intakeDocumentId;
 }
 
-export async function listReviewQueue(organizationId: string): Promise<Array<{
+export async function listReviewQueue(
+  organizationId: string,
+  context?: { actorAccountId: string; actorRole: PilotRole },
+): Promise<Array<{
   intake_case_id: string;
   status: IntakeCaseStatus;
   summary: string;
@@ -192,6 +197,19 @@ export async function listReviewQueue(organizationId: string): Promise<Array<{
   updated_at: string;
   document_count: number;
 }>> {
+  if (context) {
+    const projection = await getShadowReviewProjection(
+      {
+        organizationId,
+        actorAccountId: context.actorAccountId,
+        actorRole: context.actorRole,
+      },
+      { limit: 200 },
+    );
+
+    return projection.items;
+  }
+
   return query(
     `select
        c.intake_case_id,
@@ -519,13 +537,17 @@ export async function linkGuardianAthlete(params: {
   );
 }
 
-export async function getIntakeCaseAggregate(organizationId: string, intakeCaseId: string): Promise<Record<string, unknown> | null> {
+export async function getIntakeCaseAggregate(
+  organizationId: string,
+  intakeCaseId: string,
+  context?: { actorAccountId: string; actorRole: PilotRole },
+): Promise<Record<string, unknown> | null> {
   const intakeCase = await getIntakeCaseById(organizationId, intakeCaseId);
   if (!intakeCase) {
     return null;
   }
 
-  const [documents, emergencyContacts, medical, waivers, assessments, attendance, readiness, notes, guardians] = await Promise.all([
+  const [documents, emergencyContacts, medical, waivers, assessments, attendance, readiness, notes, guardians, shadowTimeline] = await Promise.all([
     query('select * from pilot.intake_documents where organization_id = $1 and intake_case_id = $2 order by created_at asc', [organizationId, intakeCaseId]),
     query(
       'select * from pilot.emergency_contacts where organization_id = $1 and athlete_id = $2 order by created_at desc',
@@ -549,10 +571,21 @@ export async function getIntakeCaseAggregate(organizationId: string, intakeCaseI
       where g.organization_id = $1 and g.athlete_id = $2`,
       [organizationId, intakeCase.primary_athlete_id],
     ),
+    context
+      ? getShadowEventTimeline(
+          {
+            organizationId,
+            actorAccountId: context.actorAccountId,
+            actorRole: context.actorRole,
+          },
+          { correlationId: intakeCaseId, limit: 100 },
+        )
+      : Promise.resolve([]),
   ]);
 
   return {
     intake_case: intakeCase,
+    shadow_timeline: shadowTimeline,
     documents,
     emergency_contacts: emergencyContacts,
     medical_intake: medical,

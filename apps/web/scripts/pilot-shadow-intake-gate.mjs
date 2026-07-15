@@ -184,6 +184,51 @@ function assertAuditPromotionEvent(audit) {
   }
 }
 
+function assertShadowReadModels({ events, telemetry, observation, knowledge, research, intakeCaseId, athleteId }) {
+  const eventNames = new Set((events.events || []).map((row) => row.event_name));
+  if (!eventNames.has('SHADOW_UPLOAD_CLASSIFIED_AND_ROUTED')) {
+    throw new Error('Missing SHADOW upload event in shadow/events read model');
+  }
+  if (!eventNames.has('SHADOW_INTAKE_CASE_PROMOTED')) {
+    throw new Error('Missing SHADOW promotion event in shadow/events read model');
+  }
+
+  const telemetryMetrics = new Set((telemetry.telemetry || []).map((row) => row.metric_name));
+  if (!telemetryMetrics.has('shadow.intake.upload')) {
+    throw new Error('Missing shadow.intake.upload telemetry metric');
+  }
+  if (!telemetryMetrics.has('shadow.intake.review.promote')) {
+    throw new Error('Missing shadow.intake.review.promote telemetry metric');
+  }
+
+  if (!observation.items?.some((item) => item.label === 'SHADOW_INTAKE_CASE_PROMOTED')) {
+    throw new Error('Observation projection missing SHADOW_INTAKE_CASE_PROMOTED item');
+  }
+
+  if (!knowledge.items?.some((item) => item.source_event_name === 'SHADOW_INTAKE_CASE_PROMOTED')) {
+    throw new Error('Knowledge projection missing SHADOW_INTAKE_CASE_PROMOTED item');
+  }
+
+  const researchPromoted = research.items?.find((item) => item.source_event_name === 'SHADOW_INTAKE_CASE_PROMOTED');
+  if (!researchPromoted) {
+    throw new Error('Research projection missing SHADOW_INTAKE_CASE_PROMOTED item');
+  }
+
+  if (!researchPromoted.requirement || !researchPromoted.knowledge_gap || !researchPromoted.source_status) {
+    throw new Error('Research projection item missing populated requirement/knowledge gap/source status');
+  }
+
+  const eventForCase = (events.events || []).some((row) => row.payload?.intake_case_id === intakeCaseId);
+  if (!eventForCase) {
+    throw new Error('Shadow events stream missing payload correlation to intake case id');
+  }
+
+  const telemetryForAthlete = (telemetry.telemetry || []).some((row) => row.dimensions?.athlete_id === athleteId);
+  if (!telemetryForAthlete) {
+    throw new Error('Shadow telemetry stream missing athlete_id correlation signal');
+  }
+}
+
 function assertAthleteSession(athleteSession) {
   if (!athleteSession.authenticated || athleteSession.athlete_id !== athleteId) {
     throw new Error('Athlete login/session verification failed');
@@ -306,21 +351,46 @@ async function run() {
   });
   assertAggregateReady(aggregate);
 
-  console.log('7) Verify domain retrieval endpoint');
+  console.log('7) Verify SHADOW projection/read-model streams');
+  const [events, telemetry, observation, knowledge, research] = await Promise.all([
+    admin.call('/api/pilot/shadow/events', {
+      method: 'POST',
+      body: { correlation_id: intakeCaseId, limit: 200 },
+    }),
+    admin.call('/api/pilot/shadow/telemetry', {
+      method: 'POST',
+      body: { limit: 200 },
+    }),
+    admin.call('/api/pilot/shadow/observation-projection', {
+      method: 'POST',
+      body: { limit: 200 },
+    }),
+    admin.call('/api/pilot/shadow/knowledge-projection', {
+      method: 'POST',
+      body: { limit: 200 },
+    }),
+    admin.call('/api/pilot/shadow/research-projection', {
+      method: 'POST',
+      body: { limit: 200 },
+    }),
+  ]);
+  assertShadowReadModels({ events, telemetry, observation, knowledge, research, intakeCaseId, athleteId });
+
+  console.log('8) Verify domain retrieval endpoint');
   const domain = await admin.call('/api/pilot/intake/domain-get', {
     method: 'POST',
     body: { athlete_id: athleteId },
   });
   assertDomainPersistence(domain);
 
-  console.log('8) Verify audit trail exists');
+  console.log('9) Verify audit trail exists');
   const audit = await admin.call('/api/pilot/audit/get', {
     method: 'POST',
     body: { entity_id: intakeCaseId, limit: 100 },
   });
   assertAuditPromotionEvent(audit);
 
-  console.log('9) Verify athlete login and retrieval');
+  console.log('10) Verify athlete login and retrieval');
   await athlete.call('/api/pilot/auth/login', {
     method: 'POST',
     body: { account_id: athleteAccountId, pin: athletePin },
@@ -337,7 +407,7 @@ async function run() {
     throw new Error('Athlete cannot retrieve persisted profile');
   }
 
-  console.log('10) Verify guardian login and retrieval permissions');
+  console.log('11) Verify guardian login and retrieval permissions');
   await guardian.call('/api/pilot/auth/login', {
     method: 'POST',
     body: { account_id: guardianAccountId, pin: guardianPin },

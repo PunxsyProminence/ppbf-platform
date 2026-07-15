@@ -10,8 +10,9 @@ import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { createIntakeCase, createIntakeDocument, type IntakeDocumentType } from '@/src/server/pilot/intake';
 import { assertShadowAuthority, type ShadowAutomationMode } from '@/src/server/pilot/shadowAuthority';
 import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
+import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import { writeShadowTelemetryEvent } from '@/src/server/pilot/shadowTelemetry';
-import { classifyShadowDocument, routeShadowClassification } from '@/src/server/pilot/shadow';
+import { buildUploadResearchFields, classifyShadowDocument, routeShadowClassification } from '@/src/server/pilot/shadow';
 
 export const runtime = 'nodejs';
 
@@ -19,6 +20,10 @@ export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['organization_admin', 'coach']);
+    await assertShadowRuntimeReadiness({
+      requireBlob: true,
+      requiredTables: ['intake_cases', 'intake_documents', 'shadow_intake', 'shadow_events', 'shadow_telemetry_events', 'shadow_authority_checks'],
+    });
 
     const formData = await request.formData();
     const uploaded = formData.get('file');
@@ -64,6 +69,12 @@ export async function POST(request: NextRequest) {
 
     const classification = classifyShadowDocument(uploaded.name, hint);
     const routedQueue = routeShadowClassification(classification);
+    const researchFields = buildUploadResearchFields({
+      fileName: uploaded.name,
+      documentType,
+      classification,
+      routedQueue,
+    });
 
     const intakeCaseId =
       intakeCaseIdInput ||
@@ -138,6 +149,9 @@ export async function POST(request: NextRequest) {
         classification,
         routed_queue: routedQueue,
         automation_mode: automationMode,
+        research_requirement: researchFields.researchRequirement,
+        knowledge_gap: researchFields.knowledgeGap,
+        source_status: researchFields.sourceStatus,
       },
     });
 

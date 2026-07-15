@@ -211,7 +211,7 @@ SHADOW grows along these dimensional axes as the platform evolves:
 - ✅ All 12 roles fully scaffolded
 - ✅ All mathematical gates operational
 - ✅ Audit logging and state snapshots enabled
-- ✅ Frontend-only mock implementation (Supabase-ready)
+- ✅ Mixed implementation: pilot backend SHADOW ingestion spine operational (upload, classification, intake, events, telemetry, projections) with scaffolded UI modules still present
 
 **Near Term (v21.2):**
 - Supabase integration for persistent audit logs

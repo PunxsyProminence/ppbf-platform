@@ -33,11 +33,11 @@ Goal: no operational domain write bypasses SHADOW policy checks.
 
 Checklist:
 
-- [ ] Define a centralized SHADOW authority-check service contract.
+- [x] Define a centralized SHADOW authority-check service contract.
 - [ ] Require authority checks before all managed writes (athlete, goal, session, coach review, intake promotion).
-- [ ] Enforce role boundary checks and organization boundary checks in one common flow.
-- [ ] Define blocked-action behavior and blocked-action event emission.
-- [ ] Add test cases for allowed and forbidden actions per role.
+- [x] Enforce role boundary checks and organization boundary checks in one common flow.
+- [x] Define blocked-action behavior and blocked-action event emission.
+- [x] Add test cases for allowed and forbidden actions per role.
 
 Exit criteria:
 
@@ -51,11 +51,11 @@ Goal: all meaningful writes and control decisions are auditable with canonical S
 
 Checklist:
 
-- [ ] Introduce canonical SHADOW event names as additive mapping layer.
-- [ ] Ensure create, update, route, promote, and reject operations emit canonical events.
-- [ ] Include actor, role, organization, entity, decision context, and reason payload.
+- [x] Introduce canonical SHADOW event names as additive mapping layer.
+- [x] Ensure create, update, route, promote, and reject operations emit canonical events.
+- [x] Include actor, role, organization, entity, decision context, and reason payload.
 - [ ] Ensure audit insert is part of write transaction boundary where required.
-- [ ] Add retrieval filters by organization and event class.
+- [x] Add retrieval filters by organization and event class.
 
 Exit criteria:
 
@@ -69,11 +69,11 @@ Goal: capture operational telemetry independently from audit events.
 
 Checklist:
 
-- [ ] Add dedicated telemetry write path and table design (documentation and migration plan first).
-- [ ] Define telemetry event envelope (event name, actor, org, source, context, timestamp).
+- [x] Add dedicated telemetry write path and table design (documentation and migration plan first).
+- [x] Define telemetry event envelope (event name, actor, org, source, context, timestamp).
 - [ ] Emit telemetry for safety gate triggers, role boundary blocks, and operational warnings.
 - [ ] Separate telemetry retention policy from immutable audit retention.
-- [ ] Add privacy scrub rules for sensitive payload fields.
+- [x] Add privacy scrub rules for sensitive payload fields.
 
 Exit criteria:
 
@@ -87,11 +87,11 @@ Goal: no intake item becomes trusted knowledge without classification, validatio
 
 Checklist:
 
-- [ ] Enforce intake lifecycle states: received, classified, validated, routed, reviewed, stored.
-- [ ] Standardize intake classification labels and confidence markers.
-- [ ] Ensure each intake item has source metadata and verification status.
+- [x] Enforce intake lifecycle states: received, classified, validated, routed, reviewed, stored.
+- [x] Standardize intake classification labels and confidence markers.
+- [x] Ensure each intake item has source metadata and verification status.
 - [ ] Ensure invalid or insufficient intake routes to manual review.
-- [ ] Add intake state transition tests and invalid-transition guards.
+- [x] Add intake state transition tests and invalid-transition guards.
 
 Exit criteria:
 
@@ -123,10 +123,10 @@ Goal: promotion into operational truth requires authorized human decision and co
 
 Checklist:
 
-- [ ] Restrict promotion authority to approved human roles by policy.
-- [ ] Persist promotion request, approval or rejection, and rationale.
+- [x] Restrict promotion authority to approved human roles by policy.
+- [x] Persist promotion request, approval or rejection, and rationale.
 - [ ] Require source verification threshold before promotion eligibility.
-- [ ] Ensure promoted records carry source and promotion lineage fields.
+- [x] Ensure promoted records carry source and promotion lineage fields.
 - [ ] Add rollback or correction workflow for erroneous promotions.
 
 Exit criteria:
@@ -145,7 +145,7 @@ Exit criteria:
 
 ### Multi-Gym Reservation
 
-- [ ] organization_id required in all SHADOW spine records
+- [x] organization_id required in all SHADOW spine records
 - [ ] gym_id and program_id reserved as nullable fields for staged rollout
 - [ ] no single-gym assumptions introduced in new contracts
 
@@ -156,10 +156,10 @@ Exit criteria:
 
 ### Testing and Verification
 
-- [ ] add route-level authorization tests
-- [ ] add event emission tests
-- [ ] add intake lifecycle and promotion gate tests
-- [ ] add organization-boundary regression tests
+- [x] add route-level authorization tests
+- [x] add event emission tests
+- [x] add intake lifecycle and promotion gate tests
+- [x] add organization-boundary regression tests
 
 ## Done Definition for Phase 1
 

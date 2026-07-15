@@ -71,3 +71,17 @@ jobs:
             PPBF_PILOT_BOOTSTRAP_KEY=secretref:ppbf-pilot-bootstrap-key
             PPBF_PILOT_DEFAULT_ORG_ID=secretref:ppbf-pilot-default-org-id
             PPBF_PILOT_SHADOW_CONTAINER=secretref:ppbf-pilot-shadow-container
+
+      - name: Resolve Staging API Base URL
+        run: |
+          FQDN="$(az containerapp show --name app-ppbf-staging --resource-group "$RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)"
+          test -n "$FQDN"
+          echo "PILOT_GATE_BASE_URL=https://$FQDN" >> "$GITHUB_ENV"
+
+      - name: Run SHADOW E2E Gate
+        env:
+          PPBF_PILOT_BOOTSTRAP_KEY: ${{ secrets.PPBF_PILOT_BOOTSTRAP_KEY }}
+          PILOT_ADMIN_ACCOUNT_ID: org_admin_shadow
+          PILOT_ADMIN_PIN: "15715"
+        run: |
+          npm --prefix apps/web run gate:pilot:shadow-e2e

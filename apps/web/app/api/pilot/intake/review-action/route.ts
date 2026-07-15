@@ -7,6 +7,8 @@ import { upsertAthlete } from '@/src/server/pilot/entities';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { assertShadowAuthority, type ShadowAutomationMode } from '@/src/server/pilot/shadowAuthority';
 import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
+import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
+import { buildReviewResearchFields } from '@/src/server/pilot/shadow';
 import { writeShadowTelemetryEvent } from '@/src/server/pilot/shadowTelemetry';
 import {
   bindIntakeDocumentsToOwner,
@@ -37,6 +39,25 @@ export async function POST(request: NextRequest) { // NOSONAR
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['organization_admin', 'coach']);
+    await assertShadowRuntimeReadiness({
+      requiredTables: [
+        'intake_cases',
+        'intake_documents',
+        'documents',
+        'emergency_contacts',
+        'medical_intake',
+        'waivers',
+        'guardian_links',
+        'parents',
+        'assessments',
+        'attendance',
+        'readiness',
+        'coach_observations',
+        'shadow_events',
+        'shadow_telemetry_events',
+        'shadow_authority_checks',
+      ],
+    });
 
     const body = (await request.json()) as {
       intake_case_id?: string;
@@ -78,6 +99,8 @@ export async function POST(request: NextRequest) { // NOSONAR
     }
 
     if (action === 'reject') {
+      const researchFields = buildReviewResearchFields({ action: 'reject', intakeCaseId });
+
       await updateIntakeCaseStatus({
         organizationId: principal.organizationId,
         intakeCaseId,
@@ -106,6 +129,10 @@ export async function POST(request: NextRequest) { // NOSONAR
         actorRole: principal.role,
         payload: {
           automation_mode: automationMode,
+          athlete_id: intakeCase.primary_athlete_id,
+          research_requirement: researchFields.researchRequirement,
+          knowledge_gap: researchFields.knowledgeGap,
+          source_status: researchFields.sourceStatus,
         },
       });
 
@@ -116,6 +143,7 @@ export async function POST(request: NextRequest) { // NOSONAR
         actorRole: principal.role,
         dimensions: {
           automation_mode: automationMode,
+          athlete_id: intakeCase.primary_athlete_id,
         },
       });
 
@@ -123,6 +151,8 @@ export async function POST(request: NextRequest) { // NOSONAR
     }
 
     if (action === 'approve') {
+      const researchFields = buildReviewResearchFields({ action: 'approve', intakeCaseId });
+
       await updateIntakeCaseStatus({
         organizationId: principal.organizationId,
         intakeCaseId,
@@ -151,6 +181,10 @@ export async function POST(request: NextRequest) { // NOSONAR
         actorRole: principal.role,
         payload: {
           automation_mode: automationMode,
+          athlete_id: intakeCase.primary_athlete_id,
+          research_requirement: researchFields.researchRequirement,
+          knowledge_gap: researchFields.knowledgeGap,
+          source_status: researchFields.sourceStatus,
         },
       });
 
@@ -161,6 +195,7 @@ export async function POST(request: NextRequest) { // NOSONAR
         actorRole: principal.role,
         dimensions: {
           automation_mode: automationMode,
+          athlete_id: intakeCase.primary_athlete_id,
         },
       });
 
@@ -344,6 +379,8 @@ export async function POST(request: NextRequest) { // NOSONAR
       shadow_mirror: false,
     });
 
+    const researchFields = buildReviewResearchFields({ action: 'promote', intakeCaseId });
+
     await emitShadowEvent({
       organizationId: principal.organizationId,
       eventName: 'SHADOW_INTAKE_CASE_PROMOTED',
@@ -354,6 +391,9 @@ export async function POST(request: NextRequest) { // NOSONAR
       payload: {
         athlete_id: promotion.athlete.athlete_id,
         automation_mode: automationMode,
+        research_requirement: researchFields.researchRequirement,
+        knowledge_gap: researchFields.knowledgeGap,
+        source_status: researchFields.sourceStatus,
       },
     });
 
@@ -365,6 +405,7 @@ export async function POST(request: NextRequest) { // NOSONAR
       dimensions: {
         automation_mode: automationMode,
         has_guardian: Boolean(promotion.guardian),
+        athlete_id: promotion.athlete.athlete_id,
       },
     });
 

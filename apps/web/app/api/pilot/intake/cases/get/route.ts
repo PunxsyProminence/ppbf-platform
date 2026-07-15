@@ -17,7 +17,10 @@ export async function POST(request: NextRequest) {
       throw new Error('Missing intake_case_id');
     }
 
-    const aggregate = await getIntakeCaseAggregate(principal.organizationId, intakeCaseId);
+    const aggregate = await getIntakeCaseAggregate(principal.organizationId, intakeCaseId, {
+      actorAccountId: principal.accountId,
+      actorRole: principal.role,
+    });
     if (!aggregate) {
       return NextResponse.json({ found: false });
     }

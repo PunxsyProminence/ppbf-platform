@@ -1,5 +1,14 @@
 # Auth Deployment Verification
 
+## Runtime Reality Update (2026-07-15)
+
+- Static Web App remains static-only for the frontend surface.
+- Pilot backend API runtime is actively validated through Container App execution using gate commands.
+- Verified command in active development/runtime context:
+  - `npm --prefix apps/web run gate:pilot:shadow-e2e` (PASS against local runtime)
+- Operational implication:
+  - SHADOW/pilot server routes require server runtime hosting (Container App or equivalent), not static export-only hosting.
+
 ## Deployment architecture
 
 - Detected target: Azure Static Web App.

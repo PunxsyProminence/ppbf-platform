@@ -11,7 +11,10 @@ export async function POST(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['organization_admin', 'coach', 'parent']);
 
-    const queue = await listReviewQueue(principal.organizationId);
+    const queue = await listReviewQueue(principal.organizationId, {
+      actorAccountId: principal.accountId,
+      actorRole: principal.role,
+    });
 
     return NextResponse.json({
       ok: true,
