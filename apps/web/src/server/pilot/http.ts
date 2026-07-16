@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import type { PilotPrincipal } from './auth';
+import type { PilotRole } from './contracts';
 import { resolvePrincipal } from './auth';
 
 export async function requirePrincipal(request: NextRequest): Promise<PilotPrincipal> {
@@ -9,6 +10,12 @@ export async function requirePrincipal(request: NextRequest): Promise<PilotPrinc
     throw new Error('Unauthorized');
   }
   return principal;
+}
+
+export function requireRole(principal: PilotPrincipal, allowedRoles: PilotRole[]): void {
+  if (!allowedRoles.includes(principal.role)) {
+    throw new Error('Forbidden');
+  }
 }
 
 export function jsonError(error: unknown, fallbackStatus = 500): NextResponse {

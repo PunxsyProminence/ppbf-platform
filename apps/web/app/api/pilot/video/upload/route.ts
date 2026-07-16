@@ -81,12 +81,10 @@ export async function POST(request: NextRequest) {
 
     await writeShadowTelemetryEvent({
       organizationId: principal.organizationId,
-      eventName: 'video.uploaded',
-      entityType: 'video_session',
-      entityId: videoSessionId,
+      metricName: 'video.uploaded',
       actorAccountId: principal.accountId,
       actorRole: principal.role,
-      payload: { mime_type: file.type, blob_path: blobPath },
+      dimensions: { mime_type: file.type, blob_path: blobPath, video_session_id: videoSessionId },
     });
 
     return NextResponse.json({ video_session_id: videoSessionId, title, blob_path: blobPath }, { status: 201 });
