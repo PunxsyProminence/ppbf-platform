@@ -129,8 +129,6 @@ interface ShadowCoverageComputationRow {
   matched_sources: number;
 }
 
-let ensured = false;
-
 function clampAuthorityTier(value: number): number {
   if (!Number.isFinite(value)) {
     return 3;
@@ -143,108 +141,6 @@ function clampSourceCount(value: number): number {
     return 1;
   }
   return Math.max(1, Math.min(100, Math.trunc(value)));
-}
-
-async function ensureShadowLibraryTables(): Promise<void> {
-  if (ensured) {
-    return;
-  }
-
-  await query(
-    `create table if not exists pilot.shadow_library_sources (
-      source_id text primary key,
-      organization_id text not null,
-      title text not null,
-      publisher text null,
-      source_type text not null,
-      authority_tier smallint not null,
-      url text null,
-      publication_date date null,
-      status text not null default 'active',
-      metadata jsonb not null default '{}'::jsonb,
-      created_by_account_id text null,
-      created_by_role text null,
-      created_at timestamptz not null default now(),
-      updated_at timestamptz not null default now(),
-      unique (organization_id, url)
-    )`,
-  );
-
-  await query(
-    `create table if not exists pilot.shadow_library_documents (
-      document_id text primary key,
-      source_id text not null references pilot.shadow_library_sources(source_id) on delete cascade,
-      organization_id text not null,
-      subject_id text null,
-      document_name text not null,
-      blob_path text null,
-      content_sha256 text null,
-      ingest_state text not null default 'pending',
-      extraction_error text null,
-      metadata jsonb not null default '{}'::jsonb,
-      created_by_account_id text null,
-      created_by_role text null,
-      created_at timestamptz not null default now(),
-      updated_at timestamptz not null default now(),
-      unique (organization_id, content_sha256)
-    )`,
-  );
-
-  await query(
-    `create table if not exists pilot.shadow_library_capability_map (
-      capability_map_id text primary key,
-      organization_id text not null,
-      capability_key text not null,
-      required_source_types text[] not null default '{}'::text[],
-      minimum_authority_tier smallint not null default 3,
-      minimum_source_count smallint not null default 1,
-      coverage_state text not null default 'unknown',
-      last_evaluated_at timestamptz null,
-      created_at timestamptz not null default now(),
-      updated_at timestamptz not null default now(),
-      unique (organization_id, capability_key)
-    )`,
-  );
-
-  await query(
-    `create table if not exists pilot.shadow_library_chunks (
-      chunk_id text primary key,
-      document_id text not null references pilot.shadow_library_documents(document_id) on delete cascade,
-      source_id text not null references pilot.shadow_library_sources(source_id) on delete cascade,
-      organization_id text not null,
-      subject_id text null,
-      ordinal int not null,
-      text_content text not null,
-      metadata jsonb not null default '{}'::jsonb,
-      created_by_account_id text null,
-      created_by_role text null,
-      created_at timestamptz not null default now(),
-      updated_at timestamptz not null default now(),
-      unique (document_id, ordinal)
-    )`,
-  );
-
-  await query(
-    `create index if not exists idx_shadow_library_sources_org_created
-     on pilot.shadow_library_sources(organization_id, created_at desc)`,
-  );
-
-  await query(
-    `create index if not exists idx_shadow_library_documents_org_created
-     on pilot.shadow_library_documents(organization_id, created_at desc)`,
-  );
-
-  await query(
-    `create index if not exists idx_shadow_library_cap_map_org_updated
-     on pilot.shadow_library_capability_map(organization_id, updated_at desc)`,
-  );
-
-  await query(
-    `create index if not exists idx_shadow_library_chunks_org_created
-     on pilot.shadow_library_chunks(organization_id, created_at desc)`,
-  );
-
-  ensured = true;
 }
 
 function normalizeSearchScope(input: {
@@ -437,8 +333,6 @@ export async function createShadowLibrarySource(input: {
   status?: ShadowLibrarySourceStatus;
   metadata?: Record<string, unknown>;
 }): Promise<ShadowLibrarySourceRow> {
-  await ensureShadowLibraryTables();
-
   const sourceId = `source_${randomUUID()}`;
 
   const row = await queryOne<ShadowLibrarySourceRow>(
@@ -503,8 +397,6 @@ export async function listShadowLibrarySources(input: {
   limit?: number;
   offset?: number;
 }): Promise<ShadowLibrarySourceRow[]> {
-  await ensureShadowLibraryTables();
-
   const limit = Math.max(1, Math.min(200, Math.trunc(input.limit ?? 50)));
   const offset = Math.max(0, Math.trunc(input.offset ?? 0));
 
@@ -533,8 +425,6 @@ export async function createShadowLibraryDocument(input: {
   ingestState?: ShadowLibraryIngestState;
   metadata?: Record<string, unknown>;
 }): Promise<ShadowLibraryDocumentRow> {
-  await ensureShadowLibraryTables();
-
   const source = await queryOne<{ source_id: string }>(
     `select source_id
      from pilot.shadow_library_sources
@@ -608,8 +498,6 @@ export async function createShadowLibraryChunk(input: {
   textContent: string;
   metadata?: Record<string, unknown>;
 }): Promise<ShadowLibraryChunkRow> {
-  await ensureShadowLibraryTables();
-
   const document = await queryOne<{
     document_id: string;
     source_id: string;
@@ -696,8 +584,6 @@ export async function searchShadowLibrary(input: {
   queryText: string;
   limit?: number;
 }): Promise<ShadowLibrarySearchResult[]> {
-  await ensureShadowLibraryTables();
-
   const normalized = normalizeSearchScope({
     scope: input.scope,
     subjectId: input.subjectId,
@@ -891,8 +777,6 @@ export async function upsertShadowCapabilityMap(input: {
   minimumAuthorityTier?: number;
   minimumSourceCount?: number;
 }): Promise<void> {
-  await ensureShadowLibraryTables();
-
   const capabilityMapId = `cap_${randomUUID()}`;
 
   await query(
@@ -935,8 +819,6 @@ export async function recomputeShadowCapabilityCoverage(input: {
   actorAccountId: string;
   actorRole: string;
 }): Promise<ShadowCapabilityCoverageRow[]> {
-  await ensureShadowLibraryTables();
-
   const rows = await query<ShadowCoverageComputationRow>(
     `select
        cm.capability_map_id,
@@ -1015,8 +897,6 @@ export async function recomputeShadowCapabilityCoverage(input: {
 }
 
 export async function listShadowCapabilityCoverage(organizationId: string): Promise<ShadowCapabilityCoverageRow[]> {
-  await ensureShadowLibraryTables();
-
   return query<ShadowCapabilityCoverageRow>(
     `select
        cm.capability_map_id,

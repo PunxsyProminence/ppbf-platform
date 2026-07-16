@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -29,7 +30,7 @@ Example:
 
 function chunkText(text, targetLength = 1000) {
   const normalized = text
-    .replace(/\r/g, '')
+    .replaceAll('\r', '')
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean);
@@ -60,7 +61,7 @@ async function maybeBootstrapAdmin() {
   }
 
   console.log('0) Bootstrap admin account');
-  await fetch(`${baseUrl}/api/pilot/admin/bootstrap`, {
+  const response = await fetch(`${baseUrl}/api/pilot/admin/bootstrap`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -72,6 +73,11 @@ async function maybeBootstrapAdmin() {
       organization_id: organizationId || undefined,
     }),
   });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload?.ok === false) {
+    throw new Error(`Bootstrap failed (${response.status}): ${JSON.stringify(payload)}`);
+  }
 }
 
 async function call(pathname, { method = 'GET', body } = {}) {
@@ -110,6 +116,12 @@ async function login() {
 
 async function registerDoctrineSource() {
   console.log('2) Register canonical doctrine source');
+  const existing = await findCanonicalSource();
+  if (existing) {
+    console.log('2) Canonical doctrine source already exists; reusing existing source');
+    return { source: existing, existing: true };
+  }
+
   const payload = await call('/api/pilot/shadow/library/sources', {
     method: 'POST',
     body: {
@@ -127,20 +139,36 @@ async function registerDoctrineSource() {
     },
   });
 
-  return payload.source;
+  return { source: payload.source, existing: false };
+}
+
+async function findCanonicalSource() {
+  const response = await call('/api/pilot/shadow/library/sources?source_type=internal_policy&status=active&limit=200');
+  const items = Array.isArray(response?.items) ? response.items : [];
+  return items.find((item) => {
+    const metadata = item?.metadata || {};
+    return (
+      item?.title === 'SHADOW Canonical Authority Model'
+      || metadata?.doctrine_kind === 'shadow-authority-model'
+      || metadata?.canonical === true
+    );
+  }) || null;
 }
 
 async function registerDoctrineDocument(sourceId, content) {
   console.log('3) Register doctrine document');
+  const contentSha256 = createHash('sha256').update(content, 'utf8').digest('hex');
   const payload = await call('/api/pilot/shadow/library/documents', {
     method: 'POST',
     body: {
       source_id: sourceId,
       document_name: 'SHADOW Canonical Authority Model',
+      content_sha256: contentSha256,
       ingest_state: 'chunking',
       metadata: {
         canonical: true,
         body_length: content.length,
+        content_sha256: contentSha256,
       },
     },
   });
@@ -232,21 +260,33 @@ async function run() {
   await maybeBootstrapAdmin();
   await login();
 
-  const source = await registerDoctrineSource();
-  const document = await registerDoctrineDocument(source.source_id, doctrineContent);
-  const chunkCount = await registerDoctrineChunks(document.document_id, doctrineContent);
+  const sourceResult = await registerDoctrineSource();
+  let documentId = null;
+  let chunkCount = 0;
+
+  if (sourceResult.existing) {
+    console.log('3) Skipping doctrine document/chunk registration for existing canonical source');
+  } else {
+    const document = await registerDoctrineDocument(sourceResult.source.source_id, doctrineContent);
+    documentId = document.document_id;
+    chunkCount = await registerDoctrineChunks(document.document_id, doctrineContent);
+  }
+
   const coverageItems = await seedCapabilityCoverageRules();
 
   console.log('SHADOW Library seed complete');
   console.log(JSON.stringify({
-    source_id: source.source_id,
-    document_id: document.document_id,
+    source_id: sourceResult.source.source_id,
+    document_id: documentId,
     chunk_count: chunkCount,
+    source_preexisting: sourceResult.existing,
     coverage_rules: coverageItems.length,
   }, null, 2));
 }
 
-run().catch((error) => {
+try {
+  await run();
+} catch (error) {
   console.error(error instanceof Error ? error.message : error);
   process.exit(1);
-});
+}

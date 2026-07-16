@@ -11,23 +11,46 @@
 const baseUrl = process.env.PILOT_GATE_BASE_URL || 'http://localhost:3000';
 const bootstrapKey = process.env.PPBF_PILOT_BOOTSTRAP_KEY || '';
 
-const platformOwnerAccountId = process.env.PILOT_PLATFORM_OWNER_ACCOUNT_ID || 'platform_owner_001';
-const platformOwnerPin = process.env.PILOT_PLATFORM_OWNER_PIN || '15715';
+const platformOwnerAccountId = process.env.PILOT_PLATFORM_OWNER_ACCOUNT_ID || '';
+const platformOwnerPin = process.env.PILOT_PLATFORM_OWNER_PIN || '';
 
-const orgAId = process.env.PILOT_ORG_A_ID || 'org-alpha';
-const orgAName = process.env.PILOT_ORG_A_NAME || 'Organization Alpha';
-const orgAAdminAccountId = process.env.PILOT_ORG_A_ADMIN_ACCOUNT_ID || 'org_alpha_admin';
-const orgAAdminPin = process.env.PILOT_ORG_A_ADMIN_PIN || '15715';
+const orgAId = process.env.PILOT_ORG_A_ID || '';
+const orgAName = process.env.PILOT_ORG_A_NAME || '';
+const orgAAdminAccountId = process.env.PILOT_ORG_A_ADMIN_ACCOUNT_ID || '';
+const orgAAdminPin = process.env.PILOT_ORG_A_ADMIN_PIN || '';
 
-const orgBId = process.env.PILOT_ORG_B_ID || 'org-bravo';
-const orgBName = process.env.PILOT_ORG_B_NAME || 'Organization Bravo';
-const orgBAdminAccountId = process.env.PILOT_ORG_B_ADMIN_ACCOUNT_ID || 'org_bravo_admin';
-const orgBAdminPin = process.env.PILOT_ORG_B_ADMIN_PIN || '15715';
+const orgBId = process.env.PILOT_ORG_B_ID || '';
+const orgBName = process.env.PILOT_ORG_B_NAME || '';
+const orgBAdminAccountId = process.env.PILOT_ORG_B_ADMIN_ACCOUNT_ID || '';
+const orgBAdminPin = process.env.PILOT_ORG_B_ADMIN_PIN || '';
 
-const sharedAthleteId = process.env.PILOT_SHARED_ATHLETE_ID || 'athlete_shared_001';
+const sharedAthleteId = process.env.PILOT_SHARED_ATHLETE_ID || '';
+
+function requireEnv(name, value) {
+  if (!value?.trim()) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+}
 
 if (!bootstrapKey) {
   console.error('Missing PPBF_PILOT_BOOTSTRAP_KEY');
+  process.exit(1);
+}
+
+try {
+  requireEnv('PILOT_PLATFORM_OWNER_ACCOUNT_ID', platformOwnerAccountId);
+  requireEnv('PILOT_PLATFORM_OWNER_PIN', platformOwnerPin);
+  requireEnv('PILOT_ORG_A_ID', orgAId);
+  requireEnv('PILOT_ORG_A_NAME', orgAName);
+  requireEnv('PILOT_ORG_A_ADMIN_ACCOUNT_ID', orgAAdminAccountId);
+  requireEnv('PILOT_ORG_A_ADMIN_PIN', orgAAdminPin);
+  requireEnv('PILOT_ORG_B_ID', orgBId);
+  requireEnv('PILOT_ORG_B_NAME', orgBName);
+  requireEnv('PILOT_ORG_B_ADMIN_ACCOUNT_ID', orgBAdminAccountId);
+  requireEnv('PILOT_ORG_B_ADMIN_PIN', orgBAdminPin);
+  requireEnv('PILOT_SHARED_ATHLETE_ID', sharedAthleteId);
+} catch (error) {
+  console.error(String(error));
   process.exit(1);
 }
 

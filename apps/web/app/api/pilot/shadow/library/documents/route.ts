@@ -7,6 +7,13 @@ import { createShadowLibraryDocument, type ShadowLibraryIngestState } from '@/sr
 
 export const runtime = 'nodejs';
 
+const requiredShadowLibraryTables = [
+  'shadow_library_sources',
+  'shadow_library_documents',
+  'shadow_library_chunks',
+  'shadow_library_capability_map',
+];
+
 function parseIngestState(value: string | undefined): ShadowLibraryIngestState | undefined {
   if (!value) return undefined;
 
@@ -27,7 +34,7 @@ export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['organization_admin', 'admin', 'coach']);
-    await assertShadowRuntimeReadiness({ requiredTables: [] });
+    await assertShadowRuntimeReadiness({ requiredTables: requiredShadowLibraryTables });
 
     const body = (await request.json().catch(() => ({}))) as {
       source_id?: string;

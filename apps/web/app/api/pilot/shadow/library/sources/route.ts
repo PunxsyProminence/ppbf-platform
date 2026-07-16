@@ -7,6 +7,13 @@ import { createShadowLibrarySource, listShadowLibrarySources, type ShadowLibrary
 
 export const runtime = 'nodejs';
 
+const requiredShadowLibraryTables = [
+  'shadow_library_sources',
+  'shadow_library_documents',
+  'shadow_library_chunks',
+  'shadow_library_capability_map',
+];
+
 function parseSourceType(value: string | undefined): ShadowLibrarySourceType | undefined {
   if (!value) return undefined;
   const allowed: ShadowLibrarySourceType[] = [
@@ -34,7 +41,7 @@ export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['organization_admin', 'admin', 'coach', 'athlete', 'parent', 'volunteer', 'staff']);
-    await assertShadowRuntimeReadiness({ requiredTables: [] });
+    await assertShadowRuntimeReadiness({ requiredTables: requiredShadowLibraryTables });
 
     const params = request.nextUrl.searchParams;
     const sourceType = parseSourceType(params.get('source_type') ?? undefined);
@@ -60,7 +67,7 @@ export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['organization_admin', 'admin', 'coach']);
-    await assertShadowRuntimeReadiness({ requiredTables: [] });
+    await assertShadowRuntimeReadiness({ requiredTables: requiredShadowLibraryTables });
 
     const body = (await request.json().catch(() => ({}))) as {
       title?: string;

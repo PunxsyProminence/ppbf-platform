@@ -7,11 +7,18 @@ import { createShadowLibraryClaim } from '@/src/server/pilot/shadowLibrary';
 
 export const runtime = 'nodejs';
 
+const requiredShadowLibraryTables = [
+  'shadow_library_sources',
+  'shadow_library_documents',
+  'shadow_library_chunks',
+  'shadow_library_capability_map',
+];
+
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['organization_admin', 'admin', 'coach', 'athlete', 'parent', 'volunteer', 'staff']);
-    await assertShadowRuntimeReadiness({ requiredTables: [] });
+    await assertShadowRuntimeReadiness({ requiredTables: requiredShadowLibraryTables });
 
     const body = (await request.json().catch(() => ({}))) as {
       scope?: 'master' | 'scoped' | 'subject';

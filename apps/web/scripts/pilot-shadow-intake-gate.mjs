@@ -14,17 +14,23 @@ import PDFDocument from 'pdfkit';
 
 const baseUrl = process.env.PILOT_GATE_BASE_URL || 'http://localhost:3000';
 const bootstrapKey = process.env.PPBF_PILOT_BOOTSTRAP_KEY || '';
-const adminAccountId = process.env.PILOT_ADMIN_ACCOUNT_ID || 'org_admin_shadow';
-const adminPin = process.env.PILOT_ADMIN_PIN || '15715';
-const organizationId = process.env.PILOT_ORG_A_ID || process.env.PPBF_PILOT_DEFAULT_ORG_ID || 'ppbf-default-org';
-const organizationName = process.env.PILOT_ORG_A_NAME || 'PPBF Default Organization';
+const adminAccountId = process.env.PILOT_ADMIN_ACCOUNT_ID || '';
+const adminPin = process.env.PILOT_ADMIN_PIN || '';
+const organizationId = process.env.PILOT_ORG_A_ID || process.env.PPBF_PILOT_DEFAULT_ORG_ID || '';
+const organizationName = process.env.PILOT_ORG_A_NAME || '';
 
-const athleteAccountId = process.env.PILOT_SHADOW_ATHLETE_ACCOUNT_ID || `shadow_athlete_${Date.now()}`;
-const athletePin = process.env.PILOT_SHADOW_ATHLETE_PIN || '25725';
-const athleteId = process.env.PILOT_SHADOW_ATHLETE_ID || `shadow-athlete-${Date.now()}`;
-const guardianAccountId = process.env.PILOT_SHADOW_GUARDIAN_ACCOUNT_ID || `shadow_guardian_${Date.now()}`;
-const guardianPin = process.env.PILOT_SHADOW_GUARDIAN_PIN || '35735';
-const guardianParentId = process.env.PILOT_SHADOW_GUARDIAN_PARENT_ID || `parent-${Date.now()}`;
+const athleteAccountId = process.env.PILOT_SHADOW_ATHLETE_ACCOUNT_ID || '';
+const athletePin = process.env.PILOT_SHADOW_ATHLETE_PIN || '';
+const athleteId = process.env.PILOT_SHADOW_ATHLETE_ID || '';
+const guardianAccountId = process.env.PILOT_SHADOW_GUARDIAN_ACCOUNT_ID || '';
+const guardianPin = process.env.PILOT_SHADOW_GUARDIAN_PIN || '';
+const guardianParentId = process.env.PILOT_SHADOW_GUARDIAN_PARENT_ID || '';
+
+function requireEnv(name, value) {
+  if (!value?.trim()) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+}
 
 const documentMatrix = [
   { type: 'athlete_registration', title: 'Athlete Registration Packet' },
@@ -34,6 +40,23 @@ const documentMatrix = [
   { type: 'assessment_document', title: 'Assessment Document' },
   { type: 'general_intake', title: 'General Intake Document' },
 ];
+
+try {
+  requireEnv('PPBF_PILOT_BOOTSTRAP_KEY', bootstrapKey);
+  requireEnv('PILOT_ADMIN_ACCOUNT_ID', adminAccountId);
+  requireEnv('PILOT_ADMIN_PIN', adminPin);
+  requireEnv('PILOT_ORG_A_ID or PPBF_PILOT_DEFAULT_ORG_ID', organizationId);
+  requireEnv('PILOT_ORG_A_NAME', organizationName);
+  requireEnv('PILOT_SHADOW_ATHLETE_ACCOUNT_ID', athleteAccountId);
+  requireEnv('PILOT_SHADOW_ATHLETE_PIN', athletePin);
+  requireEnv('PILOT_SHADOW_ATHLETE_ID', athleteId);
+  requireEnv('PILOT_SHADOW_GUARDIAN_ACCOUNT_ID', guardianAccountId);
+  requireEnv('PILOT_SHADOW_GUARDIAN_PIN', guardianPin);
+  requireEnv('PILOT_SHADOW_GUARDIAN_PARENT_ID', guardianParentId);
+} catch (error) {
+  console.error(String(error));
+  process.exit(1);
+}
 
 function createClient(name) {
   let cookieHeader = '';
