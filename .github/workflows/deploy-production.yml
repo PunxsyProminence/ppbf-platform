@@ -1,0 +1,118 @@
+name: deploy-production
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/web/**"
+      - "infra/azure/**"
+      - "Dockerfile"
+      - ".github/workflows/deploy-production.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-production-main
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      ACR_NAME: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+      ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io
+      RESOURCE_GROUP: rg-ppbf-enterprise-staging
+      CONTAINER_APP_NAME: app-ppbf-production
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Authenticate via Azure OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Azure Container Registry
+        run: |
+          az acr login --name "$ACR_NAME"
+
+      - name: Load Azure Container Registry deploy credentials
+        id: acr-credentials
+        run: |
+          ACR_USERNAME="$(az acr credential show --name "$ACR_NAME" --query username -o tsv)"
+          ACR_PASSWORD="$(az acr credential show --name "$ACR_NAME" --query 'passwords[0].value' -o tsv)"
+          test -n "$ACR_USERNAME"
+          test -n "$ACR_PASSWORD"
+          echo "::add-mask::$ACR_USERNAME"
+          echo "::add-mask::$ACR_PASSWORD"
+          echo "username=$ACR_USERNAME" >> "$GITHUB_OUTPUT"
+          echo "password=$ACR_PASSWORD" >> "$GITHUB_OUTPUT"
+
+      - name: Build and Push Container Image to ACR
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ env.ACR_LOGIN_SERVER }}/ppbf-frontend:${{ github.sha }}
+            ${{ env.ACR_LOGIN_SERVER }}/ppbf-frontend:prod-latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Deploy to Azure Container App (Production)
+        uses: azure/container-apps-deploy-action@v1
+        with:
+          acrName: ${{ env.ACR_NAME }}
+          acrUsername: ${{ steps.acr-credentials.outputs.username }}
+          acrPassword: ${{ steps.acr-credentials.outputs.password }}
+          resourceGroup: ${{ env.RESOURCE_GROUP }}
+          containerAppName: ${{ env.CONTAINER_APP_NAME }}
+          imageToDeploy: ${{ env.ACR_LOGIN_SERVER }}/ppbf-frontend:${{ github.sha }}
+          environmentVariables: >-
+            PPBF_ONBOARDING_LIVE_SAVE=false
+            PPBF_AUTH_PROVIDER_WIRED=false
+            AZURE_POSTGRES_CONNECTION_STRING=secretref:azure-postgres-connection-string
+            AZURE_STORAGE_CONNECTION_STRING=secretref:azure-storage-connection-string
+            PPBF_PILOT_BOOTSTRAP_KEY=secretref:ppbf-pilot-bootstrap-key
+            PPBF_PILOT_DEFAULT_ORG_ID=secretref:ppbf-pilot-default-org-id
+            PPBF_PILOT_SHADOW_CONTAINER=secretref:ppbf-pilot-shadow-container
+
+      - name: Resolve Production Base URL
+        run: |
+          FQDN="$(az containerapp show --name "$CONTAINER_APP_NAME" --resource-group "$RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)"
+          test -n "$FQDN"
+          echo "PROD_BASE_URL=https://$FQDN" >> "$GITHUB_ENV"
+
+      - name: Pilot API Smoke Checks
+        run: |
+          set -euo pipefail
+
+          LOGIN_STATUS="$(curl -sS -o /dev/null -w "%{http_code}" -X POST "$PROD_BASE_URL/api/pilot/auth/login" -H "Content-Type: application/json" -d '{}')"
+          if [ "$LOGIN_STATUS" != "400" ]; then
+            echo "Expected /api/pilot/auth/login to return 400 for empty payload, got $LOGIN_STATUS"
+            exit 1
+          fi
+
+          SESSION_STATUS="$(curl -sS -o /dev/null -w "%{http_code}" -X POST "$PROD_BASE_URL/api/pilot/auth/session" -H "Content-Type: application/json" -d '{}')"
+          if [ "$SESSION_STATUS" != "200" ]; then
+            echo "Expected /api/pilot/auth/session to return 200, got $SESSION_STATUS"
+            exit 1
+          fi
+
+          SHADOW_STATUS="$(curl -sS -o /dev/null -w "%{http_code}" -X POST "$PROD_BASE_URL/api/pilot/shadow/events" -H "Content-Type: application/json" -d '{}')"
+          if [ "$SHADOW_STATUS" != "401" ]; then
+            echo "Expected /api/pilot/shadow/events to return 401 without auth, got $SHADOW_STATUS"
+            exit 1
+          fi
+
+          echo "Production smoke checks passed."
