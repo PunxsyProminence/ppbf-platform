@@ -1,11 +1,24 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 
-const capabilityStatus = 'PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED | HUMAN REVIEW REQUIRED';
+const ML_PLACEHOLDER = 'PLANNED | ML REQUIRED | NOT YET AUTOMATED';
+
+interface VideoSession {
+  video_session_id: string;
+  title: string;
+  notes: string;
+  file_name: string;
+  file_size_bytes: number;
+  mime_type: string;
+  status: string;
+  athlete_id: string | null;
+  uploaded_by_account_id: string;
+  created_at: string;
+}
 
 interface ShadowObservationItem {
   id: string;
@@ -17,145 +30,209 @@ interface ShadowObservationItem {
   created_at: string;
 }
 
-const analysisPanels = [
-  { title: 'Skill Recognition Placeholder', detail: capabilityStatus },
-  { title: 'Punch Detection Placeholder', detail: capabilityStatus },
-  { title: 'Footwork Analysis Placeholder', detail: capabilityStatus },
-  { title: 'Technique Scoring Placeholder', detail: `${capabilityStatus} | ML REQUIRED` },
-  { title: 'Movement Analysis Placeholder', detail: capabilityStatus },
+const mlPanels = [
+  { title: 'Skill Recognition', detail: ML_PLACEHOLDER },
+  { title: 'Punch Detection', detail: ML_PLACEHOLDER },
+  { title: 'Footwork Analysis', detail: ML_PLACEHOLDER },
+  { title: 'Technique Scoring', detail: ML_PLACEHOLDER },
+  { title: 'Movement Analysis', detail: ML_PLACEHOLDER },
 ];
 
-const reviewComparisons = [
-  {
-    title: 'Session Comparison',
-    body: 'Compare Session A vs Session B clips, coaching notes, and mock trend flags.',
-    state: capabilityStatus,
-  },
-  {
-    title: 'Before / After Comparison',
-    body: 'Side-by-side frame placeholder for earlier and current training cycle clips.',
-    state: capabilityStatus,
-  },
-  {
-    title: 'Analysis History',
-    body: 'Mock history of analysis runs, reviewer notes, and role-attributed review checkpoints.',
-    state: capabilityStatus,
-  },
-];
+function formatBytes(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export default function CoachVideoAnalysisPage() {
+  const [videos, setVideos] = useState<VideoSession[]>([]);
+  const [videoError, setVideoError] = useState('');
   const [observations, setObservations] = useState<ShadowObservationItem[]>([]);
   const [observationError, setObservationError] = useState('');
 
-  useEffect(() => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadTitle, setUploadTitle] = useState('');
+  const [uploadNotes, setUploadNotes] = useState('');
+  const [uploadAthleteId, setUploadAthleteId] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState('');
+
+  const [activeVideo, setActiveVideo] = useState<{ url: string; title: string } | null>(null);
+  const [loadingVideoId, setLoadingVideoId] = useState<string | null>(null);
+
+  const loadVideos = () => {
     void (async () => {
       try {
-        const response = await fetch(`${apiBase()}/api/pilot/shadow/observation-projection`, {
+        const res = await fetch(`${apiBase()}/api/pilot/video/list`);
+        if (!res.ok) throw new Error('Failed to load video library');
+        const data = (await res.json()) as { items: VideoSession[] };
+        setVideos(data.items ?? []);
+        setVideoError('');
+      } catch (err) {
+        setVideoError(err instanceof Error ? err.message : 'Failed to load video library');
+      }
+    })();
+  };
+
+  useEffect(() => {
+    loadVideos();
+    void (async () => {
+      try {
+        const res = await fetch(`${apiBase()}/api/pilot/shadow/observation-projection`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ limit: 30 }),
         });
-
-        if (!response.ok) {
-          throw new Error('Unable to load SHADOW observation projection.');
-        }
-
-        const payload = (await response.json()) as { items?: ShadowObservationItem[] };
-        setObservations(payload.items ?? []);
-        setObservationError('');
-      } catch (error) {
-        setObservations([]);
-        setObservationError(error instanceof Error ? error.message : 'Unable to load SHADOW observation projection.');
+        if (!res.ok) throw new Error('Unable to load SHADOW observations');
+        const data = (await res.json()) as { items?: ShadowObservationItem[] };
+        setObservations(data.items ?? []);
+      } catch (err) {
+        setObservationError(err instanceof Error ? err.message : 'Unable to load SHADOW observations');
       }
     })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handleUpload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const file = fileInputRef.current?.files?.[0];
+    if (!file) { setUploadStatus('Select a video file first.'); return; }
+    setUploading(true);
+    setUploadStatus('Uploading...');
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('title', uploadTitle || file.name);
+      form.append('notes', uploadNotes);
+      if (uploadAthleteId.trim()) form.append('athlete_id', uploadAthleteId.trim());
+      const res = await fetch(`${apiBase()}/api/pilot/video/upload`, { method: 'POST', body: form });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error ?? `Upload failed (${res.status})`);
+      }
+      setUploadStatus('Upload complete.');
+      setUploadTitle(''); setUploadNotes(''); setUploadAthleteId('');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      loadVideos();
+    } catch (err) {
+      setUploadStatus(err instanceof Error ? err.message : 'Upload failed.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const openVideo = async (videoId: string) => {
+    setLoadingVideoId(videoId);
+    try {
+      const res = await fetch(`${apiBase()}/api/pilot/video/${videoId}`);
+      if (!res.ok) throw new Error('Could not load video');
+      const data = (await res.json()) as { stream_url: string; title: string };
+      setActiveVideo({ url: data.stream_url, title: data.title });
+    } catch (err) {
+      setVideoError(err instanceof Error ? err.message : 'Failed to open video');
+    } finally {
+      setLoadingVideoId(null);
+    }
+  };
 
   return (
     <RoleStandaloneView roleLabel="Coach Workspace" routeLabel="/coach/video-analysis" allowedRoles={['coach']} showShellHeader={false}>
       <div className="space-y-6">
         <header className="border-2 border-[#8b4444] bg-[#111111] p-5">
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">AI / ML Video Analysis</p>
-          <h1 className="mt-2 text-3xl font-black text-[#f2e7da]">Coach Video Analysis Console</h1>
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">Video Analysis</p>
+          <h1 className="mt-2 text-3xl font-black text-[#f2e7da]">Coach Video Console</h1>
           <p className="mt-2 text-sm leading-6 text-[#cfbfae]">
-            AI Video Analysis - Planned. All results in this route are mock display only.
-          </p>
-          <p className="mt-2 text-xs font-mono uppercase tracking-[0.09em] text-[#d4a574]">
-            {capabilityStatus}
+            Upload session footage and review athlete film. AI/ML scoring features are planned and not yet active.
           </p>
         </header>
 
-        <section className="grid gap-4 lg:grid-cols-2">
-          <article className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
-            <h2 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Video Observation Stream</h2>
-            <div className="mt-3 space-y-2">
+        {activeVideo ? (
+          <section className="border-2 border-[#8b4444] bg-[#0d0d0d] p-4">
+            <div className="flex items-center justify-between">
+              <h2 className="font-mono text-sm font-bold uppercase text-[#d4a574]">{activeVideo.title}</h2>
+              <button onClick={() => setActiveVideo(null)} className="text-xs font-mono text-[#cfbfae] underline">Close</button>
+            </div>
+            <video className="mt-3 w-full max-h-[480px] bg-black" src={activeVideo.url} controls />
+          </section>
+        ) : null}
+
+        <div className="grid gap-6 lg:grid-cols-2">
+          <section className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
+            <h2 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Upload Session Footage</h2>
+            <form onSubmit={(e) => { void handleUpload(e); }} className="mt-3 space-y-3">
+              <div>
+                <label className="block text-xs font-mono uppercase text-[#cfbfae]">Video File (MP4, MOV, AVI, WebM — max 500 MB)</label>
+                <input ref={fileInputRef} type="file" accept="video/*" className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-xs text-[#e8d7c6] file:border-0 file:bg-[#2a1a1a] file:text-[#d4a574] file:font-mono file:text-xs" />
+              </div>
+              <div>
+                <label className="block text-xs font-mono uppercase text-[#cfbfae]">Title</label>
+                <input type="text" value={uploadTitle} onChange={(e) => setUploadTitle(e.target.value)} placeholder="e.g. Sparring Round 3 — July 16" className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-xs text-[#e8d7c6] placeholder-[#7a6a5a]" />
+              </div>
+              <div>
+                <label className="block text-xs font-mono uppercase text-[#cfbfae]">Athlete ID (optional)</label>
+                <input type="text" value={uploadAthleteId} onChange={(e) => setUploadAthleteId(e.target.value)} placeholder="Link to specific athlete" className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-xs text-[#e8d7c6] placeholder-[#7a6a5a]" />
+              </div>
+              <div>
+                <label className="block text-xs font-mono uppercase text-[#cfbfae]">Notes</label>
+                <textarea value={uploadNotes} onChange={(e) => setUploadNotes(e.target.value)} rows={2} placeholder="Coaching context, drill type, focus area..." className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-xs text-[#e8d7c6] placeholder-[#7a6a5a]" />
+              </div>
+              <button type="submit" disabled={uploading} className="border-2 border-[#8b4444] bg-[#2a1a1a] px-4 py-2 text-xs font-mono font-bold uppercase text-[#d4a574] disabled:opacity-50">
+                {uploading ? 'Uploading...' : 'Upload Video'}
+              </button>
+              {uploadStatus ? <p className="text-xs font-mono text-[#cfbfae]">{uploadStatus}</p> : null}
+            </form>
+          </section>
+
+          <section className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
+            <h2 className="font-mono text-sm font-bold uppercase text-[#d4a574]">SHADOW Observation Stream</h2>
+            <div className="mt-3 space-y-2 max-h-72 overflow-y-auto">
               {observationError ? <p className="text-xs text-[#f0c4c4]">{observationError}</p> : null}
-              {!observationError && observations.length === 0 ? <p className="text-xs text-[#cfbfae]">No SHADOW observations available.</p> : null}
-              {observations.slice(0, 6).map((item) => (
-                <div key={item.id} className="border border-[#5a4a3a] bg-[#101010] p-3">
-                  <p className="text-sm font-semibold text-[#e8d7c6]">{item.label}</p>
-                  <p className="mt-1 text-xs text-[#cfbfae]">Source: {item.source}</p>
-                  <p className="mt-1 text-xs text-[#cfbfae]">Review State: {item.review_state}</p>
+              {!observationError && observations.length === 0 ? <p className="text-xs text-[#cfbfae]">No observations available.</p> : null}
+              {observations.slice(0, 8).map((item) => (
+                <div key={item.id} className="border border-[#5a4a3a] bg-[#101010] p-2">
+                  <p className="text-xs font-semibold text-[#e8d7c6]">{item.label}</p>
+                  <p className="text-xs text-[#cfbfae]">Source: {item.source} · {item.review_state}</p>
                 </div>
               ))}
             </div>
-          </article>
-
-          <article className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
-            <h2 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Video Upload Placeholder</h2>
-            <div className="mt-3 border border-[#5a4a3a] bg-[#101010] p-4">
-              <p className="text-sm text-[#e8d7c6]">Upload interaction is front-end placeholder only in this pass.</p>
-              <p className="mt-2 text-xs text-[#cfbfae]">No video processing, no ML inference, and no computer-vision code is running.</p>
-              <p className="mt-2 text-xs text-[#cfbfae]">Live observation projection is connected for review context.</p>
-              <p className="mt-2 text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">
-                {capabilityStatus}
-              </p>
-            </div>
-          </article>
-        </section>
+          </section>
+        </div>
 
         <section className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
-          <h2 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Film Review | Coach Annotation | Athlete Feedback</h2>
-          <div className="mt-3 grid gap-3 md:grid-cols-3">
-            <div className="border border-[#5a4a3a] bg-[#101010] p-3">
-              <p className="text-sm font-semibold text-[#e8d7c6]">Film Review</p>
-                <p className="mt-1 text-xs text-[#cfbfae]">Timeline markers and review lanes are now anchored to live observation signals.</p>
+          <h2 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Video Library</h2>
+          {videoError ? <p className="mt-2 text-xs text-[#f0c4c4]">{videoError}</p> : null}
+          {!videoError && videos.length === 0 ? (
+            <p className="mt-3 text-xs text-[#cfbfae]">No videos uploaded yet.</p>
+          ) : (
+            <div className="mt-3 space-y-2">
+              {videos.map((v) => (
+                <div key={v.video_session_id} className="flex items-center justify-between border border-[#5a4a3a] bg-[#101010] p-3">
+                  <div>
+                    <p className="text-sm font-semibold text-[#e8d7c6]">{v.title}</p>
+                    <p className="mt-0.5 text-xs text-[#cfbfae]">
+                      {v.file_name} · {formatBytes(v.file_size_bytes)} · {v.status}
+                      {v.athlete_id ? ` · Athlete: ${v.athlete_id}` : ''}
+                    </p>
+                    <p className="mt-0.5 text-xs text-[#7a6a5a]">{new Date(v.created_at).toLocaleString()}</p>
+                  </div>
+                  <button onClick={() => { void openVideo(v.video_session_id); }} disabled={loadingVideoId === v.video_session_id} className="ml-4 border border-[#8b4444] bg-[#2a1a1a] px-3 py-1 text-xs font-mono text-[#d4a574] disabled:opacity-50">
+                    {loadingVideoId === v.video_session_id ? 'Loading...' : 'Play'}
+                  </button>
+                </div>
+              ))}
             </div>
-            <div className="border border-[#5a4a3a] bg-[#101010] p-3">
-              <p className="text-sm font-semibold text-[#e8d7c6]">Coach Annotation</p>
-                <p className="mt-1 text-xs text-[#cfbfae]">Annotation cards reflect the current projection window for shared review.</p>
-            </div>
-            <div className="border border-[#5a4a3a] bg-[#101010] p-3">
-              <p className="text-sm font-semibold text-[#e8d7c6]">Athlete Feedback</p>
-                <p className="mt-1 text-xs text-[#cfbfae]">Feedback display is visible, and live signal context is loaded.</p>
-            </div>
-          </div>
+          )}
         </section>
 
-        <section className="grid gap-4 lg:grid-cols-2">
-          <article className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
-            <h2 className="font-mono text-sm font-bold uppercase text-[#d4a574]">AI/ML Status: Planned</h2>
-            <div className="mt-3 space-y-2">
-              {analysisPanels.map((panel) => (
-                <div key={panel.title} className="border border-[#5a4a3a] bg-[#101010] p-3">
-                  <p className="text-sm font-semibold text-[#e8d7c6]">{panel.title}</p>
-                  <p className="mt-1 text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">{panel.detail}</p>
-                </div>
-              ))}
-            </div>
-          </article>
-
-          <article className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
-            <h2 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Comparison And History</h2>
-            <div className="mt-3 space-y-2">
-              {reviewComparisons.map((item) => (
-                <div key={item.title} className="border border-[#5a4a3a] bg-[#101010] p-3">
-                  <p className="text-sm font-semibold text-[#e8d7c6]">{item.title}</p>
-                  <p className="mt-1 text-xs text-[#cfbfae]">{item.body}</p>
-                  <p className="mt-1 text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">{item.state}</p>
-                </div>
-              ))}
-            </div>
-          </article>
+        <section className="border-2 border-[#4a4a4a] bg-[#141414] p-4">
+          <h2 className="font-mono text-sm font-bold uppercase text-[#7a7a7a]">AI/ML Analysis — Planned Features</h2>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {mlPanels.map((p) => (
+              <div key={p.title} className="border border-[#3a3a3a] bg-[#0d0d0d] p-3">
+                <p className="text-xs font-semibold text-[#8a8a8a]">{p.title}</p>
+                <p className="mt-1 text-xs font-mono uppercase tracking-[0.07em] text-[#5a5a5a]">{p.detail}</p>
+              </div>
+            ))}
+          </div>
         </section>
 
         <div className="flex flex-wrap gap-3">

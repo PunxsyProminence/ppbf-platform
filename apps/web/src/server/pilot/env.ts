@@ -23,3 +23,7 @@ export function getPilotShadowContainerName(): string {
 export function getPilotDefaultOrganizationId(): string {
   return process.env.PPBF_PILOT_DEFAULT_ORG_ID?.trim() || 'ppbf-default-org';
 }
+
+export function getPilotVideoContainerName(): string {
+  return process.env.PPBF_PILOT_VIDEO_CONTAINER?.trim() || 'ppbf-pilot-video';
+}

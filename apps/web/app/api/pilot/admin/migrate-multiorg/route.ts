@@ -467,6 +467,23 @@ export async function POST(request: NextRequest) {
       `create index if not exists idx_shadow_library_documents_org_created on pilot.shadow_library_documents(organization_id, created_at desc)`,
       `create index if not exists idx_shadow_library_cap_map_org_updated on pilot.shadow_library_capability_map(organization_id, updated_at desc)`,
       `create index if not exists idx_shadow_library_chunks_org_created on pilot.shadow_library_chunks(organization_id, created_at desc)`,
+      `create table if not exists pilot.video_sessions (
+        video_session_id text primary key,
+        organization_id text not null,
+        uploaded_by_account_id text not null,
+        athlete_id text null,
+        title text not null,
+        notes text not null default '',
+        blob_path text not null,
+        file_name text not null,
+        file_size_bytes bigint not null,
+        mime_type text not null,
+        status text not null default 'uploaded' check (status in ('uploaded', 'processing', 'ready', 'error', 'archived')),
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      )`,
+      `create index if not exists idx_video_sessions_org_created on pilot.video_sessions(organization_id, created_at desc)`,
+      `create index if not exists idx_video_sessions_athlete on pilot.video_sessions(organization_id, athlete_id, created_at desc)`,
     ];
 
     const client = new Client({
