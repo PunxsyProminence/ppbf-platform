@@ -86,6 +86,7 @@ export interface ShadowLibrarySearchResult {
   document_id: string;
   source_id: string;
   subject_id: string | null;
+  ordinal: number;
   document_name: string;
   source_title: string;
   source_publisher: string | null;
@@ -282,6 +283,19 @@ function buildClaimNarrative(results: ShadowLibrarySearchResult[]): string {
     .slice(0, 500);
 
   return `Library-backed answer from current SHADOW evidence: ${snippetSummary}${snippetSummary.endsWith('.') ? '' : '.'} Primary sources: ${sourceSummary}.`;
+}
+
+function isCanonicalDoctrineResult(result: ShadowLibrarySearchResult | undefined, scope: ShadowLibraryScope): boolean {
+  if (!result) {
+    return false;
+  }
+
+  return (
+    scope === 'master'
+    && result.source_type === 'internal_policy'
+    && result.authority_tier === 1
+    && result.document_name === 'SHADOW Canonical Authority Model'
+  );
 }
 
 async function ensureClaimResearchRequirement(input: {
@@ -701,6 +715,7 @@ export async function searchShadowLibrary(input: {
        c.document_id,
        c.source_id,
        c.subject_id,
+      c.ordinal,
        d.document_name,
        s.title as source_title,
        s.publisher as source_publisher,
@@ -744,7 +759,7 @@ export async function searchShadowLibrary(input: {
               or lower(s.title) like term
          )
        )
-     order by score desc, s.authority_tier asc, c.created_at desc
+     order by score desc, s.authority_tier asc, c.ordinal asc, c.created_at asc
      limit $5`,
     [input.organizationId, normalized.effectiveSubjectId, wholeQuery, termPatterns, limit],
   );
@@ -793,10 +808,14 @@ export async function createShadowLibraryClaim(input: {
   });
 
   const distinctSourceCount = new Set(evidence.map((item) => item.source_id)).size;
+  const canonicalDoctrine = isCanonicalDoctrineResult(evidence[0], normalized.scope);
   let status: ShadowLibraryClaimStatus;
   let confidence: number;
 
-  if (distinctSourceCount >= 2 && evidence.length >= 2) {
+  if (canonicalDoctrine && evidence.length >= 1) {
+    status = 'supported';
+    confidence = 0.82;
+  } else if (distinctSourceCount >= 2 && evidence.length >= 2) {
     status = 'supported';
     confidence = 0.78;
   } else if (evidence.length >= 1) {

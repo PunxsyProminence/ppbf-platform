@@ -226,7 +226,7 @@ async function run() {
     throw new Error('Missing PILOT_ADMIN_ACCOUNT_ID or PILOT_ADMIN_PIN.');
   }
 
-  const doctrinePath = path.resolve(process.cwd(), 'docs/SHADOW_AUTHORITY_MODEL.md');
+  const doctrinePath = path.resolve(process.cwd(), '..', '..', 'docs', 'SHADOW_AUTHORITY_MODEL.md');
   const doctrineContent = await fs.readFile(doctrinePath, 'utf8');
 
   await maybeBootstrapAdmin();
