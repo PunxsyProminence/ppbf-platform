@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { apiBase } from '@/lib/apiBase';
 
 interface QAMessage {
   id: string;
@@ -41,7 +42,7 @@ export default function ResearchQAChatPage() {
   useEffect(() => {
     void (async () => {
       try {
-        const response = await fetch('/api/pilot/shadow/research-projection', {
+        const response = await fetch(`${apiBase()}/api/pilot/shadow/research-projection`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ limit: 20 }),

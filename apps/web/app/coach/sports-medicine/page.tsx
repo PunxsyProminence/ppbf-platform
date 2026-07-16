@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { apiBase } from '@/lib/apiBase';
 
 interface ShadowObservationItem {
   id: string;
@@ -20,7 +21,7 @@ export default function SportsMedicinePage() {
   useEffect(() => {
     void (async () => {
       try {
-        const response = await fetch('/api/pilot/shadow/observation-projection', {
+        const response = await fetch(`${apiBase()}/api/pilot/shadow/observation-projection`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ limit: 30 }),

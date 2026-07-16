@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactElement } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { roleRoutes, type ClubRole } from '@/components/roleRoutes';
+import { apiBase } from '@/lib/apiBase';
 import { createPersistentRoleSession, createRoleSession, getPostLoginRoute, OPERATOR_PIN, readRoleSession, clearRoleSession } from '@/components/roleSession';
 
 type ActiveTab = 'login' | 'register' | 'announcement';
@@ -322,7 +323,7 @@ export default function LoginPage() {
     const shouldLogout = params.get('logout') === 'true' || params.get('reset') === 'true';
     if (shouldLogout) {
       clearRoleSession();
-      void fetch('/api/pilot/auth/logout', { method: 'POST' });
+      void fetch(`${apiBase()}/api/pilot/auth/logout`, { method: 'POST' });
     }
 
     const session = readRoleSession();
@@ -332,7 +333,7 @@ export default function LoginPage() {
 
     if (session.role === 'athlete') {
       void (async () => {
-        const response = await fetch('/api/pilot/auth/session', { method: 'POST' });
+        const response = await fetch(`${apiBase()}/api/pilot/auth/session`, { method: 'POST' });
         const payload = (await response.json().catch(() => ({ authenticated: false }))) as { authenticated?: boolean };
         if (payload.authenticated) {
           router.replace(getPostLoginRoute(session));
@@ -349,7 +350,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     void (async () => {
-      const response = await fetch('/api/pilot/announcements/get', {
+      const response = await fetch(`${apiBase()}/api/pilot/announcements/get`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ limit: 12 }),
@@ -393,7 +394,7 @@ export default function LoginPage() {
       return;
     }
 
-    const response = await fetch('/api/pilot/auth/login', {
+    const response = await fetch(`${apiBase()}/api/pilot/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ account_id: accountId, pin }),
@@ -444,7 +445,7 @@ export default function LoginPage() {
       return;
     }
 
-    const response = await fetch('/api/pilot/announcements/post', {
+    const response = await fetch(`${apiBase()}/api/pilot/announcements/post`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -508,7 +509,7 @@ export default function LoginPage() {
     setRegisterSuccess('');
 
     try {
-      const response = await fetch('/api/pilot/admin/athlete-accounts', {
+      const response = await fetch(`${apiBase()}/api/pilot/admin/athlete-accounts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

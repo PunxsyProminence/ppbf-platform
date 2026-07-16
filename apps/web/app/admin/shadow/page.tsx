@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
+import { apiBase } from '@/lib/apiBase';
 
 type IntakeStatus = 'Pending' | 'Classified' | 'Staged' | 'Approved' | 'Rejected' | 'Imported';
 type ConfidenceLevel = 'Low' | 'Medium' | 'High';
@@ -293,7 +294,7 @@ export default function AdminShadowConsolePage() {
   const selectedItem = useMemo(() => pendingQueue.find((item) => item.id === selectedItemId) ?? null, [pendingQueue, selectedItemId]);
 
   async function refreshBackendQueue() {
-    const response = await fetch('/api/pilot/shadow/review-projection', {
+    const response = await fetch(`${apiBase()}/api/pilot/shadow/review-projection`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
@@ -334,12 +335,12 @@ export default function AdminShadowConsolePage() {
 
   async function refreshShadowOperationalReads() {
     const [telemetryResponse, authorityResponse] = await Promise.all([
-      fetch('/api/pilot/shadow/telemetry', {
+      fetch(`${apiBase()}/api/pilot/shadow/telemetry`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ limit: 40 }),
       }),
-      fetch('/api/pilot/shadow/authority', {
+      fetch(`${apiBase()}/api/pilot/shadow/authority`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ limit: 40 }),
@@ -385,7 +386,7 @@ export default function AdminShadowConsolePage() {
       throw new Error('Review action blocked: backend review queue is unavailable.');
     }
 
-    const response = await fetch('/api/pilot/intake/review-action', {
+    const response = await fetch(`${apiBase()}/api/pilot/intake/review-action`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ intake_case_id: item.intakeCaseId, action: backendAction, notes: item.notes }),
@@ -417,7 +418,7 @@ export default function AdminShadowConsolePage() {
       return null;
     }
 
-    const promoteResponse = await fetch('/api/pilot/intake/review-action', {
+    const promoteResponse = await fetch(`${apiBase()}/api/pilot/intake/review-action`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -660,7 +661,7 @@ export default function AdminShadowConsolePage() {
       formData.append('hint', 'admin-upload');
       formData.append('document_type', 'general_intake');
 
-      const response = await fetch('/api/pilot/shadow/upload', {
+      const response = await fetch(`${apiBase()}/api/pilot/shadow/upload`, {
         method: 'POST',
         body: formData,
       });

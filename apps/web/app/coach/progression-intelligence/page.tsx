@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
+import { apiBase } from '@/lib/apiBase';
 
 const capabilityStatus = 'PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED | HUMAN REVIEW REQUIRED';
 
@@ -34,8 +35,8 @@ export default function CoachProgressionIntelligencePage() {
     void (async () => {
       try {
         const [observationResponse, reviewResponse] = await Promise.all([
-          fetch('/api/pilot/shadow/observation-projection', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 10 }) }),
-          fetch('/api/pilot/shadow/review-projection', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 10 }) }),
+          fetch(`${apiBase()}/api/pilot/shadow/observation-projection`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 10 }) }),
+          fetch(`${apiBase()}/api/pilot/shadow/review-projection`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 10 }) }),
         ]);
 
         if (!observationResponse.ok || !reviewResponse.ok) {

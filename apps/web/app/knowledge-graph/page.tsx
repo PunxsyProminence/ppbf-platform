@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import FeatureSurface from '@/components/FeatureSurface';
+import { apiBase } from '@/lib/apiBase';
 
 interface ShadowKnowledgeNode {
   type: 'Observation' | 'Pattern' | 'Finding' | 'Validated Lesson';
@@ -20,7 +21,7 @@ export default function KnowledgeGraphPage() {
   useEffect(() => {
     void (async () => {
       try {
-        const response = await fetch('/api/pilot/shadow/knowledge-projection', {
+        const response = await fetch(`${apiBase()}/api/pilot/shadow/knowledge-projection`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ limit: 120 }),

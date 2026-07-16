@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
+import { apiBase } from '@/lib/apiBase';
 import ShadowChatButton from '@/components/ShadowChatButton';
 import { roleRoutes, type ClubRole } from '@/components/roleRoutes';
 
@@ -38,7 +39,7 @@ export default function BoardComplianceMonitoringPage() {
   useEffect(() => {
     void (async () => {
       try {
-        const response = await fetch('/api/pilot/shadow/research-requirements');
+        const response = await fetch(`${apiBase()}/api/pilot/shadow/research-requirements`);
         if (!response.ok) {
           throw new Error('Unable to load SHADOW research requirements.');
         }

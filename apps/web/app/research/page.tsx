@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import FeatureSurface from '@/components/FeatureSurface';
+import { apiBase } from '@/lib/apiBase';
 
 interface ShadowResearchItem {
   event_id: number;
@@ -47,7 +48,7 @@ export default function ResearchIntakePage() {
   useEffect(() => {
     void (async () => {
       try {
-        const response = await fetch('/api/pilot/shadow/research-projection', {
+        const response = await fetch(`${apiBase()}/api/pilot/shadow/research-projection`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ limit: 120 }),
@@ -70,7 +71,7 @@ export default function ResearchIntakePage() {
   useEffect(() => {
     void (async () => {
       try {
-        const response = await fetch('/api/pilot/shadow/research-requirements');
+        const response = await fetch(`${apiBase()}/api/pilot/shadow/research-requirements`);
 
         if (!response.ok) {
           throw new Error('Unable to load SHADOW research requirements.');
@@ -99,7 +100,7 @@ export default function ResearchIntakePage() {
     const sourceEntityId = requirementDraft.sourceEntityId.trim() || `manual-${Date.now()}`;
 
     try {
-      const response = await fetch('/api/pilot/shadow/research-requirements', {
+      const response = await fetch(`${apiBase()}/api/pilot/shadow/research-requirements`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -154,7 +155,7 @@ export default function ResearchIntakePage() {
     setResolvingId(researchRequirementId);
 
     try {
-      const response = await fetch('/api/pilot/shadow/research-requirements', {
+      const response = await fetch(`${apiBase()}/api/pilot/shadow/research-requirements`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

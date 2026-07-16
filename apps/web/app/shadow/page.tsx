@@ -4,6 +4,7 @@ import { Suspense, useEffect, useRef, useState, type SyntheticEvent } from 'reac
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { readRoleSession, clearRoleSession } from '@/components/roleSession';
+import { apiBase } from '@/lib/apiBase';
 import ShadowChatButton from '@/components/ShadowChatButton';
 
 interface ShadowMessage {
@@ -267,7 +268,7 @@ function ShadowChatPageContent() {
   }
 
   async function requestLibraryClaim(rawQuestion: string) {
-    const response = await fetch('/api/pilot/shadow/library/claims', {
+    const response = await fetch(`${apiBase()}/api/pilot/shadow/library/claims`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -292,7 +293,7 @@ function ShadowChatPageContent() {
     }
 
     try {
-      const response = await fetch('/api/pilot/shadow/research-requirements', {
+      const response = await fetch(`${apiBase()}/api/pilot/shadow/research-requirements`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requirement),

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import FeatureSurface from '@/components/FeatureSurface';
+import { apiBase } from '@/lib/apiBase';
 
 const capabilityStatus = 'PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED | HUMAN REVIEW REQUIRED';
 
@@ -32,7 +33,7 @@ export default function PublicationWorkflowPage() {
   useEffect(() => {
     void (async () => {
       try {
-        const response = await fetch('/api/pilot/shadow/research-requirements');
+        const response = await fetch(`${apiBase()}/api/pilot/shadow/research-requirements`);
         if (!response.ok) {
           throw new Error('Unable to load SHADOW research requirements.');
         }
