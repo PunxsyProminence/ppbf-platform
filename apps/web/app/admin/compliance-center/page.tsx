@@ -1,56 +1,311 @@
-import Link from 'next/link';
-import RoleSessionGate from '@/components/RoleSessionGate';
-import ShadowChatButton from '@/components/ShadowChatButton';
+'use client';
 
-const adminPanels = [
-  'Compliance Dashboard',
-  'Policy Review Queue',
-  'Required Review Dates',
-  'Board Compliance Alerts',
-  'Safety Governance Monitoring',
-  'Annual Filing Placeholder',
-  'Public Charity Compliance Placeholder',
-  'Conflict of Interest Review Placeholder',
-  'Youth Safety Review Placeholder',
-  'Audit Monitoring Placeholder',
-];
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import RoleStandaloneView from '@/components/RoleStandaloneView';
+import { apiBase } from '@/lib/apiBase';
+
+interface ComplianceViolation {
+  violation_id: string;
+  rule_id: string;
+  athlete_id: string;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  status: 'new' | 'acknowledged' | 'escalated' | 'resolved' | 'dismissed';
+  violation_timestamp: string;
+  created_at: string;
+  description?: string;
+}
 
 export default function AdminComplianceCenterPage() {
+  const [violations, setViolations] = useState<ComplianceViolation[]>([]);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [severityFilter, setSeverityFilter] = useState<string>('all');
+  const [selectedViolation, setSelectedViolation] = useState<ComplianceViolation | null>(null);
+  const [escalateToRole, setEscalateToRole] = useState('organization_admin');
+  const [metrics, setMetrics] = useState({
+    total: 0,
+    critical: 0,
+    high: 0,
+    medium: 0,
+    low: 0,
+    new: 0,
+    acknowledged: 0,
+    escalated: 0,
+    resolved: 0,
+  });
+
+  // Load violations
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch(`${apiBase()}/api/pilot/compliance/violations`);
+        if (res.ok) {
+          const data = (await res.json()) as { items?: ComplianceViolation[] };
+          const allViolations = data.items ?? [];
+          setViolations(allViolations);
+
+          // Calculate metrics
+          const calc = {
+            total: allViolations.length,
+            critical: allViolations.filter((v) => v.severity === 'critical').length,
+            high: allViolations.filter((v) => v.severity === 'high').length,
+            medium: allViolations.filter((v) => v.severity === 'medium').length,
+            low: allViolations.filter((v) => v.severity === 'low').length,
+            new: allViolations.filter((v) => v.status === 'new').length,
+            acknowledged: allViolations.filter((v) => v.status === 'acknowledged').length,
+            escalated: allViolations.filter((v) => v.status === 'escalated').length,
+            resolved: allViolations.filter((v) => v.status === 'resolved').length,
+          };
+          setMetrics(calc);
+        }
+        setErrorMessage('');
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : 'Unable to load violations');
+      }
+    })();
+  }, []);
+
+  const getFilteredViolations = () => {
+    return violations.filter((v) => {
+      const statusMatch = statusFilter === 'all' || v.status === statusFilter;
+      const severityMatch = severityFilter === 'all' || v.severity === severityFilter;
+      return statusMatch && severityMatch;
+    });
+  };
+
+  const getSeverityColor = (severity: string) => {
+    switch (severity) {
+      case 'critical':
+        return 'bg-[#fce8e6]';
+      case 'high':
+        return 'bg-[#fff3cd]';
+      case 'medium':
+        return 'bg-[#e3f2fd]';
+      default:
+        return 'bg-[#f1f8e9]';
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'new':
+        return 'text-[#d32f2f]';
+      case 'escalated':
+        return 'text-[#f57c00]';
+      case 'resolved':
+        return 'text-[#388e3c]';
+      default:
+        return 'text-[#1976d2]';
+    }
+  };
+
+  const handleEscalate = async () => {
+    if (!selectedViolation) return;
+
+    try {
+      const res = await fetch(`${apiBase()}/api/pilot/compliance/escalate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          violation_id: selectedViolation.violation_id,
+          escalated_to_role: escalateToRole,
+        }),
+      });
+
+      if (!res.ok) throw new Error('Failed to escalate violation');
+
+      setSelectedViolation(null);
+      setEscalateToRole('organization_admin');
+
+      // Reload violations
+      const reloadRes = await fetch(`${apiBase()}/api/pilot/compliance/violations`);
+      if (reloadRes.ok) {
+        const data = (await reloadRes.json()) as { items?: ComplianceViolation[] };
+        const allViolations = data.items ?? [];
+        setViolations(allViolations);
+
+        const calc = {
+          total: allViolations.length,
+          critical: allViolations.filter((v) => v.severity === 'critical').length,
+          high: allViolations.filter((v) => v.severity === 'high').length,
+          medium: allViolations.filter((v) => v.severity === 'medium').length,
+          low: allViolations.filter((v) => v.severity === 'low').length,
+          new: allViolations.filter((v) => v.status === 'new').length,
+          acknowledged: allViolations.filter((v) => v.status === 'acknowledged').length,
+          escalated: allViolations.filter((v) => v.status === 'escalated').length,
+          resolved: allViolations.filter((v) => v.status === 'resolved').length,
+        };
+        setMetrics(calc);
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to escalate violation');
+    }
+  };
+
+  const filteredViolations = getFilteredViolations();
+
   return (
-    <RoleSessionGate allowedRoles={['admin']}>
-      <main className="min-h-screen bg-[#0a0a0a] text-[#e8d7c6]">
-        <div className="mx-auto max-w-7xl px-6 py-10">
-          <header className="space-y-3 border-b-4 border-[#8b4444] pb-6">
-            <p className="text-xs font-mono uppercase tracking-[0.22em] text-[#d4a574]">Admin Hub</p>
-            <h1 className="text-4xl font-black tracking-tight">Compliance Center</h1>
-            <p className="text-sm font-mono uppercase tracking-[0.14em] text-[#d4a574]">PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED</p>
-            <p className="max-w-4xl text-sm leading-6 text-[#cfbfae]">
-              Admin operational companion to board compliance monitoring. No legal automation, no filing automation, and no backend reminders are active in this pass.
-            </p>
-            <ShadowChatButton context="Admin Compliance Center" className="border-[#8b4444] bg-[#1a1a1a] text-[#d4a574] hover:bg-[#2a1a1a]" />
-          </header>
+    <RoleStandaloneView
+      roleLabel="Admin Workspace"
+      routeLabel="/admin/compliance-center"
+      allowedRoles={['admin']}
+      showShellHeader={false}
+    >
+      <div className="space-y-6">
+        <header className="border-2 border-[#8b4444] bg-[#111111] p-5">
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">Compliance Management</p>
+          <h1 className="mt-2 text-3xl font-black text-[#f2e7da]">Compliance Center</h1>
+          <p className="mt-2 text-sm text-[#cfbfae]">Review, manage, and escalate athlete compliance violations.</p>
+          {errorMessage ? <p className="mt-2 text-xs text-[#f0c4c4]">{errorMessage}</p> : null}
+        </header>
 
-          <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {adminPanels.map((panel) => (
-              <article key={panel} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
-                <h2 className="text-sm font-bold uppercase tracking-[0.08em]">{panel}</h2>
-                <p className="mt-2 text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">
-                  FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED
-                </p>
-              </article>
-            ))}
-          </section>
-
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link href="/admin" className="inline-flex min-h-[42px] items-center border-2 border-[#8b4444] bg-[#2a1a1a] px-4 text-xs font-bold uppercase tracking-[0.08em] text-[#f2e7da]">
-              Back to Admin Hub
-            </Link>
-            <Link href="/board/compliance-monitoring" className="inline-flex min-h-[42px] items-center border-2 border-[#8b4444] bg-[#1a1a1a] px-4 text-xs font-bold uppercase tracking-[0.08em] text-[#d4a574]">
-              Board Compliance Watch
-            </Link>
+        {/* Metrics Dashboard */}
+        <section className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+          <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-3 text-center">
+            <p className="text-xs text-[#cfbfae]">Total</p>
+            <p className="text-2xl font-bold text-[#f2e7da]">{metrics.total}</p>
           </div>
+          <div className="border-2 border-[#fce8e6] bg-[#1a1a1a] p-3 text-center">
+            <p className="text-xs text-[#d32f2f]">Critical</p>
+            <p className="text-2xl font-bold text-[#f2e7da]">{metrics.critical}</p>
+          </div>
+          <div className="border-2 border-[#fff3cd] bg-[#1a1a1a] p-3 text-center">
+            <p className="text-xs text-[#f57c00]">High</p>
+            <p className="text-2xl font-bold text-[#f2e7da]">{metrics.high}</p>
+          </div>
+          <div className="border-2 border-[#e3f2fd] bg-[#1a1a1a] p-3 text-center">
+            <p className="text-xs text-[#1976d2]">Medium</p>
+            <p className="text-2xl font-bold text-[#f2e7da]">{metrics.medium}</p>
+          </div>
+          <div className="border-2 border-[#f1f8e9] bg-[#1a1a1a] p-3 text-center">
+            <p className="text-xs text-[#388e3c]">Low</p>
+            <p className="text-2xl font-bold text-[#f2e7da]">{metrics.low}</p>
+          </div>
+        </section>
+
+        {/* Status Tabs */}
+        <div className="flex flex-wrap gap-2">
+          {['all', 'new', 'acknowledged', 'escalated', 'resolved'].map((status) => (
+            <button
+              key={status}
+              onClick={() => setStatusFilter(status)}
+              className={`border-2 px-3 py-1 text-xs font-bold uppercase ${
+                statusFilter === status
+                  ? 'border-[#d4a574] bg-[#2a1a1a] text-[#d4a574]'
+                  : 'border-[#5a4a3a] bg-[#101010] text-[#8b7355]'
+              }`}
+            >
+              {status}
+            </button>
+          ))}
         </div>
-      </main>
-    </RoleSessionGate>
+
+        {/* Severity Filter */}
+        <div className="flex items-center gap-3">
+          <label className="text-xs font-bold text-[#d4a574]">Severity:</label>
+          <select
+            value={severityFilter}
+            onChange={(e) => setSeverityFilter(e.target.value)}
+            className="border border-[#5a4a3a] bg-[#101010] px-3 py-1 text-xs text-[#e8d7c6]"
+          >
+            <option value="all">All</option>
+            <option value="critical">Critical</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+        </div>
+
+        {/* Violations List */}
+        <section>
+          <h2 className="mb-4 text-lg font-bold text-[#f2e7da]">
+            Violations ({filteredViolations.length} of {violations.length})
+          </h2>
+          <div className="space-y-3">
+            {filteredViolations.length === 0 ? (
+              <p className="text-sm text-[#9a8a7a]">No violations matching filters.</p>
+            ) : (
+              filteredViolations.map((v) => (
+                <div
+                  key={v.violation_id}
+                  className={`border-2 border-[#8b4444] p-4 ${getSeverityColor(v.severity)}`}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <div className="mb-2 flex gap-2">
+                        <span className="font-mono text-xs font-bold uppercase text-[#111111]">
+                          {v.severity}
+                        </span>
+                        <span className={`font-mono text-xs font-bold uppercase ${getStatusColor(v.status)}`}>
+                          {v.status}
+                        </span>
+                      </div>
+                      <p className="text-sm font-semibold text-[#111111]">Athlete: {v.athlete_id}</p>
+                      <p className="text-xs text-[#333333]">Rule: {v.rule_id}</p>
+                      <p className="mt-1 text-xs text-[#444444]">
+                        {new Date(v.violation_timestamp).toLocaleString()}
+                      </p>
+                      {v.description && <p className="mt-2 text-sm text-[#222222]">{v.description}</p>}
+                    </div>
+                    {v.status === 'new' || v.status === 'acknowledged' ? (
+                      <button
+                        onClick={() => setSelectedViolation(v)}
+                        className="border-2 border-[#111111] bg-[#fce8e6] px-3 py-2 text-xs font-bold text-[#111111]"
+                      >
+                        Escalate
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+        {/* Escalation Modal */}
+        {selectedViolation && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4">
+            <div className="border-2 border-[#8b4444] bg-[#111111] p-6 max-w-sm">
+              <h3 className="mb-4 text-lg font-bold text-[#f2e7da]">Escalate Violation</h3>
+              <p className="mb-4 text-sm text-[#cfbfae]">
+                Athlete: <span className="font-semibold text-[#e8d7c6]">{selectedViolation.athlete_id}</span>
+              </p>
+              <div className="mb-4">
+                <label className="block text-xs font-bold uppercase text-[#d4a574]">Escalate To</label>
+                <select
+                  value={escalateToRole}
+                  onChange={(e) => setEscalateToRole(e.target.value)}
+                  className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-[#e8d7c6]"
+                >
+                  <option value="organization_admin">Organization Admin</option>
+                  <option value="admin">Platform Admin</option>
+                </select>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleEscalate}
+                  className="flex-1 border-2 border-[#8b4444] bg-[#2a1a1a] py-2 text-xs font-bold text-[#d4a574]"
+                >
+                  Escalate
+                </button>
+                <button
+                  onClick={() => setSelectedViolation(null)}
+                  className="flex-1 border-2 border-[#5a4a3a] bg-[#101010] py-2 text-xs font-bold text-[#8b7355]"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-3">
+          <Link href="/admin" className="border-2 border-[#8b4444] bg-[#2a1a1a] px-4 py-2 text-xs font-mono text-[#d4a574]">
+            Back to Admin
+          </Link>
+        </div>
+      </div>
+    </RoleStandaloneView>
   );
 }
