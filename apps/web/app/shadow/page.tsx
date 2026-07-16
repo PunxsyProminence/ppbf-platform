@@ -22,6 +22,20 @@ interface ShadowResearchReport {
   createdAt: string;
 }
 
+interface ShadowLibraryClaimApiResponse {
+  ok: boolean;
+  claim: {
+    answer: string;
+    status: 'supported' | 'weak' | 'unsupported';
+    confidence: number;
+    evidence: Array<{
+      chunk_id: string;
+      source_id: string;
+    }>;
+    researchRequirementId: number | null;
+  };
+}
+
 const GENERIC_UNSUPPORTED_REPLY = 'If this question needs a sourced answer, I should either answer from verified evidence or create a research requirement. Try asking about doctrine, evidence, readiness, recovery, technique, or organizational learning.';
 
 function formatTimestamp() {
@@ -166,6 +180,18 @@ function getShadowReply(mode: 'master' | 'scoped', question: string, context: st
   return getGeneralShadowReply(question, context);
 }
 
+function getActiveScope(mode: 'master' | 'scoped', subject: string): 'master' | 'scoped' | 'subject' {
+  if (mode === 'master') {
+    return 'master';
+  }
+
+  if (subject) {
+    return 'subject';
+  }
+
+  return 'scoped';
+}
+
 function ShadowChatPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -225,6 +251,40 @@ function ShadowChatPageContent() {
     router.push('/login');
   }
 
+  function prependResearchReport(report: ShadowResearchReport) {
+    setReports((current) => [report, ...current].slice(0, 8));
+  }
+
+  function recordBackendResearchReport(rawQuestion: string, researchRequirementId: number, evidenceCount: number) {
+    prependResearchReport({
+      id: `rr-${researchRequirementId}`,
+      question: rawQuestion,
+      researchRequirement: `Backend research requirement #${researchRequirementId} created from SHADOW Library claim flow.`,
+      knowledgeGap: `Claim was filed with ${evidenceCount} evidence items and still required research escalation.`,
+      status: 'created',
+      createdAt: formatTimestamp(),
+    });
+  }
+
+  async function requestLibraryClaim(rawQuestion: string) {
+    const response = await fetch('/api/pilot/shadow/library/claims', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        scope: getActiveScope(mode, subject),
+        subject_id: subject || undefined,
+        question: rawQuestion,
+        limit: 5,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error('library claim request failed');
+    }
+
+    return (await response.json()) as ShadowLibraryClaimApiResponse;
+  }
+
   async function createResearchReport(rawQuestion: string, normalizedQuestion: string, reply: string) {
     const requirement = deriveResearchRequirement(mode, rawQuestion, normalizedQuestion, reply, context, subject);
     if (!requirement) {
@@ -242,30 +302,24 @@ function ShadowChatPageContent() {
         throw new Error('backend session unavailable');
       }
 
-      setReports((current) => [
-        {
-          id: requirement.source_entity_id,
-          question: rawQuestion,
-          researchRequirement: requirement.research_requirement,
-          knowledgeGap: requirement.knowledge_gap,
-          status: 'created' as const,
-          createdAt: formatTimestamp(),
-        },
-        ...current,
-      ].slice(0, 8));
+      prependResearchReport({
+        id: requirement.source_entity_id,
+        question: rawQuestion,
+        researchRequirement: requirement.research_requirement,
+        knowledgeGap: requirement.knowledge_gap,
+        status: 'created',
+        createdAt: formatTimestamp(),
+      });
       addMessage('shadow', 'Research requirement created and routed to the Research Intake lane. Check The Library or Research Intake for follow-up.');
     } catch {
-      setReports((current) => [
-        {
-          id: requirement.source_entity_id,
-          question: rawQuestion,
-          researchRequirement: requirement.research_requirement,
-          knowledgeGap: requirement.knowledge_gap,
-          status: 'draft' as const,
-          createdAt: formatTimestamp(),
-        },
-        ...current,
-      ].slice(0, 8));
+      prependResearchReport({
+        id: requirement.source_entity_id,
+        question: rawQuestion,
+        researchRequirement: requirement.research_requirement,
+        knowledgeGap: requirement.knowledge_gap,
+        status: 'draft',
+        createdAt: formatTimestamp(),
+      });
       addMessage('shadow', 'Research report draft captured in this session, but I could not file it to the backend from the current auth context. Open Research Intake to submit or review it manually.');
     }
   }
@@ -277,12 +331,25 @@ function ShadowChatPageContent() {
     const rawQuestion = userInput.trim();
     addMessage('user', rawQuestion);
     const question = userInput.toLowerCase();
-    const reply = getShadowReply(mode, question, context, subject);
-
-    addMessage('shadow', reply);
-
     setUserInput('');
-    await createResearchReport(rawQuestion, question, reply);
+
+    try {
+      const payload = await requestLibraryClaim(rawQuestion);
+      const libraryReply = payload.claim.answer;
+      addMessage('shadow', libraryReply);
+
+      if (payload.claim.researchRequirementId) {
+        recordBackendResearchReport(rawQuestion, payload.claim.researchRequirementId, payload.claim.evidence.length);
+      }
+
+      if (payload.claim.status === 'unsupported') {
+        addMessage('shadow', 'The Library could not support this claim strongly enough, so SHADOW converted the gap into research work rather than guessing.');
+      }
+    } catch {
+      const reply = getShadowReply(mode, question, context, subject);
+      addMessage('shadow', reply);
+      await createResearchReport(rawQuestion, question, reply);
+    }
   }
 
   return (
