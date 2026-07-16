@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import RevenueFundingCenter from '@/components/RevenueFundingCenter';
-import TutorialButton from '@/components/TutorialButton';
+import ShadowChatButton from '@/components/ShadowChatButton';
 import {
   allTrackIds,
   athleteProfiles,
@@ -567,7 +567,7 @@ export default function AdminCapabilitiesPage() {
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
-              <TutorialButton anchor="admin-guide" />
+              <ShadowChatButton context="Admin Hub" />
               <Link
                 href="/admin/shadow"
                 className="inline-flex h-11 items-center border border-[#8b4444] bg-[#5a2a2a] px-4 text-[14px] font-bold text-[#f2e7da] transition hover:bg-[#7a3a3a]"
@@ -654,7 +654,7 @@ export default function AdminCapabilitiesPage() {
                       Open the full tutorial center from this button when needed. Tutorial cards are no longer rendered inline in Admin.
                     </p>
                   </div>
-                  <TutorialButton anchor="start-here" />
+                  <ShadowChatButton context="Admin Overview" />
                 </div>
               </article>
 

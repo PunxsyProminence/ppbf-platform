@@ -1,4 +1,4 @@
-import TutorialButton from '@/components/TutorialButton';
+import ShadowChatButton from '@/components/ShadowChatButton';
 import type { MasterTutorialCard } from '@/components/helpContent';
 
 interface TutorialCardProps {
@@ -6,8 +6,6 @@ interface TutorialCardProps {
 }
 
 export default function TutorialCard({ card }: TutorialCardProps) {
-  const anchor = card.href.includes('#') ? card.href.split('#')[1] : undefined;
-
   return (
     <article className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
       <h3 className="text-base font-black text-[var(--black)]">{card.title}</h3>
@@ -17,7 +15,7 @@ export default function TutorialCard({ card }: TutorialCardProps) {
         <p><span className="font-bold text-[var(--black)]">Current status:</span> {card.currentStatus}</p>
       </div>
       <div className="mt-4">
-        <TutorialButton anchor={anchor} label="Open Tutorial" />
+        <ShadowChatButton context={card.title} label="Open SHADOW Chat" />
       </div>
     </article>
   );

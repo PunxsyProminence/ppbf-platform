@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useEffect, useRef, useState, type SyntheticEvent } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { readRoleSession, clearRoleSession } from '@/components/roleSession';
-import TutorialButton from '@/components/TutorialButton';
+import ShadowChatButton from '@/components/ShadowChatButton';
 
 interface ShadowMessage {
   id: string;
@@ -13,18 +13,190 @@ interface ShadowMessage {
   timestamp: string;
 }
 
-export default function ShadowChatPage() {
+interface ShadowResearchReport {
+  id: string;
+  question: string;
+  researchRequirement: string;
+  knowledgeGap: string;
+  status: 'created' | 'draft';
+  createdAt: string;
+}
+
+const GENERIC_UNSUPPORTED_REPLY = 'If this question needs a sourced answer, I should either answer from verified evidence or create a research requirement. Try asking about doctrine, evidence, readiness, recovery, technique, or organizational learning.';
+
+function formatTimestamp() {
+  return new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function appendContext(base: string, context: string, prefix: string) {
+  if (!context) {
+    return `${base}.`;
+  }
+
+  return `${base} ${prefix} ${context}.`;
+}
+
+function buildWelcomeMessage(mode: 'master' | 'scoped', role: string, context: string, subject: string) {
+  if (mode === 'master') {
+    const base = `Master SHADOW online for ${role || 'admin'}. I speak from the organizational layer. Ask about doctrine, evidence gaps, capability growth, research requirements, or cross-system learning`;
+    return appendContext(base, context, 'from');
+  }
+
+  if (subject) {
+    const base = `${subject}'s SHADOW is active. This scope is for subject-specific learning, observation review, and support within SHADOW doctrine`;
+    return appendContext(base, context, 'from');
+  }
+
+  const base = `Scoped SHADOW online for ${role || 'current role'}. Ask about your role context, learning signals, evidence, or what SHADOW can and cannot support`;
+  return appendContext(base, context, 'from');
+}
+
+function getMasterShadowReply(question: string) {
+  if (question.includes('capability') || question.includes('library') || question.includes('grow')) {
+    return 'Master SHADOW rule: as organizational capability grows, the SHADOW library must grow with it. Every new capability should increase observations, evidence classes, research requirements, validated lessons, or organizational memory.';
+  }
+
+  if (question.includes('pattern') || question.includes('organization') || question.includes('learn')) {
+    return 'Master SHADOW looks for organization-wide learning, not athlete scoring. I track patterns, unresolved gaps, doctrine drift, and whether the organization is becoming smarter over time.';
+  }
+
+  if (question.includes('report') || question.includes('gap') || question.includes('unknown')) {
+    return 'Use the Research Intake lane for source gaps and unresolved questions, and the Admin SHADOW console for authority and telemetry traces. Unknowns should generate research requirements, not fake certainty.';
+  }
+
+  return '';
+}
+
+function getSubjectShadowReply(question: string, subject: string) {
+  if (question.includes('readiness') || question.includes('recovery')) {
+    return `${subject}'s SHADOW should focus on observation, learning, recovery patterns, and evidence quality. It may support the human in front of ${subject}, but it may not clear participation or replace human authority.`;
+  }
+
+  if (question.includes('injury') || question.includes('pain') || question.includes('hurt')) {
+    return `${subject}'s SHADOW can track observations, restrictions, and educational material. It cannot diagnose, prescribe, or clear return to participation.`;
+  }
+
+  return '';
+}
+
+function getGeneralShadowReply(question: string, context: string) {
+  if (question.includes('source') || question.includes('evidence') || question.includes('prove')) {
+    return 'If I cannot answer with a source or solid evidence, that should become a SHADOW research requirement. Check The Library and the Research Intake lane for unresolved gaps and evidence reviews.';
+  }
+
+  if (question.includes('readiness')) {
+    return 'SHADOW should not collapse a person into a single universal readiness score. Use a multidomain advisory profile: sleep, recovery, fatigue, stress, soreness, workload, intent, confidence, restrictions, and data quality.';
+  }
+
+  if (question.includes('rpe') || question.includes('effort')) {
+    return 'RPE and effort belong inside observation and learning. They help detect pattern shifts, strain, and mismatch, but they do not create truth or authority by themselves.';
+  }
+
+  if (question.includes('drill') || question.includes('technique')) {
+    return 'Technique questions should produce learning support, not false certainty. SHADOW can organize drills, guidance, and educational material while keeping human coaching authority intact.';
+  }
+
+  if (question.includes('injury') || question.includes('pain') || question.includes('hurt')) {
+    return 'Injury and pain are observation domains. SHADOW may track, educate, and escalate concerns, but it may not diagnose, prescribe treatment, or clear participation.';
+  }
+
+  if (question.includes('how') && question.includes('work')) {
+    const base = 'SHADOW turns observations into organizational intelligence through learning, improvement, knowledge, research, and memory';
+    return `${appendContext(base, context, 'within')} Humans retain authority.`;
+  }
+
+  if (question.includes('data') || question.includes('upload')) {
+    return 'Uploads should become routed evidence, then review, then observation, then learning. Evidence supports learning. Evidence does not bypass authority.';
+  }
+
+  return GENERIC_UNSUPPORTED_REPLY;
+}
+
+function deriveResearchRequirement(mode: 'master' | 'scoped', rawQuestion: string, normalizedQuestion: string, reply: string, context: string, subject: string) {
+  const needsSource = normalizedQuestion.includes('source') || normalizedQuestion.includes('evidence') || normalizedQuestion.includes('prove');
+  const unsupported = reply === GENERIC_UNSUPPORTED_REPLY;
+
+  if (!needsSource && !unsupported) {
+    return null;
+  }
+
+  let scopeLabel = 'scoped-shadow';
+  if (mode === 'master') {
+    scopeLabel = 'master-shadow';
+  } else if (subject) {
+    scopeLabel = `${subject}-shadow`;
+  }
+  const contextLabel = context || 'shadow-chat';
+
+  return {
+    source_event_name: 'SHADOW_CHAT_SOURCE_GAP',
+    source_entity_type: 'shadow_chat_question',
+    source_entity_id: `chat-${Date.now()}`,
+    research_requirement: `Resolve sourced answer requirement for ${scopeLabel} in ${contextLabel}`,
+    knowledge_gap: `Question requires stronger evidence or verified source support: ${rawQuestion}`,
+    evidence_label: subject || null,
+    source_status: 'observed',
+    source_confidence_tier: 'INSUFFICIENT',
+    source_verification_state: 'unknown',
+    metadata: {
+      question: rawQuestion,
+      mode,
+      context,
+      subject,
+      scope: scopeLabel,
+    },
+  } as const;
+}
+
+function getShadowReply(mode: 'master' | 'scoped', question: string, context: string, subject: string) {
+  if (mode === 'master') {
+    const masterReply = getMasterShadowReply(question);
+    if (masterReply) {
+      return masterReply;
+    }
+  }
+
+  if (subject) {
+    const subjectReply = getSubjectShadowReply(question, subject);
+    if (subjectReply) {
+      return subjectReply;
+    }
+  }
+
+  return getGeneralShadowReply(question, context);
+}
+
+function ShadowChatPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [userRole] = useState<string>(() => (typeof window !== 'undefined' ? readRoleSession()?.role ?? '' : ''));
+  const mode = searchParams.get('mode') === 'master' ? 'master' : 'scoped';
+  const context = searchParams.get('context')?.trim() ?? '';
+  const subject = searchParams.get('subject')?.trim() ?? '';
+  const roleLabel = (searchParams.get('role')?.trim() || userRole || 'guest').toUpperCase();
+  let heading = 'SHADOW';
+  let intro = 'Scoped role-aware SHADOW conversation.';
+  let scopeSummary = 'Role-scoped SHADOW view.';
+
+  if (mode === 'master') {
+    heading = 'MASTER SHADOW';
+    intro = 'Organizational intelligence, doctrine, and learning oversight.';
+    scopeSummary = 'Master SHADOW for admin/organizational intelligence.';
+  } else if (subject) {
+    heading = `${subject.toUpperCase()} SHADOW`;
+    intro = `Subject-specific learning scope for ${subject}.`;
+    scopeSummary = `${subject} subject scope.`;
+  }
   const [messages, setMessages] = useState<ShadowMessage[]>([
     {
       id: '0',
       type: 'shadow',
-      text: "I'm in your corner. What's the damage? Ask me about readiness, work rate, technique, or anything about training.",
-      timestamp: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      text: buildWelcomeMessage(mode, roleLabel, context, subject),
+      timestamp: formatTimestamp(),
     },
   ]);
   const [userInput, setUserInput] = useState('');
+  const [reports, setReports] = useState<ShadowResearchReport[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -43,7 +215,7 @@ export default function ShadowChatPage() {
       id: Date.now().toString(),
       type,
       text,
-      timestamp: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      timestamp: formatTimestamp(),
     };
     setMessages((prev) => [...prev, newMessage]);
   }
@@ -53,33 +225,64 @@ export default function ShadowChatPage() {
     router.push('/login');
   }
 
-  function handleSendMessage(e: SyntheticEvent) {
+  async function createResearchReport(rawQuestion: string, normalizedQuestion: string, reply: string) {
+    const requirement = deriveResearchRequirement(mode, rawQuestion, normalizedQuestion, reply, context, subject);
+    if (!requirement) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/pilot/shadow/research-requirements', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requirement),
+      });
+
+      if (!response.ok) {
+        throw new Error('backend session unavailable');
+      }
+
+      setReports((current) => [
+        {
+          id: requirement.source_entity_id,
+          question: rawQuestion,
+          researchRequirement: requirement.research_requirement,
+          knowledgeGap: requirement.knowledge_gap,
+          status: 'created' as const,
+          createdAt: formatTimestamp(),
+        },
+        ...current,
+      ].slice(0, 8));
+      addMessage('shadow', 'Research requirement created and routed to the Research Intake lane. Check The Library or Research Intake for follow-up.');
+    } catch {
+      setReports((current) => [
+        {
+          id: requirement.source_entity_id,
+          question: rawQuestion,
+          researchRequirement: requirement.research_requirement,
+          knowledgeGap: requirement.knowledge_gap,
+          status: 'draft' as const,
+          createdAt: formatTimestamp(),
+        },
+        ...current,
+      ].slice(0, 8));
+      addMessage('shadow', 'Research report draft captured in this session, but I could not file it to the backend from the current auth context. Open Research Intake to submit or review it manually.');
+    }
+  }
+
+  async function handleSendMessage(e: SyntheticEvent) {
     e.preventDefault();
     if (!userInput.trim()) return;
 
-    addMessage('user', userInput);
+    const rawQuestion = userInput.trim();
+    addMessage('user', rawQuestion);
     const question = userInput.toLowerCase();
+    const reply = getShadowReply(mode, question, context, subject);
 
-    // Response logic
-    if (question.includes('readiness')) {
-      addMessage('shadow', 'Your readiness score is calculated: (sleep × 1.25) - (soreness × 0.45) + (discipline × 0.3). Below 5.0 = alert mode. Check your sleep, manage soreness.');
-    } else if (question.includes('rpe') || question.includes('effort')) {
-      addMessage('shadow', 'Rate your effort 1-10. If actual effort > intended by 2+, we activate simplify mode. Keep it controlled. Ego is an injury.');
-    } else if (question.includes('drill') || question.includes('technique')) {
-      addMessage('shadow', 'Drills span 6 levels: Floor Cue → Field Instructions → Science Maps → Biomechanics → Origins → History. Master one tier before advancing.');
-    } else if (question.includes('injury') || question.includes('pain') || question.includes('hurt')) {
-      addMessage('shadow', 'Pain, dizziness, panic, or unsafe breath = STOP. Full system lockout. No exceptions. Safety trumps everything. Report to coach immediately.');
-    } else if (question.includes('how') && question.includes('work')) {
-      addMessage('shadow', 'SHADOW tracks your performance, monitors safety gates, logs every decision. All role-specific. Coaches see more than athletes. Everyone gets honesty.');
-    } else if (question.includes('data') || question.includes('upload')) {
-      addMessage('shadow', 'Admins can import workout data, biometrics, video, and merge it all via /admin/shadow. Your role determines what you see.');
-    } else if (question.includes('help') || question.includes('?')) {
-      addMessage('shadow', 'I answer questions about: readiness, RPE, drills, injuries, how SHADOW works, data, roles, or anything platform-related. Ask away.');
-    } else {
-      addMessage('shadow', `You asked: "${userInput}". Try asking about readiness, RPE, drills, injuries, or how SHADOW works.`);
-    }
+    addMessage('shadow', reply);
 
     setUserInput('');
+    await createResearchReport(rawQuestion, question, reply);
   }
 
   return (
@@ -88,13 +291,14 @@ export default function ShadowChatPage() {
       <header className="border-b-4 border-[#8b4444] bg-[#1a1a1a] px-4 py-4 md:px-8 md:py-6">
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-4">
           <div>
-            <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-[#dc2626]">The Scout</p>
-            <h1 className="font-display text-2xl font-black tracking-tight text-[#e8d7c6] md:text-3xl">SHADOW</h1>
-            <p className="mt-1 text-xs text-[#b0a095]">I&apos;m in your corner.</p>
+            <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-[#dc2626]">{mode === 'master' ? 'The Architect' : 'The Scout'}</p>
+            <h1 className="font-display text-2xl font-black tracking-tight text-[#e8d7c6] md:text-3xl">{heading}</h1>
+            <p className="mt-1 text-xs text-[#b0a095]">{intro}</p>
           </div>
           <div className="flex items-center gap-4 text-right">
             <div>
-              <p className="font-mono text-[10px] text-[#8a8a8a]">Role: {userRole.toUpperCase()}</p>
+              <p className="font-mono text-[10px] text-[#8a8a8a]">Role: {roleLabel}</p>
+              {context ? <p className="font-mono text-[10px] text-[#8a8a8a]">Context: {context}</p> : null}
               <p className="text-xs font-bold text-[#dc2626]">LIVE</p>
             </div>
             <button
@@ -108,6 +312,48 @@ export default function ShadowChatPage() {
       </header>
 
       <div className="mx-auto max-w-4xl p-4 md:p-8">
+        <section className="mb-4 grid gap-3 border-2 border-[#8b4444] bg-[#151515] p-4 text-xs text-[#cfbfae] md:grid-cols-3">
+          <div>
+            <p className="font-mono uppercase tracking-[0.14em] text-[#d4a574]">Scope</p>
+            <p className="mt-2">{scopeSummary}</p>
+          </div>
+          <div>
+            <p className="font-mono uppercase tracking-[0.14em] text-[#d4a574]">Authority Boundary</p>
+            <p className="mt-2">SHADOW can improve learning and generate research. SHADOW cannot clear, diagnose, prescribe, or override human authority.</p>
+          </div>
+          <div>
+            <p className="font-mono uppercase tracking-[0.14em] text-[#d4a574]">When Evidence Is Weak</p>
+            <p className="mt-2">Use The Library and Research Intake. Unknowns should become research requirements, not fake certainty.</p>
+          </div>
+        </section>
+
+        {reports.length > 0 ? (
+          <section className="mb-4 border-2 border-[#8b4444] bg-[#151515] p-4 text-xs text-[#cfbfae]">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-mono uppercase tracking-[0.14em] text-[#d4a574]">Research Reports This Session</p>
+                <p className="mt-2">Created reports go to Research Intake when backend auth is available. Otherwise they remain session drafts here.</p>
+              </div>
+              <Link
+                href="/research"
+                className="border-2 border-[#d4a574] bg-[#1f1f1f] px-3 py-2 text-[10px] font-mono uppercase tracking-[0.12em] text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#2a1f1f]"
+              >
+                Open Research Intake
+              </Link>
+            </div>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              {reports.map((report) => (
+                <article key={report.id} className="border border-[#5a4a3a] bg-[#0f0f0f] p-3">
+                  <p className="text-[10px] font-mono uppercase tracking-[0.12em] text-[#d4a574]">{report.status === 'created' ? 'Backend Filed' : 'Session Draft'}</p>
+                  <p className="mt-2 text-[12px] leading-5 text-[#e8d7c6]">{report.question}</p>
+                  <p className="mt-2 text-[11px] text-[#b0a095]">{report.researchRequirement}</p>
+                  <p className="mt-2 text-[11px] text-[#8a8a8a]">{report.createdAt}</p>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         {/* CHAT BOX */}
         <section className="border-4 border-[#8b4444] bg-[#0f0f0f] p-6 shadow-2xl shadow-black/60">
           {/* Messages */}
@@ -152,12 +398,18 @@ export default function ShadowChatPage() {
 
         {/* NAV LINKS */}
         <div className="mt-6 flex flex-wrap gap-3">
-          <TutorialButton anchor="shadow-guide" className="border-[#8b4444] bg-[#1a1a1a] text-[#d4a574] hover:border-[#d4a574] hover:bg-[#2a1a1a]" />
+          <ShadowChatButton context="SHADOW" label="SHADOW CHAT" className="border-[#8b4444] bg-[#1a1a1a] text-[#d4a574] hover:border-[#d4a574] hover:bg-[#2a1a1a]" />
           <Link
             href="/research/chat"
             className="border-2 border-[#d4a574] bg-[#1f1f1f] px-4 py-2 text-xs font-mono text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#2a1f1f]"
           >
             The Library
+          </Link>
+          <Link
+            href="/research"
+            className="border-2 border-[#d4a574] bg-[#1f1f1f] px-4 py-2 text-xs font-mono text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#2a1f1f]"
+          >
+            Research Intake
           </Link>
           <Link
             href="/admin/shadow"
@@ -198,5 +450,13 @@ export default function ShadowChatPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function ShadowChatPage() {
+  return (
+    <Suspense fallback={<main className="grid min-h-screen place-items-center bg-[#0a0a0a] px-6 text-[#e8d7c6]"><div className="text-center"><p className="text-xs font-mono uppercase tracking-[0.35em] text-[#dc2626]">SHADOW</p><h1 className="mt-3 font-display text-3xl tracking-tight">Loading scope</h1></div></main>}>
+      <ShadowChatPageContent />
+    </Suspense>
   );
 }

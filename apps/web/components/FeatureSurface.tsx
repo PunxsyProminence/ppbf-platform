@@ -1,8 +1,7 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import DevelopmentPipelineBanner, { type PipelineStageKey } from '@/components/DevelopmentPipelineBanner';
-import TutorialButton from '@/components/TutorialButton';
-import { getHelpAnchorForContext } from '@/components/helpContent';
+import ShadowChatButton from '@/components/ShadowChatButton';
 
 interface FeatureSurfaceProps {
   readonly eyebrow: string;
@@ -13,7 +12,6 @@ interface FeatureSurfaceProps {
   readonly primaryLinks: Array<{ label: string; href: string }>;
   readonly stats: Array<{ label: string; value: string }>;
   readonly children?: ReactNode;
-  readonly tutorialAnchor?: string;
 }
 
 export default function FeatureSurface({
@@ -25,15 +23,12 @@ export default function FeatureSurface({
   primaryLinks,
   stats,
   children,
-  tutorialAnchor,
 }: FeatureSurfaceProps) {
   const quickLinks = [
     ...primaryLinks,
     { label: 'Operations Hub', href: '/operations' },
     { label: 'Member Access', href: '/login' },
   ].filter((link, index, all) => all.findIndex((item) => item.href === link.href) === index);
-
-  const resolvedTutorialAnchor = tutorialAnchor ?? getHelpAnchorForContext(`${eyebrow} ${title}`);
 
   return (
     <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
@@ -75,7 +70,7 @@ export default function FeatureSurface({
             <section className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-md)]">
               <h2 className="font-display text-lg tracking-tight text-[var(--black)]">Quick links</h2>
               <div className="mt-3">
-                <TutorialButton anchor={resolvedTutorialAnchor} />
+                <ShadowChatButton context={`${eyebrow} ${title}`} />
               </div>
               <div className="mt-4 grid gap-3">
                 {quickLinks.map((item) => (

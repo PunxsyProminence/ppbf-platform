@@ -3,8 +3,7 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import RoleSessionGate from './RoleSessionGate';
-import TutorialButton from './TutorialButton';
-import { getHelpAnchorForContext } from './helpContent';
+import ShadowChatButton from './ShadowChatButton';
 import type { ClubRole } from './roleRoutes';
 
 interface RoleStandaloneViewProps {
@@ -13,7 +12,6 @@ interface RoleStandaloneViewProps {
   readonly allowedRoles: ClubRole[];
   readonly children: ReactNode;
   readonly showShellHeader?: boolean;
-  readonly tutorialAnchor?: string;
 }
 
 export default function RoleStandaloneView({
@@ -22,10 +20,7 @@ export default function RoleStandaloneView({
   allowedRoles,
   children,
   showShellHeader = true,
-  tutorialAnchor,
 }: RoleStandaloneViewProps) {
-  const resolvedTutorialAnchor = tutorialAnchor ?? getHelpAnchorForContext(`${roleLabel} ${routeLabel}`);
-
   return (
     <RoleSessionGate allowedRoles={allowedRoles}>
       <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
@@ -59,7 +54,7 @@ export default function RoleStandaloneView({
 
         <section className="mx-auto w-full max-w-[1600px] p-8 md:p-10">
           <div className="mb-4 flex justify-end">
-            <TutorialButton anchor={resolvedTutorialAnchor} />
+            <ShadowChatButton context={`${roleLabel} ${routeLabel}`} />
           </div>
           {children}
         </section>

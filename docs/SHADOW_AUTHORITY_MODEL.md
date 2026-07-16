@@ -171,6 +171,22 @@ Many observation loops -> Knowledge Network -> Experience Graph -> Expertise -> 
 
 This expanding network is the SHADOW Knowledge Web.
 
+Capability growth must expand the SHADOW Library.
+
+If the organization adds a new capability, route, workflow, role surface, evidence source, or decision pattern, SHADOW must grow its library to match.
+
+That growth may include:
+
+- new observations
+- new evidence classes
+- new educational materials
+- new research requirements
+- new validated lessons
+- new doctrine candidates
+- new organizational memory artifacts
+
+No meaningful capability should exist without increasing SHADOW's learning surface.
+
 ## 3E) Organizational Memory Rule
 
 The organization should never lose a lesson it has already paid for.
@@ -461,7 +477,73 @@ Fast Track observations and Deep Track observations enter the same SHADOW Knowle
 
 Together they create organizational intelligence.
 
-## 3O) Important Correction
+## 3O) Master and Scoped SHADOW Model
+
+SHADOW is one system with many scoped expressions.
+
+There is one Master SHADOW.
+
+Master SHADOW is the organizational conversation layer.
+
+Master SHADOW may speak to administrators and other authorized organizational operators about:
+
+- doctrine
+- evidence gaps
+- research requirements
+- unresolved conflicts
+- cross-subject patterns
+- capability growth
+- library growth
+- organizational learning
+
+Master SHADOW does not replace governance, providers, or human authority.
+
+Below Master SHADOW are scoped SHADOW views.
+
+Examples:
+
+- Athlete SHADOW
+- Coach SHADOW
+- Parent SHADOW
+- Board SHADOW
+- Research SHADOW
+- Safety SHADOW
+
+Scoped SHADOW views inherit doctrine from Master SHADOW.
+
+Scoped SHADOW views do not create independent truth.
+
+## 3P) Subject SHADOW Model
+
+An individual person, program, route, or subject may have a focused SHADOW scope.
+
+Examples:
+
+- Billy's SHADOW
+- Sally's SHADOW
+- Coach Rivera's SHADOW
+- Board Finance SHADOW
+
+These are scoped learning and evidence views, not sovereign intelligences.
+
+Subject SHADOW may:
+
+- organize observations
+- track subject-specific patterns
+- preserve subject learning history
+- support the human responsible for the subject in front of them
+
+Subject SHADOW may not:
+
+- override Master SHADOW doctrine
+- create policy automatically
+- diagnose
+- clear participation
+- replace authorized humans
+
+If a Subject SHADOW conflicts with doctrine or lacks strong evidence, it must create a research requirement or review event.
+
+## 3Q) Important Correction
 
 Fast Track is not for inexperienced users.
 Deep Track is not for advanced users.

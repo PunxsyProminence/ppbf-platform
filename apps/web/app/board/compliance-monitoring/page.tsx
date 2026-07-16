@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
-import TutorialButton from '@/components/TutorialButton';
+import ShadowChatButton from '@/components/ShadowChatButton';
 import { roleRoutes, type ClubRole } from '@/components/roleRoutes';
 
 const boardRoles = roleRoutes
@@ -74,7 +74,7 @@ export default function BoardComplianceMonitoringPage() {
               Board compliance watch and governance monitoring surface. This route is static/front-end only and does not run compliance automation.
             </p>
             {errorMessage ? <p className="text-sm text-[var(--red-primary)]">{errorMessage}</p> : null}
-            <TutorialButton anchor="planned-capabilities-guide" />
+            <ShadowChatButton context="Board Compliance Monitoring" />
           </header>
 
           <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">

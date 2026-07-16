@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState, type SyntheticEvent } from 'react';
-import TutorialButton from '@/components/TutorialButton';
+import ShadowChatButton from '@/components/ShadowChatButton';
 import { readRoleSession, subscribeRoleSession } from '@/components/roleSession';
 
 type VisitorType =
@@ -234,7 +234,7 @@ export default function PublicPortalPage() {
             >
               Member Login
             </Link>
-            <TutorialButton anchor="public-portal-guide" />
+            <ShadowChatButton context="Public Portal" label="ASK SHADOW" />
             <Link
               href="/help#tester-guide"
               className="inline-flex min-h-[40px] items-center justify-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
-import TutorialButton from '@/components/TutorialButton';
+import ShadowChatButton from '@/components/ShadowChatButton';
 import { roleRoutes } from '@/components/roleRoutes';
 
 const roleSelector = [
@@ -185,7 +185,7 @@ export default function OperationsHubPage() {
             <p className="max-w-4xl text-base leading-7 text-[var(--gray-dark)] md:text-lg">
               Every corner has its own view. Athlete. Coach. Parent. Board. Admin. Public.
             </p>
-            <TutorialButton anchor="mission-control-overview" />
+            <ShadowChatButton context="Mission Control" />
           </header>
 
           <section className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-5 shadow-[var(--shadow-sm)]">
@@ -193,7 +193,7 @@ export default function OperationsHubPage() {
               <p className="max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
                 Need orientation? Open the full tutorial center from one button instead of rendering all tutorial content inline.
               </p>
-              <TutorialButton anchor="start-here" />
+              <ShadowChatButton context="Mission Control Start Here" />
             </div>
           </section>
 
