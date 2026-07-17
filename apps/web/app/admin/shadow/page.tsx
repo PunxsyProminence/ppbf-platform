@@ -261,6 +261,18 @@ export default function AdminShadowConsolePage() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [lastIngestSummary, setLastIngestSummary] = useState<ShadowUploadResponse | null>(null);
+  const [growthMetrics, setGrowthMetrics] = useState<{
+    period: string;
+    totalInteractions: number;
+    filterRate: number;
+    avgSatisfaction: number | null;
+    avgEffectiveness: number | null;
+    recommendationsMade: number;
+    researchRequirementsCreated: number;
+    researchRequirementsClosed: number;
+    newLibraryPatterns: number;
+  } | null>(null);
+  const [metricsLoading, setMetricsLoading] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const handleItemActionRef = useRef(handleItemAction);
@@ -289,6 +301,16 @@ export default function AdminShadowConsolePage() {
     void refreshShadowOperationalReads().catch(() => {
       // Keep console operational when SHADOW telemetry/authority reads are unavailable.
     });
+
+    // Load growth metrics
+    setMetricsLoading(true);
+    fetch(`${apiBase()}/api/pilot/shadow/metrics?days=30`)
+      .then(r => r.ok ? r.json() : null)
+      .then((payload: { metrics?: typeof growthMetrics } | null) => {
+        if (payload?.metrics) setGrowthMetrics(payload.metrics);
+      })
+      .catch(() => {})
+      .finally(() => setMetricsLoading(false));
   }, []);
 
   const selectedItem = useMemo(() => pendingQueue.find((item) => item.id === selectedItemId) ?? null, [pendingQueue, selectedItemId]);
@@ -853,6 +875,34 @@ export default function AdminShadowConsolePage() {
   return (
     <RoleStandaloneView roleLabel="SHADOW Admin Console" routeLabel="/admin/shadow" allowedRoles={['admin']} showShellHeader={false}>
       <main className="grid gap-6 xl:grid-cols-[1.25fr_0.95fr]">
+        {/* ── SHADOW Growth Metrics ─────────────────────────────────── */}
+        <section className="col-span-full border-2 border-[#3f8b5b]/40 bg-[#0a1a0f] p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#c9f0d7]/70">SHADOW Intelligence — Last 30 Days</p>
+            {metricsLoading && <span className="text-xs text-[#c9f0d7]/40">Loading…</span>}
+          </div>
+          {growthMetrics ? (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
+              {([
+                ['Interactions', growthMetrics.totalInteractions],
+                ['Filter Rate', `${(growthMetrics.filterRate * 100).toFixed(1)}%`],
+                ['Avg Satisfaction', growthMetrics.avgSatisfaction != null ? growthMetrics.avgSatisfaction.toFixed(2) : '—'],
+                ['Avg Effectiveness', growthMetrics.avgEffectiveness != null ? growthMetrics.avgEffectiveness.toFixed(2) : '—'],
+                ['Recommendations', growthMetrics.recommendationsMade],
+                ['Research Created', growthMetrics.researchRequirementsCreated],
+                ['Research Closed', growthMetrics.researchRequirementsClosed],
+                ['New Patterns', growthMetrics.newLibraryPatterns],
+              ] as [string, string | number][]).map(([label, value]) => (
+                <div key={label} className="border border-[#3f8b5b]/30 bg-[#0f1f14] p-3 text-center">
+                  <p className="text-[11px] font-mono uppercase tracking-[0.12em] text-[#c9f0d7]/60">{label}</p>
+                  <p className="mt-1 text-xl font-black text-[#c9f0d7]">{value}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs font-mono text-[#c9f0d7]/40">No metrics available yet — data populates as SHADOW is used.</p>
+          )}
+        </section>
         <section className="space-y-6 border-4 border-[#8b4444] bg-[#0a0a0a]/70 p-6">
           <div className="mb-6 border-b border-[#8b4444]/20 pb-4">
             <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">AI/ML Telemetry Scout</p>

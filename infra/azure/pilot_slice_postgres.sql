@@ -486,3 +486,42 @@ create index if not exists idx_pilot_guardian_links_org_athlete on pilot.guardia
 create index if not exists idx_pilot_coach_observations_org_athlete on pilot.coach_observations(organization_id, athlete_id, created_at desc);
 create index if not exists idx_pilot_messages_org_recipient_created on pilot.messages(organization_id, recipient_account_id, created_at desc);
 create index if not exists idx_pilot_skills_org_athlete_recorded on pilot.skills(organization_id, athlete_id, recorded_at desc);
+
+-- SHADOW Feedback (effectiveness tracking)
+create table if not exists pilot.shadow_feedback (
+  feedback_id       bigserial primary key,
+  organization_id   text not null references pilot.organizations(organization_id) on delete cascade,
+  account_id        text not null,
+  role              text not null,
+  shadow_event_id   bigint null references pilot.shadow_events(shadow_event_id) on delete set null,
+  recommendation_ref text null,
+  helpful           boolean not null,
+  rating            integer null check (rating between 1 and 5),
+  comment           text null,
+  created_at        timestamptz not null default now()
+);
+
+create index if not exists idx_shadow_feedback_org_created
+  on pilot.shadow_feedback(organization_id, created_at desc);
+
+-- SHADOW User Profiles (personal shadow per member)
+create table if not exists pilot.shadow_user_profiles (
+  profile_id            bigserial primary key,
+  account_id            text not null,
+  organization_id       text not null references pilot.organizations(organization_id) on delete cascade,
+  role                  text not null,
+  interaction_count     integer not null default 0,
+  last_interaction_at   timestamptz null,
+  recent_topics         text[] not null default '{}',
+  athlete_ids_discussed text[] not null default '{}',
+  open_questions        text[] not null default '{}',
+  remembered_facts      jsonb not null default '[]'::jsonb,
+  communication_style   text not null default 'unknown' check (communication_style in ('concise', 'detailed', 'example-heavy', 'unknown')),
+  shadow_notes          text null,
+  created_at            timestamptz not null default now(),
+  updated_at            timestamptz not null default now(),
+  unique (account_id, organization_id)
+);
+
+create index if not exists idx_shadow_user_profiles_org
+  on pilot.shadow_user_profiles(organization_id, role);
