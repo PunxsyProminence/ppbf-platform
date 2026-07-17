@@ -641,6 +641,78 @@ export async function POST(request: NextRequest) {
       `create index if not exists idx_video_publications_status on pilot.video_publications(organization_id, status, created_at desc)`,
       `create index if not exists idx_research_library_published on pilot.research_library(organization_id, published_at desc)`,
       `create index if not exists idx_research_library_tags on pilot.research_library(organization_id, tags)`,
+      
+      // Seed default compliance rules for each organization
+      `insert into pilot.compliance_rules (rule_id, organization_id, rule_name, rule_category, description, detection_logic, severity, escalation_level, active_flag)
+       select 
+         'rule_safety_' || organization_id || '_physical_injury',
+         organization_id,
+         'Physical Injury Prevention',
+         'safety',
+         'Prevents unsafe techniques and movements that could result in physical injury',
+         'Monitor for high-impact movements, improper form, equipment misuse',
+         'critical',
+         'admin',
+         true
+       from pilot.organizations
+       where organization_id not in (select organization_id from pilot.compliance_rules where rule_name = 'Physical Injury Prevention')
+       on conflict do nothing`,
+      `insert into pilot.compliance_rules (rule_id, organization_id, rule_name, rule_category, description, detection_logic, severity, escalation_level, active_flag)
+       select 
+         'rule_technique_' || organization_id || '_form_standards',
+         organization_id,
+         'Proper Technique & Form',
+         'technique',
+         'Ensures athletes maintain proper form and technique during training',
+         'Verify stance, grip, positioning, and movement patterns match standards',
+         'high',
+         'coach',
+         true
+       from pilot.organizations
+       where organization_id not in (select organization_id from pilot.compliance_rules where rule_name = 'Proper Technique & Form')
+       on conflict do nothing`,
+      `insert into pilot.compliance_rules (rule_id, organization_id, rule_name, rule_category, description, detection_logic, severity, escalation_level, active_flag)
+       select 
+         'rule_protocol_' || organization_id || '_attendance',
+         organization_id,
+         'Training Protocol Compliance',
+         'protocol',
+         'Enforces attendance requirements, equipment readiness, and training protocols',
+         'Track attendance, equipment checks, session prep completion',
+         'high',
+         'coach',
+         true
+       from pilot.organizations
+       where organization_id not in (select organization_id from pilot.compliance_rules where rule_name = 'Training Protocol Compliance')
+       on conflict do nothing`,
+      `insert into pilot.compliance_rules (rule_id, organization_id, rule_name, rule_category, description, detection_logic, severity, escalation_level, active_flag)
+       select 
+         'rule_medical_' || organization_id || '_clearance',
+         organization_id,
+         'Medical Clearance Status',
+         'medical',
+         'Ensures athletes have current medical clearance and health documentation',
+         'Verify medical forms signed, physician clearance current, emergency contacts on file',
+         'critical',
+         'admin',
+         true
+       from pilot.organizations
+       where organization_id not in (select organization_id from pilot.compliance_rules where rule_name = 'Medical Clearance Status')
+       on conflict do nothing`,
+      `insert into pilot.compliance_rules (rule_id, organization_id, rule_name, rule_category, description, detection_logic, severity, escalation_level, active_flag)
+       select 
+         'rule_behavioral_' || organization_id || '_conduct',
+         organization_id,
+         'Code of Conduct',
+         'behavioral',
+         'Maintains organizational standards for athlete conduct and respect',
+         'Monitor respect to coaches/teammates, sportsmanship, team values adherence',
+         'medium',
+         'coach',
+         true
+       from pilot.organizations
+       where organization_id not in (select organization_id from pilot.compliance_rules where rule_name = 'Code of Conduct')
+       on conflict do nothing`,
     ];
 
     const client = new Client({
