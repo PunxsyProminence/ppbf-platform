@@ -40,8 +40,8 @@ export async function uploadPilotVideoFile(path: string, file: File): Promise<vo
 
 export function getPilotVideoSasUrl(blobPath: string, expiryMinutes = 60): string {
   const connStr = getAzureStorageConnectionString();
-  const accountNameMatch = connStr.match(/AccountName=([^;]+)/);
-  const accountKeyMatch = connStr.match(/AccountKey=([^;]+)/);
+  const accountNameMatch = /AccountName=([^;]+)/.exec(connStr);
+  const accountKeyMatch = /AccountKey=([^;]+)/.exec(connStr);
   if (!accountNameMatch || !accountKeyMatch) {
     throw new Error('Cannot parse storage account credentials for SAS generation');
   }

@@ -92,7 +92,7 @@ export default function CoachVideoAnalysisPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleUpload = async (e: React.FormEvent) => {
+  const handleUpload = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     const file = fileInputRef.current?.files?.[0];
     if (!file) { setUploadStatus('Select a video file first.'); return; }
@@ -151,7 +151,9 @@ export default function CoachVideoAnalysisPage() {
               <h2 className="font-mono text-sm font-bold uppercase text-[#d4a574]">{activeVideo.title}</h2>
               <button onClick={() => setActiveVideo(null)} className="text-xs font-mono text-[#cfbfae] underline">Close</button>
             </div>
-            <video className="mt-3 w-full max-h-[480px] bg-black" src={activeVideo.url} controls />
+            <video className="mt-3 w-full max-h-[480px] bg-black" src={activeVideo.url} controls>
+              <track kind="captions" />
+            </video>
           </section>
         ) : null}
 
@@ -160,20 +162,20 @@ export default function CoachVideoAnalysisPage() {
             <h2 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Upload Session Footage</h2>
             <form onSubmit={(e) => { void handleUpload(e); }} className="mt-3 space-y-3">
               <div>
-                <label className="block text-xs font-mono uppercase text-[#cfbfae]">Video File (MP4, MOV, AVI, WebM — max 500 MB)</label>
-                <input ref={fileInputRef} type="file" accept="video/*" className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-xs text-[#e8d7c6] file:border-0 file:bg-[#2a1a1a] file:text-[#d4a574] file:font-mono file:text-xs" />
+                <label htmlFor="video-file" className="block text-xs font-mono uppercase text-[#cfbfae]">Video File (MP4, MOV, AVI, WebM — max 500 MB)</label>
+                <input id="video-file" ref={fileInputRef} type="file" accept="video/*" className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-xs text-[#e8d7c6] file:border-0 file:bg-[#2a1a1a] file:text-[#d4a574] file:font-mono file:text-xs" />
               </div>
               <div>
-                <label className="block text-xs font-mono uppercase text-[#cfbfae]">Title</label>
-                <input type="text" value={uploadTitle} onChange={(e) => setUploadTitle(e.target.value)} placeholder="e.g. Sparring Round 3 — July 16" className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-xs text-[#e8d7c6] placeholder-[#7a6a5a]" />
+                <label htmlFor="upload-title" className="block text-xs font-mono uppercase text-[#cfbfae]">Title</label>
+                <input id="upload-title" type="text" value={uploadTitle} onChange={(e) => setUploadTitle(e.target.value)} placeholder="e.g. Sparring Round 3 — July 16" className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-xs text-[#e8d7c6] placeholder-[#7a6a5a]" />
               </div>
               <div>
-                <label className="block text-xs font-mono uppercase text-[#cfbfae]">Athlete ID (optional)</label>
-                <input type="text" value={uploadAthleteId} onChange={(e) => setUploadAthleteId(e.target.value)} placeholder="Link to specific athlete" className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-xs text-[#e8d7c6] placeholder-[#7a6a5a]" />
+                <label htmlFor="upload-athlete" className="block text-xs font-mono uppercase text-[#cfbfae]">Athlete ID (optional)</label>
+                <input id="upload-athlete" type="text" value={uploadAthleteId} onChange={(e) => setUploadAthleteId(e.target.value)} placeholder="Link to specific athlete" className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-xs text-[#e8d7c6] placeholder-[#7a6a5a]" />
               </div>
               <div>
-                <label className="block text-xs font-mono uppercase text-[#cfbfae]">Notes</label>
-                <textarea value={uploadNotes} onChange={(e) => setUploadNotes(e.target.value)} rows={2} placeholder="Coaching context, drill type, focus area..." className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-xs text-[#e8d7c6] placeholder-[#7a6a5a]" />
+                <label htmlFor="upload-notes" className="block text-xs font-mono uppercase text-[#cfbfae]">Notes</label>
+                <textarea id="upload-notes" value={uploadNotes} onChange={(e) => setUploadNotes(e.target.value)} rows={2} placeholder="Coaching context, drill type, focus area..." className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-xs text-[#e8d7c6] placeholder-[#7a6a5a]" />
               </div>
               <button type="submit" disabled={uploading} className="border-2 border-[#8b4444] bg-[#2a1a1a] px-4 py-2 text-xs font-mono font-bold uppercase text-[#d4a574] disabled:opacity-50">
                 {uploading ? 'Uploading...' : 'Upload Video'}

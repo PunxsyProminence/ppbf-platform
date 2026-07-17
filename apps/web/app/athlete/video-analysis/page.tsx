@@ -99,7 +99,9 @@ export default function AthleteVideoAnalysisPage() {
               <h2 className="font-mono text-sm font-bold uppercase text-[#d4a574]">{activeVideo.title}</h2>
               <button onClick={() => setActiveVideo(null)} className="text-xs font-mono text-[#cfbfae] underline">Close</button>
             </div>
-            <video className="mt-3 w-full max-h-[480px] bg-black" src={activeVideo.url} controls />
+            <video className="mt-3 w-full max-h-[480px] bg-black" src={activeVideo.url} controls>
+              <track kind="captions" />
+            </video>
           </section>
         ) : null}
 

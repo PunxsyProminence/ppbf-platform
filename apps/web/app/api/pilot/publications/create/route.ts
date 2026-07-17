@@ -2,8 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import {
   createPublication,
-  recordComplianceCheck,
-  publishToResearchLibrary,
+
   getOrganizationPublications,
 } from '@/src/server/pilot/publication';
 import { requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
@@ -17,7 +16,7 @@ export async function GET(request: NextRequest) {
 
     const status = request.nextUrl.searchParams.get('status');
     const publicationType = request.nextUrl.searchParams.get('publication_type');
-    const limit = Math.min(parseInt(request.nextUrl.searchParams.get('limit') || '50', 10), 100);
+    const limit = Math.min(Number.parseInt(request.nextUrl.searchParams.get('limit') || '50', 10), 100);
 
     const publications = await getOrganizationPublications(principal.organizationId, {
       status: status || undefined,

@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { createComplianceViolation, escalateViolation, getOrganizationViolations } from '@/src/server/pilot/compliance';
+import { createComplianceViolation, getOrganizationViolations } from '@/src/server/pilot/compliance';
 import { requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
 
     const athleteId = request.nextUrl.searchParams.get('athlete_id');
     const status = request.nextUrl.searchParams.get('status');
-    const limit = Math.min(parseInt(request.nextUrl.searchParams.get('limit') || '50', 10), 100);
+    const limit = Math.min(Number.parseInt(request.nextUrl.searchParams.get('limit') || '50', 10), 100);
 
     const violations = await getOrganizationViolations(principal.organizationId, {
       athleteId: athleteId || undefined,

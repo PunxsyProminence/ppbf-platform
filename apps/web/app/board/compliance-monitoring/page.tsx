@@ -28,7 +28,7 @@ interface ShadowRequirementItem {
 
 export default function BoardComplianceMonitoringPage() {
   const [violations, setViolations] = useState<ComplianceViolation[]>([]);
-  const [requirements, setRequirements] = useState<ShadowRequirementItem[]>([]);
+
   const [errorMessage, setErrorMessage] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('');
 
@@ -42,13 +42,6 @@ export default function BoardComplianceMonitoringPage() {
         }
         const violData = (await violRes.json()) as { items?: ComplianceViolation[] };
         setViolations(violData.items ?? []);
-
-        // Fetch SHADOW requirements
-        const reqRes = await fetch(`${apiBase()}/api/pilot/shadow/research-requirements`);
-        if (reqRes.ok) {
-          const payload = (await reqRes.json()) as { items?: ShadowRequirementItem[] };
-          setRequirements(payload.items ?? []);
-        }
 
         setErrorMessage('');
       } catch (error) {
@@ -68,7 +61,7 @@ export default function BoardComplianceMonitoringPage() {
     [violations],
   );
 
-  const statusCounts = useMemo(
+  useMemo(
     () => ({
       new: violations.filter((v) => v.status === 'new').length,
       acknowledged: violations.filter((v) => v.status === 'acknowledged').length,
@@ -144,13 +137,19 @@ export default function BoardComplianceMonitoringPage() {
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
                         <div className="flex gap-2">
-                          <span className={`text-xs font-bold uppercase px-2 py-1 border border-[var(--black)] ${
-                            violation.severity === 'critical' ? 'bg-[#fce8e6]' :
-                            violation.severity === 'high' ? 'bg-[#fff3cd]' :
-                            'bg-[var(--canvas-tan-light)]'
-                          }`}>
-                            {violation.severity}
-                          </span>
+                          {(() => {
+                            let severityClass = 'bg-[var(--canvas-tan-light)]';
+                            if (violation.severity === 'critical') {
+                              severityClass = 'bg-[#fce8e6]';
+                            } else if (violation.severity === 'high') {
+                              severityClass = 'bg-[#fff3cd]';
+                            }
+                            return (
+                              <span className={`text-xs font-bold uppercase px-2 py-1 border border-[var(--black)] ${severityClass}`}>
+                                {violation.severity}
+                              </span>
+                            );
+                          })()}
                           <span className="text-xs font-bold uppercase px-2 py-1 border border-[var(--black)] bg-[var(--canvas-tan-light)]">
                             {violation.status}
                           </span>

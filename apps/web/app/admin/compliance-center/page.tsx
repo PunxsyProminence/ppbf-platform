@@ -203,8 +203,8 @@ export default function AdminComplianceCenterPage() {
 
         {/* Severity Filter */}
         <div className="flex items-center gap-3">
-          <label className="text-xs font-bold text-[#d4a574]">Severity:</label>
-          <select
+          <label htmlFor="severity-filter" className="text-xs font-bold text-[#d4a574]">Severity:</label>
+          <select id="severity-filter"
             value={severityFilter}
             onChange={(e) => setSeverityFilter(e.target.value)}
             className="border border-[#5a4a3a] bg-[#101010] px-3 py-1 text-xs text-[#e8d7c6]"
@@ -272,8 +272,8 @@ export default function AdminComplianceCenterPage() {
                 Athlete: <span className="font-semibold text-[#e8d7c6]">{selectedViolation.athlete_id}</span>
               </p>
               <div className="mb-4">
-                <label className="block text-xs font-bold uppercase text-[#d4a574]">Escalate To</label>
-                <select
+                <label htmlFor="escalate-to-select" className="block text-xs font-bold uppercase text-[#d4a574]">Escalate To</label>
+                <select id="escalate-to-select"
                   value={escalateToRole}
                   onChange={(e) => setEscalateToRole(e.target.value)}
                   className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-[#e8d7c6]"

@@ -30,7 +30,7 @@ export default function CoachProgressionIntelligencePage() {
   const [gaps, setGaps] = useState<ProgressionGap[]>([]);
   const [assignments, setAssignments] = useState<DrillAssignment[]>([]);
   const [selectedAthlete, setSelectedAthlete] = useState('');
-  const [athletes, setAthletes] = useState<Array<{ athlete_id: string }>>([]);
+
   const [errorMessage, setErrorMessage] = useState('');
   const [showGapForm, setShowGapForm] = useState(false);
   const [newGap, setNewGap] = useState({
@@ -115,8 +115,9 @@ export default function CoachProgressionIntelligencePage() {
 
         {/* Athlete Selector */}
         <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
-          <label className="block text-sm font-semibold text-[#e8d7c6]">Select Athlete</label>
+          <label htmlFor="athlete-input" className="block text-sm font-semibold text-[#e8d7c6]">Select Athlete</label>
           <input
+            id="athlete-input"
             type="text"
             placeholder="Enter athlete ID (e.g., athlete-001)"
             value={selectedAthlete}
@@ -142,8 +143,9 @@ export default function CoachProgressionIntelligencePage() {
               {showGapForm && (
                 <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 space-y-3">
                   <div>
-                    <label className="block text-xs font-bold uppercase text-[#d4a574]">Gap Type</label>
+                    <label htmlFor="gap-type-select" className="block text-xs font-bold uppercase text-[#d4a574]">Gap Type</label>
                     <select
+                      id="gap-type-select"
                       value={newGap.gap_type}
                       onChange={(e) => setNewGap({ ...newGap, gap_type: e.target.value })}
                       className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-[#e8d7c6]"
@@ -157,8 +159,9 @@ export default function CoachProgressionIntelligencePage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold uppercase text-[#d4a574]">Description</label>
+                    <label htmlFor="gap-desc-textarea" className="block text-xs font-bold uppercase text-[#d4a574]">Description</label>
                     <textarea
+                      id="gap-desc-textarea"
                       value={newGap.gap_description}
                       onChange={(e) => setNewGap({ ...newGap, gap_description: e.target.value })}
                       placeholder="Describe the performance gap..."
@@ -167,8 +170,9 @@ export default function CoachProgressionIntelligencePage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold uppercase text-[#d4a574]">Severity</label>
+                    <label htmlFor="severity-select" className="block text-xs font-bold uppercase text-[#d4a574]">Severity</label>
                     <select
+                      id="severity-select"
                       value={newGap.severity}
                       onChange={(e) => setNewGap({ ...newGap, severity: e.target.value })}
                       className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-[#e8d7c6]"

@@ -1,4 +1,4 @@
-import { query, queryOne } from './db';
+import { query } from './db';
 
 export interface ProgressionGap {
   gap_id: string;
@@ -46,8 +46,8 @@ export async function createProgressionGap(params: {
   detectedFromId?: string;
   detectionData?: Record<string, unknown>;
 }): Promise<ProgressionGap> {
-  const gapId = `gap_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  const now = new Date().toISOString();
+  // Non-cryptographic randomness is acceptable for generating session IDs
+  const gapId = `gap_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
 
   const result = await query<ProgressionGap>(
     `insert into pilot.progression_gaps (
@@ -85,8 +85,8 @@ export async function assignDrill(params: {
   frequencyPerWeek?: number;
   dueDate?: string;
 }): Promise<DrillAssignment> {
-  const assignmentId = `assignment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  const now = new Date().toISOString();
+  // Non-cryptographic randomness is acceptable for generating session IDs
+  const assignmentId = `assignment_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
 
   const result = await query<DrillAssignment>(
     `insert into pilot.drill_assignments (
@@ -125,7 +125,8 @@ export async function recordCompletion(params: {
   repsCompleted?: number;
   notes?: string;
 }): Promise<AssignmentCompletion> {
-  const completionId = `completion_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  // Non-cryptographic randomness is acceptable for generating session IDs
+  const completionId = `completion_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
   const now = new Date().toISOString();
 
   const result = await query<AssignmentCompletion>(
