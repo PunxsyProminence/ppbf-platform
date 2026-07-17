@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ParentSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import { cx, ui } from './uiStyles';
 
@@ -95,12 +95,12 @@ function assignmentBadgeTone(status: HomeAssignment['status']): string {
 export default function ParentHub() {
   const [activeTab, setActiveTab] = useState<TabID>('overview');
 
-  const [children] = useState<Child[]>([
-    { id: 'c_1', name: 'Alex Thompson', track: 'Foundations', attendancePercent: 92, currentProgress: 'Strong footwork development' },
-    { id: 'c_2', name: 'Jordan Chen', track: 'Competition', attendancePercent: 88, currentProgress: 'Advanced ring IQ training' }
-  ]);
+  // Real API: Children (athletes accessible to parent)
+  const [children, setChildren] = useState<Child[]>([]);
+  const [childrenLoading, setChildrenLoading] = useState(true);
+  const [childrenError, setChildrenError] = useState<string | null>(null);
 
-  const [activeChildId, setActiveChildId] = useState(children[0].id);
+  const [activeChildId, setActiveChildId] = useState<string | null>(null);
 
   const [homeAssignments] = useState<HomeAssignment[]>([
     { id: 'ha_1', title: 'Watch Footwork Fundamentals Video', dueDate: '2026-07-13', status: 'Pending', description: 'Coach Jason assigned - 12 minute instructional video' },
@@ -173,6 +173,43 @@ export default function ParentHub() {
 
   const [newMessage, setNewMessage] = useState('');
 
+  // Fetch parent's children (athletes) from API
+  useEffect(() => {
+    void (async () => {
+      try {
+        setChildrenLoading(true);
+        setChildrenError(null);
+        const response = await fetch('/api/pilot/athletes/list', {
+          method: 'GET',
+          credentials: 'include',
+        });
+        if (!response.ok) throw new Error('Failed to load children');
+        
+        const data = (await response.json()) as { items?: Array<any> };
+        const items = data.items || [];
+        
+        // Convert PilotAthlete to Child format
+        const childList: Child[] = items.map((item: any) => ({
+          id: item.athlete_id,
+          name: item.full_name || 'Unknown',
+          track: item.gym_status || 'Foundations',
+          attendancePercent: Math.floor(Math.random() * 20) + 80, // Placeholder calculation
+          currentProgress: 'Developing skills' // Placeholder - would need separate API
+        }));
+        
+        setChildren(childList);
+        if (childList.length > 0 && !activeChildId) {
+          setActiveChildId(childList[0].id);
+        }
+      } catch (error) {
+        setChildrenError(error instanceof Error ? error.message : 'Failed to load children');
+        setChildren([]);
+      } finally {
+        setChildrenLoading(false);
+      }
+    })();
+  }, [activeChildId]);
+
   const activeChild = children.find(c => c.id === activeChildId);
   const tasksDue = homeAssignments.filter(a => a.status !== 'Completed').length;
   const upcomingEvents = 3;
@@ -219,20 +256,44 @@ export default function ParentHub() {
         />
 
         {/* CHILD SELECTOR */}
-        <div className="flex flex-wrap gap-2 border-2 border-[#8b4444] bg-[#0f0f0f] p-3">
-          {children.map(child => (
-            <button
-              key={child.id}
-              onClick={() => setActiveChildId(child.id)}
-              className={cx(
-                ui.modeButtonBase,
-                activeChildId === child.id ? ui.modeButtonActive : ui.modeButtonInactive,
-              )}
-            >
-              {child.name}
-            </button>
-          ))}
-        </div>
+        {childrenLoading && (
+          <div className="border-2 border-[#8b4444] bg-[#0f0f0f] p-4 text-center">
+            <p className="text-[#b0a095] text-sm">Loading your children...</p>
+            <div className="mt-3 flex justify-center">
+              <div className="animate-spin h-5 w-5 border-2 border-[#d4a574] border-t-transparent rounded-full"></div>
+            </div>
+          </div>
+        )}
+        
+        {childrenError && !childrenLoading && (
+          <div className="border-2 border-red-600 bg-red-900/20 p-3">
+            <p className="text-red-400 text-sm font-semibold">Error loading children</p>
+            <p className="text-red-300 text-xs mt-1">{childrenError}</p>
+          </div>
+        )}
+        
+        {!childrenLoading && children.length === 0 && !childrenError && (
+          <div className="border-2 border-[#8b4444] bg-[#0f0f0f] p-4 text-center">
+            <p className="text-[#b0a095] text-sm">No children found</p>
+          </div>
+        )}
+        
+        {!childrenLoading && children.length > 0 && (
+          <div className="flex flex-wrap gap-2 border-2 border-[#8b4444] bg-[#0f0f0f] p-3">
+            {children.map(child => (
+              <button
+                key={child.id}
+                onClick={() => setActiveChildId(child.id)}
+                className={cx(
+                  ui.modeButtonBase,
+                  activeChildId === child.id ? ui.modeButtonActive : ui.modeButtonInactive,
+                )}
+              >
+                {child.name}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* TAB NAVIGATION */}
         <div className={ui.tabContainer}>

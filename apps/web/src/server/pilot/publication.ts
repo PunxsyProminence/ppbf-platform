@@ -1,4 +1,5 @@
-import { query, queryOne } from './db';
+import { randomUUID } from 'node:crypto';
+import { query } from './db';
 
 export interface VideoPublication {
   publication_id: string;
@@ -33,7 +34,7 @@ export async function createPublication(params: {
   description: string;
   tags?: string[];
 }): Promise<VideoPublication> {
-  const publicationId = `pub_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const publicationId = `pub_${Date.now()}_${randomUUID().split('-')[0]}`;
 
   const result = await query<VideoPublication>(
     `insert into pilot.video_publications (
@@ -92,7 +93,7 @@ export async function recordComplianceCheck(params: {
   details: string;
   checkedByAccountId?: string;
 }): Promise<PublicationCheck> {
-  const checkId = `check_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const checkId = `check_${Date.now()}_${randomUUID().split('-')[0]}`;
   const now = new Date().toISOString();
 
   const result = await query<PublicationCheck>(
@@ -123,7 +124,7 @@ export async function publishToResearchLibrary(params: {
   description: string;
   tags?: string[];
 }): Promise<string> {
-  const libraryId = `lib_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const libraryId = `lib_${Date.now()}_${crypto.randomUUID().split('-')[0]}`;
 
   await query(
     `insert into pilot.research_library (
@@ -153,7 +154,7 @@ export async function getResearchLibrary(
     limit?: number;
     offset?: number;
   },
-): Promise<Array<any>> {
+): Promise<Array<{ library_id: string; publication_id?: string; video_session_id?: string; title: string; tags: string[] }>> {
   let sql = `
     select library_id, publication_id, video_session_id, title, description, tags, view_count, published_at
     from pilot.research_library
@@ -167,8 +168,10 @@ export async function getResearchLibrary(
   }
 
   sql += ` order by published_at desc limit $${params.length + 1} offset $${params.length + 2}`;
-  params.push(filters?.limit || 20);
-  params.push(filters?.offset || 0);
+  params.push(
+    filters?.limit || 20,
+    filters?.offset || 0,
+  );
 
   return query(sql, params);
 }

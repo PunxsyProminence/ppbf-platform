@@ -21,10 +21,11 @@ interface ComplianceViolation {
   created_at: string;
 }
 
-interface ShadowRequirementItem {
-  research_requirement_id: number;
-  status: 'open' | 'resolved';
-}
+// ShadowRequirementItem interface available for future use in research requirement tracking
+// interface ShadowRequirementItem {
+//   research_requirement_id: number;
+//   status: 'open' | 'resolved';
+// }
 
 export default function BoardComplianceMonitoringPage() {
   const [violations, setViolations] = useState<ComplianceViolation[]>([]);

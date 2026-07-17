@@ -1,8 +1,7 @@
 // Core SHADOW Chat Validation Engine
 // Doctrine enforcement through request validation, topic classification, and response filtering
 
-import { query, queryOne } from './db';
-import { assertShadowAuthority } from './shadowAuthority';
+import { query } from './db';
 
 // 5-minute org-level context cache — avoids 3 DB queries per request
 const contextCache = new Map<string, { value: string; expiresAt: number }>();
@@ -188,8 +187,10 @@ export function classifyHighRiskTopic(userMessage: string): HighRiskClassificati
 // Validate that the request aligns with SHADOW's doctrine
 export async function validateShadowRequest(
   message: string,
-  userRole: string,
-  organizationId: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _userRole: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _organizationId: string,
 ): Promise<ShadowValidationResult> {
   const classification = classifyHighRiskTopic(message);
 
@@ -290,7 +291,7 @@ export async function retrieveShadowContext(params: {
 export function validateShadowResponse(response: string): ShadowResponseValidation {
   let filtered = false;
   const reasons: string[] = [];
-  let message = response;
+  const message = response;
 
   // Check for diagnosis claims
   if (/you (have|have a|got|get|experience|develop).*(?:condition|disease|syndrome|disorder)/i.test(response)) {

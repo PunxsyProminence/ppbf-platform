@@ -305,7 +305,7 @@ export default function AthleteProgressionIntelligencePage() {
                                           </p>
                                         )}
                                         {completion.notes && (
-                                          <p className="text-xs text-gray-700 mt-2 italic">"{completion.notes}"</p>
+                                          <p className="text-xs text-gray-700 mt-2 italic">&quot;{completion.notes}&quot;</p>
                                         )}
                                         {completion.verified_at && (
                                           <p className="text-xs text-green-700 mt-1 font-medium">

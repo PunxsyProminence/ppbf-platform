@@ -210,25 +210,21 @@ export default function AthleteWorkspace() {
   const [currentPainType, setCurrentPainType] = useState<PainType>('Dull');
   const [currentPainSeverity, setCurrentPainSeverity] = useState(3);
 
-  // Goals State
-  const [smartGoals, setSmartGoals] = useState<SMARTGoal[]>([
-    { id: 'sg_1', title: 'Master 5-Punch Combination', category: 'Boxing', targetDate: '2026-08-12', successMetric: '85% accuracy rate', progressPercent: 45, status: 'Active', specific: 'Execute jab-cross-hook-uppercut-cross with 85% accuracy', measurable: 'Hit target pad 85 times out of 100 attempts', achievable: 'Aligns with current skill level', relevant: 'Foundation for sparring progression', timeBound: '30 days' },
-    { id: 'sg_2', title: 'Build 10-Pound Muscle Mass', category: 'Fitness', targetDate: '2026-10-12', successMetric: '10 lbs gain with <15% body fat increase', progressPercent: 25, status: 'Active', specific: 'Gain 10 pounds of lean muscle through resistance training', measurable: 'Weekly bodyweight and body composition tracking', achievable: 'Realistic with 4x/week training and proper nutrition', relevant: 'Improves punch power and resilience', timeBound: '90 days' },
-    { id: 'sg_3', title: 'Maintain 4.0 GPA', category: 'Academics', targetDate: '2026-12-15', successMetric: '4.0 GPA on report card', progressPercent: 90, status: 'Active', specific: 'Keep all grades at A (90+) level', measurable: 'Report card GPA = 4.0', achievable: 'Balanced with training schedule', relevant: 'Required for scholarship eligibility', timeBound: 'This semester (18 weeks)' }
-  ]);
+  // Goals State - Real API data
+  const [smartGoals, setSmartGoals] = useState<SMARTGoal[]>([]);
+  const [goalsLoading, setGoalsLoading] = useState(true);
+  const [goalsError, setGoalsError] = useState<string | null>(null);
+  
   const [showGoalForm, setShowGoalForm] = useState(false);
   const [newGoalTitle, setNewGoalTitle] = useState('');
   const [newGoalCategory, setNewGoalCategory] = useState<SMARTCategory>('Boxing');
   const [newGoalTargetDate, setNewGoalTargetDate] = useState('');
   const [newGoalSuccessMetric, setNewGoalSuccessMetric] = useState('');
 
-  // Floor Tasks State
-  const [floorTasks, setFloorTasks] = useState<FloorTask[]>([
-    { id: 'ft_1', title: 'Morning Readiness Check-In', category: 'Check-In', description: 'Complete biological readiness survey', dueDate: '7:00 AM', completed: false, priority: 'High' },
-    { id: 'ft_2', title: 'Warmup Drills - Footwork', category: 'Training', description: 'Execute prescribed footwork progression', dueDate: '4:00 PM', completed: false, priority: 'High' },
-    { id: 'ft_3', title: 'Conditioning Block', category: 'Training', description: 'Complete 30-minute conditioning session', dueDate: '5:00 PM', completed: false, priority: 'Normal' },
-    { id: 'ft_4', title: 'Goal Review Journal', category: 'Homework', description: 'Reflect on weekly SMART goal progress', dueDate: '8:00 PM', completed: true, priority: 'Normal' }
-  ]);
+  // Floor Tasks State - Real API data
+  const [floorTasks, setFloorTasks] = useState<FloorTask[]>([]);
+  const [tasksLoading, setTasksLoading] = useState(true);
+  const [tasksError, setTasksError] = useState<string | null>(null);
 
   // Drills State
   const [drills] = useState<Drill[]>([
@@ -271,6 +267,94 @@ export default function AthleteWorkspace() {
       }
     })();
   }, []);
+
+  // Fetch goals when athlete ID is set
+  useEffect(() => {
+    if (!backendAthleteId) {
+      setGoalsLoading(false);
+      return;
+    }
+
+    void (async () => {
+      try {
+        setGoalsLoading(true);
+        setGoalsError(null);
+        const response = await fetch(
+          `/api/pilot/goals/list?athlete_id=${encodeURIComponent(backendAthleteId)}`,
+          { method: 'GET', credentials: 'include' }
+        );
+        if (!response.ok) throw new Error('Failed to load goals');
+        
+        const data = (await response.json()) as { items?: Array<any> };
+        const items = data.items || [];
+        
+        // Convert PilotGoal to SMARTGoal format
+        const goals: SMARTGoal[] = items.map((item: any) => ({
+          id: item.goal_id,
+          title: item.title,
+          category: (item.category || 'Boxing') as SMARTCategory,
+          targetDate: item.target_date?.split('T')[0] || '',
+          successMetric: item.metric || '',
+          progressPercent: item.progress_percent || 0,
+          status: (item.status?.charAt(0).toUpperCase() + item.status?.slice(1).toLowerCase() || 'Not Started') as GoalStatus,
+          specific: '',
+          measurable: '',
+          achievable: '',
+          relevant: '',
+          timeBound: ''
+        }));
+        setSmartGoals(goals);
+      } catch (error) {
+        setGoalsError(error instanceof Error ? error.message : 'Failed to load goals');
+      } finally {
+        setGoalsLoading(false);
+      }
+    })();
+  }, [backendAthleteId]);
+
+  // Fetch sessions and convert to floor tasks when athlete ID is set
+  useEffect(() => {
+    if (!backendAthleteId) {
+      setTasksLoading(false);
+      return;
+    }
+
+    void (async () => {
+      try {
+        setTasksLoading(true);
+        setTasksError(null);
+        const response = await fetch(
+          `/api/pilot/sessions/list?athlete_id=${encodeURIComponent(backendAthleteId)}`,
+          { method: 'GET', credentials: 'include' }
+        );
+        if (!response.ok) throw new Error('Failed to load sessions');
+        
+        const data = (await response.json()) as { items?: Array<any> };
+        const sessions = data.items || [];
+        
+        // If no sessions exist, show placeholder tasks
+        if (sessions.length === 0) {
+          setFloorTasks([
+            { id: 'ft_1', title: 'Morning Readiness Check-In', category: 'Check-In', description: 'Complete biological readiness survey', dueDate: '7:00 AM', completed: false, priority: 'High' },
+            { id: 'ft_2', title: 'Warmup Drills - Footwork', category: 'Training', description: 'Execute prescribed footwork progression', dueDate: '4:00 PM', completed: false, priority: 'High' },
+            { id: 'ft_3', title: 'Conditioning Block', category: 'Training', description: 'Complete 30-minute conditioning session', dueDate: '5:00 PM', completed: false, priority: 'Normal' },
+            { id: 'ft_4', title: 'Goal Review Journal', category: 'Homework', description: 'Reflect on weekly SMART goal progress', dueDate: '8:00 PM', completed: false, priority: 'Normal' }
+          ]);
+        }
+      } catch (error) {
+        setTasksError(error instanceof Error ? error.message : 'Failed to load sessions');
+        // Fallback to default tasks
+        setFloorTasks([
+          { id: 'ft_1', title: 'Morning Readiness Check-In', category: 'Check-In', description: 'Complete biological readiness survey', dueDate: '7:00 AM', completed: false, priority: 'High' },
+          { id: 'ft_2', title: 'Warmup Drills - Footwork', category: 'Training', description: 'Execute prescribed footwork progression', dueDate: '4:00 PM', completed: false, priority: 'High' },
+          { id: 'ft_3', title: 'Conditioning Block', category: 'Training', description: 'Complete 30-minute conditioning session', dueDate: '5:00 PM', completed: false, priority: 'Normal' },
+          { id: 'ft_4', title: 'Goal Review Journal', category: 'Homework', description: 'Reflect on weekly SMART goal progress', dueDate: '8:00 PM', completed: false, priority: 'Normal' }
+        ]);
+      } finally {
+        setTasksLoading(false);
+      }
+    })();
+  }, [backendAthleteId]);
 
   useEffect(() => {
     void (async () => {
@@ -648,6 +732,22 @@ export default function AthleteWorkspace() {
                 onAskShadow={() => setShadowInput('What tasks do I have today?')}
               />
 
+              {tasksLoading && (
+                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-8 text-center">
+                  <p className="text-[#b0a095]">Loading your tasks...</p>
+                  <div className="mt-4 flex justify-center">
+                    <div className="animate-spin h-6 w-6 border-2 border-[#d4a574] border-t-transparent rounded-full"></div>
+                  </div>
+                </div>
+              )}
+
+              {tasksError && !tasksLoading && (
+                <div className="border-2 border-red-600 bg-red-900/20 p-4">
+                  <p className="text-red-400 font-semibold">Error loading tasks</p>
+                  <p className="text-red-300 text-sm mt-1">{tasksError}</p>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {floorTasks.map(task => (
                   <div
@@ -762,6 +862,28 @@ export default function AthleteWorkspace() {
                       Cancel
                     </button>
                   </div>
+                </div>
+              )}
+
+              {goalsLoading && (
+                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-8 text-center">
+                  <p className="text-[#b0a095]">Loading your goals...</p>
+                  <div className="mt-4 flex justify-center">
+                    <div className="animate-spin h-6 w-6 border-2 border-[#d4a574] border-t-transparent rounded-full"></div>
+                  </div>
+                </div>
+              )}
+
+              {goalsError && !goalsLoading && (
+                <div className="border-2 border-red-600 bg-red-900/20 p-4">
+                  <p className="text-red-400 font-semibold">Error loading goals</p>
+                  <p className="text-red-300 text-sm mt-1">{goalsError}</p>
+                </div>
+              )}
+
+              {!goalsLoading && smartGoals.length === 0 && !goalsError && (
+                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-8 text-center">
+                  <p className="text-[#b0a095]">No goals yet. Create one to get started!</p>
                 </div>
               )}
 

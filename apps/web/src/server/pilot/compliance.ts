@@ -1,4 +1,5 @@
-import { query, queryOne } from './db';
+import { randomUUID } from 'node:crypto';
+import { query } from './db';
 
 export interface ComplianceRule {
   rule_id: string;
@@ -30,7 +31,7 @@ export async function createComplianceViolation(params: {
   details: Record<string, unknown>;
   evidencePath?: string;
 }): Promise<ComplianceViolation> {
-  const violationId = `violation_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const violationId = `violation_${Date.now()}_${randomUUID().split('-')[0]}`;
   const now = new Date().toISOString();
 
   const result = await query<ComplianceViolation>(
@@ -64,7 +65,7 @@ export async function escalateViolation(params: {
   escalationReason: string;
   actionRequired?: string;
 }): Promise<void> {
-  const escalationId = `escalation_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const escalationId = `escalation_${Date.now()}_${randomUUID().split('-')[0]}`;
 
   await query(
     `insert into pilot.violation_escalations (

@@ -99,8 +99,8 @@ export async function upsertRememberedFact(
   }
 
   // Keep only top 20 highest-confidence facts
-  const pruned = existing
-    .sort((a, b) => b.confidence - a.confidence)
+  const sorted = existing.toSorted((a, b) => b.confidence - a.confidence);
+  const pruned = sorted
     .slice(0, 20);
 
   await query(
@@ -254,16 +254,18 @@ export function buildUserShadowContext(
   const allFacts = (profile.remembered_facts || []).filter(f => f.confidence >= 0.5);
   const roleFacts = role === 'coach'
     ? allFacts.filter(f => f.key.includes('athlete') || f.key.includes('program') || f.key.includes('team'))
-    : role === 'athlete'
-    ? allFacts.filter(f => !f.key.startsWith('org_') && !f.key.startsWith('program_'))
-    : allFacts;
+    : (() => role === 'athlete'
+        ? allFacts.filter(f => !f.key.startsWith('org_') && !f.key.startsWith('program_'))
+        : allFacts
+      )();
 
   if (roleFacts.length > 0) {
     const topFacts = roleFacts
       .map(f => ({ ...f, decayed: scoreConfidence('remembered_facts', f.confidence, f.updatedAt ? new Date(f.updatedAt) : undefined) }))
       .sort((a, b) => b.decayed - a.decayed)
       .slice(0, 4);
-    const factsText = `Known:\n${topFacts.map(f => `- ${f.key}: ${f.value}`).join('\n')}`;
+    const facts = topFacts.map(f => `-  ${f.key}: ${f.value}`);
+    const factsText = `Known:\n${facts.join('\n')}`;
     const avgConf = topFacts.reduce((s, f) => s + f.decayed, 0) / topFacts.length;
     push('remembered_facts', factsText, avgConf, undefined, 'observation');
   }
@@ -271,7 +273,8 @@ export function buildUserShadowContext(
   // ── Open questions ────────────────────────────────────────────────────────
   const openQ = profile.open_questions.slice(-2);
   if (openQ.length > 0) {
-    push('open_questions', `Unresolved:\n${openQ.map(q => `- ${q}`).join('\n')}`, 0.70);
+    const openQList = openQ.map(q => `- ${q}`).join('\n');
+    push('open_questions', `Unresolved:\n${openQList}`, 0.70);
   }
 
   // ── Recent topics ─────────────────────────────────────────────────────────
@@ -279,9 +282,10 @@ export function buildUserShadowContext(
     const topics = profile.recent_topics.slice(-3).join(', ');
     const label = role === 'coach'
       ? `Coach's recent focus: ${topics}.`
-      : role === 'athlete'
-      ? `What this athlete has been working on: ${topics}.`
-      : `Recent topics: ${topics}.`;
+      : (() => role === 'athlete'
+          ? `What this athlete has been working on: ${topics}.`
+          : `Recent topics: ${topics}.`
+        )();
     push('org_patterns', label, 0.60);
   }
 

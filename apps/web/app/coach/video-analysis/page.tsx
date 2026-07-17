@@ -89,7 +89,6 @@ export default function CoachVideoAnalysisPage() {
         setObservationError(err instanceof Error ? err.message : 'Unable to load SHADOW observations');
       }
     })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleUpload = async (e: React.SyntheticEvent<HTMLFormElement>) => {

@@ -46,14 +46,15 @@ async function callAzureOpenAI(systemPrompt: string, userMessage: string): Promi
     const endpoint = process.env.AZURE_AI_ENDPOINT;
     const apiKey = process.env.AZURE_AI_KEY;
     const deploymentName = process.env.AZURE_AI_DEPLOYMENT_NAME;
+    const apiVersion = process.env.AZURE_AI_API_VERSION || '2024-12-01-preview';
 
     if (!endpoint || !apiKey || !deploymentName) {
       console.error('Azure AI credentials not configured');
       return { response: '', success: false };
     }
 
-    // Format: https://[resource].openai.azure.com/openai/deployments/[deployment]/chat/completions?api-version=2024-08-01-preview
-    const url = `${endpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=2024-08-01-preview`;
+    // Format: https://[resource].cognitiveservices.azure.com/openai/deployments/[deployment]/chat/completions?api-version=2024-12-01-preview
+    const url = `${endpoint.replace(/\/$/, '')}/openai/deployments/${deploymentName}/chat/completions?api-version=${apiVersion}`;
 
     const azureResponse = await fetch(url, {
       method: 'POST',
@@ -67,7 +68,7 @@ async function callAzureOpenAI(systemPrompt: string, userMessage: string): Promi
           { role: 'user', content: userMessage },
         ],
         temperature: 0.7,
-        max_tokens: 2048,
+        max_completion_tokens: 2048,
       }),
     });
 
@@ -139,7 +140,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     });
 
     // Load personal user shadow profile and inject into context
-    const userProfile = await getOrCreateShadowUserProfile(userId, organizationId, userRole as any);
+    const userProfile = await getOrCreateShadowUserProfile(userId, organizationId, userRole as 'coach' | 'admin' | 'athlete');
     const userShadowContext = buildUserShadowContext(userProfile, message);
     const enrichedContext = contextResult.authorized
       ? { ...contextResult, context: contextResult.context + userShadowContext }

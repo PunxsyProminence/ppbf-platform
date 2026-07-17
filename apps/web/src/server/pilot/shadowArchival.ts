@@ -3,8 +3,8 @@
 
 import { query } from './db';
 import { BlobServiceClient } from '@azure/storage-blob';
-import { gzip } from 'zlib';
-import { promisify } from 'util';
+import { gzip } from 'node:zlib';
+import { promisify } from 'node:util';
 
 const gzipAsync = promisify(gzip);
 
@@ -57,7 +57,7 @@ export async function archiveOldData(config: ArchiveConfig): Promise<ArchiveResu
     const cutoffDateStr = cutoffDate.toISOString().split('T')[0];
 
     // FIX 3: Parameterized SELECT - no string interpolation
-    const oldDataResult = await query<any>(
+    const oldDataResult = await query<{ created_at: string; interaction_count?: number }>(
       `SELECT * FROM pilot.shadow_chat_audit 
        WHERE created_at < $1::date`,
       [cutoffDateStr],
@@ -116,13 +116,13 @@ export async function archiveOldData(config: ArchiveConfig): Promise<ArchiveResu
       );
 
       const stats = statsResult[0];
-      if (stats && parseInt(stats.interaction_count, 10) > 0) {
+      if (stats && Number.parseInt(stats.interaction_count, 10) > 0) {
         await insertMonthlyStats(
           organizationId,
           monthStart.getFullYear(),
           monthStart.getMonth() + 1,
-          parseInt(stats.interaction_count, 10),
-          parseFloat(stats.avg_filter_rate || '0'),
+          Number.parseInt(stats.interaction_count, 10),
+          Number.parseFloat(stats.avg_filter_rate || '0'),
           0, // avg_effectiveness_score would come from recommendation tracking
         );
         aggregatedMonths++;
@@ -159,7 +159,7 @@ export async function verifyArchiveIntegrity(config: ArchiveConfig): Promise<{ i
      WHERE created_at > NOW() - INTERVAL '90 days'`,
   );
 
-  if (monthlyStatsResult[0] && parseInt(monthlyStatsResult[0].count, 10) === 0) {
+  if (monthlyStatsResult[0] && Number.parseInt(monthlyStatsResult[0].count, 10) === 0) {
     issues.push('No monthly statistics found for recent months');
   }
 
@@ -175,7 +175,7 @@ export async function verifyArchiveIntegrity(config: ArchiveConfig): Promise<{ i
     [cutoffDateStr],
   );
 
-  const oldRecordCount = parseInt(oldRecordsResult[0]?.count || '0', 10);
+  const oldRecordCount = Number.parseInt(oldRecordsResult[0]?.count || '0', 10);
   if (oldRecordCount > 100) {
     issues.push(`${oldRecordCount} old audit records still in active table`);
   }

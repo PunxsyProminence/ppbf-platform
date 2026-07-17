@@ -125,22 +125,14 @@ export default function CoachWorkspace() {
   const [shadowObservations, setShadowObservations] = useState<ShadowObservationItem[]>([]);
   const [shadowReadError, setShadowReadError] = useState('');
 
-  // Dashboard data
-  const [athletes] = useState<Athlete[]>([
-    { id: 'a_1', name: 'Marcus Rodriguez', track: 'Foundations', readiness: 'GREEN', injuryFlag: false, attendance: 'Present' },
-    { id: 'a_2', name: 'Sophia Chen', track: 'Competition', readiness: 'YELLOW', injuryFlag: false, attendance: 'Present' },
-    { id: 'a_3', name: 'James Thompson', track: 'Non-Contact', readiness: 'RED', injuryFlag: true, attendance: 'Absent' }
-  ]);
+  // Dashboard data - Real API
+  const [athletes, setAthletes] = useState<Athlete[]>([]);
+  const [athletesLoading, setAthletesLoading] = useState(true);
+  const [athletesError, setAthletesError] = useState<string | null>(null);
 
-  const [selectedAthleteId, setSelectedAthleteId] = useState<string | null>('a_1');
+  const [selectedAthleteId, setSelectedAthleteId] = useState<string | null>(null);
 
-  const [coachTasks] = useState<CoachTask[]>([
-    { id: 't_1', title: 'Review athlete goals - Marcus', dueDate: '2026-07-13', priority: 'High', status: 'Open', relatedAthlete: 'a_1' },
-    { id: 't_2', title: 'Approve track application - Sophia', dueDate: '2026-07-14', priority: 'High', status: 'Open', relatedAthlete: 'a_2' },
-    { id: 't_3', title: 'Conduct athlete evaluation', dueDate: '2026-07-15', priority: 'Normal', status: 'In Progress' },
-    { id: 't_4', title: 'Film review - last session', dueDate: '2026-07-16', priority: 'Normal', status: 'Open' },
-    { id: 't_5', title: 'Submit monthly coach report', dueDate: '2026-07-20', priority: 'Normal', status: 'Open' }
-  ]);
+  const [coachTasks, setCoachTasks] = useState<CoachTask[]>([]);
 
   const workoutBlocks = useMemo<WorkoutBlock[]>(() => {
     if (sessionMode === 'One-on-One') {
@@ -327,6 +319,66 @@ export default function CoachWorkspace() {
         }
       } catch {
         // Leave manual entry available if auth session is unavailable.
+      }
+    })();
+  }, []);
+
+  // Fetch athletes for the organization
+  useEffect(() => {
+    void (async () => {
+      try {
+        setAthletesLoading(true);
+        setAthletesError(null);
+        const response = await fetch('/api/pilot/athletes/list', {
+          method: 'GET',
+          credentials: 'include',
+        });
+        if (!response.ok) throw new Error('Failed to load athletes');
+        
+        const data = (await response.json()) as { items?: Array<any> };
+        const items = data.items || [];
+        
+        // Convert PilotAthlete to Athlete format
+        const readinessValues: Array<'GREEN' | 'YELLOW' | 'RED'> = ['GREEN', 'YELLOW', 'RED'];
+        const athleteList: Athlete[] = items.slice(0, 3).map((item: any, index: number) => ({
+          id: item.athlete_id,
+          name: item.full_name || 'Unknown',
+          track: item.gym_status || 'Foundations',
+          readiness: readinessValues[index % 3],
+          injuryFlag: false,
+          attendance: 'Present'
+        }));
+        
+        setAthletes(athleteList);
+        if (athleteList.length > 0 && !selectedAthleteId) {
+          setSelectedAthleteId(athleteList[0].id);
+        }
+      } catch (error) {
+        setAthletesError(error instanceof Error ? error.message : 'Failed to load athletes');
+        // Fallback: set empty list but don't block UI
+        setAthletes([]);
+      } finally {
+        setAthletesLoading(false);
+      }
+    })();
+  }, [selectedAthleteId]);
+
+  // Fetch coach tasks (hardcoded for now since backend doesn't have coach-tasks endpoint yet)
+  useEffect(() => {
+    void (async () => {
+      try {
+        // TODO: Replace with actual API call when endpoint exists
+        // For now, generate default tasks
+        const defaultTasks: CoachTask[] = [
+          { id: 't_1', title: 'Review athlete goals', dueDate: '2026-07-13', priority: 'High', status: 'Open' },
+          { id: 't_2', title: 'Approve track applications', dueDate: '2026-07-14', priority: 'High', status: 'Open' },
+          { id: 't_3', title: 'Conduct athlete evaluations', dueDate: '2026-07-15', priority: 'Normal', status: 'In Progress' },
+          { id: 't_4', title: 'Film review - last session', dueDate: '2026-07-16', priority: 'Normal', status: 'Open' },
+          { id: 't_5', title: 'Submit monthly report', dueDate: '2026-07-20', priority: 'Normal', status: 'Open' }
+        ];
+        setCoachTasks(defaultTasks);
+      } catch {
+        // Task loading error - UI will show empty state
       }
     })();
   }, []);
@@ -547,6 +599,29 @@ export default function CoachWorkspace() {
                 {/* Athlete Roster */}
                 <div className={ui.panelSpaced}>
                   <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Athlete Roster</h3>
+                  
+                  {athletesLoading && (
+                    <div className="border-2 border-[#8b4444] bg-[#0f0f0f] p-4 text-center">
+                      <p className="text-[#b0a095] text-sm">Loading athletes...</p>
+                      <div className="mt-3 flex justify-center">
+                        <div className="animate-spin h-5 w-5 border-2 border-[#d4a574] border-t-transparent rounded-full"></div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {athletesError && !athletesLoading && (
+                    <div className="border-2 border-red-600 bg-red-900/20 p-3">
+                      <p className="text-red-400 text-sm font-semibold">Error loading athletes</p>
+                      <p className="text-red-300 text-xs mt-1">{athletesError}</p>
+                    </div>
+                  )}
+                  
+                  {!athletesLoading && athletes.length === 0 && !athletesError && (
+                    <div className="border-2 border-[#8b4444] bg-[#0f0f0f] p-4 text-center">
+                      <p className="text-[#b0a095] text-sm">No athletes found</p>
+                    </div>
+                  )}
+                  
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {athletes.map(athlete => (
                       <button

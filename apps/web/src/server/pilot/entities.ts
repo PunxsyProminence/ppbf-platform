@@ -182,3 +182,41 @@ export async function upsertCoachReview(organizationId: string, payload: PilotCo
     ],
   );
 }
+
+// List functions for frontend data fetching
+export async function getAthletesByOrganization(organizationId: string): Promise<PilotAthlete[]> {
+  return query<PilotAthlete>(
+    'select * from pilot.athletes where organization_id = $1 order by created_at desc',
+    [organizationId]
+  );
+}
+
+export async function getGoalsByAthlete(
+  organizationId: string,
+  athleteId: string
+): Promise<PilotGoal[]> {
+  return query<PilotGoal>(
+    'select * from pilot.goals where organization_id = $1 and athlete_id = $2 order by created_at desc',
+    [organizationId, athleteId]
+  );
+}
+
+export async function getSessionsByAthlete(
+  organizationId: string,
+  athleteId: string
+): Promise<PilotSession[]> {
+  return query<PilotSession>(
+    'select * from pilot.sessions where organization_id = $1 and athlete_id = $2 order by date desc',
+    [organizationId, athleteId]
+  );
+}
+
+export async function getCoachReviewsBySession(
+  organizationId: string,
+  sessionId: string
+): Promise<PilotCoachReview[]> {
+  return query<PilotCoachReview>(
+    'select * from pilot.coach_reviews where organization_id = $1 and session_id = $2 order by created_at desc',
+    [organizationId, sessionId]
+  );
+}

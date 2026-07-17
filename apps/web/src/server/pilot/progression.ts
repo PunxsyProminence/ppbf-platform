@@ -1,4 +1,5 @@
 import { query } from './db';
+import { randomUUID } from 'node:crypto';
 
 export interface ProgressionGap {
   gap_id: string;
@@ -46,9 +47,8 @@ export async function createProgressionGap(params: {
   detectedFromId?: string;
   detectionData?: Record<string, unknown>;
 }): Promise<ProgressionGap> {
-  // Session ID generation - acceptable for non-sensitive use
-  // eslint-disable-next-line security/detect-unsafe-regex,@typescript-eslint/no-unsafe-call
-  const gapId = `gap_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+  // Session ID generation - using crypto.randomUUID for secure randomness
+  const gapId = `gap_${Date.now()}_${randomUUID().substring(0, 8)}`;
 
   const result = await query<ProgressionGap>(
     `insert into pilot.progression_gaps (
@@ -86,9 +86,8 @@ export async function assignDrill(params: {
   frequencyPerWeek?: number;
   dueDate?: string;
 }): Promise<DrillAssignment> {
-  // Session ID generation - acceptable for non-sensitive use
-  // eslint-disable-next-line security/detect-unsafe-regex,@typescript-eslint/no-unsafe-call
-  const assignmentId = `assignment_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+  // Using crypto.randomUUID for secure randomness
+  const assignmentId = `assignment_${Date.now()}_${randomUUID().substring(0, 8)}`;
 
   const result = await query<DrillAssignment>(
     `insert into pilot.drill_assignments (
@@ -127,9 +126,8 @@ export async function recordCompletion(params: {
   repsCompleted?: number;
   notes?: string;
 }): Promise<AssignmentCompletion> {
-  // Session ID generation - acceptable for non-sensitive use
-  // eslint-disable-next-line security/detect-unsafe-regex,@typescript-eslint/no-unsafe-call
-  const completionId = `completion_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+  // Using crypto.randomUUID for secure randomness
+  const completionId = `completion_${Date.now()}_${randomUUID().substring(0, 8)}`;
   const now = new Date().toISOString();
 
   const result = await query<AssignmentCompletion>(
