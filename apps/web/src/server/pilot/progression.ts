@@ -47,7 +47,7 @@ export async function createProgressionGap(params: {
   detectionData?: Record<string, unknown>;
 }): Promise<ProgressionGap> {
   // Session ID generation - acceptable for non-sensitive use
-  // eslint-disable-next-line
+  // eslint-disable-next-line security/detect-unsafe-regex,@typescript-eslint/no-unsafe-call
   const gapId = `gap_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
 
   const result = await query<ProgressionGap>(
@@ -87,7 +87,7 @@ export async function assignDrill(params: {
   dueDate?: string;
 }): Promise<DrillAssignment> {
   // Session ID generation - acceptable for non-sensitive use
-  // eslint-disable-next-line
+  // eslint-disable-next-line security/detect-unsafe-regex,@typescript-eslint/no-unsafe-call
   const assignmentId = `assignment_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
 
   const result = await query<DrillAssignment>(
@@ -128,7 +128,7 @@ export async function recordCompletion(params: {
   notes?: string;
 }): Promise<AssignmentCompletion> {
   // Session ID generation - acceptable for non-sensitive use
-  // eslint-disable-next-line
+  // eslint-disable-next-line security/detect-unsafe-regex,@typescript-eslint/no-unsafe-call
   const completionId = `completion_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
   const now = new Date().toISOString();
 
