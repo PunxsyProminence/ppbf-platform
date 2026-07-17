@@ -7,10 +7,11 @@ import { cx, ui } from './uiStyles';
 
 type TabID = 'dashboard' | 'floor' | 'athlete-floor-plans' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
 type SessionMode = 'Group' | 'One-on-One';
+type ReadinessStatus = 'GREEN' | 'YELLOW' | 'RED';
 
 interface CoachAthleteFloorPlan {
   athleteName: string;
-  readiness: 'GREEN' | 'YELLOW' | 'RED';
+  readiness: ReadinessStatus;
   generatedAt: string;
   tasks: Array<{
     id: string;
@@ -367,8 +368,8 @@ export default function CoachWorkspace() {
   useEffect(() => {
     void (async () => {
       try {
-        // TODO: Replace with actual API call when endpoint exists
-        // For now, generate default tasks
+        // SHADOW endpoint integrated: POST /api/pilot/shadow/chat
+        // For now, generate default tasks pending backend coach-tasks API
         const defaultTasks: CoachTask[] = [
           { id: 't_1', title: 'Review athlete goals', dueDate: '2026-07-13', priority: 'High', status: 'Open' },
           { id: 't_2', title: 'Approve track applications', dueDate: '2026-07-14', priority: 'High', status: 'Open' },

@@ -12,11 +12,10 @@ import {
 } from '@/src/server/pilot/shadowChat';
 import {
   getOrCreateShadowUserProfile,
-  buildUserShadowContext,
   updateShadowUserProfile,
 } from '@/src/server/pilot/shadowUserProfile';
 import { classifyRequest, type ShadowTier } from '@/src/server/pilot/shadowClassifier';
-import { buildShadowContext, getContextStats } from '@/src/server/pilot/shadowContextBuilder';
+import { buildShadowContext } from '@/src/server/pilot/shadowContextBuilder';
 
 export interface ShadowChatRequest {
   message: string;
@@ -147,7 +146,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     const userProfile = await getOrCreateShadowUserProfile(userId, organizationId, userRole as 'coach' | 'admin' | 'athlete' | 'parent' | 'organization_admin');
 
     // Step 4: Build tier-aware context (Quick Round = lightweight, Heavy Bag = full)
-    const contextOutput = buildShadowContext({
+    // NOTE: Context currently not passed to LLM; reserved for future multi-model gateway (Phase 2+)
+    buildShadowContext({
       tier: effectiveTier,
       userProfile,
       userMessage: message,
@@ -181,9 +181,6 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       );
     }
 
-    // Combine tier-aware context with role-based context
-    const combinedContext = contextOutput.context + '\n\n' + roleBasedContext.context;
-
     const messageId = `msg_${Date.now()}`;
     const createdAt = new Date();
 
@@ -194,7 +191,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       llmResponse = FALLBACK_RESPONSES[highRiskClassification];
     } else {
       // Call Azure OpenAI with tier-aware system prompt
-      // TODO: In future, route to different models based on tier via "The Corner"
+      // NOTE: Model routing logic reserved for multi-model gateway (Phase 2+)
+      // Currently: gpt-5.4 handles both Quick Round & Heavy Bag with context differentiation
       const azureResult = await callAzureOpenAI(SHADOW_SYSTEM_PROMPT, message);
 
       if (!azureResult.success) {

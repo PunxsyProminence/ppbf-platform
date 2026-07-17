@@ -189,13 +189,17 @@ export default function ParentHub() {
         const items = data.items || [];
         
         // Convert PilotAthlete to Child format
-        const childList: Child[] = items.map((item: any) => ({
-          id: item.athlete_id,
-          name: item.full_name || 'Unknown',
-          track: item.gym_status || 'Foundations',
-          attendancePercent: Math.floor(Math.random() * 20) + 80, // Placeholder calculation
-          currentProgress: 'Developing skills' // Placeholder - would need separate API
-        }));
+        const childList: Child[] = items.map((item: any, index: number) => {
+          // Generate deterministic placeholder attendance (80-100%) based on item index
+          const placeholderAttendance = 80 + (index % 21);
+          return {
+            id: item.athlete_id,
+            name: item.full_name || 'Unknown',
+            track: item.gym_status || 'Foundations',
+            attendancePercent: placeholderAttendance,
+            currentProgress: 'Developing skills' // Placeholder - would need separate API
+          };
+        });
         
         setChildren(childList);
         if (childList.length > 0 && !activeChildId) {

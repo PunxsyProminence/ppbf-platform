@@ -5,13 +5,8 @@
 
 import type { PilotRole } from './contracts';
 import type { ShadowUserProfileRow, RememberedFact } from './shadowUserProfile';
-import type { WeightedContextItem, ContextCategory, ShadowQueryType } from './shadowContextWeights';
-import {
-  calculateDynamicWeights,
-  detectQueryType,
-  scoreConfidence,
-  selectTopContextItems,
-} from './shadowContextWeights';
+import type { ShadowQueryType } from './shadowContextWeights';
+import { detectQueryType } from './shadowContextWeights';
 
 export interface ShadowContextBuilderInput {
   tier: 'quick_round' | 'heavy_bag';
@@ -44,41 +39,55 @@ export interface ShadowContextOutput {
  */
 function buildQuickRoundContext(input: ShadowContextBuilderInput): string {
   const profile = input.userProfile;
-  const sections: string[] = [];
+  
+  const getExpertiseLevel = (interactionCount: number): string => {
+    if (interactionCount > 50) return 'expert';
+    if (interactionCount > 20) return 'intermediate';
+    return 'novice';
+  };
+  const expertiseLevel = getExpertiseLevel(profile.interaction_count);
 
-  // 1. User Role & Authority
-  sections.push(`## User Profile`);
-  sections.push(`- Role: ${profile.role}`);
-  sections.push(`- Expertise Level: ${profile.interaction_count > 50 ? 'expert' : profile.interaction_count > 20 ? 'intermediate' : 'novice'}`);
-  sections.push(`- Interaction History: ${profile.interaction_count} previous interactions`);
-  sections.push('');
+  const styleMap: Record<string, string> = {
+    concise: 'Prefers brief, direct answers',
+    detailed: 'Prefers comprehensive explanations',
+    'example-heavy': 'Learns best through examples',
+    unknown: 'No preference yet',
+  };
 
-  // 2. Communication Style
-  if (profile.communication_style && profile.communication_style !== 'unknown') {
-    sections.push(`## Communication Preference`);
-    const styleMap: Record<string, string> = {
-      concise: 'Prefers brief, direct answers',
-      detailed: 'Prefers comprehensive explanations',
-      'example-heavy': 'Learns best through examples',
-      unknown: 'No preference yet',
-    };
-    sections.push(`- ${styleMap[profile.communication_style] || 'Unknown'}`);
-    sections.push('');
-  }
+  const userProfileSection = [
+    `## User Profile`,
+    `- Role: ${profile.role}`,
+    `- Expertise Level: ${expertiseLevel}`,
+    `- Interaction History: ${profile.interaction_count} previous interactions`,
+  ];
 
-  // 3. Recent Topics (avoid repetition)
-  if (profile.recent_topics && profile.recent_topics.length > 0) {
-    sections.push(`## Recent Discussion Topics`);
-    sections.push(`- ${profile.recent_topics.slice(0, 5).join(', ')}`);
-    sections.push('');
-  }
+  const communicationSection = profile.communication_style && profile.communication_style !== 'unknown'
+    ? [
+        `## Communication Preference`,
+        `- ${styleMap[profile.communication_style] || 'Unknown'}`,
+      ]
+    : [];
 
-  // 4. Open Questions (show what's unresolved)
-  if (profile.open_questions && profile.open_questions.length > 0) {
-    sections.push(`## Unresolved Questions`);
-    sections.push(`Context from previous sessions: ${profile.open_questions.slice(0, 2).join('; ')}`);
-    sections.push('');
-  }
+  const topicsSection = profile.recent_topics && profile.recent_topics.length > 0
+    ? [`## Recent Discussion Topics`, `- ${profile.recent_topics.slice(0, 5).join(', ')}`]
+    : [];
+
+  const questionsSection = profile.open_questions && profile.open_questions.length > 0
+    ? [
+        `## Unresolved Questions`,
+        `Context from previous sessions: ${profile.open_questions.slice(0, 2).join('; ')}`,
+      ]
+    : [];
+
+  const sections = [
+    ...userProfileSection,
+    '',
+    ...communicationSection,
+    ...(communicationSection.length > 0 ? [''] : []),
+    ...topicsSection,
+    ...(topicsSection.length > 0 ? [''] : []),
+    ...questionsSection,
+  ];
 
   return sections.join('\n');
 }
@@ -94,64 +103,99 @@ function buildQuickRoundContext(input: ShadowContextBuilderInput): string {
 function buildHeavyBagContext(input: ShadowContextBuilderInput): string {
   const profile = input.userProfile;
   const queryType = detectQueryType(input.userMessage);
-  const sections: string[] = [];
 
-  // 1. Complete User Profile
-  sections.push(`## User Context`);
-  sections.push(`- Role: ${profile.role}`);
-  sections.push(`- Organization: ${input.organizationId}`);
-  sections.push(`- Interaction Count: ${profile.interaction_count}`);
-  sections.push(`- Last Interaction: ${profile.last_interaction_at || 'Never'}`);
-  sections.push('');
+  const sections = buildHeavyBagSections(profile, input, queryType);
+  return sections.join('\n');
+}
 
-  // 2. Communication Style (detailed)
-  if (profile.communication_style && profile.communication_style !== 'unknown') {
-    sections.push(`## Interaction Patterns`);
-    sections.push(`- Communication Style: ${profile.communication_style}`);
-    sections.push('');
+function buildHeavyBagSections(profile: ShadowUserProfileRow, input: ShadowContextBuilderInput, queryType: ShadowQueryType): string[] {
+  const userContextSection = [
+    `## User Context`,
+    `- Role: ${profile.role}`,
+    `- Organization: ${input.organizationId}`,
+    `- Interaction Count: ${profile.interaction_count}`,
+    `- Last Interaction: ${profile.last_interaction_at || 'Never'}`,
+  ];
+
+  const communicationSection = buildCommunicationSection(profile);
+  const factsSection = buildFactsSection(profile);
+  const topicsSection = buildTopicsSection(profile);
+  const questionsSection = buildQuestionsSection(profile);
+  const athleteSection = buildAthleteSection(profile, input);
+  const querySection = buildQuerySection(queryType);
+  const authoritySection = buildAuthoritySection(input.userRole);
+  const notesSection = profile.shadow_notes ? [`## Context Notes`, profile.shadow_notes] : [];
+
+  return [
+    ...userContextSection,
+    '',
+    ...communicationSection,
+    ...(communicationSection.length > 0 ? [''] : []),
+    ...factsSection,
+    ...(factsSection.length > 0 ? [''] : []),
+    ...topicsSection,
+    ...(topicsSection.length > 0 ? [''] : []),
+    ...questionsSection,
+    ...(questionsSection.length > 0 ? [''] : []),
+    ...athleteSection,
+    ...(athleteSection.length > 0 ? [''] : []),
+    ...querySection,
+    '',
+    ...authoritySection,
+    '',
+    ...notesSection,
+  ];
+}
+
+function buildCommunicationSection(profile: ShadowUserProfileRow): string[] {
+  return profile.communication_style && profile.communication_style !== 'unknown'
+    ? [`## Interaction Patterns`, `- Communication Style: ${profile.communication_style}`]
+    : [];
+}
+
+function buildFactsSection(profile: ShadowUserProfileRow): string[] {
+  if (!profile.remembered_facts || !Array.isArray(profile.remembered_facts) || profile.remembered_facts.length === 0) {
+    return [];
   }
-
-  // 3. Remembered Facts (with confidence scoring)
-  if (profile.remembered_facts && Array.isArray(profile.remembered_facts) && profile.remembered_facts.length > 0) {
-    sections.push(`## Key Facts About This User`);
-    profile.remembered_facts.slice(0, 10).forEach((fact: RememberedFact) => {
+  return [
+    `## Key Facts About This User`,
+    ...profile.remembered_facts.slice(0, 10).map((fact: RememberedFact) => {
       const confidence = (fact.confidence * 100).toFixed(0);
-      sections.push(`- ${fact.key}: ${fact.value} (confidence: ${confidence}%)`);
-    });
-    sections.push('');
-  }
+      return `- ${fact.key}: ${fact.value} (confidence: ${confidence}%)`;
+    }),
+  ];
+}
 
-  // 4. Recent Discussion Topics
-  if (profile.recent_topics && profile.recent_topics.length > 0) {
-    sections.push(`## Discussion History`);
-    sections.push(`- Recent topics: ${profile.recent_topics.slice(0, 10).join(', ')}`);
-    sections.push('');
-  }
+function buildTopicsSection(profile: ShadowUserProfileRow): string[] {
+  return profile.recent_topics && profile.recent_topics.length > 0
+    ? [`## Discussion Topics`, `- Recent topics: ${profile.recent_topics.slice(0, 10).join(', ')}`]
+    : [];
+}
 
-  // 5. Open Questions & Knowledge Gaps
-  if (profile.open_questions && profile.open_questions.length > 0) {
-    sections.push(`## Unresolved Items`);
-    profile.open_questions.slice(0, 5).forEach((q: string) => {
-      sections.push(`- ${q}`);
-    });
-    sections.push('');
-  }
+function buildQuestionsSection(profile: ShadowUserProfileRow): string[] {
+  return profile.open_questions && profile.open_questions.length > 0
+    ? [
+        `## Unresolved Items`,
+        ...profile.open_questions.slice(0, 5).map((q: string) => `- ${q}`),
+      ]
+    : [];
+}
 
-  // 6. Athlete-Specific Context (if applicable)
-  if (input.athleteId && profile.athlete_ids_discussed?.includes(input.athleteId)) {
-    sections.push(`## Athlete Context`);
-    sections.push(`- Currently discussing: Athlete ${input.athleteId}`);
-    sections.push('');
-  }
+function buildAthleteSection(profile: ShadowUserProfileRow, input: ShadowContextBuilderInput): string[] {
+  return input.athleteId && profile.athlete_ids_discussed?.includes(input.athleteId)
+    ? [`## Athlete Context`, `- Currently discussing: Athlete ${input.athleteId}`]
+    : [];
+}
 
-  // 7. Query Type & Routing
-  sections.push(`## Query Classification`);
-  sections.push(`- Type: ${queryType}`);
-  sections.push(`- Tier: Heavy Bag (full reasoning enabled)`);
-  sections.push('');
+function buildQuerySection(queryType: ShadowQueryType): string[] {
+  return [
+    `## Query Classification`,
+    `- Type: ${queryType}`,
+    `- Tier: Heavy Bag (full reasoning enabled)`,
+  ];
+}
 
-  // 8. Authority & Role-Based Constraints
-  sections.push(`## Role-Based Decision Authority`);
+function buildAuthoritySection(userRole: PilotRole): string[] {
   const authorityMap: Record<PilotRole, string> = {
     coach: 'Can make coaching decisions, recommend training modifications, refer to medical',
     admin: 'Can make organizational decisions, access all data, approve changes',
@@ -162,17 +206,10 @@ function buildHeavyBagContext(input: ShadowContextBuilderInput): string {
     volunteer: 'Can provide coaching support within organization',
     staff: 'Can access organization data and assist with operations',
   };
-  sections.push(`- ${authorityMap[input.userRole] || 'Standard access'}`);
-  sections.push('');
-
-  // 9. Shadow Notes (if available)
-  if (profile.shadow_notes) {
-    sections.push(`## Context Notes`);
-    sections.push(profile.shadow_notes);
-    sections.push('');
-  }
-
-  return sections.join('\n');
+  return [
+    `## Role-Based Decision Authority`,
+    `- ${authorityMap[userRole] || 'Standard access'}`,
+  ];
 }
 
 /**

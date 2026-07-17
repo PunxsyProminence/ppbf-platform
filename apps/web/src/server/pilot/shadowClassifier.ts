@@ -142,7 +142,6 @@ export function classifyRequest(
   // Decision thresholds
   const quickThreshold = 0.4;
   const heavyThreshold = 0.65;
-  const boundaryZone = heavyThreshold - quickThreshold;
 
   let tier: ShadowTier;
   let confidence: number;
