@@ -610,9 +610,21 @@ export default function CoachWorkspace() {
                   )}
                   
                   {athletesError && !athletesLoading && (
-                    <div className="border-2 border-red-600 bg-red-900/20 p-3">
-                      <p className="text-red-400 text-sm font-semibold">Error loading athletes</p>
-                      <p className="text-red-300 text-xs mt-1">{athletesError}</p>
+                    <div className="border-2 border-red-600 bg-red-900/20 p-3 rounded">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-red-400 text-sm font-semibold">Error loading athletes</p>
+                        <button
+                          onClick={() => {
+                            setAthletesError(null);
+                            // Effect will re-run
+                          }}
+                          className="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition"
+                          aria-label="Retry loading athletes"
+                        >
+                          Retry
+                        </button>
+                      </div>
+                      <p className="text-red-300 text-xs">{athletesError}</p>
                     </div>
                   )}
                   
@@ -998,7 +1010,20 @@ export default function CoachWorkspace() {
                 </div>
               </div>
 
-              {shadowReadError ? <p className="text-xs text-[#f0c4c4]">{shadowReadError}</p> : null}
+              {shadowReadError ? (
+                <div className="border-2 border-red-600 bg-red-900/20 p-3 rounded">
+                  <div className="flex items-center justify-between">
+                    <p className="text-red-400 text-sm font-semibold">{shadowReadError}</p>
+                    <button
+                      onClick={() => setShadowReadError('')}
+                      className="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition flex-shrink-0"
+                      aria-label="Retry loading SHADOW queue"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           )}
 

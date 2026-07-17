@@ -742,9 +742,21 @@ export default function AthleteWorkspace() {
               )}
 
               {tasksError && !tasksLoading && (
-                <div className="border-2 border-red-600 bg-red-900/20 p-4">
-                  <p className="text-red-400 font-semibold">Error loading tasks</p>
-                  <p className="text-red-300 text-sm mt-1">{tasksError}</p>
+                <div className="border-2 border-red-600 bg-red-900/20 p-4 rounded">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-red-400 font-semibold">Error loading tasks</p>
+                    <button
+                      onClick={() => {
+                        setTasksError(null);
+                        // Effect will re-run with backendAthleteId
+                      }}
+                      className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition"
+                      aria-label="Retry loading tasks"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                  <p className="text-red-300 text-sm">{tasksError}</p>
                 </div>
               )}
 
@@ -875,9 +887,21 @@ export default function AthleteWorkspace() {
               )}
 
               {goalsError && !goalsLoading && (
-                <div className="border-2 border-red-600 bg-red-900/20 p-4">
-                  <p className="text-red-400 font-semibold">Error loading goals</p>
-                  <p className="text-red-300 text-sm mt-1">{goalsError}</p>
+                <div className="border-2 border-red-600 bg-red-900/20 p-4 rounded">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-red-400 font-semibold">Error loading goals</p>
+                    <button
+                      onClick={() => {
+                        setGoalsError(null);
+                        // Effect will re-run with backendAthleteId
+                      }}
+                      className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition"
+                      aria-label="Retry loading goals"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                  <p className="text-red-300 text-sm">{goalsError}</p>
                 </div>
               )}
 
@@ -1243,7 +1267,18 @@ export default function AthleteWorkspace() {
 
               <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
                 <h3 className="font-mono text-xs font-bold uppercase tracking-[0.08em] text-[#d4a574]">SHADOW Observation Projection</h3>
-                {shadowObservationError ? <p className="mt-2 text-xs text-[#f0c4c4]">{shadowObservationError}</p> : null}
+                {shadowObservationError ? (
+                  <div className="mt-2 border border-red-600 bg-red-900/20 p-2 rounded flex items-center justify-between">
+                    <p className="text-xs text-red-400 flex-1">{shadowObservationError}</p>
+                    <button
+                      onClick={() => setShadowObservationError('')}
+                      className="ml-2 px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition flex-shrink-0"
+                      aria-label="Retry loading SHADOW observations"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                ) : null}
                 {!shadowObservationError && shadowObservations.length === 0 ? (
                   <p className="mt-2 text-xs text-[#b0a095]">No SHADOW observations available yet.</p>
                 ) : null}

@@ -266,9 +266,21 @@ export default function ParentHub() {
         )}
         
         {childrenError && !childrenLoading && (
-          <div className="border-2 border-red-600 bg-red-900/20 p-3">
-            <p className="text-red-400 text-sm font-semibold">Error loading children</p>
-            <p className="text-red-300 text-xs mt-1">{childrenError}</p>
+          <div className="border-2 border-red-600 bg-red-900/20 p-3 rounded">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-red-400 text-sm font-semibold">Error loading children</p>
+              <button
+                onClick={() => {
+                  setChildrenError(null);
+                  // Effect will re-run
+                }}
+                className="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition"
+                aria-label="Retry loading children"
+              >
+                Retry
+              </button>
+            </div>
+            <p className="text-red-300 text-xs">{childrenError}</p>
           </div>
         )}
         
