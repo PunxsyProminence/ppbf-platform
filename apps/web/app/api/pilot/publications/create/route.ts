@@ -2,8 +2,6 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import {
   createPublication,
-
-  getOrganizationPublications,
 } from '@/src/server/pilot/publication';
 import { requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
 

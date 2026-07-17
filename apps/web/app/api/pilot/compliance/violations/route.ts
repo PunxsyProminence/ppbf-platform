@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
 
     const athleteId = request.nextUrl.searchParams.get('athlete_id');
     const status = request.nextUrl.searchParams.get('status');
-    const limit = Math.min(Number.parseInt(request.nextUrl.searchParams.get('limit') || '50', 10), 100);
+    const limit = Math.min(Number.parseInt(request.nextUrl.searchParams.get('limit') ?? '50', 10), 100);
 
     const violations = await getOrganizationViolations(principal.organizationId, {
       athleteId: athleteId || undefined,
