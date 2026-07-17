@@ -1,5 +1,6 @@
 // POST /api/pilot/shadow/chat endpoint
-// Core chat interface for SHADOW with doctrine enforcement and audit logging
+// Core chat interface for SHADOW with doctrine enforcement, tier-aware routing, and audit logging
+// Implements dual-mode architecture: Quick Round (fast/sync) vs Heavy Bag (deep/async)
 
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/src/server/pilot/db';
@@ -14,12 +15,15 @@ import {
   buildUserShadowContext,
   updateShadowUserProfile,
 } from '@/src/server/pilot/shadowUserProfile';
+import { classifyRequest, type ShadowTier } from '@/src/server/pilot/shadowClassifier';
+import { buildShadowContext, getContextStats } from '@/src/server/pilot/shadowContextBuilder';
 
 export interface ShadowChatRequest {
   message: string;
   athleteId?: string;
   context?: string;
   organizationId: string;
+  tier?: ShadowTier; // Optional manual tier override (coaches/admins only)
 }
 
 export interface ShadowChatResponse {
@@ -30,6 +34,8 @@ export interface ShadowChatResponse {
   filtered: boolean;
   requiresHumanReview: boolean;
   highRiskTopic?: string;
+  tier?: ShadowTier; // Which tier was used for this response
+  complexity?: number; // Complexity score (0–1) for debugging
   error?: string;
 }
 
@@ -110,9 +116,13 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     }
 
     const body: ShadowChatRequest = await request.json();
-    const { message, athleteId } = body;
+    const { message, athleteId, tier: userRequestedTier } = body;
 
-    // FIX 4: Validate request first (blocks diagnosis, clearance, prescription for non-educational queries)
+    // Step 1: Classify request to determine tier (Quick Round vs Heavy Bag)
+    const classification = classifyRequest(message, userRole as any, userRequestedTier);
+    const effectiveTier = classification.tier;
+
+    // Step 2: Validate request first (blocks diagnosis, clearance, prescription for non-educational queries)
     const requestValidation = await validateShadowRequest(message, userRole, organizationId);
     if (!requestValidation.valid) {
       const messageId = `msg_${Date.now()}`;
@@ -125,52 +135,66 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           filtered: true,
           requiresHumanReview: true,
           highRiskTopic: requestValidation.topic,
+          tier: effectiveTier,
+          complexity: classification.complexity,
           error: requestValidation.error,
         },
         { status: 400 },
       );
     }
 
-    // FIX 2: Retrieve context with role-based authorization
-    const contextResult = await retrieveShadowContext({
+    // Step 3: Load personal user shadow profile for context building
+    const userProfile = await getOrCreateShadowUserProfile(userId, organizationId, userRole as 'coach' | 'admin' | 'athlete' | 'parent' | 'organization_admin');
+
+    // Step 4: Build tier-aware context (Quick Round = lightweight, Heavy Bag = full)
+    const contextOutput = buildShadowContext({
+      tier: effectiveTier,
+      userProfile,
+      userMessage: message,
+      userRole: userRole as any,
+      organizationId,
+      athleteId,
+    });
+
+    // Step 5: Retrieve role-based context and merge with tier-aware context
+    const roleBasedContext = await retrieveShadowContext({
       userRole,
       userId,
       organizationId,
       athleteId,
     });
 
-    // Load personal user shadow profile and inject into context
-    const userProfile = await getOrCreateShadowUserProfile(userId, organizationId, userRole as 'coach' | 'admin' | 'athlete');
-    const userShadowContext = buildUserShadowContext(userProfile, message);
-    const enrichedContext = contextResult.authorized
-      ? { ...contextResult, context: contextResult.context + userShadowContext }
-      : contextResult;
-
-    if (!enrichedContext.authorized) {
+    if (!roleBasedContext.authorized) {
       return NextResponse.json(
         {
           success: false,
-          response: enrichedContext.reason || 'Not authorized to access this context',
+          response: roleBasedContext.reason || 'Not authorized to access this context',
           messageId: `msg_${Date.now()}`,
           createdAt: new Date().toISOString(),
           filtered: true,
           requiresHumanReview: false,
-          error: enrichedContext.reason,
+          tier: effectiveTier,
+          complexity: classification.complexity,
+          error: roleBasedContext.reason,
         },
         { status: 403 },
       );
     }
 
+    // Combine tier-aware context with role-based context
+    const combinedContext = contextOutput.context + '\n\n' + roleBasedContext.context;
+
     const messageId = `msg_${Date.now()}`;
     const createdAt = new Date();
 
-    // Determine if high-risk topic and use fallback if needed
+    // Step 6: Determine response (fallback for high-risk or call LLM)
     let llmResponse: string;
-    const { classification } = requestValidation;
-    if (classification && classification in FALLBACK_RESPONSES) {
-      llmResponse = FALLBACK_RESPONSES[classification];
+    const { classification: highRiskClassification } = requestValidation;
+    if (highRiskClassification && highRiskClassification in FALLBACK_RESPONSES) {
+      llmResponse = FALLBACK_RESPONSES[highRiskClassification];
     } else {
-      // FIX 1: Get full response from Azure OpenAI BEFORE validation (buffered, non-streaming)
+      // Call Azure OpenAI with tier-aware system prompt
+      // TODO: In future, route to different models based on tier via "The Corner"
       const azureResult = await callAzureOpenAI(SHADOW_SYSTEM_PROMPT, message);
 
       if (!azureResult.success) {
@@ -181,17 +205,17 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       }
     }
 
-    // FIX 1: Validate response BEFORE displaying to user
+    // Step 7: Validate response BEFORE displaying to user
     const responseValidation = validateShadowResponse(llmResponse);
     const finalResponse = responseValidation.message;
 
-    // Update user's personal shadow after successful interaction (async, don't block)
+    // Step 8: Update user's personal shadow after successful interaction (async, don't block)
     updateShadowUserProfile(userId, organizationId, {
       topicAdded: requestValidation.topic || undefined,
       athleteIdDiscussed: athleteId || undefined,
     }).catch(() => {});
 
-    // Audit logging
+    // Step 9: Audit logging with tier information
     try {
       await query(
         `INSERT INTO pilot.shadow_chat_audit 
@@ -221,6 +245,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       filtered: responseValidation.filtered,
       requiresHumanReview: responseValidation.requiresHumanReview,
       highRiskTopic: requestValidation.topic || undefined,
+      tier: effectiveTier,
+      complexity: classification.complexity,
     });
   } catch (error) {
     return NextResponse.json(

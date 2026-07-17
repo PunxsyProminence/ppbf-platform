@@ -206,7 +206,7 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
 
     test('allows educational medical vocabulary', () => {
       // Concussions are traumatic brain injuries (educational content context)
-      expect(validateShadowRequest('What are concussion protocols?')).toEqual({ valid: true });
+      expect(validateShadowRequest('What are concussion protocols?', 'coach', 'org-123')).toEqual({ valid: true });
     });
   });
 });
