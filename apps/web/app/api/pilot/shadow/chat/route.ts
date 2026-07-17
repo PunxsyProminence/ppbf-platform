@@ -41,30 +41,47 @@ const FALLBACK_RESPONSES: Record<string, string> = {
   medical_clearance: 'Medical clearance decisions are made by qualified medical professionals. SHADOW can help you understand what clearance evaluations typically include.',
 };
 
-async function callOllama(systemPrompt: string, userMessage: string): Promise<{ response: string; success: boolean }> {
+async function callAzureOpenAI(systemPrompt: string, userMessage: string): Promise<{ response: string; success: boolean }> {
   try {
-    const ollamaResponse = await fetch('http://localhost:11434/v1/chat/completions', {
+    const endpoint = process.env.AZURE_AI_ENDPOINT;
+    const apiKey = process.env.AZURE_AI_KEY;
+    const deploymentName = process.env.AZURE_AI_DEPLOYMENT_NAME;
+
+    if (!endpoint || !apiKey || !deploymentName) {
+      console.error('Azure AI credentials not configured');
+      return { response: '', success: false };
+    }
+
+    // Format: https://[resource].openai.azure.com/openai/deployments/[deployment]/chat/completions?api-version=2024-08-01-preview
+    const url = `${endpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=2024-08-01-preview`;
+
+    const azureResponse = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': apiKey,
+      },
       body: JSON.stringify({
-        model: 'mistral',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userMessage },
         ],
-        stream: false,
         temperature: 0.7,
+        max_tokens: 2048,
       }),
     });
 
-    if (!ollamaResponse.ok) {
+    if (!azureResponse.ok) {
+      const errorText = await azureResponse.text();
+      console.error('Azure API error:', azureResponse.status, errorText);
       return { response: '', success: false };
     }
 
-    const data = await ollamaResponse.json();
+    const data = await azureResponse.json();
     const response = data.choices?.[0]?.message?.content || '';
     return { response, success: true };
-  } catch {
+  } catch (error) {
+    console.error('Azure OpenAI call failed:', error);
     return { response: '', success: false };
   }
 }
@@ -152,14 +169,14 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     if (classification && classification in FALLBACK_RESPONSES) {
       llmResponse = FALLBACK_RESPONSES[classification];
     } else {
-      // FIX 1: Get full response from Ollama BEFORE validation (buffered, non-streaming)
-      const ollamaResult = await callOllama(SHADOW_SYSTEM_PROMPT, message);
+      // FIX 1: Get full response from Azure OpenAI BEFORE validation (buffered, non-streaming)
+      const azureResult = await callAzureOpenAI(SHADOW_SYSTEM_PROMPT, message);
 
-      if (!ollamaResult.success) {
+      if (!azureResult.success) {
         // Fallback to safe educational response
         llmResponse = 'SHADOW is currently unavailable. Please contact your organization for support.';
       } else {
-        llmResponse = ollamaResult.response;
+        llmResponse = azureResult.response;
       }
     }
 
