@@ -29,7 +29,7 @@ export interface VideoAnalysisResponse {
 
 export async function POST(req: NextRequest): Promise<NextResponse<VideoAnalysisResponse>> {
   try {
-    const principal = requirePrincipal(req);
+    const principal = await requirePrincipal(req);
     requireRole(principal, ['coach', 'admin', 'organization_admin', 'platform_owner']);
 
     const body = (await req.json()) as VideoAnalysisRequest;
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<VideoAnalysis
       [
         jobId,
         principal.organizationId,
-        principal.userId,
+        principal.accountId,
         'video_analysis',
         JSON.stringify({
           videoUrl: body.videoUrl,
@@ -92,7 +92,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<VideoAnalysis
 
 export async function GET(req: NextRequest): Promise<NextResponse<VideoAnalysisResponse>> {
   try {
-    const principal = requirePrincipal(req);
+    const principal = await requirePrincipal(req);
     const jobId = req.nextUrl.searchParams.get('jobId');
 
     if (!jobId) {

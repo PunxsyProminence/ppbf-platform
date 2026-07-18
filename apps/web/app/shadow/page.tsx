@@ -530,7 +530,8 @@ function ShadowChatPageContent() {
                         <p className="text-[9px] text-[#6a5a4a]">
                           {msg.tier === 'heavy_bag' ? '🥊 Heavy Bag' : '⚡ Quick Round'}
                           {msg.profileTier ? (() => {
-                            const tierEmoji = msg.profileTier === 'bronze' ? '🥉' : msg.profileTier === 'silver' ? '🥈' : '🥇';
+                            const tierEmojiMap: Record<string, string> = { bronze: '🥉', silver: '🥈', gold: '🥇' };
+                            const tierEmoji = tierEmojiMap[msg.profileTier] || '🥇';
                             const tierLabel = msg.profileTier.charAt(0).toUpperCase() + msg.profileTier.slice(1);
                             return ` · Tier: ${tierEmoji} ${tierLabel}`;
                           })() : ''}

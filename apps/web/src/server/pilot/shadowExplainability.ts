@@ -101,15 +101,23 @@ export async function buildExplanationChain(
   }
 
   // ── Profile Information (10% cap) ──────────────────────────────────────
-  if (tierResult.profileCompleteness > 0.5) {
+  // Calculate profile completeness from userProfile
+  let profileCompleteness = 0;
+  if (userProfile.recent_topics?.length ?? 0 > 0) profileCompleteness += 0.2;
+  if (userProfile.remembered_facts?.length ?? 0 > 0) profileCompleteness += 0.2;
+  if (userProfile.communication_style && userProfile.communication_style !== 'unknown') profileCompleteness += 0.2;
+  if (userProfile.shadow_notes && (userProfile.shadow_notes?.length ?? 0) > 20) profileCompleteness += 0.2;
+  if (userProfile.open_questions?.length ?? 0 > 0) profileCompleteness += 0.2;
+  
+  if (profileCompleteness > 0.5) {
     evidence.push({
       type: 'profile',
       label: 'User Profile Data',
-      value: `${Math.round(tierResult.profileCompleteness * 100)}% complete`,
+      value: `${Math.round(profileCompleteness * 100)}% complete`,
       weight: 0.1,
       source: 'shadow_user_profiles',
     });
-    confidenceBase += 10 * tierResult.profileCompleteness;
+    confidenceBase += 10 * profileCompleteness;
   }
 
   // Cap at 95%

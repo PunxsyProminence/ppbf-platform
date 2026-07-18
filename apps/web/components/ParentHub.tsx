@@ -195,7 +195,7 @@ export default function ParentHub() {
           return {
             id: item.athlete_id,
             name: item.full_name || 'Unknown',
-            track: item.gym_status || 'Foundations',
+            track: 'Foundations', // Placeholder - gym_status not available from API
             attendancePercent: placeholderAttendance,
             currentProgress: 'Developing skills' // Placeholder - would need separate API
           };

@@ -5,48 +5,48 @@ interface SkeletonLoaderProps {
    * Width of the skeleton (CSS value, e.g., "100%", "200px")
    * @default "100%"
    */
-  width?: string;
+  readonly width?: string;
 
   /**
    * Height of the skeleton (CSS value, e.g., "100%", "20px")
    * @default "20px"
    */
-  height?: string;
+  readonly height?: string;
 
   /**
    * Number of lines to render
    * @default 1
    */
-  lines?: number;
+  readonly lines?: number;
 
   /**
    * Gap between lines (CSS value, e.g., "8px", "1rem")
    * @default "8px"
    */
-  gap?: string;
+  readonly gap?: string;
 
   /**
    * Border radius (CSS value, e.g., "4px", "8px")
    * @default "4px"
    */
-  borderRadius?: string;
+  readonly borderRadius?: string;
 
   /**
    * Show circular skeleton (ignores height)
    * @default false
    */
-  isCircle?: boolean;
+  readonly isCircle?: boolean;
 
   /**
    * Disable animation (static skeleton)
    * @default false
    */
-  disableAnimation?: boolean;
+  readonly disableAnimation?: boolean;
 
   /**
    * Custom CSS class for styling
    */
-  className?: string;
+  readonly className?: string;
 }
 
 /**
@@ -74,7 +74,7 @@ export default function SkeletonLoader({
   isCircle = false,
   disableAnimation = false,
   className = '',
-}: readonly SkeletonLoaderProps): React.ReactElement {
+}: SkeletonLoaderProps): React.ReactElement {
   const skeletonStyle: React.CSSProperties = {
     width,
     height: isCircle ? width : height, // For circles, height = width
@@ -119,13 +119,16 @@ export default function SkeletonLoader({
       `}</style>
 
       <div style={containerStyle} className={className}>
-        {Array.from({ length: lines }).map((_, index) => (
+        {Array.from({ length: lines }).map((_, index) => ({
+          id: `skeleton-line-${index}`,
+          lineIndex: index,
+        })).map(({ id, lineIndex }) => (
           <div
-            key={`skeleton-${index}`}
+            key={id}
             style={{
               ...skeletonStyle,
               // Optional: make last line slightly narrower
-              width: index === lines - 1 ? `${65 + (index % 20)}%` : width,
+              width: lineIndex === lines - 1 ? `${65 + (lineIndex % 20)}%` : width,
             }}
             aria-hidden="true"
           />
