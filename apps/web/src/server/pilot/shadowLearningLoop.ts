@@ -99,6 +99,22 @@ export async function processLearningSignal(
     }
   }
 
+  // ── Step 3.5: Auto-promote/demote library entries based on effectiveness ──
+  if (metricsRecorded) {
+    try {
+      const action = await promoteOrDemoteLibraryEntry(
+        signal.organizationId,
+        signal.topic,
+        effectivenessScore,
+      );
+      if (action) {
+        actions.push(action);
+      }
+    } catch (err) {
+      actions.push(`Library promotion/demotion skipped: ${err}`);
+    }
+  }
+
   // ── Step 4: Update communication style preference ─────────────────────────
   if (signal.outcome === 'thumbs_up' && signal.responseText) {
     try {
@@ -161,6 +177,51 @@ async function extractAndStoreFacts(signal: LearningSignal): Promise<number> {
   }
 
   return factsToStore.length;
+}
+
+// ─── Library Promotion/Demotion ──────────────────────────────────────────────
+
+/**
+ * Auto-promote library entries with >75% effectiveness, demote <40%.
+ * Updates shadow_library_review_flags with promotion/demotion action.
+ */
+async function promoteOrDemoteLibraryEntry(
+  organizationId: string,
+  topic: string,
+  effectivenessScore: number,
+): Promise<string | null> {
+  if (effectivenessScore >= 0.75) {
+    // Promote: mark for promotion in library flags
+    await query(
+      `INSERT INTO pilot.shadow_library_review_flags (
+         organization_id, topic, session_type, outcome_signal,
+         flag_count, flagged_at
+       ) VALUES ($1, $2, 'auto', 'promote', 1, NOW())
+       ON CONFLICT (organization_id, topic)
+       DO UPDATE SET
+         flag_count = pilot.shadow_library_review_flags.flag_count + 1,
+         last_flagged_at = NOW(),
+         latest_outcome_signal = 'promote'`,
+      [organizationId, topic],
+    );
+    return `Library entry promoted for topic '${topic}' (effectiveness: ${(effectivenessScore * 100).toFixed(0)}%)`;
+  } else if (effectivenessScore < 0.4) {
+    // Demote: mark for demotion
+    await query(
+      `INSERT INTO pilot.shadow_library_review_flags (
+         organization_id, topic, session_type, outcome_signal,
+         flag_count, flagged_at
+       ) VALUES ($1, $2, 'auto', 'demote', 1, NOW())
+       ON CONFLICT (organization_id, topic)
+       DO UPDATE SET
+         flag_count = pilot.shadow_library_review_flags.flag_count + 1,
+         last_flagged_at = NOW(),
+         latest_outcome_signal = 'demote'`,
+      [organizationId, topic],
+    );
+    return `Library entry demoted for topic '${topic}' (effectiveness: ${(effectivenessScore * 100).toFixed(0)}%)`;
+  }
+  return null;
 }
 
 // ─── Library Flag ─────────────────────────────────────────────────────────────

@@ -47,6 +47,15 @@ const GENERIC_UNSUPPORTED_REPLY = 'If this question needs a sourced answer, I sh
 
 const HEAVY_BAG_ELIGIBLE_ROLES = new Set(['coach', 'admin', 'organization_admin', 'platform_owner', 'staff']);
 
+interface ExplainabilityChain {
+  confidence: number; // 0-100, capped at 95%
+  confidenceLevel: '🟢 High' | '🟡 Moderate' | '🟠 Low' | '🔴 Speculative';
+  reasoning: string;
+  evidenceCount: number;
+  disclaimers: string[];
+  alternatives?: string[];
+}
+
 interface ShadowAIResult {
   success: boolean;
   response: string;
@@ -56,6 +65,7 @@ interface ShadowAIResult {
   async?: boolean;
   jobId?: string;
   error?: string;
+  explainability?: ExplainabilityChain;
 }
 
 // Module-level: returns 'created' or 'draft' based on backend availability
@@ -514,28 +524,30 @@ function ShadowChatPageContent() {
                 >
                   <p className="text-xs leading-6">{msg.text}</p>
                   {msg.tier ? (
-                    <div className="mt-2 flex items-center justify-between gap-2">
-                      <p className="text-[9px] text-[#6a5a4a]">
-                        {msg.tier === 'heavy_bag' ? '🥊 Heavy Bag' : '⚡ Quick Round'}
-                        {msg.profileTier ? ` · ${msg.profileTier.charAt(0).toUpperCase()}${msg.profileTier.slice(1)}` : ''}
-                        {msg.isAsync ? ' · Processing...' : ''}
-                      </p>
-                      {!msg.feedbackSent ? (
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() => sendFeedback(msg.id, true, msg.tier, msg.tier)}
-                            className="border border-[#3a2a2a] px-2 py-0.5 text-[9px] text-[#6a5a4a] hover:border-[#4a8a4a] hover:text-[#4a8a4a] transition"
-                            title="Helpful"
-                          >&#x1F44D;</button>
-                          <button
-                            onClick={() => sendFeedback(msg.id, false, msg.tier, msg.tier)}
-                            className="border border-[#3a2a2a] px-2 py-0.5 text-[9px] text-[#6a5a4a] hover:border-[#dc2626] hover:text-[#dc2626] transition"
-                            title="Not helpful"
-                          >&#x1F44E;</button>
-                        </div>
-                      ) : (
-                        <p className="text-[9px] text-[#4a5a4a] font-mono">Feedback sent</p>
-                      )}
+                    <div className="mt-3 space-y-2 border-t border-[#5a4a3a] pt-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[9px] text-[#6a5a4a]">
+                          {msg.tier === 'heavy_bag' ? '🥊 Heavy Bag' : '⚡ Quick Round'}
+                          {msg.profileTier ? ` · Tier: ${msg.profileTier === 'bronze' ? '🥉' : msg.profileTier === 'silver' ? '🥈' : '🥇'} ${msg.profileTier.charAt(0).toUpperCase()}${msg.profileTier.slice(1)}` : ''}
+                          {msg.isAsync ? ' · Processing...' : ''}
+                        </p>
+                        {!msg.feedbackSent ? (
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => sendFeedback(msg.id, true, msg.tier, msg.tier)}
+                              className="border border-[#3a2a2a] px-2 py-0.5 text-[9px] text-[#6a5a4a] hover:border-[#4a8a4a] hover:text-[#4a8a4a] transition"
+                              title="Helpful"
+                            >&#x1F44D;</button>
+                            <button
+                              onClick={() => sendFeedback(msg.id, false, msg.tier, msg.tier)}
+                              className="border border-[#3a2a2a] px-2 py-0.5 text-[9px] text-[#6a5a4a] hover:border-[#dc2626] hover:text-[#dc2626] transition"
+                              title="Not helpful"
+                            >&#x1F44E;</button>
+                          </div>
+                        ) : (
+                          <p className="text-[9px] text-[#4a5a4a] font-mono">✓ Feedback</p>
+                        )}
+                      </div>
                     </div>
                   ) : null}
                   <p className="mt-2 text-[9px] opacity-50">{msg.timestamp}</p>

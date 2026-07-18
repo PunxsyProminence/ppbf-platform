@@ -203,6 +203,88 @@ export default function ScoutReportPage() {
           <p className="border border-[#dc2626] bg-[#1a0a0a] px-4 py-2 text-xs font-mono text-[#dc2626]">{error}</p>
         ) : null}
 
+        {/* METRICS DASHBOARD */}
+        {scoreboard ? (
+          <section className="border-2 border-[#8b4444] bg-[#151515] p-5 space-y-4">
+            <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[#d4a574]">Metrics Dashboard — {scoreboard.period}</p>
+
+            {/* Tier Distribution */}
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs font-mono text-[#b0a095] mb-2">Tier Distribution</p>
+                <div className="space-y-2">
+                  {[
+                    { label: '🥇 Gold', count: scoreboard.profilesAtGold, percent: ((scoreboard.profilesAtGold / Math.max(scoreboard.profilesAtGold + scoreboard.profilesAtSilver + scoreboard.profilesAtBronze, 1)) * 100).toFixed(0) },
+                    { label: '🥈 Silver', count: scoreboard.profilesAtSilver, percent: ((scoreboard.profilesAtSilver / Math.max(scoreboard.profilesAtGold + scoreboard.profilesAtSilver + scoreboard.profilesAtBronze, 1)) * 100).toFixed(0) },
+                    { label: '🥉 Bronze', count: scoreboard.profilesAtBronze, percent: ((scoreboard.profilesAtBronze / Math.max(scoreboard.profilesAtGold + scoreboard.profilesAtSilver + scoreboard.profilesAtBronze, 1)) * 100).toFixed(0) },
+                  ].map(({ label, count, percent }) => (
+                    <div key={label} className="space-y-1">
+                      <div className="flex justify-between text-[9px] text-[#b0a095]">
+                        <span>{label} {count} users</span>
+                        <span>{percent}%</span>
+                      </div>
+                      <div className="h-1.5 bg-[#0f0f0f] border border-[#3a2a2a] overflow-hidden">
+                        <div
+                          className="h-full bg-[#d4a574]"
+                          style={{ width: `${percent}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Effectiveness */}
+              <div>
+                <p className="text-xs font-mono text-[#b0a095] mb-2">Effectiveness Metrics</p>
+                <div className="space-y-2">
+                  {[
+                    { label: 'Positive Outcomes', value: scoreboard.positiveOutcomes, color: '#4a8a4a' },
+                    { label: 'Negative Outcomes', value: scoreboard.negativeOutcomes, color: '#dc2626' },
+                    { label: 'Positive Rate', value: `${Math.round(scoreboard.positiveRate * 100)}%`, color: '#d4a574' },
+                  ].map(({ label, value, color }) => (
+                    <div key={label} className="flex justify-between border border-[#3a2a2a] bg-[#0f0f0f] px-3 py-2">
+                      <span className="text-[9px] text-[#b0a095]">{label}</span>
+                      <span className="text-[9px] font-mono font-bold" style={{ color }}>{value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Engagement Summary */}
+            <div className="border-t border-[#3a2a2a] pt-3">
+              <p className="text-xs font-mono text-[#b0a095] mb-2">Engagement Summary</p>
+              <div className="grid md:grid-cols-3 gap-2">
+                {[
+                  { label: 'Total Interactions', value: scoreboard.totalInteractions },
+                  { label: 'Facts Extracted', value: scoreboard.factsExtracted },
+                  { label: 'Avg per Profile', value: (scoreboard.totalInteractions / Math.max(scoreboard.profilesAtGold + scoreboard.profilesAtSilver + scoreboard.profilesAtBronze, 1)).toFixed(1) },
+                ].map(({ label, value }) => (
+                  <div key={label} className="border border-[#3a2a2a] bg-[#0f0f0f] px-3 py-2 text-center">
+                    <p className="text-[9px] text-[#8a8a8a]">{label}</p>
+                    <p className="mt-1 text-sm font-mono font-bold text-[#d4a574]">{value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Top Topics */}
+            {scoreboard.topEngagedTopics.length > 0 ? (
+              <div className="border-t border-[#3a2a2a] pt-3">
+                <p className="text-xs font-mono text-[#b0a095] mb-2">Top Engaged Topics</p>
+                <div className="flex flex-wrap gap-2">
+                  {scoreboard.topEngagedTopics.map((topic, idx) => (
+                    <span key={topic} className="border border-[#5a4a3a] bg-[#0f0f0f] px-3 py-1 text-[9px] font-mono text-[#d4a574]">
+                      #{idx + 1} {topic}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
         {/* THE SCORECARD */}
         {scoreboard ? (
           <section className="border-2 border-[#8b4444] bg-[#151515] p-5">
