@@ -12,6 +12,11 @@ interface ShadowMessage {
   type: 'user' | 'shadow';
   text: string;
   timestamp: string;
+  tier?: 'quick_round' | 'heavy_bag';
+  profileTier?: 'bronze' | 'silver' | 'gold';
+  modelUsed?: string;
+  isAsync?: boolean;
+  jobId?: string;
 }
 
 interface ShadowResearchReport {
@@ -38,6 +43,8 @@ interface ShadowLibraryClaimApiResponse {
 }
 
 const GENERIC_UNSUPPORTED_REPLY = 'If this question needs a sourced answer, I should either answer from verified evidence or create a research requirement. Try asking about doctrine, evidence, readiness, recovery, technique, or organizational learning.';
+
+const HEAVY_BAG_ELIGIBLE_ROLES = new Set(['coach', 'admin', 'organization_admin', 'platform_owner', 'staff']);
 
 function formatTimestamp() {
   return new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -223,6 +230,8 @@ function ShadowChatPageContent() {
     },
   ]);
   const [userInput, setUserInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [heavyBagMode, setHeavyBagMode] = useState(false);
   const [reports, setReports] = useState<ShadowResearchReport[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -237,12 +246,13 @@ function ShadowChatPageContent() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  function addMessage(type: 'user' | 'shadow', text: string) {
+  function addMessage(type: 'user' | 'shadow', text: string, meta?: Partial<Pick<ShadowMessage, 'tier' | 'profileTier' | 'modelUsed' | 'isAsync' | 'jobId'>>) {
     const newMessage: ShadowMessage = {
       id: Date.now().toString(),
       type,
       text,
       timestamp: formatTimestamp(),
+      ...meta,
     };
     setMessages((prev) => [...prev, newMessage]);
   }
@@ -325,31 +335,72 @@ function ShadowChatPageContent() {
     }
   }
 
+  async function callShadowAI(rawQuestion: string): Promise<void> {
+    const response = await fetch(`${apiBase()}/api/pilot/shadow/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        message: rawQuestion,
+        tier: heavyBagMode ? 'heavy_bag' : undefined,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`SHADOW AI error: ${response.status}`);
+    }
+
+    const data = (await response.json()) as {
+      success: boolean;
+      response: string;
+      tier?: 'quick_round' | 'heavy_bag';
+      profileTier?: 'bronze' | 'silver' | 'gold';
+      modelUsed?: string;
+      async?: boolean;
+      jobId?: string;
+      error?: string;
+    };
+
+    if (data.async && data.jobId) {
+      addMessage('shadow',
+        `Your Heavy Bag Session is queued and processing in the background. Job ID: ${data.jobId}`,
+        { tier: 'heavy_bag', isAsync: true, jobId: data.jobId }
+      );
+    } else {
+      addMessage('shadow',
+        data.response || data.error || 'SHADOW encountered an error.',
+        { tier: data.tier, profileTier: data.profileTier, modelUsed: data.modelUsed }
+      );
+    }
+  }
+
   async function handleSendMessage(e: SyntheticEvent) {
     e.preventDefault();
-    if (!userInput.trim()) return;
+    if (!userInput.trim() || isLoading) return;
 
     const rawQuestion = userInput.trim();
     addMessage('user', rawQuestion);
-    const question = userInput.toLowerCase();
     setUserInput('');
+    setIsLoading(true);
 
     try {
-      const payload = await requestLibraryClaim(rawQuestion);
-      const libraryReply = payload.claim.answer;
-      addMessage('shadow', libraryReply);
-
-      if (payload.claim.researchRequirementId) {
-        recordBackendResearchReport(rawQuestion, payload.claim.researchRequirementId, payload.claim.evidence.length);
-      }
-
-      if (payload.claim.status === 'unsupported') {
-        addMessage('shadow', 'The Library could not support this claim strongly enough, so SHADOW converted the gap into research work rather than guessing.');
-      }
+      await callShadowAI(rawQuestion);
     } catch {
-      const reply = getShadowReply(mode, question, context, subject);
-      addMessage('shadow', reply);
-      await createResearchReport(rawQuestion, question, reply);
+      // Fallback: try library claim, then static reply
+      const question = rawQuestion.toLowerCase();
+      try {
+        const payload = await requestLibraryClaim(rawQuestion);
+        addMessage('shadow', payload.claim.answer);
+        if (payload.claim.researchRequirementId) {
+          recordBackendResearchReport(rawQuestion, payload.claim.researchRequirementId, payload.claim.evidence.length);
+        }
+      } catch {
+        const reply = getShadowReply(mode, question, context, subject);
+        addMessage('shadow', reply);
+        await createResearchReport(rawQuestion, question, reply);
+      }
+    } finally {
+      setIsLoading(false);
     }
   }
 
@@ -439,15 +490,43 @@ function ShadowChatPageContent() {
                   }`}
                 >
                   <p className="text-xs leading-6">{msg.text}</p>
+                  {msg.tier ? (
+                    <p className="mt-1 text-[9px] text-[#6a5a4a]">
+                      {msg.tier === 'heavy_bag' ? '🥊 Heavy Bag' : '⚡ Quick Round'}
+                      {msg.profileTier ? ` · ${msg.profileTier.charAt(0).toUpperCase()}${msg.profileTier.slice(1)}` : ''}
+                      {msg.isAsync ? ' · Processing...' : ''}
+                    </p>
+                  ) : null}
                   <p className="mt-2 text-[9px] opacity-50">{msg.timestamp}</p>
                 </div>
               </div>
             ))}
+            {isLoading ? (
+              <div className="flex justify-start">
+                <div className="border-2 border-[#5a4a3a] bg-[#1a1a1a] px-4 py-3">
+                  <p className="text-xs text-[#8a8a8a] font-mono">SHADOW {heavyBagMode ? '🥊 Heavy Bag' : '⚡'} processing...</p>
+                </div>
+              </div>
+            ) : null}
             <div ref={messagesEndRef} />
           </div>
 
           {/* Input */}
           <form onSubmit={handleSendMessage} className="flex gap-2">
+            {HEAVY_BAG_ELIGIBLE_ROLES.has(userRole) ? (
+              <button
+                type="button"
+                onClick={() => setHeavyBagMode((v) => !v)}
+                title={heavyBagMode ? 'Switch to Quick Round' : 'Switch to Heavy Bag Session (deep reasoning)'}
+                className={`border-2 px-3 py-3 text-[9px] font-mono font-bold uppercase tracking-[0.1em] transition ${
+                  heavyBagMode
+                    ? 'border-[#dc2626] bg-[#3a1a1a] text-[#dc2626]'
+                    : 'border-[#5a4a3a] bg-[#1a1a1a] text-[#6a5a4a] hover:border-[#8b4444]'
+                }`}
+              >
+                {heavyBagMode ? '🥊' : '⚡'}
+              </button>
+            ) : null}
             <input
               type="text"
               value={userInput}
@@ -457,9 +536,10 @@ function ShadowChatPageContent() {
             />
             <button
               type="submit"
-              className="border-2 border-[#8b4444] bg-[#2a1a1a] px-6 py-3 text-xs font-mono font-bold text-[#dc2626] transition hover:border-[#dc2626] hover:bg-[#3a2a2a] hover:text-[#ff6b6b]"
+              disabled={isLoading}
+              className="border-2 border-[#8b4444] bg-[#2a1a1a] px-6 py-3 text-xs font-mono font-bold text-[#dc2626] transition hover:border-[#dc2626] hover:bg-[#3a2a2a] hover:text-[#ff6b6b] disabled:opacity-50"
             >
-              Ask
+              {isLoading ? '...' : 'Ask'}
             </button>
           </form>
         </section>

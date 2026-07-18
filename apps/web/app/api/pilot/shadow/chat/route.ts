@@ -4,6 +4,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/src/server/pilot/db';
+import { requirePrincipal, jsonError } from '@/src/server/pilot/http';
+import { requireRole } from '@/src/server/pilot/access';
 import {
   validateShadowRequest,
   validateShadowResponse,
@@ -24,7 +26,7 @@ export interface ShadowChatRequest {
   message: string;
   athleteId?: string;
   context?: string;
-  organizationId: string;
+  organizationId?: string; // Resolved from session cookie — optional override
   tier?: ShadowTier; // Optional manual tier override (coaches/admins only)
   sessionType?: string; // Optional: 'film_study' | 'scout_report' | 'board_summary'
   preferAsync?: boolean; // Client can request async for heavy sessions
@@ -168,27 +170,16 @@ async function routeLlmCall(ctx: LlmRouteContext): Promise<LlmRouteResult> {
   };
 }
 
+export const runtime = 'nodejs';
+
 export async function POST(request: NextRequest): Promise<NextResponse<ShadowChatResponse>> {
   try {
-    // Extract headers for authentication
-    const userId = request.headers.get('x-user-id');
-    const userRole = request.headers.get('x-user-role');
-    const organizationId = request.headers.get('x-org-id');
-
-    if (!userId || !userRole || !organizationId) {
-      return NextResponse.json(
-        {
-          success: false,
-          response: '',
-          messageId: '',
-          createdAt: '',
-          filtered: false,
-          requiresHumanReview: false,
-          error: 'Missing authentication headers',
-        },
-        { status: 401 },
-      );
-    }
+    // Authenticate via session cookie (consistent with all other SHADOW routes)
+    const principal = await requirePrincipal(request);
+    requireRole(principal, ['admin', 'coach', 'athlete', 'parent', 'organization_admin', 'staff', 'volunteer', 'platform_owner']);
+    const userId = principal.accountId;
+    const userRole = principal.role;
+    const organizationId = principal.organizationId;
 
     const body: ShadowChatRequest = await request.json();
     const { message, athleteId, tier: userRequestedTier, preferAsync = false } = body;
@@ -320,17 +311,6 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       jobId: asyncJobId,
     });
   } catch (error) {
-    return NextResponse.json(
-      {
-        success: false,
-        response: 'An error occurred processing your request',
-        messageId: `msg_${Date.now()}`,
-        createdAt: new Date().toISOString(),
-        filtered: false,
-        requiresHumanReview: true,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      },
-      { status: 500 },
-    );
+    return jsonError(error) as NextResponse<ShadowChatResponse>;
   }
 }
