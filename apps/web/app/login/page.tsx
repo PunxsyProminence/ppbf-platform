@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, type ReactElement } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useEffect, useState, type ReactElement } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { type ClubRole } from '@/components/roleRoutes';
 import { apiBase } from '@/lib/apiBase';
@@ -40,6 +40,7 @@ function AnnouncementCard({ item }: Readonly<{ item: LoginAnnouncement }>) {
 interface LoginTabProps {
   announcements: LoginAnnouncement[];
   signInWithMicrosoft: () => void;
+  authErrorMessage: string;
 }
 
 function LoginTabContent(props: Readonly<LoginTabProps>) {
@@ -55,6 +56,12 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
       </div>
 
       <p className="text-sm leading-6 text-[var(--gray-dark)]">Sign in with Microsoft to access the platform admin tools.</p>
+
+      {props.authErrorMessage ? (
+        <p className="border border-[var(--red-primary)] bg-[var(--canvas-tan-light)] px-3 py-2 text-sm text-[var(--red-primary)]">
+          {props.authErrorMessage}
+        </p>
+      ) : null}
 
       <button
         type="button"
@@ -218,8 +225,9 @@ function AnnouncementTabContent(props: Readonly<AnnouncementTabProps>) {
   );
 }
 
-export default function LoginPage() {
+function LoginPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [selectedRole, setSelectedRole] = useState<ClubRole>('athlete');
   const [activeTab, setActiveTab] = useState<ActiveTab>('login');
   const [announcements, setAnnouncements] = useState<LoginAnnouncement[]>([DEFAULT_ANNOUNCEMENT]);
@@ -234,6 +242,27 @@ export default function LoginPage() {
   const [registerError, setRegisterError] = useState('');
   const [registerSuccess, setRegisterSuccess] = useState('');
   const [registerBusy, setRegisterBusy] = useState(false);
+
+  const authErrorMessage = (() => {
+    const error = searchParams.get('error');
+    if (!error) {
+      return '';
+    }
+
+    if (error === 'not-invited') {
+      return 'This Microsoft account is not invited or not active.';
+    }
+
+    if (error === 'auth-state-expired') {
+      return 'Your sign-in session expired or the browser blocked the login cookies. Please try again.';
+    }
+
+    if (error === 'auth-forbidden') {
+      return 'This Microsoft account is not allowed to sign in as platform owner.';
+    }
+
+    return 'Microsoft sign-in failed. Please try again.';
+  })();
 
   useEffect(() => {
     const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
@@ -415,6 +444,7 @@ export default function LoginPage() {
       <LoginTabContent
         announcements={announcements}
         signInWithMicrosoft={microsoftSignIn}
+        authErrorMessage={authErrorMessage}
       />
     ),
     register: (
@@ -499,5 +529,13 @@ export default function LoginPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<main className="min-h-screen bg-[var(--canvas-tan)]" />}>
+      <LoginPageContent />
+    </Suspense>
   );
 }

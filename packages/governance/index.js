@@ -44,7 +44,7 @@ export function showAdminPinEntry() {
     const cancel = document.getElementById('pinCancelBtn');
 
     function cleanup() {
-        if (zone && zone.parentNode) zone.parentNode.removeChild(zone);
+        zone?.remove();
     }
 
     function tryUnlock() {
@@ -60,12 +60,13 @@ export function showAdminPinEntry() {
         if (val === RECONCILED_PIN_KEY) {
             performAdminUnlock();
             cleanup();
-        } else {
-            if (input) {
-                input.style.borderColor = '#e53e3e';
-                input.value = '';
-                setTimeout(function() { if (input) input.style.borderColor = '#4a5568'; }, 800);
-            }
+            return;
+        }
+
+        if (input) {
+            input.style.borderColor = '#e53e3e';
+            input.value = '';
+            setTimeout(function() { if (input) input.style.borderColor = '#4a5568'; }, 800);
         }
     }
 

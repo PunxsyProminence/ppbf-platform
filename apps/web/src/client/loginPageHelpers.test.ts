@@ -6,8 +6,36 @@ import {
 } from './loginPageHelpers';
 
 describe('login page helpers', () => {
-  test('builds the Microsoft start URL from the API base', () => {
+  test('builds the Microsoft start URL from the API base when origin matches', () => {
+    const assign = global.window;
+    Object.defineProperty(global, 'window', {
+      value: { location: { origin: 'http://localhost:3000' } },
+      writable: true,
+    });
+
     expect(getMicrosoftStartUrl('http://localhost:3000')).toBe('http://localhost:3000/api/pilot/auth/microsoft/start');
+
+    Object.defineProperty(global, 'window', {
+      value: assign,
+      writable: true,
+    });
+  });
+
+  test('falls back to same-origin Microsoft start URL when configured API base is cross-origin', () => {
+    const assign = global.window;
+    Object.defineProperty(global, 'window', {
+      value: { location: { origin: 'https://www.punxsyprominence.org' } },
+      writable: true,
+    });
+
+    expect(getMicrosoftStartUrl('https://app-ppbf-production.purpledesert-3a75d580.eastus.azurecontainerapps.io')).toBe(
+      '/api/pilot/auth/microsoft/start',
+    );
+
+    Object.defineProperty(global, 'window', {
+      value: assign,
+      writable: true,
+    });
   });
 
   test('returns the active and inactive tab button classes', () => {

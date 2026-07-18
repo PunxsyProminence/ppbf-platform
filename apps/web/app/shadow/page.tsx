@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useRef, useState, type SyntheticEvent } from 'react';
+import { Suspense, useEffect, useRef, useState, type ReactElement, type SyntheticEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { readRoleSession, clearRoleSession } from '@/components/roleSession';
@@ -87,12 +87,21 @@ async function postResearchRequirement(
 }
 
 async function fetchLibraryClaim(
-  mode: string,
+  mode: 'master' | 'scoped',
   subject: string,
   rawQuestion: string,
   apiBaseUrl: string,
 ): Promise<ShadowLibraryClaimApiResponse> {
-  const scope = mode === 'master' ? 'master' : subject ? 'subject' : 'scoped';
+  let scope: 'master' | 'subject' | 'scoped';
+
+  if (mode === 'master') {
+    scope = 'master';
+  } else if (subject) {
+    scope = 'subject';
+  } else {
+    scope = 'scoped';
+  }
+
   const res = await fetch(`${apiBaseUrl}/api/pilot/shadow/library/claims`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -276,18 +285,6 @@ function getShadowReply(mode: 'master' | 'scoped', question: string, context: st
   return getGeneralShadowReply(question, context);
 }
 
-function getActiveScope(mode: 'master' | 'scoped', subject: string): 'master' | 'scoped' | 'subject' {
-  if (mode === 'master') {
-    return 'master';
-  }
-
-  if (subject) {
-    return 'subject';
-  }
-
-  return 'scoped';
-}
-
 function buildHeading(mode: 'master' | 'scoped', subject: string) {
   if (mode === 'master') {
     return { heading: 'MASTER SHADOW', intro: 'Organizational intelligence, doctrine, and learning oversight.', scopeSummary: 'Master SHADOW for admin/organizational intelligence.' };
@@ -296,6 +293,65 @@ function buildHeading(mode: 'master' | 'scoped', subject: string) {
     return { heading: `${subject.toUpperCase()} SHADOW`, intro: `Subject-specific learning scope for ${subject}.`, scopeSummary: `${subject} subject scope.` };
   }
   return { heading: 'SHADOW', intro: 'Scoped role-aware SHADOW conversation.', scopeSummary: 'Role-scoped SHADOW view.' };
+}
+
+function getModeHeadingLabel(mode: 'master' | 'scoped'): string {
+  return mode === 'master' ? 'The Architect' : 'The Scout';
+}
+
+function getProfileTierLabel(profileTier?: ShadowMessage['profileTier']): string {
+  if (!profileTier) {
+    return '';
+  }
+
+  const tierEmojiMap: Record<string, string> = { bronze: '🥉', silver: '🥈', gold: '🥇' };
+  const tierEmoji = tierEmojiMap[profileTier] || '🥇';
+  const tierLabel = profileTier.charAt(0).toUpperCase() + profileTier.slice(1);
+  return ` · Tier: ${tierEmoji} ${tierLabel}`;
+}
+
+function ShadowResearchReportsPanel(props: Readonly<{
+  reports: ShadowResearchReport[];
+  userRole: string;
+}>): ReactElement | null {
+  if (props.reports.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="mb-4 border-2 border-[#8b4444] bg-[#151515] p-4 text-xs text-[#cfbfae]">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="font-mono uppercase tracking-[0.14em] text-[#d4a574]">Research Reports This Session</p>
+          <p className="mt-2">Created reports go to Research Intake when backend auth is available. Otherwise they remain session drafts here.</p>
+        </div>
+        <Link
+          href="/research"
+          className="border-2 border-[#d4a574] bg-[#1f1f1f] px-3 py-2 text-[10px] font-mono uppercase tracking-[0.12em] text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#2a1f1f]"
+        >
+          Open Research Intake
+        </Link>
+        {HEAVY_BAG_ELIGIBLE_ROLES.has(props.userRole) ? (
+          <Link
+            href="/shadow/scout"
+            className="border-2 border-[#5a4a3a] bg-[#1f1f1f] px-3 py-2 text-[10px] font-mono uppercase tracking-[0.12em] text-[#b0a095] transition hover:border-[#8b4444] hover:text-[#e8d7c6]"
+          >
+            Scout Reports →
+          </Link>
+        ) : null}
+      </div>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        {props.reports.map((report) => (
+          <article key={report.id} className="border border-[#5a4a3a] bg-[#0f0f0f] p-3">
+            <p className="text-[10px] font-mono uppercase tracking-[0.12em] text-[#d4a574]">{report.status === 'created' ? 'Backend Filed' : 'Session Draft'}</p>
+            <p className="mt-2 text-[12px] leading-5 text-[#e8d7c6]">{report.question}</p>
+            <p className="mt-2 text-[11px] text-[#b0a095]">{report.researchRequirement}</p>
+            <p className="mt-2 text-[11px] text-[#8a8a8a]">{report.createdAt}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function ShadowChatPageContent() {
@@ -436,7 +492,7 @@ function ShadowChatPageContent() {
       <header className="border-b-4 border-[#8b4444] bg-[#1a1a1a] px-4 py-4 md:px-8 md:py-6">
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-4">
           <div>
-            <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-[#dc2626]">{mode === 'master' ? 'The Architect' : 'The Scout'}</p>
+            <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-[#dc2626]">{getModeHeadingLabel(mode)}</p>
             <h1 className="font-display text-2xl font-black tracking-tight text-[#e8d7c6] md:text-3xl">{heading}</h1>
             <p className="mt-1 text-xs text-[#b0a095]">{intro}</p>
           </div>
@@ -472,40 +528,7 @@ function ShadowChatPageContent() {
           </div>
         </section>
 
-        {reports.length > 0 ? (
-          <section className="mb-4 border-2 border-[#8b4444] bg-[#151515] p-4 text-xs text-[#cfbfae]">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="font-mono uppercase tracking-[0.14em] text-[#d4a574]">Research Reports This Session</p>
-                <p className="mt-2">Created reports go to Research Intake when backend auth is available. Otherwise they remain session drafts here.</p>
-              </div>
-              <Link
-                href="/research"
-                className="border-2 border-[#d4a574] bg-[#1f1f1f] px-3 py-2 text-[10px] font-mono uppercase tracking-[0.12em] text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#2a1f1f]"
-              >
-                Open Research Intake
-              </Link>
-              {HEAVY_BAG_ELIGIBLE_ROLES.has(userRole) ? (
-                <Link
-                  href="/shadow/scout"
-                  className="border-2 border-[#5a4a3a] bg-[#1f1f1f] px-3 py-2 text-[10px] font-mono uppercase tracking-[0.12em] text-[#b0a095] transition hover:border-[#8b4444] hover:text-[#e8d7c6]"
-                >
-                  Scout Reports →
-                </Link>
-              ) : null}
-            </div>
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
-              {reports.map((report) => (
-                <article key={report.id} className="border border-[#5a4a3a] bg-[#0f0f0f] p-3">
-                  <p className="text-[10px] font-mono uppercase tracking-[0.12em] text-[#d4a574]">{report.status === 'created' ? 'Backend Filed' : 'Session Draft'}</p>
-                  <p className="mt-2 text-[12px] leading-5 text-[#e8d7c6]">{report.question}</p>
-                  <p className="mt-2 text-[11px] text-[#b0a095]">{report.researchRequirement}</p>
-                  <p className="mt-2 text-[11px] text-[#8a8a8a]">{report.createdAt}</p>
-                </article>
-              ))}
-            </div>
-          </section>
-        ) : null}
+        <ShadowResearchReportsPanel reports={reports} userRole={userRole} />
 
         {/* CHAT BOX */}
         <section className="border-4 border-[#8b4444] bg-[#0f0f0f] p-6 shadow-2xl shadow-black/60">
@@ -529,12 +552,7 @@ function ShadowChatPageContent() {
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-[9px] text-[#6a5a4a]">
                           {msg.tier === 'heavy_bag' ? '🥊 Heavy Bag' : '⚡ Quick Round'}
-                          {msg.profileTier ? (() => {
-                            const tierEmojiMap: Record<string, string> = { bronze: '🥉', silver: '🥈', gold: '🥇' };
-                            const tierEmoji = tierEmojiMap[msg.profileTier] || '🥇';
-                            const tierLabel = msg.profileTier.charAt(0).toUpperCase() + msg.profileTier.slice(1);
-                            return ` · Tier: ${tierEmoji} ${tierLabel}`;
-                          })() : ''}
+                          {getProfileTierLabel(msg.profileTier)}
                           {msg.isAsync ? ' · Processing...' : ''}
                         </p>
                         {!msg.feedbackSent ? (

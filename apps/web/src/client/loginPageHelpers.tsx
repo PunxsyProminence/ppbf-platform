@@ -32,7 +32,25 @@ export function validateAnnouncementPublishInput(params: {
 }
 
 export function getMicrosoftStartUrl(apiBaseUrl: string): string {
-  return `${apiBaseUrl}/api/pilot/auth/microsoft/start`;
+  const startPath = '/api/pilot/auth/microsoft/start';
+
+  if (typeof window !== 'undefined' && apiBaseUrl.trim()) {
+    try {
+      const configuredBase = new URL(apiBaseUrl, window.location.origin);
+      if (configuredBase.origin !== window.location.origin) {
+        return startPath;
+      }
+      return `${configuredBase.origin}${startPath}`;
+    } catch {
+      return startPath;
+    }
+  }
+
+  if (!apiBaseUrl.trim()) {
+    return startPath;
+  }
+
+  return `${apiBaseUrl}${startPath}`;
 }
 
 export function signInWithMicrosoft(apiBaseUrl: string): void {
