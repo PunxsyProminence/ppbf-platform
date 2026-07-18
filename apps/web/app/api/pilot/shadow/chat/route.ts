@@ -73,7 +73,7 @@ async function callAzureOpenAI(systemPrompt: string, userMessage: string): Promi
           { role: 'user', content: userMessage },
         ],
         temperature: 0.7,
-        max_completion_tokens: 2048,
+        max_completion_tokens: 4096,
       }),
     });
 
