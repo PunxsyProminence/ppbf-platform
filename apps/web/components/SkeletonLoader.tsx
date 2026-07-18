@@ -74,7 +74,7 @@ export default function SkeletonLoader({
   isCircle = false,
   disableAnimation = false,
   className = '',
-}: SkeletonLoaderProps): React.ReactElement {
+}: readonly SkeletonLoaderProps): React.ReactElement {
   const skeletonStyle: React.CSSProperties = {
     width,
     height: isCircle ? width : height, // For circles, height = width
@@ -121,14 +121,13 @@ export default function SkeletonLoader({
       <div style={containerStyle} className={className}>
         {Array.from({ length: lines }).map((_, index) => (
           <div
-            key={index}
+            key={`skeleton-${index}`}
             style={{
               ...skeletonStyle,
               // Optional: make last line slightly narrower
               width: index === lines - 1 ? `${65 + (index % 20)}%` : width,
             }}
             aria-hidden="true"
-            role="status"
           />
         ))}
       </div>

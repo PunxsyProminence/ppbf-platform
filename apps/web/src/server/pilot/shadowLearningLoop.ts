@@ -376,7 +376,7 @@ export async function getScorecard(
     negativeOutcomes: negative,
     positiveRate: total > 0 ? positive / total : 0,
     factsExtracted: events?.facts_extracted ?? 0,
-    libraryFlagsRaised: 0, // TODO: query shadow_library_review_flags
+    libraryFlagsRaised: (await query('SELECT COUNT(*) as count FROM shadow_library_review_flags WHERE organization_id = $1', [organizationId]))[0]?.count ?? 0,
     topEngagedTopics: topTopics.map((r) => r.topic),
     profilesAtGold: profiles?.gold ?? 0,
     profilesAtSilver: profiles?.silver ?? 0,

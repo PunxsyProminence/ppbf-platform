@@ -34,17 +34,17 @@ interface OrgJobsResponse {
 }
 
 interface ScoreboardResponse {
-  organizationId: string;
-  period: string;
-  totalInteractions: number;
-  positiveOutcomes: number;
-  negativeOutcomes: number;
-  positiveRate: number;
-  factsExtracted: number;
-  topEngagedTopics: string[];
-  profilesAtGold: number;
-  profilesAtSilver: number;
-  profilesAtBronze: number;
+  readonly organizationId: string;
+  readonly period: string;
+  readonly totalInteractions: number;
+  readonly positiveOutcomes: number;
+  readonly negativeOutcomes: number;
+  readonly positiveRate: number;
+  readonly factsExtracted: number;
+  readonly topEngagedTopics: string[];
+  readonly profilesAtGold: number;
+  readonly profilesAtSilver: number;
+  readonly profilesAtBronze: number;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -156,7 +156,11 @@ export default function ScoutReportPage() {
       });
       const data = await res.json();
       const summary = (data.results as Array<{ migration: string; status: string; error?: string }>)
-        .map((r) => `${r.status === 'ok' ? '✅' : '❌'} ${r.migration}${r.error ? `: ${r.error}` : ''}`)
+        .map((r) => {
+          const statusIcon = r.status === 'ok' ? '✅' : '❌';
+          const errorPart = r.error ? `: ${r.error}` : '';
+          return `${statusIcon} ${r.migration}${errorPart}`;
+        })
         .join('\n');
       setMigrationResult(summary);
     } catch {
@@ -346,10 +350,18 @@ export default function ScoutReportPage() {
               {scoutJobs.map((job) => (
                 <article
                   key={job.jobId}
+                  role="button"
+                  tabIndex={0}
                   className={`border bg-[#0f0f0f] p-4 cursor-pointer transition ${
                     selectedJob?.jobId === job.jobId ? 'border-[#d4a574]' : 'border-[#5a4a3a] hover:border-[#8b4444]'
                   }`}
                   onClick={() => setSelectedJob(selectedJob?.jobId === job.jobId ? null : job)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setSelectedJob(selectedJob?.jobId === job.jobId ? null : job);
+                    }
+                  }}
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div>
@@ -376,7 +388,7 @@ export default function ScoutReportPage() {
                         <div>
                           <p className="font-mono text-[#d4a574] uppercase tracking-[0.1em]">Strengths</p>
                           <ul className="mt-1 space-y-1 text-[#cfbfae]">
-                            {job.output.strengths.map((s, i) => <li key={i}>→ {s}</li>)}
+                            {job.output.strengths.map((s) => <li key={s}>→ {s}</li>)}
                           </ul>
                         </div>
                       ) : null}
@@ -384,7 +396,7 @@ export default function ScoutReportPage() {
                         <div>
                           <p className="font-mono text-[#d4a574] uppercase tracking-[0.1em]">Growth Areas</p>
                           <ul className="mt-1 space-y-1 text-[#cfbfae]">
-                            {job.output.growthAreas.map((a, i) => <li key={i}>→ {a}</li>)}
+                            {job.output.growthAreas.map((a) => <li key={a}>→ {a}</li>)}
                           </ul>
                         </div>
                       ) : null}
@@ -392,8 +404,8 @@ export default function ScoutReportPage() {
                         <div>
                           <p className="font-mono text-[#d4a574] uppercase tracking-[0.1em]">Recommended Topics</p>
                           <div className="mt-1 flex flex-wrap gap-2">
-                            {job.output.recommendedTopics.map((t, i) => (
-                              <span key={i} className="border border-[#5a4a3a] px-2 py-0.5 text-[9px] text-[#b0a095]">{t}</span>
+                            {job.output.recommendedTopics.map((t) => (
+                              <span key={t} className="border border-[#5a4a3a] px-2 py-0.5 text-[9px] text-[#b0a095]">{t}</span>
                             ))}
                           </div>
                         </div>
@@ -473,7 +485,7 @@ export default function ScoutReportPage() {
   );
 }
 
-function StatusBadge({ status }: { status: JobStatusResult['status'] }) {
+function StatusBadge({ status }: { readonly status: JobStatusResult['status'] }) {
   const styles: Record<JobStatusResult['status'], string> = {
     pending:   'text-[#8a8a8a] border-[#5a4a3a]',
     running:   'text-[#d4a574] border-[#d4a574]',
