@@ -3,13 +3,11 @@
 // Bronze = new users, Silver = developing relationship, Gold = trusted expert.
 
 import type { ShadowUserProfileRow, RememberedFact } from './shadowUserProfile';
-import type { PilotRole } from './contracts';
 
 // ─── Tier Definitions ─────────────────────────────────────────────────────────
 
 export type ProfileTier = 'bronze' | 'silver' | 'gold';
 
-export { }; // ensure module isolation
 
 export interface ProfileTierConfig {
   tier: ProfileTier;
@@ -83,69 +81,50 @@ export interface ProfileTierResult {
  *   - Recent topics count   (0–15 pts)
  *   - Open questions count  (0–15 pts) — engagement signal
  */
+function scoreInteractionCount(ic: number, reasons: string[]): number {
+  if (ic >= 50) { reasons.push(`${ic} interactions (max score)`); return 40; }
+  if (ic >= 20) { reasons.push(`${ic} interactions (mid score)`); return 25; }
+  if (ic >= 5)  { reasons.push(`${ic} interactions (early)`); return 10; }
+  reasons.push(`${ic} interactions (new user)`);
+  return 0;
+}
+
+function scoreRememberedFacts(facts: RememberedFact[], reasons: string[]): number {
+  const factCount = facts.length;
+  const highConf = facts.filter((f) => f.confidence >= 0.7).length;
+  if (highConf >= 5)                      { reasons.push(`${highConf} high-confidence facts`); return 20; }
+  if (highConf >= 2 || factCount >= 3)    { reasons.push(`${factCount} facts (${highConf} high-confidence)`); return 12; }
+  if (factCount > 0)                      { reasons.push(`${factCount} fact(s) recorded`); return 5; }
+  return 0;
+}
+
+function scoreTopics(topicCount: number, reasons: string[]): number {
+  if (topicCount >= 8) { reasons.push(`${topicCount} recent topics (broad engagement)`); return 15; }
+  if (topicCount >= 4) { reasons.push(`${topicCount} recent topics`); return 8; }
+  if (topicCount > 0)  { reasons.push(`${topicCount} recent topic(s)`); return 3; }
+  return 0;
+}
+
+function scoreOpenQuestions(qCount: number, reasons: string[]): number {
+  if (qCount >= 3) { reasons.push(`${qCount} open questions (deep engagement)`); return 15; }
+  if (qCount >= 1) { reasons.push(`${qCount} open question(s)`); return 8; }
+  return 0;
+}
+
 export function classifyProfileTier(profile: ShadowUserProfileRow): ProfileTierResult {
   const reasons: string[] = [];
   let score = 0;
 
-  // ── Factor 1: Interaction Count ──────────────────────────────────────────
-  const ic = profile.interaction_count;
-  if (ic >= 50) {
-    score += 40;
-    reasons.push(`${ic} interactions (max score)`);
-  } else if (ic >= 20) {
-    score += 25;
-    reasons.push(`${ic} interactions (mid score)`);
-  } else if (ic >= 5) {
-    score += 10;
-    reasons.push(`${ic} interactions (early)`);
-  } else {
-    reasons.push(`${ic} interactions (new user)`);
-  }
+  score += scoreInteractionCount(profile.interaction_count, reasons);
+  score += scoreRememberedFacts(profile.remembered_facts ?? [], reasons);
 
-  // ── Factor 2: Remembered Facts ───────────────────────────────────────────
-  const factCount = (profile.remembered_facts ?? []).length;
-  const highConfidenceFacts = (profile.remembered_facts ?? []).filter(
-    (f: RememberedFact) => f.confidence >= 0.7,
-  ).length;
-  if (highConfidenceFacts >= 5) {
-    score += 20;
-    reasons.push(`${highConfidenceFacts} high-confidence facts`);
-  } else if (highConfidenceFacts >= 2 || factCount >= 3) {
-    score += 12;
-    reasons.push(`${factCount} facts (${highConfidenceFacts} high-confidence)`);
-  } else if (factCount > 0) {
-    score += 5;
-    reasons.push(`${factCount} fact(s) recorded`);
-  }
-
-  // ── Factor 3: Communication Style ────────────────────────────────────────
   if (profile.communication_style && profile.communication_style !== 'unknown') {
     score += 10;
     reasons.push(`communication style known: ${profile.communication_style}`);
   }
 
-  // ── Factor 4: Recent Topics ──────────────────────────────────────────────
-  const topicCount = (profile.recent_topics ?? []).length;
-  if (topicCount >= 8) {
-    score += 15;
-    reasons.push(`${topicCount} recent topics (broad engagement)`);
-  } else if (topicCount >= 4) {
-    score += 8;
-    reasons.push(`${topicCount} recent topics`);
-  } else if (topicCount > 0) {
-    score += 3;
-    reasons.push(`${topicCount} recent topic(s)`);
-  }
-
-  // ── Factor 5: Open Questions ─────────────────────────────────────────────
-  const qCount = (profile.open_questions ?? []).length;
-  if (qCount >= 3) {
-    score += 15;
-    reasons.push(`${qCount} open questions (deep engagement)`);
-  } else if (qCount >= 1) {
-    score += 8;
-    reasons.push(`${qCount} open question(s)`);
-  }
+  score += scoreTopics((profile.recent_topics ?? []).length, reasons);
+  score += scoreOpenQuestions((profile.open_questions ?? []).length, reasons);
 
   // ── Assign Tier ──────────────────────────────────────────────────────────
   let tier: ProfileTier;

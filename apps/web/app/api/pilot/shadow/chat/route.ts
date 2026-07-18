@@ -16,7 +16,7 @@ import {
 } from '@/src/server/pilot/shadowUserProfile';
 import { classifyRequest, type ShadowTier } from '@/src/server/pilot/shadowClassifier';
 import { buildShadowContext } from '@/src/server/pilot/shadowContextBuilder';
-import { routeRequest, tierToSessionType, isAsyncSession, getModelStatus } from '@/src/server/pilot/shadowRouter';
+import { routeRequest, tierToSessionType, isAsyncSession } from '@/src/server/pilot/shadowRouter';
 import { classifyProfileTier, buildPersonalizationPrompt } from '@/src/server/pilot/shadowProfiling';
 import { executeHeavyBagSync, executeHeavyBagAsync, shouldRunAsync } from '@/src/server/pilot/shadowHeavyBag';
 
@@ -100,6 +100,72 @@ async function callAzureOpenAI(systemPrompt: string, userMessage: string): Promi
     console.error('Azure OpenAI call failed:', error);
     return { response: '', success: false };
   }
+}
+
+interface LlmRouteResult {
+  llmResponse: string;
+  resolvedAsync: boolean;
+  asyncJobId?: string;
+}
+
+interface LlmRouteContext {
+  sessionType: import('@/src/server/pilot/shadowRouter').ShadowSessionType;
+  effectiveTier: import('@/src/server/pilot/shadowClassifier').ShadowTier;
+  preferAsync: boolean;
+  highRiskClassification: string | undefined;
+  userProfile: import('@/src/server/pilot/shadowUserProfile').ShadowUserProfileRow;
+  tierResult: import('@/src/server/pilot/shadowProfiling').ProfileTierResult;
+  contextOutput: import('@/src/server/pilot/shadowContextBuilder').ShadowContextOutput;
+  classification: import('@/src/server/pilot/shadowClassifier').ShadowClassification;
+  message: string;
+  userId: string;
+  organizationId: string;
+  userRole: string;
+  athleteId: string | undefined;
+}
+
+async function routeLlmCall(ctx: LlmRouteContext): Promise<LlmRouteResult> {
+  const { sessionType, effectiveTier, preferAsync, highRiskClassification,
+    userProfile, tierResult, contextOutput, classification,
+    message, userId, organizationId, userRole, athleteId } = ctx;
+  if (highRiskClassification && highRiskClassification in FALLBACK_RESPONSES) {
+    return { llmResponse: FALLBACK_RESPONSES[highRiskClassification], resolvedAsync: false };
+  }
+
+  if (isAsyncSession(sessionType) || (shouldRunAsync(sessionType, tierResult.tier) && preferAsync)) {
+    const asyncResult = await executeHeavyBagAsync({
+      message, userId, organizationId, role: userRole as any, userProfile, tierResult,
+      contextOutput, classification, sessionType, athleteId, systemPromptBase: SHADOW_SYSTEM_PROMPT,
+    });
+    return {
+      llmResponse: `Your ${sessionType.replaceAll('_', ' ')} has been queued. Job ID: ${asyncResult.jobId}`,
+      resolvedAsync: true,
+      asyncJobId: asyncResult.jobId,
+    };
+  }
+
+  const personalization = buildPersonalizationPrompt(userProfile, tierResult);
+  const prompt = SHADOW_SYSTEM_PROMPT + personalization;
+
+  if (effectiveTier === 'heavy_bag') {
+    try {
+      const result = await executeHeavyBagSync(
+        { message, userId, organizationId, role: userRole as any, userProfile, tierResult,
+          contextOutput, classification, sessionType: 'heavy_bag', athleteId, systemPromptBase: prompt },
+        process.env.AZURE_AI_ENDPOINT ?? '',
+        process.env.AZURE_AI_KEY ?? '',
+      );
+      return { llmResponse: result.response ?? 'SHADOW Heavy Bag response unavailable.', resolvedAsync: false };
+    } catch {
+      return { llmResponse: 'SHADOW is currently unavailable. Please contact your organization for support.', resolvedAsync: false };
+    }
+  }
+
+  const azureResult = await callAzureOpenAI(prompt, message);
+  return {
+    llmResponse: azureResult.success ? azureResult.response : 'SHADOW is currently unavailable. Please contact your organization for support.',
+    resolvedAsync: false,
+  };
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse<ShadowChatResponse>> {
@@ -198,67 +264,12 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     const createdAt = new Date();
 
     // Step 6: Route to correct model via The Corner
-    let llmResponse: string;
-    let resolvedAsync = false;
-    let asyncJobId: string | undefined;
-    const { classification: highRiskClassification } = requestValidation;
-
-    if (highRiskClassification && highRiskClassification in FALLBACK_RESPONSES) {
-      // Doctrine fallback — no LLM call needed
-      llmResponse = FALLBACK_RESPONSES[highRiskClassification];
-    } else if (isAsyncSession(sessionType) || (shouldRunAsync(sessionType, tierResult.tier) && preferAsync)) {
-      // ── Async: Recovery Round / Scout Report / Board Summary ─────────────
-      const asyncResult = await executeHeavyBagAsync({
-        message,
-        userId,
-        organizationId,
-        role: userRole as any,
-        userProfile,
-        tierResult,
-        contextOutput,
-        classification,
-        sessionType,
-        athleteId,
-        systemPromptBase: SHADOW_SYSTEM_PROMPT,
-      });
-      asyncJobId = asyncResult.jobId;
-      resolvedAsync = true;
-      llmResponse = `Your ${sessionType.replace(/_/g, ' ')} has been queued. Job ID: ${asyncJobId}`;
-    } else if (effectiveTier === 'heavy_bag') {
-      // ── Sync Heavy Bag Session via The Corner ─────────────────────────────
-      const personalization = buildPersonalizationPrompt(userProfile, tierResult);
-      const heavyPrompt = SHADOW_SYSTEM_PROMPT + personalization;
-      try {
-        const heavyResult = await executeHeavyBagSync(
-          {
-            message,
-            userId,
-            organizationId,
-            role: userRole as any,
-            userProfile,
-            tierResult,
-            contextOutput,
-            classification,
-            sessionType: 'heavy_bag',
-            athleteId,
-            systemPromptBase: heavyPrompt,
-          },
-          process.env.AZURE_AI_ENDPOINT ?? '',
-          process.env.AZURE_AI_KEY ?? '',
-        );
-        llmResponse = heavyResult.response ?? 'SHADOW Heavy Bag response unavailable.';
-      } catch {
-        llmResponse = 'SHADOW is currently unavailable. Please contact your organization for support.';
-      }
-    } else {
-      // ── Quick Round via standard callAzureOpenAI ───────────────────────────
-      const personalization = buildPersonalizationPrompt(userProfile, tierResult);
-      const quickPrompt = SHADOW_SYSTEM_PROMPT + personalization;
-      const azureResult = await callAzureOpenAI(quickPrompt, message);
-      llmResponse = azureResult.success
-        ? azureResult.response
-        : 'SHADOW is currently unavailable. Please contact your organization for support.';
-    }
+    const { llmResponse, resolvedAsync, asyncJobId } = await routeLlmCall({
+      sessionType, effectiveTier, preferAsync,
+      highRiskClassification: requestValidation.classification ?? undefined,
+      userProfile, tierResult, contextOutput, classification,
+      message, userId, organizationId, userRole, athleteId,
+    });
 
     // Step 7: Validate response BEFORE displaying to user
     const responseValidation = validateShadowResponse(llmResponse);
