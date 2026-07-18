@@ -17,6 +17,7 @@ interface ShadowMessage {
   modelUsed?: string;
   isAsync?: boolean;
   jobId?: string;
+  feedbackSent?: boolean;
 }
 
 interface ShadowResearchReport {
@@ -45,6 +46,82 @@ interface ShadowLibraryClaimApiResponse {
 const GENERIC_UNSUPPORTED_REPLY = 'If this question needs a sourced answer, I should either answer from verified evidence or create a research requirement. Try asking about doctrine, evidence, readiness, recovery, technique, or organizational learning.';
 
 const HEAVY_BAG_ELIGIBLE_ROLES = new Set(['coach', 'admin', 'organization_admin', 'platform_owner', 'staff']);
+
+interface ShadowAIResult {
+  success: boolean;
+  response: string;
+  tier?: 'quick_round' | 'heavy_bag';
+  profileTier?: 'bronze' | 'silver' | 'gold';
+  modelUsed?: string;
+  async?: boolean;
+  jobId?: string;
+  error?: string;
+}
+
+// Module-level: returns 'created' or 'draft' based on backend availability
+async function postResearchRequirement(
+  requirement: ReturnType<typeof deriveResearchRequirement>,
+  apiBaseUrl: string,
+): Promise<'created' | 'draft'> {
+  if (!requirement) return 'draft';
+  try {
+    const res = await fetch(`${apiBaseUrl}/api/pilot/shadow/research-requirements`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requirement),
+    });
+    return res.ok ? 'created' : 'draft';
+  } catch {
+    return 'draft';
+  }
+}
+
+async function fetchLibraryClaim(
+  mode: string,
+  subject: string,
+  rawQuestion: string,
+  apiBaseUrl: string,
+): Promise<ShadowLibraryClaimApiResponse> {
+  const res = await fetch(`${apiBaseUrl}/api/pilot/shadow/library/claims`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scope: mode === 'master' ? 'master' : subject ? 'subject' : 'scoped', subject_id: subject || undefined, question: rawQuestion, limit: 5 }),
+  });
+  if (!res.ok) throw new Error('library claim request failed');
+  return res.json() as Promise<ShadowLibraryClaimApiResponse>;
+}
+
+async function fetchShadowAI(rawQuestion: string, heavyBagMode: boolean, apiBaseUrl: string): Promise<ShadowAIResult> {
+  const res = await fetch(`${apiBaseUrl}/api/pilot/shadow/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ message: rawQuestion, tier: heavyBagMode ? 'heavy_bag' : undefined }),
+  });
+  if (!res.ok) throw new Error(`SHADOW AI error: ${res.status}`);
+  return res.json() as Promise<ShadowAIResult>;
+}
+
+async function submitFeedback(
+  messageId: string,
+  helpful: boolean,
+  apiBaseUrl: string,
+  topic?: string,
+  sessionType?: string,
+): Promise<void> {
+  await fetch(`${apiBaseUrl}/api/pilot/shadow/feedback`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      helpful,
+      message_id: messageId,
+      topic: topic ?? 'general',
+      session_type: sessionType ?? 'quick_round',
+      outcome_signal: helpful ? 'thumbs_up' : 'thumbs_down',
+    }),
+  });
+}
 
 function formatTimestamp() {
   return new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -200,6 +277,16 @@ function getActiveScope(mode: 'master' | 'scoped', subject: string): 'master' | 
   return 'scoped';
 }
 
+function buildHeading(mode: 'master' | 'scoped', subject: string) {
+  if (mode === 'master') {
+    return { heading: 'MASTER SHADOW', intro: 'Organizational intelligence, doctrine, and learning oversight.', scopeSummary: 'Master SHADOW for admin/organizational intelligence.' };
+  }
+  if (subject) {
+    return { heading: `${subject.toUpperCase()} SHADOW`, intro: `Subject-specific learning scope for ${subject}.`, scopeSummary: `${subject} subject scope.` };
+  }
+  return { heading: 'SHADOW', intro: 'Scoped role-aware SHADOW conversation.', scopeSummary: 'Role-scoped SHADOW view.' };
+}
+
 function ShadowChatPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -208,19 +295,7 @@ function ShadowChatPageContent() {
   const context = searchParams.get('context')?.trim() ?? '';
   const subject = searchParams.get('subject')?.trim() ?? '';
   const roleLabel = (searchParams.get('role')?.trim() || userRole || 'guest').toUpperCase();
-  let heading = 'SHADOW';
-  let intro = 'Scoped role-aware SHADOW conversation.';
-  let scopeSummary = 'Role-scoped SHADOW view.';
-
-  if (mode === 'master') {
-    heading = 'MASTER SHADOW';
-    intro = 'Organizational intelligence, doctrine, and learning oversight.';
-    scopeSummary = 'Master SHADOW for admin/organizational intelligence.';
-  } else if (subject) {
-    heading = `${subject.toUpperCase()} SHADOW`;
-    intro = `Subject-specific learning scope for ${subject}.`;
-    scopeSummary = `${subject} subject scope.`;
-  }
+  const { heading, intro, scopeSummary } = buildHeading(mode, subject);
   const [messages, setMessages] = useState<ShadowMessage[]>([
     {
       id: '0',
@@ -278,99 +353,51 @@ function ShadowChatPageContent() {
   }
 
   async function requestLibraryClaim(rawQuestion: string) {
-    const response = await fetch(`${apiBase()}/api/pilot/shadow/library/claims`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        scope: getActiveScope(mode, subject),
-        subject_id: subject || undefined,
-        question: rawQuestion,
-        limit: 5,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error('library claim request failed');
-    }
-
-    return (await response.json()) as ShadowLibraryClaimApiResponse;
+    return fetchLibraryClaim(mode, subject, rawQuestion, apiBase());
   }
 
   async function createResearchReport(rawQuestion: string, normalizedQuestion: string, reply: string) {
     const requirement = deriveResearchRequirement(mode, rawQuestion, normalizedQuestion, reply, context, subject);
-    if (!requirement) {
-      return;
-    }
+    if (!requirement) return;
+    const status = await postResearchRequirement(requirement, apiBase());
+    prependResearchReport({ id: requirement.source_entity_id, question: rawQuestion, researchRequirement: requirement.research_requirement, knowledgeGap: requirement.knowledge_gap, status, createdAt: formatTimestamp() });
+    const msg = status === 'created'
+      ? 'Research requirement created and routed to the Research Intake lane.'
+      : 'Research report draft captured in this session. Open Research Intake to submit manually.';
+    addMessage('shadow', msg);
+  }
 
-    try {
-      const response = await fetch(`${apiBase()}/api/pilot/shadow/research-requirements`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requirement),
-      });
-
-      if (!response.ok) {
-        throw new Error('backend session unavailable');
-      }
-
-      prependResearchReport({
-        id: requirement.source_entity_id,
-        question: rawQuestion,
-        researchRequirement: requirement.research_requirement,
-        knowledgeGap: requirement.knowledge_gap,
-        status: 'created',
-        createdAt: formatTimestamp(),
-      });
-      addMessage('shadow', 'Research requirement created and routed to the Research Intake lane. Check The Library or Research Intake for follow-up.');
-    } catch {
-      prependResearchReport({
-        id: requirement.source_entity_id,
-        question: rawQuestion,
-        researchRequirement: requirement.research_requirement,
-        knowledgeGap: requirement.knowledge_gap,
-        status: 'draft',
-        createdAt: formatTimestamp(),
-      });
-      addMessage('shadow', 'Research report draft captured in this session, but I could not file it to the backend from the current auth context. Open Research Intake to submit or review it manually.');
-    }
+  function sendFeedback(messageId: string, helpful: boolean, topic?: string, sessionType?: string) {
+    setMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, feedbackSent: true } : m));
+    submitFeedback(messageId, helpful, apiBase(), topic, sessionType).catch(() => {});
   }
 
   async function callShadowAI(rawQuestion: string): Promise<void> {
-    const response = await fetch(`${apiBase()}/api/pilot/shadow/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({
-        message: rawQuestion,
-        tier: heavyBagMode ? 'heavy_bag' : undefined,
-      }),
+    const data = await fetchShadowAI(rawQuestion, heavyBagMode, apiBase());
+    const text = data.async && data.jobId
+      ? `Your Heavy Bag Session is queued. Job ID: ${data.jobId}`
+      : (data.response || data.error || 'SHADOW encountered an error.');
+    addMessage('shadow', text, {
+      tier: data.async ? 'heavy_bag' : data.tier,
+      profileTier: data.profileTier,
+      modelUsed: data.modelUsed,
+      isAsync: data.async,
+      jobId: data.jobId,
     });
+  }
 
-    if (!response.ok) {
-      throw new Error(`SHADOW AI error: ${response.status}`);
-    }
-
-    const data = (await response.json()) as {
-      success: boolean;
-      response: string;
-      tier?: 'quick_round' | 'heavy_bag';
-      profileTier?: 'bronze' | 'silver' | 'gold';
-      modelUsed?: string;
-      async?: boolean;
-      jobId?: string;
-      error?: string;
-    };
-
-    if (data.async && data.jobId) {
-      addMessage('shadow',
-        `Your Heavy Bag Session is queued and processing in the background. Job ID: ${data.jobId}`,
-        { tier: 'heavy_bag', isAsync: true, jobId: data.jobId }
-      );
-    } else {
-      addMessage('shadow',
-        data.response || data.error || 'SHADOW encountered an error.',
-        { tier: data.tier, profileTier: data.profileTier, modelUsed: data.modelUsed }
-      );
+  async function handleAIFallback(rawQuestion: string) {
+    const question = rawQuestion.toLowerCase();
+    try {
+      const payload = await requestLibraryClaim(rawQuestion);
+      addMessage('shadow', payload.claim.answer);
+      if (payload.claim.researchRequirementId) {
+        recordBackendResearchReport(rawQuestion, payload.claim.researchRequirementId, payload.claim.evidence.length);
+      }
+    } catch {
+      const reply = getShadowReply(mode, question, context, subject);
+      addMessage('shadow', reply);
+      await createResearchReport(rawQuestion, question, reply);
     }
   }
 
@@ -386,19 +413,7 @@ function ShadowChatPageContent() {
     try {
       await callShadowAI(rawQuestion);
     } catch {
-      // Fallback: try library claim, then static reply
-      const question = rawQuestion.toLowerCase();
-      try {
-        const payload = await requestLibraryClaim(rawQuestion);
-        addMessage('shadow', payload.claim.answer);
-        if (payload.claim.researchRequirementId) {
-          recordBackendResearchReport(rawQuestion, payload.claim.researchRequirementId, payload.claim.evidence.length);
-        }
-      } catch {
-        const reply = getShadowReply(mode, question, context, subject);
-        addMessage('shadow', reply);
-        await createResearchReport(rawQuestion, question, reply);
-      }
+      await handleAIFallback(rawQuestion);
     } finally {
       setIsLoading(false);
     }
@@ -459,6 +474,14 @@ function ShadowChatPageContent() {
               >
                 Open Research Intake
               </Link>
+              {HEAVY_BAG_ELIGIBLE_ROLES.has(userRole) ? (
+                <Link
+                  href="/shadow/scout"
+                  className="border-2 border-[#5a4a3a] bg-[#1f1f1f] px-3 py-2 text-[10px] font-mono uppercase tracking-[0.12em] text-[#b0a095] transition hover:border-[#8b4444] hover:text-[#e8d7c6]"
+                >
+                  Scout Reports →
+                </Link>
+              ) : null}
             </div>
             <div className="mt-3 grid gap-3 md:grid-cols-2">
               {reports.map((report) => (
@@ -491,11 +514,29 @@ function ShadowChatPageContent() {
                 >
                   <p className="text-xs leading-6">{msg.text}</p>
                   {msg.tier ? (
-                    <p className="mt-1 text-[9px] text-[#6a5a4a]">
-                      {msg.tier === 'heavy_bag' ? '🥊 Heavy Bag' : '⚡ Quick Round'}
-                      {msg.profileTier ? ` · ${msg.profileTier.charAt(0).toUpperCase()}${msg.profileTier.slice(1)}` : ''}
-                      {msg.isAsync ? ' · Processing...' : ''}
-                    </p>
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <p className="text-[9px] text-[#6a5a4a]">
+                        {msg.tier === 'heavy_bag' ? '🥊 Heavy Bag' : '⚡ Quick Round'}
+                        {msg.profileTier ? ` · ${msg.profileTier.charAt(0).toUpperCase()}${msg.profileTier.slice(1)}` : ''}
+                        {msg.isAsync ? ' · Processing...' : ''}
+                      </p>
+                      {!msg.feedbackSent ? (
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => sendFeedback(msg.id, true, msg.tier, msg.tier)}
+                            className="border border-[#3a2a2a] px-2 py-0.5 text-[9px] text-[#6a5a4a] hover:border-[#4a8a4a] hover:text-[#4a8a4a] transition"
+                            title="Helpful"
+                          >&#x1F44D;</button>
+                          <button
+                            onClick={() => sendFeedback(msg.id, false, msg.tier, msg.tier)}
+                            className="border border-[#3a2a2a] px-2 py-0.5 text-[9px] text-[#6a5a4a] hover:border-[#dc2626] hover:text-[#dc2626] transition"
+                            title="Not helpful"
+                          >&#x1F44E;</button>
+                        </div>
+                      ) : (
+                        <p className="text-[9px] text-[#4a5a4a] font-mono">Feedback sent</p>
+                      )}
+                    </div>
                   ) : null}
                   <p className="mt-2 text-[9px] opacity-50">{msg.timestamp}</p>
                 </div>

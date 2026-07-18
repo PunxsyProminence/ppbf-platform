@@ -8,6 +8,7 @@ import {
   listShadowFeedback,
   recordShadowFeedback,
 } from '@/src/server/pilot/shadowFeedback';
+import { processLearningSignal, type OutcomeSignal } from '@/src/server/pilot/shadowLearningLoop';
 
 export const runtime = 'nodejs';
 
@@ -19,8 +20,8 @@ export async function GET(request: NextRequest) {
     await assertShadowRuntimeReadiness({ requiredTables: ['shadow_feedback'] });
 
     const url = new URL(request.url);
-    const days = parseInt(url.searchParams.get('days') ?? '30', 10);
-    const limit = parseInt(url.searchParams.get('limit') ?? '50', 10);
+    const days = Number.parseInt(url.searchParams.get('days') ?? '30', 10);
+    const limit = Number.parseInt(url.searchParams.get('limit') ?? '50', 10);
 
     const [summary, items] = await Promise.all([
       getShadowFeedbackSummary(principal.organizationId, days),
@@ -43,9 +44,13 @@ export async function POST(request: NextRequest) {
     const body = (await request.json().catch(() => ({}))) as {
       shadow_event_id?: number;
       recommendation_ref?: string;
+      message_id?: string;       // For learning loop correlation
+      topic?: string;            // Topic of the interaction
+      session_type?: string;     // quick_round | heavy_bag etc.
       helpful: boolean;
       rating?: number;
       comment?: string;
+      outcome_signal?: OutcomeSignal; // Optional explicit signal override
     };
 
     if (typeof body.helpful !== 'boolean') {
@@ -66,6 +71,21 @@ export async function POST(request: NextRequest) {
       rating: body.rating ?? null,
       comment: body.comment ?? null,
     });
+
+    // Fire learning loop in background — don't block the response
+    const outcomeSignal: OutcomeSignal = body.outcome_signal
+      ?? (body.helpful ? 'thumbs_up' : 'thumbs_down');
+
+    processLearningSignal({
+      messageId: body.message_id ?? body.recommendation_ref ?? `fb-${feedbackId}`,
+      userId: principal.accountId,
+      organizationId: principal.organizationId,
+      role: principal.role,
+      topic: body.topic ?? 'general',
+      sessionType: body.session_type ?? 'quick_round',
+      outcome: outcomeSignal,
+      userNote: body.comment ?? undefined,
+    }).catch((err) => console.error('Learning loop error:', err));
 
     const summary = await getShadowFeedbackSummary(principal.organizationId);
 
