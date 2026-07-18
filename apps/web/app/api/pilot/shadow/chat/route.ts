@@ -21,6 +21,7 @@ import { buildShadowContext } from '@/src/server/pilot/shadowContextBuilder';
 import { routeRequest, tierToSessionType, isAsyncSession } from '@/src/server/pilot/shadowRouter';
 import { classifyProfileTier, buildPersonalizationPrompt } from '@/src/server/pilot/shadowProfiling';
 import { executeHeavyBagSync, executeHeavyBagAsync, shouldRunAsync } from '@/src/server/pilot/shadowHeavyBag';
+import { buildExplanationChain } from '@/src/server/pilot/shadowExplainability';
 
 export interface ShadowChatRequest {
   message: string;
@@ -47,6 +48,13 @@ export interface ShadowChatResponse {
   modelUsed?: string; // Which model handled this request
   async?: boolean; // True if response is async (jobId instead of response)
   jobId?: string; // Present when async=true — poll /api/pilot/shadow/jobs/[jobId]
+  explainability?: {
+    confidence: number; // 0-100, capped at 95%
+    confidenceLevel: '🟢 High' | '🟡 Moderate' | '🟠 Low' | '🔴 Speculative';
+    reasoning: string;
+    evidenceCount: number;
+    disclaimers: string[];
+  };
   error?: string;
 }
 
@@ -294,6 +302,33 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       console.error('Audit logging failed:', auditError);
     }
 
+    // Step 10: Build explainability chain (optional, for Silver+ tier users)
+    let explainability: ShadowChatResponse['explainability'] | undefined;
+    if (tierResult.tier !== 'bronze' && !resolvedAsync && !responseValidation.filtered) {
+      try {
+        const explanation = await buildExplanationChain(
+          finalResponse.split('\n')[0], // Use first line as recommendation
+          userProfile,
+          tierResult,
+          { assessment: 0.7, library: 0.85 }, // Default evidence signals
+          { prefersExplainability: tierResult.tier === 'gold', prefersDetails: tierResult.tier === 'gold' }
+        );
+        
+        // Only include if user has opted in or is Gold tier
+        if (tierResult.tier === 'gold') {
+          explainability = {
+            confidence: explanation.confidence,
+            confidenceLevel: explanation.confidenceLevel,
+            reasoning: explanation.reasoning,
+            evidenceCount: explanation.evidenceLinks.length,
+            disclaimers: explanation.disclaimers,
+          };
+        }
+      } catch {
+        // Non-critical — explainability is optional
+      }
+    }
+
     return NextResponse.json({
       success: true,
       response: finalResponse,
@@ -309,6 +344,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       modelUsed: routing.model.displayName,
       async: resolvedAsync,
       jobId: asyncJobId,
+      explainability,
     });
   } catch (error) {
     return jsonError(error) as NextResponse<ShadowChatResponse>;
