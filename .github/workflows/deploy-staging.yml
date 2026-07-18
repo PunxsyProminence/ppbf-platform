@@ -2,6 +2,16 @@ name: deploy-staging
 
 on:
   workflow_dispatch:
+    inputs:
+      enable_shadow_gate:
+        description: Run the SHADOW E2E gate after deploy
+        required: false
+        default: false
+        type: boolean
+      ppbf_pilot_bootstrap_key:
+        description: Bootstrap key for the SHADOW gate
+        required: false
+        type: string
 
 permissions:
   id-token: write
@@ -83,9 +93,9 @@ jobs:
           npm install --prefix apps/web
 
       - name: Run SHADOW E2E Gate
-        if: vars.ENABLE_SHADOW_GATE == 'true'
+        if: inputs.enable_shadow_gate
         env:
-          PPBF_PILOT_BOOTSTRAP_KEY: ${{ secrets.PPBF_PILOT_BOOTSTRAP_KEY || '' }}
+          PPBF_PILOT_BOOTSTRAP_KEY: ${{ inputs.ppbf_pilot_bootstrap_key }}
           PILOT_ADMIN_ACCOUNT_ID: org_admin_shadow
           PILOT_ADMIN_PIN: "15715"
         run: |

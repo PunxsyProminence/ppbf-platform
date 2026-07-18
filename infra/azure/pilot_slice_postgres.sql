@@ -24,16 +24,22 @@ create table if not exists pilot.organization_memberships (
 
 create table if not exists pilot.accounts (
   account_id text primary key,
+  login_email text null,
+  auth_provider text not null default 'ppbf_local' check (auth_provider in ('ppbf_local', 'microsoft')),
   role text not null check (role in ('platform_owner', 'organization_admin', 'admin', 'coach', 'athlete', 'parent', 'volunteer', 'staff')),
   organization_id text not null references pilot.organizations(organization_id),
   is_platform_owner boolean not null default false,
   athlete_id text null,
-  pin_hash text not null,
+  pin_hash text null,
   active_flag boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (organization_id, athlete_id)
 );
+
+create unique index if not exists pilot_accounts_login_email_uq
+  on pilot.accounts (lower(login_email))
+  where login_email is not null;
 
 create table if not exists pilot.session_tokens (
   token_hash text primary key,

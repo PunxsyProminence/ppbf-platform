@@ -2,7 +2,6 @@ import { getRoleRoute, type ClubRole } from './roleRoutes';
 
 export const ROLE_SESSION_KEY = 'ppbf-role-session';
 export const ROLE_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
-export const OPERATOR_PIN = '15715';
 const ROLE_SESSION_CHANGE_EVENT = 'ppbf-role-session-change';
 
 let cachedRoleSessionRaw: string | null | undefined;
@@ -11,23 +10,6 @@ let cachedRoleSessionValue: RoleSession | null = null;
 export interface RoleSession {
   role: ClubRole;
   expiresAt?: number;
-}
-
-export function createRoleSession(role: ClubRole, pin: string) {
-  if (pin.trim() !== OPERATOR_PIN) {
-    return { ok: false as const, reason: 'Invalid PIN' };
-  }
-
-  const session: RoleSession = {
-    role,
-    expiresAt: Date.now() + ROLE_SESSION_TTL_MS,
-  };
-
-  window.localStorage.setItem(ROLE_SESSION_KEY, JSON.stringify(session));
-  window.localStorage.setItem('ppbf-club-role', role);
-  window.dispatchEvent(new Event(ROLE_SESSION_CHANGE_EVENT));
-
-  return { ok: true as const, session };
 }
 
 export function readRoleSession(): RoleSession | null {

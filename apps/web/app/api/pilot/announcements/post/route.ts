@@ -35,7 +35,10 @@ export async function POST(request: NextRequest) {
       throw new Error('Forbidden: role not allowed to post announcements');
     }
 
-    const requiredPin = process.env.PPBF_OPERATOR_PIN?.trim() || '15715';
+    const requiredPin = process.env.PPBF_OPERATOR_PIN?.trim();
+    if (!requiredPin) {
+      throw new Error('Server misconfiguration: PPBF_OPERATOR_PIN is required');
+    }
     if (!accessPin || accessPin !== requiredPin) {
       throw new Error('Forbidden: invalid access PIN');
     }

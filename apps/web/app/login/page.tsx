@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { roleRoutes, type ClubRole } from '@/components/roleRoutes';
 import { apiBase } from '@/lib/apiBase';
-import { createPersistentRoleSession, createRoleSession, getPostLoginRoute, OPERATOR_PIN, readRoleSession, clearRoleSession } from '@/components/roleSession';
+import { createPersistentRoleSession, getPostLoginRoute, readRoleSession, clearRoleSession } from '@/components/roleSession';
+import { createMicrosoftSignInHandler, getTabButtonClass, renderAthleteIdField, validateAnnouncementPublishInput } from '@/src/client/loginPageHelpers';
 
 type ActiveTab = 'login' | 'register' | 'announcement';
 
@@ -24,35 +25,6 @@ const DEFAULT_ANNOUNCEMENT: LoginAnnouncement = {
   authorRole: 'system',
   createdAt: 'Operational Baseline',
 };
-
-function canPublishAnnouncement(role: ClubRole): boolean {
-  return role === 'coach' || role === 'admin' || role.startsWith('board-');
-}
-
-function validateAnnouncementPublishInput(params: {
-  selectedRole: ClubRole;
-  announcementPin: string;
-  draftAnnouncement: string;
-  announcementAuthorName: string;
-}): string | null {
-  if (!canPublishAnnouncement(params.selectedRole)) {
-    return 'Only Coach, Admin, or Board roles can publish announcements.';
-  }
-
-  if (params.announcementPin.trim() !== OPERATOR_PIN) {
-    return 'Invalid access PIN.';
-  }
-
-  if (!params.draftAnnouncement.trim()) {
-    return 'Announcement cannot be empty.';
-  }
-
-  if (!params.announcementAuthorName.trim()) {
-    return 'Author name is required.';
-  }
-
-  return null;
-}
 
 function AnnouncementCard({ item }: Readonly<{ item: LoginAnnouncement }>) {
   return (
@@ -75,6 +47,7 @@ interface LoginTabProps {
   setPin: (value: string) => void;
   error: string;
   signIn: () => Promise<void>;
+  signInWithMicrosoft: () => void;
 }
 
 function LoginTabContent(props: Readonly<LoginTabProps>) {
@@ -108,21 +81,7 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
       <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="pin">
         PIN
       </label>
-      {props.selectedRole === 'athlete' ? (
-        <>
-          <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="athlete-id">
-            Athlete ID
-          </label>
-          <input
-            id="athlete-id"
-            type="text"
-            value={props.athleteId}
-            onChange={(event) => props.setAthleteId(event.target.value)}
-            placeholder="Enter Athlete ID"
-            className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
-          />
-        </>
-      ) : null}
+      {renderAthleteIdField(props)}
       <input
         id="pin"
         type="password"
@@ -141,6 +100,14 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
         className="mt-4 inline-flex w-full items-center justify-center border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 py-3 text-sm font-black uppercase tracking-[0.2em] text-[var(--white)] transition hover:bg-[var(--red-highlight)]"
       >
         Sign In
+      </button>
+
+      <button
+        type="button"
+        onClick={props.signInWithMicrosoft}
+        className="inline-flex w-full items-center justify-center border-2 border-[var(--black)] bg-[var(--gray-dark)] px-4 py-3 text-sm font-black uppercase tracking-[0.2em] text-[var(--white)] transition hover:bg-[var(--black)]"
+      >
+        Sign In With Microsoft
       </button>
     </>
   );
@@ -321,6 +288,12 @@ export default function LoginPage() {
     // Check URL params for logout/reset (client-side only)
     const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
     const shouldLogout = params.get('logout') === 'true' || params.get('reset') === 'true';
+    const loginError = params.get('error')?.trim();
+
+    if (loginError === 'not-invited') {
+      setError('Account not invited or not active.');
+    }
+
     if (shouldLogout) {
       clearRoleSession();
       void fetch(`${apiBase()}/api/pilot/auth/logout`, { method: 'POST' });
@@ -412,15 +385,28 @@ export default function LoginPage() {
     router.push(getPostLoginRoute(session));
   }
 
-  function signInOperator() {
-    const result = createRoleSession(selectedRole, pin);
-    if (!result.ok) {
-      setError(result.reason);
+  async function signInOperator() {
+    const operatorPin = pin.trim();
+    if (!operatorPin) {
+      setError('PIN is required.');
       return;
     }
 
+    const response = await fetch(`${apiBase()}/api/pilot/auth/operator-verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: operatorPin }),
+    });
+
+    if (!response.ok) {
+      const result = (await response.json().catch(() => ({ error: 'Invalid PIN' }))) as { error?: string };
+      setError(result.error || 'Invalid PIN');
+      return;
+    }
+
+    const session = createPersistentRoleSession(selectedRole);
     setError('');
-    router.push(getPostLoginRoute(result.session));
+    router.push(getPostLoginRoute(session));
   }
 
   async function signIn() {
@@ -429,7 +415,7 @@ export default function LoginPage() {
       return;
     }
 
-    signInOperator();
+    await signInOperator();
   }
 
   async function publishAnnouncement() {
@@ -536,6 +522,8 @@ export default function LoginPage() {
     }
   }
 
+  const microsoftSignIn = createMicrosoftSignInHandler(apiBase());
+
   const tabContentMap: Record<ActiveTab, ReactElement> = {
     login: (
       <LoginTabContent
@@ -548,6 +536,7 @@ export default function LoginPage() {
         setPin={setPin}
         error={error}
         signIn={signIn}
+        signInWithMicrosoft={microsoftSignIn}
       />
     ),
     register: (
@@ -605,27 +594,21 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => setActiveTab('login')}
-                className={`px-4 py-3 text-xs font-black uppercase tracking-[0.2em] transition ${
-                  activeTab === 'login' ? 'border-2 border-[var(--black)] bg-[var(--red-primary)] text-[var(--white)]' : 'border-2 border-[var(--black)] bg-[var(--canvas-tan)] text-[var(--gray-dark)] hover:bg-[var(--canvas-tan-dark)]'
-                }`}
+                className={`px-4 py-3 text-xs font-black uppercase tracking-[0.2em] transition ${getTabButtonClass(activeTab === 'login')}`}
               >
                 Login
               </button>
               <button
                 type="button"
                 onClick={() => setActiveTab('register')}
-                className={`px-4 py-3 text-xs font-black uppercase tracking-[0.2em] transition ${
-                  activeTab === 'register' ? 'border-2 border-[var(--black)] bg-[var(--red-primary)] text-[var(--white)]' : 'border-2 border-[var(--black)] bg-[var(--canvas-tan)] text-[var(--gray-dark)] hover:bg-[var(--canvas-tan-dark)]'
-                }`}
+                className={`px-4 py-3 text-xs font-black uppercase tracking-[0.2em] transition ${getTabButtonClass(activeTab === 'register')}`}
               >
                 Register
               </button>
               <button
                 type="button"
                 onClick={() => setActiveTab('announcement')}
-                className={`px-4 py-3 text-xs font-black uppercase tracking-[0.2em] transition ${
-                  activeTab === 'announcement' ? 'border-2 border-[var(--black)] bg-[var(--red-primary)] text-[var(--white)]' : 'border-2 border-[var(--black)] bg-[var(--canvas-tan)] text-[var(--gray-dark)] hover:bg-[var(--canvas-tan-dark)]'
-                }`}
+                className={`px-4 py-3 text-xs font-black uppercase tracking-[0.2em] transition ${getTabButtonClass(activeTab === 'announcement')}`}
               >
                 Word
               </button>

@@ -135,6 +135,16 @@ create table if not exists pilot.skills (
 -- 1) Add organization columns to existing tables.
 alter table pilot.accounts add column if not exists organization_id text;
 alter table pilot.accounts add column if not exists is_platform_owner boolean not null default false;
+alter table pilot.accounts add column if not exists login_email text;
+alter table pilot.accounts add column if not exists auth_provider text not null default 'ppbf_local';
+alter table pilot.accounts alter column pin_hash drop not null;
+alter table pilot.accounts drop constraint if exists pilot_accounts_auth_provider_check;
+alter table pilot.accounts add constraint pilot_accounts_auth_provider_check
+  check (auth_provider in ('ppbf_local', 'microsoft'));
+
+create unique index if not exists pilot_accounts_login_email_uq
+  on pilot.accounts (lower(login_email))
+  where login_email is not null;
 
 alter table pilot.session_tokens add column if not exists organization_id text;
 alter table pilot.athletes add column if not exists organization_id text;

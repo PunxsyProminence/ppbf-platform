@@ -19,7 +19,17 @@ interface AccountRow {
   organization_id: string | null;
   is_platform_owner: boolean;
   athlete_id: string | null;
-  pin_hash: string;
+  pin_hash: string | null;
+  active_flag: boolean;
+  organization_status: string | null;
+}
+
+interface FederatedAccountRow {
+  account_id: string;
+  role: PilotRole;
+  organization_id: string | null;
+  is_platform_owner: boolean;
+  athlete_id: string | null;
   active_flag: boolean;
   organization_status: string | null;
 }
@@ -37,7 +47,8 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
        o.status as organization_status
      from pilot.accounts a
      left join pilot.organizations o on o.organization_id = a.organization_id
-     where a.account_id = $1`,
+     where a.account_id = $1
+       and a.auth_provider = 'ppbf_local'`,
     [accountId],
   );
 
@@ -50,6 +61,10 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
     return null;
   }
 
+  if (!data.pin_hash) {
+    return null;
+  }
+
   const pinIsValid = await verifyPin(pin, data.pin_hash);
   if (!pinIsValid) {
     return null;
@@ -58,6 +73,53 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
   const token = createOpaqueToken();
   const tokenHash = hashToken(token);
 
+  await query('insert into pilot.session_tokens (token_hash, account_id, organization_id) values ($1, $2, $3)', [tokenHash, data.account_id, organizationId]);
+
+  return {
+    token,
+    principal: {
+      accountId: data.account_id,
+      role: data.role,
+      organizationId,
+      athleteId: data.athlete_id,
+      sessionToken: token,
+    },
+  };
+}
+
+export async function loginWithMicrosoftEmail(emailOrUpn: string): Promise<{ principal: PilotPrincipal; token: string } | null> {
+  const normalizedEmail = emailOrUpn.trim().toLowerCase();
+  if (!normalizedEmail) {
+    return null;
+  }
+
+  const data = await queryOne<FederatedAccountRow>(
+    `select
+       a.account_id,
+       a.role,
+       a.organization_id,
+       a.is_platform_owner,
+       a.athlete_id,
+       a.active_flag,
+       o.status as organization_status
+     from pilot.accounts a
+     left join pilot.organizations o on o.organization_id = a.organization_id
+     where lower(a.login_email) = $1
+       and a.auth_provider = 'microsoft'`,
+    [normalizedEmail],
+  );
+
+  if (!data?.active_flag) {
+    return null;
+  }
+
+  const organizationId = data.organization_id || getPilotDefaultOrganizationId();
+  if (!data.is_platform_owner && data.organization_status && data.organization_status !== 'active') {
+    return null;
+  }
+
+  const token = createOpaqueToken();
+  const tokenHash = hashToken(token);
   await query('insert into pilot.session_tokens (token_hash, account_id, organization_id) values ($1, $2, $3)', [tokenHash, data.account_id, organizationId]);
 
   return {
@@ -149,6 +211,42 @@ export async function createAthleteAccount(accountId: string, athleteId: string,
   );
 }
 
+export async function createOrUpdateAthleteAccount(accountId: string, athleteId: string, pin: string, organizationId: string): Promise<void> {
+  const pinHash = await hashPin(pin);
+
+  await query(
+    `insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner)
+     values ($1, $2, $3, $4, $5, $6, $7)
+     on conflict (account_id) do update set
+       role = excluded.role,
+       organization_id = excluded.organization_id,
+       athlete_id = excluded.athlete_id,
+       pin_hash = excluded.pin_hash,
+       active_flag = excluded.active_flag,
+       is_platform_owner = excluded.is_platform_owner,
+       updated_at = now()`,
+    [accountId, 'athlete', organizationId, athleteId, pinHash, true, false],
+  );
+}
+
+export async function createCoachAccount(accountId: string, pin: string, organizationId: string): Promise<void> {
+  const pinHash = await hashPin(pin);
+
+  await query(
+    `insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner)
+     values ($1, $2, $3, $4, $5, $6, $7)
+     on conflict (account_id) do update set
+       role = excluded.role,
+       organization_id = excluded.organization_id,
+       athlete_id = excluded.athlete_id,
+       pin_hash = excluded.pin_hash,
+       active_flag = excluded.active_flag,
+       is_platform_owner = excluded.is_platform_owner,
+       updated_at = now()`,
+    [accountId, 'coach', organizationId, null, pinHash, true, false],
+  );
+}
+
 export async function createParentAccount(accountId: string, pin: string, organizationId: string): Promise<void> {
   const pinHash = await hashPin(pin);
 
@@ -215,11 +313,166 @@ export async function assignOrganizationMembership(accountId: string, organizati
   );
 }
 
+export async function createOrUpdateMicrosoftPlatformOwnerAccount(params: {
+  loginEmail: string;
+  organizationId: string;
+  accountIdHint?: string;
+}): Promise<{ accountId: string; organizationId: string; created: boolean }> {
+  const normalizedEmail = params.loginEmail.trim().toLowerCase();
+  if (!normalizedEmail) {
+    throw new Error('Missing loginEmail');
+  }
+
+  const existingByEmail = await queryOne<{ account_id: string }>(
+    'select account_id from pilot.accounts where lower(login_email) = $1',
+    [normalizedEmail],
+  );
+
+  const accountId = existingByEmail?.account_id || params.accountIdHint?.trim() || normalizedEmail;
+  const existingByAccountId = await queryOne<{ account_id: string }>('select account_id from pilot.accounts where account_id = $1', [accountId]);
+
+  await query(
+    `insert into pilot.accounts (
+       account_id,
+       login_email,
+       auth_provider,
+       role,
+       organization_id,
+       is_platform_owner,
+       athlete_id,
+       pin_hash,
+       active_flag
+     )
+     values ($1, $2, 'microsoft', 'platform_owner', $3, true, null, null, true)
+     on conflict (account_id) do update set
+       login_email = excluded.login_email,
+       auth_provider = 'microsoft',
+       role = 'platform_owner',
+       organization_id = excluded.organization_id,
+       is_platform_owner = true,
+       athlete_id = null,
+       pin_hash = null,
+       active_flag = true,
+       updated_at = now()`,
+    [accountId, normalizedEmail, params.organizationId],
+  );
+
+  await assignOrganizationMembership(accountId, params.organizationId, 'platform_owner');
+
+  return {
+    accountId,
+    organizationId: params.organizationId,
+    created: !existingByAccountId,
+  };
+}
+
 export async function setOrganizationStatus(
   organizationId: string,
   status: 'active' | 'inactive' | 'suspended' | 'pending',
 ): Promise<void> {
   await query('update pilot.organizations set status = $2, updated_at = now() where organization_id = $1', [organizationId, status]);
+}
+
+export async function setAccountActiveStatus(accountId: string, organizationId: string, activeFlag: boolean): Promise<void> {
+  const rows = await query<{ account_id: string }>(
+    `update pilot.accounts
+     set active_flag = $3,
+         updated_at = now()
+     where account_id = $1 and organization_id = $2
+     returning account_id`,
+    [accountId, organizationId, activeFlag],
+  );
+
+  if (rows.length === 0) {
+    throw new Error('Missing account_id or organization_id');
+  }
+
+  await query(
+    `update pilot.organization_memberships
+     set active_flag = $3,
+         updated_at = now()
+     where account_id = $1 and organization_id = $2`,
+    [accountId, organizationId, activeFlag],
+  );
+
+  if (!activeFlag) {
+    await revokeAllSessionsForAccount(accountId);
+  }
+}
+
+export async function upsertOrganizationMembership(accountId: string, organizationId: string, role: PilotRole, activeFlag: boolean): Promise<void> {
+  await query(
+    `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+     values ($1, $2, $3, $4)
+     on conflict (account_id, organization_id) do update
+       set role = excluded.role,
+           active_flag = excluded.active_flag,
+           updated_at = now()`,
+    [accountId, organizationId, role, activeFlag],
+  );
+
+  const rows = await query<{ account_id: string }>(
+    `update pilot.accounts
+     set role = $3,
+         organization_id = $2,
+         active_flag = $4,
+         is_platform_owner = case when $3 = 'platform_owner' then true else false end,
+         updated_at = now()
+     where account_id = $1
+     returning account_id`,
+    [accountId, organizationId, role, activeFlag],
+  );
+
+  if (rows.length === 0) {
+    throw new Error('Missing account_id');
+  }
+
+  if (!activeFlag) {
+    await revokeAllSessionsForAccount(accountId);
+  }
+}
+
+export async function transferOrganizationAdmin(
+  fromAccountId: string,
+  toAccountId: string,
+  organizationId: string,
+  demoteRole: Exclude<PilotRole, 'platform_owner' | 'organization_admin'>,
+): Promise<void> {
+  const promotedRows = await query<{ account_id: string }>(
+    `update pilot.accounts
+     set role = 'organization_admin',
+         organization_id = $2,
+         active_flag = true,
+         is_platform_owner = false,
+         updated_at = now()
+     where account_id = $1
+     returning account_id`,
+    [toAccountId, organizationId],
+  );
+
+  if (promotedRows.length === 0) {
+    throw new Error('Missing target account for admin transfer');
+  }
+
+  const demotedRows = await query<{ account_id: string }>(
+    `update pilot.accounts
+     set role = $3,
+         active_flag = true,
+         is_platform_owner = false,
+         updated_at = now()
+     where account_id = $1 and organization_id = $2
+     returning account_id`,
+    [fromAccountId, organizationId, demoteRole],
+  );
+
+  if (demotedRows.length === 0) {
+    throw new Error('Missing source admin in organization');
+  }
+
+  await assignOrganizationMembership(toAccountId, organizationId, 'organization_admin');
+  await assignOrganizationMembership(fromAccountId, organizationId, demoteRole);
+  await revokeAllSessionsForAccount(fromAccountId);
+  await revokeAllSessionsForAccount(toAccountId);
 }
 
 export async function promoteAccountToOrganizationAdmin(accountId: string, organizationId: string): Promise<void> {

@@ -185,14 +185,24 @@ export function classifyHighRiskTopic(userMessage: string): HighRiskClassificati
 }
 
 // Validate that the request aligns with SHADOW's doctrine
-export async function validateShadowRequest(
+export function validateShadowRequest(
   message: string,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _userRole: string,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _organizationId: string,
-): Promise<ShadowValidationResult> {
+): ShadowValidationResult {
   const classification = classifyHighRiskTopic(message);
+
+  // Direct prescription or weight-cutting directives are blocked even when phrased as questions.
+  if (/(prescrib|rx|should\s+i\s+take|should\s+you\s+take|take\s+(?:this\s+)?(?:medication|medicine|drug|pill)|how\s+do\s+i\s+cut\s+weight|lose\s+weight\s+quickly|cut\s+weight\s+for\s+my\s+weight\s+class)/i.test(message)) {
+    return {
+      valid: false,
+      error: 'Medication and prescription recommendations require prescription authority and professional medical oversight.',
+      highRisk: true,
+      topic: classification.topic,
+    };
+  }
 
   // Educational queries are allowed
   if (classification.educationalApproach) {
@@ -200,7 +210,7 @@ export async function validateShadowRequest(
   }
 
   // Check for diagnosis claims
-  if (/(do|does|did|am|is|have)\s+(i|you)\s+(have|have a|get|got|experience)/i.test(message)) {
+  if (/(do|does|did|am|is|have)\s+(i|you)\s+(have|have a|get|got|experience).*(concussion|fracture|injury|condition|disease|syndrome|disorder)/i.test(message)) {
     return {
       valid: false,
       error: 'Diagnosis and personal health assessment require professional medical evaluation.',
@@ -266,13 +276,19 @@ export async function retrieveShadowContext(params: {
 
   // Coaches can only see assigned athletes in their organization
   if (userRole === 'coach' && athleteId) {
-    const isAssigned = await query<{count: number}>(
-      `SELECT 1 FROM pilot.coach_assignments 
-       WHERE coach_id = $1 AND athlete_id = $2 AND organization_id = $3`,
-      [userId, athleteId, organizationId],
-    );
+    let isAssigned = false;
+    try {
+      const rows = await query<{count: number}>(
+        `SELECT 1 FROM pilot.coach_assignments 
+         WHERE coach_id = $1 AND athlete_id = $2 AND organization_id = $3`,
+        [userId, athleteId, organizationId],
+      );
+      isAssigned = rows.length > 0;
+    } catch {
+      isAssigned = false;
+    }
 
-    if (!isAssigned.length) {
+    if (!isAssigned) {
       return {
         context: '',
         authorized: false,
@@ -294,13 +310,13 @@ export function validateShadowResponse(response: string): ShadowResponseValidati
   const message = response;
 
   // Check for diagnosis claims
-  if (/you (have|have a|got|get|experience|develop).*(?:condition|disease|syndrome|disorder)/i.test(response)) {
+  if (/you (have|have a|got|get|experience|develop).*(?:concussion|fracture|injury|pain|sprain|strain|trauma|condition|disease|syndrome|disorder)/i.test(response)) {
     filtered = true;
     reasons.push('Contains diagnostic claim without evidence or human deference');
   }
 
   // Check for direct prescription claims
-  if (/you should (take|use|try).*(?:medication|medicine|drug|pill)/i.test(response)) {
+  if (/\byou should\b/i.test(response)) {
     filtered = true;
     reasons.push('Contains prescriptive claim without medical authority');
   }
@@ -314,9 +330,18 @@ export function validateShadowResponse(response: string): ShadowResponseValidati
   // Require confidence markers or human deferral
   const hasConfidenceMarker = /research|research requirement|unknown|unclear|requires|needs validation|evidence suggests|data shows|studies indicate/i.test(response);
   const hasDeferralLanguage = /professional|medical authority|clinician|doctor|physician|medical evaluation/i.test(response);
+  const hasHumanReviewLanguage = /requires? professional medical evaluation|needs? professional medical evaluation|further study required|professional medical authority|clinician|doctor|physician/i.test(response);
 
   if (!hasConfidenceMarker && !hasDeferralLanguage && filtered) {
     reasons.push('Missing confidence markers or human deferral language');
+  }
+
+  if (!filtered && /research suggests|further study required|needs validation|unknown|unclear|you should\b/i.test(response)) {
+    reasons.push('Requires human review');
+  }
+
+  if (hasConfidenceMarker || hasDeferralLanguage || hasHumanReviewLanguage) {
+    reasons.push('Human review required');
   }
 
   return {
@@ -330,6 +355,12 @@ export function validateShadowResponse(response: string): ShadowResponseValidati
 
 // SHADOW System Prompt — Punxsy Prominence Boxing & Fitness identity
 export const SHADOW_SYSTEM_PROMPT = `You are SHADOW, the organizational intelligence system for Punxsy Prominence Boxing & Fitness.
+
+PRIMARY ROLE:
+Your primary role is organizational learning, not automatic knowledge or canned recommendations.
+Recommendations are NOT your primary purpose.
+Observations are the atomic unit of learning, not automatic knowledge.
+Metrics inform decisions. Metrics do NOT make decisions.
 
 CORE IDENTITY:
 You are a tough but caring mentor who leads from the front.
@@ -358,12 +389,15 @@ KEY PHRASES (use naturally):
 "Lead from the front" / "That's the sport"
 
 DOCTRINE — NON-NEGOTIABLE:
-1. Never diagnose a condition — redirect to a medical professional.
+1. Never diagnose a condition — redirect to a professional medical authority or clinician.
 2. Never prescribe treatment or medication.
 3. Never grant medical clearance or return-to-play approval.
 4. Always use confidence markers: PROVEN (50+ cases, 90%+ success) / EMERGING (10–49 cases, 60–89%) / EXPERIMENTAL (<10 or <60%) / RESEARCH NEEDED (insufficient data).
 5. Flag unknowns as research requirements — not guesses.
 6. Defer all final decisions to coaches, athletes, or medical professionals.
+
+MEDICAL SAFETY:
+Professional medical authority makes the final call on diagnosis, prescription, and clearance.
 
 RESPONSE STRUCTURE:
 1. Direct observation or reality check

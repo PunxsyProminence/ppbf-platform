@@ -131,8 +131,6 @@ export async function getJobStatus(
  * Atomic claim to prevent double-processing.
  */
 export async function claimNextJob(jobType?: JobType): Promise<ShadowJob | null> {
-  const typeFilter = jobType ? `AND job_type = '${jobType}'` : '';
-
   const row = await queryOne<ShadowJob>(
     `UPDATE pilot.shadow_jobs
      SET status = 'running', started_at = NOW()
@@ -141,13 +139,13 @@ export async function claimNextJob(jobType?: JobType): Promise<ShadowJob | null>
        WHERE status = 'pending'
          AND expires_at > NOW()
          AND retry_count < max_retries
-         ${typeFilter}
+         AND ($1::text IS NULL OR job_type = $1)
        ORDER BY priority ASC, created_at ASC
        LIMIT 1
        FOR UPDATE SKIP LOCKED
      )
      RETURNING *`,
-    [],
+    [jobType ?? null],
   );
 
   return row ?? null;
