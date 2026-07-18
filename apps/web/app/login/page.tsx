@@ -3,10 +3,10 @@
 import { useEffect, useState, type ReactElement } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { roleRoutes, type ClubRole } from '@/components/roleRoutes';
+import { type ClubRole } from '@/components/roleRoutes';
 import { apiBase } from '@/lib/apiBase';
-import { createPersistentRoleSession, getPostLoginRoute, readRoleSession, clearRoleSession } from '@/components/roleSession';
-import { createMicrosoftSignInHandler, getTabButtonClass, renderAthleteIdField, validateAnnouncementPublishInput } from '@/src/client/loginPageHelpers';
+import { getPostLoginRoute, readRoleSession, clearRoleSession } from '@/components/roleSession';
+import { createMicrosoftSignInHandler, getTabButtonClass, validateAnnouncementPublishInput } from '@/src/client/loginPageHelpers';
 
 type ActiveTab = 'login' | 'register' | 'announcement';
 
@@ -39,14 +39,6 @@ function AnnouncementCard({ item }: Readonly<{ item: LoginAnnouncement }>) {
 
 interface LoginTabProps {
   announcements: LoginAnnouncement[];
-  selectedRole: ClubRole;
-  setSelectedRole: (role: ClubRole) => void;
-  athleteId: string;
-  setAthleteId: (value: string) => void;
-  pin: string;
-  setPin: (value: string) => void;
-  error: string;
-  signIn: () => Promise<void>;
   signInWithMicrosoft: () => void;
 }
 
@@ -62,45 +54,7 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
         </div>
       </div>
 
-      <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="role">
-        Your Role
-      </label>
-      <select
-        id="role"
-        value={props.selectedRole}
-        onChange={(event) => props.setSelectedRole(event.target.value as ClubRole)}
-        className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
-      >
-        {roleRoutes.map((item) => (
-          <option key={item.role} value={item.role}>
-            {item.label}
-          </option>
-        ))}
-      </select>
-
-      <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="pin">
-        PIN
-      </label>
-      {renderAthleteIdField(props)}
-      <input
-        id="pin"
-        type="password"
-        inputMode="numeric"
-        value={props.pin}
-        onChange={(event) => props.setPin(event.target.value)}
-        placeholder="Enter PIN"
-        className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
-      />
-
-      {props.error ? <p className="text-sm text-[var(--red-primary)]">{props.error}</p> : null}
-
-      <button
-        type="button"
-        onClick={() => void props.signIn()}
-        className="mt-4 inline-flex w-full items-center justify-center border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 py-3 text-sm font-black uppercase tracking-[0.2em] text-[var(--white)] transition hover:bg-[var(--red-highlight)]"
-      >
-        Sign In
-      </button>
+      <p className="text-sm leading-6 text-[var(--gray-dark)]">Sign in with Microsoft to access the platform admin tools.</p>
 
       <button
         type="button"
@@ -266,10 +220,7 @@ function AnnouncementTabContent(props: Readonly<AnnouncementTabProps>) {
 
 export default function LoginPage() {
   const router = useRouter();
-  const [athleteId, setAthleteId] = useState('');
-  const [pin, setPin] = useState('');
   const [selectedRole, setSelectedRole] = useState<ClubRole>('athlete');
-  const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<ActiveTab>('login');
   const [announcements, setAnnouncements] = useState<LoginAnnouncement[]>([DEFAULT_ANNOUNCEMENT]);
   const [draftAnnouncement, setDraftAnnouncement] = useState('');
@@ -285,14 +236,8 @@ export default function LoginPage() {
   const [registerBusy, setRegisterBusy] = useState(false);
 
   useEffect(() => {
-    // Check URL params for logout/reset (client-side only)
     const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
     const shouldLogout = params.get('logout') === 'true' || params.get('reset') === 'true';
-    const loginError = params.get('error')?.trim();
-
-    if (loginError === 'not-invited') {
-      setError('Account not invited or not active.');
-    }
 
     if (shouldLogout) {
       clearRoleSession();
@@ -359,64 +304,6 @@ export default function LoginPage() {
       setAnnouncements(normalized);
     })();
   }, []);
-
-  async function signInAthlete() {
-    const accountId = athleteId.trim();
-    if (!accountId) {
-      setError('Athlete ID is required.');
-      return;
-    }
-
-    const response = await fetch(`${apiBase()}/api/pilot/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: accountId, pin }),
-    });
-
-    if (!response.ok) {
-      const result = (await response.json().catch(() => ({ error: 'Invalid credentials' }))) as { error?: string };
-      setError(result.error || 'Invalid credentials');
-      return;
-    }
-
-    const result = (await response.json()) as { role: ClubRole };
-    const session = createPersistentRoleSession(result.role);
-    setError('');
-    router.push(getPostLoginRoute(session));
-  }
-
-  async function signInOperator() {
-    const operatorPin = pin.trim();
-    if (!operatorPin) {
-      setError('PIN is required.');
-      return;
-    }
-
-    const response = await fetch(`${apiBase()}/api/pilot/auth/operator-verify`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: operatorPin }),
-    });
-
-    if (!response.ok) {
-      const result = (await response.json().catch(() => ({ error: 'Invalid PIN' }))) as { error?: string };
-      setError(result.error || 'Invalid PIN');
-      return;
-    }
-
-    const session = createPersistentRoleSession(selectedRole);
-    setError('');
-    router.push(getPostLoginRoute(session));
-  }
-
-  async function signIn() {
-    if (selectedRole === 'athlete') {
-      await signInAthlete();
-      return;
-    }
-
-    await signInOperator();
-  }
 
   async function publishAnnouncement() {
     const validationError = validateAnnouncementPublishInput({
@@ -515,7 +402,6 @@ export default function LoginPage() {
       setRegisterAccountId('');
       setRegisterAthleteId('');
       setRegisterPin('');
-      setAthleteId(accountId);
       setSelectedRole('athlete');
     } finally {
       setRegisterBusy(false);
@@ -528,14 +414,6 @@ export default function LoginPage() {
     login: (
       <LoginTabContent
         announcements={announcements}
-        selectedRole={selectedRole}
-        setSelectedRole={setSelectedRole}
-        athleteId={athleteId}
-        setAthleteId={setAthleteId}
-        pin={pin}
-        setPin={setPin}
-        error={error}
-        signIn={signIn}
         signInWithMicrosoft={microsoftSignIn}
       />
     ),
@@ -586,7 +464,7 @@ export default function LoginPage() {
               </Link>
             </div>
             <h1 className="mt-4 text-4xl font-black tracking-[0.1em] text-[var(--black)] md:text-5xl">The Bell</h1>
-            <p className="mt-3 text-sm leading-relaxed text-[var(--gray-dark)]">Pick your corner, punch in your PIN, step into the ring.</p>
+            <p className="mt-3 text-sm leading-relaxed text-[var(--gray-dark)]">Pick your corner and sign in with Microsoft to enter the platform.</p>
           </div>
 
           <div className="border-b-2 border-[var(--black)] bg-[var(--canvas-tan)] px-8 py-6">

@@ -24,7 +24,7 @@ Optional environment variables:
   PPBF_PILOT_DEFAULT_ORG_ID
 
 Example:
-  PILOT_GATE_BASE_URL=https://www.punxsyprominence.org PILOT_ADMIN_ACCOUNT_ID=org_admin_shadow PILOT_ADMIN_PIN=15715 PPBF_PILOT_BOOTSTRAP_KEY=... npm --prefix apps/web run seed:shadow:library
+  PILOT_GATE_BASE_URL=https://www.punxsyprominence.org PILOT_ADMIN_ACCOUNT_ID=org_admin_shadow PILOT_ADMIN_PIN=<set> PPBF_PILOT_BOOTSTRAP_KEY=<set> npm --prefix apps/web run seed:shadow:library
 `);
 }
 

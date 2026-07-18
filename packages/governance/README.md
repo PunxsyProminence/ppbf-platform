@@ -1,5 +1,5 @@
 # @ppbf/governance
-Layer 0 Governance. Feature flags via PPBF_CAPABILITIES.json. Jason-only promotion. PIN 15715 for admin desks.
+Layer 0 Governance. Feature flags via PPBF_CAPABILITIES.json. Jason-only promotion. Admin desk unlock requires runtime PIN configuration.
 
 Phase 2: featureFlags.ts (isFeatureEnabled, getEnabledCapabilities, ROUTING_MATRIX)
 Advanced: boundedContext.ts (enforceBoundedContext for nonprofit vs personal isolation)

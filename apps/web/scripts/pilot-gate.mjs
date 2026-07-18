@@ -9,7 +9,7 @@ const adminAccountId = process.env.PILOT_ADMIN_ACCOUNT_ID || '';
 const adminPin = process.env.PILOT_ADMIN_PIN || '';
 const bootstrapKey = process.env.PPBF_PILOT_BOOTSTRAP_KEY || '';
 const athleteAccountId = process.env.PILOT_ATHLETE_ACCOUNT_ID || 'athlete_account_001';
-const athletePin = process.env.PILOT_ATHLETE_PIN || '12345';
+const athletePin = process.env.PILOT_ATHLETE_PIN || '';
 
 const athleteId = process.env.PILOT_ATHLETE_ID || 'athlete_001';
 const coachId = process.env.PILOT_COACH_ID || adminAccountId || 'coach_001';
@@ -19,6 +19,11 @@ const reviewId = process.env.PILOT_REVIEW_ID || 'review_001';
 
 if (!adminAccountId || !adminPin) {
   console.error('Missing PILOT_ADMIN_ACCOUNT_ID or PILOT_ADMIN_PIN for gate execution.');
+  process.exit(1);
+}
+
+if (!athletePin) {
+  console.error('Missing PILOT_ATHLETE_PIN for gate execution.');
   process.exit(1);
 }
 
