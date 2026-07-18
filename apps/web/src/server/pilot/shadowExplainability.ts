@@ -31,7 +31,6 @@ export async function buildExplanationChain(
   userProfile: ShadowUserProfileRow,
   tierResult: ProfileTierResult,
   evidenceSignals?: Partial<Record<EvidenceLink['type'], number>>,
-  userPreference?: { prefersExplainability: boolean; prefersDetails: boolean }
 ): Promise<ExplanationChain> {
   const evidence: EvidenceLink[] = [];
   let confidenceBase = 50; // Start at 50% for all recommendations

@@ -217,7 +217,7 @@ export default function ScoutReportPage() {
                     { label: '🥇 Gold', count: scoreboard.profilesAtGold, percent: ((scoreboard.profilesAtGold / Math.max(scoreboard.profilesAtGold + scoreboard.profilesAtSilver + scoreboard.profilesAtBronze, 1)) * 100).toFixed(0) },
                     { label: '🥈 Silver', count: scoreboard.profilesAtSilver, percent: ((scoreboard.profilesAtSilver / Math.max(scoreboard.profilesAtGold + scoreboard.profilesAtSilver + scoreboard.profilesAtBronze, 1)) * 100).toFixed(0) },
                     { label: '🥉 Bronze', count: scoreboard.profilesAtBronze, percent: ((scoreboard.profilesAtBronze / Math.max(scoreboard.profilesAtGold + scoreboard.profilesAtSilver + scoreboard.profilesAtBronze, 1)) * 100).toFixed(0) },
-                  ].map(({ label, count, percent }) => (
+                  ].map(({ label, count, percent }: { label: string; count: number; percent: string }) => (
                     <div key={label} className="space-y-1">
                       <div className="flex justify-between text-[9px] text-[#b0a095]">
                         <span>{label} {count} users</span>
@@ -340,7 +340,7 @@ export default function ScoutReportPage() {
           {loadingJobs ? (
             <p className="mt-4 text-xs text-[#6a5a4a] font-mono">Loading...</p>
           ) : scoutJobs.length === 0 ? (
-            <p className="mt-4 text-xs text-[#6a5a4a] font-mono">No Scout Reports yet. Click "+ Request Scout Report" to generate one.</p>
+            <p className="mt-4 text-xs text-[#6a5a4a] font-mono">No Scout Reports yet. Click &quot;+ Request Scout Report&quot; to generate one.</p>
           ) : (
             <div className="mt-4 space-y-3">
               {scoutJobs.map((job) => (
@@ -408,7 +408,7 @@ export default function ScoutReportPage() {
                   ) : null}
 
                   {selectedJob?.jobId === job.jobId && job.status === 'pending' ? (
-                    <p className="mt-2 text-[10px] font-mono text-[#8a8a8a]">Queued — click "Process pending" to execute</p>
+                    <p className="mt-2 text-[10px] font-mono text-[#8a8a8a]">Queued — click &quot;Process pending&quot; to execute</p>
                   ) : null}
 
                   {selectedJob?.jobId === job.jobId && job.status === 'failed' ? (

@@ -1,7 +1,7 @@
 // shadowProfileProgression.ts — Tier progression (Bronze → Silver → Gold)
 // Manages profile tier advancement based on interaction count and feature adoption
 
-import { query, queryOne } from './db';
+import { query } from './db';
 import type { ShadowUserProfileRow } from './shadowUserProfile';
 
 export type UserProfileTier = 'bronze' | 'silver' | 'gold';

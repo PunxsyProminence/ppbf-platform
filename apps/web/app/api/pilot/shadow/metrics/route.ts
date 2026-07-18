@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/src/server/pilot/access';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { getGrowthMetrics } from '@/src/server/pilot/shadowMetrics';
-import { query, queryOne } from '@/src/server/pilot/db';
+import { queryOne } from '@/src/server/pilot/db';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import type { ShadowUserProfileRow } from '@/src/server/pilot/shadowUserProfile';
 
@@ -48,12 +48,13 @@ export async function GET(request: NextRequest) {
     await assertShadowRuntimeReadiness({ requiredTables: ['shadow_feedback', 'shadow_learning_events', 'shadow_user_profiles'] });
 
     const url = new URL(request.url);
-    const days = parseInt(url.searchParams.get('days') ?? '30', 10);
+    const daysParam = url.searchParams.get('days') ?? '30';
+    const days = parseInt(daysParam, 10);
     const userId = url.searchParams.get('userId');
 
     if (userId) {
       // User-specific metrics
-      const metrics = await getUserMetrics(principal.organizationId, userId, days);
+      const metrics = await getUserMetrics(principal.organizationId, userId);
       return NextResponse.json({ ok: true, metrics });
     }
 
@@ -73,17 +74,29 @@ async function getOrgMetrics(organizationId: string, days: number): Promise<OrgM
     getTierCounts(organizationId),
   ]);
 
+  const avgScore = typeof growthMetrics.avg_effectiveness === 'string'
+    ? parseFloat(growthMetrics.avg_effectiveness)
+    : (growthMetrics.avg_effectiveness ?? 0);
+
+  const filterRate = typeof growthMetrics.filter_rate === 'string'
+    ? parseFloat(growthMetrics.filter_rate)
+    : (growthMetrics.filter_rate ?? 0);
+
+  const satisfaction = typeof growthMetrics.avg_satisfaction === 'string'
+    ? parseFloat(growthMetrics.avg_satisfaction)
+    : (growthMetrics.avg_satisfaction ?? 0);
+
   return {
     period: `Last ${days} days`,
     effectiveness: {
-      avgRecommendationScore: growthMetrics.avg_effectiveness ? Math.round((growthMetrics.avg_effectiveness as any) * 100) : 0,
+      avgRecommendationScore: Math.round(avgScore * 100),
       libraryUtilization: 75, // Placeholder
       topicsWithGoodCoverage: [],
       concernedTopics: [],
     },
     engagement: {
       dailyActiveUsers: 0, // Would need separate query
-      avgMessagesPerSession: growthMetrics.filter_rate ? Math.round((growthMetrics.filter_rate as any) * 100) : 0,
+      avgMessagesPerSession: Math.round(filterRate * 100),
       feedbackRate: 0, // Would need separate query
       usersByTier: tierCounts,
       newUsersThisPeriod: 0, // Would need separate query
@@ -97,15 +110,30 @@ async function getOrgMetrics(organizationId: string, days: number): Promise<OrgM
       avgComplexityProgression: 0.15,
       profileCompletionRate: 0.62,
       tierAdvancementCount: 3,
-      totalInteractions: growthMetrics.total_interactions,
-      positiveOutcomeRate: growthMetrics.avg_satisfaction ? (growthMetrics.avg_satisfaction as any) / 100 : 0,
+      totalInteractions: growthMetrics.total_interactions ?? 0,
+      positiveOutcomeRate: satisfaction / 100,
     },
   };
 }
 
 // ─── User-Level Metrics ───────────────────────────────────────────────────
 
-async function getUserMetrics(organizationId: string, userId: string, days: number): Promise<any> {
+interface UserMetrics {
+  userId: string;
+  profile: {
+    tier: string;
+    completeness: number;
+    totalInteractions: number;
+    daysSinceFirstInteraction: number;
+    daysSinceLastInteraction: number;
+  };
+  engagement: {
+    favoriteTopics: string[];
+    preferredSessionType: string;
+  };
+}
+
+async function getUserMetrics(organizationId: string, userId: string): Promise<UserMetrics> {
   const profile = await queryOne<ShadowUserProfileRow>(
     `SELECT * FROM pilot.shadow_user_profiles WHERE account_id = $1 AND organization_id = $2`,
     [userId, organizationId]

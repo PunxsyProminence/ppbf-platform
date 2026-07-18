@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/src/server/pilot/db';
 import { requirePrincipal, jsonError } from '@/src/server/pilot/http';
 import { requireRole } from '@/src/server/pilot/access';
+import type { PilotRole } from '@/src/server/pilot/contracts';
 import {
   validateShadowRequest,
   validateShadowResponse,
@@ -144,7 +145,7 @@ async function routeLlmCall(ctx: LlmRouteContext): Promise<LlmRouteResult> {
 
   if (isAsyncSession(sessionType) || (shouldRunAsync(sessionType, tierResult.tier) && preferAsync)) {
     const asyncResult = await executeHeavyBagAsync({
-      message, userId, organizationId, role: userRole as any, userProfile, tierResult,
+      message, userId, organizationId, role: userRole as PilotRole, userProfile, tierResult,
       contextOutput, classification, sessionType, athleteId, systemPromptBase: SHADOW_SYSTEM_PROMPT,
     });
     return {
@@ -160,7 +161,7 @@ async function routeLlmCall(ctx: LlmRouteContext): Promise<LlmRouteResult> {
   if (effectiveTier === 'heavy_bag') {
     try {
       const result = await executeHeavyBagSync(
-        { message, userId, organizationId, role: userRole as any, userProfile, tierResult,
+        { message, userId, organizationId, role: userRole as PilotRole, userProfile, tierResult,
           contextOutput, classification, sessionType: 'heavy_bag', athleteId, systemPromptBase: prompt },
         process.env.AZURE_AI_ENDPOINT ?? '',
         process.env.AZURE_AI_KEY ?? '',
@@ -193,10 +194,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     const { message, athleteId, tier: userRequestedTier, preferAsync = false } = body;
 
     // Step 1: Classify request + route via The Corner
-    const classification = classifyRequest(message, userRole as any, userRequestedTier);
+    const classification = classifyRequest(message, userRole as PilotRole, userRequestedTier);
     const effectiveTier = classification.tier;
     const isManualOverride = userRequestedTier !== undefined;
-    const sessionType = tierToSessionType(effectiveTier, userRole as any, isManualOverride);
+    const sessionType = tierToSessionType(effectiveTier, userRole as PilotRole, isManualOverride);
 
     // Step 2: Validate request first (blocks diagnosis, clearance, prescription for non-educational queries)
     const requestValidation = await validateShadowRequest(message, userRole, organizationId);
@@ -220,16 +221,16 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     }
 
     // Step 3: Load personal user shadow profile + classify profiling tier
-    const userProfile = await getOrCreateShadowUserProfile(userId, organizationId, userRole as 'coach' | 'admin' | 'athlete' | 'parent' | 'organization_admin');
+    const userProfile = await getOrCreateShadowUserProfile(userId, organizationId, userRole as PilotRole);
     const tierResult = classifyProfileTier(userProfile);
-    const routing = routeRequest(sessionType, userRole as any, classification.complexity);
+    const routing = routeRequest(sessionType, userRole as PilotRole, classification.complexity);
 
     // Step 4: Build tier-aware context (Quick Round = lightweight, Heavy Bag = full)
     const contextOutput = buildShadowContext({
       tier: effectiveTier,
       userProfile,
       userMessage: message,
-      userRole: userRole as any,
+      userRole: userRole as PilotRole,
       organizationId,
       athleteId,
     });
