@@ -295,7 +295,7 @@ export default function AthleteWorkspace() {
           targetDate: item.target_date?.split('T')[0] || '',
           successMetric: item.metric || '',
           progressPercent: item.progress_percent || 0,
-          status: (item.status?.charAt(0).toUpperCase() + item.status?.slice(1).toLowerCase() || 'Not Started') as GoalStatus,
+          status: (item.status ? item.status.charAt(0).toUpperCase() + item.status.slice(1).toLowerCase() : 'Not Started') as GoalStatus,
           specific: '',
           measurable: '',
           achievable: '',

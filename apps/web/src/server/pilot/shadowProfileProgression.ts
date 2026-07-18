@@ -88,10 +88,10 @@ function calculateProfileCompleteness(profile: ShadowUserProfileRow): number {
   }
 
   // Has many facts (10%)
-  if (profile.remembered_facts && profile.remembered_facts.length >= 5) score += 1;
+  if (profile.remembered_facts?.length >= 5) score += 1;
 
   // Has high-confidence facts (10%)
-  if (profile.remembered_facts && profile.remembered_facts.some(f => f.confidence >= 0.8)) score += 1;
+  if (profile.remembered_facts?.some(f => f.confidence >= 0.8)) score += 1;
 
   return Math.min(1, score / maxScore);
 }

@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
 
     const url = new URL(request.url);
     const daysParam = url.searchParams.get('days') ?? '30';
-    const days = parseInt(daysParam, 10);
+    const days = Number.parseInt(daysParam, 10);
     const userId = url.searchParams.get('userId');
 
     if (userId) {
@@ -75,15 +75,15 @@ async function getOrgMetrics(organizationId: string, days: number): Promise<OrgM
   ]);
 
   const avgScore = typeof growthMetrics.avgEffectiveness === 'string'
-    ? parseFloat(growthMetrics.avgEffectiveness)
+    ? Number.parseFloat(growthMetrics.avgEffectiveness)
     : (growthMetrics.avgEffectiveness ?? 0);
 
   const filterRate = typeof growthMetrics.filterRate === 'string'
-    ? parseFloat(growthMetrics.filterRate)
+    ? Number.parseFloat(growthMetrics.filterRate)
     : (growthMetrics.filterRate ?? 0);
 
   const satisfaction = typeof growthMetrics.avgSatisfaction === 'string'
-    ? parseFloat(growthMetrics.avgSatisfaction)
+    ? Number.parseFloat(growthMetrics.avgSatisfaction)
     : (growthMetrics.avgSatisfaction ?? 0);
 
   return {

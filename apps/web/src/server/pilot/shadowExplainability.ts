@@ -226,16 +226,17 @@ function generateAlternatives(
  * Format explanation chain as markdown for user display
  */
 export function formatExplanation(chain: ExplanationChain, brief = false): string {
-  const lines: string[] = [];
-
-  lines.push(`**${chain.recommendation}**`);
-  lines.push(`\n**Confidence:** ${chain.confidenceLevel} (${Math.round(chain.confidence)}%)`);
-  lines.push(`\n**Why:** ${chain.reasoning}\n`);
+  const lines: string[] = [
+    `**${chain.recommendation}**`,
+    `\n**Confidence:** ${chain.confidenceLevel} (${Math.round(chain.confidence)}%)`,
+    `\n**Why:** ${chain.reasoning}\n`
+  ];
 
   if (!brief && chain.evidenceLinks.length > 0) {
     lines.push('**Evidence:**');
     for (const link of chain.evidenceLinks.slice(0, 3)) {
-      lines.push(`- ${link.label}${link.value ? `: ${link.value}` : ''}`);
+      const valueStr = link.value ? `: ${link.value}` : '';
+      lines.push(`- ${link.label}${valueStr}`);
     }
     lines.push('');
   }
