@@ -185,11 +185,11 @@ export default function ParentHub() {
         });
         if (!response.ok) throw new Error('Failed to load children');
         
-        const data = (await response.json()) as { items?: Array<any> };
+        const data = (await response.json()) as { items?: Array<{ athlete_id: string; full_name?: string }> };
         const items = data.items || [];
         
         // Convert PilotAthlete to Child format
-        const childList: Child[] = items.map((item: any, index: number) => {
+        const childList: Child[] = items.map((item, index: number) => {
           // Generate deterministic placeholder attendance (80-100%) based on item index
           const placeholderAttendance = 80 + (index % 21);
           return {

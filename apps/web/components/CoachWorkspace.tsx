@@ -336,12 +336,12 @@ export default function CoachWorkspace() {
         });
         if (!response.ok) throw new Error('Failed to load athletes');
         
-        const data = (await response.json()) as { items?: Array<any> };
+        const data = (await response.json()) as { items?: Array<{ athlete_id: string; full_name?: string; gym_status?: string }> };
         const items = data.items || [];
         
         // Convert PilotAthlete to Athlete format
         const readinessValues: Array<'GREEN' | 'YELLOW' | 'RED'> = ['GREEN', 'YELLOW', 'RED'];
-        const athleteList: Athlete[] = items.slice(0, 3).map((item: any, index: number) => ({
+        const athleteList: Athlete[] = items.slice(0, 3).map((item, index: number) => ({
           id: item.athlete_id,
           name: item.full_name || 'Unknown',
           track: item.gym_status || 'Foundations',

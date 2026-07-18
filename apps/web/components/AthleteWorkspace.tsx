@@ -271,7 +271,6 @@ export default function AthleteWorkspace() {
   // Fetch goals when athlete ID is set
   useEffect(() => {
     if (!backendAthleteId) {
-      setGoalsLoading(false);
       return;
     }
 
@@ -285,11 +284,11 @@ export default function AthleteWorkspace() {
         );
         if (!response.ok) throw new Error('Failed to load goals');
         
-        const data = (await response.json()) as { items?: Array<any> };
+        const data = (await response.json()) as { items?: Array<{ goal_id: string; title: string; category?: string; target_date?: string; metric?: string; progress_percent?: number; status?: string }> };
         const items = data.items || [];
         
         // Convert PilotGoal to SMARTGoal format
-        const goals: SMARTGoal[] = items.map((item: any) => ({
+        const goals: SMARTGoal[] = items.map((item) => ({
           id: item.goal_id,
           title: item.title,
           category: (item.category || 'Boxing') as SMARTCategory,
@@ -315,7 +314,6 @@ export default function AthleteWorkspace() {
   // Fetch sessions and convert to floor tasks when athlete ID is set
   useEffect(() => {
     if (!backendAthleteId) {
-      setTasksLoading(false);
       return;
     }
 
@@ -329,7 +327,7 @@ export default function AthleteWorkspace() {
         );
         if (!response.ok) throw new Error('Failed to load sessions');
         
-        const data = (await response.json()) as { items?: Array<any> };
+        const data = (await response.json()) as { items?: Array<{ session_id: string; title: string; date?: string; notes?: string }> };
         const sessions = data.items || [];
         
         // If no sessions exist, show placeholder tasks

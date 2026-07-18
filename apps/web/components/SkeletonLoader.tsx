@@ -125,7 +125,7 @@ export default function SkeletonLoader({
             style={{
               ...skeletonStyle,
               // Optional: make last line slightly narrower
-              width: index === lines - 1 ? `${Math.random() * 30 + 70}%` : width,
+              width: index === lines - 1 ? `${65 + (index % 20)}%` : width,
             }}
             aria-hidden="true"
             role="status"

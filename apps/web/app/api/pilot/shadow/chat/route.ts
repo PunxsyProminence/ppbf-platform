@@ -312,7 +312,6 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           userProfile,
           tierResult,
           { assessment: 0.7, library: 0.85 }, // Default evidence signals
-          { prefersExplainability: tierResult.tier === 'gold', prefersDetails: tierResult.tier === 'gold' }
         );
         
         // Only include if user has opted in or is Gold tier
