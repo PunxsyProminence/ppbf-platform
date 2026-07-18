@@ -110,7 +110,7 @@ async function getOrgMetrics(organizationId: string, days: number): Promise<OrgM
       avgComplexityProgression: 0.15,
       profileCompletionRate: 0.62,
       tierAdvancementCount: 3,
-      totalInteractions: growthMetrics.total_interactions ?? 0,
+      totalInteractions: growthMetrics.totalInteractions ?? 0,
       positiveOutcomeRate: satisfaction / 100,
     },
   };
@@ -147,10 +147,11 @@ async function getUserMetrics(organizationId: string, userId: string): Promise<U
   const lastTime = profile.last_interaction_at ? new Date(profile.last_interaction_at).getTime() : createdTime;
   const nowTime = Date.now();
 
+  const tierLevel = profile.interaction_count >= 50 ? 'gold' : profile.interaction_count >= 20 ? 'silver' : 'bronze';
   return {
     userId,
     profile: {
-      tier: profile.interaction_count >= 50 ? 'gold' : profile.interaction_count >= 20 ? 'silver' : 'bronze',
+      tier: tierLevel,
       completeness: calculateCompleteness(profile),
       totalInteractions: profile.interaction_count,
       daysSinceFirstInteraction: Math.floor((nowTime - createdTime) / (1000 * 60 * 60 * 24)),

@@ -348,20 +348,12 @@ export default function ScoutReportPage() {
           ) : (
             <div className="mt-4 space-y-3">
               {scoutJobs.map((job) => (
-                <article
+                <button
                   key={job.jobId}
-                  role="button"
-                  tabIndex={0}
-                  className={`border bg-[#0f0f0f] p-4 cursor-pointer transition ${
+                  className={`border bg-[#0f0f0f] p-4 cursor-pointer transition w-full text-left ${
                     selectedJob?.jobId === job.jobId ? 'border-[#d4a574]' : 'border-[#5a4a3a] hover:border-[#8b4444]'
                   }`}
                   onClick={() => setSelectedJob(selectedJob?.jobId === job.jobId ? null : job)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      setSelectedJob(selectedJob?.jobId === job.jobId ? null : job);
-                    }
-                  }}
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div>
@@ -426,7 +418,7 @@ export default function ScoutReportPage() {
                   {selectedJob?.jobId === job.jobId && job.status === 'failed' ? (
                     <p className="mt-2 text-[10px] font-mono text-[#dc2626]">Error: {job.error}</p>
                   ) : null}
-                </article>
+                </button>
               ))}
             </div>
           )}

@@ -92,10 +92,11 @@ async function fetchLibraryClaim(
   rawQuestion: string,
   apiBaseUrl: string,
 ): Promise<ShadowLibraryClaimApiResponse> {
+  const scope = mode === 'master' ? 'master' : subject ? 'subject' : 'scoped';
   const res = await fetch(`${apiBaseUrl}/api/pilot/shadow/library/claims`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ scope: mode === 'master' ? 'master' : subject ? 'subject' : 'scoped', subject_id: subject || undefined, question: rawQuestion, limit: 5 }),
+    body: JSON.stringify({ scope, subject_id: subject || undefined, question: rawQuestion, limit: 5 }),
   });
   if (!res.ok) throw new Error('library claim request failed');
   return res.json() as Promise<ShadowLibraryClaimApiResponse>;
@@ -528,7 +529,11 @@ function ShadowChatPageContent() {
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-[9px] text-[#6a5a4a]">
                           {msg.tier === 'heavy_bag' ? '🥊 Heavy Bag' : '⚡ Quick Round'}
-                          {msg.profileTier ? ` · Tier: ${msg.profileTier === 'bronze' ? '🥉' : msg.profileTier === 'silver' ? '🥈' : '🥇'} ${msg.profileTier.charAt(0).toUpperCase()}${msg.profileTier.slice(1)}` : ''}
+                          {msg.profileTier ? (() => {
+                            const tierEmoji = msg.profileTier === 'bronze' ? '🥉' : msg.profileTier === 'silver' ? '🥈' : '🥇';
+                            const tierLabel = msg.profileTier.charAt(0).toUpperCase() + msg.profileTier.slice(1);
+                            return ` · Tier: ${tierEmoji} ${tierLabel}`;
+                          })() : ''}
                           {msg.isAsync ? ' · Processing...' : ''}
                         </p>
                         {!msg.feedbackSent ? (
