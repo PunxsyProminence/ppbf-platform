@@ -74,17 +74,17 @@ async function getOrgMetrics(organizationId: string, days: number): Promise<OrgM
     getTierCounts(organizationId),
   ]);
 
-  const avgScore = typeof growthMetrics.avg_effectiveness === 'string'
-    ? parseFloat(growthMetrics.avg_effectiveness)
-    : (growthMetrics.avg_effectiveness ?? 0);
+  const avgScore = typeof growthMetrics.avgEffectiveness === 'string'
+    ? parseFloat(growthMetrics.avgEffectiveness)
+    : (growthMetrics.avgEffectiveness ?? 0);
 
-  const filterRate = typeof growthMetrics.filter_rate === 'string'
-    ? parseFloat(growthMetrics.filter_rate)
-    : (growthMetrics.filter_rate ?? 0);
+  const filterRate = typeof growthMetrics.filterRate === 'string'
+    ? parseFloat(growthMetrics.filterRate)
+    : (growthMetrics.filterRate ?? 0);
 
-  const satisfaction = typeof growthMetrics.avg_satisfaction === 'string'
-    ? parseFloat(growthMetrics.avg_satisfaction)
-    : (growthMetrics.avg_satisfaction ?? 0);
+  const satisfaction = typeof growthMetrics.avgSatisfaction === 'string'
+    ? parseFloat(growthMetrics.avgSatisfaction)
+    : (growthMetrics.avgSatisfaction ?? 0);
 
   return {
     period: `Last ${days} days`,
