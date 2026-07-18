@@ -83,6 +83,11 @@ jobs:
             PPBF_AUTH_PROVIDER_WIRED=false
             AZURE_POSTGRES_CONNECTION_STRING=secretref:azure-postgres-connection-string
             AZURE_STORAGE_CONNECTION_STRING=secretref:azure-storage-connection-string
+            PPBF_MS_TENANT_ID=secretref:ppbf-ms-tenant-id
+            PPBF_MS_CLIENT_ID=secretref:ppbf-ms-client-id
+            PPBF_MS_CLIENT_SECRET=secretref:ppbf-ms-client-secret
+            PPBF_MS_REDIRECT_URI=secretref:ppbf-ms-redirect-uri
+            PPBF_MS_POST_LOGIN_PATH=secretref:ppbf-ms-post-login-path
             PPBF_PILOT_BOOTSTRAP_KEY=secretref:ppbf-pilot-bootstrap-key
             PPBF_PILOT_DEFAULT_ORG_ID=secretref:ppbf-pilot-default-org-id
             PPBF_PILOT_SHADOW_CONTAINER=secretref:ppbf-pilot-shadow-container
