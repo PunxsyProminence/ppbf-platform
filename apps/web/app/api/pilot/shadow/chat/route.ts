@@ -16,6 +16,9 @@ import {
 } from '@/src/server/pilot/shadowUserProfile';
 import { classifyRequest, type ShadowTier } from '@/src/server/pilot/shadowClassifier';
 import { buildShadowContext } from '@/src/server/pilot/shadowContextBuilder';
+import { routeRequest, tierToSessionType, isAsyncSession, getModelStatus } from '@/src/server/pilot/shadowRouter';
+import { classifyProfileTier, buildPersonalizationPrompt } from '@/src/server/pilot/shadowProfiling';
+import { executeHeavyBagSync, executeHeavyBagAsync, shouldRunAsync } from '@/src/server/pilot/shadowHeavyBag';
 
 export interface ShadowChatRequest {
   message: string;
@@ -23,6 +26,8 @@ export interface ShadowChatRequest {
   context?: string;
   organizationId: string;
   tier?: ShadowTier; // Optional manual tier override (coaches/admins only)
+  sessionType?: string; // Optional: 'film_study' | 'scout_report' | 'board_summary'
+  preferAsync?: boolean; // Client can request async for heavy sessions
 }
 
 export interface ShadowChatResponse {
@@ -35,6 +40,11 @@ export interface ShadowChatResponse {
   highRiskTopic?: string;
   tier?: ShadowTier; // Which tier was used for this response
   complexity?: number; // Complexity score (0–1) for debugging
+  sessionType?: string; // The Corner routing decision
+  profileTier?: string; // Bronze/Silver/Gold
+  modelUsed?: string; // Which model handled this request
+  async?: boolean; // True if response is async (jobId instead of response)
+  jobId?: string; // Present when async=true — poll /api/pilot/shadow/jobs/[jobId]
   error?: string;
 }
 
@@ -115,11 +125,13 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     }
 
     const body: ShadowChatRequest = await request.json();
-    const { message, athleteId, tier: userRequestedTier } = body;
+    const { message, athleteId, tier: userRequestedTier, preferAsync = false } = body;
 
-    // Step 1: Classify request to determine tier (Quick Round vs Heavy Bag)
+    // Step 1: Classify request + route via The Corner
     const classification = classifyRequest(message, userRole as any, userRequestedTier);
     const effectiveTier = classification.tier;
+    const isManualOverride = userRequestedTier !== undefined;
+    const sessionType = tierToSessionType(effectiveTier, userRole as any, isManualOverride);
 
     // Step 2: Validate request first (blocks diagnosis, clearance, prescription for non-educational queries)
     const requestValidation = await validateShadowRequest(message, userRole, organizationId);
@@ -142,12 +154,13 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       );
     }
 
-    // Step 3: Load personal user shadow profile for context building
+    // Step 3: Load personal user shadow profile + classify profiling tier
     const userProfile = await getOrCreateShadowUserProfile(userId, organizationId, userRole as 'coach' | 'admin' | 'athlete' | 'parent' | 'organization_admin');
+    const tierResult = classifyProfileTier(userProfile);
+    const routing = routeRequest(sessionType, userRole as any, classification.complexity);
 
     // Step 4: Build tier-aware context (Quick Round = lightweight, Heavy Bag = full)
-    // NOTE: Context currently not passed to LLM; reserved for future multi-model gateway (Phase 2+)
-    buildShadowContext({
+    const contextOutput = buildShadowContext({
       tier: effectiveTier,
       userProfile,
       userMessage: message,
@@ -184,23 +197,67 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     const messageId = `msg_${Date.now()}`;
     const createdAt = new Date();
 
-    // Step 6: Determine response (fallback for high-risk or call LLM)
+    // Step 6: Route to correct model via The Corner
     let llmResponse: string;
+    let resolvedAsync = false;
+    let asyncJobId: string | undefined;
     const { classification: highRiskClassification } = requestValidation;
-    if (highRiskClassification && highRiskClassification in FALLBACK_RESPONSES) {
-      llmResponse = FALLBACK_RESPONSES[highRiskClassification];
-    } else {
-      // Call Azure OpenAI with tier-aware system prompt
-      // NOTE: Model routing logic reserved for multi-model gateway (Phase 2+)
-      // Currently: gpt-5.4 handles both Quick Round & Heavy Bag with context differentiation
-      const azureResult = await callAzureOpenAI(SHADOW_SYSTEM_PROMPT, message);
 
-      if (!azureResult.success) {
-        // Fallback to safe educational response
+    if (highRiskClassification && highRiskClassification in FALLBACK_RESPONSES) {
+      // Doctrine fallback — no LLM call needed
+      llmResponse = FALLBACK_RESPONSES[highRiskClassification];
+    } else if (isAsyncSession(sessionType) || (shouldRunAsync(sessionType, tierResult.tier) && preferAsync)) {
+      // ── Async: Recovery Round / Scout Report / Board Summary ─────────────
+      const asyncResult = await executeHeavyBagAsync({
+        message,
+        userId,
+        organizationId,
+        role: userRole as any,
+        userProfile,
+        tierResult,
+        contextOutput,
+        classification,
+        sessionType,
+        athleteId,
+        systemPromptBase: SHADOW_SYSTEM_PROMPT,
+      });
+      asyncJobId = asyncResult.jobId;
+      resolvedAsync = true;
+      llmResponse = `Your ${sessionType.replace(/_/g, ' ')} has been queued. Job ID: ${asyncJobId}`;
+    } else if (effectiveTier === 'heavy_bag') {
+      // ── Sync Heavy Bag Session via The Corner ─────────────────────────────
+      const personalization = buildPersonalizationPrompt(userProfile, tierResult);
+      const heavyPrompt = SHADOW_SYSTEM_PROMPT + personalization;
+      try {
+        const heavyResult = await executeHeavyBagSync(
+          {
+            message,
+            userId,
+            organizationId,
+            role: userRole as any,
+            userProfile,
+            tierResult,
+            contextOutput,
+            classification,
+            sessionType: 'heavy_bag',
+            athleteId,
+            systemPromptBase: heavyPrompt,
+          },
+          process.env.AZURE_AI_ENDPOINT ?? '',
+          process.env.AZURE_AI_KEY ?? '',
+        );
+        llmResponse = heavyResult.response ?? 'SHADOW Heavy Bag response unavailable.';
+      } catch {
         llmResponse = 'SHADOW is currently unavailable. Please contact your organization for support.';
-      } else {
-        llmResponse = azureResult.response;
       }
+    } else {
+      // ── Quick Round via standard callAzureOpenAI ───────────────────────────
+      const personalization = buildPersonalizationPrompt(userProfile, tierResult);
+      const quickPrompt = SHADOW_SYSTEM_PROMPT + personalization;
+      const azureResult = await callAzureOpenAI(quickPrompt, message);
+      llmResponse = azureResult.success
+        ? azureResult.response
+        : 'SHADOW is currently unavailable. Please contact your organization for support.';
     }
 
     // Step 7: Validate response BEFORE displaying to user
@@ -245,6 +302,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       highRiskTopic: requestValidation.topic || undefined,
       tier: effectiveTier,
       complexity: classification.complexity,
+      sessionType,
+      profileTier: tierResult.tier,
+      modelUsed: routing.model.displayName,
+      async: resolvedAsync,
+      jobId: asyncJobId,
     });
   } catch (error) {
     return NextResponse.json(
