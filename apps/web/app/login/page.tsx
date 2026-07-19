@@ -146,7 +146,15 @@ function RegisterTabContent(props: Readonly<RegisterTabProps>) {
     <>
       <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">Registration</p>
-        <p className="mt-3 text-sm leading-6 text-[var(--black)]">Creates an athlete account through the existing backend account API.</p>
+        <p className="mt-3 text-sm leading-6 text-[var(--black)]">
+          Athlete accounts are created by an admin. Sign in as admin, then use Organization Provisioning to add organizations and users.
+        </p>
+        <Link
+          href="/admin/organizations"
+          className="mt-3 inline-flex min-h-[38px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--black)]"
+        >
+          Open Organization Provisioning
+        </Link>
       </div>
 
       <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="register-account-id">
