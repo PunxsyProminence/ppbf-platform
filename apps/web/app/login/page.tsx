@@ -5,8 +5,14 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { type ClubRole } from '@/components/roleRoutes';
 import { apiBase } from '@/lib/apiBase';
-import { getPostLoginRoute, readRoleSession, clearRoleSession } from '@/components/roleSession';
-import { createMicrosoftSignInHandler, getTabButtonClass, validateAnnouncementPublishInput } from '@/src/client/loginPageHelpers';
+import { createPersistentRoleSession, getPostLoginRoute, readRoleSession, clearRoleSession } from '@/components/roleSession';
+import {
+  createMicrosoftSignInHandler,
+  getPilotLoginRedirectPath,
+  getTabButtonClass,
+  mapPilotLoginRoleToClubRole,
+  validateAnnouncementPublishInput,
+} from '@/src/client/loginPageHelpers';
 
 type ActiveTab = 'login' | 'register' | 'announcement';
 
@@ -40,6 +46,13 @@ function AnnouncementCard({ item }: Readonly<{ item: LoginAnnouncement }>) {
 interface LoginTabProps {
   announcements: LoginAnnouncement[];
   signInWithMicrosoft: () => void;
+  loginAccountId: string;
+  setLoginAccountId: (value: string) => void;
+  loginPin: string;
+  setLoginPin: (value: string) => void;
+  loginBusy: boolean;
+  loginError: string;
+  loginWithPin: () => Promise<void>;
   authErrorMessage: string;
 }
 
@@ -69,6 +82,47 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
         className="inline-flex w-full items-center justify-center border-2 border-[var(--black)] bg-[var(--gray-dark)] px-4 py-3 text-sm font-black uppercase tracking-[0.2em] text-[var(--white)] transition hover:bg-[var(--black)]"
       >
         Sign In With Microsoft
+      </button>
+
+      <div className="border-t-2 border-[var(--black)] pt-5">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">Account PIN Login</p>
+        <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">Use your existing admin, coach, athlete, or parent account ID and PIN.</p>
+      </div>
+
+      <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="login-account-id">
+        Account ID
+      </label>
+      <input
+        id="login-account-id"
+        type="text"
+        value={props.loginAccountId}
+        onChange={(event) => props.setLoginAccountId(event.target.value)}
+        placeholder="admin-account-id"
+        className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
+      />
+
+      <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="login-pin">
+        PIN
+      </label>
+      <input
+        id="login-pin"
+        type="password"
+        inputMode="numeric"
+        value={props.loginPin}
+        onChange={(event) => props.setLoginPin(event.target.value)}
+        placeholder="Enter PIN"
+        className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
+      />
+
+      {props.loginError ? <p className="text-sm text-[var(--red-primary)]">{props.loginError}</p> : null}
+
+      <button
+        type="button"
+        disabled={props.loginBusy}
+        onClick={() => void props.loginWithPin()}
+        className="inline-flex w-full items-center justify-center border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 py-3 text-sm font-black uppercase tracking-[0.2em] text-[var(--white)] transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-70"
+      >
+        {props.loginBusy ? 'Signing In...' : 'Sign In With Account PIN'}
       </button>
     </>
   );
@@ -242,6 +296,10 @@ function LoginPageContent() {
   const [registerError, setRegisterError] = useState('');
   const [registerSuccess, setRegisterSuccess] = useState('');
   const [registerBusy, setRegisterBusy] = useState(false);
+  const [loginAccountId, setLoginAccountId] = useState('');
+  const [loginPin, setLoginPin] = useState('');
+  const [loginBusy, setLoginBusy] = useState(false);
+  const [loginError, setLoginError] = useState('');
 
   const authErrorMessage = (() => {
     const error = searchParams.get('error');
@@ -423,6 +481,10 @@ function LoginPageContent() {
 
       if (!response.ok) {
         const result = (await response.json().catch(() => ({ error: 'Registration failed' }))) as { error?: string };
+        if (response.status === 401 || response.status === 403) {
+          setRegisterError('Registration requires an admin to create the account first. Sign in as admin, then use Admin Organizations > Create User.');
+          return;
+        }
         setRegisterError(result.error || 'Registration failed');
         return;
       }
@@ -437,6 +499,42 @@ function LoginPageContent() {
     }
   }
 
+  async function loginWithPin() {
+    const accountId = loginAccountId.trim();
+    const pin = loginPin.trim();
+
+    if (!accountId || !pin) {
+      setLoginError('Account ID and PIN are required.');
+      return;
+    }
+
+    setLoginBusy(true);
+    setLoginError('');
+
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: accountId, pin }),
+      });
+
+      const result = (await response.json().catch(() => ({ error: 'Login failed' }))) as {
+        error?: string;
+        role?: string;
+      };
+
+      if (!response.ok || !result.role) {
+        setLoginError(result.error || 'Invalid account ID or PIN.');
+        return;
+      }
+
+      createPersistentRoleSession(mapPilotLoginRoleToClubRole(result.role));
+      router.replace(getPilotLoginRedirectPath(result.role));
+    } finally {
+      setLoginBusy(false);
+    }
+  }
+
   const microsoftSignIn = createMicrosoftSignInHandler(apiBase());
 
   const tabContentMap: Record<ActiveTab, ReactElement> = {
@@ -444,6 +542,13 @@ function LoginPageContent() {
       <LoginTabContent
         announcements={announcements}
         signInWithMicrosoft={microsoftSignIn}
+        loginAccountId={loginAccountId}
+        setLoginAccountId={setLoginAccountId}
+        loginPin={loginPin}
+        setLoginPin={setLoginPin}
+        loginBusy={loginBusy}
+        loginError={loginError}
+        loginWithPin={loginWithPin}
         authErrorMessage={authErrorMessage}
       />
     ),

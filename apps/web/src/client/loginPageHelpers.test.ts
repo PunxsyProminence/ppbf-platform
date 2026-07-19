@@ -1,7 +1,9 @@
 import {
   canPublishAnnouncement,
+  getPilotLoginRedirectPath,
   getMicrosoftStartUrl,
   getTabButtonClass,
+  mapPilotLoginRoleToClubRole,
   validateAnnouncementPublishInput,
 } from './loginPageHelpers';
 
@@ -41,6 +43,20 @@ describe('login page helpers', () => {
   test('returns the active and inactive tab button classes', () => {
     expect(getTabButtonClass(true)).toContain('bg-[var(--red-primary)]');
     expect(getTabButtonClass(false)).toContain('bg-[var(--canvas-tan)]');
+  });
+
+  test('maps backend login roles to supported frontend sessions', () => {
+    expect(mapPilotLoginRoleToClubRole('platform_owner')).toBe('admin');
+    expect(mapPilotLoginRoleToClubRole('organization_admin')).toBe('admin');
+    expect(mapPilotLoginRoleToClubRole('coach')).toBe('coach');
+    expect(mapPilotLoginRoleToClubRole('athlete')).toBe('athlete');
+    expect(mapPilotLoginRoleToClubRole('parent')).toBe('parent');
+  });
+
+  test('routes platform owners to organization provisioning after direct login', () => {
+    expect(getPilotLoginRedirectPath('platform_owner')).toBe('/admin/organizations');
+    expect(getPilotLoginRedirectPath('organization_admin')).toBe('/admin');
+    expect(getPilotLoginRedirectPath('coach')).toBe('/coach/review-queue');
   });
 
   test('permits only the expected announcement roles', () => {

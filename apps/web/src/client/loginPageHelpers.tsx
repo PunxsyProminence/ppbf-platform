@@ -2,6 +2,38 @@ import type { ReactElement } from 'react';
 
 import type { ClubRole } from '@/components/roleRoutes';
 
+export function mapPilotLoginRoleToClubRole(role: string): ClubRole {
+  if (role === 'coach' || role === 'athlete' || role === 'parent') {
+    return role;
+  }
+
+  return 'admin';
+}
+
+export function getPilotLoginRedirectPath(role: string): string {
+  if (role === 'platform_owner') {
+    return '/admin/organizations';
+  }
+
+  if (role === 'organization_admin' || role === 'admin') {
+    return '/admin';
+  }
+
+  if (role === 'coach') {
+    return '/coach/review-queue';
+  }
+
+  if (role === 'athlete') {
+    return '/athlete/dashboard';
+  }
+
+  if (role === 'parent') {
+    return '/parent/dashboard';
+  }
+
+  return '/admin';
+}
+
 export function canPublishAnnouncement(role: ClubRole): boolean {
   return role === 'coach' || role === 'admin' || role.startsWith('board-');
 }
