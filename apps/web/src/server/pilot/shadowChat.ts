@@ -193,9 +193,19 @@ export function validateShadowRequest(
   _organizationId: string,
 ): ShadowValidationResult {
   const classification = classifyHighRiskTopic(message);
+  const normalizedMessage = message.toLowerCase();
+
+  const hasPrescriptionLanguage = /\b(prescrib|rx)\b/i.test(message)
+    || /should\s+i\s+take/i.test(message)
+    || /should\s+you\s+take/i.test(message)
+    || /take\s+(?:this\s+)?(?:medication|medicine|drug|pill)/i.test(message);
+
+  const hasRapidWeightCutLanguage = /how\s+do\s+i\s+cut\s+weight/i.test(message)
+    || normalizedMessage.includes('lose weight quickly')
+    || normalizedMessage.includes('cut weight for my weight class');
 
   // Direct prescription or weight-cutting directives are blocked even when phrased as questions.
-  if (/(prescrib|rx|should\s+i\s+take|should\s+you\s+take|take\s+(?:this\s+)?(?:medication|medicine|drug|pill)|how\s+do\s+i\s+cut\s+weight|lose\s+weight\s+quickly|cut\s+weight\s+for\s+my\s+weight\s+class)/i.test(message)) {
+  if (hasPrescriptionLanguage || hasRapidWeightCutLanguage) {
     return {
       valid: false,
       error: 'Medication and prescription recommendations require prescription authority and professional medical oversight.',

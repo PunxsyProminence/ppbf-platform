@@ -201,7 +201,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     const sessionType = tierToSessionType(effectiveTier, userRole as PilotRole, isManualOverride);
 
     // Step 2: Validate request first (blocks diagnosis, clearance, prescription for non-educational queries)
-    const requestValidation = await validateShadowRequest(message, userRole, organizationId);
+    const requestValidation = validateShadowRequest(message, userRole, organizationId);
     if (!requestValidation.valid) {
       const messageId = `msg_${Date.now()}`;
       return NextResponse.json(

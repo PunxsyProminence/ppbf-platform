@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import Link from 'next/link';
 
+type FeedbackKind = 'success' | 'error' | 'info';
+
 async function postJson(path: string, body: Record<string, unknown>) {
   const response = await fetch(path, {
     method: 'POST',
@@ -39,14 +41,44 @@ export default function AdminOrganizationsPage() {
   const [membershipAccountId, setMembershipAccountId] = useState('');
   const [membershipRole, setMembershipRole] = useState<'organization_admin' | 'admin' | 'coach' | 'athlete' | 'parent' | 'volunteer' | 'staff'>('coach');
   const [membershipActiveFlag, setMembershipActiveFlag] = useState<'active' | 'inactive'>('active');
-  const [message, setMessage] = useState('');
+  const [feedback, setFeedback] = useState<{ kind: FeedbackKind; text: string } | null>(null);
+  const [activeAction, setActiveAction] = useState<string | null>(null);
+
+    let feedbackTextClass = 'text-[var(--gray-dark)]';
+    if (feedback?.kind === 'error') {
+      feedbackTextClass = 'text-[var(--red-primary)]';
+    } else if (feedback?.kind === 'success') {
+      feedbackTextClass = 'text-[var(--black)]';
+    }
+
+  const canCreateOrganization = organizationId.trim() && organizationName.trim();
+  const canUpdateOrganizationStatus = statusOrgId.trim();
+  const canAssignAdmin = assignAccountId.trim() && assignOrgId.trim();
+  const canCreateUser = createUserOrgId.trim() && createUserAccountId.trim() && createUserPin.trim() && (createUserRole !== 'athlete' || createUserAthleteId.trim());
+  const canUpdateUserStatus = statusAccountOrgId.trim() && statusAccountId.trim();
+  const canTransferAdmin = transferOrgId.trim() && transferFromAccountId.trim() && transferToAccountId.trim();
+  const canManageMembership = membershipOrgId.trim() && membershipAccountId.trim();
+  const isBusy = activeAction !== null;
+
+  async function runAction(actionName: string, action: () => Promise<string>) {
+    setActiveAction(actionName);
+    setFeedback({ kind: 'info', text: `Running ${actionName}...` });
+    try {
+      const successMessage = await action();
+      setFeedback({ kind: 'success', text: successMessage });
+    } catch (error) {
+      setFeedback({ kind: 'error', text: error instanceof Error ? error.message : `${actionName} failed` });
+    } finally {
+      setActiveAction(null);
+    }
+  }
 
   async function createOrganization() {
     await postJson('/api/pilot/platform/organizations', {
       organization_id: organizationId,
       organization_name: organizationName,
     });
-    setMessage(`Created organization ${organizationId}`);
+    return `Created organization ${organizationId}`;
   }
 
   async function updateOrganizationStatus() {
@@ -54,7 +86,7 @@ export default function AdminOrganizationsPage() {
       organization_id: statusOrgId,
       status,
     });
-    setMessage(`Set ${statusOrgId} status to ${status}`);
+    return `Set ${statusOrgId} status to ${status}`;
   }
 
   async function assignAdmin() {
@@ -62,7 +94,7 @@ export default function AdminOrganizationsPage() {
       account_id: assignAccountId,
       organization_id: assignOrgId,
     });
-    setMessage(`Assigned ${assignAccountId} as organization_admin in ${assignOrgId}`);
+    return `Assigned ${assignAccountId} as organization_admin in ${assignOrgId}`;
   }
 
   async function createUser() {
@@ -73,7 +105,7 @@ export default function AdminOrganizationsPage() {
       pin: createUserPin,
       athlete_id: createUserRole === 'athlete' ? createUserAthleteId : undefined,
     });
-    setMessage(`Created/updated ${createUserRole} account ${createUserAccountId} in ${createUserOrgId}`);
+    return `Created/updated ${createUserRole} account ${createUserAccountId} in ${createUserOrgId}`;
   }
 
   async function updateUserStatus() {
@@ -83,7 +115,7 @@ export default function AdminOrganizationsPage() {
       account_id: statusAccountId,
       active_flag: activeFlag,
     });
-    setMessage(`${activeFlag ? 'Reactivated' : 'Disabled'} account ${statusAccountId} in ${statusAccountOrgId}`);
+    return `${activeFlag ? 'Reactivated' : 'Disabled'} account ${statusAccountId} in ${statusAccountOrgId}`;
   }
 
   async function transferAdmin() {
@@ -93,7 +125,7 @@ export default function AdminOrganizationsPage() {
       to_account_id: transferToAccountId,
       demote_role: transferDemoteRole,
     });
-    setMessage(`Transferred admin from ${transferFromAccountId} to ${transferToAccountId} in ${transferOrgId}`);
+    return `Transferred admin from ${transferFromAccountId} to ${transferToAccountId} in ${transferOrgId}`;
   }
 
   async function manageMembership() {
@@ -104,7 +136,7 @@ export default function AdminOrganizationsPage() {
       role: membershipRole,
       active_flag: activeFlag,
     });
-    setMessage(`Updated membership for ${membershipAccountId} in ${membershipOrgId}`);
+    return `Updated membership for ${membershipAccountId} in ${membershipOrgId}`;
   }
 
   return (
@@ -118,15 +150,32 @@ export default function AdminOrganizationsPage() {
           </p>
         </header>
 
+        <section className="space-y-2 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+          <h2 className="text-lg font-bold">Recommended Workflow</h2>
+          <ol className="list-decimal space-y-1 pl-5 text-sm">
+            <li>Create organization.</li>
+            <li>Create user account in that organization.</li>
+            <li>Assign or transfer admin role.</li>
+            <li>Use membership and status tools for lifecycle changes.</li>
+          </ol>
+          <p className="text-xs text-[var(--gray-dark)]">
+            This control panel currently supports create/update/status operations. Hard delete is not exposed here.
+          </p>
+        </section>
+
         <section className="space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
           <h2 className="text-lg font-bold">Create Organization</h2>
+          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="organization-id-input">Organization ID</label>
           <input
+            id="organization-id-input"
             value={organizationId}
             onChange={(event) => setOrganizationId(event.target.value)}
             placeholder="organization_id"
             className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
           />
+          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="organization-name-input">Organization Name</label>
           <input
+            id="organization-name-input"
             value={organizationName}
             onChange={(event) => setOrganizationName(event.target.value)}
             placeholder="organization_name"
@@ -134,8 +183,9 @@ export default function AdminOrganizationsPage() {
           />
           <button
             type="button"
-            onClick={() => void createOrganization().catch((error) => setMessage(error instanceof Error ? error.message : 'Create failed'))}
-            className="h-11 border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[var(--white)]"
+            disabled={!canCreateOrganization || isBusy}
+            onClick={() => void runAction('Create Organization', createOrganization)}
+            className="h-11 border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[var(--white)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Create Organization
           </button>
@@ -143,13 +193,17 @@ export default function AdminOrganizationsPage() {
 
         <section className="space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
           <h2 className="text-lg font-bold">Update Organization Status</h2>
+          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="status-organization-id-input">Organization ID</label>
           <input
+            id="status-organization-id-input"
             value={statusOrgId}
             onChange={(event) => setStatusOrgId(event.target.value)}
             placeholder="organization_id"
             className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
           />
+          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="status-select">Status</label>
           <select
+            id="status-select"
             value={status}
             onChange={(event) => setStatus(event.target.value as 'active' | 'inactive' | 'suspended' | 'pending')}
             className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
@@ -161,8 +215,9 @@ export default function AdminOrganizationsPage() {
           </select>
           <button
             type="button"
-            onClick={() => void updateOrganizationStatus().catch((error) => setMessage(error instanceof Error ? error.message : 'Status update failed'))}
-            className="h-11 border-2 border-[var(--black)] bg-[var(--canvas-tan-dark)] px-4 text-sm font-black uppercase tracking-[0.12em]"
+            disabled={!canUpdateOrganizationStatus || isBusy}
+            onClick={() => void runAction('Update Organization Status', updateOrganizationStatus)}
+            className="h-11 border-2 border-[var(--black)] bg-[var(--canvas-tan-dark)] px-4 text-sm font-black uppercase tracking-[0.12em] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Update Status
           </button>
@@ -170,13 +225,17 @@ export default function AdminOrganizationsPage() {
 
         <section className="space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
           <h2 className="text-lg font-bold">Assign Organization Admin</h2>
+          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="assign-account-id-input">Account ID</label>
           <input
+            id="assign-account-id-input"
             value={assignAccountId}
             onChange={(event) => setAssignAccountId(event.target.value)}
             placeholder="account_id"
             className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
           />
+          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="assign-organization-id-input">Organization ID</label>
           <input
+            id="assign-organization-id-input"
             value={assignOrgId}
             onChange={(event) => setAssignOrgId(event.target.value)}
             placeholder="organization_id"
@@ -184,8 +243,9 @@ export default function AdminOrganizationsPage() {
           />
           <button
             type="button"
-            onClick={() => void assignAdmin().catch((error) => setMessage(error instanceof Error ? error.message : 'Assignment failed'))}
-            className="h-11 border-2 border-[var(--black)] bg-[var(--canvas-tan-dark)] px-4 text-sm font-black uppercase tracking-[0.12em]"
+            disabled={!canAssignAdmin || isBusy}
+            onClick={() => void runAction('Assign Organization Admin', assignAdmin)}
+            className="h-11 border-2 border-[var(--black)] bg-[var(--canvas-tan-dark)] px-4 text-sm font-black uppercase tracking-[0.12em] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Assign Admin
           </button>
@@ -193,19 +253,25 @@ export default function AdminOrganizationsPage() {
 
         <section className="space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
           <h2 className="text-lg font-bold">Create User (PlatformOwner)</h2>
+          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="create-user-organization-id-input">Organization ID</label>
           <input
+            id="create-user-organization-id-input"
             value={createUserOrgId}
             onChange={(event) => setCreateUserOrgId(event.target.value)}
             placeholder="organization_id"
             className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
           />
+          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="create-user-account-id-input">Account ID</label>
           <input
+            id="create-user-account-id-input"
             value={createUserAccountId}
             onChange={(event) => setCreateUserAccountId(event.target.value)}
             placeholder="account_id"
             className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
           />
+          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="create-user-role-select">Role</label>
           <select
+            id="create-user-role-select"
             value={createUserRole}
             onChange={(event) => setCreateUserRole(event.target.value as 'organization_admin' | 'coach' | 'athlete' | 'parent')}
             className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
@@ -216,14 +282,20 @@ export default function AdminOrganizationsPage() {
             <option value="parent">parent</option>
           </select>
           {createUserRole === 'athlete' ? (
-            <input
-              value={createUserAthleteId}
-              onChange={(event) => setCreateUserAthleteId(event.target.value)}
-              placeholder="athlete_id (required for athlete role)"
-              className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
-            />
+            <>
+              <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="create-user-athlete-id-input">Athlete ID</label>
+              <input
+                id="create-user-athlete-id-input"
+                value={createUserAthleteId}
+                onChange={(event) => setCreateUserAthleteId(event.target.value)}
+                placeholder="athlete_id (required for athlete role)"
+                className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
+              />
+            </>
           ) : null}
+          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="create-user-pin-input">Initial PIN</label>
           <input
+            id="create-user-pin-input"
             value={createUserPin}
             onChange={(event) => setCreateUserPin(event.target.value)}
             placeholder="initial PIN"
@@ -232,8 +304,9 @@ export default function AdminOrganizationsPage() {
           />
           <button
             type="button"
-            onClick={() => void createUser().catch((error) => setMessage(error instanceof Error ? error.message : 'Create user failed'))}
-            className="h-11 border-2 border-[var(--black)] bg-[var(--canvas-tan-dark)] px-4 text-sm font-black uppercase tracking-[0.12em]"
+            disabled={!canCreateUser || isBusy}
+            onClick={() => void runAction('Create User', createUser)}
+            className="h-11 border-2 border-[var(--black)] bg-[var(--canvas-tan-dark)] px-4 text-sm font-black uppercase tracking-[0.12em] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Create User
           </button>
@@ -241,19 +314,25 @@ export default function AdminOrganizationsPage() {
 
         <section className="space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
           <h2 className="text-lg font-bold">Disable / Reactivate User</h2>
+          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="status-account-organization-id-input">Organization ID</label>
           <input
+            id="status-account-organization-id-input"
             value={statusAccountOrgId}
             onChange={(event) => setStatusAccountOrgId(event.target.value)}
             placeholder="organization_id"
             className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
           />
+          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="status-account-id-input">Account ID</label>
           <input
+            id="status-account-id-input"
             value={statusAccountId}
             onChange={(event) => setStatusAccountId(event.target.value)}
             placeholder="account_id"
             className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
           />
+          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="status-active-flag-select">Status</label>
           <select
+            id="status-active-flag-select"
             value={statusActiveFlag}
             onChange={(event) => setStatusActiveFlag(event.target.value as 'active' | 'inactive')}
             className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
@@ -263,8 +342,9 @@ export default function AdminOrganizationsPage() {
           </select>
           <button
             type="button"
-            onClick={() => void updateUserStatus().catch((error) => setMessage(error instanceof Error ? error.message : 'Status update failed'))}
-            className="h-11 border-2 border-[var(--black)] bg-[var(--canvas-tan-dark)] px-4 text-sm font-black uppercase tracking-[0.12em]"
+            disabled={!canUpdateUserStatus || isBusy}
+            onClick={() => void runAction('Update User Status', updateUserStatus)}
+            className="h-11 border-2 border-[var(--black)] bg-[var(--canvas-tan-dark)] px-4 text-sm font-black uppercase tracking-[0.12em] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Update User Status
           </button>
@@ -272,25 +352,33 @@ export default function AdminOrganizationsPage() {
 
         <section className="space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
           <h2 className="text-lg font-bold">Transfer Organization Admin</h2>
+          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="transfer-organization-id-input">Organization ID</label>
           <input
+            id="transfer-organization-id-input"
             value={transferOrgId}
             onChange={(event) => setTransferOrgId(event.target.value)}
             placeholder="organization_id"
             className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
           />
+          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="transfer-from-account-id-input">From Account ID</label>
           <input
+            id="transfer-from-account-id-input"
             value={transferFromAccountId}
             onChange={(event) => setTransferFromAccountId(event.target.value)}
             placeholder="from_account_id"
             className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
           />
+          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="transfer-to-account-id-input">To Account ID</label>
           <input
+            id="transfer-to-account-id-input"
             value={transferToAccountId}
             onChange={(event) => setTransferToAccountId(event.target.value)}
             placeholder="to_account_id"
             className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
           />
+          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="transfer-demote-role-select">Demote Previous Admin To</label>
           <select
+            id="transfer-demote-role-select"
             value={transferDemoteRole}
             onChange={(event) => setTransferDemoteRole(event.target.value as 'coach' | 'athlete' | 'parent' | 'volunteer' | 'staff' | 'admin')}
             className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
@@ -304,8 +392,9 @@ export default function AdminOrganizationsPage() {
           </select>
           <button
             type="button"
-            onClick={() => void transferAdmin().catch((error) => setMessage(error instanceof Error ? error.message : 'Transfer failed'))}
-            className="h-11 border-2 border-[var(--black)] bg-[var(--canvas-tan-dark)] px-4 text-sm font-black uppercase tracking-[0.12em]"
+            disabled={!canTransferAdmin || isBusy}
+            onClick={() => void runAction('Transfer Admin', transferAdmin)}
+            className="h-11 border-2 border-[var(--black)] bg-[var(--canvas-tan-dark)] px-4 text-sm font-black uppercase tracking-[0.12em] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Transfer Admin
           </button>
@@ -313,19 +402,25 @@ export default function AdminOrganizationsPage() {
 
         <section className="space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
           <h2 className="text-lg font-bold">Manage Organization Membership</h2>
+          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="membership-organization-id-input">Organization ID</label>
           <input
+            id="membership-organization-id-input"
             value={membershipOrgId}
             onChange={(event) => setMembershipOrgId(event.target.value)}
             placeholder="organization_id"
             className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
           />
+          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="membership-account-id-input">Account ID</label>
           <input
+            id="membership-account-id-input"
             value={membershipAccountId}
             onChange={(event) => setMembershipAccountId(event.target.value)}
             placeholder="account_id"
             className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
           />
+          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="membership-role-select">Role</label>
           <select
+            id="membership-role-select"
             value={membershipRole}
             onChange={(event) => setMembershipRole(event.target.value as 'organization_admin' | 'admin' | 'coach' | 'athlete' | 'parent' | 'volunteer' | 'staff')}
             className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
@@ -338,7 +433,9 @@ export default function AdminOrganizationsPage() {
             <option value="volunteer">volunteer</option>
             <option value="staff">staff</option>
           </select>
+          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="membership-status-select">Membership Status</label>
           <select
+            id="membership-status-select"
             value={membershipActiveFlag}
             onChange={(event) => setMembershipActiveFlag(event.target.value as 'active' | 'inactive')}
             className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
@@ -348,14 +445,23 @@ export default function AdminOrganizationsPage() {
           </select>
           <button
             type="button"
-            onClick={() => void manageMembership().catch((error) => setMessage(error instanceof Error ? error.message : 'Membership update failed'))}
-            className="h-11 border-2 border-[var(--black)] bg-[var(--canvas-tan-dark)] px-4 text-sm font-black uppercase tracking-[0.12em]"
+            disabled={!canManageMembership || isBusy}
+            onClick={() => void runAction('Update Membership', manageMembership)}
+            className="h-11 border-2 border-[var(--black)] bg-[var(--canvas-tan-dark)] px-4 text-sm font-black uppercase tracking-[0.12em] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Update Membership
           </button>
         </section>
 
-        {message ? <p className="text-sm font-semibold text-[var(--red-primary)]">{message}</p> : null}
+        {feedback ? (
+          <p
+            role="status"
+            aria-live="polite"
+             className={`text-sm font-semibold ${feedbackTextClass}`}
+          >
+            {feedback.text}
+          </p>
+        ) : null}
 
         <Link
           href="/admin"

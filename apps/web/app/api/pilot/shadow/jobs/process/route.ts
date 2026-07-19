@@ -123,11 +123,42 @@ async function callAI(systemPrompt: string, userMessage: string, maxTokens = 409
   return data.choices?.[0]?.message?.content ?? '';
 }
 
+function payloadToText(value: unknown, fallback: string): string {
+  if (value === undefined || value === null) {
+    return fallback;
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return String(value);
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function extractJsonObjectText(raw: string): string | null {
+  const start = raw.indexOf('{');
+  if (start === -1) {
+    return null;
+  }
+
+  const end = raw.lastIndexOf('}');
+  if (end === -1 || end <= start) {
+    return null;
+  }
+
+  return raw.slice(start, end + 1);
+}
+
 async function executeHeavyBagJob(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const message = String(payload.message ?? '');
-  const sessionType = String(payload.sessionType ?? 'heavy_bag');
-  const topic = String(payload.topic ?? 'general');
-  const profileTier = String(payload.profileTier ?? 'bronze');
+  const message = payloadToText(payload.message, '');
+  const sessionType = payloadToText(payload.sessionType, 'heavy_bag');
+  const topic = payloadToText(payload.topic, 'general');
+  const profileTier = payloadToText(payload.profileTier, 'bronze');
 
   const systemPrompt = `${SHADOW_SYSTEM_PROMPT}
 
@@ -154,7 +185,7 @@ async function executeScoutReportJob(payload: Record<string, unknown>): Promise<
   const interactionCount = Number(payload.interactionCount ?? 0);
   const recentTopics = (payload.recentTopics as string[]) ?? [];
   const openQuestions = (payload.openQuestions as string[]) ?? [];
-  const communicationStyle = String(payload.communicationStyle ?? 'unknown');
+  const communicationStyle = payloadToText(payload.communicationStyle, 'unknown');
   const rememberedFactCount = Number(payload.rememberedFactCount ?? 0);
 
   const systemPrompt = `${SHADOW_SYSTEM_PROMPT}
@@ -177,15 +208,14 @@ Format your response as valid JSON matching this structure:
 - Recent topics: ${recentTopics.join(', ') || 'none recorded'}
 - Open questions: ${openQuestions.join('; ') || 'none recorded'}
 - ${rememberedFactCount} remembered facts on file
-- Summary from recent session: ${String(payload.recentInteractionSummary ?? 'N/A')}`;
+- Summary from recent session: ${payloadToText(payload.recentInteractionSummary, 'N/A')}`;
 
   const raw = await callAI(systemPrompt, userMessage, 2048);
 
   let report: Record<string, unknown>;
   try {
-    // Extract JSON from the response (handles markdown code fences)
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    report = jsonMatch ? JSON.parse(jsonMatch[0]) : { summary: raw, strengths: [], growthAreas: [], recommendedTopics: [], openQuestions: [], insightNotes: '' };
+    const jsonText = extractJsonObjectText(raw);
+    report = jsonText ? JSON.parse(jsonText) : { summary: raw, strengths: [], growthAreas: [], recommendedTopics: [], openQuestions: [], insightNotes: '' };
   } catch {
     report = { summary: raw, strengths: [], growthAreas: [], recommendedTopics: [], openQuestions: [], insightNotes: '' };
   }
@@ -193,7 +223,7 @@ Format your response as valid JSON matching this structure:
   return {
     ...report,
     generatedAt: new Date().toISOString(),
-    profileTier: String(payload.profileTier ?? 'gold'),
+    profileTier: payloadToText(payload.profileTier, 'gold'),
   };
 }
 
