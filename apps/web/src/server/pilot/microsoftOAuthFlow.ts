@@ -64,6 +64,25 @@ export function shouldUseSecureCookie(input: {
   return resolveRequestProtocol(input) === 'https';
 }
 
+export function resolvePublicOrigin(input: {
+  requestUrl: string;
+  forwardedHostHeader?: string | null;
+  forwardedProtoHeader?: string | null;
+  fallbackOrigin: string;
+}): string {
+  const forwardedHost = input.forwardedHostHeader?.split(',')[0]?.trim();
+  if (forwardedHost) {
+    const protocol = resolveRequestProtocol({
+      nextUrlProtocol: new URL(input.requestUrl).protocol,
+      forwardedProtoHeader: input.forwardedProtoHeader,
+    });
+
+    return `${protocol}://${forwardedHost}`;
+  }
+
+  return input.fallbackOrigin;
+}
+
 export function resolveCanonicalAuthStartRedirect(input: {
   requestUrl: string;
   callbackUrl: string;

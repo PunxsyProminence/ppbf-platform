@@ -25,7 +25,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (!bootstrapKey || bootstrapKey !== expectedKey) {
     // Try session cookie fallback
     try {
-      const { requirePrincipal, requireRole: rr } = await import('@/src/server/pilot/http');
+      const { requirePrincipal } = await import('@/src/server/pilot/http');
       const { requireRole } = await import('@/src/server/pilot/access');
       const principal = await requirePrincipal(request);
       requireRole(principal, ['platform_owner', 'admin']);

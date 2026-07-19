@@ -2,7 +2,6 @@
 // One-time idempotent setup. Safe to call repeatedly (uses IF NOT EXISTS).
 // Protected: platform_owner session OR bootstrap key.
 import { NextResponse, type NextRequest } from 'next/server';
-import { jsonError } from '@/src/server/pilot/http';
 import { query } from '@/src/server/pilot/db';
 import { SHADOW_JOBS_MIGRATION } from '@/src/server/pilot/shadowJobQueue';
 import { LEARNING_LOOP_MIGRATION } from '@/src/server/pilot/shadowLearningLoop';

@@ -9,6 +9,7 @@ import {
   MICROSOFT_AUTH_VERIFIER_COOKIE,
   fingerprintValue,
   resolveCanonicalAuthStartRedirect,
+  resolvePublicOrigin,
   shouldEmitAuthDiagnostics,
   shouldUseSecureCookie,
 } from '@/src/server/pilot/microsoftOAuthFlow';
@@ -27,8 +28,14 @@ export const runtime = 'nodejs';
 export async function GET(request: NextRequest) {
   try {
     const config = getMsOidcConfig();
-    const canonicalStartRedirect = resolveCanonicalAuthStartRedirect({
+    const publicOrigin = resolvePublicOrigin({
       requestUrl: request.url,
+      forwardedHostHeader: request.headers.get('x-forwarded-host'),
+      forwardedProtoHeader: request.headers.get('x-forwarded-proto'),
+      fallbackOrigin: new URL(config.callbackUrl).origin,
+    });
+    const canonicalStartRedirect = resolveCanonicalAuthStartRedirect({
+      requestUrl: publicOrigin,
       callbackUrl: config.callbackUrl,
       startPathname: request.nextUrl.pathname,
     });

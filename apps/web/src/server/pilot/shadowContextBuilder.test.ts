@@ -2,7 +2,7 @@
 // Unit tests for tier-aware context building (Quick Round vs Heavy Bag)
 
 import { buildShadowContext } from './shadowContextBuilder';
-import type { ShadowContextBuilderInput, ShadowContextOutput } from './shadowContextBuilder';
+import type { ShadowContextBuilderInput } from './shadowContextBuilder';
 import type { ShadowUserProfileRow } from './shadowUserProfile';
 
 describe('SHADOW Context Builder', () => {

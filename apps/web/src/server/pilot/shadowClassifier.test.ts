@@ -2,7 +2,6 @@
 // Unit tests for tier classification logic (Quick Round vs Heavy Bag)
 
 import { classifyRequest, getClassificationStats } from './shadowClassifier';
-import type { ShadowTier } from './shadowClassifier';
 
 describe('SHADOW Classifier', () => {
   describe('Auto-detection (no manual override)', () => {

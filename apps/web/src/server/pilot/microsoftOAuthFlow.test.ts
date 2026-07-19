@@ -2,6 +2,7 @@ import {
   hashStateForReplayGuard,
   resolveCanonicalAuthStartRedirect,
   resolveRequestProtocol,
+  resolvePublicOrigin,
   shouldUseSecureCookie,
   validateOAuthState,
 } from '@/src/server/pilot/microsoftOAuthFlow';
@@ -183,5 +184,16 @@ describe('microsoftOAuthFlow', () => {
     });
 
     expect(redirect).toBeNull();
+  });
+
+  test('forwarded host determines the public origin for auth redirects', () => {
+    expect(
+      resolvePublicOrigin({
+        requestUrl: 'http://0.0.0.0:3000/api/pilot/auth/microsoft/callback',
+        forwardedHostHeader: 'app-ppbf-production.purpledesert-3a75d580.eastus.azurecontainerapps.io',
+        forwardedProtoHeader: 'https',
+        fallbackOrigin: 'https://www.punxsyprominence.org',
+      }),
+    ).toBe('https://app-ppbf-production.purpledesert-3a75d580.eastus.azurecontainerapps.io');
   });
 });

@@ -11,6 +11,7 @@ import {
   MICROSOFT_AUTH_VERIFIER_COOKIE,
   fingerprintValue,
   hashStateForReplayGuard,
+  resolvePublicOrigin,
   shouldEmitAuthDiagnostics,
   shouldUseSecureCookie,
   validateOAuthState,
@@ -45,8 +46,8 @@ function clearTempCookies(response: NextResponse): void {
   response.cookies.set(MICROSOFT_AUTH_ISSUED_AT_COOKIE, '', { path: '/', maxAge: 0 });
 }
 
-function redirectToLogin(request: NextRequest, error: string): NextResponse {
-  const response = NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(error)}`, request.url));
+function redirectToLogin(publicOrigin: string, error: string): NextResponse {
+  const response = NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(error)}`, publicOrigin));
   clearTempCookies(response);
   return response;
 }
@@ -144,9 +145,16 @@ function validateStateOrThrow(input: {
 }
 
 export async function GET(request: NextRequest) {
+  const config = getMsOidcConfig();
+  const publicOrigin = resolvePublicOrigin({
+    requestUrl: request.url,
+    forwardedHostHeader: request.headers.get('x-forwarded-host'),
+    forwardedProtoHeader: request.headers.get('x-forwarded-proto'),
+    fallbackOrigin: new URL(config.callbackUrl).origin,
+  });
+
   try {
     const primaryOwnerEmail = (process.env.PPBF_PRIMARY_OWNER_EMAIL?.trim() || 'admin@punxsyprominence.org').toLowerCase();
-    const config = getMsOidcConfig();
     const queryState = request.nextUrl.searchParams.get('state')?.trim() || '';
     const code = request.nextUrl.searchParams.get('code')?.trim() || '';
 
@@ -176,7 +184,7 @@ export async function GET(request: NextRequest) {
     const loginResult = await loginWithMicrosoftEmail(identityEmail);
 
     if (!loginResult) {
-      const denied = NextResponse.redirect(new URL('/login?error=not-invited', request.url));
+      const denied = NextResponse.redirect(new URL('/login?error=not-invited', publicOrigin));
       clearTempCookies(denied);
       return denied;
     }
@@ -186,7 +194,7 @@ export async function GET(request: NextRequest) {
     }
 
     const defaultPostLogin = routeForRole(loginResult.principal.role);
-    const destination = new URL(config.postLoginPath || defaultPostLogin, request.url);
+    const destination = new URL(config.postLoginPath || defaultPostLogin, publicOrigin);
     const response = NextResponse.redirect(destination);
     const secure = shouldUseSecureCookie({
       nextUrlProtocol: request.nextUrl.protocol,
@@ -214,13 +222,13 @@ export async function GET(request: NextRequest) {
     const message = error instanceof Error ? error.message : 'Unknown auth error';
 
     if (message.startsWith('Unauthorized: missing authorization response') || message.startsWith('Unauthorized: invalid state')) {
-      return redirectToLogin(request, 'auth-state-expired');
+      return redirectToLogin(publicOrigin, 'auth-state-expired');
     }
 
     if (message.startsWith('Forbidden: platform owner identity mismatch')) {
-      return redirectToLogin(request, 'auth-forbidden');
+      return redirectToLogin(publicOrigin, 'auth-forbidden');
     }
 
-    return redirectToLogin(request, 'auth-failed');
+    return redirectToLogin(publicOrigin, 'auth-failed');
   }
 }
