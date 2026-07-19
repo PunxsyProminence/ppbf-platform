@@ -6,6 +6,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { jsonError } from '@/src/server/pilot/http';
 import { claimNextJob, completeJob, failJob, type JobType } from '@/src/server/pilot/shadowJobQueue';
 import { SHADOW_SYSTEM_PROMPT } from '@/src/server/pilot/shadowChat';
+import { buildAzureAiChatCompletionsUrl, getAzureAiRuntimeConfig } from '@/src/server/pilot/azureAiRuntime';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60; // Allow up to 60s for heavy reasoning tasks
@@ -96,26 +97,23 @@ async function executeJob(
 }
 
 async function callAI(systemPrompt: string, userMessage: string, maxTokens = 4096): Promise<string> {
-  const endpoint = process.env.AZURE_AI_ENDPOINT ?? '';
-  const apiKey = process.env.AZURE_AI_KEY ?? '';
-  const deployment = process.env.AZURE_AI_DEPLOYMENT_NAME ?? 'gpt-5-mini-shadow';
-  const apiVersion = process.env.AZURE_AI_API_VERSION ?? '2024-12-01-preview';
+  const runtime = getAzureAiRuntimeConfig();
+  if (!runtime.ok || !runtime.config) {
+    throw new Error(`Azure AI runtime not configured. Missing: ${runtime.missing.join(', ')}`);
+  }
 
-  const response = await fetch(
-    `${endpoint.replace(/\/$/, '')}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'api-key': apiKey },
-      body: JSON.stringify({
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMessage },
-        ],
-        temperature: 0.5,
-        max_completion_tokens: maxTokens,
-      }),
-    },
-  );
+  const response = await fetch(buildAzureAiChatCompletionsUrl(runtime.config), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'api-key': runtime.config.apiKey },
+    body: JSON.stringify({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage },
+      ],
+      temperature: 0.5,
+      max_completion_tokens: maxTokens,
+    }),
+  });
 
   if (!response.ok) {
     throw new Error(`AI API error ${response.status}: ${await response.text()}`);

@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
-import { createAthleteAccount, createParentAccount } from '@/src/server/pilot/auth';
+import { createOrUpdateAthleteAccount, createParentAccount } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { upsertAthlete } from '@/src/server/pilot/entities';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
@@ -274,7 +274,7 @@ export async function POST(request: NextRequest) { // NOSONAR
     });
 
     if (promotion.athlete.account_id && promotion.athlete.pin) {
-      await createAthleteAccount(
+      await createOrUpdateAthleteAccount(
         promotion.athlete.account_id,
         promotion.athlete.athlete_id,
         promotion.athlete.pin,

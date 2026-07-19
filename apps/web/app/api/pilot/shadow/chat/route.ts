@@ -13,6 +13,7 @@ import {
   retrieveShadowContext,
   SHADOW_SYSTEM_PROMPT,
 } from '@/src/server/pilot/shadowChat';
+import { buildAzureAiChatCompletionsUrl, getAzureAiRuntimeConfig } from '@/src/server/pilot/azureAiRuntime';
 import {
   getOrCreateShadowUserProfile,
   updateShadowUserProfile,
@@ -69,24 +70,19 @@ const FALLBACK_RESPONSES: Record<string, string> = {
 
 async function callAzureOpenAI(systemPrompt: string, userMessage: string): Promise<{ response: string; success: boolean }> {
   try {
-    const endpoint = process.env.AZURE_AI_ENDPOINT;
-    const apiKey = process.env.AZURE_AI_KEY;
-    const deploymentName = process.env.AZURE_AI_DEPLOYMENT_NAME;
-    const apiVersion = process.env.AZURE_AI_API_VERSION || '2024-12-01-preview';
-
-    if (!endpoint || !apiKey || !deploymentName) {
-      console.error('Azure AI credentials not configured');
+    const runtime = getAzureAiRuntimeConfig();
+    if (!runtime.ok || !runtime.config) {
+      console.error(`Azure AI runtime is not configured. Missing: ${runtime.missing.join(', ')}`);
       return { response: '', success: false };
     }
 
-    // Format: https://[resource].cognitiveservices.azure.com/openai/deployments/[deployment]/chat/completions?api-version=2024-12-01-preview
-    const url = `${endpoint.replace(/\/$/, '')}/openai/deployments/${deploymentName}/chat/completions?api-version=${apiVersion}`;
+    const url = buildAzureAiChatCompletionsUrl(runtime.config);
 
     const azureResponse = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'api-key': apiKey,
+        'api-key': runtime.config.apiKey,
       },
       body: JSON.stringify({
         messages: [
@@ -160,11 +156,17 @@ async function routeLlmCall(ctx: LlmRouteContext): Promise<LlmRouteResult> {
 
   if (effectiveTier === 'heavy_bag') {
     try {
+      const runtime = getAzureAiRuntimeConfig();
+      if (!runtime.ok || !runtime.config) {
+        console.error(`Heavy Bag runtime unavailable. Missing Azure AI config: ${runtime.missing.join(', ')}`);
+        return { llmResponse: 'SHADOW is currently unavailable. Please contact your organization for support.', resolvedAsync: false };
+      }
+
       const result = await executeHeavyBagSync(
         { message, userId, organizationId, role: userRole as PilotRole, userProfile, tierResult,
           contextOutput, classification, sessionType: 'heavy_bag', athleteId, systemPromptBase: prompt },
-        process.env.AZURE_AI_ENDPOINT ?? '',
-        process.env.AZURE_AI_KEY ?? '',
+        runtime.config.endpoint,
+        runtime.config.apiKey,
       );
       return { llmResponse: result.response ?? 'SHADOW Heavy Bag response unavailable.', resolvedAsync: false };
     } catch {
