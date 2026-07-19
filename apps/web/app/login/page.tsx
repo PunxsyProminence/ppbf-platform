@@ -128,84 +128,21 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
   );
 }
 
-interface RegisterTabProps {
-  registerAccountId: string;
-  setRegisterAccountId: (value: string) => void;
-  registerAthleteId: string;
-  setRegisterAthleteId: (value: string) => void;
-  registerPin: string;
-  setRegisterPin: (value: string) => void;
-  registerError: string;
-  registerSuccess: string;
-  registerBusy: boolean;
-  registerAthlete: () => Promise<void>;
-}
-
-function RegisterTabContent(props: Readonly<RegisterTabProps>) {
+function RegisterTabContent() {
   return (
-    <>
-      <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">Registration</p>
-        <p className="mt-3 text-sm leading-6 text-[var(--black)]">
-          Athlete accounts are created by an admin. Sign in as admin, then use Organization Provisioning to add organizations and users.
-        </p>
-        <Link
-          href="/admin/organizations"
-          className="mt-3 inline-flex min-h-[38px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--black)]"
-        >
-          Open Organization Provisioning
-        </Link>
-      </div>
-
-      <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="register-account-id">
-        Account ID
-      </label>
-      <input
-        id="register-account-id"
-        type="text"
-        value={props.registerAccountId}
-        onChange={(event) => props.setRegisterAccountId(event.target.value)}
-        placeholder="athlete-account-id"
-        className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
-      />
-
-      <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="register-athlete-id">
-        Athlete ID
-      </label>
-      <input
-        id="register-athlete-id"
-        type="text"
-        value={props.registerAthleteId}
-        onChange={(event) => props.setRegisterAthleteId(event.target.value)}
-        placeholder="athlete-id"
-        className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
-      />
-
-      <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="register-pin">
-        PIN
-      </label>
-      <input
-        id="register-pin"
-        type="password"
-        inputMode="numeric"
-        value={props.registerPin}
-        onChange={(event) => props.setRegisterPin(event.target.value)}
-        placeholder="Create PIN"
-        className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
-      />
-
-      {props.registerError ? <p className="text-sm text-[var(--red-primary)]">{props.registerError}</p> : null}
-      {props.registerSuccess ? <p className="text-sm text-[var(--olive-dark)]">{props.registerSuccess}</p> : null}
-
-      <button
-        type="button"
-        disabled={props.registerBusy}
-        onClick={() => void props.registerAthlete()}
-        className="mt-4 inline-flex w-full items-center justify-center border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 py-3 text-sm font-black uppercase tracking-[0.2em] text-[var(--white)] transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-70"
+    <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">Registration</p>
+      <p className="mt-3 text-sm leading-6 text-[var(--black)]">
+        New organizations and user accounts are created inside Organization Provisioning. Sign in with an admin Account ID and PIN first,
+        then open the provisioning workspace to add organizations, admins, coaches, athletes, and parents.
+      </p>
+      <Link
+        href="/admin/organizations"
+        className="mt-4 inline-flex w-full min-h-[44px] items-center justify-center border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 text-xs font-black uppercase tracking-[0.12em] text-[var(--white)] transition hover:bg-[var(--red-highlight)]"
       >
-        {props.registerBusy ? 'Registering...' : 'Register Athlete'}
-      </button>
-    </>
+        Open Organization Provisioning
+      </Link>
+    </div>
   );
 }
 
@@ -290,7 +227,7 @@ function AnnouncementTabContent(props: Readonly<AnnouncementTabProps>) {
 function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [selectedRole, setSelectedRole] = useState<ClubRole>('athlete');
+  const [selectedRole] = useState<ClubRole>('athlete');
   const [activeTab, setActiveTab] = useState<ActiveTab>('login');
   const [announcements, setAnnouncements] = useState<LoginAnnouncement[]>([DEFAULT_ANNOUNCEMENT]);
   const [draftAnnouncement, setDraftAnnouncement] = useState('');
@@ -298,12 +235,6 @@ function LoginPageContent() {
   const [announcementPin, setAnnouncementPin] = useState('');
   const [announcementError, setAnnouncementError] = useState('');
   const [announcementSavedAt, setAnnouncementSavedAt] = useState<string | null>(null);
-  const [registerAccountId, setRegisterAccountId] = useState('');
-  const [registerAthleteId, setRegisterAthleteId] = useState('');
-  const [registerPin, setRegisterPin] = useState('');
-  const [registerError, setRegisterError] = useState('');
-  const [registerSuccess, setRegisterSuccess] = useState('');
-  const [registerBusy, setRegisterBusy] = useState(false);
   const [loginAccountId, setLoginAccountId] = useState('');
   const [loginPin, setLoginPin] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
@@ -461,52 +392,6 @@ function LoginPageContent() {
     setAnnouncementSavedAt(record.createdAt);
   }
 
-  async function registerAthlete() {
-    const accountId = registerAccountId.trim();
-    const athleteIdValue = registerAthleteId.trim();
-    const pinValue = registerPin.trim();
-
-    if (!accountId || !athleteIdValue || !pinValue) {
-      setRegisterError('Account ID, Athlete ID, and PIN are required.');
-      setRegisterSuccess('');
-      return;
-    }
-
-    setRegisterBusy(true);
-    setRegisterError('');
-    setRegisterSuccess('');
-
-    try {
-      const response = await fetch(`${apiBase()}/api/pilot/admin/athlete-accounts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          account_id: accountId,
-          athlete_id: athleteIdValue,
-          pin: pinValue,
-        }),
-      });
-
-      if (!response.ok) {
-        const result = (await response.json().catch(() => ({ error: 'Registration failed' }))) as { error?: string };
-        if (response.status === 401 || response.status === 403) {
-          setRegisterError('Registration requires an admin to create the account first. Sign in as admin, then use Admin Organizations > Create User.');
-          return;
-        }
-        setRegisterError(result.error || 'Registration failed');
-        return;
-      }
-
-      setRegisterSuccess('Athlete account created. You can now sign in with Athlete role.');
-      setRegisterAccountId('');
-      setRegisterAthleteId('');
-      setRegisterPin('');
-      setSelectedRole('athlete');
-    } finally {
-      setRegisterBusy(false);
-    }
-  }
-
   async function loginWithPin() {
     const accountId = loginAccountId.trim();
     const pin = loginPin.trim();
@@ -560,20 +445,7 @@ function LoginPageContent() {
         authErrorMessage={authErrorMessage}
       />
     ),
-    register: (
-      <RegisterTabContent
-        registerAccountId={registerAccountId}
-        setRegisterAccountId={setRegisterAccountId}
-        registerAthleteId={registerAthleteId}
-        setRegisterAthleteId={setRegisterAthleteId}
-        registerPin={registerPin}
-        setRegisterPin={setRegisterPin}
-        registerError={registerError}
-        registerSuccess={registerSuccess}
-        registerBusy={registerBusy}
-        registerAthlete={registerAthlete}
-      />
-    ),
+    register: <RegisterTabContent />,
     announcement: (
       <AnnouncementTabContent
         announcements={announcements}
@@ -607,7 +479,9 @@ function LoginPageContent() {
               </Link>
             </div>
             <h1 className="mt-4 text-4xl font-black tracking-[0.1em] text-[var(--black)] md:text-5xl">The Bell</h1>
-            <p className="mt-3 text-sm leading-relaxed text-[var(--gray-dark)]">Pick your corner and sign in with Microsoft to enter the platform.</p>
+            <p className="mt-3 text-sm leading-relaxed text-[var(--gray-dark)]">
+              Sign in with Account ID/PIN or Microsoft. Admins can add organizations and user accounts after login.
+            </p>
           </div>
 
           <div className="border-b-2 border-[var(--black)] bg-[var(--canvas-tan)] px-8 py-6">
