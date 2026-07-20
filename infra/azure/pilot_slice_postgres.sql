@@ -551,6 +551,70 @@ create index if not exists idx_shadow_chat_audit_org_created
 create index if not exists idx_shadow_chat_audit_user_created
   on pilot.shadow_chat_audit(user_id, created_at desc);
 
+
+-- SHADOW durable user-owned conversations
+create table if not exists pilot.shadow_chat_sessions (
+  conversation_id uuid primary key,
+  organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+  user_id text not null,
+  athlete_id text null,
+  title text not null default 'New conversation',
+  session_type text not null default 'quick_round',
+  deleted_at timestamptz null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_shadow_chat_sessions_owner
+  on pilot.shadow_chat_sessions(organization_id, user_id, updated_at desc)
+  where deleted_at is null;
+
+create table if not exists pilot.shadow_chat_messages (
+  message_id uuid primary key,
+  conversation_id uuid not null references pilot.shadow_chat_sessions(conversation_id) on delete cascade,
+  organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+  user_id text not null,
+  role text not null check (role in ('user', 'assistant')),
+  content text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_shadow_chat_messages_conversation
+  on pilot.shadow_chat_messages(organization_id, conversation_id, created_at asc);
+
+-- Safety review is queued for humans; this table never sends notifications by itself.
+create table if not exists pilot.shadow_human_review_queue (
+  review_id uuid primary key,
+  organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+  conversation_id uuid null references pilot.shadow_chat_sessions(conversation_id) on delete set null,
+  user_id text not null,
+  category text not null,
+  severity text not null,
+  summary text not null,
+  status text not null default 'open' check (status in ('open', 'in_review', 'resolved', 'dismissed')),
+  metadata jsonb not null default '{}'::jsonb,
+  reviewed_by text null,
+  reviewed_at timestamptz null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_shadow_human_review_org_status
+  on pilot.shadow_human_review_queue(organization_id, status, created_at desc);
+
+-- Deletion requests require authorized policy/legal review before execution.
+create table if not exists pilot.shadow_data_deletion_requests (
+  request_id uuid primary key,
+  organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+  user_id text not null,
+  status text not null default 'pending' check (status in ('pending', 'approved', 'completed', 'denied')),
+  requested_at timestamptz not null default now(),
+  completed_at timestamptz null,
+  processed_by text null
+);
+
+create index if not exists idx_shadow_deletion_requests_org_status
+  on pilot.shadow_data_deletion_requests(organization_id, status, requested_at desc);
+
 -- SHADOW Progressive Unlocks (configuration-driven threshold engine)
 create table if not exists pilot.shadow_feature_thresholds (
   organization_id       text not null references pilot.organizations(organization_id) on delete cascade,
