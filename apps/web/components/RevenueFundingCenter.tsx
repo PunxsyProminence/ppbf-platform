@@ -313,6 +313,10 @@ export default function RevenueFundingCenter() {
     ];
   }, [donationRecords]);
 
+  const urgentActions = useMemo(() => {
+    return pendingItems.slice(0, 5);
+  }, [pendingItems]);
+
   function resetDonationForm() {
     setDonorName('');
     setDonationAmount('');
@@ -428,6 +432,30 @@ export default function RevenueFundingCenter() {
       </section>
 
       <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+        <h3 className="text-base font-black text-[var(--black)]">Action Center</h3>
+        <p className="mt-1 text-sm text-[var(--gray-dark)]">Triage these items first to keep operations moving.</p>
+        <div className="mt-3 grid gap-2">
+          {urgentActions.length === 0 ? (
+            <p className="border border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-3 text-sm text-[var(--gray-dark)]">No urgent actions right now.</p>
+          ) : (
+            urgentActions.map((item) => (
+              <button
+                key={`urgent-${item.id}`}
+                type="button"
+                onClick={() => setActiveTab('treasurer-review')}
+                className="flex min-h-[44px] items-center justify-between gap-3 border border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-2 text-left transition hover:bg-[var(--canvas-tan-dark)]"
+              >
+                <span className="text-sm font-semibold text-[var(--black)]">{item.title}</span>
+                <span className={`border px-2 py-1 text-xs font-semibold ${statusTone(item.status)}`}>{item.status}</span>
+              </button>
+            ))
+          )}
+        </div>
+      </section>
+
+      <details className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+        <summary className="cursor-pointer text-base font-black text-[var(--black)]">Capability Visibility (Revenue)</summary>
+        <div className="mt-2">
         <h3 className="text-base font-black text-[var(--black)]">Capability Visibility (Revenue)</h3>
         <p className="mt-1 text-sm text-[var(--gray-dark)]">Status map is front-end only and intended to improve discoverability and roadmap clarity.</p>
         <div className="mt-3 grid gap-2 md:grid-cols-2">
@@ -462,7 +490,8 @@ export default function RevenueFundingCenter() {
             </article>
           ))}
         </div>
-      </section>
+        </div>
+      </details>
 
       <section className="flex flex-wrap gap-2 border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-2">
         {tabs.map((tab) => (

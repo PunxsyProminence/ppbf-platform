@@ -276,6 +276,8 @@ export default function CoachWorkspace() {
   const sessionStatus = 'In Progress';
   const activeAthletes = athletes.filter(a => a.attendance !== 'Absent').length;
   const injuryFlags = athletes.filter(a => a.injuryFlag).length;
+  const redReadinessCount = athletes.filter((athlete) => athlete.readiness === 'RED').length;
+  const yellowReadinessCount = athletes.filter((athlete) => athlete.readiness === 'YELLOW').length;
   const reviewsNeeded = coachTasks.filter(t => t.status === 'Open' && t.title.includes('Review')).length;
   const assignmentsDue = coachTasks.filter(t => t.status === 'Open').length;
 
@@ -556,6 +558,58 @@ export default function CoachWorkspace() {
           {/* DASHBOARD */}
           {activeTab === 'dashboard' && (
             <div className="space-y-6 animate-fadeIn">
+              <section className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
+                <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Quick Actions</h3>
+                <div className="mt-3 grid gap-2 md:grid-cols-2 lg:grid-cols-4">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('floor')}
+                    className="min-h-[44px] border border-[#8b4444] bg-[#2a1414] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#e8d7c6] transition hover:bg-[#3a1a1a]"
+                  >
+                    Open Live Floor
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('athlete-floor-plans')}
+                    className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#cfbfae] transition hover:border-[#8b4444]"
+                  >
+                    Review Athlete Plans
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('tasks')}
+                    className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#cfbfae] transition hover:border-[#8b4444]"
+                  >
+                    Process Tasks
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('shadow')}
+                    className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#cfbfae] transition hover:border-[#8b4444]"
+                  >
+                    Open SHADOW Intel
+                  </button>
+                </div>
+              </section>
+
+              <section className="grid gap-3 md:grid-cols-3">
+                <article className="border border-[#5a4a3a] bg-[#101010] px-4 py-3">
+                  <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Readiness Alerts</p>
+                  <p className="mt-2 text-2xl font-black text-[#f2e7da]">{redReadinessCount + yellowReadinessCount}</p>
+                  <p className="text-xs text-[#b0a095]">{redReadinessCount} RED, {yellowReadinessCount} YELLOW</p>
+                </article>
+                <article className="border border-[#5a4a3a] bg-[#101010] px-4 py-3">
+                  <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Injury Flags</p>
+                  <p className="mt-2 text-2xl font-black text-[#f2e7da]">{injuryFlags}</p>
+                  <p className="text-xs text-[#b0a095]">Escalate before block progression</p>
+                </article>
+                <article className="border border-[#5a4a3a] bg-[#101010] px-4 py-3">
+                  <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Open Reviews</p>
+                  <p className="mt-2 text-2xl font-black text-[#f2e7da]">{reviewsNeeded}</p>
+                  <p className="text-xs text-[#b0a095]">Resolve queue items this session</p>
+                </article>
+              </section>
+
               <HelpPanel
                 title="Coach Dashboard"
                 description="Overview of your session status, athlete roster, and immediate action items."

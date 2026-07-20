@@ -184,38 +184,40 @@ export default function AdminComplianceCenterPage() {
           </div>
         </section>
 
-        {/* Status Tabs */}
-        <div className="flex flex-wrap gap-2">
-          {['all', 'new', 'acknowledged', 'escalated', 'resolved'].map((status) => (
-            <button
-              key={status}
-              onClick={() => setStatusFilter(status)}
-              className={`border-2 px-3 py-1 text-xs font-bold uppercase ${
-                statusFilter === status
-                  ? 'border-[#d4a574] bg-[#2a1a1a] text-[#d4a574]'
-                  : 'border-[#5a4a3a] bg-[#101010] text-[#8b7355]'
-              }`}
+        <section className="flex flex-wrap items-center gap-3 border border-[#5a4a3a] bg-[#121212] p-3">
+          <div className="flex flex-wrap gap-2">
+            {['all', 'new', 'acknowledged', 'escalated', 'resolved'].map((status) => (
+              <button
+                key={status}
+                onClick={() => setStatusFilter(status)}
+                className={`border-2 px-3 py-1 text-xs font-bold uppercase ${
+                  statusFilter === status
+                    ? 'border-[#d4a574] bg-[#2a1a1a] text-[#d4a574]'
+                    : 'border-[#5a4a3a] bg-[#101010] text-[#8b7355]'
+                }`}
+              >
+                {status}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-3">
+            <label htmlFor="severity-filter" className="text-xs font-bold text-[#d4a574]">Severity:</label>
+            <select id="severity-filter"
+              value={severityFilter}
+              onChange={(e) => setSeverityFilter(e.target.value)}
+              className="border border-[#5a4a3a] bg-[#101010] px-3 py-1 text-xs text-[#e8d7c6]"
             >
-              {status}
-            </button>
-          ))}
-        </div>
-
-        {/* Severity Filter */}
-        <div className="flex items-center gap-3">
-          <label htmlFor="severity-filter" className="text-xs font-bold text-[#d4a574]">Severity:</label>
-          <select id="severity-filter"
-            value={severityFilter}
-            onChange={(e) => setSeverityFilter(e.target.value)}
-            className="border border-[#5a4a3a] bg-[#101010] px-3 py-1 text-xs text-[#e8d7c6]"
-          >
-            <option value="all">All</option>
-            <option value="critical">Critical</option>
-            <option value="high">High</option>
-            <option value="medium">Medium</option>
-            <option value="low">Low</option>
-          </select>
-        </div>
+              <option value="all">All</option>
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
+          <div className="ml-auto text-xs text-[#9a8a7a]">
+            Showing {filteredViolations.length} of {violations.length}
+          </div>
+        </section>
 
         {/* Violations List */}
         <section>
@@ -224,7 +226,9 @@ export default function AdminComplianceCenterPage() {
           </h2>
           <div className="space-y-3">
             {filteredViolations.length === 0 ? (
-              <p className="text-sm text-[#9a8a7a]">No violations matching filters.</p>
+              <div className="border border-[#5a4a3a] bg-[#111111] px-4 py-5 text-sm text-[#9a8a7a]">
+                No violations match the current filters. Try setting Status to "all" and Severity to "all".
+              </div>
             ) : (
               filteredViolations.map((v) => (
                 <div

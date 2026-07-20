@@ -345,6 +345,40 @@ export default function ParentHub() {
           {/* OVERVIEW */}
           {activeTab === 'overview' && (
             <div className="space-y-6 animate-fadeIn">
+              <section className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
+                <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Quick Actions</h3>
+                <div className="mt-3 grid gap-2 md:grid-cols-2 lg:grid-cols-4">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('home-assignments')}
+                    className="min-h-[44px] border border-[#8b4444] bg-[#2a1414] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#e8d7c6] transition hover:bg-[#3a1a1a]"
+                  >
+                    Open Assignments
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('attendance')}
+                    className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#cfbfae] transition hover:border-[#8b4444]"
+                  >
+                    Check Attendance
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('messages')}
+                    className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#cfbfae] transition hover:border-[#8b4444]"
+                  >
+                    View Coach Messages
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('shadow')}
+                    className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#cfbfae] transition hover:border-[#8b4444]"
+                  >
+                    Open SHADOW Intel
+                  </button>
+                </div>
+              </section>
+
               <HelpPanel
                 title="Child Overview"
                 description="Quick snapshot of your child's current training status, progress, and upcoming events."
@@ -683,15 +717,15 @@ export default function ParentHub() {
               <h3 className="font-mono font-bold text-[#d4a574] uppercase">Progress & Achievements</h3>
               <p className="text-[#b0a095]">Track skill development and milestone achievements.</p>
 
-              <div className="border border-[#5a4a3a] bg-[#101010] p-3">
-                <p className="text-sm font-semibold text-[#e8d7c6]">Parent-Support Visibility Placeholder</p>
-                <p className="mt-1 text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">
+              <details className="border border-[#5a4a3a] bg-[#101010] p-3">
+                <summary className="cursor-pointer text-sm font-semibold text-[#e8d7c6]">Parent-Support Visibility Placeholder</summary>
+                <p className="mt-2 text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">
                   CLOSED-LOOP PROGRESSION INTELLIGENCE - PLANNED | FRONT-END PLACEHOLDER | BACKEND REQUIRED
                 </p>
                 <Link href="/parent/progression-visibility" className="mt-2 inline-flex border border-[#8b4444] bg-[#2a1414] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[#e8d7c6]">
                   Open Parent Progression Visibility
                 </Link>
-              </div>
+              </details>
 
               <div className="space-y-3">
                 {activeProgressMilestones.map((milestone) => (

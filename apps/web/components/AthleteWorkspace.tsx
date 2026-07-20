@@ -551,8 +551,8 @@ export default function AthleteWorkspace() {
           unreadMessages={0}
         />
 
-        <section className="border-2 border-[#8b4444] bg-[#111111] p-4">
-          <p className="text-xs font-mono uppercase tracking-[0.12em] text-[#d4a574]">Critical Capability Surfaces</p>
+        <details className="border-2 border-[#8b4444] bg-[#111111] p-4">
+          <summary className="cursor-pointer text-xs font-mono uppercase tracking-[0.12em] text-[#d4a574]">Critical Capability Surfaces</summary>
           <div className="mt-3 grid gap-3 md:grid-cols-2">
             <article className="border border-[#5a4a3a] bg-[#101010] p-3">
               <p className="text-sm font-semibold text-[#e8d7c6]">AI/ML Video Analysis - Planned</p>
@@ -569,7 +569,7 @@ export default function AthleteWorkspace() {
               </Link>
             </article>
           </div>
-        </section>
+        </details>
 
         {/* TAB NAVIGATION */}
         <div className={ui.tabContainer}>
@@ -606,6 +606,40 @@ export default function AthleteWorkspace() {
           {/* MY DASHBOARD */}
           {activeTab === 'my-dashboard' && (
             <div className="space-y-6 animate-fadeIn">
+              <section className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
+                <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Quick Actions</h3>
+                <div className="mt-3 grid gap-2 md:grid-cols-2 lg:grid-cols-4">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('bio-checkin')}
+                    className="min-h-[44px] border border-[#8b4444] bg-[#2a1414] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#e8d7c6] transition hover:bg-[#3a1a1a]"
+                  >
+                    Complete Check-In
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('athlete-floor')}
+                    className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#cfbfae] transition hover:border-[#8b4444]"
+                  >
+                    Open Floor Tasks
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('smart-goals')}
+                    className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#cfbfae] transition hover:border-[#8b4444]"
+                  >
+                    Update Goals
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('shadow')}
+                    className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#cfbfae] transition hover:border-[#8b4444]"
+                  >
+                    Ask SHADOW
+                  </button>
+                </div>
+              </section>
+
               <HelpPanel
                 title="My Dashboard"
                 description="Your daily command center. Track readiness, see assigned work, and monitor your progress toward goals."

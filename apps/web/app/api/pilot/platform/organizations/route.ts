@@ -3,9 +3,33 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/src/server/pilot/access';
 import { createOrganization } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { query } from '@/src/server/pilot/db';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
+
+export async function GET(request: NextRequest) {
+  try {
+    const principal = await requirePrincipal(request);
+    requireRole(principal, ['platform_owner']);
+
+    const rows = await query<{
+      organization_id: string;
+      organization_name: string;
+      status: string;
+      created_at: string;
+      updated_at: string;
+    }>(
+      `select organization_id, organization_name, status, created_at, updated_at
+       from pilot.organizations
+       order by organization_name asc`,
+    );
+
+    return NextResponse.json({ ok: true, organizations: rows });
+  } catch (error) {
+    return jsonError(error);
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {

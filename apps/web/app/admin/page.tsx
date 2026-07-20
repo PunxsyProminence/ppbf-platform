@@ -76,6 +76,189 @@ const ROLE_OPTIONS: RoleName[] = [
   'Public',
 ];
 
+const seedCapabilityBlueprints: Array<{ capabilityId: string; name: string; group: string; status: CapabilityStatus; owner: string; roles: RoleName[]; description: string }> = [
+  {
+    capabilityId: 'CAP-001',
+    name: 'Locker Rooms for Every Role',
+    group: 'Core Platform',
+    status: 'DRAFT',
+    owner: 'Operations',
+    roles: ['Athlete', 'Coach', 'Admin'],
+    description: 'Role-based locker room entry points and contextual dashboards.',
+  },
+  {
+    capabilityId: 'CAP-002',
+    name: 'The Card File',
+    group: 'Core Platform',
+    status: 'ACTIVE',
+    owner: 'Admin Control',
+    roles: ['Admin', 'Board', 'Auditor'],
+    description: 'Capability catalog and governance metadata index.',
+  },
+  {
+    capabilityId: 'CAP-003',
+    name: 'Map Your Fight',
+    group: 'Routing & Development',
+    status: 'DRAFT',
+    owner: 'Program Team',
+    roles: ['Athlete', 'Coach'],
+    description: 'Route guidance and mission-control view alignment.',
+  },
+  {
+    capabilityId: 'CAP-004',
+    name: 'Goal Intake and Routing Service',
+    group: 'Routing & Development',
+    status: 'DRAFT',
+    owner: 'Program Team',
+    roles: ['Athlete', 'Coach', 'Admin'],
+    description: 'Maps intake goals to the correct training or support route.',
+  },
+  {
+    capabilityId: 'CAP-005',
+    name: 'Development Route Factory',
+    group: 'Routing & Development',
+    status: 'DRAFT',
+    owner: 'Program Team',
+    roles: ['Coach', 'Admin'],
+    description: 'Builds route templates for progression, recovery, and competition paths.',
+  },
+  {
+    capabilityId: 'CAP-006',
+    name: 'Session Logging Service',
+    group: 'Program Operations',
+    status: 'ACTIVE',
+    owner: 'Operations',
+    roles: ['Athlete', 'Coach', 'Admin'],
+    description: 'Captures execution notes and session outcomes for daily operations.',
+  },
+  {
+    capabilityId: 'CAP-007',
+    name: 'Safety Gate Matrix',
+    group: 'Safety & Compliance',
+    status: 'ACTIVE',
+    owner: 'Safety Office',
+    roles: ['Coach', 'Safety', 'Admin'],
+    description: 'Evaluates risk signals and enforces progression boundaries.',
+  },
+  {
+    capabilityId: 'CAP-008',
+    name: 'Athlete Self-Service Portal',
+    group: 'Core Platform',
+    status: 'ACTIVE',
+    owner: 'Operations',
+    roles: ['Athlete'],
+    description: 'Athlete-facing goals, readiness, check-ins, and daily tasks.',
+  },
+  {
+    capabilityId: 'CAP-009',
+    name: 'Guardian Portal',
+    group: 'Core Platform',
+    status: 'DRAFT',
+    owner: 'Program Team',
+    roles: ['Parent / Guardian', 'Admin'],
+    description: 'Family communication, progress visibility, and support workflows.',
+  },
+  {
+    capabilityId: 'CAP-010',
+    name: 'Public Portal',
+    group: 'Core Platform',
+    status: 'ACTIVE',
+    owner: 'Operations',
+    roles: ['Public', 'Admin'],
+    description: 'Public-facing storytelling, onboarding, and safe access routes.',
+  },
+  {
+    capabilityId: 'CAP-011',
+    name: 'Grant and Impact Reporting Engine',
+    group: 'Program Operations',
+    status: 'DRAFT',
+    owner: 'Board Office',
+    roles: ['Board', 'Admin', 'Auditor'],
+    description: 'Compiles outcomes and evidence trails for grants and governance.',
+  },
+  {
+    capabilityId: 'CAP-012',
+    name: 'Payment Service (Gated)',
+    group: 'Program Operations',
+    status: 'BLOCKED',
+    owner: 'Admin Control',
+    roles: ['Admin', 'Board'],
+    description: 'Reserved payment capability lane pending backend and compliance sign-off.',
+  },
+  {
+    capabilityId: 'CAP-013',
+    name: 'Continuity Ledger and Digital Operating Map',
+    group: 'Program Operations',
+    status: 'DRAFT',
+    owner: 'Board Office',
+    roles: ['Admin', 'Board', 'Auditor'],
+    description: 'Tracks evolution of systems, controls, and platform continuity.',
+  },
+  {
+    capabilityId: 'SHADOW-CHAT-001',
+    name: 'SHADOW Chats Command Surface',
+    group: 'Core Platform',
+    status: 'ACTIVE',
+    owner: 'Admin Control',
+    roles: ['Athlete', 'Coach', 'Admin', 'Board'],
+    description: 'Role-scoped SHADOW conversational command surface for guided operations.',
+  },
+  {
+    capabilityId: 'SHADOW-AI-001',
+    name: 'SHADOW AI Assistance Layer',
+    group: 'Routing & Development',
+    status: 'DRAFT',
+    owner: 'Program Team',
+    roles: ['Coach', 'Admin', 'Safety'],
+    description: 'AI-assisted recommendations with explicit human approval guardrails.',
+  },
+  {
+    capabilityId: 'SHADOW-ML-001',
+    name: 'SHADOW ML Readiness Analysis',
+    group: 'Routing & Development',
+    status: 'DRAFT',
+    owner: 'Safety Office',
+    roles: ['Coach', 'Safety', 'Admin'],
+    description: 'Model-backed readiness pattern detection for safer assignment decisions.',
+  },
+  {
+    capabilityId: 'SHADOW-ML-002',
+    name: 'SHADOW Video Analysis Intelligence',
+    group: 'Routing & Development',
+    status: 'DRAFT',
+    owner: 'Program Team',
+    roles: ['Coach', 'Admin'],
+    description: 'Planned AI/ML video signal support for technique and safety review workflows.',
+  },
+  {
+    capabilityId: 'SAFE-001',
+    name: 'Compliance Violation Escalation Center',
+    group: 'Safety & Compliance',
+    status: 'ACTIVE',
+    owner: 'Safety Office',
+    roles: ['Safety', 'Admin', 'Board'],
+    description: 'Tracks violation states, escalations, and resolution workflow history.',
+  },
+  {
+    capabilityId: 'OPS-001',
+    name: 'Mission Control Operations Hub',
+    group: 'Program Operations',
+    status: 'ACTIVE',
+    owner: 'Operations',
+    roles: ['Admin', 'Coach', 'Board'],
+    description: 'Command view for daily priorities, workspace routing, and system posture.',
+  },
+  {
+    capabilityId: 'REV-001',
+    name: 'Revenue and Funding Center',
+    group: 'Program Operations',
+    status: 'ACTIVE',
+    owner: 'Board Office',
+    roles: ['Admin', 'Board', 'Auditor'],
+    description: 'Revenue operations and funding workflow orchestration center.',
+  },
+];
+
 const TRACK_CAPABILITY_PREVIEW: Record<TrackID, string[]> = {
   non_contact: ['CAP-001'],
   usa_boxing: ['CAP-001', 'CAP-003'],
@@ -104,56 +287,46 @@ function parseTabKey(raw: string | null): TabKey | null {
   return TAB_KEY_SET.has(raw as TabKey) ? (raw as TabKey) : null;
 }
 
-const fallbackCapabilities: Capability[] = [
-  {
-    id: 1,
-    capabilityId: 'CAP-001',
-    name: 'Locker Rooms for Every Role',
-    group: 'Core Platform',
-    status: 'DRAFT',
-    visibility: 'Role-Bound',
-    owner: 'Operations',
-    assignedRoles: ['Athlete', 'Coach', 'Admin'],
-    description: 'Role-based locker room entry points and contextual dashboards.',
-    dependencies: 'Session role map',
-    notes: 'Needs assignment review for Parent / Guardian.',
-    reviewNeeded: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: 2,
-    capabilityId: 'CAP-002',
-    name: 'The Card File',
-    group: 'Core Platform',
-    status: 'ACTIVE',
-    visibility: 'Internal',
-    owner: 'Admin Control',
-    assignedRoles: ['Admin', 'Board', 'Auditor'],
-    description: 'Capability catalog and governance metadata index.',
-    dependencies: 'Capability state map',
-    notes: 'Stable baseline capability.',
-    reviewNeeded: false,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: 3,
-    capabilityId: 'CAP-003',
-    name: 'Map Your Fight',
-    group: 'Routing & Development',
-    status: 'DRAFT',
-    visibility: 'Role-Bound',
-    owner: 'Program Team',
-    assignedRoles: ['Athlete', 'Coach'],
-    description: 'Route guidance and mission-control view alignment.',
-    dependencies: 'Route matrix',
-    notes: 'Pending validation before ACTIVE promotion.',
-    reviewNeeded: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-];
+const fallbackCapabilities: Capability[] = seedCapabilityBlueprints.map((item, index) => {
+  const nowIso = new Date().toISOString();
+  return {
+    id: index + 1,
+    capabilityId: item.capabilityId,
+    name: item.name,
+    group: item.group,
+    status: item.status,
+    visibility: item.capabilityId.startsWith('SHADOW-') ? 'Internal' : 'Role-Bound',
+    owner: item.owner,
+    assignedRoles: item.roles,
+    description: item.description,
+    dependencies: '',
+    notes: '',
+    reviewNeeded: item.status === 'DRAFT',
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  };
+});
+
+function mergeSeedCapabilities(existing: Capability[]): Capability[] {
+  const nowIso = new Date().toISOString();
+  const byCapabilityId = new Set(existing.map((capability) => capability.capabilityId));
+  const additions: Capability[] = [];
+
+  for (const seed of fallbackCapabilities) {
+    if (byCapabilityId.has(seed.capabilityId)) {
+      continue;
+    }
+
+    additions.push({
+      ...seed,
+      id: existing.length + additions.length + 1,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    });
+  }
+
+  return [...existing, ...additions];
+}
 
 function toCapabilityStatus(raw: unknown): CapabilityStatus {
   if (typeof raw !== 'string') return 'DRAFT';
@@ -235,7 +408,8 @@ const localCapabilityRepository: CapabilityRepository = {
     try {
       const parsed = JSON.parse(localRaw) as Partial<Capability>[];
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map((item, index) => hydrateCapability(item, index));
+        const hydrated = parsed.map((item, index) => hydrateCapability(item, index));
+        return mergeSeedCapabilities(hydrated);
       }
     } catch {
       return fallbackCapabilities;
@@ -417,10 +591,7 @@ export default function AdminCapabilitiesPage() {
       .slice(0, 6);
   }, [capabilities]);
 
-  const switchboardCapabilities = useMemo(
-    () => capabilities.filter((item) => item.status !== 'ARCHIVED').slice(0, 6),
-    [capabilities],
-  );
+  const switchboardCapabilities = useMemo(() => capabilities.filter((item) => item.status !== 'ARCHIVED'), [capabilities]);
 
   const missingAssignments = useMemo(() => capabilities.filter((item) => item.assignedRoles.length === 0), [capabilities]);
   const pendingReview = useMemo(() => capabilities.filter((item) => item.reviewNeeded || item.status === 'DRAFT'), [capabilities]);

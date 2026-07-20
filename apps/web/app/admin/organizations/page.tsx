@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import RoleSessionGate from '@/components/RoleSessionGate';
+import { apiBase } from '@/lib/apiBase';
 
 type FeedbackKind = 'success' | 'error' | 'info';
 
@@ -9,6 +11,12 @@ type CapabilityToggle = {
   id: string;
   label: string;
   description: string;
+};
+
+type OrganizationOption = {
+  organization_id: string;
+  organization_name: string;
+  status: string;
 };
 
 const GYM_CAPABILITY_STORAGE_KEY = 'ppbf-org-gym-capabilities-v1';
@@ -60,6 +68,9 @@ export default function AdminOrganizationsPage() {
   const [membershipActiveFlag, setMembershipActiveFlag] = useState<'active' | 'inactive'>('active');
   const [feedback, setFeedback] = useState<{ kind: FeedbackKind; text: string } | null>(null);
   const [activeAction, setActiveAction] = useState<string | null>(null);
+  const [organizationOptions, setOrganizationOptions] = useState<OrganizationOption[]>([]);
+  const [isMicrosoftSession, setIsMicrosoftSession] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
   const [gymCapabilityAccess, setGymCapabilityAccess] = useState<Record<string, boolean>>(() => {
     if (typeof window === 'undefined') {
       return {};
@@ -84,6 +95,43 @@ export default function AdminOrganizationsPage() {
 
     window.localStorage.setItem(GYM_CAPABILITY_STORAGE_KEY, JSON.stringify(gymCapabilityAccess));
   }, [gymCapabilityAccess]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/auth/session`, { method: 'POST' });
+        if (!response.ok) {
+          setAuthChecked(true);
+          return;
+        }
+
+        const payload = (await response.json().catch(() => ({ authenticated: false }))) as {
+          authenticated?: boolean;
+          auth_provider?: string;
+        };
+
+        setIsMicrosoftSession(payload.authenticated === true && payload.auth_provider === 'microsoft');
+      } finally {
+        setAuthChecked(true);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!isMicrosoftSession) {
+      return;
+    }
+
+    void (async () => {
+      const response = await fetch(`${apiBase()}/api/pilot/platform/organizations`, { method: 'GET' });
+      if (!response.ok) {
+        return;
+      }
+
+      const payload = (await response.json().catch(() => ({ organizations: [] }))) as { organizations?: OrganizationOption[] };
+      setOrganizationOptions(Array.isArray(payload.organizations) ? payload.organizations : []);
+    })();
+  }, [isMicrosoftSession]);
 
   let feedbackTextClass = 'text-[var(--gray-dark)]';
   if (feedback?.kind === 'error') {
@@ -208,7 +256,29 @@ export default function AdminOrganizationsPage() {
     );
   }
 
+  if (authChecked && !isMicrosoftSession) {
+    return (
+      <RoleSessionGate allowedRoles={['admin']}>
+        <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
+          <div className="mx-auto w-full max-w-3xl space-y-4 px-6 py-12 text-center lg:px-10">
+            <h1 className="font-display text-4xl font-black">Microsoft Sign-In Required</h1>
+            <p className="text-base leading-7 text-[var(--gray-dark)]">
+              Organization Provisioning is restricted to Microsoft-authenticated admin sessions.
+            </p>
+            <Link
+              href="/login"
+              className="mx-auto inline-flex min-h-[44px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-[var(--red-primary)] px-6 text-sm font-black uppercase tracking-[0.12em] text-[var(--white)] transition hover:bg-[var(--red-highlight)]"
+            >
+              Sign In With Microsoft
+            </Link>
+          </div>
+        </main>
+      </RoleSessionGate>
+    );
+  }
+
   return (
+    <RoleSessionGate allowedRoles={['admin']}>
     <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       <div className="mx-auto w-full max-w-6xl space-y-6 px-6 py-8 lg:px-10">
         <header className="space-y-4 rounded-[28px] border border-[rgba(0,0,0,0.14)] bg-[linear-gradient(135deg,var(--canvas-tan-light),#ffffff)] p-6 shadow-[var(--shadow-md)]">
@@ -276,6 +346,22 @@ export default function AdminOrganizationsPage() {
         <details className="overflow-hidden rounded-[24px] border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-light)] shadow-[var(--shadow-sm)]">
           <summary className="cursor-pointer list-none px-5 py-4 text-lg font-bold">Update Organization Status</summary>
           <div className="space-y-3 border-t border-[rgba(0,0,0,0.08)] p-5">
+          {organizationOptions.length > 0 ? renderFieldLabel('Select Organization', 'status-organization-id-select') : null}
+          {organizationOptions.length > 0 ? (
+            <select
+              id="status-organization-id-select"
+              value={statusOrgId}
+              onChange={(event) => setStatusOrgId(event.target.value)}
+              className="h-11 w-full border border-[rgba(0,0,0,0.16)] bg-white px-3"
+            >
+              <option value="">Choose organization</option>
+              {organizationOptions.map((organization) => (
+                <option key={organization.organization_id} value={organization.organization_id}>
+                  {organization.organization_name} ({organization.organization_id})
+                </option>
+              ))}
+            </select>
+          ) : null}
           {renderFieldLabel('Organization ID', 'status-organization-id-input')}
           <input
             id="status-organization-id-input"
@@ -595,5 +681,6 @@ export default function AdminOrganizationsPage() {
         </Link>
       </div>
     </main>
+    </RoleSessionGate>
   );
 }

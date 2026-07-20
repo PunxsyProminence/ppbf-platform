@@ -24,7 +24,35 @@ export default function BoardHubPage() {
         </header>
 
         <section className="mt-8 border-2 border-[#8b4444] bg-[#121212] p-5">
-          <p className="text-xs font-mono uppercase tracking-[0.28em] text-[#d4a574]">Board Overview Strip</p>
+          <h2 className="text-lg font-black text-[#e8d7c6]">Quick Actions</h2>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <Link
+              href="/operations"
+              className="inline-flex min-h-[44px] items-center justify-center border border-[#8b4444] bg-[#2f1717] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[#e8d7c6] transition hover:border-[#d4a574] hover:text-[#d4a574]"
+            >
+              Open The Ring
+            </Link>
+            <Link
+              href="/board/compliance-monitoring"
+              className="inline-flex min-h-[44px] items-center justify-center border border-[#654535] bg-[#111111] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[#cbb8a8] transition hover:border-[#8b4444]"
+            >
+              Compliance Monitoring
+            </Link>
+            <Link
+              href="/admin/compliance-center"
+              className="inline-flex min-h-[44px] items-center justify-center border border-[#654535] bg-[#111111] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[#cbb8a8] transition hover:border-[#8b4444]"
+            >
+              Admin Compliance Center
+            </Link>
+            <Link
+              href="/admin/shadow"
+              className="inline-flex min-h-[44px] items-center justify-center border border-[#654535] bg-[#111111] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[#cbb8a8] transition hover:border-[#8b4444]"
+            >
+              SHADOW Command Node
+            </Link>
+          </div>
+
+          <p className="mt-5 text-xs font-mono uppercase tracking-[0.28em] text-[#d4a574]">Board Overview Strip</p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
             {boardOverviewStrip.map((item) => (
               <article key={item.label} className="border border-[#654535] bg-[#0d0d0d] p-3">
@@ -47,14 +75,14 @@ export default function BoardHubPage() {
                   <p className="mt-1 text-[15px] leading-6 text-[#cbb8a8]">{seat.roleDescription}</p>
                 </div>
 
-                <div>
-                  <p className="text-[12px] font-mono uppercase tracking-[0.15em] text-[#d4a574]">Primary Responsibilities</p>
-                  <ul className="mt-1 space-y-1 text-[14px] leading-6 text-[#cbb8a8]">
+                <details className="border border-[#654535] bg-[#111111] p-2">
+                  <summary className="cursor-pointer text-[12px] font-mono uppercase tracking-[0.15em] text-[#d4a574]">Primary Responsibilities</summary>
+                  <ul className="mt-2 space-y-1 text-[14px] leading-6 text-[#cbb8a8]">
                     {seat.primaryResponsibilities.map((responsibility) => (
                       <li key={responsibility}>- {responsibility}</li>
                     ))}
                   </ul>
-                </div>
+                </details>
 
                 <div className="grid grid-cols-2 gap-2">
                   <div className="border border-[#654535] bg-[#111111] p-2">

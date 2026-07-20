@@ -18,6 +18,7 @@ export async function POST(request: NextRequest) {
       role: principal.role,
       organization_id: principal.organizationId,
       athlete_id: principal.athleteId,
+      auth_provider: principal.authProvider,
     });
   } catch (error) {
     return jsonError(error);

@@ -197,7 +197,11 @@ export default function OperationsHubPage() {
             </div>
           </section>
 
-          <section className="space-y-5 border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-6 shadow-[var(--shadow-sm)]">
+          <details className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-4 shadow-[var(--shadow-sm)]">
+            <summary className="cursor-pointer list-none text-lg font-bold uppercase tracking-[0.08em] text-[var(--black)]">
+              System Diagnostics and SHADOW Certification
+            </summary>
+            <div className="mt-4 space-y-5">
             <div className="space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
               <p className="text-xs font-mono uppercase tracking-[0.15em] text-[var(--red-primary)]">System Operational Audit and Validation Report</p>
               <p className="text-sm leading-6 text-[var(--gray-dark)]">
@@ -258,7 +262,8 @@ export default function OperationsHubPage() {
                 Certification Status: Signed and Active. Logical paths, equations, role boundaries, and sandbox behavior are aligned for SHADOW core build execution.
               </p>
             </article>
-          </section>
+            </div>
+          </details>
 
           <section className="space-y-4 border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-6 shadow-[var(--shadow-sm)]">
             <h2 className="font-display text-2xl font-bold tracking-tight text-[var(--black)]">Role Selector</h2>
