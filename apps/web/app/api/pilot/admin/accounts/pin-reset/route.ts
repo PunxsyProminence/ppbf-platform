@@ -23,7 +23,8 @@ export async function POST(request: NextRequest) {
       throw new Error('Missing account_id or pin');
     }
 
-    await resetAccountPin(accountId, pin);
+    // Pass organization_id to ensure scope isolation
+    await resetAccountPin(accountId, pin, principal.organizationId);
 
     await writePilotAuditEvent({
       event_type: 'update',

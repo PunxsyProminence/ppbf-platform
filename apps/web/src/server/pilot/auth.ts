@@ -204,10 +204,28 @@ export async function revokeAllSessionsForAccount(accountId: string): Promise<vo
   await query('update pilot.session_tokens set revoked_at = now() where account_id = $1 and revoked_at is null', [accountId]);
 }
 
-export async function resetAccountPin(accountId: string, pin: string): Promise<void> {
+export async function resetAccountPin(accountId: string, pin: string, organizationId: string): Promise<void> {
   const pinHash = await hashPin(pin);
 
-  await query('update pilot.accounts set pin_hash = $1 where account_id = $2', [pinHash, accountId]);
+  // Verify account exists, belongs to the organization, and is not a platform owner
+  const result = await query<{ account_id: string }>(
+    'select account_id from pilot.accounts where account_id = $1 and organization_id = $2 and is_platform_owner = false',
+    [accountId, organizationId]
+  );
+
+  if (!result.length) {
+    throw new Error('Account not found or cannot be reset');
+  }
+
+  // Update PIN only if account belongs to this organization and is not platform owner
+  const updateResult = await query(
+    'update pilot.accounts set pin_hash = $1 where account_id = $2 and organization_id = $3 and is_platform_owner = false',
+    [pinHash, accountId, organizationId]
+  );
+
+  if (!updateResult.length) {
+    throw new Error('Failed to reset PIN');
+  }
 
   await revokeAllSessionsForAccount(accountId);
 }
@@ -224,54 +242,105 @@ export async function createAthleteAccount(accountId: string, athleteId: string,
 export async function createOrUpdateAthleteAccount(accountId: string, athleteId: string, pin: string, organizationId: string): Promise<void> {
   const pinHash = await hashPin(pin);
 
-  await query(
-    `insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner)
-     values ($1, $2, $3, $4, $5, $6, $7)
-     on conflict (account_id) do update set
-       role = excluded.role,
-       organization_id = excluded.organization_id,
-       athlete_id = excluded.athlete_id,
-       pin_hash = excluded.pin_hash,
-       active_flag = excluded.active_flag,
-       is_platform_owner = excluded.is_platform_owner,
-       updated_at = now()`,
-    [accountId, 'athlete', organizationId, athleteId, pinHash, true, false],
+  // Check if account exists and verify ownership
+  const existingAccount = await query<{ organization_id: string }>(
+    'select organization_id from pilot.accounts where account_id = $1',
+    [accountId]
   );
+
+  if (existingAccount.length > 0) {
+    const existingOrgId = existingAccount[0].organization_id;
+    if (existingOrgId !== organizationId) {
+      // Account exists in a different organization—reject to prevent cross-tenant takeover
+      throw new Error('Account already exists in another organization');
+    }
+    // Same organization—update is allowed
+    await query(
+      `update pilot.accounts set
+         role = $1,
+         athlete_id = $2,
+         pin_hash = $3,
+         active_flag = $4,
+         updated_at = now()
+       where account_id = $5 and organization_id = $6`,
+      ['athlete', athleteId, pinHash, true, accountId, organizationId],
+    );
+  } else {
+    // New account—create it
+    await query(
+      `insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner)
+       values ($1, $2, $3, $4, $5, $6, $7)`,
+      [accountId, 'athlete', organizationId, athleteId, pinHash, true, false],
+    );
+  }
 }
 
 export async function createCoachAccount(accountId: string, pin: string, organizationId: string): Promise<void> {
   const pinHash = await hashPin(pin);
 
-  await query(
-    `insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner)
-     values ($1, $2, $3, $4, $5, $6, $7)
-     on conflict (account_id) do update set
-       role = excluded.role,
-       organization_id = excluded.organization_id,
-       athlete_id = excluded.athlete_id,
-       pin_hash = excluded.pin_hash,
-       active_flag = excluded.active_flag,
-       is_platform_owner = excluded.is_platform_owner,
-       updated_at = now()`,
-    [accountId, 'coach', organizationId, null, pinHash, true, false],
+  // Check if account exists and verify ownership
+  const existingAccount = await query<{ organization_id: string }>(
+    'select organization_id from pilot.accounts where account_id = $1',
+    [accountId]
   );
+
+  if (existingAccount.length > 0) {
+    const existingOrgId = existingAccount[0].organization_id;
+    if (existingOrgId !== organizationId) {
+      throw new Error('Account already exists in another organization');
+    }
+    // Same organization—update is allowed
+    await query(
+      `update pilot.accounts set
+         role = $1,
+         pin_hash = $2,
+         active_flag = $3,
+         updated_at = now()
+       where account_id = $4 and organization_id = $5`,
+      ['coach', pinHash, true, accountId, organizationId],
+    );
+  } else {
+    // New account—create it
+    await query(
+      `insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner)
+       values ($1, $2, $3, $4, $5, $6, $7)`,
+      [accountId, 'coach', organizationId, null, pinHash, true, false],
+    );
+  }
 }
 
 export async function createParentAccount(accountId: string, pin: string, organizationId: string): Promise<void> {
   const pinHash = await hashPin(pin);
 
-  await query(
-    `insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner)
-     values ($1, $2, $3, $4, $5, $6, $7)
-     on conflict (account_id) do update set
-       role = excluded.role,
-       organization_id = excluded.organization_id,
-       athlete_id = excluded.athlete_id,
-       pin_hash = excluded.pin_hash,
-       active_flag = excluded.active_flag,
-       is_platform_owner = excluded.is_platform_owner`,
-    [accountId, 'parent', organizationId, null, pinHash, true, false],
+  // Check if account exists and verify ownership
+  const existingAccount = await query<{ organization_id: string }>(
+    'select organization_id from pilot.accounts where account_id = $1',
+    [accountId]
   );
+
+  if (existingAccount.length > 0) {
+    const existingOrgId = existingAccount[0].organization_id;
+    if (existingOrgId !== organizationId) {
+      throw new Error('Account already exists in another organization');
+    }
+    // Same organization—update is allowed
+    await query(
+      `update pilot.accounts set
+         role = $1,
+         pin_hash = $2,
+         active_flag = $3,
+         updated_at = now()
+       where account_id = $4 and organization_id = $5`,
+      ['parent', pinHash, true, accountId, organizationId],
+    );
+  } else {
+    // New account—create it
+    await query(
+      `insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner)
+       values ($1, $2, $3, $4, $5, $6, $7)`,
+      [accountId, 'parent', organizationId, null, pinHash, true, false],
+    );
+  }
 }
 
 export async function createOrRotateAdminAccount(
