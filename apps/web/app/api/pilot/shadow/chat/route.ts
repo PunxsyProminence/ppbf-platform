@@ -27,6 +27,7 @@ import { routeRequest, tierToSessionType, isAsyncSession } from '@/src/server/pi
 import { classifyProfileTier, buildPersonalizationPrompt } from '@/src/server/pilot/shadowProfiling';
 import { executeHeavyBagSync, executeHeavyBagAsync, shouldRunAsync } from '@/src/server/pilot/shadowHeavyBag';
 import { evaluateShadowUnlockState, isFeatureEnabled, type ShadowUnlockState } from '@/src/server/pilot/shadowUnlocks';
+import { createShadowLibraryClaim, type ShadowLibraryClaimResult } from '@/src/server/pilot/shadowLibrary';
 
 export interface ShadowChatRequest {
   message: string;
@@ -60,6 +61,11 @@ export interface ShadowChatResponse {
     evidenceCount: number;
     disclaimers: string[];
   };
+  evidence?: {
+    status: 'supported' | 'weak' | 'unsupported';
+    sources: Array<{ sourceId: string; title: string; documentName: string; publicationDate: string | null }>;
+    researchRequirementId: number | null;
+  };
   correlationId?: string;
   error?: string;
 }
@@ -80,6 +86,22 @@ const FALLBACK_RESPONSES: Partial<Record<HighRiskTopic, string>> = {
 };
 
 const URGENT_MEDICAL_RESPONSE = `${MEDICAL_EDUCATION_NOTICE}\n\nThe symptoms described could require urgent or emergency evaluation. Stop participation. Contact local emergency services or an onsite licensed medical professional now, especially for chest pain, severe breathing difficulty, loss of consciousness, inability to wake, seizure, worsening symptoms after a head injury, or immediate danger. Do not delay emergency care to continue this chat.`;
+
+function evidenceToPromptContext(claim: ShadowLibraryClaimResult | null): string {
+  if (!claim) return 'No evidence retrieval result was available. Mark substantive claims RESEARCH NEEDED.';
+  if (claim.status === 'unsupported') {
+    return `Evidence status: UNSUPPORTED. Do not improvise a factual claim. Research requirement: ${claim.researchRequirementId ?? "not created"}.`;
+  }
+  const items = claim.evidence.slice(0, 5).map((item) => ({
+    sourceId: item.source_id,
+    title: item.source_title,
+    document: item.document_name,
+    publicationDate: item.publication_date,
+    authorityTier: item.authority_tier,
+    excerpt: item.text_content.slice(0, 800),
+  }));
+  return `Evidence status: ${claim.status.toUpperCase()}\n${JSON.stringify(items)}`;
+}
 
 async function loadRecentConversation(organizationId: string, userId: string, athleteId?: string): Promise<ChatTurn[]> {
   try {
@@ -352,10 +374,29 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
 
     const messageId = `msg_${Date.now()}`;
     const createdAt = new Date();
+    const evidenceClaim = requestValidation.urgent
+      ? null
+      : await createShadowLibraryClaim({
+          organizationId,
+          actorAccountId: userId,
+          actorRole: userRole,
+          athleteId: userRole === 'athlete' ? athleteId ?? null : null,
+          scope: athleteId ? 'subject' : (['admin', 'organization_admin', 'platform_owner'].includes(userRole) ? 'master' : 'scoped'),
+          subjectId: athleteId ?? null,
+          question: message,
+          limit: 5,
+        }).catch((error) => {
+          console.error('SHADOW evidence retrieval failed:', error);
+          return null;
+        });
     const recentConversation = await loadRecentConversation(organizationId, userId, athleteId);
     const authorizedContextOutput = {
       ...contextOutput,
-      context: [contextOutput.context, roleBasedContext.context]
+      context: [
+        contextOutput.context,
+        roleBasedContext.context,
+        `## Retrieved Evidence\n${evidenceToPromptContext(evidenceClaim)}`,
+      ]
         .filter(Boolean)
         .join('\n\n## Role-authorized context\n'),
     };
@@ -414,6 +455,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           model: routing.model.displayName,
           conversationTurnCount: recentConversation.length,
           authorizedContextIncluded: Boolean(roleBasedContext.context),
+          evidenceStatus: evidenceClaim?.status ?? 'unavailable',
+          evidenceCount: evidenceClaim?.evidence.length ?? 0,
+          researchRequirementId: evidenceClaim?.researchRequirementId ?? null,
         })],
       );
     } catch (auditError) {
@@ -441,6 +485,16 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       async: resolvedAsync,
       jobId: asyncJobId,
       explainability,
+      evidence: evidenceClaim ? {
+        status: evidenceClaim.status,
+        sources: evidenceClaim.evidence.slice(0, 5).map((item) => ({
+          sourceId: item.source_id,
+          title: item.source_title,
+          documentName: item.document_name,
+          publicationDate: item.publication_date,
+        })),
+        researchRequirementId: evidenceClaim.researchRequirementId,
+      } : undefined,
       correlationId,
     });
   } catch (error) {
