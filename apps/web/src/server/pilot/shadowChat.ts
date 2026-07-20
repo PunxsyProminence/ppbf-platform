@@ -366,7 +366,9 @@ export async function retrieveShadowContext(params: {
   }
 
   // Cache lookup occurs only after every role relationship check has passed.
-  const cacheKey = athleteId ? `${organizationId}:${athleteId}` : `${organizationId}:org`;
+  const cacheKey = athleteId
+    ? `${organizationId}:${userRole}:${userId}:${athleteId}`
+    : `${organizationId}:${userRole}:${userId}:org`;
   const cached = getCachedContext(cacheKey);
   if (cached) return { context: cached, authorized: true };
 
@@ -409,7 +411,9 @@ export async function retrieveShadowContext(params: {
       recentSessions: sessions,
       recentAttendance: attendance,
       participationRestrictionStatus: restrictions[0] ?? null,
-      recentCoachObservations: observations,
+      recentCoachObservations: ['coach', 'admin', 'organization_admin', 'platform_owner'].includes(userRole)
+        ? observations
+        : undefined,
       provenance: 'pilot PostgreSQL tables; organization and athlete scoped',
     });
     setCachedContext(cacheKey, context);
