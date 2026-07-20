@@ -4,6 +4,7 @@ import { createOrRotateAdminAccount, createOrganization, assignOrganizationMembe
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getPilotDefaultOrganizationId } from '@/src/server/pilot/env';
 import { jsonError } from '@/src/server/pilot/http';
+import { getClientIp, checkRateLimit, recordFailedAttempt, clearRateLimit } from '@/src/server/pilot/rateLimit';
 
 export const runtime = 'nodejs';
 
@@ -16,7 +17,20 @@ export async function POST(request: NextRequest) {
       throw new Error('Missing PPBF_PILOT_BOOTSTRAP_KEY');
     }
 
+    // Rate limiting: check per-IP
+    const clientIp = getClientIp(request);
+    const ipKey = `pin_bootstrap:${clientIp}`;
+
+    const ipLimitCheck = checkRateLimit(ipKey);
+    if (ipLimitCheck.isLimited) {
+      return NextResponse.json(
+        { error: 'Too many attempts. Please try again later.' },
+        { status: 429 }
+      );
+    }
+
     if (!providedKey || providedKey !== bootstrapKey) {
+      recordFailedAttempt(ipKey);
       throw new Error('Forbidden: invalid bootstrap key');
     }
 
@@ -36,6 +50,9 @@ export async function POST(request: NextRequest) {
     if (!accountId || !pin) {
       throw new Error('Missing account_id or pin');
     }
+
+    // Successful bootstrap key validation: clear rate limit
+    clearRateLimit(ipKey);
 
     await createOrganization(organizationId, organizationName, accountId);
     await createOrRotateAdminAccount(accountId, pin, organizationId, bootstrapRole);
