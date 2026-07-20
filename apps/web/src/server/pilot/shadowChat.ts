@@ -55,6 +55,7 @@ export interface ShadowValidationResult {
   highRisk?: boolean;
   topic?: HighRiskTopic;
   classification?: string;
+  urgent?: boolean;
 }
 
 export interface ShadowContextResult {
@@ -69,6 +70,18 @@ export interface ShadowResponseValidation {
   message: string;
   reasons: string[];
   requiresHumanReview: boolean;
+}
+
+export const MEDICAL_EDUCATION_NOTICE = 'The information provided by SHADOW is for general educational and informational purposes only. It is not medical advice and is not intended to diagnose, treat, prescribe, or provide medical clearance or return-to-participation approval. Symptoms may have multiple causes, and one or more symptoms do not establish that a particular condition exists. Do not use SHADOW to diagnose yourself or another person. Medical concerns, injuries, symptom patterns, treatment decisions, and return-to-participation decisions should be evaluated by an appropriately licensed or certified healthcare professional.';
+
+export const SAFE_FILTERED_RESPONSE = `${MEDICAL_EDUCATION_NOTICE}\n\nI could not safely display the generated response because it crossed SHADOW's diagnosis, treatment, prescription, or clearance boundary. I can still provide general education about possible categories of concern, common signs, questions to document, and the type of licensed or certified professional who can evaluate the concern.`;
+
+export function isUrgentMedicalConcern(message: string, topic: HighRiskTopic): boolean {
+  const immediateLanguage = /\b(now|currently|right now|just|today|severe|worsening|cannot breathe|can't breathe|difficulty breathing|unresponsive|unconscious|passed out)\b/i.test(message);
+  const urgentTopic = topic === 'chest_pain' || topic === 'loss_of_consciousness' || topic === 'fainting';
+  const concussionRedFlag = (topic === 'concussion' || topic === 'head_trauma')
+    && /\b(worsening|repeated vomiting|seizure|unequal pupils|slurred speech|unresponsive|loss of consciousness|passed out)\b/i.test(message);
+  return concussionRedFlag || (urgentTopic && immediateLanguage);
 }
 
 // Classify high-risk topics and determine routing
@@ -194,6 +207,7 @@ export function validateShadowRequest(
 ): ShadowValidationResult {
   const classification = classifyHighRiskTopic(message);
   const normalizedMessage = message.toLowerCase();
+  const urgent = isUrgentMedicalConcern(message, classification.topic);
 
   const hasPrescriptionLanguage = /\b(prescribe|prescribed|prescribing|prescription|rx)\b/i.test(message)
     || /should\s+i\s+take/i.test(message)
@@ -211,21 +225,29 @@ export function validateShadowRequest(
       error: 'Medication and prescription recommendations require prescription authority and professional medical oversight.',
       highRisk: true,
       topic: classification.topic,
+      urgent,
     };
   }
 
-  // Educational queries are allowed
+  // Educational and self-referential symptom questions are answered in education-only mode.
+  // SHADOW may discuss possibilities but must not reach a diagnosis.
   if (classification.educationalApproach) {
-    return { valid: true };
+    return {
+      valid: true,
+      highRisk: classification.isHighRisk,
+      topic: classification.topic,
+      classification: classification.isHighRisk ? 'education_only' : undefined,
+      urgent,
+    };
   }
 
-  // Check for diagnosis claims
   if (/(do|does|did|am|is|have)\s+(i|you)\s+(have|have a|get|got|experience).*(concussion|fracture|injury|condition|disease|syndrome|disorder)/i.test(message)) {
     return {
-      valid: false,
-      error: 'Diagnosis and personal health assessment require professional medical evaluation.',
+      valid: true,
       highRisk: true,
       topic: classification.topic,
+      classification: 'education_only',
+      urgent,
     };
   }
 
@@ -249,7 +271,13 @@ export function validateShadowRequest(
     };
   }
 
-  return { valid: true };
+  return {
+    valid: true,
+    highRisk: classification.isHighRisk,
+    topic: classification.topic,
+    classification: classification.isHighRisk ? 'education_only' : undefined,
+    urgent,
+  };
 }
 
 // Retrieve context based on user role and authorization
@@ -317,7 +345,7 @@ export async function retrieveShadowContext(params: {
 export function validateShadowResponse(response: string): ShadowResponseValidation {
   let filtered = false;
   const reasons: string[] = [];
-  const message = response;
+  let message = response;
 
   // Check for diagnosis claims
   if (/you (have|have a|got|get|experience|develop).*(?:concussion|fracture|injury|pain|sprain|strain|trauma|condition|disease|syndrome|disorder)/i.test(response)) {
@@ -326,7 +354,7 @@ export function validateShadowResponse(response: string): ShadowResponseValidati
   }
 
   // Check for direct prescription claims
-  if (/\byou should\b/i.test(response)) {
+  if (/\byou should\s+(?:take|use|start|stop|increase|decrease|continue|resume|try|get)\b/i.test(response)) {
     filtered = true;
     reasons.push('Contains prescriptive claim without medical authority');
   }
@@ -352,6 +380,10 @@ export function validateShadowResponse(response: string): ShadowResponseValidati
 
   if (hasConfidenceMarker || hasDeferralLanguage || hasHumanReviewLanguage) {
     reasons.push('Human review required');
+  }
+
+  if (filtered) {
+    message = SAFE_FILTERED_RESPONSE;
   }
 
   return {
@@ -399,15 +431,20 @@ KEY PHRASES (use naturally):
 "Lead from the front" / "That's the sport"
 
 DOCTRINE — NON-NEGOTIABLE:
-1. Never diagnose a condition — redirect to a professional medical authority or clinician.
+1. Provide comprehensive educational information while never diagnosing a condition.
 2. Never prescribe treatment or medication.
 3. Never grant medical clearance or return-to-play approval.
-4. Always use confidence markers: PROVEN (50+ cases, 90%+ success) / EMERGING (10–49 cases, 60–89%) / EXPERIMENTAL (<10 or <60%) / RESEARCH NEEDED (insufficient data).
+4. Use confidence markers only when supported by retrieved evidence: PROVEN / EMERGING / EXPERIMENTAL / RESEARCH NEEDED. Never invent case counts, percentages, citations, or precision.
 5. Flag unknowns as research requirements — not guesses.
-6. Defer all final decisions to coaches, athletes, or medical professionals.
+6. Defer final medical decisions to appropriately licensed or certified healthcare professionals.
 
-MEDICAL SAFETY:
-Professional medical authority makes the final call on diagnosis, prescription, and clearance.
+MEDICAL EDUCATION AND SAFETY:
+- The information provided by SHADOW is for general educational and informational purposes only. It is not medical advice and is not intended to diagnose, treat, prescribe, or provide medical clearance or return-to-participation approval.
+- Symptoms may have multiple causes. The presence of one or more symptoms does not establish that a particular condition exists. Tell users not to diagnose themselves or another person from SHADOW's information.
+- Explain reasonable possibilities using cautious language such as "could be consistent with," "may be associated with," or "could potentially indicate." Never state or imply that a possibility is a conclusion.
+- Help the user prepare for professional evaluation: describe common signs, relevant observations to document, questions to ask, and the appropriate professional to contact, such as a physician, licensed athletic trainer, physical therapist, registered dietitian, or qualified mental-health professional.
+- When symptoms could require urgent or emergency evaluation, clearly say to stop participation and seek immediate help through local emergency services or an onsite licensed medical professional. Do not delay emergency care to continue the chat.
+- Professional medical authority makes the final call on diagnosis, treatment, prescription, and clearance.
 
 RESPONSE STRUCTURE:
 1. Direct observation or reality check
@@ -418,12 +455,12 @@ RESPONSE STRUCTURE:
 
 EXAMPLE — readiness drop:
 "Readiness down 15% this week. That's your body telling you something — could be overtraining, poor sleep, stress, or all three. Embrace the suck, but work with it, not against it.
-Suggestion: Reduce volume 15–20%, add a rest day. PROVEN — 247 similar cases, 94% improved in 5–7 days.
-Unknowns: sleep, nutrition, stress — not tracked, which means we're guessing. That's a research gap.
-Coach decides: don't implement anything without a conversation first."
+Possible next step: discuss a temporary workload adjustment and recovery review with the coach. RESEARCH NEEDED — no verified comparable evidence was supplied in this conversation.
+Unknowns: sleep, nutrition, stress — not tracked, so no precise cause or outcome should be claimed. That's a research gap.
+Coach decides on training changes; a licensed healthcare professional decides medical restrictions or clearance."
 
 EXAMPLE — diagnosis request:
-"Can't tell you if you have a concussion — that's not my lane, and anyone who gives you that answer over a chat is doing you a disservice.
-Get evaluated by a medical professional. Full stop.
-What I can do: share what research says about concussion recognition and what to watch for. Want that?"`;
+"I cannot determine whether you have a concussion. The symptoms could be consistent with concussion, but they may also have other causes, and this information cannot establish a diagnosis.
+Do not diagnose yourself from this chat. Stop participation and seek evaluation from an appropriately licensed healthcare professional. If there was loss of consciousness, worsening symptoms, repeated vomiting, seizure, slurred speech, unequal pupils, or difficulty waking, seek emergency help now.
+What I can do is explain common recognition signs, observations to document, questions to ask the professional, and the usual evaluation process."`;
 
