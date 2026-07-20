@@ -7,13 +7,16 @@ import {
   validateShadowResponse,
   retrieveShadowContext,
   SHADOW_SYSTEM_PROMPT,
+  MEDICAL_EDUCATION_NOTICE,
+  SAFE_FILTERED_RESPONSE,
+  isUrgentMedicalConcern,
   HighRiskTopic,
 } from './shadowChat';
 
 describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
   describe('Request Validation', () => {
     test.each([
-      ['Do I have a concussion?', false, 'professional medical evaluation'],
+      ['Do I have a concussion?', true, null],
       ['What is a concussion?', true, null],
       ['Prescribe ibuprofen', false, 'prescription authority'],
     ])('validates request: %s', (input, shouldPass, expectedError) => {
@@ -22,6 +25,13 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
       if (!shouldPass && expectedError) {
         expect(result.error).toContain(expectedError);
       }
+    });
+
+    test('routes self-referential symptom questions to education-only mode', () => {
+      const result = validateShadowRequest('Do I have a concussion?', 'athlete', 'org-123');
+      expect(result.valid).toBe(true);
+      expect(result.classification).toBe('education_only');
+      expect(result.topic).toBe('concussion');
     });
 
     // Test 3: Clearance request is blocked
@@ -125,6 +135,29 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
       const result = validateShadowResponse(unsafeResponse);
       expect(result.filtered).toBe(true);
       expect(result.reasons.length).toBeGreaterThan(0);
+      expect(result.message).toBe(SAFE_FILTERED_RESPONSE);
+      expect(result.message).not.toContain('You have a concussion');
+    });
+  });
+
+  describe('Medical education and urgent escalation', () => {
+    test('publishes the authoritative educational disclaimer', () => {
+      expect(MEDICAL_EDUCATION_NOTICE).toContain('general educational and informational purposes only');
+      expect(MEDICAL_EDUCATION_NOTICE).toContain('not medical advice');
+      expect(MEDICAL_EDUCATION_NOTICE).toContain('Do not use SHADOW to diagnose yourself');
+      expect(MEDICAL_EDUCATION_NOTICE).toContain('licensed or certified healthcare professional');
+    });
+
+    test.each([
+      ['I have severe chest pain right now', 'chest_pain'],
+      ['I just passed out', 'loss_of_consciousness'],
+      ['Concussion with worsening symptoms and repeated vomiting', 'concussion'],
+    ] as const)('detects urgent medical concern: %s', (message, topic) => {
+      expect(isUrgentMedicalConcern(message, topic)).toBe(true);
+    });
+
+    test('does not label a general educational question as an emergency', () => {
+      expect(isUrgentMedicalConcern('What can cause fainting?', 'fainting')).toBe(false);
     });
   });
 
@@ -138,7 +171,9 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
     test('system prompt defers to medical authority', () => {
       expect(SHADOW_SYSTEM_PROMPT).toContain('professional medical authority');
       expect(SHADOW_SYSTEM_PROMPT).toContain('clinician');
-      expect(SHADOW_SYSTEM_PROMPT).toContain('diagnosis, prescription, and clearance');
+      expect(SHADOW_SYSTEM_PROMPT).toContain('diagnosis, treatment, prescription, and clearance');
+      expect(SHADOW_SYSTEM_PROMPT).toContain('could be consistent with');
+      expect(SHADOW_SYSTEM_PROMPT).toContain('Never invent case counts, percentages, citations, or precision');
     });
 
     test('system prompt emphasizes metrics inform decisions', () => {
@@ -205,8 +240,9 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
     });
 
     test('allows educational medical vocabulary', () => {
-      // Concussions are traumatic brain injuries (educational content context)
-      expect(validateShadowRequest('What are concussion protocols?', 'coach', 'org-123')).toEqual({ valid: true });
+      const result = validateShadowRequest('What are concussion protocols?', 'coach', 'org-123');
+      expect(result.valid).toBe(true);
+      expect(result.classification).toBe('education_only');
     });
   });
 });
