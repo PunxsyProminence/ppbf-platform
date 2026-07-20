@@ -615,6 +615,20 @@ create table if not exists pilot.shadow_data_deletion_requests (
 create index if not exists idx_shadow_deletion_requests_org_status
   on pilot.shadow_data_deletion_requests(organization_id, status, requested_at desc);
 
+
+create table if not exists pilot.shadow_chat_memory_corrections (
+  correction_id uuid primary key,
+  organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+  user_id text not null,
+  fact_key text not null,
+  corrected_value text null,
+  action text not null check (action in ('replace', 'forget')),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_shadow_memory_corrections_owner
+  on pilot.shadow_chat_memory_corrections(organization_id, user_id, created_at desc);
+
 -- SHADOW Progressive Unlocks (configuration-driven threshold engine)
 create table if not exists pilot.shadow_feature_thresholds (
   organization_id       text not null references pilot.organizations(organization_id) on delete cascade,
