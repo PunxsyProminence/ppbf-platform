@@ -29,6 +29,7 @@ export function ensureShadowConversationSchema(): Promise<void> {
       await query('CREATE TABLE IF NOT EXISTS pilot.shadow_human_review_queue (review_id uuid PRIMARY KEY, organization_id text NOT NULL REFERENCES pilot.organizations(organization_id) ON DELETE CASCADE, conversation_id uuid NULL REFERENCES pilot.shadow_chat_sessions(conversation_id) ON DELETE SET NULL, user_id text NOT NULL, category text NOT NULL, severity text NOT NULL, summary text NOT NULL, status text NOT NULL DEFAULT \'open\' CHECK (status IN (\'open\', \'in_review\', \'resolved\', \'dismissed\')), metadata jsonb NOT NULL DEFAULT \'{}\'::jsonb, reviewed_by text NULL, reviewed_at timestamptz NULL, created_at timestamptz NOT NULL DEFAULT now())');
       await query('CREATE INDEX IF NOT EXISTS idx_shadow_human_review_org_status ON pilot.shadow_human_review_queue(organization_id, status, created_at DESC)');
       await query('CREATE TABLE IF NOT EXISTS pilot.shadow_data_deletion_requests (request_id uuid PRIMARY KEY, organization_id text NOT NULL REFERENCES pilot.organizations(organization_id) ON DELETE CASCADE, user_id text NOT NULL, status text NOT NULL DEFAULT \'pending\' CHECK (status IN (\'pending\', \'approved\', \'completed\', \'denied\')), requested_at timestamptz NOT NULL DEFAULT now(), completed_at timestamptz NULL, processed_by text NULL)');
+      await query('CREATE TABLE IF NOT EXISTS pilot.shadow_chat_memory_corrections (correction_id uuid PRIMARY KEY, organization_id text NOT NULL REFERENCES pilot.organizations(organization_id) ON DELETE CASCADE, user_id text NOT NULL, fact_key text NOT NULL, corrected_value text NULL, action text NOT NULL CHECK (action IN (\'replace\', \'forget\')), created_at timestamptz NOT NULL DEFAULT now())');
     })().catch((error) => {
       schemaReady = null;
       throw error;
@@ -109,4 +110,23 @@ export async function purgeExpiredShadowChatData(input: { retentionDays: number;
   await ensureShadowConversationSchema();
   const rows = await query<{ conversation_id: string }>('DELETE FROM pilot.shadow_chat_sessions WHERE deleted_at IS NOT NULL AND deleted_at < now() - ($1 * interval \'1 day\') RETURNING conversation_id', [input.retentionDays]);
   return rows.length;
+}
+
+
+export async function submitMemoryCorrection(input: { organizationId: string; userId: string; factKey: string; correctedValue?: string; action: 'replace' | 'forget' }): Promise<string> {
+  await ensureShadowConversationSchema();
+  const correctionId = randomUUID();
+  await query('INSERT INTO pilot.shadow_chat_memory_corrections (correction_id, organization_id, user_id, fact_key, corrected_value, action) VALUES ($1, $2, $3, $4, $5, $6)', [correctionId, input.organizationId, input.userId, input.factKey.slice(0, 200), input.correctedValue?.slice(0, 2000) ?? null, input.action]);
+  return correctionId;
+}
+
+export async function listHumanReviews(organizationId: string, status = 'open') {
+  await ensureShadowConversationSchema();
+  return query('SELECT review_id, conversation_id, user_id, category, severity, summary, status, metadata, created_at FROM pilot.shadow_human_review_queue WHERE organization_id = $1 AND status = $2 ORDER BY CASE severity WHEN \'critical\' THEN 0 WHEN \'high\' THEN 1 ELSE 2 END, created_at ASC LIMIT 200', [organizationId, status]);
+}
+
+export async function updateHumanReview(input: { organizationId: string; reviewId: string; reviewerId: string; status: 'in_review' | 'resolved' | 'dismissed' }): Promise<boolean> {
+  await ensureShadowConversationSchema();
+  const rows = await query<{ review_id: string }>('UPDATE pilot.shadow_human_review_queue SET status = $1, reviewed_by = $2, reviewed_at = CASE WHEN $1 IN (\'resolved\', \'dismissed\') THEN now() ELSE reviewed_at END WHERE review_id = $3 AND organization_id = $4 RETURNING review_id', [input.status, input.reviewerId, input.reviewId, input.organizationId]);
+  return Boolean(rows[0]);
 }
