@@ -420,6 +420,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
         contextOutput.context,
         roleBasedContext.context,
         `## Retrieved Evidence\n${evidenceToPromptContext(evidenceClaim)}`,
+        sessionType !== 'quick_round' && recentConversation.length > 0
+          ? `## Recent Conversation\n${JSON.stringify(recentConversation)}`
+          : '',
       ]
         .filter(Boolean)
         .join('\n\n## Role-authorized context\n'),
