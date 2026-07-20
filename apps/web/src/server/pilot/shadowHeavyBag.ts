@@ -104,7 +104,7 @@ export async function executeHeavyBagAsync(input: HeavyBagInput): Promise<HeavyB
       sessionType: input.sessionType,
       complexity: input.classification.complexity,
       topic: input.classification.topic,
-      contextSummary: input.contextOutput.context.slice(0, 500), // Truncated for job payload
+      contextSummary: input.contextOutput.context.slice(0, 8_000), // Bounded authorized context for background processing
       profileTier: input.tierResult.tier,
     },
     priority: priorityForSessionType(input.sessionType),
