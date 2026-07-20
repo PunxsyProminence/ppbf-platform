@@ -151,9 +151,17 @@ export default function SetupWizard() {
       .filter(([, enabled]) => enabled)
       .map(([id]) => id);
 
-    // Just update gym capabilities (backend handles this)
-    // This is a mock—real implementation would call an endpoint
-    return `Saved ${enabledCapabilities.length} features for your gym`;
+    if (enabledCapabilities.length === 0) {
+      throw new Error('Please select at least one feature for your gym');
+    }
+
+    // Call backend to persist capability settings
+    await postJson('/api/pilot/admin/gym-capabilities', {
+      organization_id: gymId.trim(),
+      capabilities: enabledCapabilities,
+    });
+
+    return `Saved ${enabledCapabilities.length} feature${enabledCapabilities.length === 1 ? '' : 's'} for your gym`;
   }
 
   const hasPlatformAccess = isMicrosoftSession && sessionRole === 'platform_owner';
@@ -176,8 +184,14 @@ export default function SetupWizard() {
           <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--red-primary)]">Access Denied</p>
           <h1 className="font-display text-3xl font-black">Platform Owner Access Required</h1>
           <p className="text-sm leading-7 text-[var(--gray-dark)]">
-            This setup wizard is only available to platform administrators. If you&apos;re a gym owner, contact your platform administrator to get started.
+            This setup wizard is for PPBF platform administrators only. To proceed:
           </p>
+          <ol className="text-left max-w-xl mx-auto space-y-2 text-sm text-[var(--gray-dark)]">
+            <li><strong>1. Sign in with your Microsoft account</strong> (Office 365, Outlook, etc.)</li>
+            <li><strong>2. Verify your platform_owner role</strong> is active in PPBF</li>
+            <li><strong>3. Return to this page</strong> to create a new gym</li>
+          </ol>
+          <p className="text-xs italic text-[var(--gray-dark)]">If you&apos;re a gym owner (not a platform administrator), contact your PPBF platform administrator for gym setup assistance.</p>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <Link href="/login" className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-[var(--red-primary)] px-6 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-[var(--red-highlight)]">
               Sign In With Microsoft
@@ -336,9 +350,13 @@ export default function SetupWizard() {
 
           {step === 2 && (
             <div className="mt-6 space-y-4">
+              <div className="rounded-lg border border-[rgba(184,59,52,0.2)] bg-[rgba(184,59,52,0.05)] p-4">
+                <p className="text-xs font-semibold text-[var(--red-primary)] uppercase tracking-[0.1em]">⚠️ Important Setup Note</p>
+                <p className="mt-2 text-sm text-[var(--gray-dark)]">The account created here becomes an <strong>Organization Admin</strong> with PIN-based sign-in. This is separate from your platform_owner Microsoft account (used above). Organization admins manage their gym&apos;s day-to-day operations.</p>
+              </div>
               <div>
-                <label className="block text-sm font-semibold text-[var(--black)]">Your Account ID</label>
-                <p className="mt-1 text-xs text-[var(--gray-dark)]">A unique identifier for you. Example: &quot;coach-john&quot; or &quot;admin-001&quot;</p>
+                <label className="block text-sm font-semibold text-[var(--black)]">Organization Admin Account ID</label>
+                <p className="mt-1 text-xs text-[var(--gray-dark)]">A unique identifier for the organization admin. Example: &quot;coach-john&quot; or &quot;admin-001&quot;</p>
                 <input
                   type="text"
                   value={adminAccountId}
@@ -350,7 +368,7 @@ export default function SetupWizard() {
 
               <div>
                 <label className="block text-sm font-semibold text-[var(--black)]">PIN (4+ digits)</label>
-                <p className="mt-1 text-xs text-[var(--gray-dark)]">A secure PIN code you&apos;ll use to sign in. Example: 5832 or 2947</p>
+                <p className="mt-1 text-xs text-[var(--gray-dark)]">A secure PIN code for sign-in. Avoid predictable patterns (1234, 5678). Example: 5832 or 2947</p>
                 <input
                   type="password"
                   value={adminPin}
@@ -448,18 +466,39 @@ export default function SetupWizard() {
 
         {/* Complete State */}
         {step === 4 && (
-          <section className="rounded-2xl border-2 border-[#4caf50] bg-[rgba(76,175,80,0.05)] p-6 text-center">
-            <p className="text-4xl">🎉</p>
-            <h2 className="mt-4 font-display text-2xl font-black">You&apos;re All Set!</h2>
-            <p className="mt-3 text-sm leading-6 text-[var(--gray-dark)]">
-              Your gym profile is ready. You can now invite coaches and athletes to join. Sign out and log in with your new account to get started.
-            </p>
-            <Link
-              href="/login"
-              className="mt-6 inline-flex h-11 items-center rounded-lg border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-6 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)]"
-            >
-              Go to Login
-            </Link>
+          <section className="rounded-2xl border-2 border-[#4caf50] bg-[rgba(76,175,80,0.05)] p-6 space-y-6">
+            <div className="text-center">
+              <p className="text-4xl">🎉</p>
+              <h2 className="mt-4 font-display text-2xl font-black">Gym Setup Complete!</h2>
+              <p className="mt-3 text-sm leading-6 text-[var(--gray-dark)]">
+                Your gym is now configured and ready for coaches and athletes to join.
+              </p>
+            </div>
+
+            <div className="space-y-3 rounded-lg bg-white p-4 border border-[rgba(0,0,0,0.12)]">
+              <p className="text-sm font-semibold text-[var(--black)]">Next Steps:</p>
+              <ol className="space-y-2 text-sm text-[var(--gray-dark)]">
+                <li><strong>1. Sign out</strong> from your platform_owner account</li>
+                <li><strong>2. Sign in with PIN:</strong> Use the Organization Admin account ID and PIN you just created</li>
+                <li><strong>3. Create team accounts:</strong> Set up coach and athlete accounts from the admin dashboard</li>
+                <li><strong>4. Manage features:</strong> Access the capabilities you selected (check-in, notes, announcements, etc.)</li>
+              </ol>
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Link
+                href="/login"
+                className="flex-1 inline-flex h-11 items-center justify-center rounded-lg border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-6 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)]"
+              >
+                Go to Login
+              </Link>
+              <Link
+                href="/admin"
+                className="flex-1 inline-flex h-11 items-center justify-center rounded-lg border-2 border-[rgba(0,0,0,0.14)] bg-white px-6 font-bold uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]"
+              >
+                Admin Dashboard
+              </Link>
+            </div>
           </section>
         )}
       </div>
