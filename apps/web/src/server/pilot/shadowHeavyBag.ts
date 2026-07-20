@@ -71,8 +71,7 @@ export async function executeHeavyBagSync(
   });
 
   if (!apiResponse.ok) {
-    const err = await apiResponse.text();
-    throw new Error(`Heavy Bag API error ${apiResponse.status}: ${err}`);
+    throw new Error(`Heavy Bag API error ${apiResponse.status}`);
   }
 
   const data = await apiResponse.json();
