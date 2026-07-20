@@ -8,10 +8,8 @@ import ShadowChatButton from '@/components/ShadowChatButton';
 import {
   allTrackIds,
   athleteProfiles,
-  loadTrackAssignments,
-  readActiveAthleteProfileId,
-  saveActiveAthleteProfileId,
-  saveTrackAssignments,
+  getDefaultTrackAssignments,
+  normalizeTrackAssignments,
   trackManifests,
   type TrackAssignments,
   type TrackID,
@@ -55,14 +53,6 @@ interface EventTrace {
   action: string;
   detail: string;
 }
-
-interface CapabilityRepository {
-  load: () => Capability[];
-  save: (items: Capability[]) => void;
-}
-
-const STORAGE_KEY = 'ppbf-admin-capabilities-v1';
-const GYM_CAPABILITY_STORAGE_KEY = 'ppbf-gym-capability-switchboard-v1';
 const OWNER_OPTIONS = ['Operations', 'Program Team', 'Board Office', 'Safety Office', 'Admin Control'];
 const CATEGORY_OPTIONS = ['Core Platform', 'Routing & Development', 'Safety & Compliance', 'Program Operations'];
 const ROLE_OPTIONS: RoleName[] = [
@@ -394,40 +384,11 @@ function formatDateLabel(value: string): string {
   return date.toLocaleDateString();
 }
 
-const localCapabilityRepository: CapabilityRepository = {
-  load: () => {
-    if (typeof window === 'undefined') {
-      return fallbackCapabilities;
-    }
-
-    const localRaw = window.localStorage.getItem(STORAGE_KEY);
-    if (!localRaw) {
-      return fallbackCapabilities;
-    }
-
-    try {
-      const parsed = JSON.parse(localRaw) as Partial<Capability>[];
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const hydrated = parsed.map((item, index) => hydrateCapability(item, index));
-        return mergeSeedCapabilities(hydrated);
-      }
-    } catch {
-      return fallbackCapabilities;
-    }
-
-    return fallbackCapabilities;
-  },
-  save: (items) => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-  },
-};
-
 export default function AdminCapabilitiesPage() {
-  const [capabilities, setCapabilities] = useState<Capability[]>(() => localCapabilityRepository.load());
+  const [capabilities, setCapabilities] = useState<Capability[]>(fallbackCapabilities);
+  const [capabilitiesHydrated, setCapabilitiesHydrated] = useState(false);
+  const [trackAssignmentsHydrated, setTrackAssignmentsHydrated] = useState(false);
+  const [gymCapabilityHydrated, setGymCapabilityHydrated] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>(() => {
     if (typeof window === 'undefined') {
       return 'overview';
@@ -435,8 +396,8 @@ export default function AdminCapabilitiesPage() {
 
     return parseTabKey(new URLSearchParams(window.location.search).get('tab')) ?? 'overview';
   });
-  const [selectedAthleteId, setSelectedAthleteId] = useState(() => readActiveAthleteProfileId());
-  const [trackAssignments, setTrackAssignments] = useState<TrackAssignments>(() => loadTrackAssignments());
+  const [selectedAthleteId, setSelectedAthleteId] = useState(athleteProfiles[0].id);
+  const [trackAssignments, setTrackAssignments] = useState<TrackAssignments>(() => getDefaultTrackAssignments());
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterRole, setFilterRole] = useState<'ALL' | RoleName>('ALL');
@@ -466,18 +427,7 @@ export default function AdminCapabilitiesPage() {
   const [eventTraces, setEventTraces] = useState<EventTrace[]>([]);
   const [showTelemetry, setShowTelemetry] = useState(false);
   const [showIntegrationStubs, setShowIntegrationStubs] = useState(false);
-  const [gymCapabilityAccess, setGymCapabilityAccess] = useState<Record<string, boolean>>(() => {
-    if (typeof window === 'undefined') {
-      return {};
-    }
-
-    try {
-      const raw = window.localStorage.getItem(GYM_CAPABILITY_STORAGE_KEY);
-      return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
-    } catch {
-      return {};
-    }
-  });
+  const [gymCapabilityAccess, setGymCapabilityAccess] = useState<Record<string, boolean>>({});
 
   function logTrace(action: string, detail: string) {
     const trace: EventTrace = {
@@ -495,28 +445,115 @@ export default function AdminCapabilitiesPage() {
   }
 
   useEffect(() => {
-    if (Object.keys(trackAssignments).length === 0) {
+    void (async () => {
+      try {
+        const response = await fetch('/api/pilot/admin/track-assignments', {
+          method: 'GET',
+          credentials: 'include',
+        });
+
+        if (!response.ok) {
+          setTrackAssignmentsHydrated(true);
+          return;
+        }
+
+        const payload = (await response.json()) as { assignments?: unknown };
+        setTrackAssignments(normalizeTrackAssignments(payload.assignments));
+      } catch {
+        // Keep default track assignments if backend load fails.
+      } finally {
+        setTrackAssignmentsHydrated(true);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!trackAssignmentsHydrated) {
       return;
     }
 
-    saveTrackAssignments(trackAssignments);
-  }, [trackAssignments]);
+    void fetch('/api/pilot/admin/track-assignments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ assignments: trackAssignments }),
+    });
+  }, [trackAssignments, trackAssignmentsHydrated]);
 
   useEffect(() => {
-    saveActiveAthleteProfileId(selectedAthleteId);
-  }, [selectedAthleteId]);
+    void (async () => {
+      try {
+        const response = await fetch('/api/pilot/admin/capabilities', {
+          method: 'GET',
+          credentials: 'include',
+        });
+
+        if (!response.ok) {
+          setCapabilitiesHydrated(true);
+          return;
+        }
+
+        const payload = (await response.json()) as { capabilities?: Partial<Capability>[] };
+        if (Array.isArray(payload.capabilities) && payload.capabilities.length > 0) {
+          const hydrated = payload.capabilities.map((item, index) => hydrateCapability(item, index));
+          setCapabilities(mergeSeedCapabilities(hydrated));
+        }
+      } catch {
+        // Keep fallback capability set if backend load fails.
+      } finally {
+        setCapabilitiesHydrated(true);
+      }
+    })();
+  }, []);
 
   useEffect(() => {
-    localCapabilityRepository.save(capabilities);
-  }, [capabilities]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
+    if (!capabilitiesHydrated) {
       return;
     }
 
-    window.localStorage.setItem(GYM_CAPABILITY_STORAGE_KEY, JSON.stringify(gymCapabilityAccess));
-  }, [gymCapabilityAccess]);
+    void fetch('/api/pilot/admin/capabilities', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ capabilities }),
+    });
+  }, [capabilities, capabilitiesHydrated]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch('/api/pilot/admin/gym-capabilities', {
+          method: 'GET',
+          credentials: 'include',
+        });
+
+        if (!response.ok) {
+          setGymCapabilityHydrated(true);
+          return;
+        }
+
+        const payload = (await response.json()) as { capabilityAccess?: Record<string, boolean> };
+        setGymCapabilityAccess(payload.capabilityAccess || {});
+      } catch {
+        // Keep default gym capability access if backend load fails.
+      } finally {
+        setGymCapabilityHydrated(true);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!gymCapabilityHydrated) {
+      return;
+    }
+
+    void fetch('/api/pilot/admin/gym-capabilities', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ capabilityAccess: gymCapabilityAccess }),
+    });
+  }, [gymCapabilityAccess, gymCapabilityHydrated]);
 
   const categoryOptions = useMemo(
     () => ['ALL', ...new Set([...CATEGORY_OPTIONS, ...capabilities.map((item) => item.group)])],

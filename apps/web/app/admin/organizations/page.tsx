@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 
 type FeedbackKind = 'success' | 'error' | 'info';
@@ -18,8 +17,6 @@ type OrganizationOption = {
   organization_name: string;
   status: string;
 };
-
-const GYM_CAPABILITY_STORAGE_KEY = 'ppbf-org-gym-capabilities-v1';
 
 const gymCapabilityCatalog: CapabilityToggle[] = [
   { id: 'attendance', label: 'Attendance Tracking', description: 'Enable check-in and check-out visibility for the gym.' },
@@ -70,31 +67,46 @@ export default function AdminOrganizationsPage() {
   const [activeAction, setActiveAction] = useState<string | null>(null);
   const [organizationOptions, setOrganizationOptions] = useState<OrganizationOption[]>([]);
   const [isMicrosoftSession, setIsMicrosoftSession] = useState(false);
+  const [sessionRole, setSessionRole] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
-  const [gymCapabilityAccess, setGymCapabilityAccess] = useState<Record<string, boolean>>(() => {
-    if (typeof window === 'undefined') {
-      return {};
-    }
-
-    try {
-      const raw = window.localStorage.getItem(GYM_CAPABILITY_STORAGE_KEY);
-      if (!raw) {
-        return {};
-      }
-
-      return JSON.parse(raw) as Record<string, boolean>;
-    } catch {
-      return {};
-    }
-  });
+  const [gymCapabilityAccess, setGymCapabilityAccess] = useState<Record<string, boolean>>({});
+  const [gymCapabilityHydrated, setGymCapabilityHydrated] = useState(false);
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
+    void (async () => {
+      try {
+        const response = await fetch('/api/pilot/admin/gym-capabilities', {
+          method: 'GET',
+          credentials: 'include',
+        });
+
+        if (!response.ok) {
+          setGymCapabilityHydrated(true);
+          return;
+        }
+
+        const payload = (await response.json()) as { capabilityAccess?: Record<string, boolean> };
+        setGymCapabilityAccess(payload.capabilityAccess || {});
+      } catch {
+        // Keep default switchboard state if backend load fails.
+      } finally {
+        setGymCapabilityHydrated(true);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!gymCapabilityHydrated) {
       return;
     }
 
-    window.localStorage.setItem(GYM_CAPABILITY_STORAGE_KEY, JSON.stringify(gymCapabilityAccess));
-  }, [gymCapabilityAccess]);
+    void fetch('/api/pilot/admin/gym-capabilities', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ capabilityAccess: gymCapabilityAccess }),
+    });
+  }, [gymCapabilityAccess, gymCapabilityHydrated]);
 
   useEffect(() => {
     void (async () => {
@@ -108,9 +120,11 @@ export default function AdminOrganizationsPage() {
         const payload = (await response.json().catch(() => ({ authenticated: false }))) as {
           authenticated?: boolean;
           auth_provider?: string;
+          role?: string;
         };
 
         setIsMicrosoftSession(payload.authenticated === true && payload.auth_provider === 'microsoft');
+        setSessionRole(payload.authenticated ? payload.role || null : null);
       } finally {
         setAuthChecked(true);
       }
@@ -256,29 +270,52 @@ export default function AdminOrganizationsPage() {
     );
   }
 
-  if (authChecked && !isMicrosoftSession) {
+  if (!authChecked) {
     return (
-      <RoleSessionGate allowedRoles={['admin']}>
-        <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
-          <div className="mx-auto w-full max-w-3xl space-y-4 px-6 py-12 text-center lg:px-10">
-            <h1 className="font-display text-4xl font-black">Microsoft Sign-In Required</h1>
-            <p className="text-base leading-7 text-[var(--gray-dark)]">
-              Organization Provisioning is restricted to Microsoft-authenticated admin sessions.
+      <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
+        <div className="text-center">
+          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--red-primary)]">Secure Session</p>
+          <h1 className="mt-3 font-display text-3xl tracking-tight">Checking access</h1>
+        </div>
+      </main>
+    );
+  }
+
+  const hasPlatformAccess = isMicrosoftSession && sessionRole === 'platform_owner';
+
+  if (!hasPlatformAccess) {
+    return (
+      <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
+        <div className="mx-auto w-full max-w-3xl space-y-4 px-6 py-12 text-center lg:px-10">
+          <h1 className="font-display text-4xl font-black">Platform Owner Access Required</h1>
+          <p className="text-base leading-7 text-[var(--gray-dark)]">
+            Organization Provisioning is limited to Microsoft-authenticated platform owner sessions.
+          </p>
+          {sessionRole === 'organization_admin' || sessionRole === 'admin' ? (
+            <p className="text-sm leading-6 text-[var(--gray-dark)]">
+              You are currently signed in as an organization admin. Use the admin workspace for gym operations.
             </p>
+          ) : null}
+          <div className="flex flex-wrap items-center justify-center gap-3">
             <Link
               href="/login"
-              className="mx-auto inline-flex min-h-[44px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-[var(--red-primary)] px-6 text-sm font-black uppercase tracking-[0.12em] text-[var(--white)] transition hover:bg-[var(--red-highlight)]"
+              className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-[var(--red-primary)] px-6 text-sm font-black uppercase tracking-[0.12em] text-[var(--white)] transition hover:bg-[var(--red-highlight)]"
             >
               Sign In With Microsoft
             </Link>
+            <Link
+              href="/admin"
+              className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-6 text-sm font-black uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]"
+            >
+              Go To Organization Admin
+            </Link>
           </div>
-        </main>
-      </RoleSessionGate>
+        </div>
+      </main>
     );
   }
 
   return (
-    <RoleSessionGate allowedRoles={['admin']}>
     <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       <div className="mx-auto w-full max-w-6xl space-y-6 px-6 py-8 lg:px-10">
         <header className="space-y-4 rounded-[28px] border border-[rgba(0,0,0,0.14)] bg-[linear-gradient(135deg,var(--canvas-tan-light),#ffffff)] p-6 shadow-[var(--shadow-md)]">
@@ -681,6 +718,5 @@ export default function AdminOrganizationsPage() {
         </Link>
       </div>
     </main>
-    </RoleSessionGate>
   );
 }

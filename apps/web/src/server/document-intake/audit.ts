@@ -1,5 +1,4 @@
-import { appendFile, mkdir } from 'node:fs/promises'
-import path from 'node:path'
+import { query } from '@/src/server/pilot/db'
 
 interface IngestAuditEvent {
   at: string
@@ -9,10 +8,26 @@ interface IngestAuditEvent {
   details?: Record<string, unknown>
 }
 
-const AUDIT_DIR = path.join(process.cwd(), '.audit')
-const AUDIT_FILE = path.join(AUDIT_DIR, 'document-ingest.jsonl')
-
 export async function appendIngestAudit(event: IngestAuditEvent): Promise<void> {
-  await mkdir(AUDIT_DIR, { recursive: true })
-  await appendFile(AUDIT_FILE, `${JSON.stringify(event)}\n`, 'utf8')
+  try {
+    await query(
+      `insert into pilot.document_ingest_audit (
+         occurred_at,
+         status,
+         file_name,
+         message,
+         details
+       ) values ($1,$2,$3,$4,$5)`,
+      [
+        event.at,
+        event.status,
+        event.fileName ?? null,
+        event.message ?? null,
+        event.details ?? {},
+      ],
+    )
+  } catch (error) {
+    // Do not fail ingest workflow if audit logging itself fails.
+    console.error('document-ingest-audit-write-failed', error)
+  }
 }

@@ -27,6 +27,12 @@ import {
 export const runtime = 'nodejs';
 
 function routeForRole(role: string): string {
+  if (role === 'platform_owner') {
+    return '/admin/organizations';
+  }
+  if (role === 'organization_admin' || role === 'admin') {
+    return '/admin';
+  }
   if (role === 'athlete') {
     return '/athlete/dashboard';
   }

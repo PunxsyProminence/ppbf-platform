@@ -502,6 +502,7 @@ export default function PublicPortalPage() {
         <section className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-sm)]">
           <h2 className="text-[20px] font-black text-[var(--black)]">PUBLIC QUICK LINKS</h2>
           <div className="mt-3 flex flex-wrap gap-2">
+            <ShadowChatButton context="Public Quick Links" label="Public SHADOW Chat" />
             {[
               { label: 'Public FAQ', href: '/public#public-faq' },
               { label: 'Interest Intake', href: '/public#interest-intake' },

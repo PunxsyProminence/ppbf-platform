@@ -58,8 +58,6 @@ interface StoredAthleteFloorPlan {
   }>;
 }
 
-const ATHLETE_FLOOR_PLAN_STORAGE_KEY = 'ppbf-athlete-floor-plans';
-
 interface Drill {
   id: string;
   name: string;
@@ -446,27 +444,20 @@ export default function AthleteWorkspace() {
       return [...generatedTasks, ...keepCompleted];
     });
 
-    if (typeof window !== 'undefined') {
-      const payload: StoredAthleteFloorPlan = {
-        athleteName: 'Current Athlete',
-        readiness,
-        generatedAt: now.toISOString(),
-        tasks: generatedTasks.map((task) => ({
-          id: task.id,
-          title: task.title,
-          category: task.category,
-          description: task.description,
-          dueDate: task.dueDate,
-          priority: task.priority,
-          linkedGoalId: task.linkedGoalId,
-        })),
-      };
-
-      const existing = window.localStorage.getItem(ATHLETE_FLOOR_PLAN_STORAGE_KEY);
-      const parsed: StoredAthleteFloorPlan[] = existing ? (JSON.parse(existing) as StoredAthleteFloorPlan[]) : [];
-      const updated = [payload, ...parsed].slice(0, 25);
-      window.localStorage.setItem(ATHLETE_FLOOR_PLAN_STORAGE_KEY, JSON.stringify(updated));
-    }
+    const floorPlanPayload: StoredAthleteFloorPlan = {
+      athleteName: 'Current Athlete',
+      readiness,
+      generatedAt: now.toISOString(),
+      tasks: generatedTasks.map((task) => ({
+        id: task.id,
+        title: task.title,
+        category: task.category,
+        description: task.description,
+        dueDate: task.dueDate,
+        priority: task.priority,
+        linkedGoalId: task.linkedGoalId,
+      })),
+    };
 
     setLastWorkoutBuildNote(`Workout auto-generated on check-in (${readiness} readiness).`);
     setActiveTab('athlete-floor');
@@ -474,6 +465,19 @@ export default function AthleteWorkspace() {
     if (!backendAthleteId) {
       setBackendSyncMessage('Session generated locally. Backend athlete session not found.');
       return;
+    }
+
+    try {
+      await fetch('/api/pilot/floor-plans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          athlete_id: backendAthleteId,
+          plan: floorPlanPayload,
+        }),
+      });
+    } catch {
+      // Floor plan persistence is secondary to session check-in.
     }
 
     const sessionResponse = await fetch('/api/pilot/sessions', {
@@ -609,6 +613,12 @@ export default function AthleteWorkspace() {
               <section className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
                 <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Quick Actions</h3>
                 <div className="mt-3 grid gap-2 md:grid-cols-2 lg:grid-cols-4">
+                  <Link
+                    href="/schedule"
+                    className="min-h-[44px] border border-[#8b4444] bg-[#2a1414] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#e8d7c6] transition hover:bg-[#3a1a1a] inline-flex items-center justify-center"
+                  >
+                    Open Scheduler
+                  </Link>
                   <button
                     type="button"
                     onClick={() => setActiveTab('bio-checkin')}
@@ -1208,6 +1218,14 @@ export default function AthleteWorkspace() {
           {/* SCHEDULE SESSION */}
           {activeTab === 'schedule-session' && (
             <div className="space-y-6 animate-fadeIn">
+              <div className="flex flex-wrap gap-2">
+                <Link
+                  href="/schedule"
+                  className="inline-flex min-h-[40px] items-center border-2 border-[#8b4444] bg-[#2a1414] px-3 text-xs font-mono font-bold uppercase tracking-[0.1em] text-[#e8d7c6] transition hover:bg-[#3a1a1a]"
+                >
+                  Open Unified Scheduler
+                </Link>
+              </div>
               <HelpPanel
                 title="Schedule Session"
                 description="Book training sessions and coaching appointments from our weekly curriculum schedule."

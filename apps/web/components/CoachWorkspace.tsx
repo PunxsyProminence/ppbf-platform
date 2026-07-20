@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import React, { useEffect, useMemo, useState } from 'react';
 import { CoachSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
+import ShadowChatButton from './ShadowChatButton';
 import { cx, ui } from './uiStyles';
 
 type TabID = 'dashboard' | 'floor' | 'athlete-floor-plans' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
@@ -22,8 +23,6 @@ interface CoachAthleteFloorPlan {
     priority: 'High' | 'Normal';
   }>;
 }
-
-const ATHLETE_FLOOR_PLAN_STORAGE_KEY = 'ppbf-athlete-floor-plans';
 
 interface Athlete {
   id: string;
@@ -282,34 +281,24 @@ export default function CoachWorkspace() {
   const assignmentsDue = coachTasks.filter(t => t.status === 'Open').length;
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    const readPlans = () => {
-      const raw = window.localStorage.getItem(ATHLETE_FLOOR_PLAN_STORAGE_KEY);
-      if (!raw) {
-        setAthleteFloorPlans([]);
-        return;
-      }
-
+    const loadPlans = async () => {
       try {
-        setAthleteFloorPlans(JSON.parse(raw) as CoachAthleteFloorPlan[]);
+        const response = await fetch('/api/pilot/floor-plans?limit=50', {
+          method: 'GET',
+          credentials: 'include',
+        });
+        if (!response.ok) {
+          throw new Error('Failed to load athlete floor plans');
+        }
+
+        const payload = (await response.json()) as { items?: CoachAthleteFloorPlan[] };
+        setAthleteFloorPlans(payload.items || []);
       } catch {
         setAthleteFloorPlans([]);
       }
     };
 
-    readPlans();
-
-    const onStorage = (event: StorageEvent) => {
-      if (event.key === ATHLETE_FLOOR_PLAN_STORAGE_KEY) {
-        readPlans();
-      }
-    };
-
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
+    void loadPlans();
   }, []);
 
   useEffect(() => {
@@ -492,6 +481,20 @@ export default function CoachWorkspace() {
             <p className="text-base text-[#b0a095] mt-2">Manage your program floor, develop yourself, and track athlete progress with SMART goals and assessments.</p>
             <p className="text-sm font-mono uppercase tracking-[0.14em] text-[#cfbfae] mt-2">Old Gauze | Sweat | Grit | Grind | Dedication | Motivation</p>
           </div>
+          <div className="flex flex-wrap gap-2">
+            <ShadowChatButton
+              context="Coach Workspace"
+              label="Open SHADOW Chat"
+              className="border-[#8b4444] bg-[#2a1414] text-[#e8d7c6] hover:bg-[#3a1a1a]"
+            />
+            <button
+              type="button"
+              onClick={() => setActiveTab('shadow')}
+              className="min-h-[40px] border-2 border-[#5a4a3a] bg-[#101010] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[#cfbfae] transition hover:border-[#8b4444]"
+            >
+              Open SHADOW Intel Tab
+            </button>
+          </div>
         </div>
 
         <div className="border border-[#694838] bg-[#14100d] p-4">
@@ -561,6 +564,17 @@ export default function CoachWorkspace() {
               <section className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
                 <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Quick Actions</h3>
                 <div className="mt-3 grid gap-2 md:grid-cols-2 lg:grid-cols-4">
+                  <ShadowChatButton
+                    context="Coach Dashboard"
+                    label="SHADOW Chat"
+                    className="min-h-[44px] border-[#8b4444] bg-[#2a1414] text-[#e8d7c6] hover:bg-[#3a1a1a]"
+                  />
+                  <Link
+                    href="/schedule"
+                    className="min-h-[44px] border border-[#8b4444] bg-[#2a1414] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#e8d7c6] transition hover:bg-[#3a1a1a] inline-flex items-center justify-center"
+                  >
+                    Open Scheduler
+                  </Link>
                   <button
                     type="button"
                     onClick={() => setActiveTab('floor')}

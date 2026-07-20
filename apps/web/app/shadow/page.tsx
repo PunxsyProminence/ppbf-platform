@@ -357,7 +357,8 @@ function ShadowResearchReportsPanel(props: Readonly<{
 function ShadowChatPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [userRole] = useState<string>(() => (typeof window !== 'undefined' ? readRoleSession()?.role ?? '' : ''));
+  const [userRole, setUserRole] = useState<string>(() => (typeof window !== 'undefined' ? readRoleSession()?.role ?? '' : ''));
+  const [authChecked, setAuthChecked] = useState(false);
   const mode = searchParams.get('mode') === 'master' ? 'master' : 'scoped';
   const context = searchParams.get('context')?.trim() ?? '';
   const subject = searchParams.get('subject')?.trim() ?? '';
@@ -378,10 +379,60 @@ function ShadowChatPageContent() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const session = readRoleSession();
-    if (!session) {
-      router.replace('/login');
-    }
+    let cancelled = false;
+
+    void (async () => {
+      const localSession = readRoleSession();
+      if (localSession?.role) {
+        if (!cancelled) {
+          setUserRole(localSession.role);
+          setAuthChecked(true);
+        }
+        return;
+      }
+
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/auth/session`, {
+          method: 'POST',
+          credentials: 'include',
+        });
+
+        if (!response.ok) {
+          if (!cancelled) {
+            setAuthChecked(true);
+            router.replace('/login');
+          }
+          return;
+        }
+
+        const payload = (await response.json().catch(() => ({ authenticated: false }))) as {
+          authenticated?: boolean;
+          role?: string;
+        };
+
+        if (!payload.authenticated) {
+          if (!cancelled) {
+            setAuthChecked(true);
+            router.replace('/login');
+          }
+          return;
+        }
+
+        if (!cancelled) {
+          setUserRole(payload.role || '');
+          setAuthChecked(true);
+        }
+      } catch {
+        if (!cancelled) {
+          setAuthChecked(true);
+          router.replace('/login');
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   useEffect(() => {
@@ -484,6 +535,17 @@ function ShadowChatPageContent() {
     } finally {
       setIsLoading(false);
     }
+  }
+
+  if (!authChecked) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[#0a0a0a] px-6 text-[#e8d7c6]">
+        <div className="text-center">
+          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[#dc2626]">Secure Session</p>
+          <h1 className="mt-3 font-display text-3xl tracking-tight">Opening SHADOW</h1>
+        </div>
+      </main>
+    );
   }
 
   return (

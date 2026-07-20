@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import React, { useState, useEffect } from 'react';
 import { ParentSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
+import ShadowChatButton from './ShadowChatButton';
 import { cx, ui } from './uiStyles';
 
 type TabID = 'overview' | 'parent-floor' | 'home-assignments' | 'observations' | 'family-goals' | 'messages' | 'attendance' | 'progress' | 'resources' | 'shadow';
@@ -243,6 +244,20 @@ export default function ParentHub() {
             <p className="text-base text-[#b0a095] mt-2">Support your child&apos;s boxing journey with at-home assignments, family goals, and coach communication.</p>
             <p className="text-sm font-mono uppercase tracking-[0.14em] text-[#cfbfae] mt-2">Old Gauze | Sweat | Grit | Grind | Dedication | Motivation</p>
           </div>
+          <div className="flex flex-wrap gap-2">
+            <ShadowChatButton
+              context="Parent Hub"
+              label="Open SHADOW Chat"
+              className="border-[#8b4444] bg-[#2a1414] text-[#e8d7c6] hover:bg-[#3a1a1a]"
+            />
+            <button
+              type="button"
+              onClick={() => setActiveTab('shadow')}
+              className="min-h-[40px] border-2 border-[#5a4a3a] bg-[#101010] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[#cfbfae] transition hover:border-[#8b4444]"
+            >
+              Open SHADOW Intel Tab
+            </button>
+          </div>
         </div>
 
         <div className="border border-[#694838] bg-[#14100d] p-4">
@@ -348,6 +363,17 @@ export default function ParentHub() {
               <section className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
                 <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Quick Actions</h3>
                 <div className="mt-3 grid gap-2 md:grid-cols-2 lg:grid-cols-4">
+                  <ShadowChatButton
+                    context="Parent Overview"
+                    label="SHADOW Chat"
+                    className="min-h-[44px] border-[#8b4444] bg-[#2a1414] text-[#e8d7c6] hover:bg-[#3a1a1a]"
+                  />
+                  <Link
+                    href="/schedule"
+                    className="min-h-[44px] border border-[#8b4444] bg-[#2a1414] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#e8d7c6] transition hover:bg-[#3a1a1a] inline-flex items-center justify-center"
+                  >
+                    Open Scheduler
+                  </Link>
                   <button
                     type="button"
                     onClick={() => setActiveTab('home-assignments')}

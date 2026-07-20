@@ -20,9 +20,6 @@ export interface AthleteProfile {
 
 export type TrackAssignments = Record<string, TrackID[]>;
 
-export const TRACK_ASSIGNMENTS_STORAGE_KEY = 'ppbf-track-assignments-v1';
-export const ACTIVE_ATHLETE_PROFILE_STORAGE_KEY = 'ppbf-active-athlete-profile';
-
 export const athleteProfiles: AthleteProfile[] = [
   { id: 'athlete-001', label: 'Athlete 001 - Youth Foundation' },
   { id: 'athlete-002', label: 'Athlete 002 - Competition Prep' },
@@ -138,43 +135,17 @@ export function normalizeTrackAssignments(input: unknown): TrackAssignments {
 }
 
 export function loadTrackAssignments(): TrackAssignments {
-  if (typeof window === 'undefined') {
-    return getDefaultTrackAssignments();
-  }
-
-  const raw = window.localStorage.getItem(TRACK_ASSIGNMENTS_STORAGE_KEY);
-  if (!raw) {
-    return getDefaultTrackAssignments();
-  }
-
-  try {
-    return normalizeTrackAssignments(JSON.parse(raw));
-  } catch {
-    return getDefaultTrackAssignments();
-  }
+  return getDefaultTrackAssignments();
 }
 
 export function saveTrackAssignments(assignments: TrackAssignments) {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  window.localStorage.setItem(TRACK_ASSIGNMENTS_STORAGE_KEY, JSON.stringify(assignments));
+  void assignments;
 }
 
 export function readActiveAthleteProfileId() {
-  if (typeof window === 'undefined') {
-    return athleteProfiles[0].id;
-  }
-
-  const saved = window.localStorage.getItem(ACTIVE_ATHLETE_PROFILE_STORAGE_KEY);
-  return athleteProfiles.some((profile) => profile.id === saved) ? (saved as string) : athleteProfiles[0].id;
+  return athleteProfiles[0].id;
 }
 
 export function saveActiveAthleteProfileId(profileId: string) {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  window.localStorage.setItem(ACTIVE_ATHLETE_PROFILE_STORAGE_KEY, profileId);
+  void profileId;
 }

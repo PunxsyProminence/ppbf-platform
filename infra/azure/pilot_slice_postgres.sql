@@ -531,3 +531,179 @@ create table if not exists pilot.shadow_user_profiles (
 
 create index if not exists idx_shadow_user_profiles_org
   on pilot.shadow_user_profiles(organization_id, role);
+
+-- SHADOW Chat Audit (conversation event log)
+create table if not exists pilot.shadow_chat_audit (
+  chat_audit_id    bigserial primary key,
+  organization_id  text not null references pilot.organizations(organization_id) on delete cascade,
+  user_id          text not null,
+  user_role        text not null,
+  athlete_id       text null,
+  user_message     text not null,
+  shadow_response  text not null,
+  was_filtered     boolean not null default false,
+  created_at       timestamptz not null default now()
+);
+
+create index if not exists idx_shadow_chat_audit_org_created
+  on pilot.shadow_chat_audit(organization_id, created_at desc);
+
+create index if not exists idx_shadow_chat_audit_user_created
+  on pilot.shadow_chat_audit(user_id, created_at desc);
+
+-- Scheduler: classes, registrations, coaching requests, attendance
+create table if not exists pilot.scheduler_classes (
+  organization_id            text not null references pilot.organizations(organization_id) on delete cascade,
+  class_id                   text not null,
+  title                      text not null,
+  start_at                   timestamptz not null,
+  end_at                     timestamptz not null,
+  location                   text not null,
+  capacity                   integer not null check (capacity > 0 and capacity <= 200),
+  scheduled_by_account_id    text not null,
+  coach_account_id           text not null,
+  covering_coach_account_id  text null,
+  status                     text not null check (status in ('open', 'full', 'cancelled')),
+  created_at                 timestamptz not null default now(),
+  updated_at                 timestamptz not null default now(),
+  primary key (organization_id, class_id)
+);
+
+create index if not exists idx_scheduler_classes_org_start
+  on pilot.scheduler_classes(organization_id, start_at asc);
+
+create table if not exists pilot.scheduler_registrations (
+  organization_id             text not null references pilot.organizations(organization_id) on delete cascade,
+  registration_id             text not null,
+  class_id                    text not null,
+  athlete_id                  text not null,
+  requested_by_role           text not null check (requested_by_role in ('athlete', 'parent', 'coach', 'organization_admin', 'admin')),
+  requested_by_account_id     text not null,
+  parent_reviewed             boolean not null default false,
+  parent_reviewed_at          timestamptz null,
+  parent_reviewer_account_id  text null,
+  status                      text not null check (status in ('registered', 'waitlisted', 'cancelled')),
+  created_at                  timestamptz not null default now(),
+  updated_at                  timestamptz not null default now(),
+  primary key (organization_id, registration_id),
+  foreign key (organization_id, class_id)
+    references pilot.scheduler_classes(organization_id, class_id)
+    on delete cascade,
+  foreign key (organization_id, athlete_id)
+    references pilot.athletes(organization_id, athlete_id)
+    on delete cascade
+);
+
+create index if not exists idx_scheduler_registrations_org_class
+  on pilot.scheduler_registrations(organization_id, class_id, status);
+
+create index if not exists idx_scheduler_registrations_org_athlete
+  on pilot.scheduler_registrations(organization_id, athlete_id, created_at desc);
+
+create table if not exists pilot.scheduler_coaching_requests (
+  organization_id            text not null references pilot.organizations(organization_id) on delete cascade,
+  request_id                 text not null,
+  athlete_id                 text not null,
+  requested_by_role          text not null check (requested_by_role in ('athlete', 'parent', 'coach', 'organization_admin', 'admin')),
+  requested_by_account_id    text not null,
+  preferred_at               timestamptz not null,
+  goals                      text not null,
+  status                     text not null check (status in ('pending', 'approved', 'declined')),
+  assigned_coach_account_id  text null,
+  created_at                 timestamptz not null default now(),
+  updated_at                 timestamptz not null default now(),
+  primary key (organization_id, request_id),
+  foreign key (organization_id, athlete_id)
+    references pilot.athletes(organization_id, athlete_id)
+    on delete cascade
+);
+
+create index if not exists idx_scheduler_coaching_requests_org_athlete
+  on pilot.scheduler_coaching_requests(organization_id, athlete_id, created_at desc);
+
+create table if not exists pilot.scheduler_attendance (
+  organization_id         text not null references pilot.organizations(organization_id) on delete cascade,
+  attendance_id           text not null,
+  class_id                text not null,
+  athlete_id              text not null,
+  status                  text not null check (status in ('present', 'absent', 'excused')),
+  method                  text not null check (method in ('self', 'coach_override', 'admin_override')),
+  checked_in_by_role      text not null check (checked_in_by_role in ('athlete', 'parent', 'coach', 'organization_admin', 'admin')),
+  checked_in_by_account_id text not null,
+  note                    text not null default '',
+  checked_in_at           timestamptz not null,
+  updated_at              timestamptz not null default now(),
+  primary key (organization_id, attendance_id),
+  unique (organization_id, class_id, athlete_id),
+  foreign key (organization_id, class_id)
+    references pilot.scheduler_classes(organization_id, class_id)
+    on delete cascade,
+  foreign key (organization_id, athlete_id)
+    references pilot.athletes(organization_id, athlete_id)
+    on delete cascade
+);
+
+create index if not exists idx_scheduler_attendance_org_class
+  on pilot.scheduler_attendance(organization_id, class_id, checked_in_at desc);
+
+-- Document ingest backend audit stream
+create table if not exists pilot.document_ingest_audit (
+  audit_id     bigserial primary key,
+  occurred_at  timestamptz not null default now(),
+  status       text not null check (status in ('success', 'failure')),
+  file_name    text null,
+  message      text null,
+  details      jsonb not null default '{}'::jsonb
+);
+
+create index if not exists idx_document_ingest_audit_occurred_at
+  on pilot.document_ingest_audit(occurred_at desc);
+
+-- Admin capability registry (organization-scoped persisted configuration)
+create table if not exists pilot.admin_capability_registry (
+  organization_id        text primary key references pilot.organizations(organization_id) on delete cascade,
+  capabilities           jsonb not null default '[]'::jsonb,
+  updated_by_account_id  text not null,
+  updated_at             timestamptz not null default now()
+);
+
+create table if not exists pilot.admin_track_assignments (
+  organization_id        text primary key references pilot.organizations(organization_id) on delete cascade,
+  assignments            jsonb not null default '{}'::jsonb,
+  updated_by_account_id  text not null,
+  updated_at             timestamptz not null default now()
+);
+
+create table if not exists pilot.admin_gym_capability_access (
+  organization_id        text primary key references pilot.organizations(organization_id) on delete cascade,
+  capability_access      jsonb not null default '{}'::jsonb,
+  updated_by_account_id  text not null,
+  updated_at             timestamptz not null default now()
+);
+
+-- Athlete floor plans generated during readiness check-in
+create table if not exists pilot.athlete_floor_plans (
+  organization_id        text not null references pilot.organizations(organization_id) on delete cascade,
+  plan_id                text not null,
+  athlete_id             text not null,
+  generated_at           timestamptz not null,
+  readiness              text not null,
+  athlete_name           text not null,
+  payload                jsonb not null,
+  created_by_account_id  text not null,
+  created_by_role        text not null,
+  created_at             timestamptz not null default now(),
+  primary key (organization_id, plan_id),
+  foreign key (organization_id, athlete_id)
+    references pilot.athletes(organization_id, athlete_id)
+    on delete cascade
+);
+
+create index if not exists idx_athlete_floor_plans_org_athlete_generated
+  on pilot.athlete_floor_plans(organization_id, athlete_id, generated_at desc);
+
+create index if not exists idx_admin_track_assignments_updated
+  on pilot.admin_track_assignments(updated_at desc);
+
+create index if not exists idx_admin_gym_capability_access_updated
+  on pilot.admin_gym_capability_access(updated_at desc);
