@@ -25,6 +25,7 @@ interface ShadowMessage {
   jobId?: string;
   feedbackSent?: boolean;
   evidence?: ShadowEvidence;
+  explainability?: ExplainabilityChain;
 }
 
 interface ShadowResearchReport {
@@ -477,7 +478,7 @@ function ShadowChatPageContent() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  function addMessage(type: 'user' | 'shadow', text: string, meta?: Partial<Pick<ShadowMessage, 'id' | 'tier' | 'profileTier' | 'modelUsed' | 'isAsync' | 'jobId' | 'evidence'>>) {
+  function addMessage(type: 'user' | 'shadow', text: string, meta?: Partial<Pick<ShadowMessage, 'id' | 'tier' | 'profileTier' | 'modelUsed' | 'isAsync' | 'jobId' | 'evidence' | 'explainability'>>) {
     const newMessage: ShadowMessage = {
       id: createMessageId(),
       type,
@@ -542,6 +543,7 @@ function ShadowChatPageContent() {
       isAsync: data.async,
       jobId: data.jobId,
       evidence: data.evidence,
+      explainability: data.explainability,
     });
 
     if (data.evidence?.researchRequirementId) {
@@ -702,6 +704,15 @@ function ShadowChatPageContent() {
                   }`}
                 >
                   <p className="whitespace-pre-wrap text-xs leading-6">{msg.text}</p>
+                  {msg.explainability ? (
+                    <div className="mt-3 border-t border-[#5a4a3a] pt-2 text-[9px] text-[#b0a095]">
+                      <p className="font-mono uppercase tracking-[0.12em] text-[#d4a574]">
+                        {msg.explainability.confidenceLevel} · {msg.explainability.confidence}% evidence confidence
+                      </p>
+                      <p className="mt-1">{msg.explainability.reasoning}</p>
+                      {msg.explainability.disclaimers.map((item) => <p key={item} className="mt-1 text-[#8a8a8a]">{item}</p>)}
+                    </div>
+                  ) : null}
                   {msg.evidence ? (
                     <div className="mt-3 border-t border-[#5a4a3a] pt-2 text-[9px] text-[#b0a095]">
                       <p className="font-mono uppercase tracking-[0.12em] text-[#d4a574]">
