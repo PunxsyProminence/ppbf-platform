@@ -14,6 +14,7 @@ import {
   retrieveShadowContext,
   SHADOW_SYSTEM_PROMPT,
   MEDICAL_EDUCATION_NOTICE,
+  SAFE_FILTERED_RESPONSE,
   type HighRiskTopic,
 } from '@/src/server/pilot/shadowChat';
 import { buildAzureAiChatCompletionsUrl, getAzureAiRuntimeConfig } from '@/src/server/pilot/azureAiRuntime';
@@ -28,6 +29,14 @@ import { classifyProfileTier, buildPersonalizationPrompt } from '@/src/server/pi
 import { executeHeavyBagSync, executeHeavyBagAsync, shouldRunAsync } from '@/src/server/pilot/shadowHeavyBag';
 import { evaluateShadowUnlockState, isFeatureEnabled, type ShadowUnlockState } from '@/src/server/pilot/shadowUnlocks';
 import { createShadowLibraryClaim, type ShadowLibraryClaimResult } from '@/src/server/pilot/shadowLibrary';
+import {
+  calculateEvidenceConfidence,
+  classifySemanticSafety,
+  parseStructuredShadowResponse,
+  renderStructuredShadowResponse,
+  type SemanticSafetyDecision,
+  type StructuredShadowResponse,
+} from '@/src/server/pilot/shadowResponsePolicy';
 
 export interface ShadowChatRequest {
   message: string;
@@ -61,6 +70,8 @@ export interface ShadowChatResponse {
     evidenceCount: number;
     disclaimers: string[];
   };
+  structured?: StructuredShadowResponse;
+  safety?: SemanticSafetyDecision;
   evidence?: {
     status: 'supported' | 'weak' | 'unsupported';
     sources: Array<{ sourceId: string; title: string; documentName: string; publicationDate: string | null }>;
@@ -438,9 +449,26 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       message: normalizedMessage, userId, organizationId, userRole, athleteId, unlockState,
     });
 
-    // Step 7: Validate response BEFORE displaying to user
-    const responseValidation = validateShadowResponse(llmResponse);
-    const finalResponse = responseValidation.message;
+    // Step 7: Enforce structured output, then run semantic and deterministic post-generation checks.
+    const availableEvidenceIds = evidenceClaim?.evidence.map((item) => item.chunk_id) ?? [];
+    const structuredResult = parseStructuredShadowResponse(llmResponse, availableEvidenceIds);
+    const structuredResponse = renderStructuredShadowResponse(structuredResult.value);
+    const semanticSafety = classifySemanticSafety(structuredResponse);
+    const responseValidation = validateShadowResponse(structuredResponse);
+    const semanticBlocked = semanticSafety.allowedMode === 'block';
+    const finalResponse = semanticBlocked ? SAFE_FILTERED_RESPONSE : responseValidation.message;
+    const wasFiltered = semanticBlocked || responseValidation.filtered;
+    const requiresHumanReview = semanticSafety.requiresHumanReview || responseValidation.requiresHumanReview || !structuredResult.schemaValid;
+    const evidenceConfidence = evidenceClaim
+      ? calculateEvidenceConfidence(
+          evidenceClaim.status,
+          evidenceClaim.evidence.map((item) => ({
+            sourceId: item.source_id,
+            authorityTier: item.authority_tier,
+            publicationDate: item.publication_date,
+          })),
+        )
+      : null;
 
     // Step 8: Update user's personal shadow after successful interaction (async, don't block)
     updateShadowUserProfile(userId, organizationId, {
@@ -461,7 +489,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           athleteId || null,
           normalizedMessage,
           finalResponse,
-          responseValidation.filtered,
+          wasFiltered,
           createdAt.toISOString(),
         ],
       );
@@ -475,8 +503,13 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           tier: effectiveTier,
           sessionType,
           complexity: classification.complexity,
-          filtered: responseValidation.filtered,
-          requiresHumanReview: responseValidation.requiresHumanReview,
+          filtered: wasFiltered,
+          requiresHumanReview,
+          semanticRiskLevel: semanticSafety.riskLevel,
+          semanticCategory: semanticSafety.category,
+          semanticAllowedMode: semanticSafety.allowedMode,
+          structuredSchemaValid: structuredResult.schemaValid,
+          structuredIssueCount: structuredResult.issues.length,
           promptVersion: PROMPT_VERSION,
           safetyPolicyVersion: SAFETY_POLICY_VERSION,
           model: routing.model.displayName,
@@ -492,17 +525,31 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       console.error('Audit logging failed:', auditError);
     }
 
-    // Explainability is withheld until it can be computed from answer-specific evidence.
-    // Returning default confidence values would create false precision.
-    const explainability: ShadowChatResponse['explainability'] | undefined = undefined;
+    const confidenceLevelMap: Record<string, ShadowChatResponse['explainability'] extends infer T ? string : never> = {};
+    void confidenceLevelMap;
+    const explainability: ShadowChatResponse['explainability'] | undefined = evidenceConfidence ? {
+      confidence: Math.round(evidenceConfidence.score * 100),
+      confidenceLevel: evidenceConfidence.level === 'high'
+        ? '🟢 High'
+        : evidenceConfidence.level === 'moderate'
+          ? '🟡 Moderate'
+          : evidenceConfidence.level === 'low'
+            ? '🟠 Low'
+            : '🔴 Speculative',
+      reasoning: evidenceConfidence.factors.join('; '),
+      evidenceCount: evidenceClaim?.evidence.length ?? 0,
+      disclaimers: evidenceClaim?.status === 'supported'
+        ? []
+        : ['Evidence is incomplete; treat the answer as educational and subject to human review.'],
+    } : undefined;
 
     return NextResponse.json({
       success: true,
       response: finalResponse,
       messageId,
       createdAt: createdAt.toISOString(),
-      filtered: responseValidation.filtered,
-      requiresHumanReview: responseValidation.requiresHumanReview,
+      filtered: wasFiltered,
+      requiresHumanReview,
       highRiskTopic: requestValidation.topic || undefined,
       tier: effectiveTier,
       complexity: classification.complexity,
@@ -512,6 +559,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       async: resolvedAsync,
       jobId: asyncJobId,
       explainability,
+      structured: structuredResult.value,
+      safety: semanticSafety,
       evidence: evidenceClaim ? {
         status: evidenceClaim.status,
         sources: evidenceClaim.evidence.slice(0, 5).map((item) => ({
