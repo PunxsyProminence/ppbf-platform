@@ -223,16 +223,26 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
         </form>
       )}
 
-      {/* Announcements Section */}
+      {/* Help & Recovery */}
       <div className="rounded-[24px] border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-sm)]">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">📢 Latest Updates</p>
-        <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
-          Announcements from coaches and admins appear below. Check in before floor activity.
-        </p>
-        <div className="mt-4 grid gap-3">
-          {props.announcements.slice(0, 3).map((item) => (
-            <AnnouncementCard key={item.id} item={item} />
-          ))}
+        <div className="space-y-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">💡 Need Help?</p>
+            <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
+              If you don&apos;t have an Account ID or PIN, or if you&apos;ve forgotten your PIN, contact your gym admin or coach. They can create a new account or reset your PIN.
+            </p>
+          </div>
+          <div className="rounded-lg border border-[rgba(0,0,0,0.12)] bg-white p-3">
+            <p className="text-xs font-semibold text-[var(--black)] mb-2">📢 Latest Updates</p>
+            <div className="space-y-2">
+              {props.announcements.slice(0, 2).map((item) => (
+                <AnnouncementCard key={item.id} item={item} />
+              ))}
+            </div>
+            {props.announcements.length === 0 && (
+              <p className="text-xs text-[var(--gray-medium)] italic">No announcements yet</p>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -517,6 +527,9 @@ function LoginPageContent() {
     setLoginError('');
 
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
       const response = await fetch(`${apiBase()}/api/pilot/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -524,20 +537,38 @@ function LoginPageContent() {
           account_id: acctId, 
           pin: pinCode,
         }),
+        signal: controller.signal,
       });
+
+      clearTimeout(timeout);
 
       const result = (await response.json().catch(() => ({ error: 'Login failed' }))) as {
         error?: string;
         role?: string;
       };
 
+      if (response.status === 429) {
+        setLoginError('Too many login attempts. Please wait a few minutes before trying again.');
+        return;
+      }
+
       if (!response.ok || !result.role) {
-        setLoginError(result.error || 'Invalid account ID or PIN.');
+        setLoginError(result.error || 'Invalid account ID or PIN. Please try again or contact an admin.');
         return;
       }
 
       createPersistentRoleSession(mapPilotLoginRoleToClubRole(result.role));
       router.replace(getPilotLoginRedirectPath(result.role));
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          setLoginError('Login request timed out. Check your internet connection and try again.');
+        } else {
+          setLoginError('Network error. Check your connection and try again.');
+        }
+      } else {
+        setLoginError('An unexpected error occurred. Please try again.');
+      }
     } finally {
       setLoginBusy(false);
     }
