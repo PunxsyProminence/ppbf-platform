@@ -65,16 +65,28 @@ export interface JobStatusResult {
  * Enqueue a new Recovery Round job.
  * Returns the job ID for polling.
  */
+export function normalizeJobTtlHours(ttlHours: number | undefined): number {
+  if (ttlHours === undefined) return 24;
+  if (!Number.isFinite(ttlHours)) throw new Error('Job TTL must be a finite number');
+  return Math.min(168, Math.max(1, Math.trunc(ttlHours)));
+}
+
+export function normalizeJobPriority(priority: number | undefined): number {
+  if (priority === undefined) return 3;
+  if (!Number.isFinite(priority)) throw new Error('Job priority must be a finite number');
+  return Math.min(5, Math.max(1, Math.trunc(priority)));
+}
+
 export async function enqueueJob(input: CreateJobInput): Promise<string> {
-  const ttlHours = input.ttlHours ?? 24;
-  const priority = input.priority ?? 3;
+  const ttlHours = normalizeJobTtlHours(input.ttlHours);
+  const priority = normalizeJobPriority(input.priority);
 
   const row = await queryOne<{ job_id: string }>(
     `INSERT INTO pilot.shadow_jobs (
        job_type, organization_id, account_id, role,
        status, input_payload, priority, retry_count, max_retries,
        created_at, expires_at
-     ) VALUES ($1, $2, $3, $4, 'pending', $5::jsonb, $6, 0, 3, NOW(), NOW() + INTERVAL '${ttlHours} hours')
+     ) VALUES ($1, $2, $3, $4, 'pending', $5::jsonb, $6, 0, 3, NOW(), NOW() + ($7 * INTERVAL '1 hour'))
      RETURNING job_id`,
     [
       input.jobType,
@@ -83,6 +95,7 @@ export async function enqueueJob(input: CreateJobInput): Promise<string> {
       input.role,
       JSON.stringify(input.inputPayload),
       priority,
+      ttlHours,
     ],
   );
 
