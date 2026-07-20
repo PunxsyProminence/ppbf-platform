@@ -156,8 +156,7 @@ async function callAzureOpenAI(systemPrompt: string, userMessage: string, recent
     });
 
     if (!azureResponse.ok) {
-      const errorText = await azureResponse.text();
-      console.error('Azure API error:', azureResponse.status, errorText);
+      console.error('Azure API error:', azureResponse.status);
       return { response: '', success: false };
     }
 
