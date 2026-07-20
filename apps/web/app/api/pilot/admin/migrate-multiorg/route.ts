@@ -154,6 +154,39 @@ export async function POST(request: NextRequest) {
         was_filtered boolean not null default false,
         created_at timestamptz not null default now()
       )`,
+      `create table if not exists pilot.coach_chat_audit (
+        coach_chat_audit_id bigserial primary key,
+        organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+        coach_id text not null,
+        athlete_id text null,
+        message text not null,
+        response text not null,
+        created_at timestamptz not null default now()
+      )`,
+      `create table if not exists pilot.athlete_chat_audit (
+        athlete_chat_audit_id bigserial primary key,
+        organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+        athlete_id text not null,
+        message text not null,
+        response text not null,
+        created_at timestamptz not null default now()
+      )`,
+      `create table if not exists pilot.board_chat_audit (
+        board_chat_audit_id bigserial primary key,
+        organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+        board_member_id text not null,
+        message text not null,
+        response text not null,
+        created_at timestamptz not null default now()
+      )`,
+      `create table if not exists pilot.individual_chat_audit (
+        individual_chat_audit_id bigserial primary key,
+        organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+        user_id text not null,
+        message text not null,
+        response text not null,
+        created_at timestamptz not null default now()
+      )`,
       `create table if not exists pilot.shadow_feature_thresholds (
         organization_id text not null references pilot.organizations(organization_id) on delete cascade,
         feature_key text not null,
@@ -201,6 +234,14 @@ export async function POST(request: NextRequest) {
       `create index if not exists idx_admin_gym_capability_access_updated on pilot.admin_gym_capability_access(updated_at desc)`,
       `create index if not exists idx_shadow_chat_audit_org_created on pilot.shadow_chat_audit(organization_id, created_at desc)`,
       `create index if not exists idx_shadow_chat_audit_user_created on pilot.shadow_chat_audit(user_id, created_at desc)`,
+      `create index if not exists idx_coach_chat_audit_org_created on pilot.coach_chat_audit(organization_id, created_at desc)`,
+      `create index if not exists idx_coach_chat_audit_coach_created on pilot.coach_chat_audit(coach_id, created_at desc)`,
+      `create index if not exists idx_athlete_chat_audit_org_created on pilot.athlete_chat_audit(organization_id, created_at desc)`,
+      `create index if not exists idx_athlete_chat_audit_athlete_created on pilot.athlete_chat_audit(athlete_id, created_at desc)`,
+      `create index if not exists idx_board_chat_audit_org_created on pilot.board_chat_audit(organization_id, created_at desc)`,
+      `create index if not exists idx_board_chat_audit_member_created on pilot.board_chat_audit(board_member_id, created_at desc)`,
+      `create index if not exists idx_individual_chat_audit_org_created on pilot.individual_chat_audit(organization_id, created_at desc)`,
+      `create index if not exists idx_individual_chat_audit_user_created on pilot.individual_chat_audit(user_id, created_at desc)`,
       `create index if not exists idx_shadow_feature_thresholds_org on pilot.shadow_feature_thresholds(organization_id, feature_key)`,
       `create index if not exists idx_shadow_feature_unlock_snapshots_org_eval on pilot.shadow_feature_unlock_snapshots(organization_id, evaluated_at desc)`,
       `insert into pilot.organizations (organization_id, organization_name, status)
