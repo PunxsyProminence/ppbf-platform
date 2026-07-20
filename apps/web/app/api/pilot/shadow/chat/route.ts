@@ -296,12 +296,37 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     const correlationId = randomUUID();
     const body: ShadowChatRequest = await request.json();
     const { message, athleteId, tier: userRequestedTier, sessionType: requestedSessionType, preferAsync = false } = body;
+    if (typeof message !== 'string' || message.trim().length === 0 || message.length > 10_000) {
+      return NextResponse.json({
+        success: false,
+        response: 'Message must be a non-empty string no longer than 10,000 characters.',
+        messageId: `msg_${Date.now()}`,
+        createdAt: new Date().toISOString(),
+        filtered: true,
+        requiresHumanReview: false,
+        correlationId,
+        error: 'Invalid message',
+      }, { status: 400 });
+    }
+    if (athleteId !== undefined && (typeof athleteId !== 'string' || athleteId.length > 200)) {
+      return NextResponse.json({
+        success: false,
+        response: 'Athlete context identifier is invalid.',
+        messageId: `msg_${Date.now()}`,
+        createdAt: new Date().toISOString(),
+        filtered: true,
+        requiresHumanReview: false,
+        correlationId,
+        error: 'Invalid athlete context',
+      }, { status: 400 });
+    }
 
+    const normalizedMessage = message.trim();
     const canUseManualOverride = MANUAL_OVERRIDE_ROLES.has(userRole as PilotRole);
     const sanitizedTier = canUseManualOverride ? userRequestedTier : undefined;
 
     // Step 1: Classify request + route via The Corner
-    const classification = classifyRequest(message, userRole as PilotRole, sanitizedTier);
+    const classification = classifyRequest(normalizedMessage, userRole as PilotRole, sanitizedTier);
     const effectiveTier = classification.tier;
     const sessionType = resolveSessionType({
       userRequestedTier: sanitizedTier,
@@ -311,7 +336,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     });
 
     // Step 2: Validate request first (blocks diagnosis, clearance, prescription for non-educational queries)
-    const requestValidation = validateShadowRequest(message, userRole, organizationId);
+    const requestValidation = validateShadowRequest(normalizedMessage, userRole, organizationId);
     if (!requestValidation.valid) {
       const messageId = `msg_${Date.now()}`;
       return NextResponse.json(
@@ -341,7 +366,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     const contextOutput = buildShadowContext({
       tier: effectiveTier,
       userProfile,
-      userMessage: message,
+      userMessage: normalizedMessage,
       userRole: userRole as PilotRole,
       organizationId,
       athleteId,
@@ -383,7 +408,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           athleteId: userRole === 'athlete' ? athleteId ?? null : null,
           scope: athleteId ? 'subject' : (['admin', 'organization_admin', 'platform_owner'].includes(userRole) ? 'master' : 'scoped'),
           subjectId: athleteId ?? null,
-          question: message,
+          question: normalizedMessage,
           limit: 5,
         }).catch((error) => {
           console.error('SHADOW evidence retrieval failed:', error);
@@ -408,7 +433,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       urgent: requestValidation.urgent === true,
       recentConversation,
       userProfile, tierResult, contextOutput: authorizedContextOutput, classification,
-      message, userId, organizationId, userRole, athleteId, unlockState,
+      message: normalizedMessage, userId, organizationId, userRole, athleteId, unlockState,
     });
 
     // Step 7: Validate response BEFORE displaying to user
@@ -432,7 +457,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           userId,
           userRole,
           athleteId || null,
-          message,
+          normalizedMessage,
           finalResponse,
           responseValidation.filtered,
           createdAt.toISOString(),
