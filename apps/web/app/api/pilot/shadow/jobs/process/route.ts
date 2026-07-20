@@ -116,7 +116,7 @@ async function callAI(systemPrompt: string, userMessage: string, maxTokens = 409
   });
 
   if (!response.ok) {
-    throw new Error(`AI API error ${response.status}: ${await response.text()}`);
+    throw new Error(`AI API error ${response.status}`);
   }
 
   const data = await response.json();
