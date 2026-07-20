@@ -2,7 +2,7 @@
 // Builds role-specific system prompts that incorporate user's SHADOW context
 
 import { getOrCreateShadowUserProfile, buildUserShadowContext } from './shadowUserProfile';
-import { queryOne, query } from './db';
+import { query } from './db';
 import type { PilotRole } from './contracts';
 
 export interface PersonalShadowPrompt {

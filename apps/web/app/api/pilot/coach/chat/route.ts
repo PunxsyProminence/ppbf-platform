@@ -8,7 +8,7 @@ import { query } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { requireRole } from '@/src/server/pilot/access';
 import { buildAzureAiChatCompletionsUrl, getAzureAiRuntimeConfig } from '@/src/server/pilot/azureAiRuntime';
-import { buildPersonalShadowPrompt, getCoachAssignedAthletes } from '@/src/server/pilot/shadowPersonalization';
+import { buildPersonalShadowPrompt } from '@/src/server/pilot/shadowPersonalization';
 import { updateShadowUserProfile } from '@/src/server/pilot/shadowUserProfile';
 
 export interface CoachChatRequest {
@@ -126,9 +126,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<CoachChat
 
     // Update coach's SHADOW profile
     try {
-      const athleteList = await getCoachAssignedAthletes(principal.accountId, org);
-      const athleteNames = athleteList.map(a => a.full_name).join(', ');
-      const topicMatch = message.match(/\b(training|program|athlete|assessment|strategy|performance|development)\b/i);
+      const topicMatch = /\b(training|program|athlete|assessment|strategy|performance|development)\b/i.exec(message);
       const topic = topicMatch ? topicMatch[1] : 'coaching';
 
       await updateShadowUserProfile(principal.accountId, org, {

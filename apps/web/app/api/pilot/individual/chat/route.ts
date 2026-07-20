@@ -125,8 +125,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<Individua
 
     // Update parent/individual's SHADOW profile
     try {
-      const athletes = await getParentAssignedAthletes(principal.accountId, org);
-      const topicMatch = message.match(/\b(athlete|development|support|progress|family|training)\b/i);
+      const topicMatch = /\b(athlete|development|support|progress|family|training)\b/i.exec(message);
       const topic = topicMatch ? topicMatch[1] : 'family-engagement';
 
       await updateShadowUserProfile(principal.accountId, org, {

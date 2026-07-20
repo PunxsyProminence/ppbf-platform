@@ -125,7 +125,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<BoardChat
 
     // Update board member's SHADOW profile
     try {
-      const topicMatch = message.match(/\b(governance|policy|compliance|strategy|risk|oversight)\b/i);
+      const topicMatch = /\b(governance|policy|compliance|strategy|risk|oversight)\b/i.exec(message);
       const topic = topicMatch ? topicMatch[1] : 'governance';
 
       await updateShadowUserProfile(principal.accountId, org, {
