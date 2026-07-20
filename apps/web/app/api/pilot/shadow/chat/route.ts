@@ -30,6 +30,8 @@ import { classifyProfileTier, buildPersonalizationPrompt } from '@/src/server/pi
 import { executeHeavyBagSync, executeHeavyBagAsync, shouldRunAsync } from '@/src/server/pilot/shadowHeavyBag';
 import { evaluateShadowUnlockState, isFeatureEnabled, type ShadowUnlockState } from '@/src/server/pilot/shadowUnlocks';
 import { createShadowLibraryClaim, type ShadowLibraryClaimResult } from '@/src/server/pilot/shadowLibrary';
+import { getShadowChatCapabilities, canUseShadowSessionType } from '@/src/server/pilot/shadowChatCapabilities';
+import { appendConversationExchange, loadConversationMessages, queueHumanReview, resolveConversation } from '@/src/server/pilot/shadowConversations';
 import {
   calculateEvidenceConfidence,
   classifySemanticSafety,
@@ -47,6 +49,7 @@ export interface ShadowChatRequest {
   tier?: ShadowTier; // Optional manual tier override (coaches/admins only)
   sessionType?: string; // Optional: 'film_study' | 'scout_report' | 'board_summary'
   preferAsync?: boolean; // Client can request async for heavy sessions
+  conversationId?: string; // Durable user-owned conversation
 }
 
 export interface ShadowChatResponse {
@@ -79,6 +82,7 @@ export interface ShadowChatResponse {
     researchRequirementId: number | null;
   };
   correlationId?: string;
+  conversationId?: string;
   error?: string;
 }
 
@@ -270,15 +274,6 @@ async function routeLlmCall(ctx: LlmRouteContext): Promise<LlmRouteResult> {
 
 export const runtime = 'nodejs';
 
-const MANUAL_OVERRIDE_ROLES = new Set<PilotRole>(['coach', 'admin', 'organization_admin', 'platform_owner']);
-const SESSION_TYPE_OVERRIDES = new Set<import('@/src/server/pilot/shadowRouter').ShadowSessionType>([
-  'quick_round',
-  'heavy_bag',
-  'film_study',
-  'scout_report',
-  'board_summary',
-  'recovery_round',
-]);
 
 function resolveSessionType(input: {
   userRequestedTier: ShadowTier | undefined;
@@ -286,12 +281,9 @@ function resolveSessionType(input: {
   effectiveTier: ShadowTier;
   role: PilotRole;
 }): import('@/src/server/pilot/shadowRouter').ShadowSessionType {
-  const canOverride = MANUAL_OVERRIDE_ROLES.has(input.role);
-  if (canOverride && input.requestedSessionType) {
-    const candidate = input.requestedSessionType as import('@/src/server/pilot/shadowRouter').ShadowSessionType;
-    if (SESSION_TYPE_OVERRIDES.has(candidate)) {
-      return candidate;
-    }
+  const capabilities = getShadowChatCapabilities(input.role);
+  if (capabilities.canUseManualTier && input.requestedSessionType && canUseShadowSessionType(input.role, input.requestedSessionType)) {
+    return input.requestedSessionType as import('@/src/server/pilot/shadowRouter').ShadowSessionType;
   }
 
   return tierToSessionType(input.effectiveTier, input.role, input.userRequestedTier !== undefined);
@@ -308,7 +300,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
 
     const correlationId = randomUUID();
     const body: ShadowChatRequest = await request.json();
-    const { message, athleteId, tier: userRequestedTier, sessionType: requestedSessionType, preferAsync = false } = body;
+    const { message, athleteId, tier: userRequestedTier, sessionType: requestedSessionType, preferAsync = false, conversationId: requestedConversationId } = body;
     if (typeof message !== 'string' || message.trim().length === 0 || message.length > 10_000) {
       return NextResponse.json({
         success: false,
@@ -335,8 +327,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     }
 
     const normalizedMessage = message.trim();
-    const canUseManualOverride = MANUAL_OVERRIDE_ROLES.has(userRole as PilotRole);
-    const sanitizedTier = canUseManualOverride ? userRequestedTier : undefined;
+    const capabilities = getShadowChatCapabilities(userRole as PilotRole);
+    const sanitizedTier = capabilities.canUseManualTier ? userRequestedTier : undefined;
 
     // Step 1: Classify request + route via The Corner
     const classification = classifyRequest(normalizedMessage, userRole as PilotRole, sanitizedTier);
@@ -352,6 +344,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     const requestValidation = validateShadowRequest(normalizedMessage, userRole, organizationId);
     if (!requestValidation.valid) {
       const messageId = `msg_${Date.now()}`;
+      queueHumanReview({ organizationId, userId, category: requestValidation.topic ?? 'request_policy', severity: requestValidation.urgent ? 'critical' : 'high', summary: requestValidation.error ?? 'Request blocked by SHADOW policy', metadata: { correlationId } }).catch(() => {});
       return NextResponse.json(
         {
           success: false,
@@ -412,6 +405,31 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
 
     const messageId = `msg_${Date.now()}`;
     const createdAt = new Date();
+    let conversationId: string;
+    try {
+      conversationId = await resolveConversation({
+        organizationId,
+        userId,
+        conversationId: requestedConversationId,
+        athleteId,
+        sessionType,
+        firstMessage: normalizedMessage,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'SHADOW_CONVERSATION_NOT_FOUND') {
+        return NextResponse.json({
+          success: false,
+          response: 'Conversation not found.',
+          messageId,
+          createdAt: createdAt.toISOString(),
+          filtered: false,
+          requiresHumanReview: false,
+          correlationId,
+          error: 'Conversation not found',
+        }, { status: 404 });
+      }
+      throw error;
+    }
     const evidenceClaim = requestValidation.urgent
       ? null
       : await createShadowLibraryClaim({
@@ -427,7 +445,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           console.error('SHADOW evidence retrieval failed:', error);
           return null;
         });
-    const recentConversation = await loadRecentConversation(organizationId, userId, athleteId);
+    const durableMessages = await loadConversationMessages({ organizationId, userId, conversationId, limit: 12 });
+    const recentConversation = durableMessages.length > 0
+      ? durableMessages.map((turn) => ({ role: turn.role, content: turn.content }))
+      : await loadRecentConversation(organizationId, userId, athleteId);
     const authorizedContextOutput = {
       ...contextOutput,
       context: [
@@ -513,6 +534,25 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           createdAt.toISOString(),
         ],
       );
+      await appendConversationExchange({
+        organizationId,
+        userId,
+        conversationId,
+        userMessage: normalizedMessage,
+        assistantMessage: finalResponse,
+        sessionType,
+      });
+      if (requiresHumanReview || requestValidation.urgent) {
+        await queueHumanReview({
+          organizationId,
+          userId,
+          conversationId,
+          category: requestValidation.topic ?? semanticSafety.category,
+          severity: requestValidation.urgent ? 'critical' : semanticSafety.riskLevel === 'high' ? 'high' : 'moderate',
+          summary: requestValidation.urgent ? 'Urgent-care escalation shown to user.' : 'SHADOW response requires human review.',
+          metadata: { correlationId, messageId, filtered: wasFiltered, structuredIssues: structuredResult.issues },
+        });
+      }
       await query(
         `INSERT INTO pilot.shadow_telemetry_events
          (organization_id, metric_name, actor_account_id, actor_role, dimensions, created_at)
@@ -533,6 +573,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           promptVersion: PROMPT_VERSION,
           safetyPolicyVersion: SAFETY_POLICY_VERSION,
           model: routing.model.displayName,
+          conversationId,
           conversationTurnCount: recentConversation.length,
           authorizedContextIncluded: Boolean(roleBasedContext.context),
           evidenceStatus: evidenceClaim?.status ?? 'unavailable',
@@ -590,6 +631,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
         researchRequirementId: evidenceClaim.researchRequirementId,
       } : undefined,
       correlationId,
+      conversationId,
     });
   } catch (error) {
     return jsonError(error) as NextResponse<ShadowChatResponse>;
