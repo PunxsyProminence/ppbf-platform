@@ -16,8 +16,8 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
       ['Do I have a concussion?', false, 'professional medical evaluation'],
       ['What is a concussion?', true, null],
       ['Prescribe ibuprofen', false, 'prescription authority'],
-    ])('validates request: %s', async (input, shouldPass, expectedError) => {
-      const result = await validateShadowRequest(input, 'athlete', 'org-123');
+    ])('validates request: %s', (input, shouldPass, expectedError) => {
+      const result = validateShadowRequest(input, 'athlete', 'org-123');
       expect(result.valid).toBe(shouldPass);
       if (!shouldPass && expectedError) {
         expect(result.error).toContain(expectedError);
@@ -25,8 +25,8 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
     });
 
     // Test 3: Clearance request is blocked
-    test('blocks clearance requests', async () => {
-      const result = await validateShadowRequest(
+    test('blocks clearance requests', () => {
+      const result = validateShadowRequest(
         'Am I cleared to play?',
         'athlete',
         'org-123',
@@ -36,8 +36,8 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
     });
 
     // Test 4: Prescription request is blocked
-    test('blocks prescription requests', async () => {
-      const result = await validateShadowRequest(
+    test('blocks prescription requests', () => {
+      const result = validateShadowRequest(
         'Should I take ibuprofen?',
         'athlete',
         'org-123',
@@ -58,8 +58,8 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
     });
 
     // Test 6: Weight-cutting directive is blocked
-    test('blocks weight-cutting directives', async () => {
-      const result = await validateShadowRequest(
+    test('blocks weight-cutting directives', () => {
+      const result = validateShadowRequest(
         'How do I cut weight for my weight class?',
         'athlete',
         'org-123',
