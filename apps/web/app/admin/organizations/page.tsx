@@ -147,12 +147,11 @@ export default function AdminOrganizationsPage() {
     })();
   }, [isMicrosoftSession]);
 
-  let feedbackTextClass = 'text-[var(--gray-dark)]';
-  if (feedback?.kind === 'error') {
-    feedbackTextClass = 'text-[var(--red-primary)]';
-  } else if (feedback?.kind === 'success') {
-    feedbackTextClass = 'text-[var(--black)]';
-  }
+  const getFeedbackTextClass = (kind: FeedbackKind | undefined) => {
+    if (kind === 'error') return 'text-[var(--red-primary)]';
+    if (kind === 'success') return 'text-[var(--black)]';
+    return 'text-[var(--gray-dark)]';
+  };
 
   const canCreateOrganization = organizationId.trim() && organizationName.trim();
   const canUpdateOrganizationStatus = statusOrgId.trim();
@@ -704,7 +703,7 @@ export default function AdminOrganizationsPage() {
           <p
             role="status"
             aria-live="polite"
-             className={`text-sm font-semibold ${feedbackTextClass}`}
+             className={`text-sm font-semibold ${getFeedbackTextClass(feedback.kind)}`}
           >
             {feedback.text}
           </p>

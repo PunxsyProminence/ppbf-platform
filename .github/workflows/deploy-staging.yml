@@ -97,6 +97,5 @@ jobs:
         env:
           PPBF_PILOT_BOOTSTRAP_KEY: ${{ inputs.ppbf_pilot_bootstrap_key }}
           PILOT_ADMIN_ACCOUNT_ID: org_admin_shadow
-          PILOT_ADMIN_PIN: ${{ secrets.PILOT_ADMIN_PIN }}
         run: |
           npm --prefix apps/web run gate:pilot:shadow-e2e

@@ -138,14 +138,14 @@ export function loadTrackAssignments(): TrackAssignments {
   return getDefaultTrackAssignments();
 }
 
-export function saveTrackAssignments(assignments: TrackAssignments) {
-  void assignments;
+export function saveTrackAssignments(_assignments: TrackAssignments) {
+  // Placeholder for future persistence logic
 }
 
 export function readActiveAthleteProfileId() {
   return athleteProfiles[0].id;
 }
 
-export function saveActiveAthleteProfileId(profileId: string) {
-  void profileId;
+export function saveActiveAthleteProfileId(_profileId: string) {
+  // Placeholder for future persistence logic
 }

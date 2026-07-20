@@ -180,7 +180,7 @@ You are in an **extended coaching session**.
   // Session metadata
   sections.push(`
 ## Request Metadata
-- Session Type: ${input.sessionType.replace(/_/g, ' ')}
+- Session Type: ${input.sessionType.replaceAll('_', ' ')}
 - Complexity Score: ${input.classification.complexity.toFixed(2)}
 - Topic: ${input.classification.topic}
 - Model: ${routing.model.displayName}
