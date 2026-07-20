@@ -13,7 +13,7 @@
     "seed:shadow:library": "node scripts/seed-shadow-library.mjs",
     "gate:pilot": "node scripts/pilot-gate.mjs",
     "gate:pilot:multiorg": "node scripts/pilot-multiorg-gate.mjs",
-    "test": "jest --testPathPatterns=src/server/pilot/shadowChat.test.ts src/server/pilot/shadowJobQueue.test.ts src/server/pilot/federatedAuth.test.ts src/server/pilot/auth.microsoftLogin.test.ts src/server/pilot/microsoftOAuthFlow.test.ts src/client/loginPageHelpers.test.ts",
+    "test": "jest --testPathPatterns=src/server/pilot/shadowChat.test.ts src/server/pilot/shadowResponsePolicy.test.ts src/server/pilot/shadowJobQueue.test.ts src/server/pilot/federatedAuth.test.ts src/server/pilot/auth.microsoftLogin.test.ts src/server/pilot/microsoftOAuthFlow.test.ts src/client/loginPageHelpers.test.ts",
     "gate:pilot:shadow-intake": "node scripts/pilot-shadow-intake-gate.mjs",
     "gate:pilot:shadow-e2e": "node scripts/pilot-shadow-intake-gate.mjs",
     "audit:mock-ingest": "tsx scripts/run-mock-ingest.ts",
