@@ -13,6 +13,7 @@ import {
   validateShadowResponse,
   retrieveShadowContext,
   SHADOW_SYSTEM_PROMPT,
+  SHADOW_STRUCTURED_OUTPUT_INSTRUCTION,
   MEDICAL_EDUCATION_NOTICE,
   SAFE_FILTERED_RESPONSE,
   type HighRiskTopic,
@@ -234,6 +235,7 @@ async function routeLlmCall(ctx: LlmRouteContext): Promise<LlmRouteResult> {
     : '';
   const prompt = [
     SHADOW_SYSTEM_PROMPT,
+    SHADOW_STRUCTURED_OUTPUT_INSTRUCTION,
     personalization,
     contextOutput.context ? `\n## Authorized Context\n${contextOutput.context}` : '',
     `\n## Runtime Policy Versions\n- Prompt: ${PROMPT_VERSION}\n- Safety: ${SAFETY_POLICY_VERSION}`,
