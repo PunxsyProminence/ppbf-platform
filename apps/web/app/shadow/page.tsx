@@ -53,10 +53,6 @@ interface ShadowLibraryClaimApiResponse {
 
 const GENERIC_UNSUPPORTED_REPLY = 'If this question needs a sourced answer, I should either answer from verified evidence or create a research requirement. Try asking about doctrine, evidence, readiness, recovery, technique, or organizational learning.';
 
-// Mirrors the server-owned manual override policy. The API remains authoritative.
-const HEAVY_BAG_ELIGIBLE_ROLES = new Set(['coach', 'admin', 'organization_admin', 'platform_owner']);
-const MASTER_SHADOW_ROLES = new Set(['admin', 'organization_admin', 'platform_owner']);
-
 interface ExplainabilityChain {
   confidence: number; // 0-100, capped at 95%
   confidenceLevel: '🟢 High' | '🟡 Moderate' | '🟠 Low' | '🔴 Speculative';
@@ -64,6 +60,14 @@ interface ExplainabilityChain {
   evidenceCount: number;
   disclaimers: string[];
   alternatives?: string[];
+}
+
+interface ShadowCapabilities {
+  mode: 'master' | 'scoped';
+  canUseManualTier: boolean;
+  canManageSessions: boolean;
+  canExportOwnData: boolean;
+  canRequestDeletion: boolean;
 }
 
 interface ShadowAIResult {
@@ -77,6 +81,7 @@ interface ShadowAIResult {
   error?: string;
   explainability?: ExplainabilityChain;
   evidence?: ShadowEvidence;
+  conversationId?: string;
 }
 
 function createMessageId(): string {
@@ -136,12 +141,12 @@ async function fetchLibraryClaim(
   return res.json() as Promise<ShadowLibraryClaimApiResponse>;
 }
 
-async function fetchShadowAI(rawQuestion: string, heavyBagMode: boolean, apiBaseUrl: string): Promise<ShadowAIResult> {
+async function fetchShadowAI(rawQuestion: string, heavyBagMode: boolean, apiBaseUrl: string, conversationId?: string): Promise<ShadowAIResult> {
   const res = await fetch(`${apiBaseUrl}/api/pilot/shadow/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ message: rawQuestion, tier: heavyBagMode ? 'heavy_bag' : undefined }),
+    body: JSON.stringify({ message: rawQuestion, tier: heavyBagMode ? 'heavy_bag' : undefined, conversationId }),
   });
   if (!res.ok) throw new Error(`SHADOW AI error: ${res.status}`);
   return res.json() as Promise<ShadowAIResult>;
@@ -350,7 +355,7 @@ function getProfileTierLabel(profileTier?: ShadowMessage['profileTier']): string
 
 function ShadowResearchReportsPanel(props: Readonly<{
   reports: ShadowResearchReport[];
-  userRole: string;
+  canUseAdvancedSessions: boolean;
 }>): ReactElement | null {
   if (props.reports.length === 0) {
     return null;
@@ -369,7 +374,7 @@ function ShadowResearchReportsPanel(props: Readonly<{
         >
           Open Research Intake
         </Link>
-        {HEAVY_BAG_ELIGIBLE_ROLES.has(props.userRole) ? (
+        {props.canUseAdvancedSessions ? (
           <Link
             href="/shadow/scout"
             className="border-2 border-[#5a4a3a] bg-[#1f1f1f] px-3 py-2 text-[10px] font-mono uppercase tracking-[0.12em] text-[#b0a095] transition hover:border-[#8b4444] hover:text-[#e8d7c6]"
@@ -397,8 +402,12 @@ function ShadowChatPageContent() {
   const searchParams = useSearchParams();
   const [userRole, setUserRole] = useState<string>(() => (typeof window !== 'undefined' ? readRoleSession()?.role ?? '' : ''));
   const [authChecked, setAuthChecked] = useState(false);
+  const [capabilities, setCapabilities] = useState<ShadowCapabilities | null>(null);
+  const [conversationId, setConversationId] = useState<string | undefined>(() =>
+    typeof window !== 'undefined' ? window.localStorage.getItem('shadowConversationId') ?? undefined : undefined,
+  );
   const requestedMode = searchParams.get('mode') === 'master' ? 'master' : 'scoped';
-  const mode: 'master' | 'scoped' = requestedMode === 'master' && MASTER_SHADOW_ROLES.has(userRole) ? 'master' : 'scoped';
+  const mode: 'master' | 'scoped' = requestedMode === 'master' && capabilities?.mode === 'master' ? 'master' : 'scoped';
   const context = searchParams.get('context')?.trim() ?? '';
   const subject = searchParams.get('subject')?.trim() ?? '';
   const roleLabel = (userRole || 'guest').toUpperCase();
@@ -475,6 +484,18 @@ function ShadowChatPageContent() {
   }, [router]);
 
   useEffect(() => {
+    if (!authChecked || !userRole) return;
+    let cancelled = false;
+    void fetch(`${apiBase()}/api/pilot/shadow/capabilities`, { credentials: 'include' })
+      .then((response) => response.ok ? response.json() : null)
+      .then((payload) => {
+        if (!cancelled && payload?.capabilities) setCapabilities(payload.capabilities as ShadowCapabilities);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [authChecked, userRole]);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
@@ -530,7 +551,11 @@ function ShadowChatPageContent() {
   }
 
   async function callShadowAI(rawQuestion: string): Promise<void> {
-    const data = await fetchShadowAI(rawQuestion, heavyBagMode, apiBase());
+    const data = await fetchShadowAI(rawQuestion, heavyBagMode, apiBase(), conversationId);
+    if (data.conversationId) {
+      setConversationId(data.conversationId);
+      window.localStorage.setItem('shadowConversationId', data.conversationId);
+    }
     const messageId = createMessageId();
     const text = data.async && data.jobId
       ? `Your Heavy Bag Session is queued. Job ID: ${data.jobId}`
@@ -685,7 +710,7 @@ function ShadowChatPageContent() {
           </div>
         </section>
 
-        <ShadowResearchReportsPanel reports={reports} userRole={userRole} />
+        <ShadowResearchReportsPanel reports={reports} canUseAdvancedSessions={capabilities?.canUseManualTier === true} />
 
         {/* CHAT BOX */}
         <section className="border-4 border-[#8b4444] bg-[#0f0f0f] p-6 shadow-2xl shadow-black/60">
@@ -773,8 +798,23 @@ function ShadowChatPageContent() {
           </div>
 
           {/* Input */}
+          <div className="mb-2 flex justify-end">
+            {capabilities?.canManageSessions ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setConversationId(undefined);
+                  window.localStorage.removeItem('shadowConversationId');
+                  setMessages([{ id: createMessageId(), type: 'shadow', text: buildWelcomeMessage(mode, roleLabel, context, subject), timestamp: formatTimestamp() }]);
+                }}
+                className="border border-[#5a4a3a] bg-[#1a1a1a] px-3 py-2 text-[9px] font-mono uppercase tracking-[0.1em] text-[#b0a095]"
+              >
+                New conversation
+              </button>
+            ) : null}
+          </div>
           <form onSubmit={handleSendMessage} className="flex gap-2">
-            {HEAVY_BAG_ELIGIBLE_ROLES.has(userRole) ? (
+            {capabilities?.canUseManualTier ? (
               <button
                 type="button"
                 onClick={() => setHeavyBagMode((v) => !v)}
