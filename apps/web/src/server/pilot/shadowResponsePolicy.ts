@@ -57,8 +57,10 @@ function extractJsonObject(raw: string): Record<string, unknown> | null {
 }
 
 function stringArray(value: unknown, maxItems: number, maxLength: number): string[] | null {
-  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) return null;
-  return value.slice(0, maxItems)
+  if (!Array.isArray(value)) return null;
+  const strings = value.filter((item): item is string => typeof item === 'string');
+  if (strings.length !== value.length) return null;
+  return strings.slice(0, maxItems)
     .map((item) => item.trim().slice(0, maxLength))
     .filter(Boolean);
 }
