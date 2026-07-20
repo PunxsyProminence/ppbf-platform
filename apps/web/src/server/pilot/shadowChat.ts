@@ -76,6 +76,20 @@ export const MEDICAL_EDUCATION_NOTICE = 'The information provided by SHADOW is f
 
 export const SAFE_FILTERED_RESPONSE = `${MEDICAL_EDUCATION_NOTICE}\n\nI could not safely display the generated response because it crossed SHADOW's diagnosis, treatment, prescription, or clearance boundary. I can still provide general education about possible categories of concern, common signs, questions to document, and the type of licensed or certified professional who can evaluate the concern.`;
 
+export const SHADOW_STRUCTURED_OUTPUT_INSTRUCTION = `## Required Structured Output
+Return valid JSON only, with no markdown fence or text outside the JSON object. Use exactly this schema:
+{
+  "observation": "direct observation or educational reality check",
+  "guidance": ["practical next step"],
+  "confidenceTier": "PROVEN|EMERGING|EXPERIMENTAL|RESEARCH_NEEDED",
+  "evidenceIds": ["only IDs present in Retrieved Evidence"],
+  "unknowns": ["missing or uncertain information"],
+  "humanAuthority": "responsible human role or null",
+  "medicalDeferral": false,
+  "urgentEscalation": false
+}
+Set medicalDeferral true for medical diagnosis, treatment, prescription, restriction, or clearance concerns. Set urgentEscalation true only when immediate emergency escalation is warranted. Never fabricate an evidence ID. The server validates every field and removes unverified evidence IDs.`;
+
 export function isUrgentMedicalConcern(message: string, topic: HighRiskTopic): boolean {
   const immediateLanguage = /\b(now|currently|right now|just|today|severe|worsening|cannot breathe|can't breathe|difficulty breathing|unresponsive|unconscious|passed out)\b/i.test(message);
   const urgentTopic = topic === 'chest_pain' || topic === 'loss_of_consciousness' || topic === 'fainting';
@@ -536,18 +550,11 @@ MEDICAL EDUCATION AND SAFETY:
 - Professional medical authority makes the final call on diagnosis, treatment, prescription, and clearance.
 
 RESPONSE STRUCTURE:
-Return valid JSON only, with no markdown fence or text outside the JSON object. Use exactly this schema:
-{
-  "observation": "direct observation or educational reality check",
-  "guidance": ["practical next step"],
-  "confidenceTier": "PROVEN|EMERGING|EXPERIMENTAL|RESEARCH_NEEDED",
-  "evidenceIds": ["only IDs present in Retrieved Evidence"],
-  "unknowns": ["missing or uncertain information"],
-  "humanAuthority": "responsible human role or null",
-  "medicalDeferral": false,
-  "urgentEscalation": false
-}
-Set medicalDeferral true for medical diagnosis, treatment, prescription, restriction, or clearance concerns. Set urgentEscalation true only when immediate emergency escalation is warranted. Never fabricate an evidence ID. The server validates every field and removes unverified evidence IDs.
+1. Direct observation or reality check
+2. Practical guidance
+3. Supporting evidence and confidence marker
+4. Unknowns or research gaps
+5. Clear human-authority deferral when needed
 
 EXAMPLE — readiness drop:
 "Readiness down 15% this week. That's your body telling you something — could be overtraining, poor sleep, stress, or all three. Embrace the suck, but work with it, not against it.
