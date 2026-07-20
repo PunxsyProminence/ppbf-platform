@@ -203,7 +203,7 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">Account PIN Sign In</p>
             <p className="mt-2 text-sm text-[var(--gray-dark)] leading-relaxed">
-              Enter your Account ID and PIN. Ask your coach or admin if you don't have one.
+              Enter your Account ID and PIN. Ask your coach or admin if you don&apos;t have one.
             </p>
           </div>
 
@@ -219,7 +219,7 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
                 type="text"
                 value={props.loginAccountId}
                 onChange={(event) => props.setLoginAccountId(event.target.value)}
-                placeholder={accountType === 'coach' ? 'coach-001' : accountType === 'athlete' ? 'ath-001' : 'admin-001'}
+                placeholder={props.accountType === 'coach' ? 'coach-001' : props.accountType === 'athlete' ? 'ath-001' : 'admin-001'}
                 className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] bg-white px-4 text-[var(--black)] outline-none transition placeholder:text-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:ring-2 focus:ring-[rgba(184,59,52,0.15)]"
               />
             </div>

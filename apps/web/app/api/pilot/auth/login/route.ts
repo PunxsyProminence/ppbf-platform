@@ -4,10 +4,11 @@ import { loginWithAccountIdAndPin } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { PILOT_SESSION_COOKIE } from '@/src/server/pilot/env';
 import { jsonError } from '@/src/server/pilot/http';
+import type { PilotRole } from '@/src/server/pilot/contracts';
 
 export const runtime = 'nodejs';
 
-function mapAccountTypeToRole(accountType: string): string | null {
+function mapAccountTypeToRole(accountType: string): PilotRole | null {
   switch (accountType?.toLowerCase()) {
     case 'admin':
       return 'admin';

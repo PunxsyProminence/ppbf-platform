@@ -1,9 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { apiBase } from '@/lib/apiBase';
-
+import { useState } from 'react';
 
 type FeedbackKind = 'success' | 'error' | 'info';
 
@@ -15,19 +12,6 @@ const gymCapabilities = [
   { id: 'sparring', label: 'Sparring & Safety Tools', description: 'Track and manage sparring sessions with safety guidelines.' },
   { id: 'publication', label: 'Content Publishing', description: 'Allow coaches to share videos, photos, and updates.' },
 ];
-
-async function postJson(path: string, body: Record<string, unknown>) {
-  const response = await fetch(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-
-  const payload = (await response.json().catch(() => ({}))) as { error?: string };
-  if (!response.ok) {
-    throw new Error(payload.error || `Request failed: ${path}`);
-  }
-}
 
 export default function SetupWizard() {
   const [step, setStep] = useState(1);
@@ -191,7 +175,7 @@ export default function SetupWizard() {
             <div className="mt-6 space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-[var(--black)]">Gym ID (Short Code)</label>
-                <p className="mt-1 text-xs text-[var(--gray-dark)]">Use lowercase letters and numbers, no spaces. Example: "golden_boxing"</p>
+                <p className="mt-1 text-xs text-[var(--gray-dark)]">Use lowercase letters and numbers, no spaces. Example: &quot;golden_boxing&quot;</p>
                 <input
                   type="text"
                   value={gymId}
@@ -203,7 +187,7 @@ export default function SetupWizard() {
 
               <div>
                 <label className="block text-sm font-semibold text-[var(--black)]">Gym Name (Display Name)</label>
-                <p className="mt-1 text-xs text-[var(--gray-dark)]">The full name of your gym as you'd like it to appear.</p>
+                <p className="mt-1 text-xs text-[var(--gray-dark)]">The full name of your gym as you&apos;d like it to appear.</p>
                 <input
                   type="text"
                   value={gymName}
@@ -225,7 +209,7 @@ export default function SetupWizard() {
                 }}
                 className="h-11 w-full rounded-lg border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isBusy ? 'Creating...' : 'Create Gym & Continue'}
+                {isBusy ? 'Creating...' : 'Create Gym &amp; Continue'}
               </button>
             </div>
           )}
@@ -243,7 +227,7 @@ export default function SetupWizard() {
             <div className="flex-1">
               <h2 className="text-lg font-bold">Step 2: Create Your Admin Account</h2>
               <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
-                This will be your first user account. You'll use the Account ID and PIN to sign in to PPBF.
+                This will be your first user account. You&apos;ll use the Account ID and PIN to sign in to PPBF.
               </p>
             </div>
             {step2Complete && <span className="text-2xl">✓</span>}
@@ -253,7 +237,7 @@ export default function SetupWizard() {
             <div className="mt-6 space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-[var(--black)]">Your Account ID</label>
-                <p className="mt-1 text-xs text-[var(--gray-dark)]">A unique identifier for you. Example: "coach-john" or "admin-001"</p>
+                <p className="mt-1 text-xs text-[var(--gray-dark)]">A unique identifier for you. Example: &quot;coach-john&quot; or &quot;admin-001&quot;</p>
                 <input
                   type="text"
                   value={adminAccountId}
@@ -265,7 +249,7 @@ export default function SetupWizard() {
 
               <div>
                 <label className="block text-sm font-semibold text-[var(--black)]">PIN (4+ digits)</label>
-                <p className="mt-1 text-xs text-[var(--gray-dark)]">A secure PIN code you'll use to sign in. Example: 1234 or 9876</p>
+                <p className="mt-1 text-xs text-[var(--gray-dark)]">A secure PIN code you&apos;ll use to sign in. Example: 1234 or 9876</p>
                 <input
                   type="password"
                   value={adminPin}
@@ -363,7 +347,7 @@ export default function SetupWizard() {
         {step === 4 && (
           <section className="rounded-2xl border-2 border-[#4caf50] bg-[rgba(76,175,80,0.05)] p-6 text-center">
             <p className="text-4xl">🎉</p>
-            <h2 className="mt-4 font-display text-2xl font-black">You're All Set!</h2>
+            <h2 className="mt-4 font-display text-2xl font-black">You&apos;re All Set!</h2>
             <p className="mt-3 text-sm leading-6 text-[var(--gray-dark)]">
               Your gym profile is ready. You can now invite coaches and athletes to join. Sign out and log in with your new account to get started.
             </p>
