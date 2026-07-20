@@ -5,7 +5,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { jsonError } from '@/src/server/pilot/http';
 import { claimNextJob, completeJob, failJob, type JobType } from '@/src/server/pilot/shadowJobQueue';
-import { SHADOW_SYSTEM_PROMPT } from '@/src/server/pilot/shadowChat';
+import { SHADOW_SYSTEM_PROMPT, validateShadowResponse } from '@/src/server/pilot/shadowChat';
 import { buildAzureAiChatCompletionsUrl, getAzureAiRuntimeConfig } from '@/src/server/pilot/azureAiRuntime';
 
 export const runtime = 'nodejs';
@@ -170,10 +170,13 @@ You are in a **Heavy Bag Session** — full reasoning mode.
 - Think through this carefully and thoroughly before responding.
 - Identify patterns, evidence gaps, and actionable recommendations.`;
 
-  const response = await callAI(systemPrompt, message, 4096);
+  const generatedResponse = await callAI(systemPrompt, message, 4096);
+  const validation = validateShadowResponse(generatedResponse);
 
   return {
-    response,
+    response: validation.message,
+    filtered: validation.filtered,
+    requiresHumanReview: validation.requiresHumanReview,
     sessionType,
     topic,
     profileTier,
@@ -210,7 +213,9 @@ Format your response as valid JSON matching this structure:
 - ${rememberedFactCount} remembered facts on file
 - Summary from recent session: ${payloadToText(payload.recentInteractionSummary, 'N/A')}`;
 
-  const raw = await callAI(systemPrompt, userMessage, 2048);
+  const generatedResponse = await callAI(systemPrompt, userMessage, 2048);
+  const validation = validateShadowResponse(generatedResponse);
+  const raw = validation.message;
 
   let report: Record<string, unknown>;
   try {
@@ -222,6 +227,8 @@ Format your response as valid JSON matching this structure:
 
   return {
     ...report,
+    filtered: validation.filtered,
+    requiresHumanReview: validation.requiresHumanReview,
     generatedAt: new Date().toISOString(),
     profileTier: payloadToText(payload.profileTier, 'gold'),
   };
@@ -238,8 +245,14 @@ Format as structured markdown with clear section headers.`;
   const userMessage = `Generate a board summary for:
 ${JSON.stringify(payload, null, 2)}`;
 
-  const summary = await callAI(systemPrompt, userMessage, 2048);
-  return { summary, generatedAt: new Date().toISOString() };
+  const generatedSummary = await callAI(systemPrompt, userMessage, 2048);
+  const validation = validateShadowResponse(generatedSummary);
+  return {
+    summary: validation.message,
+    filtered: validation.filtered,
+    requiresHumanReview: validation.requiresHumanReview,
+    generatedAt: new Date().toISOString(),
+  };
 }
 
 async function executeLearningLoopJob(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
