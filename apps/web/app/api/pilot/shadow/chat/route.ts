@@ -193,6 +193,7 @@ interface LlmRouteContext {
   highRiskTopic: HighRiskTopic | undefined;
   urgent: boolean;
   recentConversation: ChatTurn[];
+  evidenceIds: string[];
   userProfile: import('@/src/server/pilot/shadowUserProfile').ShadowUserProfileRow;
   tierResult: import('@/src/server/pilot/shadowProfiling').ProfileTierResult;
   contextOutput: import('@/src/server/pilot/shadowContextBuilder').ShadowContextOutput;
@@ -206,7 +207,7 @@ interface LlmRouteContext {
 }
 
 async function routeLlmCall(ctx: LlmRouteContext): Promise<LlmRouteResult> {
-  const { sessionType, effectiveTier, preferAsync, highRiskTopic, urgent, recentConversation,
+  const { sessionType, effectiveTier, preferAsync, highRiskTopic, urgent, recentConversation, evidenceIds,
     userProfile, tierResult, contextOutput, classification,
     message, userId, organizationId, userRole, athleteId, unlockState } = ctx;
   if (urgent) {
@@ -219,7 +220,7 @@ async function routeLlmCall(ctx: LlmRouteContext): Promise<LlmRouteResult> {
   if (isAsyncSession(sessionType) || (shouldRunAsync(sessionType, tierResult.tier) && preferAsync)) {
     const asyncResult = await executeHeavyBagAsync({
       message, userId, organizationId, role: userRole as PilotRole, userProfile, tierResult,
-      contextOutput, classification, sessionType, athleteId, systemPromptBase: SHADOW_SYSTEM_PROMPT,
+      contextOutput, classification, sessionType, athleteId, evidenceIds, systemPromptBase: SHADOW_SYSTEM_PROMPT,
     });
     return {
       llmResponse: `Your ${sessionType.replaceAll('_', ' ')} has been queued. Job ID: ${asyncResult.jobId}`,
@@ -248,7 +249,7 @@ async function routeLlmCall(ctx: LlmRouteContext): Promise<LlmRouteResult> {
 
       const result = await executeHeavyBagSync(
         { message, userId, organizationId, role: userRole as PilotRole, userProfile, tierResult,
-          contextOutput, classification, sessionType: 'heavy_bag', athleteId, systemPromptBase: prompt },
+          contextOutput, classification, sessionType: 'heavy_bag', athleteId, evidenceIds, systemPromptBase: prompt },
         runtime.config.endpoint,
         runtime.config.apiKey,
       );
@@ -439,18 +440,20 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
         .join('\n\n## Role-authorized context\n'),
     };
 
+    const availableEvidenceIds = evidenceClaim?.evidence.map((item) => item.chunk_id) ?? [];
+
     // Step 6: Route to correct model via The Corner
     const { llmResponse, resolvedAsync, asyncJobId } = await routeLlmCall({
       sessionType, effectiveTier, preferAsync,
       highRiskTopic: requestValidation.topic,
       urgent: requestValidation.urgent === true,
       recentConversation,
+      evidenceIds: availableEvidenceIds,
       userProfile, tierResult, contextOutput: authorizedContextOutput, classification,
       message: normalizedMessage, userId, organizationId, userRole, athleteId, unlockState,
     });
 
     // Step 7: Enforce structured output, then run semantic and deterministic post-generation checks.
-    const availableEvidenceIds = evidenceClaim?.evidence.map((item) => item.chunk_id) ?? [];
     const structuredResult = parseStructuredShadowResponse(llmResponse, availableEvidenceIds);
     const structuredResponse = renderStructuredShadowResponse(structuredResult.value);
     const semanticSafety = classifySemanticSafety(structuredResponse);
