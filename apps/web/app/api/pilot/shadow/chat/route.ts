@@ -525,8 +525,6 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       console.error('Audit logging failed:', auditError);
     }
 
-    const confidenceLevelMap: Record<string, ShadowChatResponse['explainability'] extends infer T ? string : never> = {};
-    void confidenceLevelMap;
     const explainability: ShadowChatResponse['explainability'] | undefined = evidenceConfidence ? {
       confidence: Math.round(evidenceConfidence.score * 100),
       confidenceLevel: evidenceConfidence.level === 'high'
