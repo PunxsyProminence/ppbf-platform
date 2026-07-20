@@ -58,6 +58,8 @@ interface LoginTabProps {
   authErrorMessage: string;
   selectedMethod: LoginMethod;
   setSelectedMethod: (method: LoginMethod) => void;
+  accountType: string;
+  setAccountType: (type: string) => void;
 }
 
 function SignInMethodButton({
@@ -145,8 +147,6 @@ function AccountTypeDropdown({
 }
 
 function LoginTabContent(props: Readonly<LoginTabProps>) {
-  const [accountType, setAccountType] = useState('');
-
   return (
     <div className="space-y-6">
       {/* IMPROVED: Sign-In Method Selector */}
@@ -207,7 +207,7 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
             </p>
           </div>
 
-          <AccountTypeDropdown accountType={accountType} setAccountType={setAccountType} />
+          <AccountTypeDropdown accountType={props.accountType} setAccountType={props.setAccountType} />
 
           <div className="grid gap-3">
             <div>
@@ -385,6 +385,7 @@ function LoginPageContent() {
   const [selectedRole] = useState<ClubRole>('athlete');
   const [activeTab, setActiveTab] = useState<ActiveTab>('login');
   const [selectedMethod, setSelectedMethod] = useState<LoginMethod>('pin');
+  const [accountType, setAccountType] = useState('');
   const [announcements, setAnnouncements] = useState<LoginAnnouncement[]>([DEFAULT_ANNOUNCEMENT]);
   const [draftAnnouncement, setDraftAnnouncement] = useState('');
   const [announcementAuthorName, setAnnouncementAuthorName] = useState('');
@@ -549,10 +550,10 @@ function LoginPageContent() {
   }
 
   async function loginWithPin() {
-    const accountId = loginAccountId.trim();
-    const pin = loginPin.trim();
+    const acctId = loginAccountId.trim();
+    const pinCode = loginPin.trim();
 
-    if (!accountId || !pin) {
+    if (!acctId || !pinCode) {
       setLoginError('Account ID and PIN are required.');
       return;
     }
@@ -564,7 +565,11 @@ function LoginPageContent() {
       const response = await fetch(`${apiBase()}/api/pilot/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ account_id: accountId, pin }),
+        body: JSON.stringify({ 
+          account_id: acctId, 
+          pin: pinCode,
+          account_type: accountType || undefined,
+        }),
       });
 
       const result = (await response.json().catch(() => ({ error: 'Login failed' }))) as {
@@ -601,6 +606,8 @@ function LoginPageContent() {
         authErrorMessage={authErrorMessage}
         selectedMethod={selectedMethod}
         setSelectedMethod={setSelectedMethod}
+        accountType={accountType}
+        setAccountType={setAccountType}
       />
     ),
     register: <RegisterTabContent />,
