@@ -58,6 +58,7 @@ export async function POST(request: NextRequest) {
 
     // Use the authenticated role from the database, never override it
     const finalRole = loginResult.principal.role;
+    const hasMasterShadowAccess = loginResult.principal.hasMasterShadowAccess || false;
 
     await writePilotAuditEvent({
       event_type: 'login',
@@ -66,7 +67,7 @@ export async function POST(request: NextRequest) {
       organization_id: loginResult.principal.organizationId,
       entity_type: 'account',
       entity_id: loginResult.principal.accountId,
-      details: { athlete_id: loginResult.principal.athleteId },
+      details: { athlete_id: loginResult.principal.athleteId, hasMasterShadowAccess },
     });
 
     const response = NextResponse.json({
@@ -75,6 +76,7 @@ export async function POST(request: NextRequest) {
       role: finalRole,
       organization_id: loginResult.principal.organizationId,
       athlete_id: loginResult.principal.athleteId,
+      has_master_shadow_access: hasMasterShadowAccess,
     });
 
     response.cookies.set(PILOT_SESSION_COOKIE, loginResult.token, {

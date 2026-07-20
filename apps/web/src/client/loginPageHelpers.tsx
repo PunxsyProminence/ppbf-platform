@@ -10,12 +10,17 @@ export function mapPilotLoginRoleToClubRole(role: string): ClubRole {
   return 'admin';
 }
 
-export function getPilotLoginRedirectPath(role: string): string {
+export function getPilotLoginRedirectPath(role: string, hasMasterShadowAccess?: boolean): string {
   if (role === 'platform_owner') {
     return '/admin/organizations';
   }
 
   if (role === 'organization_admin' || role === 'admin') {
+    return '/admin';
+  }
+
+  // Coaches with master shadow access get admin hub (organizational layer)
+  if (role === 'coach' && hasMasterShadowAccess) {
     return '/admin';
   }
 

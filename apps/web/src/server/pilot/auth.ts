@@ -12,6 +12,7 @@ export interface PilotPrincipal {
   athleteId: string | null;
   sessionToken: string;
   authProvider: 'ppbf_local' | 'microsoft';
+  hasMasterShadowAccess?: boolean;
 }
 
 interface AccountRow {
@@ -23,6 +24,7 @@ interface AccountRow {
   auth_provider: 'ppbf_local' | 'microsoft';
   pin_hash: string | null;
   active_flag: boolean;
+  has_master_shadow_access: boolean;
   organization_status: string | null;
 }
 
@@ -34,6 +36,7 @@ interface FederatedAccountRow {
   athlete_id: string | null;
   auth_provider: 'ppbf_local' | 'microsoft';
   active_flag: boolean;
+  has_master_shadow_access: boolean;
   organization_status: string | null;
 }
 
@@ -45,9 +48,10 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
        a.organization_id,
        a.is_platform_owner,
        a.athlete_id,
-      a.auth_provider,
+       a.auth_provider,
        a.pin_hash,
        a.active_flag,
+       a.has_master_shadow_access,
        o.status as organization_status
      from pilot.accounts a
      left join pilot.organizations o on o.organization_id = a.organization_id
@@ -88,6 +92,7 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
       athleteId: data.athlete_id,
       sessionToken: token,
       authProvider: data.auth_provider,
+      hasMasterShadowAccess: data.has_master_shadow_access,
     },
   };
 }
@@ -105,8 +110,9 @@ export async function loginWithMicrosoftEmail(emailOrUpn: string): Promise<{ pri
        a.organization_id,
        a.is_platform_owner,
        a.athlete_id,
-      a.auth_provider,
+       a.auth_provider,
        a.active_flag,
+       a.has_master_shadow_access,
        o.status as organization_status
      from pilot.accounts a
      left join pilot.organizations o on o.organization_id = a.organization_id
@@ -137,6 +143,7 @@ export async function loginWithMicrosoftEmail(emailOrUpn: string): Promise<{ pri
       athleteId: data.athlete_id,
       sessionToken: token,
       authProvider: data.auth_provider,
+      hasMasterShadowAccess: data.has_master_shadow_access,
     },
   };
 }
@@ -157,6 +164,7 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
     athlete_id: string | null;
     auth_provider: 'ppbf_local' | 'microsoft';
     active_flag: boolean;
+    has_master_shadow_access: boolean;
     organization_status: string | null;
   }>(
     `select
@@ -165,8 +173,9 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
        coalesce(st.organization_id, a.organization_id) as organization_id,
        a.is_platform_owner,
        a.athlete_id,
-      a.auth_provider,
+       a.auth_provider,
        a.active_flag,
+       a.has_master_shadow_access,
        o.status as organization_status
      from pilot.session_tokens st
      join pilot.accounts a on a.account_id = st.account_id
@@ -191,6 +200,7 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
     athleteId: row.athlete_id,
     sessionToken: token,
     authProvider: row.auth_provider,
+    hasMasterShadowAccess: row.has_master_shadow_access,
   };
 }
 

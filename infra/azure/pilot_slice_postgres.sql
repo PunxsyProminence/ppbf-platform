@@ -32,6 +32,7 @@ create table if not exists pilot.accounts (
   athlete_id text null,
   pin_hash text null,
   active_flag boolean not null default true,
+  has_master_shadow_access boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (organization_id, athlete_id)

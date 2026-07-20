@@ -545,6 +545,7 @@ function LoginPageContent() {
       const result = (await response.json().catch(() => ({ error: 'Login failed' }))) as {
         error?: string;
         role?: string;
+        has_master_shadow_access?: boolean;
       };
 
       if (response.status === 429) {
@@ -558,7 +559,7 @@ function LoginPageContent() {
       }
 
       createPersistentRoleSession(mapPilotLoginRoleToClubRole(result.role));
-      router.replace(getPilotLoginRedirectPath(result.role));
+      router.replace(getPilotLoginRedirectPath(result.role, result.has_master_shadow_access));
     } catch (error) {
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
