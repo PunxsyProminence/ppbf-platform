@@ -342,11 +342,6 @@ export async function retrieveShadowContext(params: {
     };
   }
 
-  // Use an organization-scoped cache key. Athlete context is separated by athlete ID.
-  const cacheKey = athleteId ? `${organizationId}:${athleteId}` : `${organizationId}:org`;
-  const cached = getCachedContext(cacheKey);
-  if (cached) return { context: cached, authorized: true };
-
   // Coaches can only see assigned athletes in their organization
   if (userRole === 'coach' && athleteId) {
     let isAssigned = false;
@@ -369,6 +364,11 @@ export async function retrieveShadowContext(params: {
       };
     }
   }
+
+  // Cache lookup occurs only after every role relationship check has passed.
+  const cacheKey = athleteId ? `${organizationId}:${athleteId}` : `${organizationId}:org`;
+  const cached = getCachedContext(cacheKey);
+  if (cached) return { context: cached, authorized: true };
 
   if (!athleteId) {
     const context = `Organization-scoped context for authenticated account ${userId} in organization ${organizationId}.`;
