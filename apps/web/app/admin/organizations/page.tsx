@@ -55,7 +55,7 @@ export default function SetupWizard() {
   useEffect(() => {
     void (async () => {
       try {
-        const response = await fetch('/api/pilot/auth/verify', {
+        const response = await fetch('/api/pilot/auth/session', {
           method: 'GET',
           credentials: 'include',
         });
@@ -65,8 +65,10 @@ export default function SetupWizard() {
           return;
         }
 
-        const data = (await response.json()) as { isMicrosoftSession?: boolean; role?: string };
-        setIsMicrosoftSession(data.isMicrosoftSession ?? false);
+        const data = (await response.json()) as { authProvider?: string; role?: string };
+        // Check if authenticated via Microsoft
+        const isMicrosoft = data.authProvider === 'microsoft';
+        setIsMicrosoftSession(isMicrosoft);
         setSessionRole(data.role ?? null);
       } catch {
         // Fall through
@@ -348,7 +350,7 @@ export default function SetupWizard() {
 
               <div>
                 <label className="block text-sm font-semibold text-[var(--black)]">PIN (4+ digits)</label>
-                <p className="mt-1 text-xs text-[var(--gray-dark)]">A secure PIN code you&apos;ll use to sign in. Example: 1234 or 9876</p>
+                <p className="mt-1 text-xs text-[var(--gray-dark)]">A secure PIN code you&apos;ll use to sign in. Example: 5832 or 2947</p>
                 <input
                   type="password"
                   value={adminPin}

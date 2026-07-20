@@ -58,8 +58,6 @@ interface LoginTabProps {
   authErrorMessage: string;
   selectedMethod: LoginMethod;
   setSelectedMethod: (method: LoginMethod) => void;
-  accountType: string;
-  setAccountType: (type: string) => void;
 }
 
 function SignInMethodButton({
@@ -96,53 +94,6 @@ function SignInMethodButton({
         {isActive && <span className="text-xl">✓</span>}
       </div>
     </button>
-  );
-}
-
-function AccountTypeDropdown({
-  accountType,
-  setAccountType,
-}: {
-  accountType: string;
-  setAccountType: (type: string) => void;
-}) {
-  const accountTypes = [
-    { value: 'coach', label: '👨‍🏫 Coach', description: 'Training coach' },
-    { value: 'athlete', label: '🥊 Athlete', description: 'Member athlete' },
-    { value: 'parent', label: '👨‍👧 Parent', description: 'Parent/guardian' },
-    { value: 'admin', label: '⚙️ Administrator', description: 'System admin' },
-  ];
-
-  return (
-    <div className="space-y-2">
-      <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]">
-        Account Type
-      </label>
-      <select
-        value={accountType}
-        onChange={(e) => setAccountType(e.target.value)}
-        className="w-full min-h-[48px] rounded-xl border border-[rgba(0,0,0,0.14)] bg-white px-4 py-3 text-sm font-semibold text-[var(--black)] outline-none transition appearance-none cursor-pointer focus:border-[var(--red-primary)] focus:ring-2 focus:ring-[rgba(184,59,52,0.15)]"
-        style={{
-          backgroundImage:
-            "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23333' d='M6 9L1 4h10z'/%3E%3C/svg%3E\")",
-          backgroundRepeat: 'no-repeat',
-          backgroundPosition: 'right 1rem center',
-          paddingRight: '2.5rem',
-        }}
-      >
-        <option value="">Select account type...</option>
-        {accountTypes.map(({ value, label }) => (
-          <option key={value} value={value}>
-            {label}
-          </option>
-        ))}
-      </select>
-      {accountType && (
-        <p className="text-[11px] text-[var(--gray-medium)] italic">
-          {accountTypes.find((t) => t.value === accountType)?.description}
-        </p>
-      )}
-    </div>
   );
 }
 
@@ -199,15 +150,19 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
 
       {/* PIN Sign-In Method */}
       {props.selectedMethod === 'pin' && (
-        <div className="grid gap-4 rounded-[24px] border-2 border-[var(--red-primary)] bg-white p-6 shadow-[var(--shadow-lg)]">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void props.loginWithPin();
+          }}
+          className="grid gap-4 rounded-[24px] border-2 border-[var(--red-primary)] bg-white p-6 shadow-[var(--shadow-lg)]"
+        >
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">Account PIN Sign In</p>
             <p className="mt-2 text-sm text-[var(--gray-dark)] leading-relaxed">
               Enter your Account ID and PIN. Ask your coach or admin if you don&apos;t have one.
             </p>
           </div>
-
-          <AccountTypeDropdown accountType={props.accountType} setAccountType={props.setAccountType} />
 
           <div className="grid gap-3">
             <div>
@@ -219,14 +174,15 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
                 type="text"
                 value={props.loginAccountId}
                 onChange={(event) => props.setLoginAccountId(event.target.value)}
-                placeholder={props.accountType === 'coach' ? 'coach-001' : props.accountType === 'athlete' ? 'ath-001' : 'admin-001'}
+                placeholder="account-001"
+                autoComplete="username"
                 className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] bg-white px-4 text-[var(--black)] outline-none transition placeholder:text-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:ring-2 focus:ring-[rgba(184,59,52,0.15)]"
               />
             </div>
 
             <div>
               <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="login-pin">
-                PIN (4-8 digits)
+                PIN (4+ digits)
               </label>
               <input
                 id="login-pin"
@@ -235,20 +191,20 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
                 value={props.loginPin}
                 onChange={(event) => props.setLoginPin(event.target.value)}
                 placeholder="••••"
+                autoComplete="current-password"
                 className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] bg-white px-4 text-[var(--black)] outline-none transition placeholder:text-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:ring-2 focus:ring-[rgba(184,59,52,0.15)]"
               />
             </div>
 
             {props.loginError && (
-              <div className="rounded-lg border border-[var(--red-primary)] bg-[rgba(184,59,52,0.05)] p-3">
+              <div className="rounded-lg border border-[var(--red-primary)] bg-[rgba(184,59,52,0.05)] p-3" role="alert">
                 <p className="text-sm text-[var(--red-primary)]">❌ {props.loginError}</p>
               </div>
             )}
 
             <button
-              type="button"
+              type="submit"
               disabled={props.loginBusy || !props.loginAccountId.trim() || !props.loginPin.trim()}
-              onClick={() => void props.loginWithPin()}
               className="inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-6 text-sm font-black uppercase tracking-[0.18em] text-white transition hover:bg-[var(--red-highlight)] hover:border-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50 disabled:border-[rgba(0,0,0,0.14)] disabled:bg-[var(--gray-medium)] active:scale-[0.98]"
             >
               {props.loginBusy ? (
@@ -264,7 +220,7 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
               )}
             </button>
           </div>
-        </div>
+        </form>
       )}
 
       {/* Announcements Section */}
@@ -385,7 +341,6 @@ function LoginPageContent() {
   const [selectedRole] = useState<ClubRole>('athlete');
   const [activeTab, setActiveTab] = useState<ActiveTab>('login');
   const [selectedMethod, setSelectedMethod] = useState<LoginMethod>('pin');
-  const [accountType, setAccountType] = useState('');
   const [announcements, setAnnouncements] = useState<LoginAnnouncement[]>([DEFAULT_ANNOUNCEMENT]);
   const [draftAnnouncement, setDraftAnnouncement] = useState('');
   const [announcementAuthorName, setAnnouncementAuthorName] = useState('');
@@ -568,7 +523,6 @@ function LoginPageContent() {
         body: JSON.stringify({ 
           account_id: acctId, 
           pin: pinCode,
-          account_type: accountType || undefined,
         }),
       });
 
@@ -606,8 +560,6 @@ function LoginPageContent() {
         authErrorMessage={authErrorMessage}
         selectedMethod={selectedMethod}
         setSelectedMethod={setSelectedMethod}
-        accountType={accountType}
-        setAccountType={setAccountType}
       />
     ),
     register: <RegisterTabContent />,
