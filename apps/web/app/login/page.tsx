@@ -34,7 +34,7 @@ const DEFAULT_ANNOUNCEMENT: LoginAnnouncement = {
 
 function AnnouncementCard({ item }: Readonly<{ item: LoginAnnouncement }>) {
   return (
-    <article className="border border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-2">
+    <article className="rounded-2xl border border-[rgba(0,0,0,0.12)] bg-white px-4 py-3 shadow-[var(--shadow-sm)]">
       <p className="text-sm leading-6 text-[var(--black)]">{item.message}</p>
       <p className="mt-2 text-[11px] font-mono uppercase tracking-[0.08em] text-[var(--gray-medium)]">
         By {item.authorName} ({item.authorRole}) - {item.createdAt}
@@ -58,73 +58,73 @@ interface LoginTabProps {
 
 function LoginTabContent(props: Readonly<LoginTabProps>) {
   return (
-    <>
-      <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
+    <div className="space-y-6">
+      <div className="grid gap-4 rounded-[24px] border border-[rgba(0,0,0,0.14)] bg-white p-5 shadow-[var(--shadow-md)]">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">Platform Sign In</p>
+
+        <button
+          type="button"
+          onClick={props.signInWithMicrosoft}
+          className="inline-flex min-h-[48px] w-full items-center justify-center rounded-xl border border-[rgba(0,0,0,0.14)] bg-[var(--gray-dark)] px-4 text-sm font-black uppercase tracking-[0.18em] text-[var(--white)] transition hover:bg-[var(--black)]"
+        >
+          Sign In With Microsoft
+        </button>
+
+        <div className="flex items-center gap-3">
+          <span className="h-px flex-1 bg-[rgba(0,0,0,0.14)]" />
+          <span className="text-[11px] font-mono uppercase tracking-[0.28em] text-[var(--gray-medium)]">Or use PIN</span>
+          <span className="h-px flex-1 bg-[rgba(0,0,0,0.14)]" />
+        </div>
+
+        <div className="grid gap-3">
+          <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="login-account-id">
+            Account ID
+          </label>
+          <input
+            id="login-account-id"
+            type="text"
+            value={props.loginAccountId}
+            onChange={(event) => props.setLoginAccountId(event.target.value)}
+            placeholder="admin-account-id"
+            className="min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] bg-white px-4 text-[var(--black)] outline-none transition placeholder:text-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:ring-2 focus:ring-[rgba(184,59,52,0.15)]"
+          />
+
+          <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="login-pin">
+            PIN
+          </label>
+          <input
+            id="login-pin"
+            type="password"
+            inputMode="numeric"
+            value={props.loginPin}
+            onChange={(event) => props.setLoginPin(event.target.value)}
+            placeholder="Enter PIN"
+            className="min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] bg-white px-4 text-[var(--black)] outline-none transition placeholder:text-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:ring-2 focus:ring-[rgba(184,59,52,0.15)]"
+          />
+
+          {props.loginError ? <p className="text-sm text-[var(--red-primary)]">{props.loginError}</p> : null}
+
+          <button
+            type="button"
+            disabled={props.loginBusy}
+            onClick={() => void props.loginWithPin()}
+            className="inline-flex min-h-[48px] w-full items-center justify-center rounded-xl border border-[rgba(0,0,0,0.14)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.18em] text-[var(--white)] transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {props.loginBusy ? 'Signing In...' : 'Sign In With Account PIN'}
+          </button>
+        </div>
+      </div>
+
+      <div className="rounded-[24px] border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-light)] p-4 shadow-[var(--shadow-sm)]">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">Announcements</p>
+        <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">Updates for members, coaches, and administrators live here. Login stays the primary action.</p>
         <div className="mt-3 grid gap-3">
           {props.announcements.slice(0, 3).map((item) => (
             <AnnouncementCard key={item.id} item={item} />
           ))}
         </div>
       </div>
-
-      <p className="text-sm leading-6 text-[var(--gray-dark)]">Sign in with Microsoft to access the platform admin tools.</p>
-
-      {props.authErrorMessage ? (
-        <p className="border border-[var(--red-primary)] bg-[var(--canvas-tan-light)] px-3 py-2 text-sm text-[var(--red-primary)]">
-          {props.authErrorMessage}
-        </p>
-      ) : null}
-
-      <button
-        type="button"
-        onClick={props.signInWithMicrosoft}
-        className="inline-flex w-full items-center justify-center border-2 border-[var(--black)] bg-[var(--gray-dark)] px-4 py-3 text-sm font-black uppercase tracking-[0.2em] text-[var(--white)] transition hover:bg-[var(--black)]"
-      >
-        Sign In With Microsoft
-      </button>
-
-      <div className="border-t-2 border-[var(--black)] pt-5">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">Account PIN Login</p>
-        <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">Use your existing admin, coach, athlete, or parent account ID and PIN.</p>
-      </div>
-
-      <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="login-account-id">
-        Account ID
-      </label>
-      <input
-        id="login-account-id"
-        type="text"
-        value={props.loginAccountId}
-        onChange={(event) => props.setLoginAccountId(event.target.value)}
-        placeholder="admin-account-id"
-        className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
-      />
-
-      <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="login-pin">
-        PIN
-      </label>
-      <input
-        id="login-pin"
-        type="password"
-        inputMode="numeric"
-        value={props.loginPin}
-        onChange={(event) => props.setLoginPin(event.target.value)}
-        placeholder="Enter PIN"
-        className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
-      />
-
-      {props.loginError ? <p className="text-sm text-[var(--red-primary)]">{props.loginError}</p> : null}
-
-      <button
-        type="button"
-        disabled={props.loginBusy}
-        onClick={() => void props.loginWithPin()}
-        className="inline-flex w-full items-center justify-center border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 py-3 text-sm font-black uppercase tracking-[0.2em] text-[var(--white)] transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-70"
-      >
-        {props.loginBusy ? 'Signing In...' : 'Sign In With Account PIN'}
-      </button>
-    </>
+    </div>
   );
 }
 
@@ -466,14 +466,14 @@ function LoginPageContent() {
 
   return (
     <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
-      <div className="mx-auto grid min-h-screen w-full max-w-4xl place-items-center px-6 py-10 lg:px-10">
-        <section className="w-full max-w-xl border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] shadow-[var(--shadow-lg)]">
-          <div className="border-b-[3px] border-[var(--black)] bg-[var(--canvas-tan-dark)] px-8 py-8">
+      <div className="mx-auto grid min-h-screen w-full max-w-5xl place-items-center px-6 py-10 lg:px-10">
+        <section className="w-full max-w-2xl overflow-hidden rounded-[28px] border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-light)] shadow-[var(--shadow-lg)]">
+          <div className="border-b border-[rgba(0,0,0,0.14)] bg-[linear-gradient(135deg,var(--canvas-tan-dark),var(--canvas-tan-light))] px-8 py-8">
             <div className="flex items-center justify-between gap-3">
               <p className="text-[10px] font-mono uppercase tracking-[0.4em] text-[var(--gray-dark)]">Member Access</p>
               <Link
                 href="/public"
-                className="inline-flex min-h-[34px] items-center justify-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-[10px] font-mono font-bold uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]"
+                className="inline-flex min-h-[34px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-3 text-[10px] font-mono font-bold uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]"
               >
                 Public Page
               </Link>
@@ -484,8 +484,8 @@ function LoginPageContent() {
             </p>
           </div>
 
-          <div className="border-b-2 border-[var(--black)] bg-[var(--canvas-tan)] px-8 py-6">
-            <div className="grid grid-cols-3 gap-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-2">
+          <div className="border-b border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan)] px-8 py-6">
+            <div className="grid grid-cols-3 gap-3 rounded-2xl border border-[rgba(0,0,0,0.12)] bg-white p-2 shadow-[var(--shadow-sm)]">
               <button
                 type="button"
                 onClick={() => setActiveTab('login')}

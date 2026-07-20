@@ -1,6 +1,6 @@
 # SHADOW System Audit Report
 **Date:** July 17, 2026  
-**System:** SHADOW (Specialist Health Advice with Doctrine-Enforced Guardrails for Observational Learning)  
+**System:** SHADOW (Systemic Holistic Analytics and Diagnostic Oversight Wing)  
 **Status:** Pre-Production Readiness Assessment  
 **Audience:** Executive Review / Compliance / Security
 

@@ -62,6 +62,7 @@ interface CapabilityRepository {
 }
 
 const STORAGE_KEY = 'ppbf-admin-capabilities-v1';
+const GYM_CAPABILITY_STORAGE_KEY = 'ppbf-gym-capability-switchboard-v1';
 const OWNER_OPTIONS = ['Operations', 'Program Team', 'Board Office', 'Safety Office', 'Admin Control'];
 const CATEGORY_OPTIONS = ['Core Platform', 'Routing & Development', 'Safety & Compliance', 'Program Operations'];
 const ROLE_OPTIONS: RoleName[] = [
@@ -291,6 +292,18 @@ export default function AdminCapabilitiesPage() {
   const [eventTraces, setEventTraces] = useState<EventTrace[]>([]);
   const [showTelemetry, setShowTelemetry] = useState(false);
   const [showIntegrationStubs, setShowIntegrationStubs] = useState(false);
+  const [gymCapabilityAccess, setGymCapabilityAccess] = useState<Record<string, boolean>>(() => {
+    if (typeof window === 'undefined') {
+      return {};
+    }
+
+    try {
+      const raw = window.localStorage.getItem(GYM_CAPABILITY_STORAGE_KEY);
+      return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    } catch {
+      return {};
+    }
+  });
 
   function logTrace(action: string, detail: string) {
     const trace: EventTrace = {
@@ -322,6 +335,14 @@ export default function AdminCapabilitiesPage() {
   useEffect(() => {
     localCapabilityRepository.save(capabilities);
   }, [capabilities]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    window.localStorage.setItem(GYM_CAPABILITY_STORAGE_KEY, JSON.stringify(gymCapabilityAccess));
+  }, [gymCapabilityAccess]);
 
   const categoryOptions = useMemo(
     () => ['ALL', ...new Set([...CATEGORY_OPTIONS, ...capabilities.map((item) => item.group)])],
@@ -396,6 +417,11 @@ export default function AdminCapabilitiesPage() {
       .slice(0, 6);
   }, [capabilities]);
 
+  const switchboardCapabilities = useMemo(
+    () => capabilities.filter((item) => item.status !== 'ARCHIVED').slice(0, 6),
+    [capabilities],
+  );
+
   const missingAssignments = useMemo(() => capabilities.filter((item) => item.assignedRoles.length === 0), [capabilities]);
   const pendingReview = useMemo(() => capabilities.filter((item) => item.reviewNeeded || item.status === 'DRAFT'), [capabilities]);
   const draftCapabilities = useMemo(() => capabilities.filter((item) => item.status === 'DRAFT'), [capabilities]);
@@ -448,6 +474,14 @@ export default function AdminCapabilitiesPage() {
       };
     });
     logTrace('capability assigned', `Capability #${id} role toggled: ${role}`);
+  }
+
+  function toggleGymCapabilityAccess(capabilityId: string) {
+    setGymCapabilityAccess((current) => ({
+      ...current,
+      [capabilityId]: !current[capabilityId],
+    }));
+    logTrace('gym capability toggled', `${capabilityId} -> ${gymCapabilityAccess[capabilityId] ? 'OFF' : 'ON'}`);
   }
 
   function exportCapabilities() {
@@ -586,6 +620,12 @@ export default function AdminCapabilitiesPage() {
               >
                 COMPLIANCE CENTER (PLANNED)
               </Link>
+              <Link
+                href="/admin/organizations"
+                className="inline-flex h-11 items-center border border-[#8b4444] bg-[#1a1a1a] px-4 text-[14px] font-bold text-[#f2e7da] transition hover:bg-[#2a1a1a]"
+              >
+                ORGANIZATION PROVISIONING
+              </Link>
               <button
                 type="button"
                 onClick={exportCapabilities}
@@ -719,6 +759,80 @@ export default function AdminCapabilitiesPage() {
                   <Link href="/source-control/publication-workflow" className="inline-flex min-h-[44px] items-center border border-[#8b4444] bg-[#1a1a1a] px-3 text-[13px] font-bold text-[#f2e7da] transition hover:bg-[#2a1a1a]">
                     Automated Publication Workflow Surface
                   </Link>
+                </div>
+              </article>
+
+              <article className="border border-[#8b4444] bg-[#141414] p-6">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-[20px] font-bold text-[#f2e7da]">Capability On/Off Switchboard</h2>
+                    <p className="mt-2 text-[14px] leading-6 text-[#bfb3a6]">
+                      Turn platform capabilities on or off, then mirror the same access for gym admins you hand capabilities to.
+                    </p>
+                  </div>
+                  <Link
+                    href="/admin/organizations"
+                    className="inline-flex h-11 items-center border border-[#8b4444] bg-[#1a1a1a] px-4 text-[13px] font-bold text-[#d4a574] transition hover:bg-[#2a1a1a]"
+                  >
+                    Open Gym Admin Provisioning
+                  </Link>
+                </div>
+
+                <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                  <div className="space-y-3">
+                    <p className="text-[14px] font-semibold uppercase tracking-[0.12em] text-[#d4a574]">Platform Control</p>
+                    {switchboardCapabilities.map((capability) => {
+                      const isOn = capability.status === 'ACTIVE';
+                      return (
+                        <div key={capability.id} className="flex items-center justify-between gap-3 border border-[#2d2d2d] bg-[#1a1a1a] px-4 py-3">
+                          <div>
+                            <p className="text-[16px] font-semibold text-[#f2e7da]">{capability.capabilityId} - {capability.name}</p>
+                            <p className="text-[13px] text-[#bfb3a6]">{capability.group} • {capability.status}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setCapabilityStatus(capability.id, isOn ? 'BLOCKED' : 'ACTIVE')}
+                            className={`inline-flex h-10 items-center rounded-full border px-4 text-[12px] font-bold uppercase tracking-[0.12em] transition ${
+                              isOn
+                                ? 'border-[#8b4444] bg-[#5a2a2a] text-[#f2e7da]'
+                                : 'border-[#2d2d2d] bg-[#111111] text-[#cfbfae] hover:border-[#8b4444]'
+                            }`}
+                          >
+                            {isOn ? 'On' : 'Off'}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="space-y-3">
+                    <p className="text-[14px] font-semibold uppercase tracking-[0.12em] text-[#d4a574]">Gym Admin Access</p>
+                    <p className="text-[14px] leading-6 text-[#bfb3a6]">
+                      Grant a gym admin the same capability access, then let them flip it on or off inside their organization.
+                    </p>
+                    {switchboardCapabilities.map((capability) => {
+                      const allowed = !!gymCapabilityAccess[capability.capabilityId];
+                      return (
+                        <div key={capability.capabilityId} className="flex items-center justify-between gap-3 border border-[#2d2d2d] bg-[#1a1a1a] px-4 py-3">
+                          <div>
+                            <p className="text-[16px] font-semibold text-[#f2e7da]">{capability.capabilityId}</p>
+                            <p className="text-[13px] text-[#bfb3a6]">Gym admins can {allowed ? 'toggle this capability' : 'not yet toggle this capability'}.</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => toggleGymCapabilityAccess(capability.capabilityId)}
+                            className={`inline-flex h-10 items-center rounded-full border px-4 text-[12px] font-bold uppercase tracking-[0.12em] transition ${
+                              allowed
+                                ? 'border-[#8b4444] bg-[#5a2a2a] text-[#f2e7da]'
+                                : 'border-[#2d2d2d] bg-[#111111] text-[#cfbfae] hover:border-[#8b4444]'
+                            }`}
+                          >
+                            {allowed ? 'Enabled' : 'Disabled'}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </article>
 

@@ -1,9 +1,26 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 
 type FeedbackKind = 'success' | 'error' | 'info';
+
+type CapabilityToggle = {
+  id: string;
+  label: string;
+  description: string;
+};
+
+const GYM_CAPABILITY_STORAGE_KEY = 'ppbf-org-gym-capabilities-v1';
+
+const gymCapabilityCatalog: CapabilityToggle[] = [
+  { id: 'attendance', label: 'Attendance Tracking', description: 'Enable check-in and check-out visibility for the gym.' },
+  { id: 'coach-notes', label: 'Coach Notes', description: 'Allow coaches to record private notes and follow-ups.' },
+  { id: 'progression', label: 'Progression Visibility', description: 'Show progression summaries to gym admins.' },
+  { id: 'announcements', label: 'Gym Announcements', description: 'Publish gym-level announcements for members.' },
+  { id: 'sparring', label: 'Sparring Review', description: 'Open sparring review and safety review tooling.' },
+  { id: 'publication', label: 'Publication Controls', description: 'Toggle whether content can be published from the gym.' },
+];
 
 async function postJson(path: string, body: Record<string, unknown>) {
   const response = await fetch(path, {
@@ -43,13 +60,37 @@ export default function AdminOrganizationsPage() {
   const [membershipActiveFlag, setMembershipActiveFlag] = useState<'active' | 'inactive'>('active');
   const [feedback, setFeedback] = useState<{ kind: FeedbackKind; text: string } | null>(null);
   const [activeAction, setActiveAction] = useState<string | null>(null);
-
-    let feedbackTextClass = 'text-[var(--gray-dark)]';
-    if (feedback?.kind === 'error') {
-      feedbackTextClass = 'text-[var(--red-primary)]';
-    } else if (feedback?.kind === 'success') {
-      feedbackTextClass = 'text-[var(--black)]';
+  const [gymCapabilityAccess, setGymCapabilityAccess] = useState<Record<string, boolean>>(() => {
+    if (typeof window === 'undefined') {
+      return {};
     }
+
+    try {
+      const raw = window.localStorage.getItem(GYM_CAPABILITY_STORAGE_KEY);
+      if (!raw) {
+        return {};
+      }
+
+      return JSON.parse(raw) as Record<string, boolean>;
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    window.localStorage.setItem(GYM_CAPABILITY_STORAGE_KEY, JSON.stringify(gymCapabilityAccess));
+  }, [gymCapabilityAccess]);
+
+  let feedbackTextClass = 'text-[var(--gray-dark)]';
+  if (feedback?.kind === 'error') {
+    feedbackTextClass = 'text-[var(--red-primary)]';
+  } else if (feedback?.kind === 'success') {
+    feedbackTextClass = 'text-[var(--black)]';
+  }
 
   const canCreateOrganization = organizationId.trim() && organizationName.trim();
   const canUpdateOrganizationStatus = statusOrgId.trim();
@@ -59,6 +100,10 @@ export default function AdminOrganizationsPage() {
   const canTransferAdmin = transferOrgId.trim() && transferFromAccountId.trim() && transferToAccountId.trim();
   const canManageMembership = membershipOrgId.trim() && membershipAccountId.trim();
   const isBusy = activeAction !== null;
+  const capabilitySummary = useMemo(
+    () => gymCapabilityCatalog.map((capability) => ({ ...capability, enabled: !!gymCapabilityAccess[capability.id] })),
+    [gymCapabilityAccess],
+  );
 
   async function runAction(actionName: string, action: () => Promise<string>) {
     setActiveAction(actionName);
@@ -67,7 +112,12 @@ export default function AdminOrganizationsPage() {
       const successMessage = await action();
       setFeedback({ kind: 'success', text: successMessage });
     } catch (error) {
-      setFeedback({ kind: 'error', text: error instanceof Error ? error.message : `${actionName} failed` });
+      let errorMessage = `${actionName} failed`;
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+
+      setFeedback({ kind: 'error', text: errorMessage });
     } finally {
       setActiveAction(null);
     }
@@ -98,24 +148,28 @@ export default function AdminOrganizationsPage() {
   }
 
   async function createUser() {
+    const athleteId = createUserRole === 'athlete' ? createUserAthleteId : undefined;
+
     await postJson('/api/pilot/platform/users/create', {
       organization_id: createUserOrgId,
       account_id: createUserAccountId,
       role: createUserRole,
       pin: createUserPin,
-      athlete_id: createUserRole === 'athlete' ? createUserAthleteId : undefined,
+      athlete_id: athleteId,
     });
     return `Created/updated ${createUserRole} account ${createUserAccountId} in ${createUserOrgId}`;
   }
 
   async function updateUserStatus() {
     const activeFlag = statusActiveFlag === 'active';
+    const actionLabel = activeFlag ? 'Reactivated' : 'Disabled';
+
     await postJson('/api/pilot/platform/users/status', {
       organization_id: statusAccountOrgId,
       account_id: statusAccountId,
       active_flag: activeFlag,
     });
-    return `${activeFlag ? 'Reactivated' : 'Disabled'} account ${statusAccountId} in ${statusAccountOrgId}`;
+    return `${actionLabel} account ${statusAccountId} in ${statusAccountOrgId}`;
   }
 
   async function transferAdmin() {
@@ -139,74 +193,103 @@ export default function AdminOrganizationsPage() {
     return `Updated membership for ${membershipAccountId} in ${membershipOrgId}`;
   }
 
+  function toggleGymCapability(capabilityId: string) {
+    setGymCapabilityAccess((current) => ({
+      ...current,
+      [capabilityId]: !current[capabilityId],
+    }));
+  }
+
+  function renderFieldLabel(text: string, htmlFor: string) {
+    return (
+      <label className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--gray-dark)]" htmlFor={htmlFor}>
+        {text}
+      </label>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
-      <div className="mx-auto w-full max-w-4xl space-y-6 px-6 py-8 lg:px-10">
-        <header className="space-y-2 border-b-[3px] border-[var(--black)] pb-5">
+      <div className="mx-auto w-full max-w-6xl space-y-6 px-6 py-8 lg:px-10">
+        <header className="space-y-4 rounded-[28px] border border-[rgba(0,0,0,0.14)] bg-[linear-gradient(135deg,var(--canvas-tan-light),#ffffff)] p-6 shadow-[var(--shadow-md)]">
           <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--red-primary)]">Pilot Platform Controls</p>
           <h1 className="font-display text-4xl font-black">Organization Provisioning</h1>
           <p className="text-sm text-[var(--gray-dark)]">
-            Live wiring for organization creation, status updates, and admin assignment.
+            Live wiring for organization creation, status updates, admin assignment, and gym capability access.
           </p>
+          <div className="flex flex-wrap gap-2">
+            <a href="#create-organization" className="rounded-full border border-[rgba(0,0,0,0.12)] bg-white px-4 py-2 text-xs font-bold uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]">
+              Create Org
+            </a>
+            <a href="#gym-capabilities" className="rounded-full border border-[rgba(0,0,0,0.12)] bg-white px-4 py-2 text-xs font-bold uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]">
+              Gym Capabilities
+            </a>
+            <a href="#membership-tools" className="rounded-full border border-[rgba(0,0,0,0.12)] bg-white px-4 py-2 text-xs font-bold uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]">
+              Membership Tools
+            </a>
+          </div>
         </header>
 
-        <section className="space-y-2 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+        <section className="rounded-[24px] border border-[rgba(0,0,0,0.14)] bg-white/80 p-5 shadow-[var(--shadow-sm)]">
           <h2 className="text-lg font-bold">Recommended Workflow</h2>
-          <ol className="list-decimal space-y-1 pl-5 text-sm">
-            <li>Create organization.</li>
-            <li>Create user account in that organization.</li>
-            <li>Assign or transfer admin role.</li>
-            <li>Use membership and status tools for lifecycle changes.</li>
+          <ol className="mt-3 grid gap-2 text-sm md:grid-cols-2">
+            <li><a href="#create-organization" className="font-semibold text-[var(--red-primary)] hover:underline">1. Create organization</a></li>
+            <li><a href="#create-user" className="font-semibold text-[var(--red-primary)] hover:underline">2. Create user account</a></li>
+            <li><a href="#assign-admin" className="font-semibold text-[var(--red-primary)] hover:underline">3. Assign or transfer admin role</a></li>
+            <li><a href="#gym-capabilities" className="font-semibold text-[var(--red-primary)] hover:underline">4. Set gym capability access</a></li>
           </ol>
-          <p className="text-xs text-[var(--gray-dark)]">
+          <p className="mt-3 text-xs text-[var(--gray-dark)]">
             This control panel currently supports create/update/status operations. Hard delete is not exposed here.
           </p>
         </section>
 
-        <section className="space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-          <h2 className="text-lg font-bold">Create Organization</h2>
-          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="organization-id-input">Organization ID</label>
+        <details id="create-organization" open className="overflow-hidden rounded-[24px] border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-light)] shadow-[var(--shadow-sm)]">
+          <summary className="cursor-pointer list-none px-5 py-4 text-lg font-bold">Create Organization</summary>
+          <div className="space-y-3 border-t border-[rgba(0,0,0,0.08)] p-5">
+          {renderFieldLabel('Organization ID', 'organization-id-input')}
           <input
             id="organization-id-input"
             value={organizationId}
             onChange={(event) => setOrganizationId(event.target.value)}
             placeholder="organization_id"
-            className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
+            className="h-11 w-full border border-[rgba(0,0,0,0.16)] bg-white px-3"
           />
-          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="organization-name-input">Organization Name</label>
+          {renderFieldLabel('Organization Name', 'organization-name-input')}
           <input
             id="organization-name-input"
             value={organizationName}
             onChange={(event) => setOrganizationName(event.target.value)}
             placeholder="organization_name"
-            className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
+            className="h-11 w-full border border-[rgba(0,0,0,0.16)] bg-white px-3"
           />
           <button
             type="button"
             disabled={!canCreateOrganization || isBusy}
             onClick={() => void runAction('Create Organization', createOrganization)}
-            className="h-11 border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[var(--white)] disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-11 rounded-full border border-[rgba(0,0,0,0.14)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[var(--white)] transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Create Organization
           </button>
-        </section>
+          </div>
+        </details>
 
-        <section className="space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-          <h2 className="text-lg font-bold">Update Organization Status</h2>
-          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="status-organization-id-input">Organization ID</label>
+        <details className="overflow-hidden rounded-[24px] border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-light)] shadow-[var(--shadow-sm)]">
+          <summary className="cursor-pointer list-none px-5 py-4 text-lg font-bold">Update Organization Status</summary>
+          <div className="space-y-3 border-t border-[rgba(0,0,0,0.08)] p-5">
+          {renderFieldLabel('Organization ID', 'status-organization-id-input')}
           <input
             id="status-organization-id-input"
             value={statusOrgId}
             onChange={(event) => setStatusOrgId(event.target.value)}
             placeholder="organization_id"
-            className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
+            className="h-11 w-full border border-[rgba(0,0,0,0.16)] bg-white px-3"
           />
-          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="status-select">Status</label>
+          {renderFieldLabel('Status', 'status-select')}
           <select
             id="status-select"
             value={status}
             onChange={(event) => setStatus(event.target.value as 'active' | 'inactive' | 'suspended' | 'pending')}
-            className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
+            className="h-11 w-full border border-[rgba(0,0,0,0.16)] bg-white px-3"
           >
             <option value="active">active</option>
             <option value="inactive">inactive</option>
@@ -217,64 +300,68 @@ export default function AdminOrganizationsPage() {
             type="button"
             disabled={!canUpdateOrganizationStatus || isBusy}
             onClick={() => void runAction('Update Organization Status', updateOrganizationStatus)}
-            className="h-11 border-2 border-[var(--black)] bg-[var(--canvas-tan-dark)] px-4 text-sm font-black uppercase tracking-[0.12em] disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-11 rounded-full border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-dark)] px-4 text-sm font-black uppercase tracking-[0.12em] transition hover:bg-[var(--canvas-tan)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Update Status
           </button>
-        </section>
+          </div>
+        </details>
 
-        <section className="space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-          <h2 className="text-lg font-bold">Assign Organization Admin</h2>
-          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="assign-account-id-input">Account ID</label>
+        <details id="assign-admin" className="overflow-hidden rounded-[24px] border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-light)] shadow-[var(--shadow-sm)]">
+          <summary className="cursor-pointer list-none px-5 py-4 text-lg font-bold">Assign Organization Admin</summary>
+          <div className="space-y-3 border-t border-[rgba(0,0,0,0.08)] p-5">
+          {renderFieldLabel('Account ID', 'assign-account-id-input')}
           <input
             id="assign-account-id-input"
             value={assignAccountId}
             onChange={(event) => setAssignAccountId(event.target.value)}
             placeholder="account_id"
-            className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
+            className="h-11 w-full border border-[rgba(0,0,0,0.16)] bg-white px-3"
           />
-          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="assign-organization-id-input">Organization ID</label>
+          {renderFieldLabel('Organization ID', 'assign-organization-id-input')}
           <input
             id="assign-organization-id-input"
             value={assignOrgId}
             onChange={(event) => setAssignOrgId(event.target.value)}
             placeholder="organization_id"
-            className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
+            className="h-11 w-full border border-[rgba(0,0,0,0.16)] bg-white px-3"
           />
           <button
             type="button"
             disabled={!canAssignAdmin || isBusy}
             onClick={() => void runAction('Assign Organization Admin', assignAdmin)}
-            className="h-11 border-2 border-[var(--black)] bg-[var(--canvas-tan-dark)] px-4 text-sm font-black uppercase tracking-[0.12em] disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-11 rounded-full border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-dark)] px-4 text-sm font-black uppercase tracking-[0.12em] transition hover:bg-[var(--canvas-tan)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Assign Admin
           </button>
-        </section>
+          </div>
+        </details>
 
-        <section className="space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-          <h2 className="text-lg font-bold">Create User (PlatformOwner)</h2>
-          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="create-user-organization-id-input">Organization ID</label>
+        <details id="create-user" className="overflow-hidden rounded-[24px] border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-light)] shadow-[var(--shadow-sm)]">
+          <summary className="cursor-pointer list-none px-5 py-4 text-lg font-bold">Create User (PlatformOwner)</summary>
+          <div className="space-y-3 border-t border-[rgba(0,0,0,0.08)] p-5">
+          {renderFieldLabel('Organization ID', 'create-user-organization-id-input')}
           <input
             id="create-user-organization-id-input"
             value={createUserOrgId}
             onChange={(event) => setCreateUserOrgId(event.target.value)}
             placeholder="organization_id"
-            className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
+            className="h-11 w-full border border-[rgba(0,0,0,0.16)] bg-white px-3"
           />
-          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="create-user-account-id-input">Account ID</label>
+          {renderFieldLabel('Account ID', 'create-user-account-id-input')}
           <input
             id="create-user-account-id-input"
             value={createUserAccountId}
             onChange={(event) => setCreateUserAccountId(event.target.value)}
             placeholder="account_id"
-            className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
+            className="h-11 w-full border border-[rgba(0,0,0,0.16)] bg-white px-3"
           />
-          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="create-user-role-select">Role</label>
+          {renderFieldLabel('Role', 'create-user-role-select')}
           <select
             id="create-user-role-select"
             value={createUserRole}
             onChange={(event) => setCreateUserRole(event.target.value as 'organization_admin' | 'coach' | 'athlete' | 'parent')}
-            className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
+            className="h-11 w-full border border-[rgba(0,0,0,0.16)] bg-white px-3"
           >
             <option value="organization_admin">organization_admin</option>
             <option value="coach">coach</option>
@@ -283,59 +370,61 @@ export default function AdminOrganizationsPage() {
           </select>
           {createUserRole === 'athlete' ? (
             <>
-              <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="create-user-athlete-id-input">Athlete ID</label>
+              {renderFieldLabel('Athlete ID', 'create-user-athlete-id-input')}
               <input
                 id="create-user-athlete-id-input"
                 value={createUserAthleteId}
                 onChange={(event) => setCreateUserAthleteId(event.target.value)}
                 placeholder="athlete_id (required for athlete role)"
-                className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
+                className="h-11 w-full border border-[rgba(0,0,0,0.16)] bg-white px-3"
               />
             </>
           ) : null}
-          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="create-user-pin-input">Initial PIN</label>
+          {renderFieldLabel('Initial PIN', 'create-user-pin-input')}
           <input
             id="create-user-pin-input"
             value={createUserPin}
             onChange={(event) => setCreateUserPin(event.target.value)}
             placeholder="initial PIN"
             type="password"
-            className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
+            className="h-11 w-full border border-[rgba(0,0,0,0.16)] bg-white px-3"
           />
           <button
             type="button"
             disabled={!canCreateUser || isBusy}
             onClick={() => void runAction('Create User', createUser)}
-            className="h-11 border-2 border-[var(--black)] bg-[var(--canvas-tan-dark)] px-4 text-sm font-black uppercase tracking-[0.12em] disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-11 rounded-full border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-dark)] px-4 text-sm font-black uppercase tracking-[0.12em] transition hover:bg-[var(--canvas-tan)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Create User
           </button>
-        </section>
+          </div>
+        </details>
 
-        <section className="space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-          <h2 className="text-lg font-bold">Disable / Reactivate User</h2>
-          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="status-account-organization-id-input">Organization ID</label>
+        <details className="overflow-hidden rounded-[24px] border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-light)] shadow-[var(--shadow-sm)]">
+          <summary className="cursor-pointer list-none px-5 py-4 text-lg font-bold">Disable / Reactivate User</summary>
+          <div className="space-y-3 border-t border-[rgba(0,0,0,0.08)] p-5">
+          {renderFieldLabel('Organization ID', 'status-account-organization-id-input')}
           <input
             id="status-account-organization-id-input"
             value={statusAccountOrgId}
             onChange={(event) => setStatusAccountOrgId(event.target.value)}
             placeholder="organization_id"
-            className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
+            className="h-11 w-full border border-[rgba(0,0,0,0.16)] bg-white px-3"
           />
-          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="status-account-id-input">Account ID</label>
+          {renderFieldLabel('Account ID', 'status-account-id-input')}
           <input
             id="status-account-id-input"
             value={statusAccountId}
             onChange={(event) => setStatusAccountId(event.target.value)}
             placeholder="account_id"
-            className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
+            className="h-11 w-full border border-[rgba(0,0,0,0.16)] bg-white px-3"
           />
-          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="status-active-flag-select">Status</label>
+          {renderFieldLabel('Status', 'status-active-flag-select')}
           <select
             id="status-active-flag-select"
             value={statusActiveFlag}
             onChange={(event) => setStatusActiveFlag(event.target.value as 'active' | 'inactive')}
-            className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
+            className="h-11 w-full border border-[rgba(0,0,0,0.16)] bg-white px-3"
           >
             <option value="active">active</option>
             <option value="inactive">inactive</option>
@@ -344,44 +433,46 @@ export default function AdminOrganizationsPage() {
             type="button"
             disabled={!canUpdateUserStatus || isBusy}
             onClick={() => void runAction('Update User Status', updateUserStatus)}
-            className="h-11 border-2 border-[var(--black)] bg-[var(--canvas-tan-dark)] px-4 text-sm font-black uppercase tracking-[0.12em] disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-11 rounded-full border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-dark)] px-4 text-sm font-black uppercase tracking-[0.12em] transition hover:bg-[var(--canvas-tan)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Update User Status
           </button>
-        </section>
+          </div>
+        </details>
 
-        <section className="space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-          <h2 className="text-lg font-bold">Transfer Organization Admin</h2>
-          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="transfer-organization-id-input">Organization ID</label>
+        <details className="overflow-hidden rounded-[24px] border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-light)] shadow-[var(--shadow-sm)]">
+          <summary className="cursor-pointer list-none px-5 py-4 text-lg font-bold">Transfer Organization Admin</summary>
+          <div className="space-y-3 border-t border-[rgba(0,0,0,0.08)] p-5">
+          {renderFieldLabel('Organization ID', 'transfer-organization-id-input')}
           <input
             id="transfer-organization-id-input"
             value={transferOrgId}
             onChange={(event) => setTransferOrgId(event.target.value)}
             placeholder="organization_id"
-            className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
+            className="h-11 w-full border border-[rgba(0,0,0,0.16)] bg-white px-3"
           />
-          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="transfer-from-account-id-input">From Account ID</label>
+          {renderFieldLabel('From Account ID', 'transfer-from-account-id-input')}
           <input
             id="transfer-from-account-id-input"
             value={transferFromAccountId}
             onChange={(event) => setTransferFromAccountId(event.target.value)}
             placeholder="from_account_id"
-            className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
+            className="h-11 w-full border border-[rgba(0,0,0,0.16)] bg-white px-3"
           />
-          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="transfer-to-account-id-input">To Account ID</label>
+          {renderFieldLabel('To Account ID', 'transfer-to-account-id-input')}
           <input
             id="transfer-to-account-id-input"
             value={transferToAccountId}
             onChange={(event) => setTransferToAccountId(event.target.value)}
             placeholder="to_account_id"
-            className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
+            className="h-11 w-full border border-[rgba(0,0,0,0.16)] bg-white px-3"
           />
-          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="transfer-demote-role-select">Demote Previous Admin To</label>
+          {renderFieldLabel('Demote Previous Admin To', 'transfer-demote-role-select')}
           <select
             id="transfer-demote-role-select"
             value={transferDemoteRole}
             onChange={(event) => setTransferDemoteRole(event.target.value as 'coach' | 'athlete' | 'parent' | 'volunteer' | 'staff' | 'admin')}
-            className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
+            className="h-11 w-full border border-[rgba(0,0,0,0.16)] bg-white px-3"
           >
             <option value="coach">coach</option>
             <option value="athlete">athlete</option>
@@ -394,36 +485,38 @@ export default function AdminOrganizationsPage() {
             type="button"
             disabled={!canTransferAdmin || isBusy}
             onClick={() => void runAction('Transfer Admin', transferAdmin)}
-            className="h-11 border-2 border-[var(--black)] bg-[var(--canvas-tan-dark)] px-4 text-sm font-black uppercase tracking-[0.12em] disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-11 rounded-full border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-dark)] px-4 text-sm font-black uppercase tracking-[0.12em] transition hover:bg-[var(--canvas-tan)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Transfer Admin
           </button>
-        </section>
+          </div>
+        </details>
 
-        <section className="space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-          <h2 className="text-lg font-bold">Manage Organization Membership</h2>
-          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="membership-organization-id-input">Organization ID</label>
+        <details id="membership-tools" className="overflow-hidden rounded-[24px] border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-light)] shadow-[var(--shadow-sm)]">
+          <summary className="cursor-pointer list-none px-5 py-4 text-lg font-bold">Manage Organization Membership</summary>
+          <div className="space-y-3 border-t border-[rgba(0,0,0,0.08)] p-5">
+          {renderFieldLabel('Organization ID', 'membership-organization-id-input')}
           <input
             id="membership-organization-id-input"
             value={membershipOrgId}
             onChange={(event) => setMembershipOrgId(event.target.value)}
             placeholder="organization_id"
-            className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
+            className="h-11 w-full border border-[rgba(0,0,0,0.16)] bg-white px-3"
           />
-          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="membership-account-id-input">Account ID</label>
+          {renderFieldLabel('Account ID', 'membership-account-id-input')}
           <input
             id="membership-account-id-input"
             value={membershipAccountId}
             onChange={(event) => setMembershipAccountId(event.target.value)}
             placeholder="account_id"
-            className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
+            className="h-11 w-full border border-[rgba(0,0,0,0.16)] bg-white px-3"
           />
-          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="membership-role-select">Role</label>
+          {renderFieldLabel('Role', 'membership-role-select')}
           <select
             id="membership-role-select"
             value={membershipRole}
             onChange={(event) => setMembershipRole(event.target.value as 'organization_admin' | 'admin' | 'coach' | 'athlete' | 'parent' | 'volunteer' | 'staff')}
-            className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
+            className="h-11 w-full border border-[rgba(0,0,0,0.16)] bg-white px-3"
           >
             <option value="organization_admin">organization_admin</option>
             <option value="admin">admin</option>
@@ -433,12 +526,12 @@ export default function AdminOrganizationsPage() {
             <option value="volunteer">volunteer</option>
             <option value="staff">staff</option>
           </select>
-          <label className="text-xs font-semibold uppercase tracking-[0.08em]" htmlFor="membership-status-select">Membership Status</label>
+          {renderFieldLabel('Membership Status', 'membership-status-select')}
           <select
             id="membership-status-select"
             value={membershipActiveFlag}
             onChange={(event) => setMembershipActiveFlag(event.target.value as 'active' | 'inactive')}
-            className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3"
+            className="h-11 w-full border border-[rgba(0,0,0,0.16)] bg-white px-3"
           >
             <option value="active">active</option>
             <option value="inactive">inactive</option>
@@ -447,10 +540,41 @@ export default function AdminOrganizationsPage() {
             type="button"
             disabled={!canManageMembership || isBusy}
             onClick={() => void runAction('Update Membership', manageMembership)}
-            className="h-11 border-2 border-[var(--black)] bg-[var(--canvas-tan-dark)] px-4 text-sm font-black uppercase tracking-[0.12em] disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-11 rounded-full border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-dark)] px-4 text-sm font-black uppercase tracking-[0.12em] transition hover:bg-[var(--canvas-tan)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Update Membership
           </button>
+          </div>
+        </details>
+
+        <section id="gym-capabilities" className="rounded-[24px] border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-sm)]">
+          <h2 className="text-lg font-bold">Gym Admin Capability Toggles</h2>
+          <p className="mt-2 text-sm text-[var(--gray-dark)]">
+            Give a gym admin a capability, then flip it on or off for that organization.
+          </p>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {capabilitySummary.map((capability) => {
+              const buttonLabel = capability.enabled ? 'Enabled for Gym Admin' : 'Disabled for Gym Admin';
+
+              return (
+                <article key={capability.id} className="rounded-2xl border border-[rgba(0,0,0,0.12)] bg-white p-4 shadow-[var(--shadow-sm)]">
+                  <p className="text-sm font-semibold uppercase tracking-[0.1em] text-[var(--red-primary)]">{capability.label}</p>
+                  <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">{capability.description}</p>
+                  <button
+                    type="button"
+                    onClick={() => toggleGymCapability(capability.id)}
+                    className={`mt-4 inline-flex min-h-[44px] items-center justify-center rounded-full border px-4 text-xs font-black uppercase tracking-[0.12em] transition ${
+                      capability.enabled
+                        ? 'border-[rgba(184,59,52,0.35)] bg-[var(--red-primary)] text-[var(--white)] hover:bg-[var(--red-highlight)]'
+                        : 'border-[rgba(0,0,0,0.12)] bg-white text-[var(--black)] hover:bg-[var(--canvas-tan)]'
+                    }`}
+                  >
+                    {buttonLabel}
+                  </button>
+                </article>
+              );
+            })}
+          </div>
         </section>
 
         {feedback ? (
