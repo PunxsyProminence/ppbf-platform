@@ -1,0 +1,6 @@
+goal_id,athlete_id,title,target_date,metric,status
+goal-001,ath-001,Master Throw Technique,2026-12-31,technical_proficiency,active
+goal-002,ath-001,Build Strength,2026-10-31,bench_press_1rm,active
+goal-003,ath-002,Improve Conditioning,2026-09-30,vo2_max,in_progress
+goal-004,ath-003,Reduce Recovery Time,2026-11-30,resting_hr,active
+goal-005,ath-004,Compete at District,2026-08-15,placement,pending

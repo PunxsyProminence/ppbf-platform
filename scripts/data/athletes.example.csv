@@ -1,0 +1,6 @@
+athlete_id,full_name,dob,weight_class,gym_status,emergency_contact,active_flag,coach_id
+ath-001,Alex Johnson,2008-03-15,middleweight,active,555-0101,true,coach-001
+ath-002,Jordan Lee,2007-07-22,heavyweight,active,555-0102,true,coach-001
+ath-003,Casey Martinez,2009-01-10,light-heavyweight,active,555-0103,true,coach-002
+ath-004,Morgan Smith,2008-11-05,middleweight,training,555-0104,true,coach-002
+ath-005,Riley Davis,2006-05-28,heavyweight,active,555-0105,true,coach-001

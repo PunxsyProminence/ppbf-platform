@@ -43,6 +43,8 @@ function AnnouncementCard({ item }: Readonly<{ item: LoginAnnouncement }>) {
   );
 }
 
+type LoginMethod = 'microsoft' | 'pin';
+
 interface LoginTabProps {
   announcements: LoginAnnouncement[];
   signInWithMicrosoft: () => void;
@@ -54,71 +56,224 @@ interface LoginTabProps {
   loginError: string;
   loginWithPin: () => Promise<void>;
   authErrorMessage: string;
+  selectedMethod: LoginMethod;
+  setSelectedMethod: (method: LoginMethod) => void;
+}
+
+function SignInMethodButton({
+  isActive,
+  onClick,
+  icon,
+  label,
+  description,
+}: {
+  isActive: boolean;
+  onClick: () => void;
+  icon: string;
+  label: string;
+  description: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`relative rounded-xl border-2 p-4 transition ${
+        isActive
+          ? 'border-[var(--red-primary)] bg-[rgba(184,59,52,0.08)] shadow-[0_4px_12px_rgba(184,59,52,0.15)]'
+          : 'border-[rgba(0,0,0,0.12)] bg-white hover:border-[rgba(0,0,0,0.2)]'
+      }`}
+    >
+      <div className="flex items-start gap-3">
+        <span className="text-2xl">{icon}</span>
+        <div className="flex-1 text-left">
+          <p className={`text-xs font-black uppercase tracking-[0.15em] ${isActive ? 'text-[var(--red-primary)]' : 'text-[var(--gray-dark)]'}`}>
+            {label}
+          </p>
+          <p className="mt-1 text-[11px] leading-relaxed text-[var(--gray-medium)]">{description}</p>
+        </div>
+        {isActive && <span className="text-xl">✓</span>}
+      </div>
+    </button>
+  );
+}
+
+function AccountTypeDropdown({
+  accountType,
+  setAccountType,
+}: {
+  accountType: string;
+  setAccountType: (type: string) => void;
+}) {
+  const accountTypes = [
+    { value: 'coach', label: '👨‍🏫 Coach', description: 'Training coach' },
+    { value: 'athlete', label: '🥊 Athlete', description: 'Member athlete' },
+    { value: 'parent', label: '👨‍👧 Parent', description: 'Parent/guardian' },
+    { value: 'admin', label: '⚙️ Administrator', description: 'System admin' },
+  ];
+
+  return (
+    <div className="space-y-2">
+      <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]">
+        Account Type
+      </label>
+      <select
+        value={accountType}
+        onChange={(e) => setAccountType(e.target.value)}
+        className="w-full min-h-[48px] rounded-xl border border-[rgba(0,0,0,0.14)] bg-white px-4 py-3 text-sm font-semibold text-[var(--black)] outline-none transition appearance-none cursor-pointer focus:border-[var(--red-primary)] focus:ring-2 focus:ring-[rgba(184,59,52,0.15)]"
+        style={{
+          backgroundImage:
+            "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23333' d='M6 9L1 4h10z'/%3E%3C/svg%3E\")",
+          backgroundRepeat: 'no-repeat',
+          backgroundPosition: 'right 1rem center',
+          paddingRight: '2.5rem',
+        }}
+      >
+        <option value="">Select account type...</option>
+        {accountTypes.map(({ value, label }) => (
+          <option key={value} value={value}>
+            {label}
+          </option>
+        ))}
+      </select>
+      {accountType && (
+        <p className="text-[11px] text-[var(--gray-medium)] italic">
+          {accountTypes.find((t) => t.value === accountType)?.description}
+        </p>
+      )}
+    </div>
+  );
 }
 
 function LoginTabContent(props: Readonly<LoginTabProps>) {
+  const [accountType, setAccountType] = useState('');
+
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 rounded-[24px] border border-[rgba(0,0,0,0.14)] bg-white p-5 shadow-[var(--shadow-md)]">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">Platform Sign In</p>
-
-        <button
-          type="button"
-          onClick={props.signInWithMicrosoft}
-          className="inline-flex min-h-[48px] w-full items-center justify-center rounded-xl border border-[rgba(0,0,0,0.14)] bg-[var(--gray-dark)] px-4 text-sm font-black uppercase tracking-[0.18em] text-[var(--white)] transition hover:bg-[var(--black)]"
-        >
-          Sign In With Microsoft
-        </button>
-
-        <div className="flex items-center gap-3">
-          <span className="h-px flex-1 bg-[rgba(0,0,0,0.14)]" />
-          <span className="text-[11px] font-mono uppercase tracking-[0.28em] text-[var(--gray-medium)]">Or use PIN</span>
-          <span className="h-px flex-1 bg-[rgba(0,0,0,0.14)]" />
-        </div>
-
-        <div className="grid gap-3">
-          <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="login-account-id">
-            Account ID
-          </label>
-          <input
-            id="login-account-id"
-            type="text"
-            value={props.loginAccountId}
-            onChange={(event) => props.setLoginAccountId(event.target.value)}
-            placeholder="admin-account-id"
-            className="min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] bg-white px-4 text-[var(--black)] outline-none transition placeholder:text-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:ring-2 focus:ring-[rgba(184,59,52,0.15)]"
+      {/* IMPROVED: Sign-In Method Selector */}
+      <div className="grid gap-3 rounded-[24px] border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-md)]">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--black)] mb-2">Choose Sign-In Method</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <SignInMethodButton
+            isActive={props.selectedMethod === 'microsoft'}
+            onClick={() => props.setSelectedMethod('microsoft')}
+            icon="☁️"
+            label="Microsoft"
+            description="Sign in with your Microsoft account"
           />
-
-          <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="login-pin">
-            PIN
-          </label>
-          <input
-            id="login-pin"
-            type="password"
-            inputMode="numeric"
-            value={props.loginPin}
-            onChange={(event) => props.setLoginPin(event.target.value)}
-            placeholder="Enter PIN"
-            className="min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] bg-white px-4 text-[var(--black)] outline-none transition placeholder:text-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:ring-2 focus:ring-[rgba(184,59,52,0.15)]"
+          <SignInMethodButton
+            isActive={props.selectedMethod === 'pin'}
+            onClick={() => props.setSelectedMethod('pin')}
+            icon="🔐"
+            label="PIN"
+            description="Sign in with Account ID & PIN"
           />
-
-          {props.loginError ? <p className="text-sm text-[var(--red-primary)]">{props.loginError}</p> : null}
-
-          <button
-            type="button"
-            disabled={props.loginBusy}
-            onClick={() => void props.loginWithPin()}
-            className="inline-flex min-h-[48px] w-full items-center justify-center rounded-xl border border-[rgba(0,0,0,0.14)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.18em] text-[var(--white)] transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {props.loginBusy ? 'Signing In...' : 'Sign In With Account PIN'}
-          </button>
         </div>
       </div>
 
-      <div className="rounded-[24px] border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-light)] p-4 shadow-[var(--shadow-sm)]">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">Announcements</p>
-        <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">Updates for members, coaches, and administrators live here. Login stays the primary action.</p>
-        <div className="mt-3 grid gap-3">
+      {/* Microsoft Sign-In Method */}
+      {props.selectedMethod === 'microsoft' && (
+        <div className="grid gap-4 rounded-[24px] border-2 border-[var(--gray-dark)] bg-white p-6 shadow-[var(--shadow-lg)]">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--black)]">Microsoft Sign In</p>
+            <p className="mt-2 text-sm text-[var(--gray-dark)] leading-relaxed">
+              Click below to sign in securely with your Microsoft account. Your organization admin manages who can access the platform.
+            </p>
+          </div>
+
+          {props.authErrorMessage && (
+            <div className="rounded-lg border border-[var(--red-primary)] bg-[rgba(184,59,52,0.05)] p-3">
+              <p className="text-sm text-[var(--red-primary)]">⚠️ {props.authErrorMessage}</p>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={props.signInWithMicrosoft}
+            className="inline-flex min-h-[52px] w-full items-center justify-center gap-3 rounded-xl border-2 border-[var(--gray-dark)] bg-[var(--gray-dark)] px-6 text-sm font-black uppercase tracking-[0.18em] text-white transition hover:bg-[var(--black)] hover:border-[var(--black)] active:scale-[0.98]"
+          >
+            <span>☁️</span>
+            Continue With Microsoft
+          </button>
+        </div>
+      )}
+
+      {/* PIN Sign-In Method */}
+      {props.selectedMethod === 'pin' && (
+        <div className="grid gap-4 rounded-[24px] border-2 border-[var(--red-primary)] bg-white p-6 shadow-[var(--shadow-lg)]">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">Account PIN Sign In</p>
+            <p className="mt-2 text-sm text-[var(--gray-dark)] leading-relaxed">
+              Enter your Account ID and PIN. Ask your coach or admin if you don't have one.
+            </p>
+          </div>
+
+          <AccountTypeDropdown accountType={accountType} setAccountType={setAccountType} />
+
+          <div className="grid gap-3">
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="login-account-id">
+                Account ID
+              </label>
+              <input
+                id="login-account-id"
+                type="text"
+                value={props.loginAccountId}
+                onChange={(event) => props.setLoginAccountId(event.target.value)}
+                placeholder={accountType === 'coach' ? 'coach-001' : accountType === 'athlete' ? 'ath-001' : 'admin-001'}
+                className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] bg-white px-4 text-[var(--black)] outline-none transition placeholder:text-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:ring-2 focus:ring-[rgba(184,59,52,0.15)]"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="login-pin">
+                PIN (4-8 digits)
+              </label>
+              <input
+                id="login-pin"
+                type="password"
+                inputMode="numeric"
+                value={props.loginPin}
+                onChange={(event) => props.setLoginPin(event.target.value)}
+                placeholder="••••"
+                className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] bg-white px-4 text-[var(--black)] outline-none transition placeholder:text-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:ring-2 focus:ring-[rgba(184,59,52,0.15)]"
+              />
+            </div>
+
+            {props.loginError && (
+              <div className="rounded-lg border border-[var(--red-primary)] bg-[rgba(184,59,52,0.05)] p-3">
+                <p className="text-sm text-[var(--red-primary)]">❌ {props.loginError}</p>
+              </div>
+            )}
+
+            <button
+              type="button"
+              disabled={props.loginBusy || !props.loginAccountId.trim() || !props.loginPin.trim()}
+              onClick={() => void props.loginWithPin()}
+              className="inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-6 text-sm font-black uppercase tracking-[0.18em] text-white transition hover:bg-[var(--red-highlight)] hover:border-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50 disabled:border-[rgba(0,0,0,0.14)] disabled:bg-[var(--gray-medium)] active:scale-[0.98]"
+            >
+              {props.loginBusy ? (
+                <>
+                  <span>⏳</span>
+                  Signing In...
+                </>
+              ) : (
+                <>
+                  <span>🔐</span>
+                  Sign In
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Announcements Section */}
+      <div className="rounded-[24px] border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-sm)]">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">📢 Latest Updates</p>
+        <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
+          Announcements from coaches and admins appear below. Check in before floor activity.
+        </p>
+        <div className="mt-4 grid gap-3">
           {props.announcements.slice(0, 3).map((item) => (
             <AnnouncementCard key={item.id} item={item} />
           ))}
@@ -229,6 +384,7 @@ function LoginPageContent() {
   const searchParams = useSearchParams();
   const [selectedRole] = useState<ClubRole>('athlete');
   const [activeTab, setActiveTab] = useState<ActiveTab>('login');
+  const [selectedMethod, setSelectedMethod] = useState<LoginMethod>('pin');
   const [announcements, setAnnouncements] = useState<LoginAnnouncement[]>([DEFAULT_ANNOUNCEMENT]);
   const [draftAnnouncement, setDraftAnnouncement] = useState('');
   const [announcementAuthorName, setAnnouncementAuthorName] = useState('');
@@ -443,6 +599,8 @@ function LoginPageContent() {
         loginError={loginError}
         loginWithPin={loginWithPin}
         authErrorMessage={authErrorMessage}
+        selectedMethod={selectedMethod}
+        setSelectedMethod={setSelectedMethod}
       />
     ),
     register: <RegisterTabContent />,

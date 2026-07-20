@@ -11,6 +11,8 @@
     "build": "npm --workspace web run build",
     "start": "npm --workspace web run start --",
     "test": "powershell -ExecutionPolicy Bypass -File ./scripts/run-tests.ps1",
-    "deep:audit": "powershell -ExecutionPolicy Bypass -File ./scripts/deep-audit.ps1"
+    "deep:audit": "powershell -ExecutionPolicy Bypass -File ./scripts/deep-audit.ps1",
+    "seed:data": "npx ts-node scripts/seed-data.ts",
+    "seed:data:dry": "npx ts-node scripts/seed-data.ts --dry-run"
   }
 }
