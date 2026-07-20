@@ -227,7 +227,7 @@ export default function AdminComplianceCenterPage() {
           <div className="space-y-3">
             {filteredViolations.length === 0 ? (
               <div className="border border-[#5a4a3a] bg-[#111111] px-4 py-5 text-sm text-[#9a8a7a]">
-                No violations match the current filters. Try setting Status to "all" and Severity to "all".
+                No violations match the current filters. Try setting Status to &quot;all&quot; and Severity to &quot;all&quot;.
               </div>
             ) : (
               filteredViolations.map((v) => (

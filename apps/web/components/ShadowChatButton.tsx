@@ -19,8 +19,6 @@ export default function ShadowChatButton({ className, label = 'OPEN SHADOW CHAT'
 
   useEffect(() => {
     if (session?.role) {
-      setResolvedRole(session.role);
-      setIsAuthenticated(true);
       return;
     }
 

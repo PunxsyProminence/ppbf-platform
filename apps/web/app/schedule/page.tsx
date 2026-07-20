@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
 import type { ClubRole } from '@/components/roleRoutes';
@@ -114,7 +114,7 @@ export default function SchedulerPage() {
     return map;
   }, [athletes]);
 
-  async function loadSchedulerState() {
+  const loadSchedulerState = useCallback(async () => {
     setLoading(true);
     setErrorMessage('');
 
@@ -162,12 +162,12 @@ export default function SchedulerPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [selectedClassId, selectedAthleteId]);
 
   useEffect(() => {
-    void loadSchedulerState();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadSchedulerState().catch((err) => console.error('Failed to load scheduler state:', err));
+  }, [loadSchedulerState]);
 
   async function runAction(payload: Record<string, unknown>, successMessage: string) {
     setActionMessage('');
