@@ -211,8 +211,8 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
     });
 
     test('system prompt defers to medical authority', () => {
-      expect(SHADOW_SYSTEM_PROMPT).toContain('professional medical authority');
-      expect(SHADOW_SYSTEM_PROMPT).toContain('clinician');
+      expect(SHADOW_SYSTEM_PROMPT).toMatch(/professional medical authority/i);
+      expect(SHADOW_SYSTEM_PROMPT).toContain('appropriately licensed or certified healthcare professionals');
       expect(SHADOW_SYSTEM_PROMPT).toContain('diagnosis, treatment, prescription, and clearance');
       expect(SHADOW_SYSTEM_PROMPT).toContain('could be consistent with');
       expect(SHADOW_SYSTEM_PROMPT).toContain('Never invent case counts, percentages, citations, or precision');
