@@ -24,6 +24,7 @@ export interface HeavyBagInput {
   classification: ShadowClassification;
   sessionType: ShadowSessionType;
   athleteId?: string;
+  evidenceIds?: string[];
   systemPromptBase: string;
 }
 
@@ -105,6 +106,7 @@ export async function executeHeavyBagAsync(input: HeavyBagInput): Promise<HeavyB
       complexity: input.classification.complexity,
       topic: input.classification.topic,
       contextSummary: input.contextOutput.context.slice(0, 8_000), // Bounded authorized context for background processing
+      evidenceIds: (input.evidenceIds ?? []).slice(0, 20),
       profileTier: input.tierResult.tier,
     },
     priority: priorityForSessionType(input.sessionType),
