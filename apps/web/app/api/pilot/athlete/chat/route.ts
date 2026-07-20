@@ -1,12 +1,15 @@
 // POST /api/pilot/athlete/chat endpoint
 // Chat interface for athletes with role-based access control
 // Supports athlete-specific queries around training, progression, and performance
+// Personalized SHADOW: each athlete gets their own AI tuned to their goals and progress
 
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { requireRole } from '@/src/server/pilot/access';
 import { buildAzureAiChatCompletionsUrl, getAzureAiRuntimeConfig } from '@/src/server/pilot/azureAiRuntime';
+import { buildPersonalShadowPrompt, getAthleteGoals, getAthleteRecentSessions } from '@/src/server/pilot/shadowPersonalization';
+import { updateShadowUserProfile } from '@/src/server/pilot/shadowUserProfile';
 
 export interface AthleteChatRequest {
   message: string;
@@ -21,15 +24,6 @@ export interface AthleteChatResponse {
   createdAt: string;
   error?: string;
 }
-
-const ATHLETE_SYSTEM_PROMPT = `You are an AI assistant designed to support athletes. Your role is to:
-- Answer questions about training principles, nutrition, recovery, and conditioning
-- Provide guidance on goal-setting, progression tracking, and performance optimization
-- Offer motivational and educational content around athletic development
-- Help athletes understand performance data and feedback from coaches
-- Support mental performance and resilience strategies
-
-Maintain an encouraging, supportive tone. If asked about medical symptoms or diagnoses, always recommend consulting with a medical professional.`;
 
 async function callAzureOpenAI(systemPrompt: string, userMessage: string): Promise<{ response: string; success: boolean }> {
   try {
@@ -90,8 +84,16 @@ export async function POST(request: NextRequest): Promise<NextResponse<AthleteCh
     const createdAt = new Date().toISOString();
     const org = organizationId || principal.organizationId;
 
-    // Call Azure OpenAI
-    const { response, success } = await callAzureOpenAI(ATHLETE_SYSTEM_PROMPT, message);
+    // Build personalized SHADOW prompt for this athlete
+    const { systemPrompt } = await buildPersonalShadowPrompt(
+      principal.accountId,
+      org,
+      'athlete',
+      message,
+    );
+
+    // Call Azure OpenAI with personalized prompt
+    const { response, success } = await callAzureOpenAI(systemPrompt, message);
 
     if (!success) {
       return NextResponse.json(
@@ -106,7 +108,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<AthleteCh
       );
     }
 
-    // Log to athlete_chat_audit table (create if doesn't exist)
+    // Log to athlete_chat_audit table
     try {
       await query(
         `INSERT INTO pilot.athlete_chat_audit (
@@ -119,6 +121,20 @@ export async function POST(request: NextRequest): Promise<NextResponse<AthleteCh
     } catch (auditError) {
       console.warn('Failed to log athlete chat:', auditError);
       // Continue even if audit logging fails
+    }
+
+    // Update athlete's SHADOW profile
+    try {
+      const goals = await getAthleteGoals(principal.accountId, org);
+      const topicMatch = message.match(/\b(training|goal|performance|progress|recovery|strength)\b/i);
+      const topic = topicMatch ? topicMatch[1] : 'training';
+
+      await updateShadowUserProfile(principal.accountId, org, {
+        topicAdded: topic,
+      });
+    } catch (profileError) {
+      console.warn('Failed to update SHADOW profile:', profileError);
+      // Continue even if profile update fails
     }
 
     return NextResponse.json({

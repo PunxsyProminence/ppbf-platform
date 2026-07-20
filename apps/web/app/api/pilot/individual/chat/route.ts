@@ -1,12 +1,15 @@
 // POST /api/pilot/individual/chat endpoint
 // Chat interface for individual users (parent/guardian) with role-based access control
 // Supports general queries around youth athletics, family engagement, and player development
+// Personalized SHADOW: each parent/guardian gets their own AI tuned to their family's journey
 
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { requireRole } from '@/src/server/pilot/access';
 import { buildAzureAiChatCompletionsUrl, getAzureAiRuntimeConfig } from '@/src/server/pilot/azureAiRuntime';
+import { buildPersonalShadowPrompt, getParentAssignedAthletes } from '@/src/server/pilot/shadowPersonalization';
+import { updateShadowUserProfile } from '@/src/server/pilot/shadowUserProfile';
 
 export interface IndividualChatRequest {
   message: string;
@@ -21,15 +24,6 @@ export interface IndividualChatResponse {
   createdAt: string;
   error?: string;
 }
-
-const INDIVIDUAL_SYSTEM_PROMPT = `You are an AI assistant designed to support parents, guardians, and individual users in youth athletics. Your role is to:
-- Answer questions about youth athletic development, training, and progression
-- Provide guidance on supporting young athletes and fostering healthy athletic environments
-- Offer information about sports science, nutrition, recovery, and injury prevention basics
-- Help families understand athletic programs, progression frameworks, and competitive opportunities
-- Support positive youth development and family engagement in athletics
-
-Use a warm, family-focused tone. Always recommend professional consultation for medical questions.`;
 
 async function callAzureOpenAI(systemPrompt: string, userMessage: string): Promise<{ response: string; success: boolean }> {
   try {
@@ -90,8 +84,16 @@ export async function POST(request: NextRequest): Promise<NextResponse<Individua
     const createdAt = new Date().toISOString();
     const org = organizationId || principal.organizationId;
 
-    // Call Azure OpenAI
-    const { response, success } = await callAzureOpenAI(INDIVIDUAL_SYSTEM_PROMPT, message);
+    // Build personalized SHADOW prompt for this parent/individual
+    const { systemPrompt } = await buildPersonalShadowPrompt(
+      principal.accountId,
+      org,
+      'parent',
+      message,
+    );
+
+    // Call Azure OpenAI with personalized prompt
+    const { response, success } = await callAzureOpenAI(systemPrompt, message);
 
     if (!success) {
       return NextResponse.json(
@@ -106,7 +108,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<Individua
       );
     }
 
-    // Log to individual_chat_audit table (create if doesn't exist)
+    // Log to individual_chat_audit table
     try {
       await query(
         `INSERT INTO pilot.individual_chat_audit (
@@ -119,6 +121,20 @@ export async function POST(request: NextRequest): Promise<NextResponse<Individua
     } catch (auditError) {
       console.warn('Failed to log individual chat:', auditError);
       // Continue even if audit logging fails
+    }
+
+    // Update parent/individual's SHADOW profile
+    try {
+      const athletes = await getParentAssignedAthletes(principal.accountId, org);
+      const topicMatch = message.match(/\b(athlete|development|support|progress|family|training)\b/i);
+      const topic = topicMatch ? topicMatch[1] : 'family-engagement';
+
+      await updateShadowUserProfile(principal.accountId, org, {
+        topicAdded: topic,
+      });
+    } catch (profileError) {
+      console.warn('Failed to update SHADOW profile:', profileError);
+      // Continue even if profile update fails
     }
 
     return NextResponse.json({

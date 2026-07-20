@@ -1,12 +1,15 @@
 // POST /api/pilot/board/chat endpoint
 // Chat interface for board members with role-based access control
 // Supports board-level queries around compliance, policy, governance, and organizational strategy
+// Personalized SHADOW: each board member gets their own AI tuned to governance context
 
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { requireRole } from '@/src/server/pilot/access';
 import { buildAzureAiChatCompletionsUrl, getAzureAiRuntimeConfig } from '@/src/server/pilot/azureAiRuntime';
+import { buildPersonalShadowPrompt } from '@/src/server/pilot/shadowPersonalization';
+import { updateShadowUserProfile } from '@/src/server/pilot/shadowUserProfile';
 
 export interface BoardChatRequest {
   message: string;
@@ -21,15 +24,6 @@ export interface BoardChatResponse {
   createdAt: string;
   error?: string;
 }
-
-const BOARD_SYSTEM_PROMPT = `You are an AI assistant designed to support sports organization board members and governance. Your role is to:
-- Provide guidance on governance structures, compliance requirements, and policy frameworks
-- Support strategic decision-making around organizational operations and athlete safety
-- Offer insights on best practices in sports governance, risk management, and organizational leadership
-- Help board members understand regulatory requirements and duty-of-care obligations
-- Support policy development and compliance monitoring frameworks
-
-Maintain a professional, governance-focused perspective. Defer medical and clinical questions to appropriate professionals.`;
 
 async function callAzureOpenAI(systemPrompt: string, userMessage: string): Promise<{ response: string; success: boolean }> {
   try {
@@ -90,8 +84,16 @@ export async function POST(request: NextRequest): Promise<NextResponse<BoardChat
     const createdAt = new Date().toISOString();
     const org = organizationId || principal.organizationId;
 
-    // Call Azure OpenAI
-    const { response, success } = await callAzureOpenAI(BOARD_SYSTEM_PROMPT, message);
+    // Build personalized SHADOW prompt for this board member
+    const { systemPrompt } = await buildPersonalShadowPrompt(
+      principal.accountId,
+      org,
+      'organization_admin',
+      message,
+    );
+
+    // Call Azure OpenAI with personalized prompt
+    const { response, success } = await callAzureOpenAI(systemPrompt, message);
 
     if (!success) {
       return NextResponse.json(
@@ -106,7 +108,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<BoardChat
       );
     }
 
-    // Log to board_chat_audit table (create if doesn't exist)
+    // Log to board_chat_audit table
     try {
       await query(
         `INSERT INTO pilot.board_chat_audit (
@@ -119,6 +121,19 @@ export async function POST(request: NextRequest): Promise<NextResponse<BoardChat
     } catch (auditError) {
       console.warn('Failed to log board chat:', auditError);
       // Continue even if audit logging fails
+    }
+
+    // Update board member's SHADOW profile
+    try {
+      const topicMatch = message.match(/\b(governance|policy|compliance|strategy|risk|oversight)\b/i);
+      const topic = topicMatch ? topicMatch[1] : 'governance';
+
+      await updateShadowUserProfile(principal.accountId, org, {
+        topicAdded: topic,
+      });
+    } catch (profileError) {
+      console.warn('Failed to update SHADOW profile:', profileError);
+      // Continue even if profile update fails
     }
 
     return NextResponse.json({
