@@ -9,7 +9,10 @@ on:
       - 'apps/web/src/server/pilot/shadowChat*'
       - 'apps/web/src/server/pilot/shadowResponsePolicy*'
       - 'apps/web/src/server/pilot/shadowJobQueue*'
+      - 'apps/web/scripts/shadow-chat-readiness.mjs'
       - 'apps/web/package.json'
+      - 'infra/azure/pilot_slice_postgres.sql'
+      - 'docs/SHADOW_CHAT_MONITORING.md'
       - 'package-lock.json'
       - '.github/workflows/shadow-chat-hardening-ci.yml'
   workflow_dispatch:
