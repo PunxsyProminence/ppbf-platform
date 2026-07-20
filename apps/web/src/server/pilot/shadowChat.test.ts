@@ -1,6 +1,9 @@
 // SHADOW Chat Validation Tests
 // Verify doctrine enforcement at all layers
 
+jest.mock('./db', () => ({ query: jest.fn() }));
+
+import { query } from './db';
 import {
   classifyHighRiskTopic,
   validateShadowRequest,
@@ -13,7 +16,11 @@ import {
   HighRiskTopic,
 } from './shadowChat';
 
+const mockedQuery = query as jest.MockedFunction<typeof query>;
+
 describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
+  beforeEach(() => mockedQuery.mockReset());
+
   describe('Request Validation', () => {
     test.each([
       ['Do I have a concussion?', true, null],
@@ -89,6 +96,41 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
       });
       expect(result.authorized).toBe(false);
       expect(result.reason).toContain('organization-level aggregates only');
+    });
+
+    test('blocks an unlinked guardian from athlete context', async () => {
+      mockedQuery.mockResolvedValueOnce([]);
+      const result = await retrieveShadowContext({
+        userRole: 'parent',
+        userId: 'parent-account',
+        organizationId: 'org-456',
+        athleteId: 'athlete-789',
+      });
+      expect(result.authorized).toBe(false);
+      expect(result.reason).toContain('not linked');
+    });
+
+    test('blocks operational roles from athlete-specific context', async () => {
+      const result = await retrieveShadowContext({
+        userRole: 'staff',
+        userId: 'staff-123',
+        organizationId: 'org-456',
+        athleteId: 'athlete-789',
+      });
+      expect(result.authorized).toBe(false);
+      expect(mockedQuery).not.toHaveBeenCalled();
+    });
+
+    test('resolves athlete ownership from the authenticated account mapping', async () => {
+      mockedQuery.mockResolvedValueOnce([]);
+      const result = await retrieveShadowContext({
+        userRole: 'athlete',
+        userId: 'account-123',
+        organizationId: 'org-456',
+        athleteId: 'different-athlete',
+      });
+      expect(result.authorized).toBe(false);
+      expect(result.reason).toContain('their own context');
     });
 
     // Test 8: Coach can only see assigned athletes in same org
