@@ -5,7 +5,17 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { jsonError } from '@/src/server/pilot/http';
 import { claimNextJob, completeJob, failJob, type JobType } from '@/src/server/pilot/shadowJobQueue';
-import { SHADOW_SYSTEM_PROMPT, validateShadowResponse } from '@/src/server/pilot/shadowChat';
+import {
+  SAFE_FILTERED_RESPONSE,
+  SHADOW_STRUCTURED_OUTPUT_INSTRUCTION,
+  SHADOW_SYSTEM_PROMPT,
+  validateShadowResponse,
+} from '@/src/server/pilot/shadowChat';
+import {
+  classifySemanticSafety,
+  parseStructuredShadowResponse,
+  renderStructuredShadowResponse,
+} from '@/src/server/pilot/shadowResponsePolicy';
 import { buildAzureAiChatCompletionsUrl, getAzureAiRuntimeConfig } from '@/src/server/pilot/azureAiRuntime';
 
 export const runtime = 'nodejs';
@@ -163,6 +173,8 @@ async function executeHeavyBagJob(payload: Record<string, unknown>): Promise<Rec
 
   const systemPrompt = `${SHADOW_SYSTEM_PROMPT}
 
+${SHADOW_STRUCTURED_OUTPUT_INSTRUCTION}
+
 ## Heavy Bag Session (Background Processing)
 You are in a **Heavy Bag Session** — full reasoning mode.
 - Session type: ${sessionType}
@@ -173,12 +185,22 @@ You are in a **Heavy Bag Session** — full reasoning mode.
 - Identify patterns, evidence gaps, and actionable recommendations.`;
 
   const generatedResponse = await callAI(systemPrompt, message, 4096);
-  const validation = validateShadowResponse(generatedResponse);
+  const evidenceIds = Array.isArray(payload.evidenceIds)
+    ? payload.evidenceIds.filter((value): value is string => typeof value === 'string').slice(0, 20)
+    : [];
+  const structured = parseStructuredShadowResponse(generatedResponse, evidenceIds);
+  const rendered = renderStructuredShadowResponse(structured.value);
+  const semanticSafety = classifySemanticSafety(rendered);
+  const validation = validateShadowResponse(rendered);
+  const blocked = semanticSafety.allowedMode === 'block';
 
   return {
-    response: validation.message,
-    filtered: validation.filtered,
-    requiresHumanReview: validation.requiresHumanReview,
+    response: blocked ? SAFE_FILTERED_RESPONSE : validation.message,
+    structured: structured.value,
+    structuredSchemaValid: structured.schemaValid,
+    safety: semanticSafety,
+    filtered: blocked || validation.filtered,
+    requiresHumanReview: semanticSafety.requiresHumanReview || validation.requiresHumanReview || !structured.schemaValid,
     sessionType,
     topic,
     profileTier,
@@ -216,8 +238,9 @@ Format your response as valid JSON matching this structure:
 - Summary from recent session: ${payloadToText(payload.recentInteractionSummary, 'N/A')}`;
 
   const generatedResponse = await callAI(systemPrompt, userMessage, 2048);
+  const semanticSafety = classifySemanticSafety(generatedResponse);
   const validation = validateShadowResponse(generatedResponse);
-  const raw = validation.message;
+  const raw = semanticSafety.allowedMode === 'block' ? SAFE_FILTERED_RESPONSE : validation.message;
 
   let report: Record<string, unknown>;
   try {
@@ -229,8 +252,9 @@ Format your response as valid JSON matching this structure:
 
   return {
     ...report,
-    filtered: validation.filtered,
-    requiresHumanReview: validation.requiresHumanReview,
+    safety: semanticSafety,
+    filtered: semanticSafety.allowedMode === 'block' || validation.filtered,
+    requiresHumanReview: semanticSafety.requiresHumanReview || validation.requiresHumanReview,
     generatedAt: new Date().toISOString(),
     profileTier: payloadToText(payload.profileTier, 'gold'),
   };
@@ -248,11 +272,13 @@ Format as structured markdown with clear section headers.`;
 ${JSON.stringify(payload, null, 2)}`;
 
   const generatedSummary = await callAI(systemPrompt, userMessage, 2048);
+  const semanticSafety = classifySemanticSafety(generatedSummary);
   const validation = validateShadowResponse(generatedSummary);
   return {
-    summary: validation.message,
-    filtered: validation.filtered,
-    requiresHumanReview: validation.requiresHumanReview,
+    summary: semanticSafety.allowedMode === 'block' ? SAFE_FILTERED_RESPONSE : validation.message,
+    safety: semanticSafety,
+    filtered: semanticSafety.allowedMode === 'block' || validation.filtered,
+    requiresHumanReview: semanticSafety.requiresHumanReview || validation.requiresHumanReview,
     generatedAt: new Date().toISOString(),
   };
 }
