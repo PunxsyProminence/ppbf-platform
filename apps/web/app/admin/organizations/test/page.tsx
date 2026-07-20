@@ -216,13 +216,12 @@ export default function SetupWizard() {
               <button
                 type="button"
                 disabled={!canStep1 || isBusy}
-                onClick={() => {
-                  void runAction(createGym).then((success) => {
-                    if (success) {
-                      setCompletedSteps([...completedSteps, 1]);
-                      setStep(2);
-                    }
-                  });
+                onClick={async () => {
+                  const success = await runAction(createGym);
+                  if (success) {
+                    setCompletedSteps([...completedSteps, 1]);
+                    setStep(2);
+                  }
                 }}
                 className="h-11 w-full rounded-lg border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -290,13 +289,12 @@ export default function SetupWizard() {
               <button
                 type="button"
                 disabled={!canStep2 || isBusy}
-                onClick={() => {
-                  void runAction(createAdminAccount).then((success) => {
-                    if (success) {
-                      setCompletedSteps([...completedSteps, 2]);
-                      setStep(3);
-                    }
-                  });
+                onClick={async () => {
+                  const success = await runAction(createAdminAccount);
+                  if (success) {
+                    setCompletedSteps([...completedSteps, 2]);
+                    setStep(3);
+                  }
                 }}
                 className="h-11 w-full rounded-lg border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -346,13 +344,12 @@ export default function SetupWizard() {
               <button
                 type="button"
                 disabled={isBusy}
-                onClick={() => {
-                  void runAction(saveCapabilities).then((success) => {
-                    if (success) {
-                      setCompletedSteps([...completedSteps, 3]);
-                      setStep(4);
-                    }
-                  });
+                onClick={async () => {
+                  const success = await runAction(saveCapabilities);
+                  if (success) {
+                    setCompletedSteps([...completedSteps, 3]);
+                    setStep(4);
+                  }
                 }}
                 className="h-11 w-full rounded-lg border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
               >
