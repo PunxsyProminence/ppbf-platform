@@ -74,7 +74,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<CoachChat
     const body: CoachChatRequest = await request.json();
     const { message, athleteId, organizationId } = body;
 
-    if (!message || !message.trim()) {
+    if (!message?.trim()) {
       return NextResponse.json(
         { success: false, response: '', messageId: '', createdAt: '', error: 'Message is required' },
         { status: 400 }

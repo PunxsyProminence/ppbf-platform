@@ -73,7 +73,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<AthleteCh
     const body: AthleteChatRequest = await request.json();
     const { message, organizationId } = body;
 
-    if (!message || !message.trim()) {
+    if (!message?.trim()) {
       return NextResponse.json(
         { success: false, response: '', messageId: '', createdAt: '', error: 'Message is required' },
         { status: 400 }

@@ -8,7 +8,7 @@ import { query } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { requireRole } from '@/src/server/pilot/access';
 import { buildAzureAiChatCompletionsUrl, getAzureAiRuntimeConfig } from '@/src/server/pilot/azureAiRuntime';
-import { buildPersonalShadowPrompt, getParentAssignedAthletes } from '@/src/server/pilot/shadowPersonalization';
+import { buildPersonalShadowPrompt } from '@/src/server/pilot/shadowPersonalization';
 import { updateShadowUserProfile } from '@/src/server/pilot/shadowUserProfile';
 
 export interface IndividualChatRequest {
@@ -73,7 +73,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<Individua
     const body: IndividualChatRequest = await request.json();
     const { message, organizationId } = body;
 
-    if (!message || !message.trim()) {
+    if (!message?.trim()) {
       return NextResponse.json(
         { success: false, response: '', messageId: '', createdAt: '', error: 'Message is required' },
         { status: 400 }
