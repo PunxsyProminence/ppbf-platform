@@ -7,6 +7,12 @@ import { readRoleSession, clearRoleSession } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
 import ShadowChatButton from '@/components/ShadowChatButton';
 
+interface ShadowEvidence {
+  status: 'supported' | 'weak' | 'unsupported';
+  sources: Array<{ sourceId: string; title: string; documentName: string; publicationDate: string | null }>;
+  researchRequirementId: number | null;
+}
+
 interface ShadowMessage {
   id: string;
   type: 'user' | 'shadow';
@@ -18,6 +24,7 @@ interface ShadowMessage {
   isAsync?: boolean;
   jobId?: string;
   feedbackSent?: boolean;
+  evidence?: ShadowEvidence;
 }
 
 interface ShadowResearchReport {
@@ -47,6 +54,7 @@ const GENERIC_UNSUPPORTED_REPLY = 'If this question needs a sourced answer, I sh
 
 // Mirrors the server-owned manual override policy. The API remains authoritative.
 const HEAVY_BAG_ELIGIBLE_ROLES = new Set(['coach', 'admin', 'organization_admin', 'platform_owner']);
+const MASTER_SHADOW_ROLES = new Set(['admin', 'organization_admin', 'platform_owner']);
 
 interface ExplainabilityChain {
   confidence: number; // 0-100, capped at 95%
@@ -67,6 +75,7 @@ interface ShadowAIResult {
   jobId?: string;
   error?: string;
   explainability?: ExplainabilityChain;
+  evidence?: ShadowEvidence;
 }
 
 function createMessageId(): string {
@@ -387,10 +396,11 @@ function ShadowChatPageContent() {
   const searchParams = useSearchParams();
   const [userRole, setUserRole] = useState<string>(() => (typeof window !== 'undefined' ? readRoleSession()?.role ?? '' : ''));
   const [authChecked, setAuthChecked] = useState(false);
-  const mode = searchParams.get('mode') === 'master' ? 'master' : 'scoped';
+  const requestedMode = searchParams.get('mode') === 'master' ? 'master' : 'scoped';
+  const mode: 'master' | 'scoped' = requestedMode === 'master' && MASTER_SHADOW_ROLES.has(userRole) ? 'master' : 'scoped';
   const context = searchParams.get('context')?.trim() ?? '';
   const subject = searchParams.get('subject')?.trim() ?? '';
-  const roleLabel = (searchParams.get('role')?.trim() || userRole || 'guest').toUpperCase();
+  const roleLabel = (userRole || 'guest').toUpperCase();
   const { heading, intro, scopeSummary } = buildHeading(mode, subject);
   const [messages, setMessages] = useState<ShadowMessage[]>([
     {
@@ -467,7 +477,7 @@ function ShadowChatPageContent() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  function addMessage(type: 'user' | 'shadow', text: string, meta?: Partial<Pick<ShadowMessage, 'id' | 'tier' | 'profileTier' | 'modelUsed' | 'isAsync' | 'jobId'>>) {
+  function addMessage(type: 'user' | 'shadow', text: string, meta?: Partial<Pick<ShadowMessage, 'id' | 'tier' | 'profileTier' | 'modelUsed' | 'isAsync' | 'jobId' | 'evidence'>>) {
     const newMessage: ShadowMessage = {
       id: createMessageId(),
       type,
@@ -531,7 +541,12 @@ function ShadowChatPageContent() {
       modelUsed: data.modelUsed,
       isAsync: data.async,
       jobId: data.jobId,
+      evidence: data.evidence,
     });
+
+    if (data.evidence?.researchRequirementId) {
+      recordBackendResearchReport(rawQuestion, data.evidence.researchRequirementId, data.evidence.sources.length);
+    }
 
     if (data.async && data.jobId) {
       void pollQueuedShadowJob(data.jobId, messageId);
@@ -686,7 +701,25 @@ function ShadowChatPageContent() {
                       : 'border-2 border-[#d4a574] bg-[#2a1f0f] text-[#e8d7c6]'
                   }`}
                 >
-                  <p className="text-xs leading-6">{msg.text}</p>
+                  <p className="whitespace-pre-wrap text-xs leading-6">{msg.text}</p>
+                  {msg.evidence ? (
+                    <div className="mt-3 border-t border-[#5a4a3a] pt-2 text-[9px] text-[#b0a095]">
+                      <p className="font-mono uppercase tracking-[0.12em] text-[#d4a574]">
+                        Evidence: {msg.evidence.status.replace('_', ' ')}
+                      </p>
+                      {msg.evidence.sources.length > 0 ? (
+                        <ul className="mt-1 space-y-1">
+                          {msg.evidence.sources.map((source) => (
+                            <li key={source.sourceId}>
+                              {source.title} · {source.documentName}{source.publicationDate ? ` · ${source.publicationDate}` : ''}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="mt-1">No qualifying source was found. A research requirement may have been created.</p>
+                      )}
+                    </div>
+                  ) : null}
                   {msg.tier ? (
                     <div className="mt-3 space-y-2 border-t border-[#5a4a3a] pt-2">
                       <div className="flex items-center justify-between gap-2">
