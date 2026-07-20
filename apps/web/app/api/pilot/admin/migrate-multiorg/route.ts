@@ -154,6 +154,33 @@ export async function POST(request: NextRequest) {
         was_filtered boolean not null default false,
         created_at timestamptz not null default now()
       )`,
+      `create table if not exists pilot.shadow_feature_thresholds (
+        organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+        feature_key text not null,
+        metric_key text not null,
+        min_value integer not null check (min_value >= 0),
+        activation_mode text not null default 'enabled',
+        description text not null default '',
+        created_by_account_id text null,
+        updated_by_account_id text null,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now(),
+        primary key (organization_id, feature_key)
+      )`,
+      `create table if not exists pilot.shadow_feature_unlock_snapshots (
+        organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+        account_id text not null,
+        feature_key text not null,
+        metric_key text not null,
+        unlocked boolean not null,
+        activation_mode text not null,
+        satisfied boolean not null,
+        current_value integer not null default 0,
+        threshold_value integer not null default 0,
+        details jsonb not null default '{}'::jsonb,
+        evaluated_at timestamptz not null default now(),
+        primary key (organization_id, account_id, feature_key)
+      )`,
       `alter table pilot.accounts add column if not exists organization_id text`,
       `alter table pilot.accounts add column if not exists is_platform_owner boolean not null default false`,
       `alter table pilot.session_tokens add column if not exists organization_id text`,
@@ -174,6 +201,8 @@ export async function POST(request: NextRequest) {
       `create index if not exists idx_admin_gym_capability_access_updated on pilot.admin_gym_capability_access(updated_at desc)`,
       `create index if not exists idx_shadow_chat_audit_org_created on pilot.shadow_chat_audit(organization_id, created_at desc)`,
       `create index if not exists idx_shadow_chat_audit_user_created on pilot.shadow_chat_audit(user_id, created_at desc)`,
+      `create index if not exists idx_shadow_feature_thresholds_org on pilot.shadow_feature_thresholds(organization_id, feature_key)`,
+      `create index if not exists idx_shadow_feature_unlock_snapshots_org_eval on pilot.shadow_feature_unlock_snapshots(organization_id, evaluated_at desc)`,
       `insert into pilot.organizations (organization_id, organization_name, status)
        values ('ppbf-default-org', 'PPBF Default Organization', 'active')
        on conflict (organization_id) do nothing`,

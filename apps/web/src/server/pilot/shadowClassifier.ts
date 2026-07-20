@@ -124,7 +124,7 @@ export function classifyRequest(
   userManualTier?: ShadowTier,
 ): ShadowClassification {
   // If user explicitly requested Heavy Bag (coach/admin only), honor it
-  if (userManualTier === 'heavy_bag' && (role === 'coach' || role === 'admin')) {
+  if (userManualTier === 'heavy_bag' && (role === 'coach' || role === 'admin' || role === 'organization_admin' || role === 'platform_owner')) {
     return {
       tier: 'heavy_bag',
       complexity: 0.9,
@@ -160,7 +160,7 @@ export function classifyRequest(
     // (Coaches/Admins can escalate if they sense the query needs depth)
     tier = 'quick_round';
     confidence = 0.5; // Low confidence at boundary
-    requiresManualOverride = role === 'coach' || role === 'admin'; // Offer override option
+    requiresManualOverride = role === 'coach' || role === 'admin' || role === 'organization_admin' || role === 'platform_owner'; // Offer override option
   }
 
   // Build reasoning string

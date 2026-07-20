@@ -195,7 +195,7 @@ export function validateShadowRequest(
   const classification = classifyHighRiskTopic(message);
   const normalizedMessage = message.toLowerCase();
 
-  const hasPrescriptionLanguage = /\b(prescrib|rx)\b/i.test(message)
+  const hasPrescriptionLanguage = /\b(prescribe|prescribed|prescribing|prescription|rx)\b/i.test(message)
     || /should\s+i\s+take/i.test(message)
     || /should\s+you\s+take/i.test(message)
     || /take\s+(?:this\s+)?(?:medication|medicine|drug|pill)/i.test(message);

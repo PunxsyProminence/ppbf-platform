@@ -5,6 +5,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { query } from '@/src/server/pilot/db';
 import { SHADOW_JOBS_MIGRATION } from '@/src/server/pilot/shadowJobQueue';
 import { LEARNING_LOOP_MIGRATION } from '@/src/server/pilot/shadowLearningLoop';
+import { SHADOW_UNLOCKS_MIGRATION } from '@/src/server/pilot/shadowUnlocks';
 
 export const runtime = 'nodejs';
 
@@ -29,6 +30,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const migrations = [
     { name: 'shadow_jobs + indexes', sql: SHADOW_JOBS_MIGRATION },
     { name: 'shadow_learning_events + library_review_flags', sql: LEARNING_LOOP_MIGRATION },
+    { name: 'shadow_feature_thresholds + unlock_snapshots', sql: SHADOW_UNLOCKS_MIGRATION },
   ];
 
   for (const { name, sql } of migrations) {

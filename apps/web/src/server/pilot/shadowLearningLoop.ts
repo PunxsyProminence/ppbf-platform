@@ -6,6 +6,8 @@ import { query, queryOne } from './db';
 import type { PilotRole } from './contracts';
 import { recordRecommendationEffectiveness } from './shadowMetrics';
 import { upsertRememberedFact } from './shadowUserProfile';
+import { createShadowResearchRequirement } from './shadowResearch';
+import { evaluateShadowUnlockState, isFeatureEnabled, type ShadowUnlockState } from './shadowUnlocks';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -50,15 +52,55 @@ export async function processLearningSignal(
   signal: LearningSignal,
 ): Promise<LearningLoopResult> {
   const actions: string[] = [];
-  let profileUpdated = false;
-  let metricsRecorded = false;
-  let libraryFlagged = false;
-  let factsExtracted = 0;
-
+  const unlockState = await loadUnlockState(signal, actions);
   const effectivenessScore = outcomeToScore(signal.outcome);
   const outcome = outcomeToCategory(signal.outcome);
+  const metricsRecorded = await recordMetrics(signal, outcome, effectivenessScore, actions);
+  const positiveResult = await handlePositiveOutcome(signal, actions, unlockState);
+  const libraryFlagged = await handleNegativeOutcome(signal, actions, unlockState);
+  await applyLibraryPromotion(metricsRecorded, signal.organizationId, signal.topic, effectivenessScore, actions, unlockState);
+  await maybeUpdateCommunicationStyle(signal, actions);
+  await safeLogLearningEvent(signal, effectivenessScore, actions);
 
-  // ── Step 1: Record effectiveness metrics ─────────────────────────────────
+  return {
+    profileUpdated: positiveResult.profileUpdated,
+    metricsRecorded,
+    libraryFlagged,
+    factsExtracted: positiveResult.factsExtracted,
+    actions,
+  };
+}
+
+async function loadUnlockState(signal: LearningSignal, actions: string[]): Promise<ShadowUnlockState | null> {
+  try {
+    return await evaluateShadowUnlockState({
+      organizationId: signal.organizationId,
+      accountId: signal.userId,
+    });
+  } catch (err) {
+    actions.push(`Unlock state unavailable: ${err}`);
+    return null;
+  }
+}
+
+async function safeLogLearningEvent(
+  signal: LearningSignal,
+  effectivenessScore: number,
+  actions: string[],
+): Promise<void> {
+  try {
+    await logLearningEvent(signal, effectivenessScore, actions);
+  } catch {
+    // Non-critical — don't fail the whole loop
+  }
+}
+
+async function recordMetrics(
+  signal: LearningSignal,
+  outcome: 'improved' | 'neutral' | 'degraded' | 'unknown',
+  effectivenessScore: number,
+  actions: string[],
+): Promise<boolean> {
   try {
     await recordRecommendationEffectiveness({
       organizationId: signal.organizationId,
@@ -68,71 +110,106 @@ export async function processLearningSignal(
       outcome,
       effectivenessScore,
     });
-    metricsRecorded = true;
     actions.push(`Effectiveness recorded: ${outcome} (${effectivenessScore})`);
+    return true;
   } catch (err) {
     actions.push(`Metrics failed: ${err}`);
+    return false;
+  }
+}
+
+async function handlePositiveOutcome(
+  signal: LearningSignal,
+  actions: string[],
+  unlockState: ShadowUnlockState | null,
+): Promise<{ profileUpdated: boolean; factsExtracted: number }> {
+  if (!['thumbs_up', 'followed_advice', 'asked_followup'].includes(signal.outcome)) {
+    return { profileUpdated: false, factsExtracted: 0 };
   }
 
-  // ── Step 2: Extract profile facts from positive outcomes ─────────────────
-  if (['thumbs_up', 'followed_advice', 'asked_followup'].includes(signal.outcome)) {
-    try {
-      const extracted = await extractAndStoreFacts(signal);
-      factsExtracted = extracted;
-      if (extracted > 0) {
-        profileUpdated = true;
-        actions.push(`Extracted ${extracted} fact(s) from positive signal`);
-      }
-    } catch (err) {
-      actions.push(`Fact extraction failed: ${err}`);
-    }
+  if (!unlockState || !isFeatureEnabled(unlockState, 'strong_personalization')) {
+    actions.push('Strong personalization remains locked (observation mode)');
+    return { profileUpdated: false, factsExtracted: 0 };
   }
 
-  // ── Step 3: Flag library entries for review on negative outcomes ──────────
-  if (['thumbs_down', 'escalated_to_human'].includes(signal.outcome)) {
-    try {
-      await flagLibraryEntryForReview(signal);
-      libraryFlagged = true;
-      actions.push(`Library entry flagged for review (topic: ${signal.topic})`);
-    } catch (err) {
-      actions.push(`Library flag failed: ${err}`);
-    }
-  }
-
-  // ── Step 3.5: Auto-promote/demote library entries based on effectiveness ──
-  if (metricsRecorded) {
-    try {
-      const action = await promoteOrDemoteLibraryEntry(
-        signal.organizationId,
-        signal.topic,
-        effectivenessScore,
-      );
-      if (action) {
-        actions.push(action);
-      }
-    } catch (err) {
-      actions.push(`Library promotion/demotion skipped: ${err}`);
-    }
-  }
-
-  // ── Step 4: Update communication style preference ─────────────────────────
-  if (signal.outcome === 'thumbs_up' && signal.responseText) {
-    try {
-      await inferCommunicationPreference(signal);
-      actions.push('Communication preference updated');
-    } catch (err) {
-      actions.push(`Style update skipped: ${err}`);
-    }
-  }
-
-  // ── Step 5: Log the learning event ───────────────────────────────────────
   try {
-    await logLearningEvent(signal, effectivenessScore, actions);
-  } catch {
-    // Non-critical — don't fail the whole loop
+    const factsExtracted = await extractAndStoreFacts(signal);
+    if (factsExtracted > 0) {
+      actions.push(`Extracted ${factsExtracted} fact(s) from positive signal`);
+      return { profileUpdated: true, factsExtracted };
+    }
+    return { profileUpdated: false, factsExtracted: 0 };
+  } catch (err) {
+    actions.push(`Fact extraction failed: ${err}`);
+    return { profileUpdated: false, factsExtracted: 0 };
+  }
+}
+
+async function handleNegativeOutcome(
+  signal: LearningSignal,
+  actions: string[],
+  unlockState: ShadowUnlockState | null,
+): Promise<boolean> {
+  const baseNegative = ['thumbs_down', 'escalated_to_human'];
+  const aggressiveNegative = ['ignored_advice', 'session_ended'];
+  const shouldUseAggressiveMode = unlockState && isFeatureEnabled(unlockState, 'aggressive_research_generation');
+  const negativeOutcomes = shouldUseAggressiveMode ? [...baseNegative, ...aggressiveNegative] : baseNegative;
+
+  if (!negativeOutcomes.includes(signal.outcome)) {
+    return false;
   }
 
-  return { profileUpdated, metricsRecorded, libraryFlagged, factsExtracted, actions };
+  try {
+    await flagLibraryEntryForReview(signal);
+    actions.push(`Library entry flagged for review (topic: ${signal.topic})`);
+
+    const researchRequirementId = await createResearchRequirementFromNegativeSignal(signal);
+    actions.push(`Research requirement created (#${researchRequirementId})`);
+    return true;
+  } catch (err) {
+    actions.push(`Library flag failed: ${err}`);
+    return false;
+  }
+}
+
+async function applyLibraryPromotion(
+  metricsRecorded: boolean,
+  organizationId: string,
+  topic: string,
+  effectivenessScore: number,
+  actions: string[],
+  unlockState: ShadowUnlockState | null,
+): Promise<void> {
+  if (!metricsRecorded) {
+    return;
+  }
+
+  if (!unlockState || !isFeatureEnabled(unlockState, 'auto_library_updates')) {
+    actions.push('Auto library updates remain in observation mode');
+    return;
+  }
+
+  try {
+    const action = await promoteOrDemoteLibraryEntry(organizationId, topic, effectivenessScore);
+    if (action) {
+      actions.push(action);
+    }
+  } catch (err) {
+    actions.push(`Library promotion/demotion skipped: ${err}`);
+  }
+}
+
+async function maybeUpdateCommunicationStyle(signal: LearningSignal, actions: string[]): Promise<void> {
+  if (signal.outcome !== 'thumbs_up' || !signal.responseText) {
+    return;
+  }
+
+  try {
+    await inferCommunicationPreference(signal);
+    actions.push('Communication preference updated');
+  } catch (err) {
+    actions.push(`Style update skipped: ${err}`);
+  }
 }
 
 // ─── Profile Fact Extraction ──────────────────────────────────────────────────
@@ -246,6 +323,34 @@ async function flagLibraryEntryForReview(signal: LearningSignal): Promise<void> 
       signal.userNote ?? null,
     ],
   );
+}
+
+async function createResearchRequirementFromNegativeSignal(signal: LearningSignal): Promise<number> {
+  const safeTopic = signal.topic && signal.topic.trim().length > 0 ? signal.topic.trim() : 'general';
+  const sourceEntityId = signal.messageId && signal.messageId.trim().length > 0
+    ? signal.messageId
+    : `learning-${Date.now()}`;
+
+  return createShadowResearchRequirement({
+    organizationId: signal.organizationId,
+    sourceEventName: 'shadow_learning_negative_outcome',
+    sourceEntityType: 'shadow_learning_event',
+    sourceEntityId,
+    researchRequirement: `Strengthen SHADOW guidance for topic '${safeTopic}' after outcome '${signal.outcome}'.`,
+    knowledgeGap: signal.userNote?.trim() || `Recent response on '${safeTopic}' was judged insufficient and requires evidence reinforcement.`,
+    evidenceLabel: `Learning loop escalation (${signal.outcome})`,
+    sourceStatus: 'weak',
+    sourceConfidenceTier: 'LIMITED',
+    sourceVerificationState: 'unverified',
+    createdByAccountId: signal.userId,
+    createdByRole: signal.role,
+    metadata: {
+      sessionType: signal.sessionType,
+      outcome: signal.outcome,
+      topic: safeTopic,
+      note: signal.userNote ?? null,
+    },
+  });
 }
 
 // ─── Communication Style Inference ───────────────────────────────────────────

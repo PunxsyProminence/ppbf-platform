@@ -6,6 +6,7 @@ import { getGrowthMetrics } from '@/src/server/pilot/shadowMetrics';
 import { queryOne } from '@/src/server/pilot/db';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import type { ShadowUserProfileRow } from '@/src/server/pilot/shadowUserProfile';
+import { evaluateShadowUnlockState } from '@/src/server/pilot/shadowUnlocks';
 
 export const runtime = 'nodejs';
 
@@ -38,6 +39,12 @@ export interface OrgMetrics {
     totalInteractions: number;
     positiveOutcomeRate: number;
   };
+  unlocks: {
+    strongPersonalization: boolean;
+    autoLibraryUpdates: boolean;
+    aggressiveResearchGeneration: boolean;
+    fineTuningPipelineReady: boolean;
+  };
 }
 
 // GET /api/pilot/shadow/metrics — admin/board only growth dashboard data
@@ -59,7 +66,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Org-level metrics
-    const metrics = await getOrgMetrics(principal.organizationId, days);
+    const metrics = await getOrgMetrics(principal.organizationId, principal.accountId, days);
     return NextResponse.json({ ok: true, metrics });
   } catch (error) {
     return jsonError(error);
@@ -68,10 +75,11 @@ export async function GET(request: NextRequest) {
 
 // ─── Org-Level Metrics Aggregation ────────────────────────────────────────
 
-async function getOrgMetrics(organizationId: string, days: number): Promise<OrgMetrics> {
-  const [growthMetrics, tierCounts] = await Promise.all([
+async function getOrgMetrics(organizationId: string, accountId: string, days: number): Promise<OrgMetrics> {
+  const [growthMetrics, tierCounts, unlockState] = await Promise.all([
     getGrowthMetrics(organizationId, days),
     getTierCounts(organizationId),
+    evaluateShadowUnlockState({ organizationId, accountId }).catch(() => null),
   ]);
 
   const avgScore = typeof growthMetrics.avgEffectiveness === 'string'
@@ -113,6 +121,12 @@ async function getOrgMetrics(organizationId: string, days: number): Promise<OrgM
       totalInteractions: growthMetrics.totalInteractions ?? 0,
       positiveOutcomeRate: satisfaction / 100,
     },
+    unlocks: {
+      strongPersonalization: unlockState?.features.strong_personalization?.unlocked ?? false,
+      autoLibraryUpdates: unlockState?.features.auto_library_updates?.unlocked ?? false,
+      aggressiveResearchGeneration: unlockState?.features.aggressive_research_generation?.unlocked ?? false,
+      fineTuningPipelineReady: unlockState?.features.fine_tuning_pipeline?.unlocked ?? false,
+    },
   };
 }
 
@@ -147,7 +161,12 @@ async function getUserMetrics(organizationId: string, userId: string): Promise<U
   const lastTime = profile.last_interaction_at ? new Date(profile.last_interaction_at).getTime() : createdTime;
   const nowTime = Date.now();
 
-  const tierLevel = profile.interaction_count >= 50 ? 'gold' : profile.interaction_count >= 20 ? 'silver' : 'bronze';
+  let tierLevel: 'bronze' | 'silver' | 'gold' = 'bronze';
+  if (profile.interaction_count >= 50) {
+    tierLevel = 'gold';
+  } else if (profile.interaction_count >= 20) {
+    tierLevel = 'silver';
+  }
   return {
     userId,
     profile: {

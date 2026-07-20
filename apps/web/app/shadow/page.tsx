@@ -68,6 +68,20 @@ interface ShadowAIResult {
   explainability?: ExplainabilityChain;
 }
 
+function createMessageId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `m-${crypto.randomUUID()}`;
+  }
+  return `m-${Date.now()}`;
+}
+
+interface ShadowJobStatusResult {
+  jobId: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  output?: Record<string, unknown> | null;
+  error?: string | null;
+}
+
 // Module-level: returns 'created' or 'draft' based on backend availability
 async function postResearchRequirement(
   requirement: ReturnType<typeof deriveResearchRequirement>,
@@ -120,6 +134,19 @@ async function fetchShadowAI(rawQuestion: string, heavyBagMode: boolean, apiBase
   });
   if (!res.ok) throw new Error(`SHADOW AI error: ${res.status}`);
   return res.json() as Promise<ShadowAIResult>;
+}
+
+async function fetchShadowJobStatus(jobId: string, apiBaseUrl: string): Promise<ShadowJobStatusResult | null> {
+  const response = await fetch(`${apiBaseUrl}/api/pilot/shadow/jobs/${jobId}`, {
+    method: 'GET',
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  return response.json() as Promise<ShadowJobStatusResult>;
 }
 
 async function submitFeedback(
@@ -439,9 +466,9 @@ function ShadowChatPageContent() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  function addMessage(type: 'user' | 'shadow', text: string, meta?: Partial<Pick<ShadowMessage, 'tier' | 'profileTier' | 'modelUsed' | 'isAsync' | 'jobId'>>) {
+  function addMessage(type: 'user' | 'shadow', text: string, meta?: Partial<Pick<ShadowMessage, 'id' | 'tier' | 'profileTier' | 'modelUsed' | 'isAsync' | 'jobId'>>) {
     const newMessage: ShadowMessage = {
-      id: Date.now().toString(),
+      id: createMessageId(),
       type,
       text,
       timestamp: formatTimestamp(),
@@ -492,16 +519,66 @@ function ShadowChatPageContent() {
 
   async function callShadowAI(rawQuestion: string): Promise<void> {
     const data = await fetchShadowAI(rawQuestion, heavyBagMode, apiBase());
+    const messageId = createMessageId();
     const text = data.async && data.jobId
       ? `Your Heavy Bag Session is queued. Job ID: ${data.jobId}`
       : (data.response || data.error || 'SHADOW encountered an error.');
     addMessage('shadow', text, {
+      id: messageId,
       tier: data.async ? 'heavy_bag' : data.tier,
       profileTier: data.profileTier,
       modelUsed: data.modelUsed,
       isAsync: data.async,
       jobId: data.jobId,
     });
+
+    if (data.async && data.jobId) {
+      void pollQueuedShadowJob(data.jobId, messageId);
+    }
+  }
+
+  async function pollQueuedShadowJob(jobId: string, messageId: string): Promise<void> {
+    const maxAttempts = 30;
+    const intervalMs = 2000;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const status = await fetchShadowJobStatus(jobId, apiBase());
+
+      if (!status) {
+        break;
+      }
+
+      if (status.status === 'completed') {
+        const outputText = typeof status.output?.response === 'string'
+          ? status.output.response
+          : 'Heavy Bag Session completed. Open Scout Reports for detailed output.';
+        setMessages((prev) => prev.map((msg) => (
+          msg.id === messageId
+            ? { ...msg, text: outputText, isAsync: false }
+            : msg
+        )));
+        return;
+      }
+
+      if (status.status === 'failed' || status.status === 'cancelled') {
+        setMessages((prev) => prev.map((msg) => (
+          msg.id === messageId
+            ? { ...msg, text: status.error || 'Heavy Bag Session failed. Please retry.', isAsync: false }
+            : msg
+        )));
+        return;
+      }
+
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, intervalMs);
+      });
+    }
+
+    setMessages((prev) => prev.map((msg) => (
+      msg.id === messageId
+        ? { ...msg, text: `${msg.text}\n\nStill processing. Check Scout Reports for completion.`, isAsync: false }
+        : msg
+    )));
   }
 
   async function handleAIFallback(rawQuestion: string) {
