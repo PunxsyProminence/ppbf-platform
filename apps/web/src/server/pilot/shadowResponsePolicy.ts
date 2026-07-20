@@ -153,7 +153,7 @@ export function classifySemanticSafety(text: string): SemanticSafetyDecision {
     return { riskLevel: 'critical', category: 'emergency', allowedMode: 'defer', requiresHumanReview: true, reasons: ['Potential emergency language detected'] };
   }
 
-  const diagnosis = /\b(you|the athlete|this)\b.{0,40}\b(have|has|definitely|confirms|proves|means)\b.{0,60}\b(concussion|fracture|injury|disease|syndrome|disorder|condition)\b/.test(normalized);
+  const diagnosis = /\b(you|your symptoms|the athlete|this)\b.{0,40}\b(have|has|definitely|confirm|confirms|proves|means)\b.{0,60}\b(concussion|fracture|injury|disease|syndrome|disorder|condition)\b/.test(normalized);
   if (diagnosis) reasons.push('Output reaches or strongly implies a personal diagnosis');
   const prescription = /\b(take|start|stop|increase|decrease|double|dose|use)\b.{0,40}\b(medication|medicine|drug|pill|ibuprofen|acetaminophen|supplement|injection)\b/.test(normalized);
   if (prescription) reasons.push('Output gives a treatment, medication, or dosage directive');
@@ -189,7 +189,7 @@ export function calculateEvidenceConfidence(
 
   const factors: string[] = [];
   const distinctSources = new Set(evidence.map((item) => item.sourceId)).size;
-  const base = status === 'supported' ? 0.45 : 0.22;
+  const base = status === 'supported' ? 0.45 : 0.12;
   const diversity = Math.min(0.2, distinctSources * 0.07);
   const authority = evidence.reduce(
     (sum, item) => sum + Math.max(0, Math.min(1, (6 - item.authorityTier) / 5)),
