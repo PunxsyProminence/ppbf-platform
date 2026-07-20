@@ -298,16 +298,51 @@ export async function retrieveShadowContext(params: {
     };
   }
 
-  // Athletes can only access their own context
-  if (userRole === 'athlete' && athleteId && userId !== athleteId) {
+  // Athlete identifiers are resolved from the authenticated account; account IDs are not trusted as athlete IDs.
+  if (userRole === 'athlete' && athleteId) {
+    const ownAthlete = await query<{ athlete_id: string }>(
+      `SELECT athlete_id FROM pilot.accounts
+       WHERE account_id = $1 AND organization_id = $2 AND athlete_id = $3 AND active_flag = true`,
+      [userId, organizationId, athleteId],
+    ).catch(() => []);
+    if (ownAthlete.length === 0) {
+      return {
+        context: '',
+        authorized: false,
+        reason: 'Athletes can only access their own context.',
+      };
+    }
+  }
+
+  // Guardians must have an explicit organization-scoped relationship to the athlete.
+  if (userRole === 'parent' && athleteId) {
+    const guardianLink = await query<{ athlete_id: string }>(
+      `SELECT gl.athlete_id
+       FROM pilot.guardian_links gl
+       JOIN pilot.parents p
+         ON p.organization_id = gl.organization_id AND p.parent_id = gl.parent_id
+       WHERE p.account_id = $1 AND gl.organization_id = $2 AND gl.athlete_id = $3`,
+      [userId, organizationId, athleteId],
+    ).catch(() => []);
+    if (guardianLink.length === 0) {
+      return {
+        context: '',
+        authorized: false,
+        reason: 'Guardian is not linked to this athlete.',
+      };
+    }
+  }
+
+  // Operational staff and volunteers do not receive athlete-specific chat context.
+  if ((userRole === 'staff' || userRole === 'volunteer') && athleteId) {
     return {
       context: '',
       authorized: false,
-      reason: 'Athletes can only access their own context.',
+      reason: 'This role is limited to organization-level SHADOW context.',
     };
   }
 
-  // Use cache for org-level context (athlete-specific queries are not cached)
+  // Use an organization-scoped cache key. Athlete context is separated by athlete ID.
   const cacheKey = athleteId ? `${organizationId}:${athleteId}` : `${organizationId}:org`;
   const cached = getCachedContext(cacheKey);
   if (cached) return { context: cached, authorized: true };
@@ -335,10 +370,58 @@ export async function retrieveShadowContext(params: {
     }
   }
 
-  // Retrieve context (simplified for MVP)
-  const context = `Context for ${athleteId || userId} in organization ${organizationId}`;
-  setCachedContext(cacheKey, context);
-  return { context, authorized: true };
+  if (!athleteId) {
+    const context = `Organization-scoped context for authenticated account ${userId} in organization ${organizationId}.`;
+    setCachedContext(cacheKey, context);
+    return { context, authorized: true };
+  }
+
+  try {
+    const [athletes, readiness, sessions, attendance, restrictions, observations] = await Promise.all([
+      query<{ athlete_id: string; full_name: string; gym_status: string; coach_id: string }>(
+        `SELECT athlete_id, full_name, gym_status, coach_id FROM pilot.athletes
+         WHERE organization_id = $1 AND athlete_id = $2`, [organizationId, athleteId]),
+      query<{ score: string; category: string; measured_at: string }>(
+        `SELECT score, category, measured_at FROM pilot.readiness
+         WHERE organization_id = $1 AND athlete_id = $2 ORDER BY measured_at DESC LIMIT 5`, [organizationId, athleteId]),
+      query<{ date: string; rpe: string; completed_flag: boolean; notes: string }>(
+        `SELECT date, rpe, completed_flag, notes FROM pilot.sessions
+         WHERE organization_id = $1 AND athlete_id = $2 ORDER BY date DESC LIMIT 5`, [organizationId, athleteId]),
+      query<{ attendance_date: string; status: string }>(
+        `SELECT attendance_date, status FROM pilot.attendance
+         WHERE organization_id = $1 AND athlete_id = $2 ORDER BY attendance_date DESC LIMIT 5`, [organizationId, athleteId]),
+      query<{ clearance_status: string; updated_at: string }>(
+        `SELECT clearance_status, updated_at FROM pilot.medical_intake
+         WHERE organization_id = $1 AND athlete_id = $2 ORDER BY updated_at DESC LIMIT 1`, [organizationId, athleteId]),
+      query<{ note_type: string; note_text: string; created_at: string }>(
+        `SELECT note_type, note_text, created_at FROM pilot.coach_observations
+         WHERE organization_id = $1 AND athlete_id = $2 ORDER BY created_at DESC LIMIT 5`, [organizationId, athleteId]),
+    ]);
+
+    if (athletes.length === 0) {
+      return { context: '', authorized: false, reason: 'Athlete was not found in this organization.' };
+    }
+
+    const context = JSON.stringify({
+      scope: { organizationId, athleteId },
+      athlete: athletes[0],
+      recentReadiness: readiness,
+      recentSessions: sessions,
+      recentAttendance: attendance,
+      participationRestrictionStatus: restrictions[0] ?? null,
+      recentCoachObservations: observations,
+      provenance: 'pilot PostgreSQL tables; organization and athlete scoped',
+    });
+    setCachedContext(cacheKey, context);
+    return { context, authorized: true };
+  } catch (error) {
+    console.error('SHADOW authorized context retrieval failed:', error);
+    return {
+      context: `Authorized athlete ${athleteId} context in organization ${organizationId} is temporarily unavailable.`,
+      authorized: true,
+      reason: 'Authorized context retrieval was incomplete.',
+    };
+  }
 }
 
 // Validate and filter LLM response before display
