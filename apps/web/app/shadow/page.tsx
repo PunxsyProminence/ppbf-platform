@@ -45,7 +45,8 @@ interface ShadowLibraryClaimApiResponse {
 
 const GENERIC_UNSUPPORTED_REPLY = 'If this question needs a sourced answer, I should either answer from verified evidence or create a research requirement. Try asking about doctrine, evidence, readiness, recovery, technique, or organizational learning.';
 
-const HEAVY_BAG_ELIGIBLE_ROLES = new Set(['coach', 'admin', 'organization_admin', 'platform_owner', 'staff']);
+// Mirrors the server-owned manual override policy. The API remains authoritative.
+const HEAVY_BAG_ELIGIBLE_ROLES = new Set(['coach', 'admin', 'organization_admin', 'platform_owner']);
 
 interface ExplainabilityChain {
   confidence: number; // 0-100, capped at 95%
