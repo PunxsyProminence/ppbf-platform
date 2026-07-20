@@ -1,0 +1,12 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install pg package
+RUN npm install pg
+
+# Copy migration script
+COPY migration-runner.js .
+
+# Run migration
+CMD ["node", "migration-runner.js"]
