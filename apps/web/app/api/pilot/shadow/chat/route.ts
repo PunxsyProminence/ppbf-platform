@@ -456,8 +456,23 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     });
 
     // Step 7: Enforce structured output, then run semantic and deterministic post-generation checks.
-    const structuredResult = parseStructuredShadowResponse(llmResponse, availableEvidenceIds);
-    const structuredResponse = renderStructuredShadowResponse(structuredResult.value);
+    const structuredResult = resolvedAsync
+      ? {
+          value: {
+            observation: llmResponse,
+            guidance: [],
+            confidenceTier: 'RESEARCH_NEEDED' as const,
+            evidenceIds: [],
+            unknowns: [],
+            humanAuthority: null,
+            medicalDeferral: false,
+            urgentEscalation: false,
+          },
+          schemaValid: true,
+          issues: [],
+        }
+      : parseStructuredShadowResponse(llmResponse, availableEvidenceIds);
+    const structuredResponse = resolvedAsync ? llmResponse : renderStructuredShadowResponse(structuredResult.value);
     const semanticSafety = classifySemanticSafety(structuredResponse);
     const responseValidation = validateShadowResponse(structuredResponse);
     const semanticBlocked = semanticSafety.allowedMode === 'block';
