@@ -1,0 +1,44 @@
+name: Shadow Chat hardening CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/web/app/api/pilot/shadow/**'
+      - 'apps/web/app/shadow/**'
+      - 'apps/web/src/server/pilot/shadowChat*'
+      - 'apps/web/src/server/pilot/shadowJobQueue*'
+      - 'apps/web/package.json'
+      - 'package-lock.json'
+      - '.github/workflows/shadow-chat-hardening-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shadow-chat-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run focused and regression tests
+        run: npm --workspace web test -- --runInBand
+
+      - name: Run production build
+        run: npm run build
