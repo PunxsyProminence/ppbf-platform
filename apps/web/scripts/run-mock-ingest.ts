@@ -1,8 +1,10 @@
 import { Buffer } from 'node:buffer'
 
 import PDFDocument from 'pdfkit'
+import { NextRequest } from 'next/server'
 
 import { POST } from '../app/api/document-ingest/route'
+import { PILOT_SESSION_COOKIE } from '../src/server/pilot/env'
 
 function createMockPdfBuffer(): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -26,6 +28,14 @@ function createMockPdfBuffer(): Promise<Buffer> {
   })
 }
 
+function requireSessionToken(): string {
+  const token = process.env.PPBF_MOCK_INGEST_SESSION_TOKEN?.trim()
+  if (!token) {
+    throw new Error('PPBF_MOCK_INGEST_SESSION_TOKEN must contain an active organization-admin session token')
+  }
+  return token
+}
+
 async function main() {
   process.env.PPBF_INGEST_MOCK_MODE = 'true'
 
@@ -36,8 +46,12 @@ async function main() {
   formData.append('file', file)
   formData.append('source', 'Mock Audit Runner')
 
-  const request = new Request('http://localhost/api/document-ingest', {
+  const request = new NextRequest('http://localhost/api/document-ingest', {
     method: 'POST',
+    headers: {
+      cookie: `${PILOT_SESSION_COOKIE}=${encodeURIComponent(requireSessionToken())}`,
+      'content-length': String(pdfBuffer.length + 1024),
+    },
     body: formData,
   })
 
