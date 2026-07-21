@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { requireRole } from '@/src/server/pilot/access';
+import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { uploadPilotVideoFile } from '@/src/server/pilot/blob';
 import { query } from '@/src/server/pilot/db';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
@@ -33,18 +33,22 @@ export async function POST(request: NextRequest) {
     const notesValue = formData.get('notes');
 
     if (!(file instanceof File)) {
-      return jsonError('Missing video file', 400);
+      return NextResponse.json({ error: 'Missing video file' }, { status: 400 });
     }
     if (!ALLOWED_MIME_TYPES.has(file.type)) {
-      return jsonError(`Unsupported file type: ${file.type}`, 415);
+      return NextResponse.json({ error: `Unsupported file type: ${file.type}` }, { status: 415 });
     }
     if (file.size > MAX_BYTES) {
-      return jsonError('File exceeds 500 MB limit', 413);
+      return NextResponse.json({ error: 'File exceeds 500 MB limit' }, { status: 413 });
     }
 
     const athleteId = typeof athleteIdValue === 'string' ? athleteIdValue.trim() : null;
     const title = typeof titleValue === 'string' ? titleValue.trim() : file.name;
     const notes = typeof notesValue === 'string' ? notesValue.trim() : '';
+
+    if (athleteId) {
+      await assertActorCanAccessAthlete(principal, athleteId);
+    }
 
     const videoSessionId = randomUUID();
     const blobPath = `${principal.organizationId}/${videoSessionId}/${file.name}`;
@@ -89,6 +93,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ video_session_id: videoSessionId, title, blob_path: blobPath }, { status: 201 });
   } catch (error) {
-    return jsonError(error instanceof Error ? error.message : 'Video upload failed', 500);
+    return jsonError(error);
   }
 }

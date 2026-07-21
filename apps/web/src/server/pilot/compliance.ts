@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { query } from './db';
+import { query, queryOne } from './db';
 
 export interface ComplianceRule {
   rule_id: string;
@@ -83,10 +83,25 @@ export async function escalateViolation(params: {
     ],
   );
 
-  // Update violation status
+  // Update violation status. Scoped by organization_id so a violation_id
+  // from another organization can never be mutated by this call.
   await query(
-    `update pilot.compliance_violations set status = 'escalated', escalation_status = 'in_progress' where violation_id = $1`,
-    [params.violationId],
+    `update pilot.compliance_violations
+     set status = 'escalated', escalation_status = 'in_progress'
+     where violation_id = $1 and organization_id = $2`,
+    [params.violationId, params.organizationId],
+  );
+}
+
+export async function getComplianceViolationById(
+  organizationId: string,
+  violationId: string,
+): Promise<ComplianceViolation | null> {
+  return queryOne<ComplianceViolation>(
+    `select violation_id, rule_id, video_session_id, athlete_id, severity, status, escalation_status, created_at
+     from pilot.compliance_violations
+     where organization_id = $1 and violation_id = $2`,
+    [organizationId, violationId],
   );
 }
 
@@ -97,6 +112,7 @@ export async function getOrganizationViolations(
     status?: string;
     severity?: string;
     limit?: number;
+    coachAccountId?: string;
   },
 ): Promise<ComplianceViolation[]> {
   let sql = `
@@ -109,6 +125,11 @@ export async function getOrganizationViolations(
   if (filters?.athleteId) {
     sql += ` and athlete_id = $${params.length + 1}`;
     params.push(filters.athleteId);
+  }
+
+  if (filters?.coachAccountId) {
+    sql += ` and athlete_id in (select athlete_id from pilot.athletes where coach_id = $${params.length + 1} and organization_id = $1)`;
+    params.push(filters.coachAccountId);
   }
 
   if (filters?.status) {
@@ -125,6 +146,18 @@ export async function getOrganizationViolations(
   params.push(filters?.limit || 50);
 
   return query<ComplianceViolation>(sql, params);
+}
+
+export async function getComplianceRuleById(
+  organizationId: string,
+  ruleId: string,
+): Promise<ComplianceRule | null> {
+  return queryOne<ComplianceRule>(
+    `select rule_id, rule_name, rule_category, severity, escalation_level, active_flag
+     from pilot.compliance_rules
+     where organization_id = $1 and rule_id = $2`,
+    [organizationId, ruleId],
+  );
 }
 
 export async function getComplianceRulesByCategory(

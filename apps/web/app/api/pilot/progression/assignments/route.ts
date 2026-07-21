@@ -1,14 +1,15 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { assignDrill, getAthleteAssignments } from '@/src/server/pilot/progression';
-import { requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
+import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
+import { assignDrill, getAthleteAssignments, getProgressionGapById } from '@/src/server/pilot/progression';
+import { hiddenNotFound, requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['coach', 'admin', 'organization_admin', 'athlete']);
+    requireRole(principal, ['coach', 'admin', 'organization_admin', 'athlete', 'parent']);
 
     const athleteId = request.nextUrl.searchParams.get('athlete_id');
     const status = request.nextUrl.searchParams.get('status');
@@ -16,6 +17,8 @@ export async function GET(request: NextRequest) {
     if (!athleteId) {
       throw new Error('Missing athlete_id');
     }
+
+    await assertActorCanAccessAthlete(principal, athleteId);
 
     const assignments = await getAthleteAssignments(principal.organizationId, athleteId, status || undefined);
 
@@ -44,6 +47,15 @@ export async function POST(request: NextRequest) {
 
     if (!body.gap_id || !body.athlete_id || !body.drill_name || !body.drill_description) {
       throw new Error('Missing required fields');
+    }
+
+    await assertActorCanAccessAthlete(principal, body.athlete_id);
+
+    // Reject a gap_id that belongs to another organization or to a
+    // different athlete without revealing whether it exists at all.
+    const gap = await getProgressionGapById(principal.organizationId, body.gap_id);
+    if (!gap || gap.athlete_id !== body.athlete_id) {
+      return hiddenNotFound();
     }
 
     const assignment = await assignDrill({
