@@ -1,9 +1,11 @@
 import type { NextRequest } from 'next/server';
+import type { PoolClient } from 'pg';
 
 import type { PilotRole } from './contracts';
 import { getPilotDefaultOrganizationId, PILOT_SESSION_COOKIE } from './env';
 import { createOpaqueToken, hashPin, hashToken, verifyPin } from './security';
-import { query, queryOne } from './db';
+import { computeSessionExpiry } from './sessionPolicy';
+import { query, queryOne, withTransaction } from './db';
 
 export interface PilotPrincipal {
   accountId: string;
@@ -38,6 +40,30 @@ interface FederatedAccountRow {
   active_flag: boolean;
   has_master_shadow_access: boolean;
   organization_status: string | null;
+}
+
+async function revokeAllSessionsForAccountTx(client: PoolClient, accountId: string): Promise<void> {
+  await client.query(
+    'update pilot.session_tokens set revoked_at = now() where account_id = $1 and revoked_at is null',
+    [accountId],
+  );
+}
+
+async function assignOrganizationMembershipTx(
+  client: PoolClient,
+  accountId: string,
+  organizationId: string,
+  role: PilotRole,
+): Promise<void> {
+  await client.query(
+    `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+     values ($1, $2, $3, true)
+     on conflict (account_id, organization_id) do update
+       set role = excluded.role,
+           active_flag = true,
+           updated_at = now()`,
+    [accountId, organizationId, role],
+  );
 }
 
 export async function loginWithAccountIdAndPin(accountId: string, pin: string): Promise<{ principal: PilotPrincipal; token: string } | null> {
@@ -80,8 +106,12 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
 
   const token = createOpaqueToken();
   const tokenHash = hashToken(token);
+  const expiresAt = computeSessionExpiry();
 
-  await query('insert into pilot.session_tokens (token_hash, account_id, organization_id) values ($1, $2, $3)', [tokenHash, data.account_id, organizationId]);
+  await query(
+    'insert into pilot.session_tokens (token_hash, account_id, organization_id, expires_at) values ($1, $2, $3, $4)',
+    [tokenHash, data.account_id, organizationId, expiresAt],
+  );
 
   return {
     token,
@@ -132,7 +162,12 @@ export async function loginWithMicrosoftEmail(emailOrUpn: string): Promise<{ pri
 
   const token = createOpaqueToken();
   const tokenHash = hashToken(token);
-  await query('insert into pilot.session_tokens (token_hash, account_id, organization_id) values ($1, $2, $3)', [tokenHash, data.account_id, organizationId]);
+  const expiresAt = computeSessionExpiry();
+
+  await query(
+    'insert into pilot.session_tokens (token_hash, account_id, organization_id, expires_at) values ($1, $2, $3, $4)',
+    [tokenHash, data.account_id, organizationId, expiresAt],
+  );
 
   return {
     token,
@@ -180,7 +215,13 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
      from pilot.session_tokens st
      join pilot.accounts a on a.account_id = st.account_id
      left join pilot.organizations o on o.organization_id = coalesce(st.organization_id, a.organization_id)
-     where st.token_hash = $1 and st.revoked_at is null`,
+     join pilot.organization_memberships om
+       on om.account_id = a.account_id
+      and om.organization_id = coalesce(st.organization_id, a.organization_id)
+      and om.active_flag = true
+     where st.token_hash = $1
+       and st.revoked_at is null
+       and st.expires_at > now()`,
     [tokenHash],
   );
 
@@ -214,39 +255,72 @@ export async function revokeAllSessionsForAccount(accountId: string): Promise<vo
   await query('update pilot.session_tokens set revoked_at = now() where account_id = $1 and revoked_at is null', [accountId]);
 }
 
-export async function resetAccountPin(accountId: string, pin: string, organizationId: string): Promise<void> {
-  const pinHash = await hashPin(pin);
-
-  // Verify account exists, belongs to the organization, and is not a platform owner
-  const result = await query<{ account_id: string }>(
-    'select account_id from pilot.accounts where account_id = $1 and organization_id = $2 and is_platform_owner = false',
-    [accountId, organizationId]
+// Used by organization-admin-triggered revocation. Rejects with the same
+// generic error whether the account doesn't exist, belongs to a different
+// organization, or is a platform owner, so none of those conditions can be
+// distinguished from the response -- an organization admin can only ever
+// revoke sessions for a non-platform-owner account inside their own org.
+export async function revokeAllSessionsForAccountInOrganization(accountId: string, organizationId: string): Promise<void> {
+  const account = await queryOne<{ account_id: string; is_platform_owner: boolean }>(
+    'select account_id, is_platform_owner from pilot.accounts where account_id = $1 and organization_id = $2',
+    [accountId, organizationId],
   );
 
-  if (!result.length) {
-    throw new Error('Account not found or cannot be reset');
-  }
-
-  // Update PIN only if account belongs to this organization and is not platform owner
-  const updateResult = await query(
-    'update pilot.accounts set pin_hash = $1 where account_id = $2 and organization_id = $3 and is_platform_owner = false',
-    [pinHash, accountId, organizationId]
-  );
-
-  if (!updateResult.length) {
-    throw new Error('Failed to reset PIN');
+  if (!account || account.is_platform_owner) {
+    throw new Error('Account not found or cannot be revoked');
   }
 
   await revokeAllSessionsForAccount(accountId);
 }
 
+// Deletes session rows that have been expired or revoked for at least
+// `retentionDays`, keeping a short forensic window before hard-deleting.
+export async function cleanupExpiredSessions(retentionDays = 7): Promise<{ deletedCount: number }> {
+  const rows = await query<{ token_hash: string }>(
+    `delete from pilot.session_tokens
+     where (expires_at < now() - ($1 || ' days')::interval)
+        or (revoked_at is not null and revoked_at < now() - ($1 || ' days')::interval)
+     returning token_hash`,
+    [retentionDays],
+  );
+
+  return { deletedCount: rows.length };
+}
+
+export async function resetAccountPin(accountId: string, pin: string, organizationId: string): Promise<void> {
+  const pinHash = await hashPin(pin);
+
+  await withTransaction(async (client) => {
+    // Verify ownership, change the PIN, and revoke every existing session
+    // for this account in one transaction: if any step fails, nothing
+    // commits, so a caller is never told a reset succeeded while the old
+    // PIN or an old session is still valid.
+    const result = await client.query<{ account_id: string }>(
+      `update pilot.accounts
+       set pin_hash = $1, updated_at = now()
+       where account_id = $2 and organization_id = $3 and is_platform_owner = false
+       returning account_id`,
+      [pinHash, accountId, organizationId],
+    );
+
+    if (result.rows.length === 0) {
+      throw new Error('Account not found or cannot be reset');
+    }
+
+    await revokeAllSessionsForAccountTx(client, accountId);
+  });
+}
+
 export async function createAthleteAccount(accountId: string, athleteId: string, pin: string, organizationId: string): Promise<void> {
   const pinHash = await hashPin(pin);
 
-  await query(
-    'insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner) values ($1, $2, $3, $4, $5, $6, $7)',
-    [accountId, 'athlete', organizationId, athleteId, pinHash, true, false],
-  );
+  await withTransaction(async (client) => {
+    await client.query(
+      'insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner) values ($1, $2, $3, $4, $5, $6, $7)',
+      [accountId, 'athlete', organizationId, athleteId, pinHash, true, false],
+    );
+    await assignOrganizationMembershipTx(client, accountId, organizationId, 'athlete');
+  });
 }
 
 export async function createOrUpdateAthleteAccount(accountId: string, athleteId: string, pin: string, organizationId: string): Promise<void> {
@@ -264,24 +338,33 @@ export async function createOrUpdateAthleteAccount(accountId: string, athleteId:
       // Account exists in a different organization—reject to prevent cross-tenant takeover
       throw new Error('Account already exists in another organization');
     }
-    // Same organization—update is allowed
-    await query(
-      `update pilot.accounts set
-         role = $1,
-         athlete_id = $2,
-         pin_hash = $3,
-         active_flag = $4,
-         updated_at = now()
-       where account_id = $5 and organization_id = $6`,
-      ['athlete', athleteId, pinHash, true, accountId, organizationId],
-    );
+
+    await withTransaction(async (client) => {
+      // Same organization—update is allowed. The PIN is changing, so revoke
+      // every existing session for this account in the same transaction.
+      await client.query(
+        `update pilot.accounts set
+           role = $1,
+           athlete_id = $2,
+           pin_hash = $3,
+           active_flag = $4,
+           updated_at = now()
+         where account_id = $5 and organization_id = $6`,
+        ['athlete', athleteId, pinHash, true, accountId, organizationId],
+      );
+      await assignOrganizationMembershipTx(client, accountId, organizationId, 'athlete');
+      await revokeAllSessionsForAccountTx(client, accountId);
+    });
   } else {
-    // New account—create it
-    await query(
-      `insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner)
-       values ($1, $2, $3, $4, $5, $6, $7)`,
-      [accountId, 'athlete', organizationId, athleteId, pinHash, true, false],
-    );
+    await withTransaction(async (client) => {
+      // New account—create it
+      await client.query(
+        `insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner)
+         values ($1, $2, $3, $4, $5, $6, $7)`,
+        [accountId, 'athlete', organizationId, athleteId, pinHash, true, false],
+      );
+      await assignOrganizationMembershipTx(client, accountId, organizationId, 'athlete');
+    });
   }
 }
 
@@ -299,23 +382,32 @@ export async function createCoachAccount(accountId: string, pin: string, organiz
     if (existingOrgId !== organizationId) {
       throw new Error('Account already exists in another organization');
     }
-    // Same organization—update is allowed
-    await query(
-      `update pilot.accounts set
-         role = $1,
-         pin_hash = $2,
-         active_flag = $3,
-         updated_at = now()
-       where account_id = $4 and organization_id = $5`,
-      ['coach', pinHash, true, accountId, organizationId],
-    );
+
+    await withTransaction(async (client) => {
+      // Same organization—update is allowed. The PIN is changing, so revoke
+      // every existing session for this account in the same transaction.
+      await client.query(
+        `update pilot.accounts set
+           role = $1,
+           pin_hash = $2,
+           active_flag = $3,
+           updated_at = now()
+         where account_id = $4 and organization_id = $5`,
+        ['coach', pinHash, true, accountId, organizationId],
+      );
+      await assignOrganizationMembershipTx(client, accountId, organizationId, 'coach');
+      await revokeAllSessionsForAccountTx(client, accountId);
+    });
   } else {
-    // New account—create it
-    await query(
-      `insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner)
-       values ($1, $2, $3, $4, $5, $6, $7)`,
-      [accountId, 'coach', organizationId, null, pinHash, true, false],
-    );
+    await withTransaction(async (client) => {
+      // New account—create it
+      await client.query(
+        `insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner)
+         values ($1, $2, $3, $4, $5, $6, $7)`,
+        [accountId, 'coach', organizationId, null, pinHash, true, false],
+      );
+      await assignOrganizationMembershipTx(client, accountId, organizationId, 'coach');
+    });
   }
 }
 
@@ -333,23 +425,32 @@ export async function createParentAccount(accountId: string, pin: string, organi
     if (existingOrgId !== organizationId) {
       throw new Error('Account already exists in another organization');
     }
-    // Same organization—update is allowed
-    await query(
-      `update pilot.accounts set
-         role = $1,
-         pin_hash = $2,
-         active_flag = $3,
-         updated_at = now()
-       where account_id = $4 and organization_id = $5`,
-      ['parent', pinHash, true, accountId, organizationId],
-    );
+
+    await withTransaction(async (client) => {
+      // Same organization—update is allowed. The PIN is changing, so revoke
+      // every existing session for this account in the same transaction.
+      await client.query(
+        `update pilot.accounts set
+           role = $1,
+           pin_hash = $2,
+           active_flag = $3,
+           updated_at = now()
+         where account_id = $4 and organization_id = $5`,
+        ['parent', pinHash, true, accountId, organizationId],
+      );
+      await assignOrganizationMembershipTx(client, accountId, organizationId, 'parent');
+      await revokeAllSessionsForAccountTx(client, accountId);
+    });
   } else {
-    // New account—create it
-    await query(
-      `insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner)
-       values ($1, $2, $3, $4, $5, $6, $7)`,
-      [accountId, 'parent', organizationId, null, pinHash, true, false],
-    );
+    await withTransaction(async (client) => {
+      // New account—create it
+      await client.query(
+        `insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner)
+         values ($1, $2, $3, $4, $5, $6, $7)`,
+        [accountId, 'parent', organizationId, null, pinHash, true, false],
+      );
+      await assignOrganizationMembershipTx(client, accountId, organizationId, 'parent');
+    });
   }
 }
 
@@ -362,20 +463,22 @@ export async function createOrRotateAdminAccount(
   const pinHash = await hashPin(pin);
   const isPlatformOwner = role === 'platform_owner';
 
-  await query(
-    `insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner)
-     values ($1, $2, $3, $4, $5, $6, $7)
-     on conflict (account_id) do update set
-       role = excluded.role,
-       organization_id = excluded.organization_id,
-       athlete_id = excluded.athlete_id,
-       pin_hash = excluded.pin_hash,
-       active_flag = excluded.active_flag,
-       is_platform_owner = excluded.is_platform_owner`,
-    [accountId, role, organizationId, null, pinHash, true, isPlatformOwner],
-  );
+  await withTransaction(async (client) => {
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner)
+       values ($1, $2, $3, $4, $5, $6, $7)
+       on conflict (account_id) do update set
+         role = excluded.role,
+         organization_id = excluded.organization_id,
+         athlete_id = excluded.athlete_id,
+         pin_hash = excluded.pin_hash,
+         active_flag = excluded.active_flag,
+         is_platform_owner = excluded.is_platform_owner`,
+      [accountId, role, organizationId, null, pinHash, true, isPlatformOwner],
+    );
 
-  await revokeAllSessionsForAccount(accountId);
+    await revokeAllSessionsForAccountTx(client, accountId);
+  });
 }
 
 export async function createOrganization(organizationId: string, organizationName: string, createdBy: string): Promise<void> {
@@ -420,33 +523,41 @@ export async function createOrUpdateMicrosoftPlatformOwnerAccount(params: {
   const accountId = existingByEmail?.account_id || params.accountIdHint?.trim() || normalizedEmail;
   const existingByAccountId = await queryOne<{ account_id: string }>('select account_id from pilot.accounts where account_id = $1', [accountId]);
 
-  await query(
-    `insert into pilot.accounts (
-       account_id,
-       login_email,
-       auth_provider,
-       role,
-       organization_id,
-       is_platform_owner,
-       athlete_id,
-       pin_hash,
-       active_flag
-     )
-     values ($1, $2, 'microsoft', 'platform_owner', $3, true, null, null, true)
-     on conflict (account_id) do update set
-       login_email = excluded.login_email,
-       auth_provider = 'microsoft',
-       role = 'platform_owner',
-       organization_id = excluded.organization_id,
-       is_platform_owner = true,
-       athlete_id = null,
-       pin_hash = null,
-       active_flag = true,
-       updated_at = now()`,
-    [accountId, normalizedEmail, params.organizationId],
-  );
+  await withTransaction(async (client) => {
+    await client.query(
+      `insert into pilot.accounts (
+         account_id,
+         login_email,
+         auth_provider,
+         role,
+         organization_id,
+         is_platform_owner,
+         athlete_id,
+         pin_hash,
+         active_flag
+       )
+       values ($1, $2, 'microsoft', 'platform_owner', $3, true, null, null, true)
+       on conflict (account_id) do update set
+         login_email = excluded.login_email,
+         auth_provider = 'microsoft',
+         role = 'platform_owner',
+         organization_id = excluded.organization_id,
+         is_platform_owner = true,
+         athlete_id = null,
+         pin_hash = null,
+         active_flag = true,
+         updated_at = now()`,
+      [accountId, normalizedEmail, params.organizationId],
+    );
 
-  await assignOrganizationMembership(accountId, params.organizationId, 'platform_owner');
+    await assignOrganizationMembershipTx(client, accountId, params.organizationId, 'platform_owner');
+
+    if (existingByAccountId) {
+      // Provider/role/org were (re)assigned on an existing account -- revoke
+      // any sessions minted under the previous configuration.
+      await revokeAllSessionsForAccountTx(client, accountId);
+    }
+  });
 
   return {
     accountId,
@@ -459,66 +570,90 @@ export async function setOrganizationStatus(
   organizationId: string,
   status: 'active' | 'inactive' | 'suspended' | 'pending',
 ): Promise<void> {
-  await query('update pilot.organizations set status = $2, updated_at = now() where organization_id = $1', [organizationId, status]);
+  await withTransaction(async (client) => {
+    await client.query(
+      'update pilot.organizations set status = $2, updated_at = now() where organization_id = $1',
+      [organizationId, status],
+    );
+
+    if (status !== 'active') {
+      // Revoke every session scoped to this organization so members can't
+      // keep operating in it under the old status.
+      await client.query(
+        'update pilot.session_tokens set revoked_at = now() where organization_id = $1 and revoked_at is null',
+        [organizationId],
+      );
+    }
+  });
 }
 
 export async function setAccountActiveStatus(accountId: string, organizationId: string, activeFlag: boolean): Promise<void> {
-  const rows = await query<{ account_id: string }>(
-    `update pilot.accounts
-     set active_flag = $3,
-         updated_at = now()
-     where account_id = $1 and organization_id = $2
-     returning account_id`,
-    [accountId, organizationId, activeFlag],
-  );
+  await withTransaction(async (client) => {
+    const rows = await client.query<{ account_id: string }>(
+      `update pilot.accounts
+       set active_flag = $3,
+           updated_at = now()
+       where account_id = $1 and organization_id = $2
+       returning account_id`,
+      [accountId, organizationId, activeFlag],
+    );
 
-  if (rows.length === 0) {
-    throw new Error('Missing account_id or organization_id');
-  }
+    if (rows.rows.length === 0) {
+      throw new Error('Missing account_id or organization_id');
+    }
 
-  await query(
-    `update pilot.organization_memberships
-     set active_flag = $3,
-         updated_at = now()
-     where account_id = $1 and organization_id = $2`,
-    [accountId, organizationId, activeFlag],
-  );
+    await client.query(
+      `update pilot.organization_memberships
+       set active_flag = $3,
+           updated_at = now()
+       where account_id = $1 and organization_id = $2`,
+      [accountId, organizationId, activeFlag],
+    );
 
-  if (!activeFlag) {
-    await revokeAllSessionsForAccount(accountId);
-  }
+    if (!activeFlag) {
+      await revokeAllSessionsForAccountTx(client, accountId);
+    }
+  });
 }
 
 export async function upsertOrganizationMembership(accountId: string, organizationId: string, role: PilotRole, activeFlag: boolean): Promise<void> {
-  await query(
-    `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
-     values ($1, $2, $3, $4)
-     on conflict (account_id, organization_id) do update
-       set role = excluded.role,
-           active_flag = excluded.active_flag,
-           updated_at = now()`,
-    [accountId, organizationId, role, activeFlag],
-  );
+  await withTransaction(async (client) => {
+    const previous = await client.query<{ role: PilotRole }>(
+      'select role from pilot.organization_memberships where account_id = $1 and organization_id = $2',
+      [accountId, organizationId],
+    );
 
-  const rows = await query<{ account_id: string }>(
-    `update pilot.accounts
-     set role = $3,
-         organization_id = $2,
-         active_flag = $4,
-         is_platform_owner = case when $3 = 'platform_owner' then true else false end,
-         updated_at = now()
-     where account_id = $1
-     returning account_id`,
-    [accountId, organizationId, role, activeFlag],
-  );
+    await client.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+       values ($1, $2, $3, $4)
+       on conflict (account_id, organization_id) do update
+         set role = excluded.role,
+             active_flag = excluded.active_flag,
+             updated_at = now()`,
+      [accountId, organizationId, role, activeFlag],
+    );
 
-  if (rows.length === 0) {
-    throw new Error('Missing account_id');
-  }
+    const rows = await client.query<{ account_id: string }>(
+      `update pilot.accounts
+       set role = $3,
+           organization_id = $2,
+           active_flag = $4,
+           is_platform_owner = case when $3 = 'platform_owner' then true else false end,
+           updated_at = now()
+       where account_id = $1
+       returning account_id`,
+      [accountId, organizationId, role, activeFlag],
+    );
 
-  if (!activeFlag) {
-    await revokeAllSessionsForAccount(accountId);
-  }
+    if (rows.rows.length === 0) {
+      throw new Error('Missing account_id');
+    }
+
+    const roleChanged = previous.rows.length > 0 && previous.rows[0].role !== role;
+    if (!activeFlag || roleChanged) {
+      await revokeAllSessionsForAccountTx(client, accountId);
+    }
+  });
 }
 
 export async function transferOrganizationAdmin(
@@ -527,54 +662,58 @@ export async function transferOrganizationAdmin(
   organizationId: string,
   demoteRole: Exclude<PilotRole, 'platform_owner' | 'organization_admin'>,
 ): Promise<void> {
-  const promotedRows = await query<{ account_id: string }>(
-    `update pilot.accounts
-     set role = 'organization_admin',
-         organization_id = $2,
-         active_flag = true,
-         is_platform_owner = false,
-         updated_at = now()
-     where account_id = $1
-     returning account_id`,
-    [toAccountId, organizationId],
-  );
+  await withTransaction(async (client) => {
+    const promotedRows = await client.query<{ account_id: string }>(
+      `update pilot.accounts
+       set role = 'organization_admin',
+           organization_id = $2,
+           active_flag = true,
+           is_platform_owner = false,
+           updated_at = now()
+       where account_id = $1
+       returning account_id`,
+      [toAccountId, organizationId],
+    );
 
-  if (promotedRows.length === 0) {
-    throw new Error('Missing target account for admin transfer');
-  }
+    if (promotedRows.rows.length === 0) {
+      throw new Error('Missing target account for admin transfer');
+    }
 
-  const demotedRows = await query<{ account_id: string }>(
-    `update pilot.accounts
-     set role = $3,
-         active_flag = true,
-         is_platform_owner = false,
-         updated_at = now()
-     where account_id = $1 and organization_id = $2
-     returning account_id`,
-    [fromAccountId, organizationId, demoteRole],
-  );
+    const demotedRows = await client.query<{ account_id: string }>(
+      `update pilot.accounts
+       set role = $3,
+           active_flag = true,
+           is_platform_owner = false,
+           updated_at = now()
+       where account_id = $1 and organization_id = $2
+       returning account_id`,
+      [fromAccountId, organizationId, demoteRole],
+    );
 
-  if (demotedRows.length === 0) {
-    throw new Error('Missing source admin in organization');
-  }
+    if (demotedRows.rows.length === 0) {
+      throw new Error('Missing source admin in organization');
+    }
 
-  await assignOrganizationMembership(toAccountId, organizationId, 'organization_admin');
-  await assignOrganizationMembership(fromAccountId, organizationId, demoteRole);
-  await revokeAllSessionsForAccount(fromAccountId);
-  await revokeAllSessionsForAccount(toAccountId);
+    await assignOrganizationMembershipTx(client, toAccountId, organizationId, 'organization_admin');
+    await assignOrganizationMembershipTx(client, fromAccountId, organizationId, demoteRole);
+    await revokeAllSessionsForAccountTx(client, fromAccountId);
+    await revokeAllSessionsForAccountTx(client, toAccountId);
+  });
 }
 
 export async function promoteAccountToOrganizationAdmin(accountId: string, organizationId: string): Promise<void> {
-  await query(
-    `update pilot.accounts
-     set role = 'organization_admin',
-         organization_id = $2,
-         is_platform_owner = false,
-         updated_at = now()
-     where account_id = $1`,
-    [accountId, organizationId],
-  );
+  await withTransaction(async (client) => {
+    await client.query(
+      `update pilot.accounts
+       set role = 'organization_admin',
+           organization_id = $2,
+           is_platform_owner = false,
+           updated_at = now()
+       where account_id = $1`,
+      [accountId, organizationId],
+    );
 
-  await assignOrganizationMembership(accountId, organizationId, 'organization_admin');
-  await revokeAllSessionsForAccount(accountId);
+    await assignOrganizationMembershipTx(client, accountId, organizationId, 'organization_admin');
+    await revokeAllSessionsForAccountTx(client, accountId);
+  });
 }
