@@ -97,6 +97,7 @@ export async function getOrganizationViolations(
     status?: string;
     severity?: string;
     limit?: number;
+    coachAccountId?: string;
   },
 ): Promise<ComplianceViolation[]> {
   let sql = `
@@ -109,6 +110,11 @@ export async function getOrganizationViolations(
   if (filters?.athleteId) {
     sql += ` and athlete_id = $${params.length + 1}`;
     params.push(filters.athleteId);
+  }
+
+  if (filters?.coachAccountId) {
+    sql += ` and athlete_id in (select athlete_id from pilot.athletes where coach_id = $${params.length + 1} and organization_id = $1)`;
+    params.push(filters.coachAccountId);
   }
 
   if (filters?.status) {

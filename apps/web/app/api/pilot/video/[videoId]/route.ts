@@ -1,8 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { assertActorCanAccessAthlete, isOrganizationAdminRole } from '@/src/server/pilot/access';
 import { getPilotVideoSasUrl } from '@/src/server/pilot/blob';
 import { queryOne } from '@/src/server/pilot/db';
-import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
 
@@ -36,19 +37,23 @@ export async function GET(
       [videoId, principal.organizationId],
     );
 
+    // Every "doesn't exist" and "exists but forbidden" case below returns the
+    // exact same hiddenNotFound() response so a caller can't distinguish the
+    // two (see issue #8's 403-vs-404 disclosure requirement).
     if (!row) {
-      return jsonError('Video session not found', 404);
+      return hiddenNotFound();
     }
 
-    // Athletes may only access their own videos
-    if (principal.role === 'athlete') {
-      const athleteRow = await queryOne<{ athlete_id: string }>(
-        'select athlete_id from pilot.athletes where account_id = $1 and organization_id = $2 limit 1',
-        [principal.accountId, principal.organizationId],
-      );
-      if (!athleteRow || row.athlete_id !== athleteRow.athlete_id) {
-        return jsonError('Forbidden', 403);
+    if (row.athlete_id) {
+      try {
+        await assertActorCanAccessAthlete(principal, row.athlete_id);
+      } catch {
+        return hiddenNotFound();
       }
+    } else if (!isOrganizationAdminRole(principal.role) && principal.role !== 'coach') {
+      // Unattributed (team-wide) video: only coaches and org admins may view
+      // it individually. Athletes, parents, volunteers, and staff cannot.
+      return hiddenNotFound();
     }
 
     const sasUrl = getPilotVideoSasUrl(row.blob_path, 60);
@@ -59,6 +64,6 @@ export async function GET(
       stream_url: sasUrl,
     });
   } catch (error) {
-    return jsonError(error instanceof Error ? error.message : 'Failed to retrieve video session', 500);
+    return jsonError(error);
   }
 }

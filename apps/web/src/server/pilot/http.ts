@@ -18,6 +18,14 @@ export function requireRole(principal: PilotPrincipal, allowedRoles: PilotRole[]
   }
 }
 
+// Used for per-record lookups where a distinct 403 would disclose that a
+// record exists but the caller can't access it. Every "doesn't exist" and
+// "exists but forbidden" case for these routes must return this exact
+// response so the two are indistinguishable to the caller.
+export function hiddenNotFound(): NextResponse {
+  return NextResponse.json({ error: 'Not found' }, { status: 404 });
+}
+
 export function jsonError(error: unknown, fallbackStatus = 500): NextResponse {
   const message = error instanceof Error ? error.message : 'Unknown server error';
 

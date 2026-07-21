@@ -1,4 +1,4 @@
-import { query } from './db';
+import { query, queryOne } from './db';
 import { randomUUID } from 'node:crypto';
 
 export interface ProgressionGap {
@@ -206,6 +206,19 @@ export async function getAthleteAssignments(
   sql += ` order by due_date asc nulls last, created_at desc`;
 
   return query<DrillAssignment>(sql, params);
+}
+
+export async function getDrillAssignmentById(
+  organizationId: string,
+  assignmentId: string,
+): Promise<DrillAssignment | null> {
+  return queryOne<DrillAssignment>(
+    `select assignment_id, gap_id, athlete_id, drill_name, drill_description, drill_difficulty,
+            rep_count, duration_minutes, frequency_per_week, due_date, status, completion_percentage, created_at
+     from pilot.drill_assignments
+     where organization_id = $1 and assignment_id = $2`,
+    [organizationId, assignmentId],
+  );
 }
 
 export async function getAssignmentCompletions(

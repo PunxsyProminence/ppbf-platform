@@ -42,12 +42,24 @@ export async function assertCoachAssignedToAthlete(coachId: string, athleteId: s
   }
 }
 
+export async function assertAthleteBelongsToOrganization(organizationId: string, athleteId: string): Promise<void> {
+  const row = await queryOne<{ athlete_id: string }>(
+    'select athlete_id from pilot.athletes where athlete_id = $1 and organization_id = $2',
+    [athleteId, organizationId],
+  );
+
+  if (!row) {
+    throw new Error('Forbidden: athlete does not belong to organization');
+  }
+}
+
 export async function assertActorCanAccessAthlete(actor: ActorIdentity, athleteId: string): Promise<void> {
   if (actor.role === 'platform_owner') {
     throw new Error('Forbidden: platform owner cannot access organization-private athlete records by default');
   }
 
   if (isOrganizationAdminRole(actor.role)) {
+    await assertAthleteBelongsToOrganization(actor.organizationId, athleteId);
     return;
   }
 

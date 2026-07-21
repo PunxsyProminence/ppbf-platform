@@ -94,6 +94,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ items: rows });
   } catch (error) {
-    return jsonError(error instanceof Error ? error.message : 'Failed to list video sessions', 500);
+    return jsonError(error);
   }
 }

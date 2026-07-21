@@ -23,6 +23,7 @@ export async function GET(request: NextRequest) {
       athleteId: athleteId || undefined,
       status: status || undefined,
       limit,
+      coachAccountId: principal.role === 'coach' && !athleteId ? principal.accountId : undefined,
     });
 
     return NextResponse.json({ items: violations });

@@ -1,4 +1,10 @@
-import { assertActorCanAccessAthlete, assertCoachAssignedToAthlete, isOrganizationAdminRole, requireRole } from './access';
+import {
+  assertActorCanAccessAthlete,
+  assertAthleteBelongsToOrganization,
+  assertCoachAssignedToAthlete,
+  isOrganizationAdminRole,
+  requireRole,
+} from './access';
 import { queryOne } from './db';
 import type { ActorIdentity } from './access';
 
@@ -77,6 +83,24 @@ describe('assertCoachAssignedToAthlete', () => {
   });
 });
 
+// ─── assertAthleteBelongsToOrganization ──────────────────────────────────────
+
+describe('assertAthleteBelongsToOrganization', () => {
+  test('resolves when athlete belongs to organization', async () => {
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    await expect(assertAthleteBelongsToOrganization('org-1', 'ath-1')).resolves.toBeUndefined();
+    expect(mockQueryOne).toHaveBeenCalledWith(
+      expect.stringContaining('pilot.athletes'),
+      ['ath-1', 'org-1'],
+    );
+  });
+
+  test('throws Forbidden when athlete belongs to a different organization', async () => {
+    mockQueryOne.mockResolvedValueOnce(null);
+    await expect(assertAthleteBelongsToOrganization('org-1', 'ath-other-org')).rejects.toThrow('Forbidden');
+  });
+});
+
 // ─── assertActorCanAccessAthlete ─────────────────────────────────────────────
 
 describe('assertActorCanAccessAthlete', () => {
@@ -85,16 +109,32 @@ describe('assertActorCanAccessAthlete', () => {
     await expect(assertActorCanAccessAthlete(actor, 'ath-1')).rejects.toThrow('Forbidden');
   });
 
-  test('allows organization_admin without DB check', async () => {
+  test('allows organization_admin when athlete belongs to their organization', async () => {
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
     const actor: ActorIdentity = { accountId: 'a', role: 'organization_admin', organizationId: 'org-1', athleteId: null };
     await expect(assertActorCanAccessAthlete(actor, 'ath-1')).resolves.toBeUndefined();
-    expect(mockQueryOne).not.toHaveBeenCalled();
+    expect(mockQueryOne).toHaveBeenCalledWith(
+      expect.stringContaining('pilot.athletes'),
+      ['ath-1', 'org-1'],
+    );
   });
 
-  test('allows legacy admin role without DB check', async () => {
+  test('throws Forbidden when organization_admin targets an athlete from another organization', async () => {
+    mockQueryOne.mockResolvedValueOnce(null);
+    const actor: ActorIdentity = { accountId: 'a', role: 'organization_admin', organizationId: 'org-1', athleteId: null };
+    await expect(assertActorCanAccessAthlete(actor, 'ath-other-org')).rejects.toThrow('Forbidden');
+  });
+
+  test('allows legacy admin role when athlete belongs to their organization', async () => {
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
     const actor: ActorIdentity = { accountId: 'a', role: 'admin', organizationId: 'org-1', athleteId: null };
     await expect(assertActorCanAccessAthlete(actor, 'ath-1')).resolves.toBeUndefined();
-    expect(mockQueryOne).not.toHaveBeenCalled();
+  });
+
+  test('throws Forbidden when legacy admin targets an athlete from another organization', async () => {
+    mockQueryOne.mockResolvedValueOnce(null);
+    const actor: ActorIdentity = { accountId: 'a', role: 'admin', organizationId: 'org-1', athleteId: null };
+    await expect(assertActorCanAccessAthlete(actor, 'ath-other-org')).rejects.toThrow('Forbidden');
   });
 
   describe('coach role', () => {
