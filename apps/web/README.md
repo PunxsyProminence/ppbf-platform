@@ -51,10 +51,10 @@ Copy `.env.example` and fill required values for Dataverse, Graph, and Google Dr
 
 ### Local Mock Audit Run
 
-Run the end-to-end mock ingest (no real cloud writes):
+Set `PPBF_MOCK_INGEST_SESSION_TOKEN` to an active organization-admin session token, then run the end-to-end mock ingest:
 
 ```bash
 npm run audit:mock-ingest
 ```
 
-This command sets `PPBF_INGEST_MOCK_MODE=true`, generates a mock PDF, posts it through the real API route, and validates the response contract.
+This command sets `PPBF_INGEST_MOCK_MODE=true`, generates a mock PDF, posts it through the authenticated API route, and validates the response contract without writing to Dataverse, SharePoint, or Google Drive. It still requires the configured PostgreSQL database to validate the session and append the ingest audit event.
