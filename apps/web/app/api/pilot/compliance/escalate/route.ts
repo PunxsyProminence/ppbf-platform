@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { escalateViolation } from '@/src/server/pilot/compliance';
-import { requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
+import { escalateViolation, getComplianceViolationById } from '@/src/server/pilot/compliance';
+import { hiddenNotFound, requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
 
@@ -19,6 +19,13 @@ export async function POST(request: NextRequest) {
 
     if (!body.violation_id || !body.escalated_to_role) {
       throw new Error('Missing violation_id or escalated_to_role');
+    }
+
+    // Resolve the violation scoped to this organization first, rejecting a
+    // cross-organization violation_id without revealing whether it exists.
+    const violation = await getComplianceViolationById(principal.organizationId, body.violation_id);
+    if (!violation) {
+      return hiddenNotFound();
     }
 
     await escalateViolation({

@@ -72,9 +72,29 @@ describe('GET /api/pilot/progression/completions', () => {
   });
 
   test('403 for a role that cannot view completions', async () => {
-    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'parent' }));
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'volunteer' }));
     const res = await GET(getRequest('assignment_id=asg-1'));
     expect(res.status).toBe(403);
+  });
+
+  test('linked parent can view completions for their athlete', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'parent', athleteId: null }));
+    mockQueryOne
+      .mockResolvedValueOnce(assignmentRow())
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' }); // guardian link found
+    mockQuery.mockResolvedValueOnce([]);
+    const res = await GET(getRequest('assignment_id=asg-1'));
+    expect(res.status).toBe(200);
+  });
+
+  test('unlinked parent gets hidden not-found', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'parent', athleteId: null }));
+    mockQueryOne
+      .mockResolvedValueOnce(assignmentRow())
+      .mockResolvedValueOnce(null); // no guardian link
+    const res = await GET(getRequest('assignment_id=asg-1'));
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Not found' });
   });
 
   test('400 when assignment_id is missing', async () => {

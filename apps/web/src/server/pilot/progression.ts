@@ -113,8 +113,12 @@ export async function assignDrill(params: {
     ],
   );
 
-  // Update gap status to assigned
-  await query(`update pilot.progression_gaps set status = 'assigned' where gap_id = $1`, [params.gapId]);
+  // Update gap status to assigned. Scoped by organization_id so a gap_id
+  // from another organization can never be mutated by this call.
+  await query(
+    `update pilot.progression_gaps set status = 'assigned' where gap_id = $1 and organization_id = $2`,
+    [params.gapId, params.organizationId],
+  );
 
   return result[0];
 }
@@ -183,6 +187,18 @@ export async function getAthleteGaps(
   sql += ` order by severity desc, created_at desc`;
 
   return query<ProgressionGap>(sql, params);
+}
+
+export async function getProgressionGapById(
+  organizationId: string,
+  gapId: string,
+): Promise<ProgressionGap | null> {
+  return queryOne<ProgressionGap>(
+    `select gap_id, athlete_id, gap_type, gap_description, severity, status, created_at
+     from pilot.progression_gaps
+     where organization_id = $1 and gap_id = $2`,
+    [organizationId, gapId],
+  );
 }
 
 export async function getAthleteAssignments(

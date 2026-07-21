@@ -73,9 +73,32 @@ describe('GET /api/pilot/progression/gaps', () => {
     const res = await GET(getRequest('athlete_id=ath-other-org'));
     expect(res.status).toBe(403);
   });
+
+  test('linked parent can read gaps for their athlete', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'parent', athleteId: null }));
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // guardian link found
+    mockQuery.mockResolvedValueOnce([]);
+    const res = await GET(getRequest('athlete_id=ath-1'));
+    expect(res.status).toBe(200);
+  });
+
+  test('unlinked parent is denied', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'parent', athleteId: null }));
+    mockQueryOne.mockResolvedValueOnce(null); // no guardian link
+    const res = await GET(getRequest('athlete_id=ath-other'));
+    expect(res.status).toBe(403);
+  });
 });
 
 describe('POST /api/pilot/progression/gaps', () => {
+  test('parent cannot create a gap (writes remain denied)', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'parent', athleteId: null }));
+    const res = await POST(
+      postRequest({ athlete_id: 'ath-1', gap_type: 'technique', gap_description: 'x' }),
+    );
+    expect(res.status).toBe(403);
+  });
+
   test('403 when coach creates a gap for an unassigned athlete', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', athleteId: null }));
     mockQueryOne.mockResolvedValueOnce(null);

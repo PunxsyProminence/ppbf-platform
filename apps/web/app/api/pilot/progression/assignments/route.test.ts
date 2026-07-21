@@ -60,9 +60,32 @@ describe('GET /api/pilot/progression/assignments', () => {
     const res = await GET(getRequest('athlete_id=ath-1'));
     expect(res.status).toBe(200);
   });
+
+  test('linked parent can read assignments for their athlete', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'parent', athleteId: null }));
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // guardian link found
+    mockQuery.mockResolvedValueOnce([]);
+    const res = await GET(getRequest('athlete_id=ath-1'));
+    expect(res.status).toBe(200);
+  });
+
+  test('unlinked parent is denied', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'parent', athleteId: null }));
+    mockQueryOne.mockResolvedValueOnce(null); // no guardian link
+    const res = await GET(getRequest('athlete_id=ath-other'));
+    expect(res.status).toBe(403);
+  });
 });
 
 describe('POST /api/pilot/progression/assignments', () => {
+  test('parent cannot create an assignment (writes remain denied)', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'parent', athleteId: null }));
+    const res = await POST(
+      postRequest({ athlete_id: 'ath-1', gap_id: 'gap-1', drill_name: 'd', drill_description: 'x' }),
+    );
+    expect(res.status).toBe(403);
+  });
+
   test('403 when coach assigns a drill to an unassigned athlete', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', athleteId: null }));
     mockQueryOne.mockResolvedValueOnce(null);
@@ -74,11 +97,37 @@ describe('POST /api/pilot/progression/assignments', () => {
 
   test('201 when coach assigns a drill to an assigned athlete', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', athleteId: null }));
-    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockQueryOne
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' }) // assertCoachAssignedToAthlete
+      .mockResolvedValueOnce({ gap_id: 'gap-1', athlete_id: 'ath-1' }); // getProgressionGapById
     mockQuery.mockResolvedValueOnce([{ assignment_id: 'asg-1' }]).mockResolvedValueOnce([]);
     const res = await POST(
       postRequest({ athlete_id: 'ath-1', gap_id: 'gap-1', drill_name: 'd', drill_description: 'x' }),
     );
     expect(res.status).toBe(201);
+  });
+
+  test('cross-organization gap_id returns a hidden not-found response', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', athleteId: null }));
+    mockQueryOne
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' }) // assertCoachAssignedToAthlete
+      .mockResolvedValueOnce(null); // gap not found in this organization
+    const res = await POST(
+      postRequest({ athlete_id: 'ath-1', gap_id: 'gap-other-org', drill_name: 'd', drill_description: 'x' }),
+    );
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Not found' });
+  });
+
+  test('gap belonging to another athlete returns a hidden not-found response', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', athleteId: null }));
+    mockQueryOne
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' }) // assertCoachAssignedToAthlete for ath-1
+      .mockResolvedValueOnce({ gap_id: 'gap-1', athlete_id: 'ath-2' }); // gap belongs to a different athlete
+    const res = await POST(
+      postRequest({ athlete_id: 'ath-1', gap_id: 'gap-1', drill_name: 'd', drill_description: 'x' }),
+    );
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Not found' });
   });
 });

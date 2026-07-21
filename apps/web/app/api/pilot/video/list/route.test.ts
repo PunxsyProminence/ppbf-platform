@@ -121,4 +121,23 @@ describe('GET /api/pilot/video/list', () => {
     const body = await res.json();
     expect(body.items).toHaveLength(2);
   });
+
+  describe('limit validation', () => {
+    test.each(['0', '-1', 'NaN', '3.5', 'abc', '999999999999999999999'])(
+      '400 for an invalid limit=%s',
+      async (rawLimit) => {
+        mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+        const res = await GET(request(`http://localhost/api/pilot/video/list?limit=${rawLimit}`));
+        expect(res.status).toBe(400);
+      },
+    );
+
+    test('excessive limit is clamped to the safe maximum, not rejected', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+      mockQuery.mockResolvedValueOnce([]);
+      const res = await GET(request('http://localhost/api/pilot/video/list?limit=100000'));
+      expect(res.status).toBe(200);
+      expect(mockQuery).toHaveBeenCalledWith(expect.anything(), expect.arrayContaining([100]));
+    });
+  });
 });

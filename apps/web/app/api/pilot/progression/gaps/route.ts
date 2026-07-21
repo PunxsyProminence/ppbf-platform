@@ -9,7 +9,7 @@ export const runtime = 'nodejs';
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['coach', 'admin', 'organization_admin', 'athlete']);
+    requireRole(principal, ['coach', 'admin', 'organization_admin', 'athlete', 'parent']);
 
     const athleteId = request.nextUrl.searchParams.get('athlete_id');
     const status = request.nextUrl.searchParams.get('status');

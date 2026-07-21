@@ -85,6 +85,33 @@ describe('GET /api/pilot/compliance/violations', () => {
     expect(res.status).toBe(200);
     expect(mockQuery).toHaveBeenCalledWith(expect.not.stringContaining('coach_id ='), expect.anything());
   });
+
+  describe('limit validation', () => {
+    test.each(['0', '-1', 'NaN', '3.5', 'abc', '999999999999999999999'])(
+      '400 for an invalid limit=%s',
+      async (rawLimit) => {
+        mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+        const res = await GET(getRequest(`limit=${rawLimit}`));
+        expect(res.status).toBe(400);
+      },
+    );
+
+    test('excessive limit is clamped to the safe maximum, not rejected', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+      mockQuery.mockResolvedValueOnce([]);
+      const res = await GET(getRequest('limit=100000'));
+      expect(res.status).toBe(200);
+      expect(mockQuery).toHaveBeenCalledWith(expect.anything(), expect.arrayContaining([100]));
+    });
+
+    test('missing limit falls back to the default', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+      mockQuery.mockResolvedValueOnce([]);
+      const res = await GET(getRequest());
+      expect(res.status).toBe(200);
+      expect(mockQuery).toHaveBeenCalledWith(expect.anything(), expect.arrayContaining([50]));
+    });
+  });
 });
 
 describe('POST /api/pilot/compliance/violations', () => {
@@ -103,7 +130,9 @@ describe('POST /api/pilot/compliance/violations', () => {
 
   test('201 when coach logs a violation against an assigned athlete', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
-    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockQueryOne
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' }) // assertCoachAssignedToAthlete
+      .mockResolvedValueOnce({ rule_id: 'r1' }); // getComplianceRuleById
     mockQuery.mockResolvedValueOnce([{ violation_id: 'v1' }]);
     const res = await POST(postRequest({ rule_id: 'r1', athlete_id: 'ath-1' }));
     expect(res.status).toBe(201);
@@ -114,5 +143,53 @@ describe('POST /api/pilot/compliance/violations', () => {
     mockQueryOne.mockResolvedValueOnce(null);
     const res = await POST(postRequest({ rule_id: 'r1', athlete_id: 'ath-other-org' }));
     expect(res.status).toBe(403);
+  });
+
+  test('cross-organization rule_id returns a hidden not-found response', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+    mockQueryOne
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' }) // assertCoachAssignedToAthlete succeeds
+      .mockResolvedValueOnce(null); // rule not found in this org
+    const res = await POST(postRequest({ rule_id: 'r-other-org', athlete_id: 'ath-1' }));
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Not found' });
+  });
+
+  test('cross-organization video_session_id returns a hidden not-found response', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+    mockQueryOne
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' }) // assertCoachAssignedToAthlete
+      .mockResolvedValueOnce({ rule_id: 'r1' }) // getComplianceRuleById
+      .mockResolvedValueOnce(null); // video session not found in this org
+    const res = await POST(
+      postRequest({ rule_id: 'r1', athlete_id: 'ath-1', video_session_id: 'vid-other-org' }),
+    );
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Not found' });
+  });
+
+  test('video_session_id attributed to a different athlete returns a hidden not-found response', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+    mockQueryOne
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' }) // assertCoachAssignedToAthlete
+      .mockResolvedValueOnce({ rule_id: 'r1' }) // getComplianceRuleById
+      .mockResolvedValueOnce({ video_session_id: 'vid-1', organization_id: 'org-1', athlete_id: 'ath-2' });
+    const res = await POST(
+      postRequest({ rule_id: 'r1', athlete_id: 'ath-1', video_session_id: 'vid-1' }),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  test('201 when video_session_id is attributed to the same athlete', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+    mockQueryOne
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' })
+      .mockResolvedValueOnce({ rule_id: 'r1' })
+      .mockResolvedValueOnce({ video_session_id: 'vid-1', organization_id: 'org-1', athlete_id: 'ath-1' });
+    mockQuery.mockResolvedValueOnce([{ violation_id: 'v1' }]);
+    const res = await POST(
+      postRequest({ rule_id: 'r1', athlete_id: 'ath-1', video_session_id: 'vid-1' }),
+    );
+    expect(res.status).toBe(201);
   });
 });

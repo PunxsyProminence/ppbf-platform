@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import { query } from '@/src/server/pilot/db';
-import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { jsonError, parseSafeLimit, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
 
@@ -26,7 +26,10 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const athleteId = searchParams.get('athlete_id');
-    const limit = Math.min(parseInt(searchParams.get('limit') ?? '50', 10), 100);
+    const limit = parseSafeLimit(searchParams.get('limit'), 50, 100);
+    if (limit === null) {
+      return NextResponse.json({ error: 'Invalid limit parameter' }, { status: 400 });
+    }
 
     let rows: VideoSessionRow[];
 

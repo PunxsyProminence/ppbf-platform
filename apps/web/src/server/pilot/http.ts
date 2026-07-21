@@ -39,5 +39,40 @@ export function jsonError(error: unknown, fallbackStatus = 500): NextResponse {
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
+  // Anything else is an unexpected failure (database, parser, upstream
+  // provider, ...). The fallback status of 500 means the caller never
+  // authored a specific, safe-to-disclose message for it, so the raw
+  // message -- which can contain connection strings, SQL, or stack
+  // details -- must never reach the client. Non-500 fallbacks are always
+  // an explicit, intentional status a route chose for a known condition,
+  // so those are left untouched.
+  if (fallbackStatus === 500) {
+    console.error('unhandled-route-error', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+
   return NextResponse.json({ error: message }, { status: fallbackStatus });
+}
+
+const MAX_SAFE_LIMIT_VALUE = 1_000_000;
+
+// Parses a "limit" query parameter into a finite positive integer clamped to
+// `max`. Returns null for anything that isn't a plain positive integer
+// string (empty, negative, zero, decimal, NaN, Infinity, non-numeric) so
+// the caller can reject the request instead of silently coercing it.
+export function parseSafeLimit(raw: string | null, defaultValue: number, max: number): number | null {
+  if (raw === null || raw === '') {
+    return defaultValue;
+  }
+
+  if (!/^[0-9]+$/.test(raw)) {
+    return null;
+  }
+
+  const value = Number(raw);
+  if (!Number.isFinite(value) || !Number.isSafeInteger(value) || value <= 0 || value > MAX_SAFE_LIMIT_VALUE) {
+    return null;
+  }
+
+  return Math.min(value, max);
 }

@@ -14,7 +14,7 @@ export const runtime = 'nodejs';
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['coach', 'admin', 'organization_admin', 'athlete']);
+    requireRole(principal, ['coach', 'admin', 'organization_admin', 'athlete', 'parent']);
 
     const assignmentId = request.nextUrl.searchParams.get('assignment_id');
 
