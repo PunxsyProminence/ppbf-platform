@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { createComplianceViolation, getOrganizationViolations } from '@/src/server/pilot/compliance';
 import { requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
 
@@ -13,6 +14,10 @@ export async function GET(request: NextRequest) {
     const athleteId = request.nextUrl.searchParams.get('athlete_id');
     const status = request.nextUrl.searchParams.get('status');
     const limit = Math.min(Number.parseInt(request.nextUrl.searchParams.get('limit') ?? '50', 10), 100);
+
+    if (athleteId) {
+      await assertActorCanAccessAthlete(principal, athleteId);
+    }
 
     const violations = await getOrganizationViolations(principal.organizationId, {
       athleteId: athleteId || undefined,
@@ -42,6 +47,8 @@ export async function POST(request: NextRequest) {
     if (!body.rule_id || !body.athlete_id) {
       throw new Error('Missing rule_id or athlete_id');
     }
+
+    await assertActorCanAccessAthlete(principal, body.athlete_id);
 
     const violation = await createComplianceViolation({
       organizationId: principal.organizationId,

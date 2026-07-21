@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { assignDrill, getAthleteAssignments } from '@/src/server/pilot/progression';
 import { requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
 
@@ -16,6 +17,8 @@ export async function GET(request: NextRequest) {
     if (!athleteId) {
       throw new Error('Missing athlete_id');
     }
+
+    await assertActorCanAccessAthlete(principal, athleteId);
 
     const assignments = await getAthleteAssignments(principal.organizationId, athleteId, status || undefined);
 
@@ -45,6 +48,8 @@ export async function POST(request: NextRequest) {
     if (!body.gap_id || !body.athlete_id || !body.drill_name || !body.drill_description) {
       throw new Error('Missing required fields');
     }
+
+    await assertActorCanAccessAthlete(principal, body.athlete_id);
 
     const assignment = await assignDrill({
       organizationId: principal.organizationId,

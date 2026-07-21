@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { assertActorCanAccessAthlete, isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import { query } from '@/src/server/pilot/db';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
@@ -21,6 +22,7 @@ interface VideoSessionRow {
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
+    requireRole(principal, ['organization_admin', 'admin', 'coach', 'athlete', 'parent']);
 
     const { searchParams } = new URL(request.url);
     const athleteId = searchParams.get('athlete_id');
@@ -38,7 +40,41 @@ export async function GET(request: NextRequest) {
          order by created_at desc limit $3`,
         [principal.organizationId, principal.accountId, limit],
       );
-    } else {
+    } else if (principal.role === 'parent') {
+      if (!athleteId) {
+        throw new Error('Missing athlete_id');
+      }
+      await assertActorCanAccessAthlete(principal, athleteId);
+      rows = await query<VideoSessionRow>(
+        `select video_session_id, title, notes, file_name, file_size_bytes, mime_type, status, athlete_id, uploaded_by_account_id, created_at
+         from pilot.video_sessions
+         where organization_id = $1 and athlete_id = $2
+         order by created_at desc limit $3`,
+        [principal.organizationId, athleteId, limit],
+      );
+    } else if (principal.role === 'coach') {
+      if (athleteId) {
+        await assertActorCanAccessAthlete(principal, athleteId);
+        rows = await query<VideoSessionRow>(
+          `select video_session_id, title, notes, file_name, file_size_bytes, mime_type, status, athlete_id, uploaded_by_account_id, created_at
+           from pilot.video_sessions
+           where organization_id = $1 and athlete_id = $2
+           order by created_at desc limit $3`,
+          [principal.organizationId, athleteId, limit],
+        );
+      } else {
+        rows = await query<VideoSessionRow>(
+          `select video_session_id, title, notes, file_name, file_size_bytes, mime_type, status, athlete_id, uploaded_by_account_id, created_at
+           from pilot.video_sessions
+           where organization_id = $1
+             and (athlete_id is null or athlete_id in (
+               select athlete_id from pilot.athletes where coach_id = $2 and organization_id = $1
+             ))
+           order by created_at desc limit $3`,
+          [principal.organizationId, principal.accountId, limit],
+        );
+      }
+    } else if (isOrganizationAdminRole(principal.role)) {
       const params: (string | number)[] = [principal.organizationId, limit];
       let athleteFilter = '';
       if (athleteId) {
@@ -52,6 +88,8 @@ export async function GET(request: NextRequest) {
          order by created_at desc limit $2`,
         params,
       );
+    } else {
+      throw new Error('Forbidden: role not allowed');
     }
 
     return NextResponse.json({ items: rows });
