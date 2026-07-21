@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
       );
     } else if (principal.role === 'parent') {
       if (!athleteId) {
-        throw new Error('Missing athlete_id');
+        throw new Error('Missing athlete_id: parents must specify an athlete_id parameter');
       }
       await assertActorCanAccessAthlete(principal, athleteId);
       rows = await query<VideoSessionRow>(
@@ -89,7 +89,7 @@ export async function GET(request: NextRequest) {
         params,
       );
     } else {
-      throw new Error('Forbidden: role not allowed');
+      throw new Error('Forbidden: your role does not have permission to list videos');
     }
 
     return NextResponse.json({ items: rows });
