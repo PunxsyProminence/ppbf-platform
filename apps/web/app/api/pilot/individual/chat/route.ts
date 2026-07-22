@@ -14,7 +14,6 @@ import { updateShadowUserProfile } from '@/src/server/pilot/shadowUserProfile';
 export interface IndividualChatRequest {
   message: string;
   context?: string;
-  organizationId?: string;
 }
 
 export interface IndividualChatResponse {
@@ -71,7 +70,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<Individua
     requireRole(principal, ['organization_admin', 'parent']);
 
     const body: IndividualChatRequest = await request.json();
-    const { message, organizationId } = body;
+    const { message } = body;
 
     if (!message?.trim()) {
       return NextResponse.json(
@@ -82,7 +81,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<Individua
 
     const messageId = `msg_${Date.now()}`;
     const createdAt = new Date().toISOString();
-    const org = organizationId || principal.organizationId;
+    // Tenant identity is always derived from the authenticated principal --
+    // never from client input -- so a caller cannot attribute chat activity
+    // or SHADOW profile writes to an organization they don't belong to.
+    const org = principal.organizationId;
 
     // Build personalized SHADOW prompt for this parent/individual
     const { systemPrompt } = await buildPersonalShadowPrompt(
