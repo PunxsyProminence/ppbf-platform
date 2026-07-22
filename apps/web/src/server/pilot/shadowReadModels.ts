@@ -116,6 +116,45 @@ function clampOffset(value: number | undefined): number {
   return Math.max(0, Number(value));
 }
 
+interface AthleteScope {
+  // Non-null: restrict rows to only these athlete IDs (parent: their linked
+  // athletes; athlete: themselves). Null: no athlete-based restriction.
+  restrictToAthleteIds: string[] | null;
+  // True: strip out any row tied to a specific athlete entirely (volunteer --
+  // pilot.access.ts's assertActorCanAccessAthlete denies volunteers athlete
+  // access outright, so read-models must not leak athlete-scoped rows either).
+  excludeAthleteScoped: boolean;
+}
+
+// Mirrors the guardian-link authorization check in
+// assertActorCanAccessAthlete (access.ts) so a parent's SHADOW read-model
+// access matches their actual linked-athlete scope everywhere in the app.
+async function resolveAthleteScope(context: ShadowReadContext): Promise<AthleteScope> {
+  if (context.actorRole === 'athlete') {
+    return { restrictToAthleteIds: [context.athleteId ?? '__unbound_athlete__'], excludeAthleteScoped: false };
+  }
+
+  if (context.actorRole === 'parent') {
+    const rows = await query<{ athlete_id: string }>(
+      `select gl.athlete_id
+       from pilot.guardian_links gl
+       where gl.organization_id = $1
+         and gl.parent_id in (
+           select parent_id from pilot.parents where organization_id = $1 and account_id = $2
+         )`,
+      [context.organizationId, context.actorAccountId],
+    );
+    const athleteIds = rows.map((row) => row.athlete_id);
+    return { restrictToAthleteIds: athleteIds.length > 0 ? athleteIds : ['__unbound_athlete__'], excludeAthleteScoped: false };
+  }
+
+  if (context.actorRole === 'volunteer') {
+    return { restrictToAthleteIds: null, excludeAthleteScoped: true };
+  }
+
+  return { restrictToAthleteIds: null, excludeAthleteScoped: false };
+}
+
 function roleCanViewSensitivePayload(role: PilotRole): boolean {
   return role === 'platform_owner' || role === 'organization_admin' || role === 'admin' || role === 'coach';
 }
@@ -184,7 +223,7 @@ function toReviewState(eventName: string): ShadowReviewState {
 export async function listShadowEvents(context: ShadowReadContext, filters: ShadowListFilters = {}): Promise<ShadowEventRow[]> {
   const limit = clampLimit(filters.limit, 25, 200);
   const offset = clampOffset(filters.offset);
-  const athleteScope = context.actorRole === 'athlete' ? context.athleteId ?? '__unbound_athlete__' : null;
+  const scope = await resolveAthleteScope(context);
 
   const rows = await query<ShadowEventRow>(
     `select
@@ -211,10 +250,13 @@ export async function listShadowEvents(context: ShadowReadContext, filters: Shad
          or payload->>'correlation_id' = $6
        )
        and (
-         $9::text is null
-         or (entity_type = 'athlete' and entity_id = $9)
-         or payload->>'athlete_id' = $9
-         or payload->>'owner_entity_id' = $9
+         ($9::text[] is null and not $10::boolean)
+         or ($9::text[] is not null and (
+           (entity_type = 'athlete' and entity_id = any($9::text[]))
+           or payload->>'athlete_id' = any($9::text[])
+           or payload->>'owner_entity_id' = any($9::text[])
+         ))
+         or ($10::boolean and entity_type <> 'athlete' and payload->>'athlete_id' is null and payload->>'owner_entity_id' is null)
        )
      order by created_at desc
      limit $7
@@ -228,7 +270,8 @@ export async function listShadowEvents(context: ShadowReadContext, filters: Shad
       filters.correlationId?.trim() || null,
       limit,
       offset,
-      athleteScope,
+      scope.restrictToAthleteIds,
+      scope.excludeAthleteScoped,
     ],
   );
 
@@ -241,7 +284,7 @@ export async function listShadowEvents(context: ShadowReadContext, filters: Shad
 export async function listShadowTelemetry(context: ShadowReadContext, filters: ShadowListFilters = {}): Promise<ShadowTelemetryRow[]> {
   const limit = clampLimit(filters.limit, 25, 200);
   const offset = clampOffset(filters.offset);
-  const athleteScope = context.actorRole === 'athlete' ? context.athleteId ?? '__unbound_athlete__' : null;
+  const scope = await resolveAthleteScope(context);
 
   const rows = await query<ShadowTelemetryRow>(
     `select
@@ -264,10 +307,13 @@ export async function listShadowTelemetry(context: ShadowReadContext, filters: S
          or dimensions->>'correlation_id' = $4
        )
        and (
-         $7::text is null
-         or dimensions->>'athlete_id' = $7
-         or dimensions->>'entity_id' = $7
-         or dimensions->>'owner_entity_id' = $7
+         ($7::text[] is null and not $8::boolean)
+         or ($7::text[] is not null and (
+           dimensions->>'athlete_id' = any($7::text[])
+           or dimensions->>'entity_id' = any($7::text[])
+           or dimensions->>'owner_entity_id' = any($7::text[])
+         ))
+         or ($8::boolean and dimensions->>'athlete_id' is null)
        )
      order by created_at desc
      limit $5
@@ -279,7 +325,8 @@ export async function listShadowTelemetry(context: ShadowReadContext, filters: S
       filters.correlationId?.trim() || null,
       limit,
       offset,
-      athleteScope,
+      scope.restrictToAthleteIds,
+      scope.excludeAthleteScoped,
     ],
   );
 
@@ -355,6 +402,7 @@ export async function getShadowReviewProjection(
 ): Promise<{ items: ShadowReviewProjectionItem[]; total: number }> {
   const limit = clampLimit(filters.limit, 25, 200);
   const offset = clampOffset(filters.offset);
+  const scope = await resolveAthleteScope(context);
 
   const items = await query<ShadowReviewProjectionItem>(
     `select
@@ -394,6 +442,7 @@ export async function getShadowReviewProjection(
      where c.organization_id = $1
        and ($2::text is null or c.intake_case_id::text = $2)
        and ($3::text is null or c.status = $3)
+       and ($6::text[] is null or c.primary_athlete_id = any($6::text[]))
      order by coalesce(se.created_at, c.updated_at) desc
      limit $4
      offset $5`,
@@ -403,6 +452,7 @@ export async function getShadowReviewProjection(
       filters.eventName?.trim() || null,
       limit,
       offset,
+      scope.restrictToAthleteIds,
     ],
   );
 
@@ -411,11 +461,13 @@ export async function getShadowReviewProjection(
      from pilot.intake_cases c
      where c.organization_id = $1
        and ($2::text is null or c.intake_case_id::text = $2)
-       and ($3::text is null or c.status = $3)`,
+       and ($3::text is null or c.status = $3)
+       and ($4::text[] is null or c.primary_athlete_id = any($4::text[]))`,
     [
       context.organizationId,
       filters.entityId?.trim() || filters.correlationId?.trim() || null,
       filters.eventName?.trim() || null,
+      scope.restrictToAthleteIds,
     ],
   );
 

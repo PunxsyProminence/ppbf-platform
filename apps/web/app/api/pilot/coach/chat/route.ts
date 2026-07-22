@@ -15,7 +15,6 @@ export interface CoachChatRequest {
   message: string;
   athleteId?: string;
   context?: string;
-  organizationId?: string;
 }
 
 export interface CoachChatResponse {
@@ -72,7 +71,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<CoachChat
     requireRole(principal, ['organization_admin', 'coach']);
 
     const body: CoachChatRequest = await request.json();
-    const { message, athleteId, organizationId } = body;
+    const { message, athleteId } = body;
 
     if (!message?.trim()) {
       return NextResponse.json(
@@ -83,7 +82,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<CoachChat
 
     const messageId = `msg_${Date.now()}`;
     const createdAt = new Date().toISOString();
-    const org = organizationId || principal.organizationId;
+    // Tenant identity is always derived from the authenticated principal --
+    // never from client input -- so a caller cannot attribute chat activity
+    // or SHADOW profile writes to an organization they don't belong to.
+    const org = principal.organizationId;
 
     // Build personalized SHADOW prompt for this coach
     const { systemPrompt } = await buildPersonalShadowPrompt(

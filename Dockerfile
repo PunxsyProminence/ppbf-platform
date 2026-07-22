@@ -2,8 +2,12 @@
 FROM node:20-alpine AS base
 WORKDIR /app
 RUN apk add --no-cache libc6-compat
+# Install from the committed root workspace lockfile with `npm ci` so the
+# production image is a reproducible, locked install -- not a fresh resolve
+# against the registry on every build.
+COPY package.json package-lock.json ./
 COPY apps/web/package.json ./apps/web/
-RUN npm install --prefix apps/web
+RUN npm ci
 
 # Stage 2: Production Build
 FROM base AS builder
