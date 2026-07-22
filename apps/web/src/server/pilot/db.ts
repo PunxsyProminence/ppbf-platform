@@ -27,16 +27,25 @@ export function resolveSslConfig(override: SslOverride = {}): { rejectUnauthoriz
   return { rejectUnauthorized: false };
 }
 
+// A Postgres SQLSTATE is always exactly 5 uppercase ASCII letters/digits
+// (e.g. '57P01', '08006'). Anything else -- lowercase, oversized, containing
+// whitespace/control characters, or simply not a string -- is rejected
+// outright rather than logged, since a driver/library could in principle
+// stuff an arbitrary string into an error's `code` property.
+const SQLSTATE_PATTERN = /^[0-9A-Z]{5}$/;
+
+function sanitizedSqlState(rawCode: unknown): string | undefined {
+  return typeof rawCode === 'string' && SQLSTATE_PATTERN.test(rawCode) ? rawCode : undefined;
+}
+
 // Bounded, sanitized log payload for an idle-connection pool error. Never
 // includes the client object, connection parameters/string, credentials,
-// query text/parameters, or socket internals -- only a fixed event name,
-// the Postgres error code (if the driver supplied one), and a static,
-// non-derived message.
+// query text/parameters, socket internals, or the original error message --
+// only a fixed event name, a validated Postgres SQLSTATE code (if the driver
+// supplied a well-formed one), and a static, non-derived message.
 export function sanitizedPoolErrorLog(error: unknown): { event: string; code?: string; message: string } {
-  const code =
-    error && typeof error === 'object' && 'code' in error && typeof (error as { code: unknown }).code === 'string'
-      ? (error as { code: string }).code
-      : undefined;
+  const rawCode = error && typeof error === 'object' && 'code' in error ? (error as { code: unknown }).code : undefined;
+  const code = sanitizedSqlState(rawCode);
 
   return {
     event: 'pilot-db-pool-error',

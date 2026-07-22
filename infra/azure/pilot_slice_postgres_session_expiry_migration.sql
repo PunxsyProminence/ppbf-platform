@@ -5,28 +5,34 @@
 -- resolvePrincipal now requires.
 --
 -- SAFE ROLLOUT ORDER (this repository's deploy workflows do not apply
--- migrations automatically -- this must be run by hand, in this order,
--- against each environment before deploying the application code from this
--- change):
+-- migrations automatically -- this must be run by hand, against each
+-- environment, before deploying the application code from this change).
+-- These are two DIFFERENT sequences; a fresh installation never runs this
+-- migration at all.
 --
---   1. Fresh installs only: apply the base schema first
+-- Fresh installation:
+--   1. Apply the canonical base schema
 --        npm run --workspace apps/web pilot:apply-schema
---      (the canonical schema in pilot_slice_postgres.sql already includes
---      expires_at, so a brand-new environment does not need this migration
---      at all -- skip straight to step 3/4 for a fresh install.)
---   2. Existing installs only: if not already applied, run the multi-org
---      migration first
+--   2. Do NOT run this migration -- pilot_slice_postgres.sql already
+--      includes pilot.session_tokens.expires_at (and its indexes) directly,
+--      so a brand-new environment already has everything this file adds.
+--   3. Deploy the application code.
+--
+-- Existing installation:
+--   1. If not already applied, run the multi-org migration first
 --        npm run --workspace apps/web pilot:apply-multiorg
---   3. Existing installs: apply THIS migration
+--   2. Apply THIS migration
 --        npm run --workspace apps/web pilot:apply-session-expiry
---      This must complete successfully before step 4 -- it runs as a single
---      transaction (see pilot-apply-session-expiry-migration.mjs), so it
---      either fully applies or leaves the previous schema untouched.
---   4. Only after step 3 has committed: deploy the application code that
---      depends on pilot.session_tokens.expires_at and the active-membership
---      check in resolvePrincipal. Deploying the code before the column
---      exists means every request would fail with a database error, since
---      resolvePrincipal's query directly selects/filters on expires_at.
+--   3. Confirm the transaction committed successfully (it runs as a single
+--      BEGIN/COMMIT/ROLLBACK -- see pilot-apply-session-expiry-migration.mjs
+--      -- so it either fully applies or leaves the previous schema
+--      completely untouched; check the script's own PASS/FAIL output).
+--   4. Only after step 3 confirms a commit: deploy the application code
+--      that depends on pilot.session_tokens.expires_at and the
+--      active-membership check in resolvePrincipal. Deploying the code
+--      before the column exists means every request fails with a database
+--      error, since resolvePrincipal's query directly selects/filters on
+--      expires_at.
 
 -- 1) Add expires_at to session_tokens.
 alter table pilot.session_tokens add column if not exists expires_at timestamptz;

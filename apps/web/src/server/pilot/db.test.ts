@@ -208,4 +208,109 @@ describe('sanitizedPoolErrorLog', () => {
     });
     expect(sanitizedPoolErrorLog(null)).toEqual({ event: 'pilot-db-pool-error', message: expect.any(String) });
   });
+
+  test('retains a valid 5-character uppercase alphanumeric SQLSTATE', () => {
+    expect(sanitizedPoolErrorLog({ code: '57P01' })).toEqual({
+      event: 'pilot-db-pool-error',
+      code: '57P01',
+      message: expect.any(String),
+    });
+    expect(sanitizedPoolErrorLog({ code: '08006' })).toHaveProperty('code', '08006');
+    expect(sanitizedPoolErrorLog({ code: 'ZZZZZ' })).toHaveProperty('code', 'ZZZZZ');
+  });
+
+  test('omits an oversized code value', () => {
+    const log = sanitizedPoolErrorLog({ code: '57P011' }); // 6 characters
+    expect(log).not.toHaveProperty('code');
+    const longLog = sanitizedPoolErrorLog({ code: 'A'.repeat(500) });
+    expect(longLog).not.toHaveProperty('code');
+  });
+
+  test('omits an undersized code value', () => {
+    expect(sanitizedPoolErrorLog({ code: '5701' })).not.toHaveProperty('code'); // 4 characters
+    expect(sanitizedPoolErrorLog({ code: '' })).not.toHaveProperty('code');
+  });
+
+  test('omits a lowercase or mixed-case code value', () => {
+    expect(sanitizedPoolErrorLog({ code: '57p01' })).not.toHaveProperty('code');
+    expect(sanitizedPoolErrorLog({ code: 'abcde' })).not.toHaveProperty('code');
+  });
+
+  test('omits a code value containing a newline or other control character', () => {
+    expect(sanitizedPoolErrorLog({ code: '57P0\n' })).not.toHaveProperty('code');
+    expect(sanitizedPoolErrorLog({ code: '57P0\t' })).not.toHaveProperty('code');
+    expect(sanitizedPoolErrorLog({ code: '\n\n\n\n\n' })).not.toHaveProperty('code');
+  });
+
+  test('omits a code value containing whitespace', () => {
+    expect(sanitizedPoolErrorLog({ code: '57P0 ' })).not.toHaveProperty('code');
+    expect(sanitizedPoolErrorLog({ code: ' 7P01' })).not.toHaveProperty('code');
+    expect(sanitizedPoolErrorLog({ code: '5 P01' })).not.toHaveProperty('code');
+  });
+
+  test('omits a code value containing punctuation or symbols', () => {
+    expect(sanitizedPoolErrorLog({ code: '57P0!' })).not.toHaveProperty('code');
+    expect(sanitizedPoolErrorLog({ code: '57-01' })).not.toHaveProperty('code');
+  });
+
+  test('omits a non-string code value', () => {
+    expect(sanitizedPoolErrorLog({ code: 12345 })).not.toHaveProperty('code');
+    expect(sanitizedPoolErrorLog({ code: null })).not.toHaveProperty('code');
+    expect(sanitizedPoolErrorLog({ code: { nested: '57P01' } })).not.toHaveProperty('code');
+    expect(sanitizedPoolErrorLog({ code: ['5', '7', 'P', '0', '1'] })).not.toHaveProperty('code');
+  });
+
+  test('a malformed code never leaks into the message either', () => {
+    const log = sanitizedPoolErrorLog({ code: 'malicious-connection-string-fragment' });
+    expect(log).not.toHaveProperty('code');
+    expect(JSON.stringify(log)).not.toContain('malicious-connection-string-fragment');
+  });
+});
+
+describe('the registered pool error listener logs a sanitized payload', () => {
+  test('the actual callback passed to pool.on(\'error\', ...) invokes console.error with only sanitized fields', async () => {
+    // Force a fresh pool (and therefore a fresh pool.on('error', ...)
+    // registration) within this test, rather than relying on registration
+    // order from earlier tests in this file.
+    await closePool();
+
+    const client = fakeClient();
+    mockConnect.mockResolvedValueOnce(client);
+    await withTransaction(async () => 'ok');
+
+    const errorRegistration = mockOn.mock.calls.find(([eventName]) => eventName === 'error');
+    expect(errorRegistration).toBeDefined();
+    const registeredListener = errorRegistration?.[1] as (err: unknown) => void;
+
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const sensitiveError = Object.assign(new Error('do not log this raw message'), {
+        code: '57P01',
+        client: {
+          connectionParameters: { user: 'ppbf_app', password: 'super-secret-password', host: 'prod-db.internal' },
+        },
+        connectionString: 'postgres://ppbf_app:super-secret-password@prod-db.internal:5432/pilot',
+        query: { text: 'select pin_hash from pilot.accounts', values: ['acct-1'] },
+      });
+
+      registeredListener(sensitiveError);
+
+      expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+      expect(consoleErrorSpy).toHaveBeenCalledWith({
+        event: 'pilot-db-pool-error',
+        code: '57P01',
+        message: expect.any(String),
+      });
+
+      const loggedSerialized = JSON.stringify(consoleErrorSpy.mock.calls[0]);
+      expect(loggedSerialized).not.toContain('super-secret-password');
+      expect(loggedSerialized).not.toContain('prod-db.internal');
+      expect(loggedSerialized).not.toContain('do not log this raw message');
+      expect(loggedSerialized).not.toContain('pin_hash');
+      expect(loggedSerialized).not.toContain('connectionString');
+      expect(loggedSerialized).not.toContain('client');
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
 });
