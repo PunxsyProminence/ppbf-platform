@@ -66,22 +66,14 @@ export async function updatePublicationStatus(
 ): Promise<void> {
   const now = new Date().toISOString();
 
-  const updates = [
-    `status = '${status}'`,
-    `updated_at = '${now}'`,
-  ];
-
-  if (complianceStatus) {
-    updates.push(`compliance_check_status = '${complianceStatus}'`);
-  }
-
-  if (status === 'published') {
-    updates.push(`published_at = '${now}'`);
-  }
-
   await query(
-    `update pilot.video_publications set ${updates.join(', ')} where publication_id = $1`,
-    [publicationId],
+    `update pilot.video_publications
+     set status = $2,
+         updated_at = $3,
+         compliance_check_status = coalesce($4, compliance_check_status),
+         published_at = case when $2 = 'published' then $3::timestamptz else published_at end
+     where publication_id = $1`,
+    [publicationId, status, now, complianceStatus ?? null],
   );
 }
 
