@@ -4,7 +4,7 @@ import type { PoolClient } from 'pg';
 import type { PilotRole } from './contracts';
 import { getPilotDefaultOrganizationId, PILOT_SESSION_COOKIE } from './env';
 import { createOpaqueToken, hashPin, hashToken, verifyPin } from './security';
-import { computeSessionExpiry } from './sessionPolicy';
+import { computeSessionExpiry, parseRetentionDays } from './sessionPolicy';
 import { query, queryOne, withTransaction } from './db';
 
 export interface PilotPrincipal {
@@ -259,7 +259,9 @@ export async function revokeAllSessionsForAccount(accountId: string): Promise<vo
 // generic error whether the account doesn't exist, belongs to a different
 // organization, or is a platform owner, so none of those conditions can be
 // distinguished from the response -- an organization admin can only ever
-// revoke sessions for a non-platform-owner account inside their own org.
+// revoke sessions for a non-platform-owner account inside their own org, and
+// only that account's sessions scoped to that organization: sessions the
+// same account holds in any other organization are left untouched.
 export async function revokeAllSessionsForAccountInOrganization(accountId: string, organizationId: string): Promise<void> {
   const account = await queryOne<{ account_id: string; is_platform_owner: boolean }>(
     'select account_id, is_platform_owner from pilot.accounts where account_id = $1 and organization_id = $2',
@@ -270,18 +272,34 @@ export async function revokeAllSessionsForAccountInOrganization(accountId: strin
     throw new Error('Account not found or cannot be revoked');
   }
 
-  await revokeAllSessionsForAccount(accountId);
+  await query(
+    'update pilot.session_tokens set revoked_at = now() where account_id = $1 and organization_id = $2 and revoked_at is null',
+    [accountId, organizationId],
+  );
 }
 
-// Deletes session rows that have been expired or revoked for at least
-// `retentionDays`, keeping a short forensic window before hard-deleting.
-export async function cleanupExpiredSessions(retentionDays = 7): Promise<{ deletedCount: number }> {
+// Deletes session rows once EITHER terminal condition has been true for at
+// least `retentionDays`: the row expired that long ago, OR it was revoked
+// that long ago. Only one condition needs to hold, not both -- a session
+// that was revoked immediately after being minted (expires_at still far in
+// the future) is just as eligible for cleanup, on revoked_at alone, as a
+// session that simply expired without ever being revoked. This keeps a
+// short forensic window on both kinds of terminal session before
+// hard-deleting them.
+//
+// retentionDays is validated here (not just by the CLI wrapper) so any
+// caller -- script or application code -- gets the same rejection of
+// malformed input (e.g. "7abc", decimals, zero, negative, NaN, or an
+// excessive value).
+export async function cleanupExpiredSessions(retentionDays: number = 7): Promise<{ deletedCount: number }> {
+  const validDays = parseRetentionDays(retentionDays);
+
   const rows = await query<{ token_hash: string }>(
     `delete from pilot.session_tokens
      where (expires_at < now() - ($1 || ' days')::interval)
         or (revoked_at is not null and revoked_at < now() - ($1 || ' days')::interval)
      returning token_hash`,
-    [retentionDays],
+    [validDays],
   );
 
   return { deletedCount: rows.length };
@@ -477,6 +495,10 @@ export async function createOrRotateAdminAccount(
       [accountId, role, organizationId, null, pinHash, true, isPlatformOwner],
     );
 
+    // Without this, a newly created or rotated admin has no matching active
+    // organization_memberships row, and resolvePrincipal's active-membership
+    // join would then reject every session they try to establish.
+    await assignOrganizationMembershipTx(client, accountId, organizationId, role);
     await revokeAllSessionsForAccountTx(client, accountId);
   });
 }
@@ -490,18 +512,6 @@ export async function createOrganization(organizationId: string, organizationNam
            status = 'active',
            updated_at = now()`,
     [organizationId, organizationName, createdBy],
-  );
-}
-
-export async function assignOrganizationMembership(accountId: string, organizationId: string, role: PilotRole): Promise<void> {
-  await query(
-    `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
-     values ($1, $2, $3, true)
-     on conflict (account_id, organization_id) do update
-       set role = excluded.role,
-           active_flag = true,
-           updated_at = now()`,
-    [accountId, organizationId, role],
   );
 }
 
@@ -618,11 +628,6 @@ export async function setAccountActiveStatus(accountId: string, organizationId: 
 
 export async function upsertOrganizationMembership(accountId: string, organizationId: string, role: PilotRole, activeFlag: boolean): Promise<void> {
   await withTransaction(async (client) => {
-    const previous = await client.query<{ role: PilotRole }>(
-      'select role from pilot.organization_memberships where account_id = $1 and organization_id = $2',
-      [accountId, organizationId],
-    );
-
     await client.query(
       `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
        values ($1, $2, $3, $4)
@@ -649,10 +654,16 @@ export async function upsertOrganizationMembership(accountId: string, organizati
       throw new Error('Missing account_id');
     }
 
-    const roleChanged = previous.rows.length > 0 && previous.rows[0].role !== role;
-    if (!activeFlag || roleChanged) {
-      await revokeAllSessionsForAccountTx(client, accountId);
-    }
+    // pilot.accounts.role/organization_id are read live on every request
+    // (resolvePrincipal doesn't scope role to the session's own
+    // organization), so ANY membership mutation here can change what an
+    // existing session resolves to -- a brand-new membership in another
+    // organization, a role change, a reactivation, or a deactivation all
+    // rewrite those columns. Fail closed and always revoke rather than try
+    // to prove a specific case didn't change anything: an old session in
+    // organization A must never be able to inherit a role or organization
+    // assigned here.
+    await revokeAllSessionsForAccountTx(client, accountId);
   });
 }
 

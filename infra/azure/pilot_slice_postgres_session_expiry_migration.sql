@@ -3,6 +3,30 @@
 -- Adds an absolute 24-hour session lifetime (pilot.session_tokens.expires_at)
 -- and ensures every account has an active organization membership row, which
 -- resolvePrincipal now requires.
+--
+-- SAFE ROLLOUT ORDER (this repository's deploy workflows do not apply
+-- migrations automatically -- this must be run by hand, in this order,
+-- against each environment before deploying the application code from this
+-- change):
+--
+--   1. Fresh installs only: apply the base schema first
+--        npm run --workspace apps/web pilot:apply-schema
+--      (the canonical schema in pilot_slice_postgres.sql already includes
+--      expires_at, so a brand-new environment does not need this migration
+--      at all -- skip straight to step 3/4 for a fresh install.)
+--   2. Existing installs only: if not already applied, run the multi-org
+--      migration first
+--        npm run --workspace apps/web pilot:apply-multiorg
+--   3. Existing installs: apply THIS migration
+--        npm run --workspace apps/web pilot:apply-session-expiry
+--      This must complete successfully before step 4 -- it runs as a single
+--      transaction (see pilot-apply-session-expiry-migration.mjs), so it
+--      either fully applies or leaves the previous schema untouched.
+--   4. Only after step 3 has committed: deploy the application code that
+--      depends on pilot.session_tokens.expires_at and the active-membership
+--      check in resolvePrincipal. Deploying the code before the column
+--      exists means every request would fail with a database error, since
+--      resolvePrincipal's query directly selects/filters on expires_at.
 
 -- 1) Add expires_at to session_tokens.
 alter table pilot.session_tokens add column if not exists expires_at timestamptz;

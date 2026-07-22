@@ -38,4 +38,11 @@ describe('cleanupExpiredSessions', () => {
     const result = await cleanupExpiredSessions(30);
     expect(result).toEqual({ deletedCount: 0 });
   });
+
+  // Validated at this service boundary too, not only by the CLI wrapper, so
+  // any caller gets the same rejection.
+  test.each([0, -1, Number.NaN, 1.5, 10000])('rejects an invalid retentionDays value: %s', async (invalid) => {
+    await expect(cleanupExpiredSessions(invalid)).rejects.toThrow('Invalid retention days');
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
 });

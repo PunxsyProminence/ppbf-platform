@@ -39,6 +39,10 @@ function revokeCalls() {
   return currentClient.query.mock.calls.filter(([sql]) => sql.includes('pilot.session_tokens') && sql.includes('revoked_at'));
 }
 
+function membershipCalls() {
+  return currentClient.query.mock.calls.filter(([sql]) => sql.includes('pilot.organization_memberships') && sql.includes('insert'));
+}
+
 beforeEach(() => {
   currentClient = fakeClient();
 });
@@ -73,9 +77,17 @@ describe('session revocation after credential changes', () => {
     expect(revokeCalls()).toHaveLength(1);
   });
 
-  test('createOrRotateAdminAccount always revokes sessions', async () => {
-    await createOrRotateAdminAccount('acct-1', '123456', 'org-1');
+  test('createOrRotateAdminAccount always revokes sessions and assigns a matching active membership', async () => {
+    await createOrRotateAdminAccount('acct-1', '123456', 'org-1', 'organization_admin');
     expect(revokeCalls()).toHaveLength(1);
+    expect(membershipCalls()).toHaveLength(1);
+    expect(membershipCalls()[0][1]).toEqual(['acct-1', 'org-1', 'organization_admin']);
+  });
+
+  test('createOrRotateAdminAccount assigns a platform_owner membership when rotating a platform owner', async () => {
+    await createOrRotateAdminAccount('owner-1', '123456', 'org-1', 'platform_owner');
+    expect(membershipCalls()).toHaveLength(1);
+    expect(membershipCalls()[0][1]).toEqual(['owner-1', 'org-1', 'platform_owner']);
   });
 });
 
@@ -94,37 +106,37 @@ describe('session revocation after provider/role/organization changes', () => {
     expect(revokeCalls()).toHaveLength(0);
   });
 
-  test('upsertOrganizationMembership revokes sessions when the role changes', async () => {
-    currentClient.query.mockImplementation((sql: string) => {
-      if (sql.includes('select role from pilot.organization_memberships')) {
-        return Promise.resolve({ rows: [{ role: 'coach' }] });
-      }
-      return Promise.resolve({ rows: [{ account_id: 'acct-1' }] });
-    });
-    await upsertOrganizationMembership('acct-1', 'org-1', 'organization_admin', true);
+  // pilot.accounts.role/organization_id are read live on every request, so
+  // ANY membership mutation can change what an existing session resolves
+  // to. upsertOrganizationMembership must therefore revoke unconditionally
+  // -- these cases mirror the exact scenarios issue review called out.
+  test.each([
+    ['brand-new membership with the same role the account already has elsewhere', 'coach', true],
+    ['brand-new membership with a different role', 'organization_admin', true],
+    ['a role change on an existing membership', 'organization_admin', true],
+    ['reactivating a membership', 'coach', true],
+  ])('upsertOrganizationMembership always revokes sessions: %s', async (_label, role, activeFlag) => {
+    currentClient.query.mockResolvedValue({ rows: [{ account_id: 'acct-1' }] });
+    await upsertOrganizationMembership('acct-1', 'org-1', role as never, activeFlag);
     expect(revokeCalls()).toHaveLength(1);
+    expect(revokeCalls()[0][1]).toEqual(['acct-1']);
   });
 
-  test('upsertOrganizationMembership revokes sessions on deactivation even without a role change', async () => {
-    currentClient.query.mockImplementation((sql: string) => {
-      if (sql.includes('select role from pilot.organization_memberships')) {
-        return Promise.resolve({ rows: [{ role: 'coach' }] });
-      }
-      return Promise.resolve({ rows: [{ account_id: 'acct-1' }] });
-    });
+  test('upsertOrganizationMembership revokes sessions on deactivation', async () => {
+    currentClient.query.mockResolvedValue({ rows: [{ account_id: 'acct-1' }] });
     await upsertOrganizationMembership('acct-1', 'org-1', 'coach', false);
     expect(revokeCalls()).toHaveLength(1);
   });
 
-  test('upsertOrganizationMembership does not revoke when nothing sensitive changed', async () => {
-    currentClient.query.mockImplementation((sql: string) => {
-      if (sql.includes('select role from pilot.organization_memberships')) {
-        return Promise.resolve({ rows: [{ role: 'coach' }] });
-      }
-      return Promise.resolve({ rows: [{ account_id: 'acct-1' }] });
-    });
-    await upsertOrganizationMembership('acct-1', 'org-1', 'coach', true);
-    expect(revokeCalls()).toHaveLength(0);
+  test('an old session bound to organization A is revoked when a role is assigned to the same account in organization B (prevents cross-organization privilege inheritance)', async () => {
+    currentClient.query.mockResolvedValue({ rows: [{ account_id: 'acct-1' }] });
+    await upsertOrganizationMembership('acct-1', 'org-B', 'organization_admin', true);
+    // revokeAllSessionsForAccountTx revokes by account_id alone (every
+    // session for this account, in every organization) -- specifically
+    // because a session in org A must not be allowed to keep resolving
+    // with a role that was just granted in org B.
+    expect(revokeCalls()).toHaveLength(1);
+    expect(revokeCalls()[0][1]).toEqual(['acct-1']);
   });
 
   test('setAccountActiveStatus revokes sessions on deactivation', async () => {
@@ -166,10 +178,13 @@ describe('session revocation after provider/role/organization changes', () => {
 });
 
 describe('revokeAllSessionsForAccountInOrganization (cross-tenant administrator revocation)', () => {
-  test('revokes when the account belongs to the requesting organization and is not a platform owner', async () => {
+  test('revokes only the account\'s sessions in the requesting organization, scoped by both account_id and organization_id', async () => {
     mockQueryOne.mockResolvedValueOnce({ account_id: 'acct-1', is_platform_owner: false });
     await expect(revokeAllSessionsForAccountInOrganization('acct-1', 'org-1')).resolves.toBeUndefined();
-    expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining('pilot.session_tokens'), ['acct-1']);
+    expect(mockQuery).toHaveBeenCalledWith(
+      expect.stringContaining('pilot.session_tokens'),
+      ['acct-1', 'org-1'],
+    );
   });
 
   test('denies revocation for an account in a different organization', async () => {

@@ -1,12 +1,9 @@
 import { cleanupExpiredSessions } from '../src/server/pilot/auth'
+import { parseRetentionDays } from '../src/server/pilot/sessionPolicy'
 
 async function main() {
   const retentionDaysArg = process.argv[2]
-  const retentionDays = retentionDaysArg ? Number.parseInt(retentionDaysArg, 10) : undefined
-
-  if (retentionDaysArg && (!Number.isFinite(retentionDays) || retentionDays! <= 0)) {
-    throw new Error(`Invalid retention days argument: ${retentionDaysArg}`)
-  }
+  const retentionDays = retentionDaysArg === undefined ? undefined : parseRetentionDays(retentionDaysArg)
 
   const { deletedCount } = await cleanupExpiredSessions(retentionDays)
   console.log(`Deleted ${deletedCount} expired/revoked session row(s).`)

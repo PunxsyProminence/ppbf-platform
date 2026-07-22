@@ -28,7 +28,16 @@ async function run() {
 
   await client.connect();
   try {
+    // Every statement in this migration (ALTER TABLE, UPDATE, CREATE INDEX,
+    // INSERT ... ON CONFLICT) is valid inside a Postgres transaction, so run
+    // the whole file as one: a failure partway through rolls back
+    // everything instead of leaving the schema in a half-migrated state.
+    await client.query('BEGIN');
     await client.query(sql);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
   } finally {
     await client.end();
   }
