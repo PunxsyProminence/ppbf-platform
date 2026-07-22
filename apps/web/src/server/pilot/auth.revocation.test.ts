@@ -187,11 +187,31 @@ describe('revokeAllSessionsForAccountInOrganization (cross-tenant administrator 
     );
   });
 
-  test('denies revocation for an account in a different organization', async () => {
-    // Scoping the lookup by organization_id means an account in another org
-    // simply doesn't match -- queryOne returns null either way.
+  test('authorizes via an active organization_memberships row, not accounts.organization_id -- a legitimate secondary membership is revocable', async () => {
+    mockQueryOne.mockResolvedValueOnce({ account_id: 'acct-1', is_platform_owner: false });
+    await revokeAllSessionsForAccountInOrganization('acct-1', 'org-secondary');
+    const [sql, params] = mockQueryOne.mock.calls[0];
+    expect(sql).toContain('pilot.organization_memberships');
+    expect(sql).toContain('om.active_flag = true');
+    expect(params).toEqual(['acct-1', 'org-secondary']);
+  });
+
+  test('denies revocation for an account with no membership in this organization (nonexistent account, or a foreign organization)', async () => {
+    // The join against an active membership row for this exact organization
+    // means neither a nonexistent account nor an account whose only
+    // membership is elsewhere produces a match -- queryOne returns null
+    // either way.
     mockQueryOne.mockResolvedValueOnce(null);
     await expect(revokeAllSessionsForAccountInOrganization('acct-in-other-org', 'org-1')).rejects.toThrow(
+      'Account not found or cannot be revoked',
+    );
+  });
+
+  test('denies revocation when the membership in this organization exists but is inactive', async () => {
+    // active_flag = true in the join means an inactive membership row also
+    // produces no match.
+    mockQueryOne.mockResolvedValueOnce(null);
+    await expect(revokeAllSessionsForAccountInOrganization('acct-inactive-member', 'org-1')).rejects.toThrow(
       'Account not found or cannot be revoked',
     );
   });

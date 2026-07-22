@@ -12,20 +12,22 @@
 import { createHash } from 'node:crypto';
 import { type ChildProcessByStdio, spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import type { Readable } from 'node:stream';
 
+import { NextRequest } from 'next/server';
 import { Client } from 'pg';
 
 jest.setTimeout(180_000);
 
-const PG_PORT = 55_477;
 const PG_USER = 'postgres';
 const PG_PASSWORD = 'postgres';
 const DATA_DIR = path.join(os.tmpdir(), `ppbf-session-expiry-pg-test-${Date.now()}`);
 const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedded-pg-server.mjs');
+const MIGRATION_RUNNER_PATH = path.resolve(__dirname, '../../../scripts/pilot-apply-session-expiry-migration.mjs');
 
 const SCHEMA_SQL_PATH = path.resolve(__dirname, '../../../../../infra/azure/pilot_slice_postgres.sql');
 const MIGRATION_SQL_PATH = path.resolve(
@@ -33,14 +35,52 @@ const MIGRATION_SQL_PATH = path.resolve(
   '../../../../../infra/azure/pilot_slice_postgres_session_expiry_migration.sql',
 );
 
+let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 
 function tokenHashOf(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
+// A plain `await import(specifier)` here would get downleveled by ts-jest's
+// CommonJS transform into a require()-based call, which cannot load a real
+// ESM-only file (the local .mjs migration runner, or the embedded-postgres
+// package) and throws "Cannot use import statement outside a module".
+// Constructing the import() call inside `new Function` hides it from
+// TypeScript's static analysis/downleveling entirely, so it remains a
+// genuine dynamic import that Node's own ESM loader executes at runtime.
+const nativeDynamicImport = new Function('specifier', 'return import(specifier)') as (
+  specifier: string,
+) => Promise<Record<string, unknown>>;
+
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
+}
+
+function requestWithSessionCookie(token: string): NextRequest {
+  // PILOT_SESSION_COOKIE is a plain constant ('ppbf_pilot_session'); hardcoded
+  // here rather than imported so this file never triggers env.ts's other
+  // required-env-var checks merely by importing it.
+  return new NextRequest('http://localhost/api/pilot/whatever', {
+    headers: { cookie: `ppbf_pilot_session=${token}` },
+  });
+}
+
+async function findFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.unref();
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (address && typeof address === 'object') {
+        const { port } = address;
+        server.close(() => resolve(port));
+      } else {
+        server.close(() => reject(new Error('Could not determine a free port')));
+      }
+    });
+  });
 }
 
 async function readSql(filePath: string): Promise<string> {
@@ -60,6 +100,8 @@ async function newTestDatabase(name: string): Promise<Client> {
 }
 
 beforeAll(async () => {
+  PG_PORT = await findFreePort();
+
   serverProcess = spawn(process.execPath, [SERVER_SCRIPT_PATH, DATA_DIR, String(PG_PORT)], {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -99,10 +141,22 @@ afterAll(async () => {
   await closePool();
 
   await new Promise<void>((resolve) => {
-    serverProcess.once('exit', () => resolve());
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(safetyTimer);
+      resolve();
+    };
+    // Safety net only, in case the child's own graceful shutdown hangs --
+    // unref'd so this timer itself can never be the reason the process
+    // stays alive, and explicitly cleared by finish() the moment the child
+    // actually exits so it never lingers as an open handle after a normal
+    // (fast) shutdown.
+    const safetyTimer = setTimeout(finish, 15_000);
+    safetyTimer.unref();
+    serverProcess.once('exit', finish);
     serverProcess.kill('SIGTERM');
-    // Safety net in case the graceful shutdown hangs.
-    setTimeout(resolve, 15_000);
   });
 });
 
@@ -241,46 +295,61 @@ describe('migration on a pre-existing (legacy) database', () => {
   });
 });
 
-describe('a failed migration does not leave a partial rollout', () => {
+describe('the migration runner itself rolls back on failure -- no partial rollout', () => {
   let client: Client;
+  let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
 
   beforeAll(async () => {
-    client = await newTestDatabase('ppbf_test_migration_rollback');
+    client = await newTestDatabase('ppbf_test_migration_runner_rollback');
     await client.query(await readSql(SCHEMA_SQL_PATH));
     await client.query('alter table pilot.session_tokens drop column expires_at');
+
+    // A plain `await import(...)` here gets downleveled by ts-jest into a
+    // require() call, which cannot load this ESM-only .mjs file (the same
+    // reason embedded-postgres is spawned as a child process above) --
+    // nativeDynamicImport bypasses that downleveling.
+    const runnerModule = await nativeDynamicImport(MIGRATION_RUNNER_PATH);
+    applyMigrationTransaction = runnerModule.applyMigrationTransaction as (client: Client, sql: string) => Promise<void>;
   });
 
   afterAll(async () => {
     await client.end();
   });
 
-  test('a mid-migration failure inside an explicit transaction rolls back the whole thing', async () => {
-    // Mirrors exactly what pilot-apply-session-expiry-migration.mjs does:
-    // BEGIN, run the migration statements, and on any error ROLLBACK instead
-    // of leaving whatever already ran committed.
-    await client.query('BEGIN');
-    await client.query('alter table pilot.session_tokens add column if not exists expires_at timestamptz');
+  test('the real migration SQL applies successfully through the runner\'s own transaction wrapper', async () => {
+    await applyMigrationTransaction(client, await readSql(MIGRATION_SQL_PATH));
 
-    let threw = false;
-    try {
-      // A deliberately invalid statement, standing in for whatever real
-      // failure (constraint violation, connection drop, etc.) could occur
-      // partway through a real migration run.
-      await client.query('this is not valid sql');
-    } catch {
-      threw = true;
-    }
-    expect(threw).toBe(true);
-    await client.query('ROLLBACK');
+    const { rows } = await client.query<{ is_nullable: string }>(
+      `select is_nullable from information_schema.columns
+       where table_schema = 'pilot' and table_name = 'session_tokens' and column_name = 'expires_at'`,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].is_nullable).toBe('NO');
+  });
 
-    const { rows } = await client.query<{ column_name: string }>(
+  test('an injected failing statement rolls back everything the runner already ran in that transaction', async () => {
+    // A fresh database with no expires_at column, exercised through the
+    // exact function pilot-apply-session-expiry-migration.mjs's CLI entry
+    // point calls -- not a hand-rolled BEGIN/ROLLBACK standing in for it.
+    const rollbackDb = await newTestDatabase('ppbf_test_migration_runner_rollback_2');
+    await rollbackDb.query(await readSql(SCHEMA_SQL_PATH));
+    await rollbackDb.query('alter table pilot.session_tokens drop column expires_at');
+
+    const realMigrationSql = await readSql(MIGRATION_SQL_PATH);
+    const brokenSql = `${realMigrationSql}\nthis is not valid sql;`;
+
+    await expect(applyMigrationTransaction(rollbackDb, brokenSql)).rejects.toThrow();
+
+    const { rows } = await rollbackDb.query<{ column_name: string }>(
       `select column_name from information_schema.columns
        where table_schema = 'pilot' and table_name = 'session_tokens' and column_name = 'expires_at'`,
     );
-    // The ADD COLUMN from earlier in the same transaction was rolled back
-    // along with the failed statement -- a partial rollout (column added,
-    // rest of the migration never applied) is never left committed.
+    // Every real migration statement that ran before the injected failure
+    // (including the ADD COLUMN) was rolled back along with it -- the
+    // runner never leaves a partially-applied migration committed.
     expect(rows).toHaveLength(0);
+
+    await rollbackDb.end();
   });
 });
 
@@ -293,9 +362,10 @@ describe('session revocation regressions (real database, real application code)'
     await migrateClient.end();
 
     process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(TEST_DB_NAME);
-    // This disposable local instance has no SSL configured; production and
-    // staging always require it (see db.ts's sslConfig()) -- this flag has
-    // no effect unless explicitly set, which real deploy environments never do.
+    // This disposable local instance has no TLS configured. db.ts's
+    // resolveSslConfig() only honors this flag when NODE_ENV is exactly
+    // 'test' (which Jest itself sets) -- production and staging can never
+    // trigger this path.
     process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
   });
 
@@ -329,29 +399,40 @@ describe('session revocation regressions (real database, real application code)'
     }
   }
 
-  test('a newly created organization admin can authenticate and resolvePrincipal resolves the session', async () => {
+  test('a newly created organization admin can authenticate, and resolvePrincipal resolves the session end-to-end', async () => {
     await seedOrganization('org-new-admin');
     await auth.createOrRotateAdminAccount('admin-new-1', '123456', 'org-new-admin', 'organization_admin');
 
     const login = await auth.loginWithAccountIdAndPin('admin-new-1', '123456');
     expect(login).not.toBeNull();
 
-    const membership = await rawQuery<{ active_flag: boolean; role: string }>(
-      'select active_flag, role from pilot.organization_memberships where account_id = $1 and organization_id = $2',
-      ['admin-new-1', 'org-new-admin'],
-    );
-    expect(membership).toHaveLength(1);
-    expect(membership[0].active_flag).toBe(true);
-    expect(membership[0].role).toBe('organization_admin');
+    const principal = await auth.resolvePrincipal(requestWithSessionCookie(login!.token));
+    expect(principal).not.toBeNull();
+    expect(principal?.accountId).toBe('admin-new-1');
+    expect(principal?.organizationId).toBe('org-new-admin');
+    expect(principal?.role).toBe('organization_admin');
   });
 
-  test('a rotated admin has an active matching membership after rotation', async () => {
+  test('a rotated admin keeps an active matching membership; the old session is revoked and the new session resolves', async () => {
     await seedOrganization('org-rotate-admin');
     await auth.createOrRotateAdminAccount('admin-rotate-1', '111111', 'org-rotate-admin', 'organization_admin');
+    const firstLogin = await auth.loginWithAccountIdAndPin('admin-rotate-1', '111111');
+    expect(firstLogin).not.toBeNull();
+
     await auth.createOrRotateAdminAccount('admin-rotate-1', '222222', 'org-rotate-admin', 'organization_admin');
 
-    const login = await auth.loginWithAccountIdAndPin('admin-rotate-1', '222222');
-    expect(login).not.toBeNull();
+    // The session established before rotation must no longer resolve.
+    const oldPrincipal = await auth.resolvePrincipal(requestWithSessionCookie(firstLogin!.token));
+    expect(oldPrincipal).toBeNull();
+
+    const secondLogin = await auth.loginWithAccountIdAndPin('admin-rotate-1', '222222');
+    expect(secondLogin).not.toBeNull();
+
+    const newPrincipal = await auth.resolvePrincipal(requestWithSessionCookie(secondLogin!.token));
+    expect(newPrincipal).not.toBeNull();
+    expect(newPrincipal?.accountId).toBe('admin-rotate-1');
+    expect(newPrincipal?.organizationId).toBe('org-rotate-admin');
+    expect(newPrincipal?.role).toBe('organization_admin');
 
     const membership = await rawQuery<{ active_flag: boolean }>(
       'select active_flag from pilot.organization_memberships where account_id = $1 and organization_id = $2',
@@ -368,75 +449,114 @@ describe('session revocation regressions (real database, real application code)'
     await auth.createCoachAccount('coach-cross-org-1', '123456', 'org-A-inherit');
     const loginA = await auth.loginWithAccountIdAndPin('coach-cross-org-1', '123456');
     expect(loginA).not.toBeNull();
-    const tokenHashA = tokenHashOf(loginA!.token);
 
-    const beforeGrant = await rawQuery<{ revoked_at: Date | null }>(
-      'select revoked_at from pilot.session_tokens where token_hash = $1',
-      [tokenHashA],
-    );
-    expect(beforeGrant[0].revoked_at).toBeNull();
+    const principalBefore = await auth.resolvePrincipal(requestWithSessionCookie(loginA!.token));
+    expect(principalBefore).not.toBeNull();
 
     // Grant this same account a new, higher-privilege membership in a
     // different organization.
     await auth.upsertOrganizationMembership('coach-cross-org-1', 'org-B-inherit', 'organization_admin', true);
 
-    const afterGrant = await rawQuery<{ revoked_at: Date | null }>(
-      'select revoked_at from pilot.session_tokens where token_hash = $1',
-      [tokenHashA],
-    );
     // The old org-A session is revoked -- it can never resolve again, so it
     // can never be observed carrying the organization_admin role granted in
     // org B.
-    expect(afterGrant[0].revoked_at).not.toBeNull();
+    const principalAfter = await auth.resolvePrincipal(requestWithSessionCookie(loginA!.token));
+    expect(principalAfter).toBeNull();
   });
 
-  test('organization-admin revocation affects only the target account\'s sessions in that organization; sessions in other organizations remain active', async () => {
-    await seedOrganization('org-scope-A');
-    await seedOrganization('org-scope-B');
+  test('organization-admin revocation authorizes via an active secondary membership, and leaves the primary-organization session untouched', async () => {
+    await seedOrganization('org-primary-A');
+    await seedOrganization('org-secondary-B');
 
-    await auth.createCoachAccount('coach-multi-org-1', '123456', 'org-scope-A');
-    const loginInA = await auth.loginWithAccountIdAndPin('coach-multi-org-1', '123456');
-    expect(loginInA).not.toBeNull();
+    await auth.createCoachAccount('coach-secondary-1', '123456', 'org-primary-A');
+    const loginInPrimary = await auth.loginWithAccountIdAndPin('coach-secondary-1', '123456');
+    expect(loginInPrimary).not.toBeNull();
 
-    // Simulate this same account also holding a session scoped to a second
-    // organization (multi-org membership), inserted directly since the
-    // login helpers always resolve a single primary organization.
-    const otherOrgTokenHash = 'other-org-session-hash-1';
+    // This account also holds an active membership in a second organization,
+    // distinct from its primary pilot.accounts.organization_id -- inserted
+    // directly since the login/membership helpers always resolve a single
+    // primary organization, and this is exactly the legitimate multi-org
+    // case the prior (incorrect) accounts.organization_id-based check
+    // couldn't recognize.
+    await rawQuery(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+       values ($1, $2, 'coach', true)
+       on conflict (account_id, organization_id) do update set active_flag = true`,
+      ['coach-secondary-1', 'org-secondary-B'],
+    );
+    const secondaryOrgTokenHash = 'secondary-org-session-hash-1';
     await rawQuery(
       `insert into pilot.session_tokens (token_hash, account_id, organization_id, expires_at)
        values ($1, $2, $3, now() + interval '24 hours')`,
-      [otherOrgTokenHash, 'coach-multi-org-1', 'org-scope-B'],
+      [secondaryOrgTokenHash, 'coach-secondary-1', 'org-secondary-B'],
     );
 
-    await auth.revokeAllSessionsForAccountInOrganization('coach-multi-org-1', 'org-scope-A');
+    await auth.revokeAllSessionsForAccountInOrganization('coach-secondary-1', 'org-secondary-B');
 
-    const tokenHashInA = tokenHashOf(loginInA!.token);
-    const [rowInA] = await rawQuery<{ revoked_at: Date | null }>(
+    const [secondaryRow] = await rawQuery<{ revoked_at: Date | null }>(
       'select revoked_at from pilot.session_tokens where token_hash = $1',
-      [tokenHashInA],
+      [secondaryOrgTokenHash],
     );
-    const [rowInB] = await rawQuery<{ revoked_at: Date | null }>(
-      'select revoked_at from pilot.session_tokens where token_hash = $1',
-      [otherOrgTokenHash],
-    );
+    expect(secondaryRow.revoked_at).not.toBeNull(); // revoked: the targeted secondary organization
 
-    expect(rowInA.revoked_at).not.toBeNull(); // revoked: in the target org
-    expect(rowInB.revoked_at).toBeNull(); // untouched: a different organization
+    const primaryTokenHash = tokenHashOf(loginInPrimary!.token);
+    const [primaryRow] = await rawQuery<{ revoked_at: Date | null }>(
+      'select revoked_at from pilot.session_tokens where token_hash = $1',
+      [primaryTokenHash],
+    );
+    expect(primaryRow.revoked_at).toBeNull(); // untouched: the primary organization
   });
 
-  test('cross-tenant and platform-owner revocation attempts are denied without disclosing which reason applied', async () => {
+  test('organization-admin revocation is denied when the membership in that organization is inactive', async () => {
+    await seedOrganization('org-inactive-member-primary');
+    await seedOrganization('org-inactive-member-target');
+    await auth.createCoachAccount('coach-inactive-member-1', '123456', 'org-inactive-member-primary');
+
+    await rawQuery(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+       values ($1, $2, 'coach', false)
+       on conflict (account_id, organization_id) do update set active_flag = false`,
+      ['coach-inactive-member-1', 'org-inactive-member-target'],
+    );
+
+    await expect(
+      auth.revokeAllSessionsForAccountInOrganization('coach-inactive-member-1', 'org-inactive-member-target'),
+    ).rejects.toThrow('Account not found or cannot be revoked');
+  });
+
+  test('organization-admin revocation is denied when there is no membership at all in that organization', async () => {
+    await seedOrganization('org-no-member-primary');
+    await seedOrganization('org-no-member-target');
+    await auth.createCoachAccount('coach-no-member-1', '123456', 'org-no-member-primary');
+
+    await expect(
+      auth.revokeAllSessionsForAccountInOrganization('coach-no-member-1', 'org-no-member-target'),
+    ).rejects.toThrow('Account not found or cannot be revoked');
+  });
+
+  test('cross-tenant, missing-membership, inactive-membership, and platform-owner denials are all indistinguishable to the caller', async () => {
     await seedOrganization('org-cross-tenant-actor');
     await seedOrganization('org-cross-tenant-target');
     await auth.createCoachAccount('coach-other-tenant-1', '123456', 'org-cross-tenant-target');
 
-    await expect(
-      auth.revokeAllSessionsForAccountInOrganization('coach-other-tenant-1', 'org-cross-tenant-actor'),
-    ).rejects.toThrow('Account not found or cannot be revoked');
+    const errors: string[] = [];
+
+    try {
+      await auth.revokeAllSessionsForAccountInOrganization('coach-other-tenant-1', 'org-cross-tenant-actor');
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error));
+    }
 
     await auth.createOrRotateAdminAccount('owner-cross-tenant-1', '123456', 'org-cross-tenant-actor', 'platform_owner');
-    await expect(
-      auth.revokeAllSessionsForAccountInOrganization('owner-cross-tenant-1', 'org-cross-tenant-actor'),
-    ).rejects.toThrow('Account not found or cannot be revoked');
+    try {
+      await auth.revokeAllSessionsForAccountInOrganization('owner-cross-tenant-1', 'org-cross-tenant-actor');
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error));
+    }
+
+    expect(errors).toHaveLength(2);
+    expect(new Set(errors).size).toBe(1); // exactly one distinct message across every denial reason
+    expect(errors[0]).toBe('Account not found or cannot be revoked');
   });
 
   test('cookie lifetime and the database session expire at the same time (24 hours)', async () => {

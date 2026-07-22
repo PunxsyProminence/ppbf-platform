@@ -4,31 +4,62 @@ import { getAzurePostgresConnectionString } from './env';
 
 let pool: Pool | null = null;
 
-// Azure Postgres always requires SSL in production. The only opt-out is this
-// exact, explicit flag, which real deploy environments never set -- it
-// exists solely so local/CI tests can point at a disposable, non-SSL local
-// Postgres instance (e.g. the embedded-postgres-backed migration tests).
-function sslConfig(): { rejectUnauthorized: boolean } | false {
-  if (process.env.PPBF_POSTGRES_DISABLE_SSL === 'true') {
+export interface SslOverride {
+  nodeEnv?: string;
+  disableSslFlag?: string;
+}
+
+// Azure Postgres always requires TLS in production and staging. The only
+// opt-out is this exact combination -- NODE_ENV must be the unmistakable
+// 'test' value, AND the explicit disable flag must be set -- so a stray or
+// accidental PPBF_POSTGRES_DISABLE_SSL=true can never downgrade a real
+// deploy environment, which never runs with NODE_ENV=test. Accepts an
+// injected override so this is directly unit-testable without mutating
+// global process.env.
+export function resolveSslConfig(override: SslOverride = {}): { rejectUnauthorized: boolean } | false {
+  const nodeEnv = override.nodeEnv ?? process.env.NODE_ENV;
+  const disableSslFlag = override.disableSslFlag ?? process.env.PPBF_POSTGRES_DISABLE_SSL;
+
+  if (nodeEnv === 'test' && disableSslFlag === 'true') {
     return false;
   }
+
   return { rejectUnauthorized: false };
+}
+
+// Bounded, sanitized log payload for an idle-connection pool error. Never
+// includes the client object, connection parameters/string, credentials,
+// query text/parameters, or socket internals -- only a fixed event name,
+// the Postgres error code (if the driver supplied one), and a static,
+// non-derived message.
+export function sanitizedPoolErrorLog(error: unknown): { event: string; code?: string; message: string } {
+  const code =
+    error && typeof error === 'object' && 'code' in error && typeof (error as { code: unknown }).code === 'string'
+      ? (error as { code: string }).code
+      : undefined;
+
+  return {
+    event: 'pilot-db-pool-error',
+    ...(code ? { code } : {}),
+    message: 'Idle database connection encountered an error and was discarded from the pool.',
+  };
 }
 
 function getPool(): Pool {
   if (!pool) {
     pool = new Pool({
       connectionString: getAzurePostgresConnectionString(),
-      ssl: sslConfig(),
+      ssl: resolveSslConfig(),
       max: 10,
     });
     // pg's Pool re-emits errors from idle clients (e.g. the server closing a
     // connection, a network blip). Without a listener here, that becomes an
     // unhandled 'error' event and crashes the entire process -- registering
-    // one just logs it, since query()/withTransaction() already surface the
-    // failure to whichever caller was using that connection.
+    // one just logs a sanitized summary, since query()/withTransaction()
+    // already surface the failure to whichever caller was using that
+    // connection.
     pool.on('error', (error) => {
-      console.error('pilot-db-pool-error', error);
+      console.error(sanitizedPoolErrorLog(error));
     });
   }
 

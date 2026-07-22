@@ -255,20 +255,29 @@ export async function revokeAllSessionsForAccount(accountId: string): Promise<vo
   await query('update pilot.session_tokens set revoked_at = now() where account_id = $1 and revoked_at is null', [accountId]);
 }
 
-// Used by organization-admin-triggered revocation. Rejects with the same
-// generic error whether the account doesn't exist, belongs to a different
-// organization, or is a platform owner, so none of those conditions can be
-// distinguished from the response -- an organization admin can only ever
-// revoke sessions for a non-platform-owner account inside their own org, and
-// only that account's sessions scoped to that organization: sessions the
-// same account holds in any other organization are left untouched.
+// Used by organization-admin-triggered revocation. Authorizes the target
+// through an ACTIVE pilot.organization_memberships row for this specific
+// (account, organization) pair -- not the account's single denormalized
+// pilot.accounts.organization_id -- so a legitimate secondary membership
+// (the account's primary organization is elsewhere, but it also holds an
+// active membership here) is correctly revocable, while a foreign
+// organization, a missing membership, and an inactive membership are all
+// correctly denied. Rejects with the same generic error for every denial
+// reason (account doesn't exist, no membership in this organization, an
+// inactive membership, or a platform owner), so none of those conditions
+// can be distinguished from the response. Only revokes that account's
+// sessions scoped to this organization: sessions the same account holds in
+// any other organization are left untouched.
 export async function revokeAllSessionsForAccountInOrganization(accountId: string, organizationId: string): Promise<void> {
-  const account = await queryOne<{ account_id: string; is_platform_owner: boolean }>(
-    'select account_id, is_platform_owner from pilot.accounts where account_id = $1 and organization_id = $2',
+  const membership = await queryOne<{ account_id: string; is_platform_owner: boolean }>(
+    `select a.account_id, a.is_platform_owner
+     from pilot.organization_memberships om
+     join pilot.accounts a on a.account_id = om.account_id
+     where om.account_id = $1 and om.organization_id = $2 and om.active_flag = true`,
     [accountId, organizationId],
   );
 
-  if (!account || account.is_platform_owner) {
+  if (!membership || membership.is_platform_owner) {
     throw new Error('Account not found or cannot be revoked');
   }
 
