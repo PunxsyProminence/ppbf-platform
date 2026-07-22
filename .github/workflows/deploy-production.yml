@@ -1,15 +1,38 @@
+# ─────────────────────────────────────────────────────────────────────────
+# Production deployment -- manual only, schema-before-code gated.
+#
+# This workflow deploys application code to the production Container App.
+# It does NOT apply database migrations -- migrations are always a separate,
+# manual step run against production before this workflow is ever dispatched.
+#
+# Safe rollout order (see PR #13 for the concrete session-expiry example):
+#   1. Apply any pending schema migration(s) directly against production
+#      PostgreSQL (e.g. `npm run pilot:apply-multiorg`, then
+#      `npm run pilot:apply-session-expiry`), and confirm each one committed.
+#   2. Only once every migration the target commit depends on has been
+#      applied and confirmed: dispatch this workflow, supplying the exact
+#      commit SHA you intend to deploy and confirming migrations are done.
+#   3. Deploying application code before its required migration is applied
+#      is unsafe -- e.g. code that selects/filters on a column the schema
+#      doesn't have yet will fail every request. This workflow cannot verify
+#      your migration was actually applied; the `migrations_complete` input
+#      is an attestation from the operator dispatching it, not a check
+#      against the database. Do not type CONFIRMED unless it's true.
+# ─────────────────────────────────────────────────────────────────────────
+
 name: deploy-production
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "apps/web/**"
-      - "infra/azure/**"
-      - "Dockerfile"
-      - ".github/workflows/deploy-production.yml"
   workflow_dispatch:
+    inputs:
+      confirm_sha:
+        description: "Full commit SHA on main you intend to deploy (must exactly match the checked-out commit)"
+        required: true
+        type: string
+      migrations_complete:
+        description: "Type CONFIRMED to attest all database migrations this commit depends on are already applied to production"
+        required: true
+        type: string
 
 permissions:
   id-token: write
@@ -17,10 +40,35 @@ permissions:
 
 concurrency:
   group: deploy-production-main
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify running from main
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "::error::This workflow may only be dispatched from refs/heads/main (got '${{ github.ref }}')."
+            exit 1
+          fi
+
+      - name: Verify supplied SHA matches the checked-out commit
+        run: |
+          if [ "${{ inputs.confirm_sha }}" != "${{ github.sha }}" ]; then
+            echo "::error::confirm_sha ('${{ inputs.confirm_sha }}') does not match the checked-out commit ('${{ github.sha }}'). Refusing to deploy."
+            exit 1
+          fi
+
+      - name: Verify migration confirmation
+        run: |
+          if [ "${{ inputs.migrations_complete }}" != "CONFIRMED" ]; then
+            echo "::error::migrations_complete must be exactly 'CONFIRMED'. Refusing to deploy."
+            exit 1
+          fi
+
   build-and-deploy:
+    needs: guard
     runs-on: ubuntu-latest
     env:
       ACR_NAME: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
