@@ -24,7 +24,7 @@ export function resolveSslConfig(override: SslOverride = {}): { rejectUnauthoriz
     return false;
   }
 
-  return { rejectUnauthorized: false };
+  return { rejectUnauthorized: true };
 }
 
 // A Postgres SQLSTATE is always exactly 5 uppercase ASCII letters/digits

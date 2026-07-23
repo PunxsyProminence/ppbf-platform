@@ -20,7 +20,7 @@ function resolveSslConfig() {
   if (process.env.NODE_ENV === 'test' && process.env.PPBF_POSTGRES_DISABLE_SSL === 'true') {
     return false;
   }
-  return { rejectUnauthorized: false };
+  return { rejectUnauthorized: true };
 }
 
 // Applies `sql` against `client` inside a single explicit transaction: every

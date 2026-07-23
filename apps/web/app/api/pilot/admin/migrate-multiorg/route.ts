@@ -914,7 +914,7 @@ export async function POST(request: NextRequest) {
 
     const client = new Client({
       connectionString: getAzurePostgresConnectionString(),
-      ssl: { rejectUnauthorized: false },
+      ssl: { rejectUnauthorized: true },
     });
 
     await client.connect();

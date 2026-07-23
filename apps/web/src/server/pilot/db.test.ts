@@ -110,7 +110,7 @@ describe('withTransaction', () => {
 
 describe('resolveSslConfig', () => {
   test('defaults to TLS with no override and no relevant env vars', () => {
-    expect(resolveSslConfig({})).toEqual({ rejectUnauthorized: false });
+    expect(resolveSslConfig({})).toEqual({ rejectUnauthorized: true });
   });
 
   test('the disable flag alone, outside a test NODE_ENV, is ignored -- TLS stays on', () => {
@@ -118,11 +118,11 @@ describe('resolveSslConfig', () => {
     // process.env.NODE_ENV, which Jest itself always sets to 'test' -- these
     // tests must pass an explicit non-test value to actually exercise "not
     // in a test environment".
-    expect(resolveSslConfig({ nodeEnv: 'production', disableSslFlag: 'true' })).toEqual({ rejectUnauthorized: false });
+    expect(resolveSslConfig({ nodeEnv: 'production', disableSslFlag: 'true' })).toEqual({ rejectUnauthorized: true });
   });
 
   test('NODE_ENV=test alone (no explicit flag) is ignored -- TLS stays on', () => {
-    expect(resolveSslConfig({ nodeEnv: 'test' })).toEqual({ rejectUnauthorized: false });
+    expect(resolveSslConfig({ nodeEnv: 'test' })).toEqual({ rejectUnauthorized: true });
   });
 
   test('NODE_ENV=test together with the explicit flag disables TLS', () => {
@@ -132,13 +132,13 @@ describe('resolveSslConfig', () => {
   test.each(['production', 'staging'])(
     'NODE_ENV=%s ignores the disable flag even if present -- production/staging can never downgrade TLS',
     (nodeEnv) => {
-      expect(resolveSslConfig({ nodeEnv, disableSslFlag: 'true' })).toEqual({ rejectUnauthorized: false });
+      expect(resolveSslConfig({ nodeEnv, disableSslFlag: 'true' })).toEqual({ rejectUnauthorized: true });
     },
   );
 
   test('an unexpected disable flag value (not the exact string "true") is ignored', () => {
-    expect(resolveSslConfig({ nodeEnv: 'test', disableSslFlag: 'yes' })).toEqual({ rejectUnauthorized: false });
-    expect(resolveSslConfig({ nodeEnv: 'test', disableSslFlag: '1' })).toEqual({ rejectUnauthorized: false });
+    expect(resolveSslConfig({ nodeEnv: 'test', disableSslFlag: 'yes' })).toEqual({ rejectUnauthorized: true });
+    expect(resolveSslConfig({ nodeEnv: 'test', disableSslFlag: '1' })).toEqual({ rejectUnauthorized: true });
   });
 
   test('falls back to real process.env when no override is provided at all', () => {
