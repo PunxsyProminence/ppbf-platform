@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
-import { revokeAllSessionsForAccount } from '@/src/server/pilot/auth';
+import { revokeAllSessionsForAccountInOrganization } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
@@ -21,7 +21,9 @@ export async function POST(request: NextRequest) {
       throw new Error('Missing account_id');
     }
 
-    await revokeAllSessionsForAccount(accountId);
+    // Scoped to this organization: an organization admin can never revoke a
+    // user in another tenant or a platform owner.
+    await revokeAllSessionsForAccountInOrganization(accountId, principal.organizationId);
 
     await writePilotAuditEvent({
       event_type: 'update',

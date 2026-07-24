@@ -1,0 +1,56 @@
+name: Session expiry and revocation CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/web/app/api/pilot/auth/**'
+      - 'apps/web/src/server/pilot/auth*'
+      - 'apps/web/src/server/pilot/db*'
+      - 'apps/web/src/server/pilot/sessionPolicy*'
+      - 'apps/web/scripts/pilot-apply-session-expiry-migration.mjs'
+      - 'apps/web/scripts/pilot-cleanup-sessions.ts'
+      - 'infra/azure/pilot_slice_postgres.sql'
+      - 'infra/azure/pilot_slice_postgres_session_expiry_migration.sql'
+      - 'apps/web/package.json'
+      - 'package-lock.json'
+      - '.github/workflows/session-expiry-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: session-expiry-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Type-check
+        working-directory: apps/web
+        run: npx tsc --noEmit
+
+      - name: Run fast regression suite
+        run: npm --workspace web test -- --runInBand
+
+      - name: Run PostgreSQL migration suite
+        run: npm --workspace web run test:migrations -- --runInBand --detectOpenHandles
+
+      - name: Build production application
+        run: npm run build

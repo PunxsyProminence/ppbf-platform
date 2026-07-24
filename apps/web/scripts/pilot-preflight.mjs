@@ -12,7 +12,7 @@ function required(name) {
 async function checkPostgres(connectionString) {
   const client = new Client({
     connectionString,
-    ssl: { rejectUnauthorized: false },
+    ssl: { rejectUnauthorized: true },
   });
 
   await client.connect();

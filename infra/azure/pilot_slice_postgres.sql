@@ -47,8 +47,12 @@ create table if not exists pilot.session_tokens (
   account_id text not null references pilot.accounts(account_id) on delete cascade,
   organization_id text not null references pilot.organizations(organization_id),
   created_at timestamptz not null default now(),
-  revoked_at timestamptz null
+  revoked_at timestamptz null,
+  expires_at timestamptz not null default (now() + interval '24 hours')
 );
+
+create index if not exists idx_pilot_session_tokens_expires_at on pilot.session_tokens(expires_at);
+create index if not exists idx_pilot_session_tokens_account_id on pilot.session_tokens(account_id);
 
 create table if not exists pilot.athletes (
   organization_id text not null references pilot.organizations(organization_id),

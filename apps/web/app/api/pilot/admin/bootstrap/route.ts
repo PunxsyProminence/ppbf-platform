@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { createOrRotateAdminAccount, createOrganization, assignOrganizationMembership } from '@/src/server/pilot/auth';
+import { createOrRotateAdminAccount, createOrganization } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getPilotDefaultOrganizationId } from '@/src/server/pilot/env';
 import { jsonError } from '@/src/server/pilot/http';
@@ -55,8 +55,9 @@ export async function POST(request: NextRequest) {
     clearRateLimit(ipKey);
 
     await createOrganization(organizationId, organizationName, accountId);
+    // createOrRotateAdminAccount already assigns the matching organization
+    // membership atomically alongside the account upsert.
     await createOrRotateAdminAccount(accountId, pin, organizationId, bootstrapRole);
-    await assignOrganizationMembership(accountId, organizationId, bootstrapRole);
 
     await writePilotAuditEvent({
       event_type: 'create',

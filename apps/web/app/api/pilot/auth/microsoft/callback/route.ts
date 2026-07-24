@@ -23,6 +23,7 @@ import {
   resolveMicrosoftIdentityEmail,
   verifyAndDecodeMicrosoftIdToken,
 } from '@/src/server/pilot/federatedAuth';
+import { SESSION_ABSOLUTE_LIFETIME_SECONDS } from '@/src/server/pilot/sessionPolicy';
 
 export const runtime = 'nodejs';
 
@@ -213,7 +214,7 @@ export async function GET(request: NextRequest) {
       sameSite: 'lax',
       secure,
       path: '/',
-      maxAge: 60 * 60 * 24 * 365,
+      maxAge: SESSION_ABSOLUTE_LIFETIME_SECONDS,
     });
     response.cookies.set(MICROSOFT_AUTH_USED_STATE_COOKIE, hashStateForReplayGuard(queryState), {
       httpOnly: true,

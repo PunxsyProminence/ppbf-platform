@@ -2,7 +2,6 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
 import {
-  assignOrganizationMembership,
   createCoachAccount,
   createOrRotateAdminAccount,
   createOrUpdateAthleteAccount,
@@ -60,7 +59,9 @@ export async function POST(request: NextRequest) {
       await createParentAccount(accountId, pin, organizationId);
     }
 
-    await assignOrganizationMembership(accountId, organizationId, role);
+    // Each of the create/rotate functions above already assigns the
+    // matching organization membership atomically alongside the account
+    // upsert.
 
     await writePilotAuditEvent({
       event_type: 'create',
