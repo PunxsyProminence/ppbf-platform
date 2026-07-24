@@ -83,6 +83,12 @@ describe('SHADOW Classifier', () => {
       const result = classifyRequest('What is training?', 'parent', 'heavy_bag');
       expect(result.tier).toBe('quick_round');
     });
+
+    test('does not grant Board accounts a Heavy Bag override', () => {
+      const result = classifyRequest('What is training?', 'board', 'heavy_bag');
+      expect(result.tier).toBe('quick_round');
+      expect(result.requiresManualOverride).toBe(false);
+    });
   });
 
   describe('Topic detection', () => {

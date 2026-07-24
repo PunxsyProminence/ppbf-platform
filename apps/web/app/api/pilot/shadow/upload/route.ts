@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { NextResponse, type NextRequest } from 'next/server';
 
@@ -18,6 +18,7 @@ import { enforceShadowRateLimit, ShadowRateLimitExceeded } from '@/src/server/pi
 import {
   describeShadowUpload,
   SHADOW_INTAKE_DOCUMENT_TYPES,
+  validateShadowUploadContent,
   validateShadowUploadTransport,
 } from '@/src/server/pilot/shadowUploadPolicy';
 
@@ -79,6 +80,15 @@ export async function POST(request: NextRequest) {
         { status: 415 },
       );
     }
+    const uploadBytes = new Uint8Array(await uploaded.arrayBuffer());
+    const contentValidation = validateShadowUploadContent(uploadDescriptor, uploadBytes);
+    if (!contentValidation.ok) {
+      return NextResponse.json(
+        { ok: false, error: contentValidation.error },
+        { status: 415 },
+      );
+    }
+    const contentSha256 = createHash('sha256').update(uploadBytes).digest('hex');
     if (intakeCaseIdInput && !isUuid(intakeCaseIdInput)) {
       return NextResponse.json({ ok: false, error: 'Intake case not found.' }, { status: 404 });
     }
@@ -143,6 +153,7 @@ export async function POST(request: NextRequest) {
       metadata: {
         hint: hint ?? null,
         quarantine_status: 'pending_security_review',
+        content_sha256: contentSha256,
       },
     });
 
@@ -234,17 +245,21 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return NextResponse.json({
-      ok: true,
-      intake_id: intakeId,
-      intake_case_id: intakeCaseId,
-      intake_document_id: intakeDocumentId,
-      document_type: documentType,
-      classification,
-      routed_queue: routedQueue,
-      review_status: 'pending_human_review',
-      quarantine_status: 'pending_security_review',
-    });
+    return NextResponse.json(
+      {
+        ok: true,
+        accepted_for_security_review: true,
+        intake_id: intakeId,
+        intake_case_id: intakeCaseId,
+        intake_document_id: intakeDocumentId,
+        document_type: documentType,
+        classification,
+        routed_queue: routedQueue,
+        review_status: 'pending_human_review',
+        quarantine_status: 'pending_security_review',
+      },
+      { status: 202 },
+    );
   } catch (error) {
     if (error instanceof ShadowRateLimitExceeded) {
       return NextResponse.json(

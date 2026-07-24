@@ -202,6 +202,7 @@ function buildAuthoritySection(userRole: PilotRole): string[] {
     admin: 'Organization-scoped administration; athlete records require a separate successful subject authorization check',
     athlete: 'May use only the authenticated athlete’s own record when separately authorized',
     parent: 'May use only records for an athlete linked to this parent when separately authorized',
+    board: 'Aggregate governance only; SHADOW chat and athlete-record context are not authorized for this role',
     organization_admin: 'Organization-scoped administration; athlete records require a separate successful subject authorization check',
     platform_owner: 'Platform governance only; organization-private athlete records are denied by default',
     volunteer: 'General organization support only; no athlete-record access by default',
@@ -218,6 +219,24 @@ function buildAuthoritySection(userRole: PilotRole): string[] {
  */
 export function buildShadowContext(input: ShadowContextBuilderInput): ShadowContextOutput {
   const tier = input.tier;
+
+  // Board accounts use the dedicated, aggregate-only Board workspace. If this
+  // context helper is reached outside the guarded chat route, return no
+  // profile, athlete, coaching, or remembered-fact context.
+  if (input.userRole === 'board') {
+    return {
+      context: buildAuthoritySection('board').join('\n'),
+      metadata: {
+        tier,
+        topicType: 'general',
+        contextItemCount: 1,
+        totalWeight: 0,
+        includesAthleteData: false,
+        includesResearchRequirements: false,
+      },
+    };
+  }
+
   const queryType = detectQueryType(input.userMessage);
 
   let context: string;

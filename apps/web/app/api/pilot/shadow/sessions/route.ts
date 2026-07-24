@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
+import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { isUuid, jsonError, parseSafeLimit, requirePrincipal } from '@/src/server/pilot/http';
 import { canUseShadowSessionType } from '@/src/server/pilot/shadowChatCapabilities';
 import { listConversations, resolveConversation } from '@/src/server/pilot/shadowConversations';
@@ -8,6 +8,16 @@ import { listConversations, resolveConversation } from '@/src/server/pilot/shado
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
+    requireRole(principal, [
+      'admin',
+      'coach',
+      'athlete',
+      'parent',
+      'organization_admin',
+      'staff',
+      'volunteer',
+      'platform_owner',
+    ]);
     const limit = parseSafeLimit(request.nextUrl.searchParams.get('limit'), 50, 100);
     if (limit === null) {
       return NextResponse.json({ error: 'Invalid limit' }, { status: 400 });
@@ -25,6 +35,16 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
+    requireRole(principal, [
+      'admin',
+      'coach',
+      'athlete',
+      'parent',
+      'organization_admin',
+      'staff',
+      'volunteer',
+      'platform_owner',
+    ]);
     const body = await request.json() as {
       conversationId?: unknown;
       athleteId?: unknown;

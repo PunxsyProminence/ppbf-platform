@@ -52,24 +52,46 @@ export type FormulaId = (typeof FORMULA_IDS)[number];
 
 export type FormulaSupport = 'implemented' | 'primitive_only' | 'unsupported' | 'experimental_unsupported';
 
-export type ObservationKind =
-  | 'session_rpe'
-  | 'duration'
-  | 'scheduled_sessions'
-  | 'attended_sessions'
-  | 'session_load'
-  | 'acute_load'
-  | 'chronic_load'
-  | 'numeric';
+export const OBSERVATION_KINDS = [
+  'session_rpe',
+  'duration',
+  'scheduled_sessions',
+  'attended_sessions',
+  'session_load',
+  'acute_load',
+  'chronic_load',
+  'punch_count',
+  'punch_attempted',
+  'punch_landed',
+  'punch_absorbed',
+  'active_time',
+  'round_count',
+  'contact_level',
+  'contact_rounds',
+  'round_output',
+  'focus_achieved',
+  'body_weight',
+  'numeric',
+] as const;
 
-export type FormulaUnit =
-  | 'rpe_0_10'
-  | 'minutes'
-  | 'count'
-  | 'percent'
-  | 'au'
-  | 'ratio'
-  | 'unitless';
+export type ObservationKind = (typeof OBSERVATION_KINDS)[number];
+
+export const FORMULA_UNITS = [
+  'rpe_0_10',
+  'minutes',
+  'seconds',
+  'count',
+  'percent',
+  'au',
+  'ratio',
+  'level_0_3',
+  'kilograms',
+  'pounds',
+  'boolean_0_1',
+  'unitless',
+] as const;
+
+export type FormulaUnit = (typeof FORMULA_UNITS)[number];
 
 export type ObservationSourceType =
   | 'computer_vision'
@@ -105,8 +127,16 @@ export interface NumericObservation<
   readonly kind: TKind;
   readonly value: number | null;
   readonly unit: TUnit;
+  /**
+   * Formula-specific labels such as round number, punch type, field key, or
+   * metric key. Dimensions are descriptive only and never replace a typed
+   * observation kind or unit.
+   */
+  readonly dimensions?: Readonly<Record<string, string | number | boolean | null>>;
   readonly observedAt: string;
   readonly source: ObservationSource;
+  readonly idempotencyKey?: string;
+  readonly supersedesObservationId?: string | null;
 }
 
 export type ValidationState = 'valid' | 'warning' | 'invalid' | 'insufficient' | 'unsupported';
@@ -148,6 +178,22 @@ export type ValidationReasonCode =
   | 'INVALID_TIMESTAMP'
   | 'OBSERVATIONS_NOT_CHRONOLOGICAL'
   | 'SOURCE_QUALITY_WARNING'
+  | 'MISSING_PUNCH_COUNT'
+  | 'MISSING_ACTIVE_TIME'
+  | 'MISSING_ATTEMPTED'
+  | 'MISSING_CONTACT_LEVEL'
+  | 'MISSING_ROUNDS'
+  | 'MISSING_FOCUS'
+  | 'ZERO_MEAN'
+  | 'INVALID_BINARY_VALUE'
+  | 'INVALID_DIMENSION'
+  | 'DIMENSION_MISMATCH'
+  | 'INCOMPLETE_WINDOW'
+  | 'INVALID_POLICY'
+  | 'DATE_WINDOW_MISMATCH'
+  | 'SUPERSEDED_OBSERVATION'
+  | 'OBSERVATION_NOT_FOUND'
+  | 'IDEMPOTENCY_CONFLICT'
   | 'UNSUPPORTED_FORMULA';
 
 export interface ValidationSummary {
@@ -172,12 +218,17 @@ export interface ProvenanceSnapshot {
   readonly sourceType: ObservationSourceType;
   readonly sourceQuality: SourceQuality;
   readonly sourceReferenceId: string;
+  readonly dimensions: Readonly<Record<string, string | number | boolean | null>>;
 }
 
 export interface FormulaResult {
   readonly resultId: string;
+  readonly calculationKey: string;
   readonly formulaId: FormulaId;
   readonly formulaVersion: string;
+  readonly outputKey: string;
+  readonly policyVersion: string;
+  readonly parameters: Readonly<Record<string, unknown>>;
   readonly organizationId: string | null;
   readonly athleteId: string | null;
   readonly contextId: string | null;
@@ -192,6 +243,16 @@ export interface FormulaResult {
   readonly humanReviewRequired: boolean;
 }
 
+export interface FormulaOutputDefinition {
+  readonly key: string;
+  /**
+   * `input_unit` is used for formulas such as raw baseline or weight change,
+   * whose safe output unit must exactly match the validated input unit.
+   */
+  readonly unit: FormulaUnit | 'input_unit';
+  readonly description: string;
+}
+
 export interface FormulaDefinition {
   readonly id: FormulaId;
   readonly version: string;
@@ -199,10 +260,45 @@ export interface FormulaDefinition {
   readonly expression: string;
   readonly support: FormulaSupport;
   readonly outputUnit: FormulaUnit;
+  readonly outputs: readonly FormulaOutputDefinition[];
   readonly requiredObservationKinds: readonly ObservationKind[];
   readonly humanReviewRequired: boolean;
   readonly unsupportedReason?: string;
   readonly implementation?: string;
+}
+
+export type MvpFormulaId =
+  | 'MVP-01'
+  | 'MVP-02'
+  | 'MVP-03'
+  | 'MVP-04'
+  | 'MVP-05'
+  | 'MVP-06'
+  | 'MVP-07'
+  | 'MVP-08'
+  | 'MVP-09'
+  | 'MVP-10'
+  | 'MVP-11'
+  | 'MVP-12';
+
+export type FormulaHistoryStatus = 'insufficient_history' | 'building' | 'adequate';
+
+export interface FormulaBaselineSnapshot {
+  readonly calculationKey: string;
+  readonly organizationId: string;
+  readonly athleteId: string;
+  readonly formulaId: 'MVP-09';
+  readonly formulaVersion: string;
+  readonly metricKey: string;
+  readonly unit: FormulaUnit;
+  readonly policyVersion: string;
+  readonly parameters: Readonly<Record<string, unknown>>;
+  readonly windowSize: number;
+  readonly historyStatus: FormulaHistoryStatus;
+  readonly baselineMean: number | null;
+  readonly baselineSampleSd: number | null;
+  readonly observationIds: readonly string[];
+  readonly effectiveAt: string;
 }
 
 export interface NumericSuccess {

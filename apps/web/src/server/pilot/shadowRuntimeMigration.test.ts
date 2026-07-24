@@ -12,6 +12,10 @@ const migrationPath = path.join(
   repositoryRoot,
   'infra/azure/pilot_slice_postgres_shadow_runtime_migration.sql',
 );
+const formulaFoundationMigrationPath = path.join(
+  repositoryRoot,
+  'infra/azure/pilot_slice_postgres_shadow_formula_foundation_migration.sql',
+);
 const runnerPath = path.join(
   repositoryRoot,
   'apps/web/scripts/pilot-apply-shadow-runtime-migration.mjs',
@@ -20,6 +24,10 @@ const runnerPath = path.join(
 describe('SHADOW runtime migration contract', () => {
   const canonicalSchema = fs.readFileSync(canonicalSchemaPath, 'utf8');
   const migration = fs.readFileSync(migrationPath, 'utf8');
+  const formulaFoundationMigration = fs.readFileSync(
+    formulaFoundationMigrationPath,
+    'utf8',
+  );
   const runner = fs.readFileSync(runnerPath, 'utf8');
 
   test('keeps the additive migration transactional and aligned with required tables', () => {
@@ -126,10 +134,58 @@ describe('SHADOW runtime migration contract', () => {
     );
   });
 
-  test('uses the one approved migration file and hard-asserts the target', () => {
-    expect(runner).toContain(
-      'pilot_slice_postgres_shadow_runtime_migration.sql',
+  test('keeps formula observation, multi-output, and baseline identity additive and aligned', () => {
+    const formulaFoundationFragments = [
+      "dimensions jsonb not null default '{}'::jsonb",
+      'idempotency_key text not null',
+      'idx_shadow_formula_observations_idempotency',
+      'idx_shadow_formula_observations_supersedes',
+      'calculation_key text not null',
+      'output_key text not null',
+      'policy_version text not null',
+      "parameters jsonb not null default '{}'::jsonb",
+      'idx_shadow_formula_results_calculation',
+      'metric_key text not null',
+      'unit text not null',
+      'idx_shadow_formula_baseline_calculation',
+      'shadow_formula_observations_dimensions_check',
+      'shadow_formula_results_identity_check',
+      'shadow_formula_baseline_identity_check',
+    ];
+
+    for (const fragment of formulaFoundationFragments) {
+      expect(canonicalSchema).toContain(fragment);
+      expect(formulaFoundationMigration).toContain(fragment);
+    }
+    expect(formulaFoundationMigration.trim()).toMatch(/^--[\s\S]*\nbegin;/i);
+    expect(formulaFoundationMigration.trim()).toMatch(/commit;$/i);
+    expect(formulaFoundationMigration).toContain(
+      'add column if not exists idempotency_key text not null default gen_random_uuid()::text',
     );
+    expect(formulaFoundationMigration).toContain(
+      'add column if not exists calculation_key text not null default gen_random_uuid()::text',
+    );
+    expect(formulaFoundationMigration).toContain(
+      'SHADOW_FORMULA_FOUNDATION_PRECHECK_FAILED',
+    );
+    expect(formulaFoundationMigration).not.toMatch(/\bupdate\s+pilot\.shadow_/i);
+    expect(formulaFoundationMigration).not.toMatch(/\bdelete\s+from\s+pilot\.shadow_/i);
+
+    expect(migration).not.toContain('idx_shadow_formula_observations_idempotency');
+    expect(migration).not.toContain('idx_shadow_formula_results_calculation');
+    expect(migration).not.toContain('shadow_formula_results_identity_check');
+  });
+
+  test('uses the ordered approved additive migrations and hard-asserts the target', () => {
+    for (const migrationFile of [
+      'pilot_slice_postgres_shadow_runtime_migration.sql',
+      'pilot_slice_postgres_shadow_formula_foundation_migration.sql',
+      'pilot_slice_postgres_shadow_evidence_migration.sql',
+      'pilot_slice_postgres_shadow_job_lease_migration.sql',
+      'pilot_slice_postgres_board_role_migration.sql',
+    ]) {
+      expect(runner).toContain(migrationFile);
+    }
     expect(runner).toContain('PPBF_EXPECTED_POSTGRES_HOSTNAME');
     expect(runner).toContain('PPBF_EXPECTED_POSTGRES_DATABASE');
     expect(runner).toContain('POSTGRES_TARGET_MISMATCH');
@@ -139,21 +195,22 @@ describe('SHADOW runtime migration contract', () => {
 
   test('accepts the approved leading comments before the transaction boundary', () => {
     const moduleUrl = pathToFileURL(runnerPath).href;
-    const migrationUrl = pathToFileURL(migrationPath).href;
-
-    execFileSync(
-      process.execPath,
-      [
-        '--input-type=module',
-        '--eval',
+    for (const transactionalPath of [migrationPath, formulaFoundationMigrationPath]) {
+      const migrationUrl = pathToFileURL(transactionalPath).href;
+      execFileSync(
+        process.execPath,
         [
-          `import fs from 'node:fs';`,
-          `import { assertTransactionalMigration } from ${JSON.stringify(moduleUrl)};`,
-          `assertTransactionalMigration(fs.readFileSync(new URL(${JSON.stringify(migrationUrl)}), 'utf8'));`,
-        ].join('\n'),
-      ],
-      { stdio: 'pipe' },
-    );
+          '--input-type=module',
+          '--eval',
+          [
+            `import fs from 'node:fs';`,
+            `import { assertTransactionalMigration } from ${JSON.stringify(moduleUrl)};`,
+            `assertTransactionalMigration(fs.readFileSync(new URL(${JSON.stringify(migrationUrl)}), 'utf8'));`,
+          ].join('\n'),
+        ],
+        { stdio: 'pipe' },
+      );
+    }
   });
 
   test('verifies readiness without printing raw errors or secret material', () => {
@@ -161,5 +218,10 @@ describe('SHADOW runtime migration contract', () => {
     expect(runner).toContain('shadow_schema_ready: true');
     expect(runner).not.toContain('console.error(String(error))');
     expect(runner).not.toContain('console.log(connectionString)');
+    expect(runner).toContain('shadow_evidence_bundles');
+    expect(runner).toContain('formula_baseline_identity_ready');
+    expect(runner).toContain('formula_uniqueness_ready');
+    expect(runner).toContain('lease_expires_at');
+    expect(runner).toContain('board_membership_role_ready');
   });
 });

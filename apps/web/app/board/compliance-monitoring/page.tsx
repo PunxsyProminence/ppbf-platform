@@ -4,12 +4,6 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
-import ShadowChatButton from '@/components/ShadowChatButton';
-import { roleRoutes, type ClubRole } from '@/components/roleRoutes';
-
-const boardRoles = roleRoutes
-  .map((route) => route.role)
-  .filter((role): role is ClubRole => role.startsWith('board-'));
 
 interface ComplianceViolation {
   violation_id: string;
@@ -73,7 +67,7 @@ export default function BoardComplianceMonitoringPage() {
   );
 
   return (
-    <RoleSessionGate allowedRoles={boardRoles}>
+    <RoleSessionGate allowedRoles={['board']}>
       <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
         <div className="mx-auto max-w-7xl px-6 py-10 lg:px-10">
           <header className="space-y-3 border-b-[3px] border-[var(--black)] pb-6">
@@ -83,7 +77,6 @@ export default function BoardComplianceMonitoringPage() {
               Real-time compliance violation tracking and escalation management.
             </p>
             {errorMessage ? <p className="text-sm text-[var(--red-primary)]">{errorMessage}</p> : null}
-            <ShadowChatButton context="Board Compliance Monitoring" />
           </header>
 
           {/* Metrics Dashboard */}
@@ -173,9 +166,6 @@ export default function BoardComplianceMonitoringPage() {
           <div className="mt-8 flex flex-wrap gap-3">
             <Link href="/board" className="inline-flex min-h-[42px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.08em]">
               Back to Board Hub
-            </Link>
-            <Link href="/admin/compliance-center" className="inline-flex min-h-[42px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.08em]">
-              Admin Compliance Center
             </Link>
           </div>
         </div>

@@ -495,7 +495,7 @@ describe('versioned formula results', () => {
 
   test('returns an explicit immutable unsupported result instead of a fabricated number', () => {
     const result = unsupportedFormulaResult({
-      formulaId: 'MVP-03',
+      formulaId: 'BF-13',
       computedAt: COMPUTED_AT,
     });
 

@@ -1,16 +1,17 @@
 import { NextRequest } from 'next/server';
 
-import { POST } from './route';
+import { GET, POST } from './route';
 import { requirePrincipal } from '@/src/server/pilot/http';
-import { resolveConversation } from '@/src/server/pilot/shadowConversations';
+import { listConversations, resolveConversation } from '@/src/server/pilot/shadowConversations';
 
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
   return { ...actual, requirePrincipal: jest.fn() };
 });
-jest.mock('@/src/server/pilot/access', () => ({
-  assertActorCanAccessAthlete: jest.fn(),
-}));
+jest.mock('@/src/server/pilot/access', () => {
+  const actual = jest.requireActual('@/src/server/pilot/access');
+  return { ...actual, assertActorCanAccessAthlete: jest.fn() };
+});
 jest.mock('@/src/server/pilot/shadowChatCapabilities', () => ({
   canUseShadowSessionType: jest.fn(() => true),
 }));
@@ -20,6 +21,7 @@ jest.mock('@/src/server/pilot/shadowConversations', () => ({
 }));
 
 const mockRequirePrincipal = jest.mocked(requirePrincipal);
+const mockListConversations = jest.mocked(listConversations);
 const mockResolveConversation = jest.mocked(resolveConversation);
 
 beforeEach(() => {
@@ -32,6 +34,61 @@ beforeEach(() => {
     sessionToken: 'token',
     authProvider: 'ppbf_local',
   });
+});
+
+test('lists only the authenticated owner sessions with a bounded limit', async () => {
+  mockListConversations.mockResolvedValueOnce([{
+    conversationId: '8d697e85-dde4-47ac-b03f-e6c74595a3bc',
+    title: 'Footwork review',
+    athleteId: null,
+    sessionType: 'quick_round',
+    createdAt: '2026-07-24T12:00:00.000Z',
+    updatedAt: '2026-07-24T12:02:00.000Z',
+  }]);
+
+  const response = await GET(new NextRequest(
+    'http://localhost/api/pilot/shadow/sessions?limit=25',
+  ));
+
+  expect(response.status).toBe(200);
+  await expect(response.json()).resolves.toMatchObject({
+    success: true,
+    conversations: [{ title: 'Footwork review' }],
+  });
+  expect(mockListConversations).toHaveBeenCalledWith(
+    expect.objectContaining({
+      accountId: 'account-1',
+      organizationId: 'org-1',
+    }),
+    25,
+  );
+});
+
+test('rejects an invalid list limit before querying session history', async () => {
+  const response = await GET(new NextRequest(
+    'http://localhost/api/pilot/shadow/sessions?limit=all',
+  ));
+
+  expect(response.status).toBe(400);
+  expect(mockListConversations).not.toHaveBeenCalled();
+});
+
+test('denies a Board user access to saved sessions from a prior role', async () => {
+  mockRequirePrincipal.mockResolvedValueOnce({
+    accountId: 'account-1',
+    role: 'board',
+    organizationId: 'org-1',
+    athleteId: null,
+    sessionToken: 'token',
+    authProvider: 'ppbf_local',
+  });
+
+  const response = await GET(new NextRequest(
+    'http://localhost/api/pilot/shadow/sessions',
+  ));
+
+  expect(response.status).toBe(403);
+  expect(mockListConversations).not.toHaveBeenCalled();
 });
 
 test('hides a malformed conversation UUID before it reaches PostgreSQL', async () => {

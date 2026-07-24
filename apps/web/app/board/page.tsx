@@ -1,6 +1,5 @@
 import Link from 'next/link';
-import ShadowChatButton from '@/components/ShadowChatButton';
-import { boardOverviewStrip, boardSeatConfigs } from './boardWorkspaceConfig';
+import { boardSeatConfigs } from './boardWorkspaceConfig';
 
 export default function BoardHubPage() {
   return (
@@ -14,53 +13,13 @@ export default function BoardHubPage() {
               Board Hub is the board seat directory, governance control surface, and mission oversight launcher. Every seat opens the same board workspace shell with role-aware visibility for nonprofit governance.
             </p>
           </div>
-          <Link
-            href="/operations"
-            className="inline-flex min-h-[44px] items-center justify-center border-2 border-[#8b4444] bg-[#5a2a2a]/10 px-4 py-2 text-sm font-mono font-bold text-[#d4a574] transition hover:bg-[#5a2a2a]/20 hover:text-[#d4a574]"
-          >
-            Governance Operations
-          </Link>
-          <ShadowChatButton context="Board Hub" className="border-[#8b4444] bg-[#5a2a2a]/10 text-[#d4a574] hover:bg-[#5a2a2a]/20 hover:text-[#d4a574]" />
         </header>
 
         <section className="mt-8 border-2 border-[#8b4444] bg-[#121212] p-5">
-          <h2 className="text-lg font-black text-[#e8d7c6]">Quick Actions</h2>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <Link
-              href="/operations"
-              className="inline-flex min-h-[44px] items-center justify-center border border-[#8b4444] bg-[#2f1717] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[#e8d7c6] transition hover:border-[#d4a574] hover:text-[#d4a574]"
-            >
-              Open The Ring
-            </Link>
-            <Link
-              href="/board/compliance-monitoring"
-              className="inline-flex min-h-[44px] items-center justify-center border border-[#654535] bg-[#111111] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[#cbb8a8] transition hover:border-[#8b4444]"
-            >
-              Compliance Monitoring
-            </Link>
-            <Link
-              href="/admin/compliance-center"
-              className="inline-flex min-h-[44px] items-center justify-center border border-[#654535] bg-[#111111] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[#cbb8a8] transition hover:border-[#8b4444]"
-            >
-              Admin Compliance Center
-            </Link>
-            <Link
-              href="/admin/shadow"
-              className="inline-flex min-h-[44px] items-center justify-center border border-[#654535] bg-[#111111] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[#cbb8a8] transition hover:border-[#8b4444]"
-            >
-              SHADOW Command Node
-            </Link>
-          </div>
-
-          <p className="mt-5 text-xs font-mono uppercase tracking-[0.28em] text-[#d4a574]">Board Overview Strip</p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-            {boardOverviewStrip.map((item) => (
-              <article key={item.label} className="border border-[#654535] bg-[#0d0d0d] p-3">
-                <p className="text-[12px] font-mono uppercase tracking-[0.14em] text-[#aa9484]">{item.label}</p>
-                <p className="mt-2 text-[22px] font-black text-[#e8d7c6]">{item.value}</p>
-              </article>
-            ))}
-          </div>
+          <h2 className="text-lg font-black text-[#e8d7c6]">Aggregate boundary</h2>
+          <p className="mt-3 max-w-4xl text-sm leading-6 text-[#cbb8a8]">
+            Board access is organization-level and aggregate-only. Small cohorts are suppressed, missing data remains unavailable, and athlete records, messages, notes, intake records, video, safety review, and administrative controls remain outside this role.
+          </p>
         </section>
 
         <section className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">

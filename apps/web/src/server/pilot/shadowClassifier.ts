@@ -75,6 +75,9 @@ function calculateComplexityScore(message: string, role: PilotRole): number {
     admin: 0.1,
     athlete: -0.05,
     parent: 0.0,
+    // Board accounts are denied from SHADOW chat at the route boundary.
+    // Keep classification neutral if this helper is called independently.
+    board: 0.0,
     organization_admin: 0.1,
     platform_owner: 0.05,
     volunteer: -0.05,

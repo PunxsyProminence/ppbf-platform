@@ -6,6 +6,14 @@ import Link from 'next/link';
 import { readRoleSession, clearRoleSession } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
 import { revokeShadowSession } from '@/client/shadowLogout';
+import {
+  buildShadowChatRequest,
+  listOwnedShadowSessions,
+  loadOwnedShadowSessionMessages,
+  mapStoredShadowMessage,
+  ShadowSessionsRequestError,
+  type OwnedShadowConversation,
+} from '@/client/shadowSessions';
 import ShadowChatButton from '@/components/ShadowChatButton';
 
 interface ShadowMessage {
@@ -39,6 +47,7 @@ interface ShadowAIResult {
   messageId: string;
   conversationId?: string;
   tier?: 'quick_round' | 'heavy_bag';
+  sessionType?: string;
   profileTier?: 'bronze' | 'silver' | 'gold';
   modelUsed?: string;
   async?: boolean;
@@ -79,16 +88,18 @@ async function fetchShadowAI(
   heavyBagMode: boolean,
   apiBaseUrl: string,
   conversationId?: string,
+  athleteId?: string,
 ): Promise<ShadowAIResult> {
   const res = await fetch(`${apiBaseUrl}/api/pilot/shadow/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({
+    body: JSON.stringify(buildShadowChatRequest({
       message: rawQuestion,
-      tier: heavyBagMode ? 'heavy_bag' : undefined,
+      heavyBagMode,
       conversationId,
-    }),
+      athleteId,
+    })),
   });
   const payload = await res.json().catch(() => null) as ShadowAIResult | null;
   if (!res.ok) {
@@ -218,7 +229,14 @@ function ShadowChatPageContent() {
   const [heavyBagMode, setHeavyBagMode] = useState(false);
   const [allowedSessionTypes, setAllowedSessionTypes] = useState<string[]>(['quick_round']);
   const [conversationId, setConversationId] = useState<string>();
+  const [conversationAthleteId, setConversationAthleteId] = useState<string>();
+  const [savedSessions, setSavedSessions] = useState<OwnedShadowConversation[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [restoringSessionId, setRestoringSessionId] = useState<string>();
+  const [sessionNotice, setSessionNotice] = useState<string>();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const restoreAbortRef = useRef<AbortController | null>(null);
+  const restoreRequestIdRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -341,6 +359,42 @@ function ShadowChatPageContent() {
   }, [authChecked, userRole]);
 
   useEffect(() => {
+    if (!capabilitiesLoaded) return;
+    const controller = new AbortController();
+
+    void listOwnedShadowSessions(apiBase(), controller.signal)
+      .then((sessions) => {
+        if (!controller.signal.aborted) {
+          setSavedSessions(sessions);
+        }
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        if (
+          error instanceof ShadowSessionsRequestError
+          && (error.status === 401 || error.status === 403)
+        ) {
+          clearRoleSession();
+          router.replace('/login');
+          return;
+        }
+        setSessionNotice('Saved sessions are temporarily unavailable. You can still start a new chat.');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setSessionsLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [capabilitiesLoaded, router]);
+
+  useEffect(() => () => {
+    restoreRequestIdRef.current += 1;
+    restoreAbortRef.current?.abort();
+  }, []);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
@@ -353,6 +407,97 @@ function ShadowChatPageContent() {
       ...meta,
     };
     setMessages((prev) => [...prev, newMessage]);
+  }
+
+  function welcomeMessage(): ShadowMessage {
+    return {
+      id: '0',
+      type: 'shadow',
+      text: buildWelcomeMessage(mode, roleLabel, context, subject),
+      timestamp: formatTimestamp(),
+    };
+  }
+
+  function handleNewChat() {
+    restoreRequestIdRef.current += 1;
+    restoreAbortRef.current?.abort();
+    restoreAbortRef.current = null;
+    setRestoringSessionId(undefined);
+    setConversationId(undefined);
+    setConversationAthleteId(undefined);
+    setMessages([welcomeMessage()]);
+    setHeavyBagMode(false);
+    setUserInput('');
+    setSessionNotice(undefined);
+  }
+
+  async function handleRestoreSession(session: OwnedShadowConversation): Promise<void> {
+    if (isLoading) return;
+    const requestId = restoreRequestIdRef.current + 1;
+    restoreRequestIdRef.current = requestId;
+    restoreAbortRef.current?.abort();
+    const controller = new AbortController();
+    restoreAbortRef.current = controller;
+    setRestoringSessionId(session.conversationId);
+    setSessionNotice(undefined);
+
+    try {
+      const storedMessages = await loadOwnedShadowSessionMessages(
+        apiBase(),
+        session.conversationId,
+        controller.signal,
+      );
+      if (controller.signal.aborted || restoreRequestIdRef.current !== requestId) return;
+
+      const restoredTier = session.sessionType === 'heavy_bag'
+        ? 'heavy_bag'
+        : session.sessionType === 'quick_round'
+          ? 'quick_round'
+          : undefined;
+      const restoredMessages: ShadowMessage[] = storedMessages.map((storedMessage) => {
+        const mapped = mapStoredShadowMessage(storedMessage);
+        return {
+          ...mapped,
+          tier: mapped.type === 'shadow' ? restoredTier : undefined,
+        };
+      });
+
+      setConversationId(session.conversationId);
+      setConversationAthleteId(session.athleteId ?? undefined);
+      setMessages(restoredMessages.length > 0 ? restoredMessages : [welcomeMessage()]);
+      setHeavyBagMode(
+        session.sessionType === 'heavy_bag'
+        && allowedSessionTypes.includes('heavy_bag'),
+      );
+    } catch (error) {
+      if (controller.signal.aborted || restoreRequestIdRef.current !== requestId) return;
+      if (error instanceof ShadowSessionsRequestError) {
+        if (error.status === 401 || error.status === 403) {
+          clearRoleSession();
+          router.replace('/login');
+          return;
+        }
+        if (error.status === 404) {
+          setSavedSessions((current) => current.filter(
+            (item) => item.conversationId !== session.conversationId,
+          ));
+          if (conversationId === session.conversationId) {
+            setConversationId(undefined);
+            setConversationAthleteId(undefined);
+            setMessages([welcomeMessage()]);
+            setHeavyBagMode(false);
+          }
+          setSessionNotice('That saved session is no longer available.');
+          return;
+        }
+      }
+      setSessionNotice('SHADOW could not restore that session. Your current chat was left unchanged.');
+    } finally {
+      if (restoreRequestIdRef.current === requestId) {
+        setRestoringSessionId(undefined);
+        restoreAbortRef.current = null;
+      }
+    }
   }
 
   async function handleLogout() {
@@ -382,9 +527,40 @@ function ShadowChatPageContent() {
   }
 
   async function callShadowAI(rawQuestion: string): Promise<void> {
-    const data = await fetchShadowAI(rawQuestion, heavyBagMode, apiBase(), conversationId);
+    const data = await fetchShadowAI(
+      rawQuestion,
+      heavyBagMode,
+      apiBase(),
+      conversationId,
+      conversationAthleteId,
+    );
     if (data.conversationId) {
       setConversationId(data.conversationId);
+      const now = new Date().toISOString();
+      const persistedSessionType = data.sessionType
+        ?? (heavyBagMode ? 'heavy_bag' : 'quick_round');
+      setSavedSessions((current) => {
+        const existing = current.find((item) => item.conversationId === data.conversationId);
+        const session: OwnedShadowConversation = existing
+          ? {
+              ...existing,
+              athleteId: conversationAthleteId ?? existing.athleteId,
+              sessionType: persistedSessionType,
+              updatedAt: now,
+            }
+          : {
+              conversationId: data.conversationId as string,
+              title: rawQuestion.replace(/\s+/g, ' ').trim().slice(0, 80) || 'New conversation',
+              athleteId: conversationAthleteId ?? null,
+              sessionType: persistedSessionType,
+              createdAt: now,
+              updatedAt: now,
+            };
+        return [
+          session,
+          ...current.filter((item) => item.conversationId !== data.conversationId),
+        ];
+      });
     }
     const messageId = data.messageId || createMessageId();
     const text = data.state === 'queued' && data.jobId
@@ -398,7 +574,9 @@ function ShadowChatPageContent() {
       isAsync: data.state === 'queued',
       jobId: data.jobId,
       state: data.state,
-      feedbackEligible: data.state !== 'queued' && Boolean(data.conversationId),
+      feedbackEligible: (
+        data.state === 'ok' || data.state === 'filtered'
+      ) && Boolean(data.conversationId) && Boolean(data.messageId),
     });
 
     if (data.state === 'queued' && data.jobId) {
@@ -501,7 +679,7 @@ function ShadowChatPageContent() {
 
   async function handleSendMessage(e: SyntheticEvent) {
     e.preventDefault();
-    if (!userInput.trim() || isLoading) return;
+    if (!userInput.trim() || isLoading || restoringSessionId) return;
 
     const rawQuestion = userInput.trim();
     addMessage('user', rawQuestion);
@@ -568,6 +746,68 @@ function ShadowChatPageContent() {
             <p className="font-mono uppercase tracking-[0.14em] text-[#d4a574]">When Evidence Is Weak</p>
             <p className="mt-2">Use The Library and Research Intake. Unknowns should become research requirements, not fake certainty.</p>
           </div>
+        </section>
+
+        <section
+          aria-label="Saved SHADOW sessions"
+          className="mb-4 border-2 border-[#5a4a3a] bg-[#111111] p-4"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#d4a574]">
+                Saved sessions
+              </p>
+              <p className="mt-1 text-xs text-[#8a8a8a]">
+                Your server-stored conversation history. Chat content is not stored in this browser.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleNewChat}
+              disabled={isLoading}
+              className="border-2 border-[#8b4444] bg-[#2a1a1a] px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-[0.12em] text-[#dc2626] transition hover:border-[#dc2626] disabled:opacity-50"
+            >
+              New chat
+            </button>
+          </div>
+
+          {sessionNotice ? (
+            <p role="status" className="mt-3 text-xs text-[#d4a574]">{sessionNotice}</p>
+          ) : null}
+
+          {sessionsLoading ? (
+            <p className="mt-3 font-mono text-[10px] text-[#8a8a8a]">Loading saved sessions...</p>
+          ) : savedSessions.length === 0 ? (
+            <p className="mt-3 font-mono text-[10px] text-[#6a5a4a]">No saved sessions yet.</p>
+          ) : (
+            <div className="mt-3 grid max-h-40 gap-2 overflow-y-auto md:grid-cols-2">
+              {savedSessions.map((session) => {
+                const selected = conversationId === session.conversationId;
+                const restoring = restoringSessionId === session.conversationId;
+                return (
+                  <button
+                    key={session.conversationId}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => void handleRestoreSession(session)}
+                    disabled={isLoading}
+                    className={`border px-3 py-2 text-left transition disabled:opacity-50 ${
+                      selected
+                        ? 'border-[#dc2626] bg-[#2a1a1a]'
+                        : 'border-[#3a3a3a] bg-[#171717] hover:border-[#8b4444]'
+                    }`}
+                  >
+                    <span className="block truncate text-xs font-semibold text-[#cfbfae]">
+                      {restoring ? 'Restoring…' : session.title}
+                    </span>
+                    <span className="mt-1 block font-mono text-[9px] uppercase tracking-[0.08em] text-[#6a5a4a]">
+                      {session.sessionType.replaceAll('_', ' ')} · {new Date(session.updatedAt).toLocaleDateString()}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </section>
 
         {/* CHAT BOX */}
@@ -641,6 +881,7 @@ function ShadowChatPageContent() {
               <button
                 type="button"
                 onClick={() => setHeavyBagMode((v) => !v)}
+                disabled={Boolean(restoringSessionId)}
                 title={heavyBagMode ? 'Switch to Quick Round' : 'Switch to Heavy Bag Session (deep reasoning)'}
                 className={`border-2 px-3 py-3 text-[9px] font-mono font-bold uppercase tracking-[0.1em] transition ${
                   heavyBagMode
@@ -655,12 +896,13 @@ function ShadowChatPageContent() {
               type="text"
               value={userInput}
               onChange={(e) => setUserInput(e.target.value)}
+              disabled={Boolean(restoringSessionId)}
               placeholder="What do you need to know?"
               className="flex-1 border-2 border-[#8b4444] bg-[#1a1a1a] px-4 py-3 text-sm text-[#e8d7c6] placeholder-[#6a5a4a] outline-none transition focus:border-[#dc2626] focus:bg-[#2a1a1a]"
             />
             <button
               type="submit"
-              disabled={isLoading}
+              disabled={isLoading || Boolean(restoringSessionId)}
               className="border-2 border-[#8b4444] bg-[#2a1a1a] px-6 py-3 text-xs font-mono font-bold text-[#dc2626] transition hover:border-[#dc2626] hover:bg-[#3a2a2a] hover:text-[#ff6b6b] disabled:opacity-50"
             >
               {isLoading ? '...' : 'Ask'}

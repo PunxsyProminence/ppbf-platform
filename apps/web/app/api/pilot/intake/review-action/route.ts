@@ -18,7 +18,9 @@ import {
   createCoachObservation,
   createReadiness,
   getIntakeCaseById,
+  isIntakeDocumentReadyForReview,
   linkGuardianAthlete,
+  listIntakeDocumentsByCase,
   type IntakePromotionPayload,
   updateIntakeCaseStatus,
   upsertEmergencyContact,
@@ -97,6 +99,21 @@ export async function POST(request: NextRequest) { // NOSONAR
 
     if (intakeCase.primary_athlete_id) {
       await assertActorCanAccessAthlete(principal, intakeCase.primary_athlete_id);
+    }
+
+    const intakeDocuments = action === 'reject'
+      ? []
+      : await listIntakeDocumentsByCase(principal.organizationId, intakeCaseId);
+    if (
+      action !== 'reject'
+      && (
+        intakeDocuments.length === 0
+        || intakeDocuments.some((document) => !isIntakeDocumentReadyForReview(document))
+      )
+    ) {
+      throw new Error(
+        'Forbidden: intake documents must pass security scanning and extraction before approval',
+      );
     }
 
     if (action === 'reject') {
@@ -256,6 +273,12 @@ export async function POST(request: NextRequest) { // NOSONAR
 
     if (principal.role !== 'organization_admin') {
       throw new Error('Forbidden: only organization_admin can promote intake');
+    }
+    if (intakeCase.status !== 'approved') {
+      throw new Error('Forbidden: intake must be approved before promotion');
+    }
+    if (process.env.PPBF_INTAKE_PROMOTION_ENABLED !== 'true') {
+      throw new Error('Forbidden: intake promotion is not enabled');
     }
 
     const athleteCreatedAt = new Date().toISOString();

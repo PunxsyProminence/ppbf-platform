@@ -70,6 +70,7 @@ export interface ShadowResponseValidation {
   message: string;
   reasons: string[];
   requiresHumanReview: boolean;
+  citationIds: string[];
 }
 
 export const SHADOW_SAFE_FILTERED_RESPONSE =
@@ -362,7 +363,7 @@ export async function retrieveShadowContext(params: {
 // Validate and filter LLM response before display
 export function validateShadowResponse(
   response: string,
-  options: { verifiedSourceIds?: string[] } = {},
+  options: { allowedEvidenceIds?: string[]; verifiedSourceIds?: string[] } = {},
 ): ShadowResponseValidation {
   let filtered = false;
   const reasons: string[] = [];
@@ -419,13 +420,36 @@ export function validateShadowResponse(
     reasons.push('Attempts to override human authority');
   }
 
-  const verifiedSourceIds = (options.verifiedSourceIds ?? [])
-    .filter((sourceId) => typeof sourceId === 'string' && sourceId.trim().length > 0);
+  const allowedEvidenceIds = new Set(
+    (options.allowedEvidenceIds ?? options.verifiedSourceIds ?? [])
+      .filter((evidenceId) => (
+        typeof evidenceId === 'string'
+        && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(evidenceId)
+      )),
+  );
+  const citationMatches = [...response.matchAll(/\[E:([^\]\r\n]{1,200})\]/gi)];
+  const citationIds: string[] = [];
+  let hasInvalidCitation = false;
+  for (const match of citationMatches) {
+    const evidenceId = match[1]?.trim() ?? '';
+    if (!allowedEvidenceIds.has(evidenceId)) {
+      hasInvalidCitation = true;
+      continue;
+    }
+    if (!citationIds.includes(evidenceId)) citationIds.push(evidenceId);
+  }
+  if (/\[E:/i.test(response) && citationMatches.length === 0) {
+    hasInvalidCitation = true;
+  }
+  if (hasInvalidCitation) {
+    filtered = true;
+    reasons.push('Contains an unknown, malformed, or unauthorized evidence citation');
+  }
   const makesEvidenceClaim = /\b(research|studies?|data|evidence|clinical guidance|literature)\s+(suggests?|shows?|indicates?|demonstrates?|proves?|supports?)\b/i.test(response);
   const makesQuantifiedEvidenceClaim = /\b\d+(?:\.\d+)?%\b|\b\d+\s+(?:similar\s+)?(cases?|athletes?|participants?|studies?)\b/i.test(response);
-  if ((makesEvidenceClaim || makesQuantifiedEvidenceClaim) && verifiedSourceIds.length === 0) {
+  if ((makesEvidenceClaim || makesQuantifiedEvidenceClaim) && citationIds.length === 0) {
     filtered = true;
-    reasons.push('Makes an evidence or quantitative claim without a verified source ID');
+    reasons.push('Makes an evidence or quantitative claim without an exact retrieved evidence citation');
   }
 
   const hasDeferralLanguage = /professional|medical authority|clinician|doctor|physician|medical evaluation/i.test(response);
@@ -448,6 +472,7 @@ export function validateShadowResponse(
     message,
     reasons,
     requiresHumanReview: filtered || reasons.length > 0,
+    citationIds: filtered ? [] : citationIds,
   };
 }
 

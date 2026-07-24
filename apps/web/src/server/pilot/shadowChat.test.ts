@@ -280,12 +280,28 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
       expect(result.message).toBe(SHADOW_SAFE_FILTERED_RESPONSE);
     });
 
-    test('accepts an evidence claim only when the caller supplies a verified source ID', () => {
+    test('accepts an evidence claim only when it cites the exact retrieved evidence ID', () => {
+      const evidenceId = '00000000-0000-4000-8000-000000000123';
       const result = validateShadowResponse(
-        'Research suggests this drill may help.',
-        { verifiedSourceIds: ['library-source-123'] },
+        `Research suggests this drill may help. [E:${evidenceId}]`,
+        { allowedEvidenceIds: [evidenceId] },
       );
       expect(result.filtered).toBe(false);
+      expect(result.citationIds).toEqual([evidenceId]);
+    });
+
+    test.each([
+      '[E:00000000-0000-4000-8000-000000000999]',
+      '[E:not-a-server-evidence-id]',
+      '[E:00000000-0000-4000-8000-000000000123',
+    ])('filters an unknown or malformed citation token: %s', (citation) => {
+      const evidenceId = '00000000-0000-4000-8000-000000000123';
+      const result = validateShadowResponse(
+        `Research suggests this drill may help. ${citation}`,
+        { allowedEvidenceIds: [evidenceId] },
+      );
+      expect(result.filtered).toBe(true);
+      expect(result.citationIds).toEqual([]);
     });
   });
 

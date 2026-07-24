@@ -58,6 +58,10 @@ export async function assertActorCanAccessAthlete(actor: ActorIdentity, athleteI
     throw new Error('Forbidden: platform owner cannot access organization-private athlete records by default');
   }
 
+  if (actor.role === 'board') {
+    throw new Error('Forbidden: board role is restricted to organization-level aggregates');
+  }
+
   if (isOrganizationAdminRole(actor.role)) {
     await assertAthleteBelongsToOrganization(actor.organizationId, athleteId);
     return;

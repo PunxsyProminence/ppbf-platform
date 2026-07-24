@@ -3,7 +3,7 @@ import type { ReactElement } from 'react';
 import type { ClubRole } from '@/components/roleRoutes';
 
 export function mapPilotLoginRoleToClubRole(role: string): ClubRole {
-  if (role === 'coach' || role === 'athlete' || role === 'parent') {
+  if (role === 'coach' || role === 'athlete' || role === 'parent' || role === 'board') {
     return role;
   }
 
@@ -36,11 +36,15 @@ export function getPilotLoginRedirectPath(role: string, hasMasterShadowAccess?: 
     return '/parent/dashboard';
   }
 
+  if (role === 'board') {
+    return '/board';
+  }
+
   return '/admin';
 }
 
 export function canPublishAnnouncement(role: ClubRole): boolean {
-  return role === 'coach' || role === 'admin' || role.startsWith('board-');
+  return role === 'coach' || role === 'admin';
 }
 
 export function validateAnnouncementPublishInput(params: {
@@ -50,7 +54,7 @@ export function validateAnnouncementPublishInput(params: {
   announcementAuthorName: string;
 }): string | null {
   if (!canPublishAnnouncement(params.selectedRole)) {
-    return 'Only Coach, Admin, or Board roles can publish announcements.';
+    return 'Only Coach or Admin roles can publish announcements.';
   }
 
   if (!params.announcementPin.trim()) {

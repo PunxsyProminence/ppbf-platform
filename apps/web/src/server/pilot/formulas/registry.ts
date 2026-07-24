@@ -13,6 +13,7 @@ interface DefinitionInput {
   expression: string;
   support: FormulaSupport;
   outputUnit: FormulaUnit;
+  outputs?: FormulaDefinition['outputs'];
   requiredObservationKinds?: readonly ObservationKind[];
   humanReviewRequired?: boolean;
   unsupportedReason?: string;
@@ -20,9 +21,15 @@ interface DefinitionInput {
 }
 
 function definition(input: DefinitionInput): FormulaDefinition {
+  const outputs = input.outputs ?? [{
+    key: 'value',
+    unit: input.outputUnit,
+    description: input.name,
+  }];
   return Object.freeze({
     ...input,
     version: '1.0.0',
+    outputs: Object.freeze(outputs.map((output) => Object.freeze({ ...output }))),
     requiredObservationKinds: Object.freeze([...(input.requiredObservationKinds ?? [])]),
     humanReviewRequired: input.humanReviewRequired ?? false,
   });
@@ -168,17 +175,127 @@ export const SHADOW_FORMULA_REGISTRY: readonly FormulaDefinition[] = Object.free
     requiredObservationKinds: ['session_rpe', 'duration'],
     implementation: 'calculateSessionLoad',
   }),
-  unsupported('MVP-02', 'Punch Output', 'punches per round; punches / active minutes', 'ratio', 'Round-level punch counts and active-time observations are not available.'),
-  unsupported('MVP-03', 'Accuracy by Punch Type', '(landed / attempted) × 100 by punch type', 'percent', 'Typed punch attempts, landed counts, and punch classifications are not available.'),
-  unsupported('MVP-04', 'Connect Differential', 'landed − absorbed', 'count', 'Validated landed and absorbed observations are not available.'),
-  unsupported('MVP-05', 'Offensive Efficiency', 'landed / active minutes', 'ratio', 'Validated landed and active-time observations are not available.'),
-  unsupported('MVP-06', 'Contact Exposure', 'Σ(contact level × rounds) over 7 days; four-week weekly mean', 'au', 'Contact-level 0–3 observations and round exposure are not available.', true),
-  unsupported('MVP-07', 'Work-Rate Consistency', '(sample SD of round output / mean round output) × 100', 'percent', 'Round-level output observations are not available.'),
-  unsupported('MVP-08', 'Round-to-Round Change', 'outputₙ − outputₙ₋₁ and percentage change', 'unitless', 'Ordered round-level output observations are not available.'),
-  unsupported('MVP-09', 'Personal Baseline Comparison', 'current − baseline; standardized change', 'unitless', 'Versioned immutable baseline snapshots and eligible observation-window rules are not yet persisted.', true),
-  unsupported('MVP-10', 'Data Completeness and Confidence', 'present required fields / expected required fields', 'ratio', 'Metric-specific required-field schemas, source quality rules, and confidence policy are not yet approved.'),
-  unsupported('MVP-11', 'Focus Attainment Rate', 'achieved eligible sessions / eligible sessions', 'percent', 'Eligible-session and achieved-focus observations are not available.'),
-  unsupported('MVP-12', 'Seven-Day Weight Change', 'current measured weight − measured weight seven days earlier', 'unitless', 'Measured weight history does not exist; weight class text is not a weight measurement.', true),
+  definition({
+    id: 'MVP-02',
+    name: 'Punch Output',
+    expression: 'punches per round; punches / active minutes',
+    support: 'implemented',
+    outputUnit: 'ratio',
+    outputs: [
+      { key: 'punches_per_round', unit: 'ratio', description: 'Punches divided by completed rounds' },
+      { key: 'punches_per_active_minute', unit: 'ratio', description: 'Punches divided by active minutes' },
+    ],
+    requiredObservationKinds: ['punch_count', 'round_count', 'active_time'],
+    implementation: 'calculatePunchOutput',
+  }),
+  definition({
+    id: 'MVP-03',
+    name: 'Accuracy by Punch Type',
+    expression: '(landed / attempted) × 100 by punch type',
+    support: 'implemented',
+    outputUnit: 'percent',
+    requiredObservationKinds: ['punch_landed', 'punch_attempted'],
+    implementation: 'calculateAccuracyByPunchType',
+  }),
+  definition({
+    id: 'MVP-04',
+    name: 'Connect Differential',
+    expression: 'landed − absorbed',
+    support: 'implemented',
+    outputUnit: 'count',
+    requiredObservationKinds: ['punch_landed', 'punch_absorbed'],
+    implementation: 'calculateConnectDifferential',
+  }),
+  definition({
+    id: 'MVP-05',
+    name: 'Offensive Efficiency',
+    expression: 'landed / active minutes',
+    support: 'implemented',
+    outputUnit: 'ratio',
+    requiredObservationKinds: ['punch_landed', 'active_time'],
+    implementation: 'calculateOffensiveEfficiency',
+  }),
+  definition({
+    id: 'MVP-06',
+    name: 'Contact Exposure',
+    expression: 'Σ(contact level × rounds) over 7 days; four-week weekly mean',
+    support: 'implemented',
+    outputUnit: 'au',
+    outputs: [
+      { key: 'acute_7_day', unit: 'au', description: 'Seven-day contact exposure' },
+      { key: 'chronic_4_week', unit: 'au', description: 'Mean of four weekly exposure totals' },
+    ],
+    requiredObservationKinds: ['contact_level', 'contact_rounds'],
+    humanReviewRequired: true,
+    implementation: 'calculateContactExposure',
+  }),
+  definition({
+    id: 'MVP-07',
+    name: 'Work-Rate Consistency',
+    expression: '(sample SD of round output / mean round output) × 100',
+    support: 'implemented',
+    outputUnit: 'percent',
+    requiredObservationKinds: ['round_output'],
+    implementation: 'calculateWorkRateConsistency',
+  }),
+  definition({
+    id: 'MVP-08',
+    name: 'Round-to-Round Change',
+    expression: 'outputₙ − outputₙ₋₁ and percentage change',
+    support: 'implemented',
+    outputUnit: 'unitless',
+    outputs: [
+      { key: 'raw_change', unit: 'input_unit', description: 'Current round output minus previous round output' },
+      { key: 'percent_change', unit: 'percent', description: 'Raw change divided by previous round output' },
+    ],
+    requiredObservationKinds: ['round_output'],
+    implementation: 'calculateRoundToRoundChange',
+  }),
+  definition({
+    id: 'MVP-09',
+    name: 'Personal Baseline Comparison',
+    expression: 'current − baseline; standardized change',
+    support: 'implemented',
+    outputUnit: 'unitless',
+    outputs: [
+      { key: 'raw_change', unit: 'input_unit', description: 'Current value minus personal baseline mean' },
+      { key: 'standardized_change', unit: 'ratio', description: 'Raw change divided by baseline sample SD' },
+    ],
+    requiredObservationKinds: ['numeric'],
+    humanReviewRequired: true,
+    implementation: 'calculatePersonalBaselineComparison',
+  }),
+  definition({
+    id: 'MVP-10',
+    name: 'Data Completeness and Confidence',
+    expression: 'present required fields / expected required fields',
+    support: 'implemented',
+    outputUnit: 'ratio',
+    requiredObservationKinds: ['numeric'],
+    implementation: 'calculateDataCompleteness',
+  }),
+  definition({
+    id: 'MVP-11',
+    name: 'Focus Attainment Rate',
+    expression: 'achieved eligible sessions / eligible sessions',
+    support: 'implemented',
+    outputUnit: 'percent',
+    requiredObservationKinds: ['focus_achieved'],
+    implementation: 'calculateFocusAttainmentRate',
+  }),
+  definition({
+    id: 'MVP-12',
+    name: 'Seven-Day Weight Change',
+    expression: 'current measured weight − measured weight seven days earlier',
+    support: 'implemented',
+    outputUnit: 'unitless',
+    outputs: [
+      { key: 'weight_change', unit: 'input_unit', description: 'Current measured weight minus prior measured weight' },
+    ],
+    requiredObservationKinds: ['body_weight'],
+    humanReviewRequired: true,
+    implementation: 'calculateSevenDayWeightChange',
+  }),
   unsupported('BF-01', 'Combination Performance', 'combination rate; combination success rate', 'percent', 'Typed combination attempts, punches, and landed combinations are not available.'),
   unsupported('BF-02', 'Counterpunch Performance', 'counters / absorbed; counters landed / counters attempted', 'percent', 'Counter opportunities, attempts, landed counters, and absorbed punches are not available.'),
   unsupported('BF-03', 'Defensive Avoidance', '1 − absorbed / opponent attempts', 'ratio', 'Opponent attempts and validated absorbed-punch observations are not available.'),

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+import { requireRole } from '@/src/server/pilot/access';
 import { hiddenNotFound, isUuid, jsonError, parseSafeLimit, requirePrincipal } from '@/src/server/pilot/http';
 import {
   loadConversationMessages,
@@ -11,9 +12,23 @@ interface RouteContext {
   params: Promise<{ conversationId: string }>;
 }
 
+function requireShadowSessionRole(principal: Awaited<ReturnType<typeof requirePrincipal>>): void {
+  requireRole(principal, [
+    'admin',
+    'coach',
+    'athlete',
+    'parent',
+    'organization_admin',
+    'staff',
+    'volunteer',
+    'platform_owner',
+  ]);
+}
+
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const principal = await requirePrincipal(request);
+    requireShadowSessionRole(principal);
     const { conversationId } = await context.params;
     if (!isUuid(conversationId)) return hiddenNotFound();
     const limit = parseSafeLimit(request.nextUrl.searchParams.get('limit'), 12, 50);
@@ -37,6 +52,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
 export async function PATCH(request: NextRequest, context: RouteContext) {
   try {
     const principal = await requirePrincipal(request);
+    requireShadowSessionRole(principal);
     const { conversationId } = await context.params;
     if (!isUuid(conversationId)) return hiddenNotFound();
     const body = await request.json() as { title?: unknown };
@@ -58,6 +74,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 export async function DELETE(request: NextRequest, context: RouteContext) {
   try {
     const principal = await requirePrincipal(request);
+    requireShadowSessionRole(principal);
     const { conversationId } = await context.params;
     if (!isUuid(conversationId)) return hiddenNotFound();
     const deleted = await softDeleteConversation(

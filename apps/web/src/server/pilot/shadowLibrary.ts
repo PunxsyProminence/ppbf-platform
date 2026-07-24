@@ -20,6 +20,8 @@ export type ShadowLibrarySourceType =
   | 'other';
 
 export type ShadowLibrarySourceStatus = 'active' | 'archived' | 'rejected' | 'quarantined';
+export type ShadowLibraryApprovalState = 'pending_review' | 'approved' | 'rejected';
+export type ShadowLibraryVerificationState = 'unverified' | 'verified';
 
 export type ShadowLibraryIngestState =
   | 'pending'
@@ -44,6 +46,12 @@ export interface ShadowLibrarySourceRow {
   url: string | null;
   publication_date: string | null;
   status: ShadowLibrarySourceStatus;
+  approval_state: ShadowLibraryApprovalState;
+  verification_state: ShadowLibraryVerificationState;
+  approved_by_account_id: string | null;
+  approved_at: string | null;
+  verified_by_account_id: string | null;
+  verified_at: string | null;
   metadata: Record<string, unknown>;
   created_by_account_id: string | null;
   created_by_role: string | null;
@@ -60,10 +68,32 @@ export interface ShadowLibraryDocumentRow {
   blob_path: string | null;
   content_sha256: string | null;
   ingest_state: ShadowLibraryIngestState;
+  index_completed_at: string | null;
+  approval_state: ShadowLibraryApprovalState;
+  verification_state: ShadowLibraryVerificationState;
+  approved_by_account_id: string | null;
+  approved_at: string | null;
+  verified_by_account_id: string | null;
+  verified_at: string | null;
   extraction_error: string | null;
   metadata: Record<string, unknown>;
   created_by_account_id: string | null;
   created_by_role: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ShadowLibraryReviewDocumentRow {
+  document_id: string;
+  source_id: string;
+  document_name: string;
+  subject_id: string | null;
+  ingest_state: ShadowLibraryIngestState;
+  index_completed_at: string | null;
+  approval_state: ShadowLibraryApprovalState;
+  verification_state: ShadowLibraryVerificationState;
+  extraction_error: string | null;
+  chunk_count: number;
   created_at: string;
   updated_at: string;
 }
@@ -143,6 +173,24 @@ function clampSourceCount(value: number): number {
     return 1;
   }
   return Math.max(1, Math.min(100, Math.trunc(value)));
+}
+
+function requireEvidenceReviewer(role: PilotRole): void {
+  if (role !== 'organization_admin' && role !== 'admin' && role !== 'platform_owner') {
+    throw new Error('Forbidden: SHADOW evidence review requires an organization administrator');
+  }
+}
+
+function validateReviewState(
+  approvalState: ShadowLibraryApprovalState,
+  verificationState: ShadowLibraryVerificationState,
+): void {
+  if (
+    (approvalState === 'approved' && verificationState !== 'verified')
+    || (approvalState !== 'approved' && verificationState === 'verified')
+  ) {
+    throw new Error('Approved SHADOW evidence must also be verified');
+  }
 }
 
 export function normalizeSearchScope(input: {
@@ -440,6 +488,104 @@ export async function listShadowLibrarySources(input: {
   );
 }
 
+export async function listShadowLibraryReviewQueue(input: {
+  organizationId: string;
+  limit?: number;
+}): Promise<{
+  sources: ShadowLibrarySourceRow[];
+  documents: ShadowLibraryReviewDocumentRow[];
+}> {
+  const limit = Math.max(1, Math.min(200, Math.trunc(input.limit ?? 100)));
+  const [sources, documents] = await Promise.all([
+    query<ShadowLibrarySourceRow>(
+      `select *
+       from pilot.shadow_library_sources
+       where organization_id = $1
+       order by
+         case approval_state when 'pending_review' then 0 else 1 end,
+         created_at desc
+       limit $2`,
+      [input.organizationId, limit],
+    ),
+    query<ShadowLibraryReviewDocumentRow>(
+      `select
+         d.document_id,
+         d.source_id,
+         d.document_name,
+         d.subject_id,
+         d.ingest_state,
+         d.index_completed_at,
+         d.approval_state,
+         d.verification_state,
+         d.extraction_error,
+         count(c.chunk_id)::integer as chunk_count,
+         d.created_at,
+         d.updated_at
+       from pilot.shadow_library_documents d
+       left join pilot.shadow_library_chunks c
+         on c.organization_id = d.organization_id
+        and c.document_id = d.document_id
+       where d.organization_id = $1
+       group by
+         d.document_id,
+         d.source_id,
+         d.document_name,
+         d.subject_id,
+         d.ingest_state,
+         d.index_completed_at,
+         d.approval_state,
+         d.verification_state,
+         d.extraction_error,
+         d.created_at,
+         d.updated_at
+       order by
+         case d.approval_state when 'pending_review' then 0 else 1 end,
+         d.created_at desc
+       limit $2`,
+      [input.organizationId, limit],
+    ),
+  ]);
+  return { sources, documents };
+}
+
+export async function reviewShadowLibrarySource(input: {
+  organizationId: string;
+  actorAccountId: string;
+  actorRole: PilotRole;
+  sourceId: string;
+  approvalState: ShadowLibraryApprovalState;
+  verificationState: ShadowLibraryVerificationState;
+}): Promise<ShadowLibrarySourceRow> {
+  requireEvidenceReviewer(input.actorRole);
+  validateReviewState(input.approvalState, input.verificationState);
+
+  const row = await queryOne<ShadowLibrarySourceRow>(
+    `update pilot.shadow_library_sources
+     set approval_state = $1,
+         verification_state = $2,
+         approved_by_account_id = case when $1 = 'approved' then $3 else null end,
+         approved_at = case when $1 = 'approved' then now() else null end,
+         verified_by_account_id = case when $2 = 'verified' then $3 else null end,
+         verified_at = case when $2 = 'verified' then now() else null end,
+         updated_at = now()
+     where source_id = $4
+       and organization_id = $5
+     returning *`,
+    [
+      input.approvalState,
+      input.verificationState,
+      input.actorAccountId,
+      input.sourceId,
+      input.organizationId,
+    ],
+  );
+
+  if (!row) {
+    throw new Error('SHADOW_LIBRARY_SOURCE_NOT_FOUND');
+  }
+  return row;
+}
+
 export async function createShadowLibraryDocument(input: {
   organizationId: string;
   actorAccountId: string;
@@ -566,8 +712,15 @@ export async function createShadowLibraryChunk(input: {
 
   await query(
     `update pilot.shadow_library_documents
-     set ingest_state = 'indexed',
-         updated_at = now()
+     set ingest_state = 'chunking',
+         index_completed_at = null,
+         approval_state = 'pending_review',
+         verification_state = 'unverified',
+         approved_by_account_id = null,
+         approved_at = null,
+         verified_by_account_id = null,
+         verified_at = null,
+          updated_at = now()
      where document_id = $1 and organization_id = $2`,
     [document.document_id, input.organizationId],
   );
@@ -598,6 +751,78 @@ export async function createShadowLibraryChunk(input: {
     },
   });
 
+  return row;
+}
+
+export async function completeShadowLibraryDocumentIndexing(input: {
+  organizationId: string;
+  actorAccountId: string;
+  actorRole: PilotRole;
+  documentId: string;
+}): Promise<ShadowLibraryDocumentRow> {
+  requireEvidenceReviewer(input.actorRole);
+  const row = await queryOne<ShadowLibraryDocumentRow>(
+    `update pilot.shadow_library_documents d
+     set ingest_state = 'indexed',
+         index_completed_at = now(),
+         updated_at = now()
+     where d.document_id = $1
+       and d.organization_id = $2
+       and exists (
+         select 1
+         from pilot.shadow_library_chunks c
+         where c.document_id = d.document_id
+           and c.organization_id = d.organization_id
+           and length(trim(c.text_content)) > 0
+       )
+     returning d.*`,
+    [input.documentId, input.organizationId],
+  );
+  if (!row) {
+    throw new Error('SHADOW document cannot be indexed without a non-empty organization-scoped chunk');
+  }
+  return row;
+}
+
+export async function reviewShadowLibraryDocument(input: {
+  organizationId: string;
+  actorAccountId: string;
+  actorRole: PilotRole;
+  documentId: string;
+  approvalState: ShadowLibraryApprovalState;
+  verificationState: ShadowLibraryVerificationState;
+}): Promise<ShadowLibraryDocumentRow> {
+  requireEvidenceReviewer(input.actorRole);
+  validateReviewState(input.approvalState, input.verificationState);
+
+  const row = await queryOne<ShadowLibraryDocumentRow>(
+    `update pilot.shadow_library_documents
+     set approval_state = $1,
+         verification_state = $2,
+         approved_by_account_id = case when $1 = 'approved' then $3 else null end,
+         approved_at = case when $1 = 'approved' then now() else null end,
+         verified_by_account_id = case when $2 = 'verified' then $3 else null end,
+         verified_at = case when $2 = 'verified' then now() else null end,
+         updated_at = now()
+     where document_id = $4
+       and organization_id = $5
+       and (
+         $1 <> 'approved'
+         or (ingest_state = 'indexed' and index_completed_at is not null)
+       )
+     returning *`,
+    [
+      input.approvalState,
+      input.verificationState,
+      input.actorAccountId,
+      input.documentId,
+      input.organizationId,
+    ],
+  );
+
+  if (!row) {
+    throw new Error('SHADOW document is missing or has not completed indexing');
+  }
   return row;
 }
 
@@ -670,9 +895,15 @@ export async function searchShadowLibrary(input: {
      from pilot.shadow_library_chunks c
      join pilot.shadow_library_documents d on d.document_id = c.document_id and d.organization_id = c.organization_id
      join pilot.shadow_library_sources s on s.source_id = c.source_id and s.organization_id = c.organization_id
-     where c.organization_id = $1
-       and s.status = 'active'
-        and (
+      where c.organization_id = $1
+        and s.status = 'active'
+        and s.approval_state = 'approved'
+        and s.verification_state = 'verified'
+        and d.ingest_state = 'indexed'
+        and d.index_completed_at is not null
+        and d.approval_state = 'approved'
+        and d.verification_state = 'verified'
+         and (
           $2::text = 'master'
           or ($2::text = 'scoped' and c.subject_id is null)
           or ($2::text = 'subject' and (c.subject_id is null or c.subject_id = $3))

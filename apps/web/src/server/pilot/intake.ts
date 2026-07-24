@@ -48,6 +48,16 @@ export interface IntakeDocumentRecord {
   updated_at: string;
 }
 
+export function isIntakeDocumentReadyForReview(
+  document: Pick<IntakeDocumentRecord, 'metadata'>,
+): boolean {
+  const metadata = document.metadata;
+  return (
+    (metadata.security_state === 'clean' || metadata.quarantine_status === 'clean')
+    && metadata.extraction_state === 'ready_for_review'
+  );
+}
+
 export interface IntakePromotionPayload {
   athlete: {
     athlete_id: string;

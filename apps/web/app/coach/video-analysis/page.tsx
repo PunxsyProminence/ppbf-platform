@@ -108,7 +108,7 @@ export default function CoachVideoAnalysisPage() {
         const err = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(err.error ?? `Upload failed (${res.status})`);
       }
-      setUploadStatus('Upload complete.');
+      setUploadStatus('Upload accepted and quarantined for security review.');
       setUploadTitle(''); setUploadNotes(''); setUploadAthleteId('');
       if (fileInputRef.current) fileInputRef.current.value = '';
       loadVideos();
@@ -161,7 +161,7 @@ export default function CoachVideoAnalysisPage() {
             <h2 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Upload Session Footage</h2>
             <form onSubmit={(e) => { void handleUpload(e); }} className="mt-3 space-y-3">
               <div>
-                <label htmlFor="video-file" className="block text-xs font-mono uppercase text-[#cfbfae]">Video File (MP4, MOV, AVI, WebM — max 500 MB)</label>
+                <label htmlFor="video-file" className="block text-xs font-mono uppercase text-[#cfbfae]">Video File (MP4, MOV, AVI, WebM, MPEG — interim max 50 MB)</label>
                 <input id="video-file" ref={fileInputRef} type="file" accept="video/*" className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-xs text-[#e8d7c6] file:border-0 file:bg-[#2a1a1a] file:text-[#d4a574] file:font-mono file:text-xs" />
               </div>
               <div>
@@ -215,8 +215,8 @@ export default function CoachVideoAnalysisPage() {
                     </p>
                     <p className="mt-0.5 text-xs text-[#7a6a5a]">{new Date(v.created_at).toLocaleString()}</p>
                   </div>
-                  <button onClick={() => { void openVideo(v.video_session_id); }} disabled={loadingVideoId === v.video_session_id} className="ml-4 border border-[#8b4444] bg-[#2a1a1a] px-3 py-1 text-xs font-mono text-[#d4a574] disabled:opacity-50">
-                    {loadingVideoId === v.video_session_id ? 'Loading...' : 'Play'}
+                  <button onClick={() => { void openVideo(v.video_session_id); }} disabled={v.status !== 'ready' || loadingVideoId === v.video_session_id} className="ml-4 border border-[#8b4444] bg-[#2a1a1a] px-3 py-1 text-xs font-mono text-[#d4a574] disabled:opacity-50">
+                    {v.status !== 'ready' ? 'Security review' : loadingVideoId === v.video_session_id ? 'Loading...' : 'Play'}
                   </button>
                 </div>
               ))}

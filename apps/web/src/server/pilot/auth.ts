@@ -485,7 +485,7 @@ export async function createOrRotateAdminAccount(
   accountId: string,
   pin: string,
   organizationId: string,
-  role: 'organization_admin' | 'platform_owner' = 'organization_admin',
+  role: 'organization_admin' | 'platform_owner' | 'board' = 'organization_admin',
 ): Promise<void> {
   const pinHash = await hashPin(pin);
   const isPlatformOwner = role === 'platform_owner';

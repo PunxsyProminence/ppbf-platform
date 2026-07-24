@@ -13,6 +13,7 @@ export type ShadowConversationSessionType =
 
 export type ShadowStoredResponseState = 'ok' | 'filtered';
 export type ShadowReviewStatus = 'open' | 'in_review' | 'resolved' | 'dismissed';
+export type ShadowEvidenceClaimStatus = 'supported' | 'research_needed' | 'unavailable' | 'filtered';
 
 export interface ShadowConversation {
   conversationId: string;
@@ -29,6 +30,12 @@ export interface ShadowConversationMessage {
   content: string;
   responseState: ShadowStoredResponseState | null;
   createdAt: string;
+  citations?: Array<{
+    evidenceId: string;
+    token: string;
+    sourceTitle: string;
+    documentName: string;
+  }>;
 }
 
 function boundedLimit(value: number | undefined, defaultValue: number, maximum: number): number {
@@ -153,6 +160,11 @@ export async function appendConversationExchange(input: {
   sessionType: ShadowConversationSessionType;
   topic: string;
   responseState: ShadowStoredResponseState;
+  evidence?: {
+    bundleId: string;
+    availability: 'available' | 'unavailable';
+    citationIds: string[];
+  };
 }): Promise<string> {
   requireTenantOwner(input.actor);
 
@@ -200,6 +212,65 @@ export async function appendConversationExchange(input: {
          and account_id = $4`,
       [input.sessionType, input.conversationId, input.actor.organizationId, input.actor.accountId],
     );
+
+    if (input.evidence) {
+      const citationIds = [...new Set(input.evidence.citationIds)].slice(0, 8);
+      const claimStatus: ShadowEvidenceClaimStatus = input.responseState === 'filtered'
+        ? 'filtered'
+        : citationIds.length > 0
+          ? 'supported'
+          : input.evidence.availability === 'unavailable'
+            ? 'unavailable'
+            : 'research_needed';
+      const claimId = randomUUID();
+      const claim = await client.query<{ claim_id: string }>(
+        `insert into pilot.shadow_evidence_claims
+           (claim_id, organization_id, account_id, conversation_id, assistant_message_id, bundle_id, claim_status)
+         select $1, $2, $3, $4, $5, b.bundle_id, $7
+         from pilot.shadow_evidence_bundles b
+         where b.bundle_id = $6
+           and b.organization_id = $2
+           and b.account_id = $3
+         returning claim_id`,
+        [
+          claimId,
+          input.actor.organizationId,
+          input.actor.accountId,
+          input.conversationId,
+          assistantMessageId,
+          input.evidence.bundleId,
+          claimStatus,
+        ],
+      );
+      if (!claim.rows[0]) {
+        throw new Error('SHADOW_EVIDENCE_BUNDLE_NOT_FOUND');
+      }
+
+      for (const [index, evidenceId] of citationIds.entries()) {
+        const citation = await client.query<{ evidence_id: string }>(
+          `insert into pilot.shadow_message_citations
+             (assistant_message_id, evidence_id, bundle_id, organization_id, account_id, ordinal)
+           select $1, e.evidence_id, e.bundle_id, e.organization_id, e.account_id, $6
+           from pilot.shadow_evidence_items e
+           where e.evidence_id = $2
+             and e.bundle_id = $3
+             and e.organization_id = $4
+             and e.account_id = $5
+           returning evidence_id`,
+          [
+            assistantMessageId,
+            evidenceId,
+            input.evidence.bundleId,
+            input.actor.organizationId,
+            input.actor.accountId,
+            index + 1,
+          ],
+        );
+        if (!citation.rows[0]) {
+          throw new Error('SHADOW_EVIDENCE_CITATION_NOT_FOUND');
+        }
+      }
+    }
     return assistantMessageId;
   });
 }
@@ -222,17 +293,56 @@ export async function loadConversationMessages(input: {
     content: string;
     response_state: ShadowStoredResponseState | null;
     created_at: Date;
+    citations: Array<{
+      evidenceId: string;
+      token: string;
+      sourceTitle: string;
+      documentName: string;
+    }>;
   }>(
-    `select m.message_id, m.role, m.content, m.response_state, m.created_at
+    `select
+       m.message_id,
+       m.role,
+       m.content,
+       m.response_state,
+       m.created_at,
+       coalesce(
+         jsonb_agg(
+           jsonb_build_object(
+             'evidenceId', mc.evidence_id,
+             'token', '[E:' || mc.evidence_id::text || ']',
+             'sourceTitle', ls.title,
+             'documentName', d.document_name
+           )
+           order by mc.ordinal
+         ) filter (where mc.evidence_id is not null),
+         '[]'::jsonb
+       ) as citations
      from pilot.shadow_chat_messages m
      join pilot.shadow_chat_sessions s
        on s.conversation_id = m.conversation_id
-      and s.organization_id = m.organization_id
-      and s.account_id = m.account_id
+       and s.organization_id = m.organization_id
+       and s.account_id = m.account_id
+     left join pilot.shadow_message_citations mc
+       on mc.assistant_message_id = m.message_id
+      and mc.organization_id = m.organization_id
+      and mc.account_id = m.account_id
+     left join pilot.shadow_evidence_items ei
+       on ei.evidence_id = mc.evidence_id
+      and ei.bundle_id = mc.bundle_id
+      and ei.organization_id = mc.organization_id
+      and ei.account_id = mc.account_id
+     left join pilot.shadow_library_sources ls
+       on ls.source_id = ei.source_id
+      and ls.organization_id = ei.organization_id
+     left join pilot.shadow_library_documents d
+       on d.document_id = ei.document_id
+      and d.organization_id = ei.organization_id
      where m.organization_id = $1
        and m.account_id = $2
        and m.conversation_id = $3
        and s.deleted_at is null
+     group by m.message_id, m.role, m.content, m.response_state, m.created_at
      order by m.created_at desc,
               case m.role when 'assistant' then 1 else 0 end desc,
               m.message_id desc
@@ -245,6 +355,7 @@ export async function loadConversationMessages(input: {
     content: row.content,
     responseState: row.response_state,
     createdAt: row.created_at.toISOString(),
+    citations: Array.isArray(row.citations) ? row.citations : [],
   }));
 }
 
@@ -404,6 +515,9 @@ export async function submitMemoryCorrection(input: {
   action: 'replace' | 'forget';
 }): Promise<string> {
   requireTenantOwner(input.actor);
+  if (input.actor.role === 'board') {
+    throw new Error('Forbidden: board role cannot access account-level SHADOW memory');
+  }
   const factKey = input.factKey.replace(/\s+/g, ' ').trim().slice(0, 200);
   if (!factKey) throw new Error('Missing SHADOW memory fact key');
   if (input.action === 'replace' && !input.correctedValue?.trim()) {

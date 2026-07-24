@@ -1001,12 +1001,14 @@ create table if not exists pilot.shadow_formula_observations (
   observation_kind text not null,
   numeric_value numeric null,
   unit text not null,
+  dimensions jsonb not null default '{}'::jsonb,
   observed_at timestamptz not null,
   source_type text not null,
   source_quality text not null
     check (source_quality in ('verified', 'high', 'moderate', 'low', 'failed')),
   source_reference_id text not null,
   source_quality_notes text null,
+  idempotency_key text not null,
   supersedes_observation_id text null references pilot.shadow_formula_observations(observation_id),
   created_by_account_id text null references pilot.accounts(account_id) on delete set null,
   created_at timestamptz not null default now(),
@@ -1015,15 +1017,33 @@ create table if not exists pilot.shadow_formula_observations (
     on delete cascade
 );
 
+alter table pilot.shadow_formula_observations
+  add column if not exists dimensions jsonb not null default '{}'::jsonb,
+  add column if not exists idempotency_key text;
+update pilot.shadow_formula_observations
+set idempotency_key = observation_id
+where idempotency_key is null;
+alter table pilot.shadow_formula_observations
+  alter column idempotency_key set not null;
+create unique index if not exists idx_shadow_formula_observations_idempotency
+  on pilot.shadow_formula_observations(organization_id, idempotency_key);
+
 create index if not exists idx_shadow_formula_observations_scope
   on pilot.shadow_formula_observations(
     organization_id, athlete_id, context_id, observation_kind, observed_at desc
   );
+create unique index if not exists idx_shadow_formula_observations_supersedes
+  on pilot.shadow_formula_observations(organization_id, supersedes_observation_id)
+  where supersedes_observation_id is not null;
 
 create table if not exists pilot.shadow_formula_results (
   result_id text primary key,
+  calculation_key text not null,
   formula_id text not null,
   formula_version text not null,
+  output_key text not null,
+  policy_version text not null,
+  parameters jsonb not null default '{}'::jsonb,
   organization_id text not null references pilot.organizations(organization_id) on delete cascade,
   athlete_id text null,
   context_id text null,
@@ -1048,17 +1068,45 @@ create table if not exists pilot.shadow_formula_results (
     on delete cascade
 );
 
+alter table pilot.shadow_formula_results
+  add column if not exists calculation_key text,
+  add column if not exists output_key text,
+  add column if not exists policy_version text,
+  add column if not exists parameters jsonb not null default '{}'::jsonb;
+update pilot.shadow_formula_results
+set calculation_key = coalesce(calculation_key, result_id),
+    output_key = coalesce(output_key, 'value'),
+    policy_version = coalesce(policy_version, formula_version)
+where calculation_key is null
+   or output_key is null
+   or policy_version is null;
+alter table pilot.shadow_formula_results
+  alter column calculation_key set not null,
+  alter column output_key set not null,
+  alter column policy_version set not null;
+create unique index if not exists idx_shadow_formula_results_calculation
+  on pilot.shadow_formula_results(organization_id, calculation_key);
+
 create index if not exists idx_shadow_formula_results_scope
   on pilot.shadow_formula_results(
-    organization_id, athlete_id, formula_id, formula_version, computed_at desc
+    organization_id, athlete_id, formula_id, output_key, formula_version, computed_at desc
+  );
+create index if not exists idx_shadow_formula_results_output_scope
+  on pilot.shadow_formula_results(
+    organization_id, athlete_id, formula_id, output_key, formula_version, computed_at desc
   );
 
 create table if not exists pilot.shadow_formula_baseline_snapshots (
   baseline_snapshot_id uuid primary key default gen_random_uuid(),
+  calculation_key text not null,
   organization_id text not null references pilot.organizations(organization_id) on delete cascade,
   athlete_id text not null,
   formula_id text not null,
   formula_version text not null,
+  metric_key text not null,
+  unit text not null,
+  policy_version text not null,
+  parameters jsonb not null default '{}'::jsonb,
   window_size integer not null check (window_size between 1 and 1000),
   history_status text not null
     check (history_status in ('insufficient_history', 'building', 'adequate')),
@@ -1072,10 +1120,91 @@ create table if not exists pilot.shadow_formula_baseline_snapshots (
     on delete cascade
 );
 
+alter table pilot.shadow_formula_baseline_snapshots
+  add column if not exists calculation_key text,
+  add column if not exists metric_key text,
+  add column if not exists unit text,
+  add column if not exists policy_version text,
+  add column if not exists parameters jsonb not null default '{}'::jsonb;
+update pilot.shadow_formula_baseline_snapshots
+set calculation_key = coalesce(calculation_key, baseline_snapshot_id::text),
+    metric_key = coalesce(metric_key, formula_id),
+    unit = coalesce(unit, 'unitless'),
+    policy_version = coalesce(policy_version, formula_version)
+where calculation_key is null
+   or metric_key is null
+   or unit is null
+   or policy_version is null;
+alter table pilot.shadow_formula_baseline_snapshots
+  alter column calculation_key set not null,
+  alter column metric_key set not null,
+  alter column unit set not null,
+  alter column policy_version set not null;
+create unique index if not exists idx_shadow_formula_baseline_calculation
+  on pilot.shadow_formula_baseline_snapshots(
+    organization_id, athlete_id, metric_key, calculation_key
+  );
+
 create index if not exists idx_shadow_formula_baseline_scope
   on pilot.shadow_formula_baseline_snapshots(
-    organization_id, athlete_id, formula_id, effective_at desc
+    organization_id, athlete_id, metric_key, formula_id, effective_at desc
   );
+create index if not exists idx_shadow_formula_baseline_metric_scope
+  on pilot.shadow_formula_baseline_snapshots(
+    organization_id, athlete_id, metric_key, formula_id, effective_at desc
+  );
+
+do $shadow_formula_foundation_constraints$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'pilot.shadow_formula_observations'::regclass
+      and conname = 'shadow_formula_observations_dimensions_check'
+  ) then
+    alter table pilot.shadow_formula_observations
+      add constraint shadow_formula_observations_dimensions_check
+      check (jsonb_typeof(dimensions) = 'object');
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'pilot.shadow_formula_observations'::regclass
+      and conname = 'shadow_formula_observations_idempotency_key_check'
+  ) then
+    alter table pilot.shadow_formula_observations
+      add constraint shadow_formula_observations_idempotency_key_check
+      check (length(btrim(idempotency_key)) between 1 and 300);
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'pilot.shadow_formula_results'::regclass
+      and conname = 'shadow_formula_results_identity_check'
+  ) then
+    alter table pilot.shadow_formula_results
+      add constraint shadow_formula_results_identity_check
+      check (
+        length(btrim(calculation_key)) between 1 and 300
+        and length(btrim(output_key)) between 1 and 120
+        and length(btrim(policy_version)) between 1 and 120
+        and jsonb_typeof(parameters) = 'object'
+      );
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'pilot.shadow_formula_baseline_snapshots'::regclass
+      and conname = 'shadow_formula_baseline_identity_check'
+  ) then
+    alter table pilot.shadow_formula_baseline_snapshots
+      add constraint shadow_formula_baseline_identity_check
+      check (
+        length(btrim(calculation_key)) between 1 and 300
+        and length(btrim(metric_key)) between 1 and 200
+        and length(btrim(unit)) between 1 and 80
+        and length(btrim(policy_version)) between 1 and 120
+        and jsonb_typeof(parameters) = 'object'
+      );
+  end if;
+end
+$shadow_formula_foundation_constraints$;
 
 alter table pilot.shadow_feedback
   add column if not exists outcome_signal text null,

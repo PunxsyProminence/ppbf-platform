@@ -27,6 +27,13 @@ jest.mock('@/src/server/pilot/shadowTelemetry', () => ({
   writeShadowTelemetryEvent: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('@/src/server/pilot/shadowRateLimit', () => ({
+  enforceShadowRateLimit: jest.fn().mockResolvedValue(undefined),
+  ShadowRateLimitExceeded: class ShadowRateLimitExceeded extends Error {
+    retryAfterSeconds = 60;
+  },
+}));
+
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockQuery = query as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
@@ -52,10 +59,18 @@ function uploadRequest(fields: Record<string, string | Blob>) {
   for (const [key, value] of Object.entries(fields)) {
     formData.append(key, value);
   }
-  return new NextRequest('http://localhost/api/pilot/video/upload', { method: 'POST', body: formData });
+  return new NextRequest('http://localhost/api/pilot/video/upload', {
+    method: 'POST',
+    body: formData,
+    headers: { 'content-length': '4096' },
+  });
 }
 
-const videoFile = () => new File([new Uint8Array([1, 2, 3])], 'clip.mp4', { type: 'video/mp4' });
+const videoFile = () => new File(
+  [new Uint8Array([0, 0, 0, 20, 0x66, 0x74, 0x79, 0x70, 0, 0, 0, 0])],
+  'clip.mp4',
+  { type: 'video/mp4' },
+);
 
 describe('POST /api/pilot/video/upload', () => {
   test('401 when unauthenticated', async () => {
@@ -83,6 +98,17 @@ describe('POST /api/pilot/video/upload', () => {
     expect(res.status).toBe(415);
   });
 
+  test('415 when the bytes do not match the declared video type', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    const spoofed = new File(
+      [new Uint8Array([0x1a, 0x45, 0xdf, 0xa3])],
+      'spoofed.mp4',
+      { type: 'video/mp4' },
+    );
+    const res = await POST(uploadRequest({ file: spoofed }));
+    expect(res.status).toBe(415);
+  });
+
   test('403 when coach uploads for an unassigned athlete (coach-assignment enforcement)', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({}));
     mockQueryOne.mockResolvedValueOnce(null);
@@ -90,19 +116,23 @@ describe('POST /api/pilot/video/upload', () => {
     expect(res.status).toBe(403);
   });
 
-  test('201 when coach uploads for an assigned athlete', async () => {
+  test('202 when coach uploads for an assigned athlete into quarantine', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({}));
     mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
     mockQuery.mockResolvedValueOnce([]);
     const res = await POST(uploadRequest({ file: videoFile(), athlete_id: 'ath-1' }));
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(202);
+    expect(await res.json()).toEqual(expect.objectContaining({
+      status: 'quarantined',
+      accepted_for_security_review: true,
+    }));
   });
 
-  test('201 when coach uploads an unattributed (team) video with no athlete_id', async () => {
+  test('202 when coach uploads an unattributed (team) video with no athlete_id', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({}));
     mockQuery.mockResolvedValueOnce([]);
     const res = await POST(uploadRequest({ file: videoFile() }));
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(202);
     expect(mockQueryOne).not.toHaveBeenCalled();
   });
 

@@ -8,7 +8,6 @@ jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
   return { ...actual, requirePrincipal: jest.fn() };
 });
-jest.mock('@/src/server/pilot/access', () => ({ requireRole: jest.fn() }));
 jest.mock('@/src/server/pilot/shadowJobQueue', () => ({
   cancelJobForActor: jest.fn(),
   getJobsForActor: jest.fn(),
@@ -50,6 +49,29 @@ describe('SHADOW jobs collection route validation', () => {
 
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: 'Not found' });
+    expect(mockCancel).not.toHaveBeenCalled();
+  });
+
+  test('denies a Board user list and cancellation access to prior-role jobs', async () => {
+    mockRequirePrincipal.mockResolvedValue({
+      accountId: 'account-1',
+      role: 'board',
+      organizationId: 'org-1',
+      athleteId: null,
+      sessionToken: 'token',
+      authProvider: 'ppbf_local',
+    });
+
+    const listResponse = await GET(new NextRequest(
+      'http://localhost/api/pilot/shadow/jobs',
+    ));
+    const cancelResponse = await DELETE(new NextRequest(
+      'http://localhost/api/pilot/shadow/jobs?jobId=7339777f-97cc-4c64-aa87-56ea042d06ac',
+      { method: 'DELETE' },
+    ));
+
+    expect([listResponse.status, cancelResponse.status]).toEqual([403, 403]);
+    expect(mockGetJobs).not.toHaveBeenCalled();
     expect(mockCancel).not.toHaveBeenCalled();
   });
 });

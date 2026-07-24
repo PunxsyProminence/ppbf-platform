@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 
-import { POST } from './route';
+import { POST, resolveShadowMaxCompletionTokens } from './route';
 import { query } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { retrieveShadowContext, SHADOW_SAFE_FILTERED_RESPONSE } from '@/src/server/pilot/shadowChat';
@@ -17,6 +17,7 @@ import { enforceShadowRateLimit } from '@/src/server/pilot/shadowRateLimit';
 import { classifyRequest } from '@/src/server/pilot/shadowClassifier';
 import { executeHeavyBagSync } from '@/src/server/pilot/shadowHeavyBag';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
+import { retrieveShadowEvidenceBundle } from '@/src/server/pilot/shadowEvidence';
 
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
@@ -107,6 +108,38 @@ jest.mock('@/src/server/pilot/shadowRateLimit', () => ({
   ShadowRateLimitExceeded: class ShadowRateLimitExceeded extends Error {},
 }));
 
+jest.mock('@/src/server/pilot/shadowEvidence', () => ({
+  retrieveShadowEvidenceBundle: jest.fn(),
+  unavailableShadowEvidenceBundle: jest.fn(() => ({
+    bundleId: null,
+    availability: 'unavailable',
+    items: [],
+    allowedEvidenceIds: [],
+    context: 'EVIDENCE UNAVAILABLE',
+  })),
+  publicEvidenceCitations: jest.fn((
+    bundle: { items: Array<{
+      evidenceId: string;
+      token: string;
+      sourceTitle: string;
+      documentName: string;
+    }> },
+    citationIds: string[],
+  ) => bundle.items
+    .filter((item: { evidenceId: string }) => citationIds.includes(item.evidenceId))
+    .map((item: {
+      evidenceId: string;
+      token: string;
+      sourceTitle: string;
+      documentName: string;
+    }) => ({
+      evidenceId: item.evidenceId,
+      token: item.token,
+      sourceTitle: item.sourceTitle,
+      documentName: item.documentName,
+    }))),
+}));
+
 const mockRequirePrincipal = jest.mocked(requirePrincipal);
 const mockQuery = jest.mocked(query);
 const mockRetrieveShadowContext = jest.mocked(retrieveShadowContext);
@@ -122,6 +155,7 @@ const mockQueueHumanReview = jest.mocked(queueHumanReview);
 const mockEnforceRateLimit = jest.mocked(enforceShadowRateLimit);
 const mockClassifyRequest = jest.mocked(classifyRequest);
 const mockExecuteHeavyBagSync = jest.mocked(executeHeavyBagSync);
+const mockRetrieveEvidence = jest.mocked(retrieveShadowEvidenceBundle);
 const originalFetch = global.fetch;
 
 function principal(overrides: Partial<PilotPrincipal> = {}): PilotPrincipal {
@@ -160,6 +194,13 @@ beforeEach(() => {
   mockLoadConversationMessages.mockResolvedValue([]);
   mockQueueHumanReview.mockResolvedValue('review-1');
   mockEnforceRateLimit.mockResolvedValue(undefined);
+  mockRetrieveEvidence.mockResolvedValue({
+    bundleId: '00000000-0000-4000-8000-000000000200',
+    availability: 'unavailable',
+    items: [],
+    allowedEvidenceIds: [],
+    context: 'EVIDENCE UNAVAILABLE — no approved, verified, fully indexed evidence.',
+  });
   mockGetRuntime.mockReturnValue({
     ok: true,
     missing: [],
@@ -207,9 +248,25 @@ describe('POST /api/pilot/shadow/chat trust boundary', () => {
     const systemPrompt = providerBody.messages[0].content as string;
     expect(systemPrompt).toContain('Authorized role: coach');
     expect(systemPrompt).toContain('Tier context for this authenticated user.');
+    expect(systemPrompt).toContain('EVIDENCE UNAVAILABLE');
     expect(systemPrompt).toContain('Never invent citations, case counts, confidence values, or outcomes');
     expect(systemPrompt).not.toContain('org-attacker');
+    expect(providerBody.max_completion_tokens).toBe(1024);
     expect(requestInit.signal).toBeDefined();
+    expect(mockEnforceRateLimit).toHaveBeenNthCalledWith(1, {
+      organizationId: 'org-session',
+      accountId: 'account-1',
+      endpointKey: 'chat',
+      limit: 20,
+      windowSeconds: 60,
+    });
+    expect(mockEnforceRateLimit).toHaveBeenNthCalledWith(2, {
+      organizationId: 'org-session',
+      accountId: 'account-1',
+      endpointKey: 'chat_daily',
+      limit: 100,
+      windowSeconds: 86_400,
+    });
     expect(mockAppendConversationExchange).toHaveBeenCalledWith(expect.objectContaining({
       actor: expect.objectContaining({
         organizationId: 'org-session',
@@ -217,6 +274,101 @@ describe('POST /api/pilot/shadow/chat trust boundary', () => {
       }),
       conversationId: 'conversation-1',
       responseState: 'ok',
+      evidence: {
+        bundleId: '00000000-0000-4000-8000-000000000200',
+        availability: 'unavailable',
+        citationIds: [],
+      },
+    }));
+    expect(JSON.stringify(mockQuery.mock.calls)).not.toContain('What does the evidence show?');
+  });
+
+  test('returns and persists only an exact citation from the retrieved bundle', async () => {
+    const evidenceId = '00000000-0000-4000-8000-000000000201';
+    mockRetrieveEvidence.mockResolvedValueOnce({
+      bundleId: '00000000-0000-4000-8000-000000000200',
+      availability: 'available',
+      allowedEvidenceIds: [evidenceId],
+      context: `Use [E:${evidenceId}] for the approved excerpt.`,
+      items: [{
+        evidenceId,
+        token: `[E:${evidenceId}]`,
+        sourceId: 'source-a',
+        documentId: 'doc-a',
+        chunkId: 'chunk-a',
+        subjectId: null,
+        sourceTitle: 'Approved source',
+        documentName: 'Approved document',
+        excerpt: 'Approved bounded excerpt.',
+      }],
+    });
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: `Research suggests the approved drill may help. [E:${evidenceId}]`,
+          },
+        }],
+      }),
+    }) as unknown as typeof fetch;
+
+    const response = await POST(postRequest({ message: 'What does approved research suggest?' }));
+    const payload = await response.json();
+
+    expect(payload.state).toBe('ok');
+    expect(payload.citations).toEqual([{
+      evidenceId,
+      token: `[E:${evidenceId}]`,
+      sourceTitle: 'Approved source',
+      documentName: 'Approved document',
+    }]);
+    expect(mockAppendConversationExchange).toHaveBeenCalledWith(expect.objectContaining({
+      evidence: {
+        bundleId: '00000000-0000-4000-8000-000000000200',
+        availability: 'available',
+        citationIds: [evidenceId],
+      },
+    }));
+  });
+
+  test('filters a generated citation that was not in the exact retrieved bundle', async () => {
+    const evidenceId = '00000000-0000-4000-8000-000000000201';
+    const forgedId = '00000000-0000-4000-8000-000000000999';
+    mockRetrieveEvidence.mockResolvedValueOnce({
+      bundleId: '00000000-0000-4000-8000-000000000200',
+      availability: 'available',
+      allowedEvidenceIds: [evidenceId],
+      context: `Use [E:${evidenceId}] for the approved excerpt.`,
+      items: [{
+        evidenceId,
+        token: `[E:${evidenceId}]`,
+        sourceId: 'source-a',
+        documentId: 'doc-a',
+        chunkId: 'chunk-a',
+        subjectId: null,
+        sourceTitle: 'Approved source',
+        documentName: 'Approved document',
+        excerpt: 'Approved bounded excerpt.',
+      }],
+    });
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{
+          message: { content: `Research suggests this works. [E:${forgedId}]` },
+        }],
+      }),
+    }) as unknown as typeof fetch;
+
+    const response = await POST(postRequest({ message: 'What does approved research suggest?' }));
+    const payload = await response.json();
+
+    expect(payload.state).toBe('filtered');
+    expect(payload.response).toBe(SHADOW_SAFE_FILTERED_RESPONSE);
+    expect(payload.citations).toEqual([]);
+    expect(mockAppendConversationExchange).toHaveBeenCalledWith(expect.objectContaining({
+      evidence: expect.objectContaining({ citationIds: [] }),
     }));
   });
 
@@ -362,5 +514,18 @@ describe('POST /api/pilot/shadow/chat trust boundary', () => {
     expect(payload.success).toBe(false);
     expect(payload.state).toBe('filtered');
     expect(global.fetch).toBe(originalFetch);
+  });
+});
+
+describe('SHADOW completion-token budget', () => {
+  test.each([
+    [undefined, 1024],
+    ['', 1024],
+    ['not-a-number', 1024],
+    ['64', 256],
+    ['1025.9', 1025],
+    ['99999', 2048],
+  ])('bounds %p to %p tokens', (raw, expected) => {
+    expect(resolveShadowMaxCompletionTokens(raw)).toBe(expected);
   });
 });

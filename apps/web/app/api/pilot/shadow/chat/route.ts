@@ -20,9 +20,9 @@ import {
 } from '@/src/server/pilot/shadowUserProfile';
 import { classifyRequest, type ShadowTier } from '@/src/server/pilot/shadowClassifier';
 import { buildShadowContext } from '@/src/server/pilot/shadowContextBuilder';
-import { routeRequest, tierToSessionType, isAsyncSession } from '@/src/server/pilot/shadowRouter';
+import { routeRequest, tierToSessionType } from '@/src/server/pilot/shadowRouter';
 import { classifyProfileTier, buildPersonalizationPrompt } from '@/src/server/pilot/shadowProfiling';
-import { executeHeavyBagSync, executeHeavyBagAsync, shouldRunAsync } from '@/src/server/pilot/shadowHeavyBag';
+import { executeHeavyBagSync } from '@/src/server/pilot/shadowHeavyBag';
 import { evaluateShadowUnlockState, isFeatureEnabled, type ShadowUnlockState } from '@/src/server/pilot/shadowUnlocks';
 import {
   appendConversationExchange,
@@ -36,6 +36,12 @@ import {
   ShadowRateLimitExceeded,
 } from '@/src/server/pilot/shadowRateLimit';
 import { budgetConversationHistory } from '@/src/server/pilot/shadowConversationHistory';
+import {
+  publicEvidenceCitations,
+  retrieveShadowEvidenceBundle,
+  unavailableShadowEvidenceBundle,
+  type ShadowEvidenceCitation,
+} from '@/src/server/pilot/shadowEvidence';
 
 export interface ShadowChatRequest {
   message: string;
@@ -67,6 +73,7 @@ export interface ShadowChatResponse {
   modelUsed?: string; // Which model handled this request
   async?: boolean; // True if response is async (jobId instead of response)
   jobId?: string; // Present when async=true — poll /api/pilot/shadow/jobs/[jobId]
+  citations?: ShadowEvidenceCitation[];
   error?: string;
 }
 
@@ -81,6 +88,15 @@ const FALLBACK_RESPONSES: Record<string, string> = {
 const PROVIDER_TIMEOUT_MS = 15_000;
 const MAX_MESSAGE_LENGTH = 12_000;
 const DEGRADED_RESPONSE = 'SHADOW is temporarily unavailable. No generated guidance was returned. Please try again later or contact your organization for support.';
+
+export function resolveShadowMaxCompletionTokens(
+  rawValue: string | undefined = process.env.PPBF_SHADOW_MAX_COMPLETION_TOKENS,
+): number {
+  if (rawValue === undefined || rawValue.trim() === '') return 1_024;
+  const parsed = Number(rawValue);
+  if (!Number.isFinite(parsed)) return 1_024;
+  return Math.max(256, Math.min(2_048, Math.trunc(parsed)));
+}
 
 async function withProviderTimeout<T>(operation: Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -125,7 +141,7 @@ async function callAzureOpenAI(
           })),
           { role: 'user', content: userMessage },
         ],
-        max_completion_tokens: 4096,
+        max_completion_tokens: resolveShadowMaxCompletionTokens(),
       }),
       signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
     });
@@ -165,7 +181,6 @@ interface LlmRouteResult {
 interface LlmRouteContext {
   sessionType: import('@/src/server/pilot/shadowRouter').ShadowSessionType;
   effectiveTier: import('@/src/server/pilot/shadowClassifier').ShadowTier;
-  preferAsync: boolean;
   highRiskClassification: string | undefined;
   userProfile: import('@/src/server/pilot/shadowUserProfile').ShadowUserProfileRow;
   tierResult: import('@/src/server/pilot/shadowProfiling').ProfileTierResult;
@@ -181,7 +196,7 @@ interface LlmRouteContext {
 }
 
 async function routeLlmCall(ctx: LlmRouteContext): Promise<LlmRouteResult> {
-  const { sessionType, preferAsync, highRiskClassification,
+  const { sessionType, highRiskClassification,
     userProfile, tierResult, contextOutput, classification,
     message, userId, organizationId, userRole, athleteId, unlockState,
     conversationHistory } = ctx;
@@ -202,22 +217,11 @@ Only describe a claim as supported, proven, or evidence-based when verified evid
     : '';
   const capabilityAuthorizedPrompt = `${trustBoundaryPrompt}${personalization}`;
 
-  if (isAsyncSession(sessionType) || (shouldRunAsync(sessionType, tierResult.tier) && preferAsync)) {
-    try {
-      const asyncResult = await withProviderTimeout(executeHeavyBagAsync({
-        message, userId, organizationId, role: userRole as PilotRole, userProfile, tierResult,
-        contextOutput, classification, sessionType, athleteId, systemPromptBase: capabilityAuthorizedPrompt,
-      }));
-      return {
-        llmResponse: `Your ${sessionType.replaceAll('_', ' ')} has been queued. Job ID: ${asyncResult.jobId}`,
-        resolvedAsync: true,
-        asyncJobId: asyncResult.jobId,
-        state: 'queued',
-      };
-    } catch {
-      return { llmResponse: DEGRADED_RESPONSE, resolvedAsync: false, state: 'degraded' };
-    }
-  }
+  // Background generation remains fail-closed until the worker can carry the
+  // exact server-owned evidence bundle through completion and persist its
+  // citations. Heavy Bag therefore runs synchronously even when preferAsync is
+  // requested. Unsupported async-only session types are rejected before this
+  // function is reached.
 
   const prompt = `${capabilityAuthorizedPrompt}
 
@@ -365,6 +369,13 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       endpointKey: 'chat',
       limit: 20,
       windowSeconds: 60,
+    });
+    await enforceShadowRateLimit({
+      organizationId,
+      accountId: userId,
+      endpointKey: 'chat_daily',
+      limit: 100,
+      windowSeconds: 86_400,
     });
 
     if (athleteId) {
@@ -518,9 +529,21 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
 
     const transientMessageId = `msg_${Date.now()}`;
     const createdAt = new Date();
+    const evidenceBundle = await retrieveShadowEvidenceBundle({
+      actor: principal,
+      subjectId: athleteId,
+      queryText: message,
+    }).catch(() => {
+      console.error('SHADOW evidence retrieval unavailable');
+      return unavailableShadowEvidenceBundle();
+    });
     const authorizedContextOutput = {
       ...contextOutput,
-      context: [roleBasedContext.context, contextOutput.context].filter(Boolean).join('\n\n'),
+      context: [
+        roleBasedContext.context,
+        contextOutput.context,
+        evidenceBundle.context,
+      ].filter(Boolean).join('\n\n'),
     };
     const conversationHistory = requestedConversationId
       ? (await loadConversationMessages({
@@ -535,15 +558,18 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
 
     // Step 6: Route to correct model via The Corner
     const { llmResponse, resolvedAsync, asyncJobId, state: providerState } = await routeLlmCall({
-      sessionType, effectiveTier, preferAsync,
+      sessionType, effectiveTier,
       highRiskClassification: requestValidation.classification ?? undefined,
       userProfile, tierResult, contextOutput: authorizedContextOutput, classification,
       message, userId, organizationId, userRole, athleteId, unlockState, conversationHistory,
     });
 
     // Step 7: Validate response BEFORE displaying to user
-    const responseValidation = validateShadowResponse(llmResponse);
+    const responseValidation = validateShadowResponse(llmResponse, {
+      allowedEvidenceIds: evidenceBundle.allowedEvidenceIds,
+    });
     const finalResponse = responseValidation.message;
+    const citations = publicEvidenceCitations(evidenceBundle, responseValidation.citationIds);
     const state: ShadowResponseState = responseValidation.filtered ? 'filtered' : providerState;
     let messageId = transientMessageId;
     let conversationId: string | undefined;
@@ -564,6 +590,13 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
         sessionType,
         topic: interactionTopic,
         responseState: state,
+        evidence: evidenceBundle.bundleId
+          ? {
+              bundleId: evidenceBundle.bundleId,
+              availability: evidenceBundle.availability,
+              citationIds: responseValidation.citationIds,
+            }
+          : undefined,
       });
       if (state === 'filtered' || responseValidation.requiresHumanReview) {
         await queueHumanReview({
@@ -641,6 +674,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       modelUsed: state === 'degraded' ? undefined : routing.model.displayName,
       async: resolvedAsync,
       jobId: asyncJobId,
+      citations,
     });
   } catch (error) {
     if (error instanceof ShadowRateLimitExceeded) {

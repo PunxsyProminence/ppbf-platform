@@ -34,6 +34,8 @@ export interface ShadowJob {
   priority: number;
   retryCount: number;
   maxRetries: number;
+  leaseToken: string;
+  leaseExpiresAt: string;
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;
@@ -78,6 +80,8 @@ interface ShadowJobRow {
   priority: number;
   retry_count: number;
   max_retries: number;
+  lease_token: string;
+  lease_expires_at: string;
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
@@ -86,12 +90,15 @@ interface ShadowJobRow {
 
 interface JobAccessRow {
   job_id: string;
+  job_type: JobType;
   account_id: string;
   subject_id: string | null;
 }
 
 const MAX_JOB_PAYLOAD_BYTES = 100_000;
 const JOB_ERROR_CODE = /^[A-Z][A-Z0-9_]{2,79}$/;
+const JOB_LEASE_SECONDS = 120;
+const OWNER_ONLY_JOB_TYPES = new Set<JobType>(['heavy_bag_session', 'scout_report']);
 
 export function normalizeJobTtlHours(ttlHours: number | undefined): number {
   if (ttlHours === undefined) return 24;
@@ -133,6 +140,8 @@ function mapJobRow(row: ShadowJobRow): ShadowJob {
     priority: row.priority,
     retryCount: row.retry_count,
     maxRetries: row.max_retries,
+    leaseToken: row.lease_token,
+    leaseExpiresAt: row.lease_expires_at,
     createdAt: row.created_at,
     startedAt: row.started_at,
     completedAt: row.completed_at,
@@ -159,7 +168,11 @@ function actorCanReadAllOrgJobs(actor: ActorIdentity): boolean {
 }
 
 async function actorCanAccessJob(actor: ActorIdentity, job: JobAccessRow): Promise<boolean> {
-  if (job.account_id !== actor.accountId && !actorCanReadAllOrgJobs(actor)) {
+  const isOwner = job.account_id === actor.accountId;
+  if (!isOwner && OWNER_ONLY_JOB_TYPES.has(job.job_type)) {
+    return false;
+  }
+  if (!isOwner && !actorCanReadAllOrgJobs(actor)) {
     return false;
   }
 
@@ -216,7 +229,7 @@ export async function getJobStatusForActor(
   actor: ActorIdentity,
 ): Promise<JobStatusResult | null> {
   const accessRow = await queryOne<JobAccessRow>(
-    `SELECT job_id, account_id, subject_id
+    `SELECT job_id, job_type, account_id, subject_id
      FROM pilot.shadow_jobs
      WHERE job_id = $1 AND organization_id = $2`,
     [jobId, actor.organizationId],
@@ -229,7 +242,8 @@ export async function getJobStatusForActor(
   const row = await queryOne<ShadowJobRow>(
     `SELECT job_id, job_type, organization_id, account_id, subject_id, role,
             status, input_payload, output_payload, error_message, safety_status,
-            priority, retry_count, max_retries, created_at, started_at,
+            priority, retry_count, max_retries, lease_token, lease_expires_at,
+            created_at, started_at,
             completed_at, expires_at
      FROM pilot.shadow_jobs
      WHERE job_id = $1 AND organization_id = $2`,
@@ -241,10 +255,49 @@ export async function getJobStatusForActor(
 
 export async function claimNextJob(jobType?: JobType): Promise<ShadowJob | null> {
   const row = await queryOne<ShadowJobRow>(
-    `UPDATE pilot.shadow_jobs
-     SET status = 'running', started_at = NOW(), updated_at = NOW(),
-         error_message = NULL
-     WHERE job_id = (
+    `WITH expired_pending AS (
+       UPDATE pilot.shadow_jobs
+       SET status = 'cancelled',
+           input_payload = '{}'::jsonb,
+           output_payload = NULL,
+           error_message = 'SHADOW_JOB_EXPIRED',
+           safety_status = 'not_applicable',
+           completed_at = NOW(),
+           lease_token = NULL,
+           lease_expires_at = NULL,
+           updated_at = NOW()
+       WHERE status = 'pending'
+         AND expires_at <= NOW()
+     ),
+     stale_running AS (
+       UPDATE pilot.shadow_jobs
+       SET status = CASE
+             WHEN retry_count + 1 >= max_retries THEN 'failed'
+             ELSE 'pending'
+           END,
+           retry_count = retry_count + 1,
+           input_payload = CASE
+             WHEN retry_count + 1 >= max_retries THEN '{}'::jsonb
+             ELSE input_payload
+           END,
+           output_payload = NULL,
+           error_message = 'SHADOW_JOB_LEASE_EXPIRED',
+           safety_status = CASE
+             WHEN retry_count + 1 >= max_retries THEN 'not_applicable'
+             ELSE 'pending'
+           END,
+           started_at = NULL,
+           completed_at = CASE
+             WHEN retry_count + 1 >= max_retries THEN NOW()
+             ELSE NULL
+           END,
+           lease_token = NULL,
+           lease_expires_at = NULL,
+           updated_at = NOW()
+       WHERE status = 'running'
+         AND (lease_expires_at IS NULL OR lease_expires_at <= NOW())
+     ),
+     next_job AS (
        SELECT job_id
        FROM pilot.shadow_jobs
        WHERE status = 'pending'
@@ -255,36 +308,57 @@ export async function claimNextJob(jobType?: JobType): Promise<ShadowJob | null>
        LIMIT 1
        FOR UPDATE SKIP LOCKED
      )
+     UPDATE pilot.shadow_jobs AS jobs
+     SET status = 'running',
+         started_at = NOW(),
+         updated_at = NOW(),
+         error_message = NULL,
+         lease_token = gen_random_uuid(),
+         lease_expires_at = NOW() + ($2 * INTERVAL '1 second')
+     FROM next_job
+     WHERE jobs.job_id = next_job.job_id
      RETURNING job_id, job_type, organization_id, account_id, subject_id, role,
                status, input_payload, output_payload, error_message, safety_status,
-               priority, retry_count, max_retries, created_at, started_at,
+               priority, retry_count, max_retries, lease_token, lease_expires_at,
+               created_at, started_at,
                completed_at, expires_at`,
-    [jobType ?? null],
+    [jobType ?? null, JOB_LEASE_SECONDS],
   );
 
   return row ? mapJobRow(row) : null;
 }
 
 export async function completeJob(
-  job: Pick<ShadowJob, 'jobId' | 'organizationId' | 'accountId'>,
+  job: Pick<ShadowJob, 'jobId' | 'organizationId' | 'accountId' | 'leaseToken'>,
   output: Record<string, unknown>,
   safetyStatus: Exclude<JobSafetyStatus, 'pending'>,
 ): Promise<void> {
   const result = await queryOne<{ job_id: string }>(
     `UPDATE pilot.shadow_jobs
      SET status = 'completed',
-         output_payload = $4::jsonb,
+         output_payload = $5::jsonb,
          input_payload = '{}'::jsonb,
-         safety_status = $5,
+         safety_status = $6,
          error_message = NULL,
          completed_at = NOW(),
+         lease_token = NULL,
+         lease_expires_at = NULL,
          updated_at = NOW()
      WHERE job_id = $1
        AND organization_id = $2
        AND account_id = $3
        AND status = 'running'
+       AND lease_token = $4::uuid
+       AND lease_expires_at > NOW()
      RETURNING job_id`,
-    [job.jobId, job.organizationId, job.accountId, serializeJobPayload(output), safetyStatus],
+    [
+      job.jobId,
+      job.organizationId,
+      job.accountId,
+      job.leaseToken,
+      serializeJobPayload(output),
+      safetyStatus,
+    ],
   );
 
   if (!result) {
@@ -293,41 +367,62 @@ export async function completeJob(
 }
 
 export async function failJob(
-  job: Pick<ShadowJob, 'jobId' | 'organizationId' | 'accountId'>,
+  job: Pick<ShadowJob, 'jobId' | 'organizationId' | 'accountId' | 'leaseToken'>,
   errorCode: string,
+  options: Readonly<{ retryable?: boolean }> = {},
 ): Promise<void> {
-  await query(
+  const retryable = options.retryable !== false;
+  const result = await queryOne<{ job_id: string }>(
     `UPDATE pilot.shadow_jobs
      SET
        status = CASE
-         WHEN retry_count + 1 >= max_retries THEN 'failed'
+         WHEN NOT $6::boolean OR retry_count + 1 >= max_retries THEN 'failed'
          ELSE 'pending'
        END,
        retry_count = retry_count + 1,
-       error_message = $4,
+       error_message = $5,
        input_payload = CASE
-         WHEN retry_count + 1 >= max_retries THEN '{}'::jsonb
+         WHEN NOT $6::boolean OR retry_count + 1 >= max_retries THEN '{}'::jsonb
          ELSE input_payload
        END,
        output_payload = NULL,
-       safety_status = 'pending',
+       safety_status = CASE
+         WHEN NOT $6::boolean OR retry_count + 1 >= max_retries THEN 'not_applicable'
+         ELSE 'pending'
+       END,
        started_at = NULL,
        completed_at = CASE
-         WHEN retry_count + 1 >= max_retries THEN NOW()
+         WHEN NOT $6::boolean OR retry_count + 1 >= max_retries THEN NOW()
          ELSE NULL
        END,
+       lease_token = NULL,
+       lease_expires_at = NULL,
        updated_at = NOW()
      WHERE job_id = $1
        AND organization_id = $2
        AND account_id = $3
-       AND status = 'running'`,
-    [job.jobId, job.organizationId, job.accountId, sanitizeJobErrorCode(errorCode)],
+       AND status = 'running'
+       AND lease_token = $4::uuid
+       AND lease_expires_at > NOW()
+     RETURNING job_id`,
+    [
+      job.jobId,
+      job.organizationId,
+      job.accountId,
+      job.leaseToken,
+      sanitizeJobErrorCode(errorCode),
+      retryable,
+    ],
   );
+
+  if (!result) {
+    throw new Error('Job failure rejected because the claimed lease is no longer active');
+  }
 }
 
 export async function cancelJobForActor(jobId: string, actor: ActorIdentity): Promise<boolean> {
   const accessRow = await queryOne<JobAccessRow>(
-    `SELECT job_id, account_id, subject_id
+    `SELECT job_id, job_type, account_id, subject_id
      FROM pilot.shadow_jobs
      WHERE job_id = $1 AND organization_id = $2`,
     [jobId, actor.organizationId],
@@ -342,6 +437,8 @@ export async function cancelJobForActor(jobId: string, actor: ActorIdentity): Pr
          input_payload = '{}'::jsonb,
          output_payload = NULL,
          safety_status = 'not_applicable',
+         lease_token = NULL,
+         lease_expires_at = NULL,
          updated_at = NOW(),
          completed_at = NOW()
      WHERE job_id = $1
@@ -364,11 +461,18 @@ export async function getJobsForActor(
   const rows = await query<ShadowJobRow>(
     `SELECT job_id, job_type, organization_id, account_id, subject_id, role,
             status, input_payload, output_payload, error_message, safety_status,
-            priority, retry_count, max_retries, created_at, started_at,
+            priority, retry_count, max_retries, lease_token, lease_expires_at,
+            created_at, started_at,
             completed_at, expires_at
      FROM pilot.shadow_jobs
      WHERE organization_id = $1
-       AND (account_id = $2 OR $3::boolean)
+       AND (
+         account_id = $2
+         OR (
+           $3::boolean
+           AND job_type NOT IN ('heavy_bag_session', 'scout_report')
+         )
+       )
      ORDER BY created_at DESC
      LIMIT $4`,
     [actor.organizationId, actor.accountId, actorCanReadAllOrgJobs(actor), limit],

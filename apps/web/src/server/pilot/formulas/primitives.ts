@@ -101,6 +101,34 @@ export function standardizedChange(
   return success((current - baseline) / denominator);
 }
 
+export function safeRatio(
+  numerator: number,
+  denominator: number,
+  zeroReason: ValidationReasonCode = 'DIV_BY_ZERO',
+): NumericOutcome {
+  if (![numerator, denominator].every(Number.isFinite)) {
+    return failure('NON_FINITE_VALUE');
+  }
+  if (denominator === 0) {
+    return failure(zeroReason);
+  }
+  return success(numerator / denominator);
+}
+
+export function percentageChange(current: number, previous: number): NumericOutcome {
+  const ratio = safeRatio(current - previous, previous);
+  return ratio.ok ? success(ratio.value * 100) : ratio;
+}
+
+export function coefficientOfVariationPercent(values: readonly number[]): NumericOutcome {
+  const average = mean(values);
+  if (!average.ok) return average;
+  if (average.value === 0) return failure('ZERO_MEAN');
+  const sampleSd = sampleStandardDeviation(values);
+  if (!sampleSd.ok) return sampleSd;
+  return success((sampleSd.value / Math.abs(average.value)) * 100);
+}
+
 export function smallestWorthwhileChangeBetweenAthletes(
   betweenAthleteSampleSd: number,
 ): NumericOutcome {

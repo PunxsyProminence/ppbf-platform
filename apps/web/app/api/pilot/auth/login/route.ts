@@ -4,7 +4,6 @@ import { loginWithAccountIdAndPin } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { PILOT_SESSION_COOKIE } from '@/src/server/pilot/env';
 import { jsonError } from '@/src/server/pilot/http';
-import type { PilotRole } from '@/src/server/pilot/contracts';
 import { getClientIp, checkRateLimit, recordFailedAttempt, clearRateLimit } from '@/src/server/pilot/rateLimit';
 import { SESSION_ABSOLUTE_LIFETIME_SECONDS } from '@/src/server/pilot/sessionPolicy';
 

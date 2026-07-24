@@ -36,6 +36,10 @@ describe('isOrganizationAdminRole', () => {
   test('returns false for athlete', () => {
     expect(isOrganizationAdminRole('athlete')).toBe(false);
   });
+
+  test('returns false for the aggregate-only board role', () => {
+    expect(isOrganizationAdminRole('board')).toBe(false);
+  });
 });
 
 // ─── requireRole ─────────────────────────────────────────────────────────────
@@ -62,6 +66,10 @@ describe('requireRole', () => {
 
   test('allows admin when organization_admin is specified (legacy compat)', () => {
     expect(() => requireRole(actor('admin'), ['organization_admin'])).not.toThrow();
+  });
+
+  test('does not treat board as admin or coach authority', () => {
+    expect(() => requireRole(actor('board'), ['admin', 'organization_admin', 'coach'])).toThrow('Forbidden');
   });
 });
 
@@ -107,6 +115,14 @@ describe('assertActorCanAccessAthlete', () => {
   test('throws Forbidden for platform_owner', async () => {
     const actor: ActorIdentity = { accountId: 'a', role: 'platform_owner', organizationId: 'org-1', athleteId: null };
     await expect(assertActorCanAccessAthlete(actor, 'ath-1')).rejects.toThrow('Forbidden');
+  });
+
+  test('denies board before any athlete lookup is attempted', async () => {
+    const actor: ActorIdentity = { accountId: 'board-1', role: 'board', organizationId: 'org-1', athleteId: null };
+    await expect(assertActorCanAccessAthlete(actor, 'ath-1')).rejects.toThrow(
+      'restricted to organization-level aggregates',
+    );
+    expect(mockQueryOne).not.toHaveBeenCalled();
   });
 
   test('allows organization_admin when athlete belongs to their organization', async () => {

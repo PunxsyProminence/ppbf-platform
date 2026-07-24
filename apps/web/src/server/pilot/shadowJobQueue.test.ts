@@ -4,6 +4,8 @@ import {
   claimNextJob,
   completeJob,
   enqueueJob,
+  failJob,
+  getJobsForActor,
   getJobStatusForActor,
   normalizeJobPriority,
   normalizeJobTtlHours,
@@ -45,6 +47,8 @@ const jobRow = {
   priority: 2,
   retry_count: 0,
   max_retries: 3,
+  lease_token: '4cbf3128-e04f-40ac-884f-401410b9c4cb',
+  lease_expires_at: '2026-07-23T00:02:01.000Z',
   created_at: '2026-07-23T00:00:00.000Z',
   started_at: '2026-07-23T00:00:01.000Z',
   completed_at: null,
@@ -98,12 +102,21 @@ describe('SHADOW job queue safeguards', () => {
       accountId: 'coach-1',
       subjectId: 'athlete-1',
       inputPayload: { message: 'test' },
+      leaseToken: '4cbf3128-e04f-40ac-884f-401410b9c4cb',
     });
+    const [sql, params] = mockQueryOne.mock.calls[0];
+    expect(sql).toContain("input_payload = '{}'::jsonb");
+    expect(sql).toContain("error_message = 'SHADOW_JOB_EXPIRED'");
+    expect(sql).toContain("error_message = 'SHADOW_JOB_LEASE_EXPIRED'");
+    expect(sql).toContain('lease_expires_at IS NULL OR lease_expires_at <= NOW()');
+    expect(sql).toContain('lease_token = gen_random_uuid()');
+    expect(params).toEqual(['heavy_bag_session', 120]);
   });
 
   test('does not reveal another account job within the same tenant', async () => {
     mockQueryOne.mockResolvedValueOnce({
       job_id: 'job-2',
+      job_type: 'heavy_bag_session',
       account_id: 'coach-2',
       subject_id: null,
     });
@@ -114,6 +127,7 @@ describe('SHADOW job queue safeguards', () => {
   test('rechecks subject authorization before returning output', async () => {
     mockQueryOne.mockResolvedValueOnce({
       job_id: 'job-1',
+      job_type: 'heavy_bag_session',
       account_id: 'coach-1',
       subject_id: 'athlete-1',
     });
@@ -129,6 +143,7 @@ describe('SHADOW job queue safeguards', () => {
         jobId: 'job-1',
         organizationId: 'org-1',
         accountId: 'coach-1',
+        leaseToken: '4cbf3128-e04f-40ac-884f-401410b9c4cb',
       },
       { response: 'Evidence is limited; coach review is required.' },
       'passed',
@@ -137,6 +152,94 @@ describe('SHADOW job queue safeguards', () => {
     expect(sql).toContain("input_payload = '{}'::jsonb");
     expect(sql).toContain('organization_id = $2');
     expect(sql).toContain('account_id = $3');
+    expect(sql).toContain('lease_token = $4::uuid');
+    expect(sql).toContain('lease_expires_at > NOW()');
+    expect(sql).toContain('lease_token = NULL');
     expect(params?.slice(0, 3)).toEqual(['job-1', 'org-1', 'coach-1']);
+    expect(params?.[3]).toBe('4cbf3128-e04f-40ac-884f-401410b9c4cb');
+  });
+
+  test('rejects completion when the active lease no longer matches', async () => {
+    mockQueryOne.mockResolvedValueOnce(null);
+    await expect(completeJob(
+      {
+        jobId: 'job-1',
+        organizationId: 'org-1',
+        accountId: 'coach-1',
+        leaseToken: '4cbf3128-e04f-40ac-884f-401410b9c4cb',
+      },
+      { response: 'late output' },
+      'passed',
+    )).rejects.toThrow('claimed job no longer matches');
+  });
+
+  test('failure is lease-scoped and terminally clears sensitive input after retry exhaustion', async () => {
+    mockQueryOne.mockResolvedValueOnce({ job_id: 'job-1' });
+    await failJob(
+      {
+        jobId: 'job-1',
+        organizationId: 'org-1',
+        accountId: 'coach-1',
+        leaseToken: '4cbf3128-e04f-40ac-884f-401410b9c4cb',
+      },
+      'SHADOW_AI_PROVIDER_ERROR',
+    );
+
+    const [sql, params] = mockQueryOne.mock.calls[0];
+    expect(sql).toContain('retry_count + 1 >= max_retries');
+    expect(sql).toContain("THEN '{}'::jsonb");
+    expect(sql).toContain('lease_token = $4::uuid');
+    expect(sql).toContain('lease_expires_at > NOW()');
+    expect(sql).toContain('lease_token = NULL');
+    expect(params).toEqual([
+      'job-1',
+      'org-1',
+      'coach-1',
+      '4cbf3128-e04f-40ac-884f-401410b9c4cb',
+      'SHADOW_AI_PROVIDER_ERROR',
+      true,
+    ]);
+  });
+
+  test('rejects failure from a worker whose lease is no longer active', async () => {
+    mockQueryOne.mockResolvedValueOnce(null);
+    await expect(failJob(
+      {
+        jobId: 'job-1',
+        organizationId: 'org-1',
+        accountId: 'coach-1',
+        leaseToken: '4cbf3128-e04f-40ac-884f-401410b9c4cb',
+      },
+      'SHADOW_AI_PROVIDER_ERROR',
+    )).rejects.toThrow('claimed lease is no longer active');
+  });
+
+  test('does not expose an owner-only Scout job to an organization administrator', async () => {
+    mockQueryOne.mockResolvedValueOnce({
+      job_id: 'job-2',
+      job_type: 'scout_report',
+      account_id: 'coach-2',
+      subject_id: null,
+    });
+    await expect(getJobStatusForActor('job-2', {
+      accountId: 'admin-1',
+      organizationId: 'org-1',
+      role: 'organization_admin',
+      athleteId: null,
+    })).resolves.toBeNull();
+    expect(mockQueryOne).toHaveBeenCalledTimes(1);
+  });
+
+  test('filters owner-only jobs out of organization-wide job listings', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+    await getJobsForActor({
+      accountId: 'admin-1',
+      organizationId: 'org-1',
+      role: 'organization_admin',
+      athleteId: null,
+    });
+
+    const [sql] = mockQuery.mock.calls[0];
+    expect(sql).toContain("job_type NOT IN ('heavy_bag_session', 'scout_report')");
   });
 });

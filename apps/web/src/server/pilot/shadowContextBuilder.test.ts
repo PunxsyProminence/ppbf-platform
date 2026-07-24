@@ -316,6 +316,22 @@ describe('SHADOW Context Builder', () => {
       },
     );
 
+    test('returns only a fail-closed aggregate boundary for Board', () => {
+      const result = buildShadowContext({
+        ...baseInput,
+        tier: 'heavy_bag',
+        userRole: 'board',
+        athleteId: 'athlete-1',
+      });
+
+      expect(result.context).toContain('Aggregate governance only');
+      expect(result.context).toContain('SHADOW chat and athlete-record context are not authorized');
+      expect(result.context).not.toContain('athlete-1');
+      expect(result.context).not.toContain('data_driven');
+      expect(result.metadata.includesAthleteData).toBe(false);
+      expect(result.metadata.totalWeight).toBe(0);
+    });
+
     test('adjusts context for athlete role', () => {
       const athleteProfile = { ...mockUserProfile, role: 'athlete' as const };
       const athleteResult = buildShadowContext({

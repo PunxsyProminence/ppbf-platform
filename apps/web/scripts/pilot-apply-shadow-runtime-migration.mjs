@@ -5,6 +5,13 @@ import { fileURLToPath } from 'node:url';
 import { Client } from 'pg';
 
 const MIGRATION_LOCK = 'ppbf_shadow_runtime_migration_v1';
+const MIGRATION_FILES = [
+  'pilot_slice_postgres_shadow_runtime_migration.sql',
+  'pilot_slice_postgres_shadow_formula_foundation_migration.sql',
+  'pilot_slice_postgres_shadow_evidence_migration.sql',
+  'pilot_slice_postgres_shadow_job_lease_migration.sql',
+  'pilot_slice_postgres_board_role_migration.sql',
+];
 
 const READINESS_QUERY = `
   select
@@ -36,6 +43,95 @@ const READINESS_QUERY = `
         and tablename = 'shadow_feedback'
         and indexname = 'idx_shadow_feedback_unique_message'
     ) as feedback_correlation_ready
+`;
+
+const COMPLETION_READINESS_QUERY = `
+  select
+    to_regclass('pilot.shadow_chat_sessions') is not null as chat_sessions_ready,
+    to_regclass('pilot.shadow_formula_observations') is not null as formula_observations_ready,
+    to_regclass('pilot.shadow_formula_results') is not null as formula_results_ready,
+    to_regclass('pilot.shadow_formula_baseline_snapshots') is not null as formula_baselines_ready,
+    to_regclass('pilot.shadow_evidence_bundles') is not null as evidence_bundles_ready,
+    to_regclass('pilot.shadow_evidence_items') is not null as evidence_items_ready,
+    to_regclass('pilot.shadow_evidence_claims') is not null as evidence_claims_ready,
+    to_regclass('pilot.shadow_message_citations') is not null as message_citations_ready,
+    exists (
+      select 1
+      from information_schema.columns
+      where table_schema = 'pilot'
+        and table_name = 'shadow_formula_observations'
+        and column_name = 'idempotency_key'
+    ) as formula_idempotency_ready,
+    exists (
+      select 1
+      from information_schema.columns
+      where table_schema = 'pilot'
+        and table_name = 'shadow_formula_results'
+        and column_name = 'output_key'
+    ) as formula_multi_output_ready,
+    (
+      select count(*) = 2
+      from information_schema.columns
+      where table_schema = 'pilot'
+        and table_name = 'shadow_formula_observations'
+        and column_name in ('dimensions', 'idempotency_key')
+        and is_nullable = 'NO'
+    ) as formula_observation_identity_ready,
+    (
+      select count(*) = 4
+      from information_schema.columns
+      where table_schema = 'pilot'
+        and table_name = 'shadow_formula_results'
+        and column_name in ('calculation_key', 'output_key', 'policy_version', 'parameters')
+        and is_nullable = 'NO'
+    ) as formula_result_identity_ready,
+    (
+      select count(*) = 5
+      from information_schema.columns
+      where table_schema = 'pilot'
+        and table_name = 'shadow_formula_baseline_snapshots'
+        and column_name in ('calculation_key', 'metric_key', 'unit', 'policy_version', 'parameters')
+        and is_nullable = 'NO'
+    ) as formula_baseline_identity_ready,
+    (
+      select count(*) = 4
+      from pg_indexes
+      where schemaname = 'pilot'
+        and indexname in (
+          'idx_shadow_formula_observations_idempotency',
+          'idx_shadow_formula_observations_supersedes',
+          'idx_shadow_formula_results_calculation',
+          'idx_shadow_formula_baseline_calculation'
+        )
+    ) as formula_uniqueness_ready,
+    exists (
+      select 1
+      from information_schema.columns
+      where table_schema = 'pilot'
+        and table_name = 'shadow_jobs'
+        and column_name = 'lease_token'
+    ) as job_lease_token_ready,
+    exists (
+      select 1
+      from information_schema.columns
+      where table_schema = 'pilot'
+        and table_name = 'shadow_jobs'
+        and column_name = 'lease_expires_at'
+    ) as job_lease_expiry_ready,
+    exists (
+      select 1
+      from pg_constraint
+      where conrelid = 'pilot.accounts'::regclass
+        and contype = 'c'
+        and pg_get_constraintdef(oid) ilike '%board%'
+    ) as board_account_role_ready,
+    exists (
+      select 1
+      from pg_constraint
+      where conrelid = 'pilot.organization_memberships'::regclass
+        and contype = 'c'
+        and pg_get_constraintdef(oid) ilike '%board%'
+    ) as board_membership_role_ready
 `;
 
 function required(name) {
@@ -126,6 +222,30 @@ export async function applyShadowRuntimeMigration(client, sql) {
   }
 }
 
+export async function applyShadowCompletionMigrations(client, migrations) {
+  for (const migration of migrations) {
+    assertTransactionalMigration(migration.sql);
+  }
+
+  await client.query('select pg_advisory_lock(hashtext($1))', [MIGRATION_LOCK]);
+  try {
+    for (const migration of migrations) {
+      try {
+        await client.query(migration.sql);
+      } catch (error) {
+        await client.query('rollback').catch(() => {});
+        throw error;
+      }
+    }
+    const readiness = await client.query(COMPLETION_READINESS_QUERY);
+    assertReadiness(readiness.rows[0]);
+  } finally {
+    await client
+      .query('select pg_advisory_unlock(hashtext($1))', [MIGRATION_LOCK])
+      .catch(() => {});
+  }
+}
+
 export async function run() {
   const connectionString = required('AZURE_POSTGRES_CONNECTION_STRING');
   const expectedHostname = required('PPBF_EXPECTED_POSTGRES_HOSTNAME');
@@ -136,11 +256,14 @@ export async function run() {
   assertExpectedTarget(target, expectedHostname, expectedDatabase);
 
   const scriptPath = fileURLToPath(import.meta.url);
-  const migrationPath = path.resolve(
+  const migrationDirectory = path.resolve(
     path.dirname(scriptPath),
-    '../../../infra/azure/pilot_slice_postgres_shadow_runtime_migration.sql',
+    '../../../infra/azure',
   );
-  const sql = await fs.readFile(migrationPath, 'utf8');
+  const migrations = await Promise.all(MIGRATION_FILES.map(async (fileName) => ({
+    fileName,
+    sql: await fs.readFile(path.join(migrationDirectory, fileName), 'utf8'),
+  })));
 
   const client = new Client({
     connectionString,
@@ -149,7 +272,7 @@ export async function run() {
 
   await client.connect();
   try {
-    await applyShadowRuntimeMigration(client, sql);
+    await applyShadowCompletionMigrations(client, migrations);
   } finally {
     await client.end();
   }

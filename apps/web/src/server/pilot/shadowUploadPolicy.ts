@@ -22,6 +22,11 @@ export interface ShadowUploadDescriptor {
   contentType: string;
 }
 
+export interface ShadowUploadContentValidation {
+  ok: boolean;
+  error?: string;
+}
+
 export function validateShadowUploadTransport(headers: Headers): {
   ok: boolean;
   status: number;
@@ -78,4 +83,59 @@ export function describeShadowUpload(file: {
     generatedFileName: `source${extension}`,
     contentType: expectedType,
   };
+}
+
+/**
+ * Performs a bounded content-signature check before an upload enters
+ * quarantine. This is not malware scanning: accepted documents remain
+ * quarantined until a separate scanner and human reviewer approve them.
+ */
+export function validateShadowUploadContent(
+  descriptor: Pick<ShadowUploadDescriptor, 'contentType'>,
+  bytes: Uint8Array,
+): ShadowUploadContentValidation {
+  if (bytes.byteLength === 0 || bytes.byteLength > SHADOW_UPLOAD_MAX_FILE_BYTES) {
+    return { ok: false, error: 'The uploaded document is empty or too large.' };
+  }
+
+  if (descriptor.contentType === 'application/pdf') {
+    const pdfSignature = [0x25, 0x50, 0x44, 0x46, 0x2d]; // %PDF-
+    const matches = pdfSignature.every((value, index) => bytes[index] === value);
+    return matches
+      ? { ok: true }
+      : { ok: false, error: 'The document content does not match its PDF type.' };
+  }
+
+  if (
+    descriptor.contentType
+    === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  ) {
+    // DOCX is an OPC ZIP container. ZIP-bomb, macro, and relationship checks
+    // belong to the future isolated extraction worker.
+    const zipSignature = bytes.byteLength >= 4
+      && bytes[0] === 0x50
+      && bytes[1] === 0x4b
+      && (
+        (bytes[2] === 0x03 && bytes[3] === 0x04)
+        || (bytes[2] === 0x05 && bytes[3] === 0x06)
+        || (bytes[2] === 0x07 && bytes[3] === 0x08)
+      );
+    return zipSignature
+      ? { ok: true }
+      : { ok: false, error: 'The document content does not match its DOCX type.' };
+  }
+
+  if (descriptor.contentType === 'text/plain') {
+    if (bytes.includes(0)) {
+      return { ok: false, error: 'The text document contains unsupported binary content.' };
+    }
+    try {
+      new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'The text document must be valid UTF-8.' };
+    }
+  }
+
+  return { ok: false, error: 'The document content type is unsupported.' };
 }

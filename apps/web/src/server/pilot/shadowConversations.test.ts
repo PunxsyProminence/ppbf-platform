@@ -1,6 +1,7 @@
 import { query, withTransaction } from './db';
 import {
   appendConversationExchange,
+  loadConversationMessages,
   listConversations,
   purgeExpiredShadowChatData,
   requestOwnShadowDataDeletion,
@@ -92,6 +93,117 @@ describe('SHADOW durable conversation isolation', () => {
     );
   });
 
+  it('persists only exact citations from the same server-owned bundle and tenant', async () => {
+    const bundleId = '00000000-0000-4000-8000-000000000100';
+    const evidenceId = '00000000-0000-4000-8000-000000000101';
+    const clientQuery = jest.fn()
+      .mockResolvedValueOnce({ rows: [{ conversation_id: 'conversation-a' }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ claim_id: 'claim-a' }] })
+      .mockResolvedValueOnce({ rows: [{ evidence_id: evidenceId }] });
+    mockedWithTransaction.mockImplementation(async (callback) => callback({
+      query: clientQuery,
+    } as never));
+
+    const messageId = await appendConversationExchange({
+      actor,
+      conversationId: 'conversation-a',
+      userMessage: 'What does approved evidence say?',
+      assistantMessage: `Approved evidence supports the claim. [E:${evidenceId}]`,
+      sessionType: 'quick_round',
+      topic: 'training',
+      responseState: 'ok',
+      evidence: {
+        bundleId,
+        availability: 'available',
+        citationIds: [evidenceId],
+      },
+    });
+
+    expect(String(clientQuery.mock.calls[3][0])).toContain('b.organization_id = $2');
+    expect(String(clientQuery.mock.calls[3][0])).toContain('b.account_id = $3');
+    expect(clientQuery.mock.calls[3][1]).toEqual(expect.arrayContaining([
+      'org-a',
+      'account-a',
+      messageId,
+      bundleId,
+      'supported',
+    ]));
+    expect(String(clientQuery.mock.calls[4][0])).toContain('e.bundle_id = $3');
+    expect(String(clientQuery.mock.calls[4][0])).toContain('e.organization_id = $4');
+    expect(String(clientQuery.mock.calls[4][0])).toContain('e.account_id = $5');
+  });
+
+  it('fails the atomic exchange when a citation is not in the exact bundle', async () => {
+    const clientQuery = jest.fn()
+      .mockResolvedValueOnce({ rows: [{ conversation_id: 'conversation-a' }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ claim_id: 'claim-a' }] })
+      .mockResolvedValueOnce({ rows: [] });
+    mockedWithTransaction.mockImplementation(async (callback) => callback({
+      query: clientQuery,
+    } as never));
+
+    await expect(appendConversationExchange({
+      actor,
+      conversationId: 'conversation-a',
+      userMessage: 'Question',
+      assistantMessage: 'Claim with forged citation.',
+      sessionType: 'quick_round',
+      topic: 'training',
+      responseState: 'ok',
+      evidence: {
+        bundleId: '00000000-0000-4000-8000-000000000100',
+        availability: 'available',
+        citationIds: ['00000000-0000-4000-8000-000000000999'],
+      },
+    })).rejects.toThrow('SHADOW_EVIDENCE_CITATION_NOT_FOUND');
+  });
+
+  it('returns persisted citations only through tenant- and account-scoped joins', async () => {
+    mockedQuery
+      .mockResolvedValueOnce([{
+        conversation_id: 'conversation-a',
+        athlete_id: null,
+        session_type: 'quick_round',
+      }] as never)
+      .mockResolvedValueOnce([{
+        message_id: '00000000-0000-4000-8000-000000000010',
+        role: 'assistant',
+        content: 'Supported claim.',
+        response_state: 'ok',
+        created_at: new Date('2026-07-24T12:00:00.000Z'),
+        citations: [{
+          evidenceId: '00000000-0000-4000-8000-000000000101',
+          token: '[E:00000000-0000-4000-8000-000000000101]',
+          sourceTitle: 'Approved source',
+          documentName: 'Approved document',
+        }],
+      }] as never);
+
+    const messages = await loadConversationMessages({
+      actor,
+      conversationId: 'conversation-a',
+    });
+
+    const sql = String(mockedQuery.mock.calls[1][0]);
+    expect(sql).toContain('mc.organization_id = m.organization_id');
+    expect(sql).toContain('mc.account_id = m.account_id');
+    expect(sql).toContain('ei.organization_id = mc.organization_id');
+    expect(sql).toContain('ei.account_id = mc.account_id');
+    expect(mockedQuery.mock.calls[1][1]).toEqual([
+      'org-a',
+      'account-a',
+      'conversation-a',
+      12,
+    ]);
+    expect(messages[0].citations).toEqual([expect.objectContaining({
+      sourceTitle: 'Approved source',
+    })]);
+  });
+
   it('reuses a pending deletion request instead of creating duplicates', async () => {
     mockedQuery.mockResolvedValueOnce([{ request_id: 'request-a' }] as never);
     await expect(requestOwnShadowDataDeletion(actor)).resolves.toBe('request-a');
@@ -104,6 +216,16 @@ describe('SHADOW durable conversation isolation', () => {
       factKey: 'stance',
       action: 'replace',
     })).rejects.toThrow('Missing corrected SHADOW memory value');
+    expect(mockedQuery).not.toHaveBeenCalled();
+  });
+
+  it('fails closed before Board members can access account-level memory', async () => {
+    await expect(submitMemoryCorrection({
+      actor: { ...actor, role: 'board' },
+      factKey: 'stance',
+      correctedValue: 'southpaw',
+      action: 'replace',
+    })).rejects.toThrow('Forbidden: board role cannot access account-level SHADOW memory');
     expect(mockedQuery).not.toHaveBeenCalled();
   });
 

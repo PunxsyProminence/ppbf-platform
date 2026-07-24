@@ -43,6 +43,9 @@ function routeForRole(role: string): string {
   if (role === 'parent') {
     return '/parent/dashboard';
   }
+  if (role === 'board') {
+    return '/board';
+  }
   return '/admin';
 }
 
@@ -201,7 +204,10 @@ export async function GET(request: NextRequest) {
     }
 
     const defaultPostLogin = routeForRole(loginResult.principal.role);
-    const destination = new URL(config.postLoginPath || defaultPostLogin, publicOrigin);
+    const destinationPath = loginResult.principal.role === 'board'
+      ? defaultPostLogin
+      : (config.postLoginPath || defaultPostLogin);
+    const destination = new URL(destinationPath, publicOrigin);
     const response = NextResponse.redirect(destination);
     const secure = shouldUseSecureCookie({
       nextUrlProtocol: request.nextUrl.protocol,

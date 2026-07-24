@@ -62,7 +62,15 @@ describe('GET /api/pilot/video/list', () => {
     mockQuery.mockResolvedValueOnce([{ video_session_id: 'v1', athlete_id: 'ath-1' }]);
     const res = await GET(request());
     expect(res.status).toBe(200);
-    expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining('account_id = $2'), ['org-1', 'acct-1', 50]);
+    expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining("status = 'ready'"), ['org-1', 'ath-1', 50]);
+  });
+
+  test('athlete without a linked athlete profile sees no videos', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: null }));
+    const res = await GET(request());
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ items: [] });
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 
   test('400 when parent omits athlete_id', async () => {
@@ -78,6 +86,7 @@ describe('GET /api/pilot/video/list', () => {
     mockQuery.mockResolvedValueOnce([{ video_session_id: 'v1', athlete_id: 'ath-1' }]);
     const res = await GET(request('http://localhost/api/pilot/video/list?athlete_id=ath-1'));
     expect(res.status).toBe(200);
+    expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining("status = 'ready'"), ['org-1', 'ath-1', 50]);
   });
 
   test('403 when parent is not linked to the athlete', async () => {

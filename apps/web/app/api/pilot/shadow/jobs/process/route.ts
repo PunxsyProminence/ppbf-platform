@@ -31,6 +31,21 @@ const JOB_TYPES = new Set<JobType>([
   'film_study',
   'learning_loop',
 ]);
+const UNAVAILABLE_JOB_TYPES = new Set<JobType>([
+  'scout_report',
+  'board_summary',
+  'film_study',
+]);
+const SHADOW_JOB_ACTOR_ROLES = new Set<PilotRole>([
+  'admin',
+  'coach',
+  'athlete',
+  'parent',
+  'organization_admin',
+  'staff',
+  'volunteer',
+  'platform_owner',
+]);
 
 const SAFE_FILTERED_JOB_OUTPUT = {
   resultStatus: 'filtered',
@@ -48,19 +63,24 @@ async function loadCurrentJobActor(job: {
     is_platform_owner: boolean;
     organization_status: string | null;
   }>(
-    `select a.role, a.athlete_id, a.is_platform_owner, o.status as organization_status
-     from pilot.accounts a
-     join pilot.organization_memberships om
-       on om.account_id = a.account_id
-      and om.organization_id = $2
-      and om.active_flag = true
-     left join pilot.organizations o on o.organization_id = $2
-     where a.account_id = $1
-       and a.active_flag = true`,
+     `select a.role, a.athlete_id, a.is_platform_owner, o.status as organization_status
+      from pilot.accounts a
+      left join pilot.organization_memberships om
+        on om.account_id = a.account_id
+       and om.organization_id = $2
+       and om.active_flag = true
+      left join pilot.organizations o on o.organization_id = $2
+      where a.account_id = $1
+        and a.active_flag = true
+        and (
+          a.is_platform_owner = true
+          or om.account_id is not null
+        )`,
     [job.accountId, job.organizationId],
   );
   if (
     !row
+    || !SHADOW_JOB_ACTOR_ROLES.has(row.role)
     || (!row.is_platform_owner
       && row.organization_status !== null
       && row.organization_status !== 'active')
@@ -104,6 +124,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     if (!job) {
       return NextResponse.json({ processed: false } satisfies JobProcessorResult);
+    }
+
+    if (UNAVAILABLE_JOB_TYPES.has(job.jobType)) {
+      const errorCode = 'SHADOW_JOB_TYPE_UNAVAILABLE';
+      await failJob(job, errorCode, { retryable: false });
+      return NextResponse.json({
+        processed: true,
+        jobId: job.jobId,
+        jobType: job.jobType,
+        durationMs: Date.now() - start,
+        error: errorCode,
+      } satisfies JobProcessorResult);
     }
 
     try {
@@ -169,15 +201,21 @@ async function executeJob(
     case 'heavy_bag_session':
       return executeHeavyBagJob(payload);
     case 'scout_report':
+      if (UNAVAILABLE_JOB_TYPES.has(jobType)) {
+        throw new Error('SHADOW_JOB_TYPE_UNAVAILABLE');
+      }
       return executeScoutReportJob(payload);
     case 'board_summary':
+      if (UNAVAILABLE_JOB_TYPES.has(jobType)) {
+        throw new Error('SHADOW_JOB_TYPE_UNAVAILABLE');
+      }
       return executeBoardSummaryJob(payload);
     case 'learning_loop':
       return executeLearningLoopJob(payload);
     case 'library_update':
       return { skipped: true, reason: 'Library updates handled via admin upload pipeline' };
     case 'film_study':
-      return { skipped: true, reason: 'Film study requires vision model — quota pending' };
+      throw new Error('SHADOW_JOB_TYPE_UNAVAILABLE');
     default:
       throw new Error(`Unknown job type: ${jobType}`);
   }
