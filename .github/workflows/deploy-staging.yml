@@ -8,10 +8,6 @@ on:
         required: false
         default: false
         type: boolean
-      ppbf_pilot_bootstrap_key:
-        description: Bootstrap key for the SHADOW gate
-        required: false
-        type: string
 
 permissions:
   id-token: write
@@ -43,18 +39,6 @@ jobs:
         run: |
           az acr login --name "$ACR_NAME"
 
-      - name: Load Azure Container Registry deploy credentials
-        id: acr-credentials
-        run: |
-          ACR_USERNAME="$(az acr credential show --name "$ACR_NAME" --query username -o tsv)"
-          ACR_PASSWORD="$(az acr credential show --name "$ACR_NAME" --query 'passwords[0].value' -o tsv)"
-          test -n "$ACR_USERNAME"
-          test -n "$ACR_PASSWORD"
-          echo "::add-mask::$ACR_USERNAME"
-          echo "::add-mask::$ACR_PASSWORD"
-          echo "username=$ACR_USERNAME" >> "$GITHUB_OUTPUT"
-          echo "password=$ACR_PASSWORD" >> "$GITHUB_OUTPUT"
-
       - name: Build and Push Container Image to ACR
         uses: docker/build-push-action@v5
         with:
@@ -66,22 +50,19 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Deploy to Azure Container App
-        uses: azure/container-apps-deploy-action@v1
-        with:
-          acrName: ${{ env.ACR_NAME }}
-          acrUsername: ${{ steps.acr-credentials.outputs.username }}
-          acrPassword: ${{ steps.acr-credentials.outputs.password }}
-          resourceGroup: ${{ env.RESOURCE_GROUP }}
-          containerAppName: app-ppbf-staging
-          imageToDeploy: ${{ env.ACR_LOGIN_SERVER }}/ppbf-frontend:${{ github.sha }}
-          environmentVariables: >-
-            PPBF_ONBOARDING_LIVE_SAVE=false
-            PPBF_AUTH_PROVIDER_WIRED=false
-            AZURE_POSTGRES_CONNECTION_STRING=secretref:azure-postgres-connection-string
-            AZURE_STORAGE_CONNECTION_STRING=secretref:azure-storage-connection-string
-            PPBF_PILOT_BOOTSTRAP_KEY=secretref:ppbf-pilot-bootstrap-key
-            PPBF_PILOT_DEFAULT_ORG_ID=secretref:ppbf-pilot-default-org-id
-            PPBF_PILOT_SHADOW_CONTAINER=secretref:ppbf-pilot-shadow-container
+        run: |
+          az containerapp update \
+            --name app-ppbf-staging \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "${ACR_LOGIN_SERVER}/ppbf-frontend:${{ github.sha }}" \
+            --set-env-vars \
+              PPBF_ONBOARDING_LIVE_SAVE=false \
+              PPBF_AUTH_PROVIDER_WIRED=false \
+              AZURE_POSTGRES_CONNECTION_STRING=secretref:azure-postgres-connection-string \
+              AZURE_STORAGE_CONNECTION_STRING=secretref:azure-storage-connection-string \
+              PPBF_PILOT_BOOTSTRAP_KEY=secretref:ppbf-pilot-bootstrap-key \
+              PPBF_PILOT_DEFAULT_ORG_ID=secretref:ppbf-pilot-default-org-id \
+              PPBF_PILOT_SHADOW_CONTAINER=secretref:ppbf-pilot-shadow-container
 
       - name: Resolve Staging API Base URL
         run: |
@@ -91,12 +72,16 @@ jobs:
 
       - name: Install Web Dependencies For Gate
         run: |
-          npm install --prefix apps/web
+          npm ci
 
       - name: Run SHADOW E2E Gate
         if: inputs.enable_shadow_gate
         env:
-          PPBF_PILOT_BOOTSTRAP_KEY: ${{ inputs.ppbf_pilot_bootstrap_key }}
+          # Sourced from a repository/environment secret, never a manual
+          # workflow_dispatch text input -- dispatch inputs are visible in
+          # the Actions run's trigger metadata to anyone with read access to
+          # the repo, regardless of log masking.
+          PPBF_PILOT_BOOTSTRAP_KEY: ${{ secrets.PPBF_PILOT_BOOTSTRAP_KEY }}
           PILOT_ADMIN_ACCOUNT_ID: org_admin_shadow
         run: |
           npm --prefix apps/web run gate:pilot:shadow-e2e
