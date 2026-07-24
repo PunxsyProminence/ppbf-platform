@@ -8,6 +8,10 @@ on:
         required: false
         default: false
         type: boolean
+      ppbf_pilot_bootstrap_key:
+        description: Bootstrap key for the SHADOW gate
+        required: false
+        type: string
 
 permissions:
   id-token: write
@@ -15,6 +19,7 @@ permissions:
 
 jobs:
   build-and-deploy:
+    environment: staging
     runs-on: ubuntu-latest
     env:
       ACR_NAME: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
@@ -86,16 +91,12 @@ jobs:
 
       - name: Install Web Dependencies For Gate
         run: |
-          npm ci
+          npm install --prefix apps/web
 
       - name: Run SHADOW E2E Gate
         if: inputs.enable_shadow_gate
         env:
-          # Sourced from a repository/environment secret, never a manual
-          # workflow_dispatch text input -- dispatch inputs are visible in
-          # the Actions run's trigger metadata to anyone with read access to
-          # the repo, regardless of log masking.
-          PPBF_PILOT_BOOTSTRAP_KEY: ${{ secrets.PPBF_PILOT_BOOTSTRAP_KEY }}
+          PPBF_PILOT_BOOTSTRAP_KEY: ${{ inputs.ppbf_pilot_bootstrap_key }}
           PILOT_ADMIN_ACCOUNT_ID: org_admin_shadow
         run: |
           npm --prefix apps/web run gate:pilot:shadow-e2e
