@@ -4,8 +4,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/src/server/pilot/db';
-import { requirePrincipal, jsonError } from '@/src/server/pilot/http';
-import { requireRole } from '@/src/server/pilot/access';
+import { isUuid, requirePrincipal, jsonError } from '@/src/server/pilot/http';
+import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import type { PilotRole } from '@/src/server/pilot/contracts';
 import {
   validateShadowRequest,
@@ -23,23 +23,39 @@ import { buildShadowContext } from '@/src/server/pilot/shadowContextBuilder';
 import { routeRequest, tierToSessionType, isAsyncSession } from '@/src/server/pilot/shadowRouter';
 import { classifyProfileTier, buildPersonalizationPrompt } from '@/src/server/pilot/shadowProfiling';
 import { executeHeavyBagSync, executeHeavyBagAsync, shouldRunAsync } from '@/src/server/pilot/shadowHeavyBag';
-import { buildExplanationChain } from '@/src/server/pilot/shadowExplainability';
 import { evaluateShadowUnlockState, isFeatureEnabled, type ShadowUnlockState } from '@/src/server/pilot/shadowUnlocks';
+import {
+  appendConversationExchange,
+  assertConversationAccess,
+  loadConversationMessages,
+  queueHumanReview,
+  resolveConversation,
+} from '@/src/server/pilot/shadowConversations';
+import {
+  enforceShadowRateLimit,
+  ShadowRateLimitExceeded,
+} from '@/src/server/pilot/shadowRateLimit';
+import { budgetConversationHistory } from '@/src/server/pilot/shadowConversationHistory';
 
 export interface ShadowChatRequest {
   message: string;
+  conversationId?: string;
   athleteId?: string;
   context?: string;
-  organizationId?: string; // Resolved from session cookie — optional override
+  organizationId?: string; // Ignored: organization scope is always resolved from the authenticated session
   tier?: ShadowTier; // Optional manual tier override (coaches/admins only)
   sessionType?: string; // Optional: 'film_study' | 'scout_report' | 'board_summary'
   preferAsync?: boolean; // Client can request async for heavy sessions
 }
 
+export type ShadowResponseState = 'ok' | 'filtered' | 'degraded' | 'queued';
+
 export interface ShadowChatResponse {
   success: boolean;
+  state: ShadowResponseState;
   response: string;
   messageId: string;
+  conversationId?: string;
   createdAt: string;
   filtered: boolean;
   requiresHumanReview: boolean;
@@ -51,13 +67,6 @@ export interface ShadowChatResponse {
   modelUsed?: string; // Which model handled this request
   async?: boolean; // True if response is async (jobId instead of response)
   jobId?: string; // Present when async=true — poll /api/pilot/shadow/jobs/[jobId]
-  explainability?: {
-    confidence: number; // 0-100, capped at 95%
-    confidenceLevel: '🟢 High' | '🟡 Moderate' | '🟠 Low' | '🔴 Speculative';
-    reasoning: string;
-    evidenceCount: number;
-    disclaimers: string[];
-  };
   error?: string;
 }
 
@@ -69,11 +78,33 @@ const FALLBACK_RESPONSES: Record<string, string> = {
   medical_clearance: 'Medical clearance decisions are made by qualified medical professionals. SHADOW can help you understand what clearance evaluations typically include.',
 };
 
-async function callAzureOpenAI(systemPrompt: string, userMessage: string): Promise<{ response: string; success: boolean }> {
+const PROVIDER_TIMEOUT_MS = 15_000;
+const MAX_MESSAGE_LENGTH = 12_000;
+const DEGRADED_RESPONSE = 'SHADOW is temporarily unavailable. No generated guidance was returned. Please try again later or contact your organization for support.';
+
+async function withProviderTimeout<T>(operation: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<T>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('provider_timeout')), PROVIDER_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function callAzureOpenAI(
+  systemPrompt: string,
+  userMessage: string,
+  conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
+): Promise<{ response: string; success: boolean }> {
   try {
     const runtime = getAzureAiRuntimeConfig();
     if (!runtime.ok || !runtime.config) {
-      console.error(`Azure AI runtime is not configured. Missing: ${runtime.missing.join(', ')}`);
+      console.error('Azure AI runtime is not configured');
       return { response: '', success: false };
     }
 
@@ -88,23 +119,38 @@ async function callAzureOpenAI(systemPrompt: string, userMessage: string): Promi
       body: JSON.stringify({
         messages: [
           { role: 'system', content: systemPrompt },
+          ...budgetConversationHistory(conversationHistory).map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
           { role: 'user', content: userMessage },
         ],
         max_completion_tokens: 4096,
       }),
+      signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
     });
 
     if (!azureResponse.ok) {
-      const errorText = await azureResponse.text();
-      console.error('Azure API error:', azureResponse.status, errorText);
+      console.error('Azure AI request failed', { status: azureResponse.status });
       return { response: '', success: false };
     }
 
-    const data = await azureResponse.json();
-    const response = data.choices?.[0]?.message?.content || '';
-    return { response, success: true };
+    const data = await azureResponse.json() as {
+      choices?: Array<{ message?: { content?: unknown } }>;
+    };
+    const response = typeof data.choices?.[0]?.message?.content === 'string'
+      ? data.choices[0].message.content.trim()
+      : '';
+    return { response, success: response.length > 0 };
   } catch (error) {
-    console.error('Azure OpenAI call failed:', error);
+    const reason = error instanceof Error && (
+      error.name === 'TimeoutError'
+      || error.name === 'AbortError'
+      || error.message === 'provider_timeout'
+    )
+      ? 'timeout'
+      : 'request_failed';
+    console.error('Azure AI request failed', { reason });
     return { response: '', success: false };
   }
 }
@@ -113,6 +159,7 @@ interface LlmRouteResult {
   llmResponse: string;
   resolvedAsync: boolean;
   asyncJobId?: string;
+  state: ShadowResponseState;
 }
 
 interface LlmRouteContext {
@@ -130,57 +177,84 @@ interface LlmRouteContext {
   userRole: string;
   athleteId: string | undefined;
   unlockState: ShadowUnlockState | null;
+  conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }>;
 }
 
 async function routeLlmCall(ctx: LlmRouteContext): Promise<LlmRouteResult> {
-  const { sessionType, effectiveTier, preferAsync, highRiskClassification,
+  const { sessionType, preferAsync, highRiskClassification,
     userProfile, tierResult, contextOutput, classification,
-    message, userId, organizationId, userRole, athleteId, unlockState } = ctx;
-  if (highRiskClassification && highRiskClassification in FALLBACK_RESPONSES) {
-    return { llmResponse: FALLBACK_RESPONSES[highRiskClassification], resolvedAsync: false };
-  }
+    message, userId, organizationId, userRole, athleteId, unlockState,
+    conversationHistory } = ctx;
+  const trustBoundaryPrompt = `${SHADOW_SYSTEM_PROMPT}
 
-  if (isAsyncSession(sessionType) || (shouldRunAsync(sessionType, tierResult.tier) && preferAsync)) {
-    const asyncResult = await executeHeavyBagAsync({
-      message, userId, organizationId, role: userRole as PilotRole, userProfile, tierResult,
-      contextOutput, classification, sessionType, athleteId, systemPromptBase: SHADOW_SYSTEM_PROMPT,
-    });
+## EVIDENCE BOUNDARY
+Only describe a claim as supported, proven, or evidence-based when verified evidence for that claim is present in the authorized request context. Never invent citations, case counts, confidence values, or outcomes. When verified evidence is absent, label the claim RESEARCH NEEDED.`;
+  if (highRiskClassification && highRiskClassification in FALLBACK_RESPONSES) {
     return {
-      llmResponse: `Your ${sessionType.replaceAll('_', ' ')} has been queued. Job ID: ${asyncResult.jobId}`,
-      resolvedAsync: true,
-      asyncJobId: asyncResult.jobId,
+      llmResponse: FALLBACK_RESPONSES[highRiskClassification],
+      resolvedAsync: false,
+      state: 'filtered',
     };
   }
 
   const personalization = unlockState && isFeatureEnabled(unlockState, 'strong_personalization')
     ? buildPersonalizationPrompt(userProfile, tierResult)
     : '';
-  const prompt = SHADOW_SYSTEM_PROMPT + personalization;
+  const capabilityAuthorizedPrompt = `${trustBoundaryPrompt}${personalization}`;
 
-  if (effectiveTier === 'heavy_bag') {
+  if (isAsyncSession(sessionType) || (shouldRunAsync(sessionType, tierResult.tier) && preferAsync)) {
     try {
-      const runtime = getAzureAiRuntimeConfig();
-      if (!runtime.ok || !runtime.config) {
-        console.error(`Heavy Bag runtime unavailable. Missing Azure AI config: ${runtime.missing.join(', ')}`);
-        return { llmResponse: 'SHADOW is currently unavailable. Please contact your organization for support.', resolvedAsync: false };
-      }
-
-      const result = await executeHeavyBagSync(
-        { message, userId, organizationId, role: userRole as PilotRole, userProfile, tierResult,
-          contextOutput, classification, sessionType: 'heavy_bag', athleteId, systemPromptBase: prompt },
-        runtime.config.endpoint,
-        runtime.config.apiKey,
-      );
-      return { llmResponse: result.response ?? 'SHADOW Heavy Bag response unavailable.', resolvedAsync: false };
+      const asyncResult = await withProviderTimeout(executeHeavyBagAsync({
+        message, userId, organizationId, role: userRole as PilotRole, userProfile, tierResult,
+        contextOutput, classification, sessionType, athleteId, systemPromptBase: capabilityAuthorizedPrompt,
+      }));
+      return {
+        llmResponse: `Your ${sessionType.replaceAll('_', ' ')} has been queued. Job ID: ${asyncResult.jobId}`,
+        resolvedAsync: true,
+        asyncJobId: asyncResult.jobId,
+        state: 'queued',
+      };
     } catch {
-      return { llmResponse: 'SHADOW is currently unavailable. Please contact your organization for support.', resolvedAsync: false };
+      return { llmResponse: DEGRADED_RESPONSE, resolvedAsync: false, state: 'degraded' };
     }
   }
 
-  const azureResult = await callAzureOpenAI(prompt, message);
+  const prompt = `${capabilityAuthorizedPrompt}
+
+## AUTHORIZED REQUEST CONTEXT
+${contextOutput.context}
+
+Use only this authorized role and scope. Do not infer or disclose data outside it.`;
+
+  if (sessionType === 'heavy_bag') {
+    try {
+      const runtime = getAzureAiRuntimeConfig();
+      if (!runtime.ok || !runtime.config) {
+        console.error('Heavy Bag runtime is not configured');
+        return { llmResponse: DEGRADED_RESPONSE, resolvedAsync: false, state: 'degraded' };
+      }
+
+      const result = await withProviderTimeout(executeHeavyBagSync(
+        { message, userId, organizationId, role: userRole as PilotRole, userProfile, tierResult,
+          contextOutput, classification, sessionType: 'heavy_bag', athleteId, systemPromptBase: prompt,
+          conversationHistory },
+        runtime.config.endpoint,
+        runtime.config.apiKey,
+      ));
+      if (!result.response?.trim()) {
+        return { llmResponse: DEGRADED_RESPONSE, resolvedAsync: false, state: 'degraded' };
+      }
+      return { llmResponse: result.response, resolvedAsync: false, state: 'ok' };
+    } catch {
+      return { llmResponse: DEGRADED_RESPONSE, resolvedAsync: false, state: 'degraded' };
+    }
+  }
+
+  const azureResult = await callAzureOpenAI(prompt, message, conversationHistory);
   return {
-    llmResponse: azureResult.success ? azureResult.response : 'SHADOW is currently unavailable. Please contact your organization for support.',
+    llmResponse: azureResult.success ? azureResult.response : DEGRADED_RESPONSE,
     resolvedAsync: false,
+    state: azureResult.success ? 'ok' : 'degraded',
   };
 }
 
@@ -222,8 +296,88 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     const userRole = principal.role;
     const organizationId = principal.organizationId;
 
-    const body: ShadowChatRequest = await request.json();
-    const { message, athleteId, tier: userRequestedTier, sessionType: requestedSessionType, preferAsync = false } = body;
+    let body: ShadowChatRequest;
+    try {
+      const parsed = await request.json() as unknown;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('invalid_body');
+      }
+      body = parsed as ShadowChatRequest;
+    } catch {
+      return NextResponse.json(
+        {
+          success: false,
+          state: 'filtered',
+          response: 'SHADOW could not process that request.',
+          messageId: `msg_${Date.now()}`,
+          createdAt: new Date().toISOString(),
+          filtered: true,
+          requiresHumanReview: false,
+          error: 'Request body must be valid JSON.',
+        },
+        { status: 400 },
+      );
+    }
+    const {
+      message: rawMessage,
+      conversationId: requestedConversationId,
+      athleteId,
+      tier: userRequestedTier,
+      sessionType: requestedSessionType,
+      preferAsync = false,
+    } = body;
+
+    if (
+      typeof rawMessage !== 'string'
+      || rawMessage.trim().length === 0
+      || rawMessage.length > MAX_MESSAGE_LENGTH
+      || (requestedConversationId !== undefined
+        && !isUuid(requestedConversationId))
+      || (athleteId !== undefined
+        && (typeof athleteId !== 'string' || !athleteId.trim() || athleteId.length > 200))
+      || (userRequestedTier !== undefined
+        && userRequestedTier !== 'quick_round' && userRequestedTier !== 'heavy_bag')
+      || (requestedSessionType !== undefined
+        && (typeof requestedSessionType !== 'string' || !SESSION_TYPE_OVERRIDES.has(
+          requestedSessionType as import('@/src/server/pilot/shadowRouter').ShadowSessionType,
+        )))
+      || typeof preferAsync !== 'boolean'
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          state: 'filtered',
+          response: 'Enter a question for SHADOW.',
+          messageId: `msg_${Date.now()}`,
+          createdAt: new Date().toISOString(),
+          filtered: true,
+          requiresHumanReview: false,
+          error: 'Request fields are invalid or exceed their allowed size.',
+        },
+        { status: 400 },
+      );
+    }
+    const message = rawMessage.trim();
+
+    await enforceShadowRateLimit({
+      organizationId,
+      accountId: userId,
+      endpointKey: 'chat',
+      limit: 20,
+      windowSeconds: 60,
+    });
+
+    if (athleteId) {
+      await assertActorCanAccessAthlete(principal, athleteId);
+    }
+    if (requestedConversationId) {
+      await assertConversationAccess({
+        actor: principal,
+        conversationId: requestedConversationId,
+        athleteId,
+        requireExactSubject: true,
+      });
+    }
 
     const canUseManualOverride = MANUAL_OVERRIDE_ROLES.has(userRole as PilotRole);
     const sanitizedTier = canUseManualOverride ? userRequestedTier : undefined;
@@ -238,13 +392,69 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       role: userRole as PilotRole,
     });
 
+    if (sessionType === 'film_study' || sessionType === 'recovery_round') {
+      return NextResponse.json(
+        {
+          success: false,
+          state: 'filtered',
+          response: sessionType === 'film_study'
+            ? 'Film Study is not available in text chat. Use the dedicated video-analysis workflow.'
+            : 'Recovery Round is an internal background workflow and cannot be started from chat.',
+          messageId: `msg_${Date.now()}`,
+          createdAt: new Date().toISOString(),
+          filtered: true,
+          requiresHumanReview: false,
+          tier: effectiveTier,
+          complexity: classification.complexity,
+          error: 'The requested SHADOW session type is not available from chat.',
+        },
+        { status: 400 },
+      );
+    }
+    if (sessionType === 'scout_report' || sessionType === 'board_summary') {
+      return NextResponse.json(
+        {
+          success: false,
+          state: 'degraded',
+          response: 'This background SHADOW mode is not active until the secure job worker is configured.',
+          messageId: `msg_${Date.now()}`,
+          createdAt: new Date().toISOString(),
+          filtered: false,
+          requiresHumanReview: false,
+          tier: effectiveTier,
+          complexity: classification.complexity,
+          error: 'Background worker unavailable.',
+        },
+        { status: 503 },
+      );
+    }
+
     // Step 2: Validate request first (blocks diagnosis, clearance, prescription for non-educational queries)
     const requestValidation = validateShadowRequest(message, userRole, organizationId);
     if (!requestValidation.valid) {
       const messageId = `msg_${Date.now()}`;
+      await queueHumanReview({
+        organizationId,
+        accountId: userId,
+        conversationId: requestedConversationId,
+        category: requestValidation.topic ?? 'safety_boundary',
+        severity: ['chest_pain', 'fainting', 'loss_of_consciousness', 'urgent_personal_symptom']
+          .includes(requestValidation.classification ?? '')
+          ? 'critical'
+          : 'high',
+        summary: 'A SHADOW chat request was withheld by the pre-generation safety boundary.',
+        metadata: {
+          sessionType,
+          athleteScoped: Boolean(athleteId),
+          validationClassification: requestValidation.classification ?? null,
+        },
+      }).catch(() => {
+        console.error('SHADOW human-review queue write failed');
+      });
       return NextResponse.json(
         {
           success: false,
+          state: 'filtered',
           response: requestValidation.error || 'Request validation failed',
           messageId,
           createdAt: new Date().toISOString(),
@@ -258,6 +468,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
         { status: 400 },
       );
     }
+
+    const interactionTopic = requestValidation.topic && requestValidation.topic !== 'none'
+      ? requestValidation.topic
+      : (classification.topic || 'general');
 
     // Step 3: Load personal user shadow profile + classify profiling tier
     const userProfile = await getOrCreateShadowUserProfile(userId, organizationId, userRole as PilotRole);
@@ -280,6 +494,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       userRole,
       userId,
       organizationId,
+      actorAthleteId: principal.athleteId,
       athleteId,
     });
 
@@ -287,6 +502,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       return NextResponse.json(
         {
           success: false,
+          state: 'filtered',
           response: roleBasedContext.reason || 'Not authorized to access this context',
           messageId: `msg_${Date.now()}`,
           createdAt: new Date().toISOString(),
@@ -300,26 +516,89 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       );
     }
 
-    const messageId = `msg_${Date.now()}`;
+    const transientMessageId = `msg_${Date.now()}`;
     const createdAt = new Date();
+    const authorizedContextOutput = {
+      ...contextOutput,
+      context: [roleBasedContext.context, contextOutput.context].filter(Boolean).join('\n\n'),
+    };
+    const conversationHistory = requestedConversationId
+      ? (await loadConversationMessages({
+          actor: principal,
+          conversationId: requestedConversationId,
+          limit: 10,
+        })).map((historyMessage) => ({
+          role: historyMessage.role,
+          content: historyMessage.content,
+        }))
+      : [];
 
     // Step 6: Route to correct model via The Corner
-    const { llmResponse, resolvedAsync, asyncJobId } = await routeLlmCall({
+    const { llmResponse, resolvedAsync, asyncJobId, state: providerState } = await routeLlmCall({
       sessionType, effectiveTier, preferAsync,
       highRiskClassification: requestValidation.classification ?? undefined,
-      userProfile, tierResult, contextOutput, classification,
-      message, userId, organizationId, userRole, athleteId, unlockState,
+      userProfile, tierResult, contextOutput: authorizedContextOutput, classification,
+      message, userId, organizationId, userRole, athleteId, unlockState, conversationHistory,
     });
 
     // Step 7: Validate response BEFORE displaying to user
     const responseValidation = validateShadowResponse(llmResponse);
     const finalResponse = responseValidation.message;
+    const state: ShadowResponseState = responseValidation.filtered ? 'filtered' : providerState;
+    let messageId = transientMessageId;
+    let conversationId: string | undefined;
 
-    // Step 8: Update user's personal shadow after successful interaction (async, don't block)
-    updateShadowUserProfile(userId, organizationId, {
-      topicAdded: requestValidation.topic || undefined,
-      athleteIdDiscussed: athleteId || undefined,
-    }).catch(() => {});
+    if (state === 'ok' || state === 'filtered') {
+      conversationId = await resolveConversation({
+        actor: principal,
+        conversationId: requestedConversationId,
+        athleteId,
+        sessionType,
+        firstMessage: message,
+      });
+      messageId = await appendConversationExchange({
+        actor: principal,
+        conversationId,
+        userMessage: message,
+        assistantMessage: finalResponse,
+        sessionType,
+        topic: interactionTopic,
+        responseState: state,
+      });
+      if (state === 'filtered' || responseValidation.requiresHumanReview) {
+        await queueHumanReview({
+          organizationId,
+          accountId: userId,
+          conversationId,
+          category: interactionTopic,
+          severity: ['chest_pain', 'fainting', 'loss_of_consciousness', 'urgent_personal_symptom']
+            .includes(requestValidation.classification ?? '')
+            ? 'critical'
+            : 'high',
+          summary: 'A generated SHADOW response was replaced by the post-generation safety boundary.',
+          metadata: {
+            assistantMessageId: messageId,
+            sessionType,
+            athleteScoped: Boolean(athleteId),
+            safetyReasons: responseValidation.reasons.slice(0, 10),
+          },
+        }).catch(() => {
+          console.error('SHADOW human-review queue write failed');
+        });
+      }
+    }
+
+    // Step 8: Durably update the personal profile before the request lifecycle ends.
+    if (state === 'ok' || state === 'queued') {
+      try {
+        await updateShadowUserProfile(userId, organizationId, {
+          topicAdded: interactionTopic,
+          athleteIdDiscussed: athleteId || undefined,
+        });
+      } catch {
+        console.error('SHADOW profile update failed', { errorClass: 'ProfileUpdateError' });
+      }
+    }
 
     // Step 9: Audit logging with tier information
     try {
@@ -332,61 +611,93 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           userId,
           userRole,
           athleteId || null,
-          message,
-          finalResponse,
-          responseValidation.filtered,
+          `<redacted:${interactionTopic}>`,
+          `<state:${state}>`,
+          state === 'filtered',
           createdAt.toISOString(),
         ],
       );
-    } catch (auditError) {
-      // Log error but don't fail the request
-      console.error('Audit logging failed:', auditError);
-    }
-
-    // Step 10: Build explainability chain (optional, for Silver+ tier users)
-    let explainability: ShadowChatResponse['explainability'] | undefined;
-    if (tierResult.tier !== 'bronze' && !resolvedAsync && !responseValidation.filtered) {
-      try {
-        const explanation = await buildExplanationChain(
-          finalResponse.split('\n')[0], // Use first line as recommendation
-          userProfile,
-          tierResult,
-          { assessment: 0.7, library: 0.85 }, // Default evidence signals
-        );
-        
-        // Only include if user has opted in or is Gold tier
-        if (tierResult.tier === 'gold') {
-          explainability = {
-            confidence: explanation.confidence,
-            confidenceLevel: explanation.confidenceLevel,
-            reasoning: explanation.reasoning,
-            evidenceCount: explanation.evidenceLinks.length,
-            disclaimers: explanation.disclaimers,
-          };
-        }
-      } catch {
-        // Non-critical — explainability is optional
-      }
+    } catch {
+      // Audit failures must not expose database or user content in logs.
+      console.error('SHADOW audit logging failed');
     }
 
     return NextResponse.json({
-      success: true,
+      success: state === 'ok' || state === 'queued',
+      state,
       response: finalResponse,
       messageId,
+      conversationId,
       createdAt: createdAt.toISOString(),
       filtered: responseValidation.filtered,
-      requiresHumanReview: responseValidation.requiresHumanReview,
-      highRiskTopic: requestValidation.topic || undefined,
+      requiresHumanReview: responseValidation.requiresHumanReview || state === 'filtered',
+      highRiskTopic: requestValidation.topic && requestValidation.topic !== 'none'
+        ? requestValidation.topic
+        : undefined,
       tier: effectiveTier,
       complexity: classification.complexity,
       sessionType,
       profileTier: tierResult.tier,
-      modelUsed: routing.model.displayName,
+      modelUsed: state === 'degraded' ? undefined : routing.model.displayName,
       async: resolvedAsync,
       jobId: asyncJobId,
-      explainability,
     });
   } catch (error) {
-    return jsonError(error) as NextResponse<ShadowChatResponse>;
+    if (error instanceof ShadowRateLimitExceeded) {
+      return NextResponse.json(
+        {
+          success: false,
+          state: 'filtered',
+          response: 'SHADOW is receiving too many requests from this account. Please wait briefly and try again.',
+          messageId: `msg_${Date.now()}`,
+          createdAt: new Date().toISOString(),
+          filtered: true,
+          requiresHumanReview: false,
+          error: 'Rate limit exceeded.',
+        },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(error.retryAfterSeconds) },
+        },
+      );
+    }
+    if (error instanceof Error && error.message === 'SHADOW_CONVERSATION_NOT_FOUND') {
+      return NextResponse.json(
+        {
+          success: false,
+          state: 'filtered',
+          response: 'SHADOW could not process that request.',
+          messageId: `msg_${Date.now()}`,
+          createdAt: new Date().toISOString(),
+          filtered: true,
+          requiresHumanReview: false,
+          error: 'Not found',
+        },
+        { status: 404 },
+      );
+    }
+    const mappedError = jsonError(error);
+    const status = mappedError.status;
+    const payload = await mappedError.json().catch(() => ({ error: 'Request failed' })) as { error?: string };
+    const state: ShadowResponseState = status >= 500 ? 'degraded' : 'filtered';
+    return NextResponse.json(
+      {
+        success: false,
+        state,
+        response: status === 401
+          ? 'Your session is no longer valid. Sign in again.'
+          : status === 403
+            ? 'You are not authorized to use this SHADOW scope.'
+            : status >= 500
+              ? DEGRADED_RESPONSE
+              : 'SHADOW could not process that request.',
+        messageId: `msg_${Date.now()}`,
+        createdAt: new Date().toISOString(),
+        filtered: state === 'filtered',
+        requiresHumanReview: false,
+        error: payload.error,
+      },
+      { status },
+    );
   }
 }

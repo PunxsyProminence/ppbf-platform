@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import { assertActorCanAccessAthlete } from './access';
+import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
 import { emitShadowEvent } from './shadowEvents';
 import { createShadowResearchRequirement, listShadowResearchRequirements } from './shadowResearch';
@@ -143,19 +145,44 @@ function clampSourceCount(value: number): number {
   return Math.max(1, Math.min(100, Math.trunc(value)));
 }
 
-function normalizeSearchScope(input: {
+export function normalizeSearchScope(input: {
   scope?: ShadowLibraryScope;
   subjectId?: string | null;
-  actorRole?: string;
+  actorRole?: PilotRole;
   athleteId?: string | null;
 }) {
   const requestedSubjectId = input.subjectId?.trim() || null;
-  const actorAthleteId = input.actorRole === 'athlete' ? input.athleteId?.trim() || null : null;
-  const effectiveSubjectId = requestedSubjectId || actorAthleteId;
+  const requestedScope = input.scope ?? 'scoped';
+
+  if (input.actorRole === 'athlete') {
+    const actorAthleteId = input.athleteId?.trim() || null;
+    if (!actorAthleteId) {
+      throw new Error('Forbidden: athlete SHADOW library access requires an athlete identity');
+    }
+    if (requestedSubjectId && requestedSubjectId !== actorAthleteId) {
+      throw new Error('Forbidden: athlete cannot search another subject');
+    }
+    return {
+      scope: 'subject' as const,
+      effectiveSubjectId: actorAthleteId,
+    };
+  }
+
+  if (
+    requestedScope === 'master'
+    && input.actorRole !== 'organization_admin'
+    && input.actorRole !== 'admin'
+    && input.actorRole !== 'platform_owner'
+  ) {
+    throw new Error('Forbidden: master SHADOW library scope requires an organization administrator');
+  }
+  if (requestedScope === 'subject' && !requestedSubjectId) {
+    throw new Error('Missing SHADOW library subject');
+  }
 
   return {
-    scope: input.scope ?? 'scoped',
-    effectiveSubjectId,
+    scope: requestedScope,
+    effectiveSubjectId: requestedScope === 'subject' ? requestedSubjectId : null,
   } as const;
 }
 
@@ -197,7 +224,7 @@ function isCanonicalDoctrineResult(result: ShadowLibrarySearchResult | undefined
 async function ensureClaimResearchRequirement(input: {
   organizationId: string;
   actorAccountId: string;
-  actorRole: string;
+  actorRole: PilotRole;
   scope: ShadowLibraryScope;
   subjectId: string | null;
   question: string;
@@ -577,7 +604,7 @@ export async function createShadowLibraryChunk(input: {
 export async function searchShadowLibrary(input: {
   organizationId: string;
   actorAccountId: string;
-  actorRole: string;
+  actorRole: PilotRole;
   athleteId?: string | null;
   scope?: ShadowLibraryScope;
   subjectId?: string | null;
@@ -590,10 +617,27 @@ export async function searchShadowLibrary(input: {
     actorRole: input.actorRole,
     athleteId: input.athleteId,
   });
-  const terms = tokenizeQuery(input.queryText);
-  const limit = Math.max(1, Math.min(20, Math.trunc(input.limit ?? 8)));
-  const wholeQuery = input.queryText.trim().toLowerCase();
+  const normalizedQuery = input.queryText.trim();
+  if (!normalizedQuery) {
+    throw new Error('Missing SHADOW library query');
+  }
+  const terms = tokenizeQuery(normalizedQuery);
+  const requestedLimit = input.limit ?? 8;
+  if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1) {
+    throw new Error('Invalid SHADOW library result limit');
+  }
+  const limit = Math.min(20, requestedLimit);
+  const wholeQuery = normalizedQuery.toLowerCase().slice(0, 1_000);
   const termPatterns = terms.map((term) => `%${term}%`);
+
+  if (normalized.scope === 'subject' && normalized.effectiveSubjectId) {
+    await assertActorCanAccessAthlete({
+      accountId: input.actorAccountId,
+      organizationId: input.organizationId,
+      role: input.actorRole,
+      athleteId: input.athleteId ?? null,
+    }, normalized.effectiveSubjectId);
+  }
 
   const rows = await query<ShadowLibrarySearchResult>(
     `select
@@ -611,12 +655,12 @@ export async function searchShadowLibrary(input: {
        s.publication_date::text as publication_date,
        c.text_content,
        (
-         case when lower(c.text_content) like '%' || $3 || '%' then 40 else 0 end
-         + case when lower(d.document_name) like '%' || $3 || '%' then 20 else 0 end
-         + case when lower(s.title) like '%' || $3 || '%' then 25 else 0 end
-         + case when cardinality($4::text[]) > 0 then (
-             select count(*)::int * 8
-             from unnest($4::text[]) as term
+          case when lower(c.text_content) like '%' || $4 || '%' then 40 else 0 end
+          + case when lower(d.document_name) like '%' || $4 || '%' then 20 else 0 end
+          + case when lower(s.title) like '%' || $4 || '%' then 25 else 0 end
+          + case when cardinality($5::text[]) > 0 then (
+              select count(*)::int * 8
+              from unnest($5::text[]) as term
              where lower(c.text_content) like term
                 or lower(d.document_name) like term
                 or lower(s.title) like term
@@ -628,26 +672,33 @@ export async function searchShadowLibrary(input: {
      join pilot.shadow_library_sources s on s.source_id = c.source_id and s.organization_id = c.organization_id
      where c.organization_id = $1
        and s.status = 'active'
-       and (
-         $2::text is null
-         or c.subject_id is null
-         or c.subject_id = $2
-       )
-       and (
-         lower(c.text_content) like '%' || $3 || '%'
-         or lower(d.document_name) like '%' || $3 || '%'
-         or lower(s.title) like '%' || $3 || '%'
-         or exists (
-           select 1
-           from unnest($4::text[]) as term
+        and (
+          $2::text = 'master'
+          or ($2::text = 'scoped' and c.subject_id is null)
+          or ($2::text = 'subject' and (c.subject_id is null or c.subject_id = $3))
+        )
+        and (
+          lower(c.text_content) like '%' || $4 || '%'
+          or lower(d.document_name) like '%' || $4 || '%'
+          or lower(s.title) like '%' || $4 || '%'
+          or exists (
+            select 1
+            from unnest($5::text[]) as term
            where lower(c.text_content) like term
               or lower(d.document_name) like term
               or lower(s.title) like term
          )
        )
      order by score desc, s.authority_tier asc, c.ordinal asc, c.created_at asc
-     limit $5`,
-    [input.organizationId, normalized.effectiveSubjectId, wholeQuery, termPatterns, limit],
+      limit $6`,
+    [
+      input.organizationId,
+      normalized.scope,
+      normalized.effectiveSubjectId,
+      wholeQuery,
+      termPatterns,
+      limit,
+    ],
   );
 
   await writeShadowTelemetryEvent({
@@ -668,7 +719,7 @@ export async function searchShadowLibrary(input: {
 export async function createShadowLibraryClaim(input: {
   organizationId: string;
   actorAccountId: string;
-  actorRole: string;
+  actorRole: PilotRole;
   athleteId?: string | null;
   scope?: ShadowLibraryScope;
   subjectId?: string | null;

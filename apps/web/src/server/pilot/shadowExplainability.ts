@@ -10,15 +10,28 @@ export interface EvidenceLink {
   value?: string;
   weight: number; // 0-1, contribution to final confidence
   source?: string;
+  sourceId: string;
+  verificationState: 'verified';
+}
+
+export interface VerifiedEvidenceDescriptor {
+  type: EvidenceLink['type'];
+  label: string;
+  sourceId: string;
+  verificationState: 'verified';
+  confidence: number; // 0-1, supplied by the verified evidence record
+  weight?: number; // 0-1, defaults to 1
+  value?: string;
+  source?: string;
 }
 
 export interface ExplanationChain {
   recommendation: string;
-  confidence: number; // 0-100, capped at 95%
-  confidenceLevel: '🟢 High' | '🟡 Moderate' | '🟠 Low' | '🔴 Speculative';
+  confidence: number | null; // 0-100 when verified evidence exists; otherwise unavailable
+  confidenceLevel: '🟢 High' | '🟡 Moderate' | '🟠 Low' | '🔴 Speculative' | '⚪ Unavailable';
   reasoning: string; // One-sentence explanation
   evidenceLinks: EvidenceLink[];
-  alternatives?: Array<{ recommendation: string; confidence: number; reason: string }>;
+  alternatives?: Array<{ recommendation: string; confidence: number | null; reason: string }>;
   disclaimers: string[];
 }
 
@@ -28,107 +41,52 @@ export interface ExplanationChain {
  */
 export async function buildExplanationChain(
   recommendation: string,
-  userProfile: ShadowUserProfileRow,
+  _userProfile: ShadowUserProfileRow,
   tierResult: ProfileTierResult,
-  evidenceSignals?: Partial<Record<EvidenceLink['type'], number>>,
+  evidenceDescriptors: VerifiedEvidenceDescriptor[] = [],
 ): Promise<ExplanationChain> {
-  const evidence: EvidenceLink[] = [];
-  let confidenceBase = 50; // Start at 50% for all recommendations
+  const verifiedDescriptors = evidenceDescriptors.filter((descriptor) => (
+    descriptor.verificationState === 'verified'
+    && descriptor.sourceId.trim().length > 0
+    && Number.isFinite(descriptor.confidence)
+    && descriptor.confidence >= 0
+    && descriptor.confidence <= 1
+    && (descriptor.weight === undefined || (
+      Number.isFinite(descriptor.weight)
+      && descriptor.weight > 0
+      && descriptor.weight <= 1
+    ))
+  ));
 
-  // ── Assessment Evidence (25% weight) ────────────────────────────────────
-  if (evidenceSignals?.assessment ?? false) {
-    const assessmentConfidence = (evidenceSignals?.assessment ?? 0) * 100;
-    evidence.push({
-      type: 'assessment',
-      label: 'Recent Assessment',
-      value: `${Math.round(assessmentConfidence)}% coverage`,
-      weight: 0.25,
-      source: 'shadow_events',
-    });
-    confidenceBase += 25 * ((evidenceSignals?.assessment ?? 0.5) / 1);
-  }
-
-  // ── Historical Pattern Evidence (30% weight) ────────────────────────────
-  if (userProfile.remembered_facts && userProfile.remembered_facts.length > 0) {
-    const matchingFacts = userProfile.remembered_facts.filter(
-      f => f.confidence > 0.5 && f.key.includes('engag')
-    );
-    if (matchingFacts.length > 0) {
-      evidence.push({
-        type: 'historical',
-        label: 'Historical Patterns',
-        value: `${matchingFacts.length} confirmed behavior(s)`,
-        weight: 0.3,
-        source: 'shadow_user_profiles',
-      });
-      confidenceBase += 30 * 0.7; // 70% of weight
-    }
-  }
-
-  // ── Library Evidence (30% weight) ──────────────────────────────────────
-  // Assuming recommendation came from verified library
-  evidence.push({
-    type: 'library',
-    label: 'Verified Library Source',
-    value: 'Evidence-based methodology',
-    weight: 0.3,
-    source: 'shadow_library',
-  });
-  confidenceBase += 30 * 0.8; // 80% of weight for library sources
-
-  // ── Biometric Evidence (bonus, 10% cap) ────────────────────────────────
-  if (tierResult.tier === 'gold' && (evidenceSignals?.biometric ?? false)) {
-    evidence.push({
-      type: 'biometric',
-      label: 'Biometric Signals',
-      value: 'Optional: Integrated data stream',
-      weight: 0.1,
-      source: 'connected_devices',
-    });
-    confidenceBase += 10 * ((evidenceSignals?.biometric ?? 0.5) / 1);
-  }
-
-  // ── Pattern Recognition (15% cap) ──────────────────────────────────────
-  if (userProfile.recent_topics && userProfile.recent_topics.length > 3) {
-    evidence.push({
-      type: 'pattern',
-      label: 'Topic Pattern',
-      value: `Recurring interest in ${userProfile.recent_topics[0]}`,
-      weight: 0.15,
-      source: 'shadow_chat_audit',
-    });
-    confidenceBase += 15 * 0.6; // 60% weight for pattern
-  }
-
-  // ── Profile Information (10% cap) ──────────────────────────────────────
-  // Calculate profile completeness from userProfile
-  let profileCompleteness = 0;
-  if (userProfile.recent_topics?.length ?? 0 > 0) profileCompleteness += 0.2;
-  if (userProfile.remembered_facts?.length ?? 0 > 0) profileCompleteness += 0.2;
-  if (userProfile.communication_style && userProfile.communication_style !== 'unknown') profileCompleteness += 0.2;
-  if (userProfile.shadow_notes && (userProfile.shadow_notes?.length ?? 0) > 20) profileCompleteness += 0.2;
-  if (userProfile.open_questions?.length ?? 0 > 0) profileCompleteness += 0.2;
-  
-  if (profileCompleteness > 0.5) {
-    evidence.push({
-      type: 'profile',
-      label: 'User Profile Data',
-      value: `${Math.round(profileCompleteness * 100)}% complete`,
-      weight: 0.1,
-      source: 'shadow_user_profiles',
-    });
-    confidenceBase += 10 * profileCompleteness;
-  }
-
-  // Cap at 95%
-  const finalConfidence = Math.min(95, Math.max(0, confidenceBase));
-
-  // ── Generate Reasoning ─────────────────────────────────────────────────
-  const reasoning = generateReasoning(tierResult.tier, evidence.length, finalConfidence);
-
-  // ── Generate Disclaimers ──────────────────────────────────────────────
+  const evidence: EvidenceLink[] = verifiedDescriptors.map((descriptor) => ({
+    type: descriptor.type,
+    label: descriptor.label,
+    value: descriptor.value,
+    weight: descriptor.weight ?? 1,
+    source: descriptor.source,
+    sourceId: descriptor.sourceId,
+    verificationState: 'verified',
+  }));
+  const totalWeight = verifiedDescriptors.reduce((sum, descriptor) => sum + (descriptor.weight ?? 1), 0);
+  const finalConfidence = totalWeight > 0
+    ? Math.min(
+        95,
+        Math.max(
+          0,
+          verifiedDescriptors.reduce(
+            (sum, descriptor) => sum + descriptor.confidence * (descriptor.weight ?? 1),
+            0,
+          ) / totalWeight * 100,
+        ),
+      )
+    : null;
+  const reasoning = finalConfidence === null
+    ? 'RESEARCH NEEDED — no verified evidence descriptors with source IDs were supplied.'
+    : generateReasoning(tierResult.tier, evidence.length, finalConfidence);
   const disclaimers: string[] = [];
-  if (finalConfidence < 50) {
+  if (finalConfidence === null) {
+    disclaimers.push('Confidence unavailable until verified evidence is linked.');
+  } else if (finalConfidence < 50) {
     disclaimers.push('⚠️ Low confidence: Consider seeking additional perspectives');
   }
   if (tierResult.tier === 'bronze') {
@@ -138,14 +96,12 @@ export async function buildExplanationChain(
     disclaimers.push('Tip: Enable biometric signals for enhanced insights (Phase 4)');
   }
   disclaimers.push('SHADOW recommendations are educational only and not diagnostic');
-
-  // ── Generate Alternatives ─────────────────────────────────────────────
-  const alternatives = generateAlternatives(recommendation, finalConfidence);
+  const alternatives = generateAlternatives();
 
   return {
     recommendation,
     confidence: finalConfidence,
-    confidenceLevel: getConfidenceLevel(finalConfidence),
+    confidenceLevel: finalConfidence === null ? '⚪ Unavailable' : getConfidenceLevel(finalConfidence),
     reasoning,
     evidenceLinks: evidence,
     alternatives,
@@ -182,48 +138,17 @@ function generateReasoning(tier: string, evidenceCount: number, confidence: numb
 
 // ─── Alternative Suggestions ──────────────────────────────────────────────
 
-function generateAlternatives(
-  recommendation: string,
-  confidence: number
-): ExplanationChain['alternatives'] {
-  if (confidence >= 80) {
-    // High confidence → brief alternatives
-    return [
-      {
-        recommendation: 'Seek a second opinion from a coach',
-        confidence: Math.max(20, confidence - 60),
-        reason: 'Always valid to cross-check recommendations',
-      },
-    ];
-  }
-
-  if (confidence >= 50) {
-    // Moderate confidence → more alternatives
-    return [
-      {
-        recommendation: 'Try a different approach',
-        confidence: Math.max(30, confidence - 30),
-        reason: 'Alternative strategy based on different evidence',
-      },
-      {
-        recommendation: 'Request a Heavy Bag deep-dive',
-        confidence: confidence + 10,
-        reason: 'Longer analysis might increase confidence',
-      },
-    ];
-  }
-
-  // Low confidence → many alternatives
+function generateAlternatives(): ExplanationChain['alternatives'] {
   return [
     {
-      recommendation: 'Request a Heavy Bag analysis for this topic',
-      confidence: confidence + 25,
-      reason: 'Longer reasoning session could resolve uncertainty',
+      recommendation: 'Create a research requirement and link reviewed evidence',
+      confidence: null,
+      reason: 'Alternative confidence is unavailable until that alternative has its own verified evidence',
     },
     {
-      recommendation: 'Consult your coach for personalized guidance',
-      confidence: 90,
-      reason: 'Human expertise is always more reliable for low-confidence topics',
+      recommendation: 'Consult the responsible coach or qualified professional',
+      confidence: null,
+      reason: 'Human review is appropriate when an alternative has not been independently evaluated',
     },
   ];
 }
@@ -234,9 +159,12 @@ function generateAlternatives(
  * Format explanation chain as markdown for user display
  */
 export function formatExplanation(chain: ExplanationChain, brief = false): string {
+  const confidenceText = chain.confidence === null
+    ? chain.confidenceLevel
+    : `${chain.confidenceLevel} (${Math.round(chain.confidence)}%)`;
   const lines: string[] = [
     `**${chain.recommendation}**`,
-    `\n**Confidence:** ${chain.confidenceLevel} (${Math.round(chain.confidence)}%)`,
+    `\n**Confidence:** ${confidenceText}`,
     `\n**Why:** ${chain.reasoning}\n`
   ];
 
@@ -244,7 +172,7 @@ export function formatExplanation(chain: ExplanationChain, brief = false): strin
     lines.push('**Evidence:**');
     for (const link of chain.evidenceLinks.slice(0, 3)) {
       const valueStr = link.value ? `: ${link.value}` : '';
-      lines.push(`- ${link.label}${valueStr}`);
+      lines.push(`- ${link.label}${valueStr} [source: ${link.sourceId}]`);
     }
     lines.push('');
   }
@@ -274,7 +202,7 @@ export function formatExplanation(chain: ExplanationChain, brief = false): strin
 export interface ShadowResponseWithExplainability {
   response: string;
   explainability?: {
-    confidence: number;
+    confidence: number | null;
     confidenceLevel: string;
     reasoning: string;
     evidenceCount: number;

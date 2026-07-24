@@ -25,7 +25,17 @@ export interface ShadowClassification {
  * - Recency markers (how fresh is the knowledge needed)
  * - Topic risk profile (high-risk topics get elevated complexity)
  */
-function calculateComplexityScore(message: string, role: PilotRole, topic?: string): number {
+const HIGH_RISK_MESSAGE_PATTERNS = [
+  /\bconcussion\b/i,
+  /\bmedical\s+clearance\b/i,
+  /\breturn[-\s]+to[-\s]+play\b/i,
+  /\bsurger(?:y|ies)\b/i,
+  /\bprescription\b/i,
+  /\b(?:cut(?:ting)?\s+weight|weight\s+cut(?:ting)?)\b/i,
+  /\b(?:suicid(?:e|al)|self[-\s]+harm|mental\s+health)\b/i,
+];
+
+function calculateComplexityScore(message: string, role: PilotRole): number {
   let score = 0;
 
   // 1. Message length (max score: 0.2)
@@ -53,17 +63,8 @@ function calculateComplexityScore(message: string, role: PilotRole, topic?: stri
   score += Math.min(matchedKeywords * 0.05, 0.3);
 
   // 3. High-risk topics (elevated to Heavy Bag baseline)
-  const highRiskTopics = [
-    'concussion',
-    'medical_clearance',
-    'return_to_play',
-    'surgery',
-    'prescription',
-    'weight_cutting',
-    'mental_health',
-  ];
-  if (topic && highRiskTopics.includes(topic.toLowerCase())) {
-    score += 0.25; // Significant boost for high-risk
+  if (HIGH_RISK_MESSAGE_PATTERNS.some((pattern) => pattern.test(message))) {
+    score += 0.6;
   }
 
   // 4. Role-based baseline adjustment
@@ -137,11 +138,11 @@ export function classifyRequest(
   }
 
   const topic = detectTopic(message, role);
-  const complexity = calculateComplexityScore(message, role, topic);
+  const complexity = calculateComplexityScore(message, role);
 
   // Decision thresholds
   const quickThreshold = 0.4;
-  const heavyThreshold = 0.65;
+  const heavyThreshold = 0.6;
 
   let tier: ShadowTier;
   let confidence: number;
@@ -151,7 +152,7 @@ export function classifyRequest(
     tier = 'quick_round';
     confidence = Math.max(1 - complexity, 0.8);
     requiresManualOverride = false;
-  } else if (complexity > heavyThreshold) {
+  } else if (complexity >= heavyThreshold) {
     tier = 'heavy_bag';
     confidence = Math.min(complexity, 1.0);
     requiresManualOverride = false;
@@ -167,7 +168,7 @@ export function classifyRequest(
   let reasoning = `Complexity score: ${complexity.toFixed(2)}. `;
   if (complexity < quickThreshold) {
     reasoning += 'Straightforward query, lightweight context sufficient.';
-  } else if (complexity > heavyThreshold) {
+  } else if (complexity >= heavyThreshold) {
     reasoning += 'Complex query requiring full context and deep reasoning.';
   } else {
     reasoning += 'Boundary case. Quick Round default with escalation available.';

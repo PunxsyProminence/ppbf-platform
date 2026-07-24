@@ -38,48 +38,14 @@ export interface ShadowResearchRequirementRow {
   resolved_at: string | null;
 }
 
-let ensured = false;
-
-async function ensureShadowResearchTable(): Promise<void> {
-  if (ensured) return;
-
-  await query(
-    `create table if not exists pilot.shadow_research_requirements (
-      research_requirement_id bigserial primary key,
-      organization_id text not null,
-      source_event_name text not null,
-      source_entity_type text not null,
-      source_entity_id text not null,
-      research_requirement text not null,
-      knowledge_gap text not null,
-      evidence_label text null,
-      source_status text not null,
-      source_confidence_tier text not null,
-      source_verification_state text not null,
-      status text not null default 'open',
-      created_by_account_id text not null,
-      created_by_role text not null,
-      metadata jsonb not null default '{}'::jsonb,
-      created_at timestamptz not null default now(),
-      resolved_at timestamptz null
-    )`,
-  );
-
-  await query(
-    `create index if not exists idx_shadow_research_requirements_org_created
-     on pilot.shadow_research_requirements(organization_id, created_at desc)`,
-  );
-
-  ensured = true;
-}
-
 export async function createShadowResearchRequirement(input: ShadowResearchRequirementInput): Promise<number> {
-  await ensureShadowResearchTable();
-
   const row = await queryOne<{ research_requirement_id: number }>(
     `insert into pilot.shadow_research_requirements
      (organization_id, source_event_name, source_entity_type, source_entity_id, research_requirement, knowledge_gap, evidence_label, source_status, source_confidence_tier, source_verification_state, created_by_account_id, created_by_role, metadata)
      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb)
+     on conflict (organization_id, source_event_name, source_entity_type, source_entity_id)
+     do update set
+       source_entity_id = pilot.shadow_research_requirements.source_entity_id
      returning research_requirement_id`,
     [
       input.organizationId,
@@ -106,8 +72,6 @@ export async function createShadowResearchRequirement(input: ShadowResearchRequi
 }
 
 export async function listShadowResearchRequirements(organizationId: string, status?: 'open' | 'resolved'): Promise<ShadowResearchRequirementRow[]> {
-  await ensureShadowResearchTable();
-
   return query<ShadowResearchRequirementRow>(
     `select
        research_requirement_id,
@@ -142,8 +106,6 @@ export async function resolveShadowResearchRequirement(input: {
   resolvedByRole: string;
   metadata?: Record<string, unknown>;
 }): Promise<boolean> {
-  await ensureShadowResearchTable();
-
   const rows = await query<{
     research_requirement_id: number;
   }>(

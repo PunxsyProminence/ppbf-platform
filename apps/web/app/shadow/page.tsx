@@ -1,10 +1,11 @@
 'use client';
 
-import { Suspense, useEffect, useRef, useState, type ReactElement, type SyntheticEvent } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useRef, useState, type SyntheticEvent } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { readRoleSession, clearRoleSession } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
+import { revokeShadowSession } from '@/client/shadowLogout';
 import ShadowChatButton from '@/components/ShadowChatButton';
 
 interface ShadowMessage {
@@ -18,34 +19,9 @@ interface ShadowMessage {
   isAsync?: boolean;
   jobId?: string;
   feedbackSent?: boolean;
+  feedbackEligible?: boolean;
+  state?: ShadowResponseState;
 }
-
-interface ShadowResearchReport {
-  id: string;
-  question: string;
-  researchRequirement: string;
-  knowledgeGap: string;
-  status: 'created' | 'draft';
-  createdAt: string;
-}
-
-interface ShadowLibraryClaimApiResponse {
-  ok: boolean;
-  claim: {
-    answer: string;
-    status: 'supported' | 'weak' | 'unsupported';
-    confidence: number;
-    evidence: Array<{
-      chunk_id: string;
-      source_id: string;
-    }>;
-    researchRequirementId: number | null;
-  };
-}
-
-const GENERIC_UNSUPPORTED_REPLY = 'If this question needs a sourced answer, I should either answer from verified evidence or create a research requirement. Try asking about doctrine, evidence, readiness, recovery, technique, or organizational learning.';
-
-const HEAVY_BAG_ELIGIBLE_ROLES = new Set(['coach', 'admin', 'organization_admin', 'platform_owner', 'staff']);
 
 interface ExplainabilityChain {
   confidence: number; // 0-100, capped at 95%
@@ -58,7 +34,10 @@ interface ExplainabilityChain {
 
 interface ShadowAIResult {
   success: boolean;
+  state: ShadowResponseState;
   response: string;
+  messageId: string;
+  conversationId?: string;
   tier?: 'quick_round' | 'heavy_bag';
   profileTier?: 'bronze' | 'silver' | 'gold';
   modelUsed?: string;
@@ -66,6 +45,18 @@ interface ShadowAIResult {
   jobId?: string;
   error?: string;
   explainability?: ExplainabilityChain;
+}
+
+type ShadowResponseState = 'ok' | 'filtered' | 'degraded' | 'queued';
+
+class ShadowApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly safeMessage: string,
+  ) {
+    super(safeMessage);
+    this.name = 'ShadowApiError';
+  }
 }
 
 function createMessageId(): string {
@@ -78,62 +69,38 @@ function createMessageId(): string {
 interface ShadowJobStatusResult {
   jobId: string;
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  safetyStatus: 'pending' | 'passed' | 'filtered' | 'not_applicable';
   output?: Record<string, unknown> | null;
   error?: string | null;
 }
 
-// Module-level: returns 'created' or 'draft' based on backend availability
-async function postResearchRequirement(
-  requirement: ReturnType<typeof deriveResearchRequirement>,
-  apiBaseUrl: string,
-): Promise<'created' | 'draft'> {
-  if (!requirement) return 'draft';
-  try {
-    const res = await fetch(`${apiBaseUrl}/api/pilot/shadow/research-requirements`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requirement),
-    });
-    return res.ok ? 'created' : 'draft';
-  } catch {
-    return 'draft';
-  }
-}
-
-async function fetchLibraryClaim(
-  mode: 'master' | 'scoped',
-  subject: string,
+async function fetchShadowAI(
   rawQuestion: string,
+  heavyBagMode: boolean,
   apiBaseUrl: string,
-): Promise<ShadowLibraryClaimApiResponse> {
-  let scope: 'master' | 'subject' | 'scoped';
-
-  if (mode === 'master') {
-    scope = 'master';
-  } else if (subject) {
-    scope = 'subject';
-  } else {
-    scope = 'scoped';
-  }
-
-  const res = await fetch(`${apiBaseUrl}/api/pilot/shadow/library/claims`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ scope, subject_id: subject || undefined, question: rawQuestion, limit: 5 }),
-  });
-  if (!res.ok) throw new Error('library claim request failed');
-  return res.json() as Promise<ShadowLibraryClaimApiResponse>;
-}
-
-async function fetchShadowAI(rawQuestion: string, heavyBagMode: boolean, apiBaseUrl: string): Promise<ShadowAIResult> {
+  conversationId?: string,
+): Promise<ShadowAIResult> {
   const res = await fetch(`${apiBaseUrl}/api/pilot/shadow/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ message: rawQuestion, tier: heavyBagMode ? 'heavy_bag' : undefined }),
+    body: JSON.stringify({
+      message: rawQuestion,
+      tier: heavyBagMode ? 'heavy_bag' : undefined,
+      conversationId,
+    }),
   });
-  if (!res.ok) throw new Error(`SHADOW AI error: ${res.status}`);
-  return res.json() as Promise<ShadowAIResult>;
+  const payload = await res.json().catch(() => null) as ShadowAIResult | null;
+  if (!res.ok) {
+    throw new ShadowApiError(
+      res.status,
+      payload?.response || payload?.error || 'SHADOW could not process that request.',
+    );
+  }
+  if (!payload?.state) {
+    throw new ShadowApiError(502, 'SHADOW returned an invalid response. No guidance was displayed.');
+  }
+  return payload;
 }
 
 async function fetchShadowJobStatus(jobId: string, apiBaseUrl: string): Promise<ShadowJobStatusResult | null> {
@@ -143,6 +110,9 @@ async function fetchShadowJobStatus(jobId: string, apiBaseUrl: string): Promise<
   });
 
   if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      throw new ShadowApiError(response.status, 'Your session is no longer valid. Sign in again.');
+    }
     return null;
   }
 
@@ -156,7 +126,7 @@ async function submitFeedback(
   topic?: string,
   sessionType?: string,
 ): Promise<void> {
-  await fetch(`${apiBaseUrl}/api/pilot/shadow/feedback`, {
+  const response = await fetch(`${apiBaseUrl}/api/pilot/shadow/feedback`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
@@ -168,6 +138,9 @@ async function submitFeedback(
       outcome_signal: helpful ? 'thumbs_up' : 'thumbs_down',
     }),
   });
+  if (!response.ok) {
+    throw new ShadowApiError(response.status, 'Feedback was not saved. You can try again.');
+  }
 }
 
 function formatTimestamp() {
@@ -197,121 +170,6 @@ function buildWelcomeMessage(mode: 'master' | 'scoped', role: string, context: s
   return appendContext(base, context, 'from');
 }
 
-function getMasterShadowReply(question: string) {
-  if (question.includes('capability') || question.includes('library') || question.includes('grow')) {
-    return 'Master SHADOW rule: as organizational capability grows, the SHADOW library must grow with it. Every new capability should increase observations, evidence classes, research requirements, validated lessons, or organizational memory.';
-  }
-
-  if (question.includes('pattern') || question.includes('organization') || question.includes('learn')) {
-    return 'Master SHADOW looks for organization-wide learning, not athlete scoring. I track patterns, unresolved gaps, doctrine drift, and whether the organization is becoming smarter over time.';
-  }
-
-  if (question.includes('report') || question.includes('gap') || question.includes('unknown')) {
-    return 'Use the Research Intake lane for source gaps and unresolved questions, and the Admin SHADOW console for authority and telemetry traces. Unknowns should generate research requirements, not fake certainty.';
-  }
-
-  return '';
-}
-
-function getSubjectShadowReply(question: string, subject: string) {
-  if (question.includes('readiness') || question.includes('recovery')) {
-    return `${subject}'s SHADOW should focus on observation, learning, recovery patterns, and evidence quality. It may support the human in front of ${subject}, but it may not clear participation or replace human authority.`;
-  }
-
-  if (question.includes('injury') || question.includes('pain') || question.includes('hurt')) {
-    return `${subject}'s SHADOW can track observations, restrictions, and educational material. It cannot diagnose, prescribe, or clear return to participation.`;
-  }
-
-  return '';
-}
-
-function getGeneralShadowReply(question: string, context: string) {
-  if (question.includes('source') || question.includes('evidence') || question.includes('prove')) {
-    return 'If I cannot answer with a source or solid evidence, that should become a SHADOW research requirement. Check The Library and the Research Intake lane for unresolved gaps and evidence reviews.';
-  }
-
-  if (question.includes('readiness')) {
-    return 'SHADOW should not collapse a person into a single universal readiness score. Use a multidomain advisory profile: sleep, recovery, fatigue, stress, soreness, workload, intent, confidence, restrictions, and data quality.';
-  }
-
-  if (question.includes('rpe') || question.includes('effort')) {
-    return 'RPE and effort belong inside observation and learning. They help detect pattern shifts, strain, and mismatch, but they do not create truth or authority by themselves.';
-  }
-
-  if (question.includes('drill') || question.includes('technique')) {
-    return 'Technique questions should produce learning support, not false certainty. SHADOW can organize drills, guidance, and educational material while keeping human coaching authority intact.';
-  }
-
-  if (question.includes('injury') || question.includes('pain') || question.includes('hurt')) {
-    return 'Injury and pain are observation domains. SHADOW may track, educate, and escalate concerns, but it may not diagnose, prescribe treatment, or clear participation.';
-  }
-
-  if (question.includes('how') && question.includes('work')) {
-    const base = 'SHADOW turns observations into organizational intelligence through learning, improvement, knowledge, research, and memory';
-    return `${appendContext(base, context, 'within')} Humans retain authority.`;
-  }
-
-  if (question.includes('data') || question.includes('upload')) {
-    return 'Uploads should become routed evidence, then review, then observation, then learning. Evidence supports learning. Evidence does not bypass authority.';
-  }
-
-  return GENERIC_UNSUPPORTED_REPLY;
-}
-
-function deriveResearchRequirement(mode: 'master' | 'scoped', rawQuestion: string, normalizedQuestion: string, reply: string, context: string, subject: string) {
-  const needsSource = normalizedQuestion.includes('source') || normalizedQuestion.includes('evidence') || normalizedQuestion.includes('prove');
-  const unsupported = reply === GENERIC_UNSUPPORTED_REPLY;
-
-  if (!needsSource && !unsupported) {
-    return null;
-  }
-
-  let scopeLabel = 'scoped-shadow';
-  if (mode === 'master') {
-    scopeLabel = 'master-shadow';
-  } else if (subject) {
-    scopeLabel = `${subject}-shadow`;
-  }
-  const contextLabel = context || 'shadow-chat';
-
-  return {
-    source_event_name: 'SHADOW_CHAT_SOURCE_GAP',
-    source_entity_type: 'shadow_chat_question',
-    source_entity_id: `chat-${Date.now()}`,
-    research_requirement: `Resolve sourced answer requirement for ${scopeLabel} in ${contextLabel}`,
-    knowledge_gap: `Question requires stronger evidence or verified source support: ${rawQuestion}`,
-    evidence_label: subject || null,
-    source_status: 'observed',
-    source_confidence_tier: 'INSUFFICIENT',
-    source_verification_state: 'unknown',
-    metadata: {
-      question: rawQuestion,
-      mode,
-      context,
-      subject,
-      scope: scopeLabel,
-    },
-  } as const;
-}
-
-function getShadowReply(mode: 'master' | 'scoped', question: string, context: string, subject: string) {
-  if (mode === 'master') {
-    const masterReply = getMasterShadowReply(question);
-    if (masterReply) {
-      return masterReply;
-    }
-  }
-
-  if (subject) {
-    const subjectReply = getSubjectShadowReply(question, subject);
-    if (subjectReply) {
-      return subjectReply;
-    }
-  }
-
-  return getGeneralShadowReply(question, context);
-}
-
 function buildHeading(mode: 'master' | 'scoped', subject: string) {
   if (mode === 'master') {
     return { heading: 'MASTER SHADOW', intro: 'Organizational intelligence, doctrine, and learning oversight.', scopeSummary: 'Master SHADOW for admin/organizational intelligence.' };
@@ -337,59 +195,15 @@ function getProfileTierLabel(profileTier?: ShadowMessage['profileTier']): string
   return ` · Tier: ${tierEmoji} ${tierLabel}`;
 }
 
-function ShadowResearchReportsPanel(props: Readonly<{
-  reports: ShadowResearchReport[];
-  userRole: string;
-}>): ReactElement | null {
-  if (props.reports.length === 0) {
-    return null;
-  }
-
-  return (
-    <section className="mb-4 border-2 border-[#8b4444] bg-[#151515] p-4 text-xs text-[#cfbfae]">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="font-mono uppercase tracking-[0.14em] text-[#d4a574]">Research Reports This Session</p>
-          <p className="mt-2">Created reports go to Research Intake when backend auth is available. Otherwise they remain session drafts here.</p>
-        </div>
-        <Link
-          href="/research"
-          className="border-2 border-[#d4a574] bg-[#1f1f1f] px-3 py-2 text-[10px] font-mono uppercase tracking-[0.12em] text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#2a1f1f]"
-        >
-          Open Research Intake
-        </Link>
-        {HEAVY_BAG_ELIGIBLE_ROLES.has(props.userRole) ? (
-          <Link
-            href="/shadow/scout"
-            className="border-2 border-[#5a4a3a] bg-[#1f1f1f] px-3 py-2 text-[10px] font-mono uppercase tracking-[0.12em] text-[#b0a095] transition hover:border-[#8b4444] hover:text-[#e8d7c6]"
-          >
-            Scout Reports →
-          </Link>
-        ) : null}
-      </div>
-      <div className="mt-3 grid gap-3 md:grid-cols-2">
-        {props.reports.map((report) => (
-          <article key={report.id} className="border border-[#5a4a3a] bg-[#0f0f0f] p-3">
-            <p className="text-[10px] font-mono uppercase tracking-[0.12em] text-[#d4a574]">{report.status === 'created' ? 'Backend Filed' : 'Session Draft'}</p>
-            <p className="mt-2 text-[12px] leading-5 text-[#e8d7c6]">{report.question}</p>
-            <p className="mt-2 text-[11px] text-[#b0a095]">{report.researchRequirement}</p>
-            <p className="mt-2 text-[11px] text-[#8a8a8a]">{report.createdAt}</p>
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function ShadowChatPageContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [userRole, setUserRole] = useState<string>(() => (typeof window !== 'undefined' ? readRoleSession()?.role ?? '' : ''));
   const [authChecked, setAuthChecked] = useState(false);
-  const mode = searchParams.get('mode') === 'master' ? 'master' : 'scoped';
-  const context = searchParams.get('context')?.trim() ?? '';
-  const subject = searchParams.get('subject')?.trim() ?? '';
-  const roleLabel = (searchParams.get('role')?.trim() || userRole || 'guest').toUpperCase();
+  const [capabilitiesLoaded, setCapabilitiesLoaded] = useState(false);
+  const [mode, setMode] = useState<'master' | 'scoped'>('scoped');
+  const context = '';
+  const subject = '';
+  const roleLabel = (userRole || 'guest').toUpperCase();
   const { heading, intro, scopeSummary } = buildHeading(mode, subject);
   const [messages, setMessages] = useState<ShadowMessage[]>([
     {
@@ -402,7 +216,8 @@ function ShadowChatPageContent() {
   const [userInput, setUserInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [heavyBagMode, setHeavyBagMode] = useState(false);
-  const [reports, setReports] = useState<ShadowResearchReport[]>([]);
+  const [allowedSessionTypes, setAllowedSessionTypes] = useState<string[]>(['quick_round']);
+  const [conversationId, setConversationId] = useState<string>();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -413,9 +228,7 @@ function ShadowChatPageContent() {
       if (localSession?.role) {
         if (!cancelled) {
           setUserRole(localSession.role);
-          setAuthChecked(true);
         }
-        return;
       }
 
       try {
@@ -426,6 +239,7 @@ function ShadowChatPageContent() {
 
         if (!response.ok) {
           if (!cancelled) {
+            clearRoleSession();
             setAuthChecked(true);
             router.replace('/login');
           }
@@ -439,6 +253,7 @@ function ShadowChatPageContent() {
 
         if (!payload.authenticated) {
           if (!cancelled) {
+            clearRoleSession();
             setAuthChecked(true);
             router.replace('/login');
           }
@@ -451,6 +266,7 @@ function ShadowChatPageContent() {
         }
       } catch {
         if (!cancelled) {
+          clearRoleSession();
           setAuthChecked(true);
           router.replace('/login');
         }
@@ -463,10 +279,72 @@ function ShadowChatPageContent() {
   }, [router]);
 
   useEffect(() => {
+    if (!authChecked) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/shadow/capabilities`, {
+          credentials: 'include',
+        });
+        if (!response.ok) {
+          if (!cancelled) {
+            setMode('scoped');
+            setMessages([{
+              id: '0',
+              type: 'shadow',
+              text: buildWelcomeMessage('scoped', (userRole || 'guest').toUpperCase(), '', ''),
+              timestamp: formatTimestamp(),
+            }]);
+            setCapabilitiesLoaded(true);
+          }
+          return;
+        }
+        const payload = await response.json() as {
+          capabilities?: { allowedSessionTypes?: unknown; mode?: unknown };
+        };
+        const sessionTypes = Array.isArray(payload.capabilities?.allowedSessionTypes)
+          ? payload.capabilities.allowedSessionTypes.filter(
+            (value): value is string => typeof value === 'string',
+          )
+          : ['quick_round'];
+        if (!cancelled) {
+          const serverMode = payload.capabilities?.mode === 'master' ? 'master' : 'scoped';
+          setMode(serverMode);
+          setAllowedSessionTypes(sessionTypes);
+          if (!sessionTypes.includes('heavy_bag')) setHeavyBagMode(false);
+          setMessages([{
+            id: '0',
+            type: 'shadow',
+            text: buildWelcomeMessage(serverMode, (userRole || 'guest').toUpperCase(), '', ''),
+            timestamp: formatTimestamp(),
+          }]);
+          setCapabilitiesLoaded(true);
+        }
+      } catch {
+        if (!cancelled) {
+          setMode('scoped');
+          setAllowedSessionTypes(['quick_round']);
+          setHeavyBagMode(false);
+          setMessages([{
+            id: '0',
+            type: 'shadow',
+            text: buildWelcomeMessage('scoped', (userRole || 'guest').toUpperCase(), '', ''),
+            timestamp: formatTimestamp(),
+          }]);
+          setCapabilitiesLoaded(true);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authChecked, userRole]);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  function addMessage(type: 'user' | 'shadow', text: string, meta?: Partial<Pick<ShadowMessage, 'id' | 'tier' | 'profileTier' | 'modelUsed' | 'isAsync' | 'jobId'>>) {
+  function addMessage(type: 'user' | 'shadow', text: string, meta?: Partial<Pick<ShadowMessage, 'id' | 'tier' | 'profileTier' | 'modelUsed' | 'isAsync' | 'jobId' | 'state' | 'feedbackEligible'>>) {
     const newMessage: ShadowMessage = {
       id: createMessageId(),
       type,
@@ -477,62 +355,53 @@ function ShadowChatPageContent() {
     setMessages((prev) => [...prev, newMessage]);
   }
 
-  function handleLogout() {
-    clearRoleSession();
-    router.push('/login');
+  async function handleLogout() {
+    try {
+      await revokeShadowSession(apiBase());
+    } finally {
+      clearRoleSession();
+      router.replace('/login');
+    }
   }
 
-  function prependResearchReport(report: ShadowResearchReport) {
-    setReports((current) => [report, ...current].slice(0, 8));
-  }
-
-  function recordBackendResearchReport(rawQuestion: string, researchRequirementId: number, evidenceCount: number) {
-    prependResearchReport({
-      id: `rr-${researchRequirementId}`,
-      question: rawQuestion,
-      researchRequirement: `Backend research requirement #${researchRequirementId} created from SHADOW Library claim flow.`,
-      knowledgeGap: `Claim was filed with ${evidenceCount} evidence items and still required research escalation.`,
-      status: 'created',
-      createdAt: formatTimestamp(),
-    });
-  }
-
-  async function requestLibraryClaim(rawQuestion: string) {
-    return fetchLibraryClaim(mode, subject, rawQuestion, apiBase());
-  }
-
-  async function createResearchReport(rawQuestion: string, normalizedQuestion: string, reply: string) {
-    const requirement = deriveResearchRequirement(mode, rawQuestion, normalizedQuestion, reply, context, subject);
-    if (!requirement) return;
-    const status = await postResearchRequirement(requirement, apiBase());
-    prependResearchReport({ id: requirement.source_entity_id, question: rawQuestion, researchRequirement: requirement.research_requirement, knowledgeGap: requirement.knowledge_gap, status, createdAt: formatTimestamp() });
-    const msg = status === 'created'
-      ? 'Research requirement created and routed to the Research Intake lane.'
-      : 'Research report draft captured in this session. Open Research Intake to submit manually.';
-    addMessage('shadow', msg);
-  }
-
-  function sendFeedback(messageId: string, helpful: boolean, topic?: string, sessionType?: string) {
-    setMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, feedbackSent: true } : m));
-    submitFeedback(messageId, helpful, apiBase(), topic, sessionType).catch(() => {});
+  async function sendFeedback(messageId: string, helpful: boolean, topic?: string, sessionType?: string) {
+    try {
+      await submitFeedback(messageId, helpful, apiBase(), topic, sessionType);
+      setMessages((prev) => prev.map((m) => (
+        m.id === messageId ? { ...m, feedbackSent: true } : m
+      )));
+    } catch (feedbackError) {
+      if (
+        feedbackError instanceof ShadowApiError
+        && (feedbackError.status === 401 || feedbackError.status === 403)
+      ) {
+        clearRoleSession();
+        router.replace('/login');
+      }
+    }
   }
 
   async function callShadowAI(rawQuestion: string): Promise<void> {
-    const data = await fetchShadowAI(rawQuestion, heavyBagMode, apiBase());
-    const messageId = createMessageId();
-    const text = data.async && data.jobId
+    const data = await fetchShadowAI(rawQuestion, heavyBagMode, apiBase(), conversationId);
+    if (data.conversationId) {
+      setConversationId(data.conversationId);
+    }
+    const messageId = data.messageId || createMessageId();
+    const text = data.state === 'queued' && data.jobId
       ? `Your Heavy Bag Session is queued. Job ID: ${data.jobId}`
       : (data.response || data.error || 'SHADOW encountered an error.');
     addMessage('shadow', text, {
       id: messageId,
-      tier: data.async ? 'heavy_bag' : data.tier,
+      tier: data.state === 'queued' ? 'heavy_bag' : data.tier,
       profileTier: data.profileTier,
       modelUsed: data.modelUsed,
-      isAsync: data.async,
+      isAsync: data.state === 'queued',
       jobId: data.jobId,
+      state: data.state,
+      feedbackEligible: data.state !== 'queued' && Boolean(data.conversationId),
     });
 
-    if (data.async && data.jobId) {
+    if (data.state === 'queued' && data.jobId) {
       void pollQueuedShadowJob(data.jobId, messageId);
     }
   }
@@ -542,19 +411,42 @@ function ShadowChatPageContent() {
     const intervalMs = 2000;
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const status = await fetchShadowJobStatus(jobId, apiBase());
+      let status: ShadowJobStatusResult | null;
+      try {
+        status = await fetchShadowJobStatus(jobId, apiBase());
+      } catch (error) {
+        if (error instanceof ShadowApiError && (error.status === 401 || error.status === 403)) {
+          clearRoleSession();
+          router.replace('/login');
+        }
+        setMessages((prev) => prev.map((msg) => (
+          msg.id === messageId
+            ? { ...msg, text: 'SHADOW could not verify the queued result. No generated guidance was displayed.', isAsync: false, state: 'degraded' }
+            : msg
+        )));
+        return;
+      }
 
       if (!status) {
         break;
       }
 
       if (status.status === 'completed') {
-        const outputText = typeof status.output?.response === 'string'
-          ? status.output.response
-          : 'Heavy Bag Session completed. Open Scout Reports for detailed output.';
+        const resultStatus = typeof status.output?.resultStatus === 'string'
+          ? status.output.resultStatus
+          : 'unavailable';
+        const safeCompletion = status.safetyStatus === 'passed' && resultStatus === 'ok';
         setMessages((prev) => prev.map((msg) => (
           msg.id === messageId
-            ? { ...msg, text: outputText, isAsync: false }
+            ? {
+                ...msg,
+                text: safeCompletion
+                  ? 'Heavy Bag Session completed. Open Scout Reports to review the server-validated result.'
+                  : 'SHADOW withheld or could not produce this queued result. No generated guidance was displayed.',
+                isAsync: false,
+                state: safeCompletion ? 'ok' : 'degraded',
+                feedbackEligible: false,
+              }
             : msg
         )));
         return;
@@ -563,7 +455,7 @@ function ShadowChatPageContent() {
       if (status.status === 'failed' || status.status === 'cancelled') {
         setMessages((prev) => prev.map((msg) => (
           msg.id === messageId
-            ? { ...msg, text: status.error || 'Heavy Bag Session failed. Please retry.', isAsync: false }
+            ? { ...msg, text: 'Heavy Bag Session failed. No generated guidance was displayed.', isAsync: false, state: 'degraded' }
             : msg
         )));
         return;
@@ -576,24 +468,35 @@ function ShadowChatPageContent() {
 
     setMessages((prev) => prev.map((msg) => (
       msg.id === messageId
-        ? { ...msg, text: `${msg.text}\n\nStill processing. Check Scout Reports for completion.`, isAsync: false }
+        ? {
+            ...msg,
+            text: 'SHADOW could not confirm the queued result in time. No generated guidance was displayed.',
+            isAsync: false,
+            state: 'degraded',
+          }
         : msg
     )));
   }
 
-  async function handleAIFallback(rawQuestion: string) {
-    const question = rawQuestion.toLowerCase();
-    try {
-      const payload = await requestLibraryClaim(rawQuestion);
-      addMessage('shadow', payload.claim.answer);
-      if (payload.claim.researchRequirementId) {
-        recordBackendResearchReport(rawQuestion, payload.claim.researchRequirementId, payload.claim.evidence.length);
+  function handleAIFallback(error: unknown) {
+    if (error instanceof ShadowApiError) {
+      if (error.status === 401 || error.status === 403) {
+        clearRoleSession();
+        router.replace('/login');
       }
-    } catch {
-      const reply = getShadowReply(mode, question, context, subject);
-      addMessage('shadow', reply);
-      await createResearchReport(rawQuestion, question, reply);
+      addMessage(
+        'shadow',
+        error.safeMessage,
+        { state: error.status >= 500 ? 'degraded' : 'filtered' },
+      );
+      return;
     }
+
+    addMessage(
+      'shadow',
+      'SHADOW could not reach the secure chat service. No generated or fallback guidance was displayed.',
+      { state: 'degraded' },
+    );
   }
 
   async function handleSendMessage(e: SyntheticEvent) {
@@ -607,14 +510,14 @@ function ShadowChatPageContent() {
 
     try {
       await callShadowAI(rawQuestion);
-    } catch {
-      await handleAIFallback(rawQuestion);
+    } catch (error) {
+      handleAIFallback(error);
     } finally {
       setIsLoading(false);
     }
   }
 
-  if (!authChecked) {
+  if (!authChecked || !capabilitiesLoaded) {
     return (
       <main className="grid min-h-screen place-items-center bg-[#0a0a0a] px-6 text-[#e8d7c6]">
         <div className="text-center">
@@ -667,8 +570,6 @@ function ShadowChatPageContent() {
           </div>
         </section>
 
-        <ShadowResearchReportsPanel reports={reports} userRole={userRole} />
-
         {/* CHAT BOX */}
         <section className="border-4 border-[#8b4444] bg-[#0f0f0f] p-6 shadow-2xl shadow-black/60">
           {/* Messages */}
@@ -686,6 +587,11 @@ function ShadowChatPageContent() {
                   }`}
                 >
                   <p className="text-xs leading-6">{msg.text}</p>
+                  {msg.type === 'shadow' && msg.state && msg.state !== 'ok' ? (
+                    <p className="mt-2 text-[9px] font-bold uppercase tracking-[0.12em] text-[#d4a574]">
+                      State: {msg.state}
+                    </p>
+                  ) : null}
                   {msg.tier ? (
                     <div className="mt-3 space-y-2 border-t border-[#5a4a3a] pt-2">
                       <div className="flex items-center justify-between gap-2">
@@ -694,22 +600,24 @@ function ShadowChatPageContent() {
                           {getProfileTierLabel(msg.profileTier)}
                           {msg.isAsync ? ' · Processing...' : ''}
                         </p>
-                        {!msg.feedbackSent ? (
+                        {msg.feedbackEligible
+                          && (msg.state === 'ok' || msg.state === 'filtered')
+                          && !msg.feedbackSent ? (
                           <div className="flex gap-1">
                             <button
-                              onClick={() => sendFeedback(msg.id, true, msg.tier, msg.tier)}
+                              onClick={() => void sendFeedback(msg.id, true, msg.tier, msg.tier)}
                               className="border border-[#3a2a2a] px-2 py-0.5 text-[9px] text-[#6a5a4a] hover:border-[#4a8a4a] hover:text-[#4a8a4a] transition"
                               title="Helpful"
                             >&#x1F44D;</button>
                             <button
-                              onClick={() => sendFeedback(msg.id, false, msg.tier, msg.tier)}
+                              onClick={() => void sendFeedback(msg.id, false, msg.tier, msg.tier)}
                               className="border border-[#3a2a2a] px-2 py-0.5 text-[9px] text-[#6a5a4a] hover:border-[#dc2626] hover:text-[#dc2626] transition"
                               title="Not helpful"
                             >&#x1F44E;</button>
                           </div>
-                        ) : (
+                        ) : msg.feedbackSent ? (
                           <p className="text-[9px] text-[#4a5a4a] font-mono">✓ Feedback</p>
-                        )}
+                        ) : null}
                       </div>
                     </div>
                   ) : null}
@@ -729,7 +637,7 @@ function ShadowChatPageContent() {
 
           {/* Input */}
           <form onSubmit={handleSendMessage} className="flex gap-2">
-            {HEAVY_BAG_ELIGIBLE_ROLES.has(userRole) ? (
+            {allowedSessionTypes.includes('heavy_bag') ? (
               <button
                 type="button"
                 onClick={() => setHeavyBagMode((v) => !v)}

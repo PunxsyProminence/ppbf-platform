@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { readRoleSession } from '@/components/roleSession';
@@ -12,7 +12,9 @@ interface JobStatusResult {
   jobId: string;
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
   sessionType: string;
+  safetyStatus: 'pending' | 'passed' | 'filtered' | 'not_applicable';
   output?: {
+    resultStatus?: 'ok' | 'filtered' | 'unavailable';
     summary?: string;
     strengths?: string[];
     growthAreas?: string[];
@@ -36,15 +38,26 @@ interface OrgJobsResponse {
 interface ScoreboardResponse {
   readonly organizationId: string;
   readonly period: string;
-  readonly totalInteractions: number;
-  readonly positiveOutcomes: number;
-  readonly negativeOutcomes: number;
-  readonly positiveRate: number;
-  readonly factsExtracted: number;
-  readonly topEngagedTopics: string[];
-  readonly profilesAtGold: number;
-  readonly profilesAtSilver: number;
-  readonly profilesAtBronze: number;
+  readonly effectiveness: {
+    readonly avgRecommendationScore: number | null;
+    readonly concernedTopics: string[];
+  };
+  readonly engagement: {
+    readonly dailyActiveUsers: number;
+    readonly avgMessagesPerSession: number | null;
+    readonly feedbackRate: number | null;
+    readonly usersByTier: { bronze: number; silver: number; gold: number };
+    readonly newUsersThisPeriod: number;
+  };
+  readonly safety: {
+    readonly highRiskFlagCount: number;
+    readonly escalationsToHuman: number;
+    readonly flaggedTopicsNeedingReview: string[];
+  };
+  readonly growth: {
+    readonly totalInteractions: number;
+    readonly positiveOutcomeRate: number | null;
+  };
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -59,12 +72,10 @@ export default function ScoutReportPage() {
   const [scoreboard, setScoreboard] = useState<ScoreboardResponse | null>(null);
   const [selectedJob, setSelectedJob] = useState<JobStatusResult | null>(null);
   const [loadingJobs, setLoadingJobs] = useState(true);
-  const [requestingReport, setRequestingReport] = useState(false);
-  const [runningMigration, setRunningMigration] = useState(false);
-  const [migrationResult, setMigrationResult] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   const canAccessAdmin = ['admin', 'organization_admin', 'platform_owner', 'coach'].includes(userRole);
+  const canViewOrgMetrics = ['admin', 'organization_admin', 'platform_owner'].includes(userRole);
 
   useEffect(() => {
     const session = readRoleSession();
@@ -77,102 +88,49 @@ export default function ScoutReportPage() {
     }
   }, [router, canAccessAdmin]);
 
-  useEffect(() => {
-    void loadData();
-  }, []);
-
-  async function loadData() {
+  const loadData = useCallback(async () => {
     setLoadingJobs(true);
     setError('');
     try {
-      const [jobsRes, scoreRes] = await Promise.allSettled([
+      const requests: Promise<Response>[] = [
         fetch(`${apiBase()}/api/pilot/shadow/jobs?limit=30`, { credentials: 'include' }),
-        fetch(`${apiBase()}/api/pilot/shadow/metrics?days=30`, { credentials: 'include' }),
-      ]);
+      ];
+      if (canViewOrgMetrics) {
+        requests.push(fetch(`${apiBase()}/api/pilot/shadow/metrics?days=30`, { credentials: 'include' }));
+      }
+      const [jobsRes, scoreRes] = await Promise.allSettled(requests);
 
       if (jobsRes.status === 'fulfilled' && jobsRes.value.ok) {
         const data = (await jobsRes.value.json()) as OrgJobsResponse;
         setJobs(data.jobs ?? []);
       }
 
-      if (scoreRes.status === 'fulfilled' && scoreRes.value.ok) {
-        const data = await scoreRes.value.json();
-        setScoreboard(data as ScoreboardResponse);
+      if (scoreRes?.status === 'fulfilled' && scoreRes.value.ok) {
+        const data = await scoreRes.value.json() as { metrics?: ScoreboardResponse };
+        setScoreboard(data.metrics ?? null);
       }
     } catch {
       setError('Failed to load data');
     } finally {
       setLoadingJobs(false);
     }
-  }
+  }, [canViewOrgMetrics]);
 
-  async function requestScoutReport() {
-    setRequestingReport(true);
-    try {
-      const res = await fetch(`${apiBase()}/api/pilot/shadow/chat`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: 'Generate a Scout Report for my profile',
-          sessionType: 'scout_report',
-          preferAsync: true,
-        }),
-      });
-      if (!res.ok) throw new Error('Request failed');
-      const data = await res.json();
-      if (data.jobId) {
-        setTimeout(() => void loadData(), 1500);
-      }
-    } catch {
-      setError('Failed to request Scout Report');
-    } finally {
-      setRequestingReport(false);
-    }
-  }
-
-  async function runProcessor() {
-    try {
-      const res = await fetch(`${apiBase()}/api/pilot/shadow/jobs/process`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-      const data = await res.json();
-      if (data.processed) {
-        setTimeout(() => void loadData(), 1000);
-      }
-    } catch {
-      setError('Processor error');
-    }
-  }
-
-  async function runMigrations() {
-    setRunningMigration(true);
-    setMigrationResult(null);
-    try {
-      const res = await fetch(`${apiBase()}/api/pilot/shadow/migrate`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-      const data = await res.json();
-      const summary = (data.results as Array<{ migration: string; status: string; error?: string }>)
-        .map((r) => {
-          const statusIcon = r.status === 'ok' ? '✅' : '❌';
-          const errorPart = r.error ? `: ${r.error}` : '';
-          return `${statusIcon} ${r.migration}${errorPart}`;
-        })
-        .join('\n');
-      setMigrationResult(summary);
-    } catch {
-      setMigrationResult('Migration request failed');
-    } finally {
-      setRunningMigration(false);
-    }
-  }
+  useEffect(() => {
+    if (!userRole) return undefined;
+    const timer = window.setTimeout(() => {
+      void loadData();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadData, userRole]);
 
   const scoutJobs = jobs.filter((j) => j.sessionType === 'scout_report');
   const heavyBagJobs = jobs.filter((j) => j.sessionType === 'heavy_bag');
-  const pendingCount = jobs.filter((j) => j.status === 'pending' || j.status === 'running').length;
+  const safeCompleted = (job: JobStatusResult) => (
+    job.status === 'completed'
+    && job.safetyStatus === 'passed'
+    && job.output?.resultStatus === 'ok'
+  );
 
   return (
     <main className="min-h-screen bg-[#0a0a0a] text-[#e8d7c6]">
@@ -192,11 +150,12 @@ export default function ScoutReportPage() {
               ← SHADOW
             </Link>
             <button
-              onClick={() => void requestScoutReport()}
-              disabled={requestingReport}
-              className="border-2 border-[#d4a574] bg-[#2a1f0f] px-4 py-2 text-xs font-mono font-bold text-[#d4a574] transition hover:border-[#e8d7c6] hover:text-[#e8d7c6] disabled:opacity-50"
+              type="button"
+              disabled
+              title="Requires the secure scheduled SHADOW worker"
+              className="border-2 border-[#5a4a3a] bg-[#1a1a1a] px-4 py-2 text-xs font-mono font-bold text-[#6a5a4a] opacity-60"
             >
-              {requestingReport ? 'Queuing...' : '+ Request Scout Report'}
+              Scout Report worker not active
             </button>
           </div>
         </div>
@@ -218,9 +177,9 @@ export default function ScoutReportPage() {
                 <p className="text-xs font-mono text-[#b0a095] mb-2">Tier Distribution</p>
                 <div className="space-y-2">
                   {[
-                    { label: '🥇 Gold', count: scoreboard.profilesAtGold, percent: ((scoreboard.profilesAtGold / Math.max(scoreboard.profilesAtGold + scoreboard.profilesAtSilver + scoreboard.profilesAtBronze, 1)) * 100).toFixed(0) },
-                    { label: '🥈 Silver', count: scoreboard.profilesAtSilver, percent: ((scoreboard.profilesAtSilver / Math.max(scoreboard.profilesAtGold + scoreboard.profilesAtSilver + scoreboard.profilesAtBronze, 1)) * 100).toFixed(0) },
-                    { label: '🥉 Bronze', count: scoreboard.profilesAtBronze, percent: ((scoreboard.profilesAtBronze / Math.max(scoreboard.profilesAtGold + scoreboard.profilesAtSilver + scoreboard.profilesAtBronze, 1)) * 100).toFixed(0) },
+                    { label: '🥇 Gold', count: scoreboard.engagement.usersByTier.gold, percent: ((scoreboard.engagement.usersByTier.gold / Math.max(scoreboard.engagement.usersByTier.gold + scoreboard.engagement.usersByTier.silver + scoreboard.engagement.usersByTier.bronze, 1)) * 100).toFixed(0) },
+                    { label: '🥈 Silver', count: scoreboard.engagement.usersByTier.silver, percent: ((scoreboard.engagement.usersByTier.silver / Math.max(scoreboard.engagement.usersByTier.gold + scoreboard.engagement.usersByTier.silver + scoreboard.engagement.usersByTier.bronze, 1)) * 100).toFixed(0) },
+                    { label: '🥉 Bronze', count: scoreboard.engagement.usersByTier.bronze, percent: ((scoreboard.engagement.usersByTier.bronze / Math.max(scoreboard.engagement.usersByTier.gold + scoreboard.engagement.usersByTier.silver + scoreboard.engagement.usersByTier.bronze, 1)) * 100).toFixed(0) },
                   ].map(({ label, count, percent }: { label: string; count: number; percent: string }) => (
                     <div key={label} className="space-y-1">
                       <div className="flex justify-between text-[9px] text-[#b0a095]">
@@ -243,9 +202,9 @@ export default function ScoutReportPage() {
                 <p className="text-xs font-mono text-[#b0a095] mb-2">Effectiveness Metrics</p>
                 <div className="space-y-2">
                   {[
-                    { label: 'Positive Outcomes', value: scoreboard.positiveOutcomes, color: '#4a8a4a' },
-                    { label: 'Negative Outcomes', value: scoreboard.negativeOutcomes, color: '#dc2626' },
-                    { label: 'Positive Rate', value: `${Math.round(scoreboard.positiveRate * 100)}%`, color: '#d4a574' },
+                    { label: 'Positive Outcome Rate', value: scoreboard.growth.positiveOutcomeRate == null ? 'Unavailable' : `${Math.round(scoreboard.growth.positiveOutcomeRate * 100)}%`, color: '#4a8a4a' },
+                    { label: 'Reviewed Recommendation Score', value: scoreboard.effectiveness.avgRecommendationScore == null ? 'Unavailable' : `${scoreboard.effectiveness.avgRecommendationScore}%`, color: '#d4a574' },
+                    { label: 'Human Escalations', value: scoreboard.safety.escalationsToHuman, color: '#dc2626' },
                   ].map(({ label, value, color }) => (
                     <div key={label} className="flex justify-between border border-[#3a2a2a] bg-[#0f0f0f] px-3 py-2">
                       <span className="text-[9px] text-[#b0a095]">{label}</span>
@@ -261,9 +220,9 @@ export default function ScoutReportPage() {
               <p className="text-xs font-mono text-[#b0a095] mb-2">Engagement Summary</p>
               <div className="grid md:grid-cols-3 gap-2">
                 {[
-                  { label: 'Total Interactions', value: scoreboard.totalInteractions },
-                  { label: 'Facts Extracted', value: scoreboard.factsExtracted },
-                  { label: 'Avg per Profile', value: (scoreboard.totalInteractions / Math.max(scoreboard.profilesAtGold + scoreboard.profilesAtSilver + scoreboard.profilesAtBronze, 1)).toFixed(1) },
+                  { label: 'Total Interactions', value: scoreboard.growth.totalInteractions },
+                  { label: 'Daily Active Users', value: scoreboard.engagement.dailyActiveUsers },
+                  { label: 'Avg Messages / Session', value: scoreboard.engagement.avgMessagesPerSession?.toFixed(1) ?? 'Unavailable' },
                 ].map(({ label, value }) => (
                   <div key={label} className="border border-[#3a2a2a] bg-[#0f0f0f] px-3 py-2 text-center">
                     <p className="text-[9px] text-[#8a8a8a]">{label}</p>
@@ -274,11 +233,11 @@ export default function ScoutReportPage() {
             </div>
 
             {/* Top Topics */}
-            {scoreboard.topEngagedTopics.length > 0 ? (
+            {scoreboard.effectiveness.concernedTopics.length > 0 ? (
               <div className="border-t border-[#3a2a2a] pt-3">
                 <p className="text-xs font-mono text-[#b0a095] mb-2">Top Engaged Topics</p>
                 <div className="flex flex-wrap gap-2">
-                  {scoreboard.topEngagedTopics.map((topic, idx) => (
+                  {scoreboard.effectiveness.concernedTopics.map((topic, idx) => (
                     <span key={topic} className="border border-[#5a4a3a] bg-[#0f0f0f] px-3 py-1 text-[9px] font-mono text-[#d4a574]">
                       #{idx + 1} {topic}
                     </span>
@@ -295,10 +254,10 @@ export default function ScoutReportPage() {
             <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[#d4a574]">The Scorecard — {scoreboard.period}</p>
             <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
               {[
-                { label: 'Total Interactions', value: scoreboard.totalInteractions },
-                { label: 'Positive Rate', value: `${Math.round(scoreboard.positiveRate * 100)}%` },
-                { label: 'Facts Extracted', value: scoreboard.factsExtracted },
-                { label: 'Gold Profiles', value: scoreboard.profilesAtGold },
+                { label: 'Total Interactions', value: scoreboard.growth.totalInteractions },
+                { label: 'Positive Rate', value: scoreboard.growth.positiveOutcomeRate == null ? 'Unavailable' : `${Math.round(scoreboard.growth.positiveOutcomeRate * 100)}%` },
+                { label: 'Active Users', value: scoreboard.engagement.dailyActiveUsers },
+                { label: 'Gold Profiles', value: scoreboard.engagement.usersByTier.gold },
               ].map(({ label, value }) => (
                 <div key={label} className="border border-[#5a4a3a] bg-[#0f0f0f] p-3 text-center">
                   <p className="text-xs font-mono text-[#8a8a8a]">{label}</p>
@@ -308,17 +267,17 @@ export default function ScoutReportPage() {
             </div>
             <div className="mt-4 flex gap-4">
               {[
-                { label: '🥇 Gold', count: scoreboard.profilesAtGold },
-                { label: '🥈 Silver', count: scoreboard.profilesAtSilver },
-                { label: '🥉 Bronze', count: scoreboard.profilesAtBronze },
+                { label: '🥇 Gold', count: scoreboard.engagement.usersByTier.gold },
+                { label: '🥈 Silver', count: scoreboard.engagement.usersByTier.silver },
+                { label: '🥉 Bronze', count: scoreboard.engagement.usersByTier.bronze },
               ].map(({ label, count }) => (
                 <div key={label} className="text-xs font-mono text-[#b0a095]">
                   <span className="text-[#d4a574]">{label}</span> {count} users
                 </div>
               ))}
-              {scoreboard.topEngagedTopics.length > 0 ? (
+              {scoreboard.effectiveness.concernedTopics.length > 0 ? (
                 <div className="text-xs font-mono text-[#b0a095]">
-                  Top topics: <span className="text-[#d4a574]">{scoreboard.topEngagedTopics.join(', ')}</span>
+                  Topics needing review: <span className="text-[#d4a574]">{scoreboard.effectiveness.concernedTopics.join(', ')}</span>
                 </div>
               ) : null}
             </div>
@@ -331,20 +290,12 @@ export default function ScoutReportPage() {
             <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[#d4a574]">
               Scout Reports ({scoutJobs.length})
             </p>
-            {pendingCount > 0 ? (
-              <button
-                onClick={() => void runProcessor()}
-                className="border border-[#5a4a3a] bg-[#1a1a1a] px-3 py-1 text-[9px] font-mono text-[#8a8a8a] transition hover:border-[#8b4444] hover:text-[#e8d7c6]"
-              >
-                ▶ Process {pendingCount} pending
-              </button>
-            ) : null}
           </div>
 
           {loadingJobs ? (
             <p className="mt-4 text-xs text-[#6a5a4a] font-mono">Loading...</p>
           ) : scoutJobs.length === 0 ? (
-            <p className="mt-4 text-xs text-[#6a5a4a] font-mono">No Scout Reports yet. Click &quot;+ Request Scout Report&quot; to generate one.</p>
+            <p className="mt-4 text-xs text-[#6a5a4a] font-mono">No verified Scout Reports are available. Generation remains disabled until the secure scheduled worker is configured.</p>
           ) : (
             <div className="mt-4 space-y-3">
               {scoutJobs.map((job) => (
@@ -360,7 +311,7 @@ export default function ScoutReportPage() {
                       <StatusBadge status={job.status} />
                       <p className="mt-1 text-[10px] text-[#8a8a8a] font-mono">{job.jobId.slice(0, 8)}... · {new Date(job.createdAt).toLocaleDateString()}</p>
                     </div>
-                    {job.status === 'completed' && job.output?.profileTier ? (
+                    {safeCompleted(job) && job.output?.profileTier ? (
                       <span className="text-[10px] font-mono text-[#d4a574] border border-[#5a4a3a] px-2 py-0.5">
                         {job.output.profileTier.toUpperCase()}
                       </span>
@@ -368,7 +319,7 @@ export default function ScoutReportPage() {
                   </div>
 
                   {/* Expanded report */}
-                  {selectedJob?.jobId === job.jobId && job.status === 'completed' && job.output ? (
+                  {selectedJob?.jobId === job.jobId && safeCompleted(job) && job.output ? (
                     <div className="mt-4 space-y-3 text-xs">
                       {job.output.summary ? (
                         <div>
@@ -411,8 +362,16 @@ export default function ScoutReportPage() {
                     </div>
                   ) : null}
 
+                  {selectedJob?.jobId === job.jobId
+                    && job.status === 'completed'
+                    && !safeCompleted(job) ? (
+                      <p className="mt-2 text-[10px] font-mono text-[#d4a574]">
+                        This result is unavailable because it did not pass the server safety boundary or the required model capability is not active.
+                      </p>
+                    ) : null}
+
                   {selectedJob?.jobId === job.jobId && job.status === 'pending' ? (
-                    <p className="mt-2 text-[10px] font-mono text-[#8a8a8a]">Queued — click &quot;Process pending&quot; to execute</p>
+                    <p className="mt-2 text-[10px] font-mono text-[#8a8a8a]">Queued for secure background processing.</p>
                   ) : null}
 
                   {selectedJob?.jobId === job.jobId && job.status === 'failed' ? (
@@ -451,27 +410,6 @@ export default function ScoutReportPage() {
           </section>
         ) : null}
 
-        {/* ADMIN: DB MIGRATIONS */}
-        {['platform_owner', 'admin'].includes(userRole) ? (
-          <section className="border border-[#3a2a2a] bg-[#0f0f0f] p-4">
-            <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[#6a5a4a]">Platform Admin — DB Migrations</p>
-            <p className="mt-1 text-[10px] text-[#6a5a4a] font-mono">
-              Creates shadow_jobs, shadow_learning_events, shadow_library_review_flags tables (idempotent).
-            </p>
-            <div className="mt-3 flex items-center gap-3">
-              <button
-                onClick={() => void runMigrations()}
-                disabled={runningMigration}
-                className="border border-[#5a4a3a] bg-[#1a1a1a] px-3 py-1.5 text-[10px] font-mono text-[#8a8a8a] transition hover:border-[#d4a574] hover:text-[#d4a574] disabled:opacity-50"
-              >
-                {runningMigration ? 'Running...' : 'Run Migrations'}
-              </button>
-              {migrationResult ? (
-                <pre className="text-[10px] font-mono text-[#b0a095] whitespace-pre-wrap">{migrationResult}</pre>
-              ) : null}
-            </div>
-          </section>
-        ) : null}
       </div>
     </main>
   );

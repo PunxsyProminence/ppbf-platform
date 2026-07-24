@@ -22,8 +22,20 @@ describe('SHADOW Classifier', () => {
 
     test('detects high-risk medical keywords for routing', () => {
       const result = classifyRequest('What are concussion recovery protocols?', 'coach');
-      // Should detect recovery/medical-related topic
+      expect(result.tier).toBe('heavy_bag');
+      expect(result.complexity).toBeGreaterThanOrEqual(0.6);
       expect(['medical', 'recovery', 'safety']).toContain(result.topic);
+    });
+
+    test('auto-routes a truly complex non-medical prompt to Heavy Bag', () => {
+      const result = classifyRequest(
+        `${'Detailed context '.repeat(110)}
+        Compare and contrast the multi-step trade-offs, edge cases, nuanced constraints,
+        conflicting goals, exceptions, and what happens if conditions change.`,
+        'coach',
+      );
+      expect(result.tier).toBe('heavy_bag');
+      expect(result.requiresManualOverride).toBe(false);
     });
 
     test('adjusts complexity for coach vs athlete roles', () => {
