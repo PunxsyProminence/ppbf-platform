@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { NextResponse, type NextRequest } from 'next/server';
 
@@ -6,7 +6,7 @@ import { requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { uploadPilotShadowFile } from '@/src/server/pilot/blob';
 import { query } from '@/src/server/pilot/db';
-import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { isUuid, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { createIntakeCase, createIntakeDocument, type IntakeDocumentType } from '@/src/server/pilot/intake';
 import { assertShadowAuthority, type ShadowAutomationMode } from '@/src/server/pilot/shadowAuthority';
 import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
@@ -14,6 +14,13 @@ import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness
 import { createShadowResearchRequirement } from '@/src/server/pilot/shadowResearch';
 import { writeShadowTelemetryEvent } from '@/src/server/pilot/shadowTelemetry';
 import { buildUploadResearchFields, classifyShadowDocument, routeShadowClassification } from '@/src/server/pilot/shadow';
+import { enforceShadowRateLimit, ShadowRateLimitExceeded } from '@/src/server/pilot/shadowRateLimit';
+import {
+  describeShadowUpload,
+  SHADOW_INTAKE_DOCUMENT_TYPES,
+  validateShadowUploadContent,
+  validateShadowUploadTransport,
+} from '@/src/server/pilot/shadowUploadPolicy';
 
 export const runtime = 'nodejs';
 
@@ -23,7 +30,19 @@ export async function POST(request: NextRequest) {
     requireRole(principal, ['organization_admin', 'coach']);
     await assertShadowRuntimeReadiness({
       requireBlob: true,
-      requiredTables: ['intake_cases', 'intake_documents', 'shadow_intake', 'shadow_events', 'shadow_telemetry_events', 'shadow_authority_checks'],
+      requiredTables: ['intake_cases', 'intake_documents', 'shadow_intake', 'shadow_events', 'shadow_telemetry_events', 'shadow_authority_checks', 'shadow_rate_limit_buckets'],
+    });
+
+    const transport = validateShadowUploadTransport(request.headers);
+    if (!transport.ok) {
+      return NextResponse.json({ ok: false, error: transport.error }, { status: transport.status });
+    }
+    await enforceShadowRateLimit({
+      organizationId: principal.organizationId,
+      accountId: principal.accountId,
+      endpointKey: 'shadow_upload',
+      limit: 10,
+      windowSeconds: 3_600,
     });
 
     const formData = await request.formData();
@@ -32,19 +51,46 @@ export async function POST(request: NextRequest) {
     const intakeCaseIdValue = formData.get('intake_case_id');
     const documentTypeValue = formData.get('document_type');
     const automationModeValue = formData.get('automation_mode');
-    const hint = typeof hintValue === 'string' ? hintValue : undefined;
+    const hint = typeof hintValue === 'string' ? hintValue.trim().slice(0, 1_000) : undefined;
     const intakeCaseIdInput = typeof intakeCaseIdValue === 'string' ? intakeCaseIdValue.trim() : '';
-    const automationMode: ShadowAutomationMode =
-      automationModeValue === 'automatic' || automationModeValue === 'manual'
-        ? automationModeValue
-        : 'assisted';
-    const documentType: IntakeDocumentType =
-      typeof documentTypeValue === 'string' && documentTypeValue.trim()
-        ? (documentTypeValue.trim() as IntakeDocumentType)
-        : 'general_intake';
+    if (
+      automationModeValue != null
+      && automationModeValue !== 'automatic'
+      && automationModeValue !== 'manual'
+      && automationModeValue !== 'assisted'
+    ) {
+      return NextResponse.json({ ok: false, error: 'Invalid automation mode.' }, { status: 400 });
+    }
+    const automationMode: ShadowAutomationMode = automationModeValue ?? 'assisted';
+    const requestedDocumentType = typeof documentTypeValue === 'string' && documentTypeValue.trim()
+      ? documentTypeValue.trim()
+      : 'general_intake';
+    if (!SHADOW_INTAKE_DOCUMENT_TYPES.has(requestedDocumentType)) {
+      return NextResponse.json({ ok: false, error: 'Unsupported intake document type.' }, { status: 400 });
+    }
+    const documentType = requestedDocumentType as IntakeDocumentType;
 
     if (!(uploaded instanceof File)) {
       throw new TypeError('Missing file upload payload');
+    }
+    const uploadDescriptor = describeShadowUpload(uploaded);
+    if (!uploadDescriptor) {
+      return NextResponse.json(
+        { ok: false, error: 'Only bounded PDF, DOCX, and plain-text documents are accepted.' },
+        { status: 415 },
+      );
+    }
+    const uploadBytes = new Uint8Array(await uploaded.arrayBuffer());
+    const contentValidation = validateShadowUploadContent(uploadDescriptor, uploadBytes);
+    if (!contentValidation.ok) {
+      return NextResponse.json(
+        { ok: false, error: contentValidation.error },
+        { status: 415 },
+      );
+    }
+    const contentSha256 = createHash('sha256').update(uploadBytes).digest('hex');
+    if (intakeCaseIdInput && !isUuid(intakeCaseIdInput)) {
+      return NextResponse.json({ ok: false, error: 'Intake case not found.' }, { status: 404 });
     }
 
     await assertShadowAuthority({
@@ -60,20 +106,21 @@ export async function POST(request: NextRequest) {
       withinApprovedOptions: true,
       restrictionConflict: false,
       metadata: {
-        file_name: uploaded.name,
+        file_name: uploadDescriptor.safeOriginalName,
         document_type: documentType,
+        quarantine_status: 'pending_security_review',
       },
     });
 
     const intakeId = randomUUID();
-    const filePath = `${intakeId}/${uploaded.name}`;
+    const filePath = `quarantine/${principal.organizationId}/${intakeId}/${uploadDescriptor.generatedFileName}`;
 
     await uploadPilotShadowFile(filePath, uploaded);
 
-    const classification = classifyShadowDocument(uploaded.name, hint);
+    const classification = classifyShadowDocument(uploadDescriptor.safeOriginalName, hint);
     const routedQueue = routeShadowClassification(classification);
     const researchFields = buildUploadResearchFields({
-      fileName: uploaded.name,
+      fileName: uploadDescriptor.safeOriginalName,
       documentType,
       classification,
       routedQueue,
@@ -84,10 +131,10 @@ export async function POST(request: NextRequest) {
       (await createIntakeCase({
         organizationId: principal.organizationId,
         submittedByAccountId: principal.accountId,
-        summary: `SHADOW upload: ${uploaded.name}`,
+        summary: `SHADOW upload: ${uploadDescriptor.safeOriginalName}`,
         sourceShadowIntakeId: intakeId,
         payload: {
-          file_name: uploaded.name,
+          file_name: uploadDescriptor.safeOriginalName,
           classification,
           routed_queue: routedQueue,
           document_type: documentType,
@@ -99,12 +146,14 @@ export async function POST(request: NextRequest) {
       intakeCaseId,
       shadowIntakeId: intakeId,
       documentType,
-      fileName: uploaded.name,
+      fileName: uploadDescriptor.safeOriginalName,
       blobPath: filePath,
       classification,
       reviewStatus: 'pending_review',
       metadata: {
         hint: hint ?? null,
+        quarantine_status: 'pending_security_review',
+        content_sha256: contentSha256,
       },
     });
 
@@ -112,7 +161,7 @@ export async function POST(request: NextRequest) {
       `insert into pilot.shadow_intake
        (organization_id, intake_id, file_name, file_path, classification, routed_queue, review_status, uploaded_by_account_id)
        values ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [principal.organizationId, intakeId, uploaded.name, filePath, classification, routedQueue, 'pending_human_review', principal.accountId],
+      [principal.organizationId, intakeId, uploadDescriptor.safeOriginalName, filePath, classification, routedQueue, 'pending_human_review', principal.accountId],
     );
 
     await writePilotAuditEvent({
@@ -145,7 +194,7 @@ export async function POST(request: NextRequest) {
       actorAccountId: principal.accountId,
       actorRole: principal.role,
       payload: {
-        file_name: uploaded.name,
+        file_name: uploadDescriptor.safeOriginalName,
         intake_case_id: intakeCaseId,
         intake_document_id: intakeDocumentId,
         document_type: documentType,
@@ -156,6 +205,7 @@ export async function POST(request: NextRequest) {
         knowledge_gap: researchFields.knowledgeGap,
         source_status: researchFields.sourceStatus,
         source_verification_state: researchFields.sourceVerificationState,
+        quarantine_status: 'pending_security_review',
       },
     });
 
@@ -173,7 +223,7 @@ export async function POST(request: NextRequest) {
       createdByAccountId: principal.accountId,
       createdByRole: principal.role,
       metadata: {
-        file_name: uploaded.name,
+        file_name: uploadDescriptor.safeOriginalName,
         intake_case_id: intakeCaseId,
         intake_document_id: intakeDocumentId,
         document_type: documentType,
@@ -195,17 +245,28 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return NextResponse.json({
-      ok: true,
-      intake_id: intakeId,
-      intake_case_id: intakeCaseId,
-      intake_document_id: intakeDocumentId,
-      document_type: documentType,
-      classification,
-      routed_queue: routedQueue,
-      review_status: 'pending_human_review',
-    });
+    return NextResponse.json(
+      {
+        ok: true,
+        accepted_for_security_review: true,
+        intake_id: intakeId,
+        intake_case_id: intakeCaseId,
+        intake_document_id: intakeDocumentId,
+        document_type: documentType,
+        classification,
+        routed_queue: routedQueue,
+        review_status: 'pending_human_review',
+        quarantine_status: 'pending_security_review',
+      },
+      { status: 202 },
+    );
   } catch (error) {
+    if (error instanceof ShadowRateLimitExceeded) {
+      return NextResponse.json(
+        { ok: false, error: 'Too many upload requests. Please wait and try again.' },
+        { status: 429, headers: { 'Retry-After': String(error.retryAfterSeconds) } },
+      );
+    }
     return jsonError(error);
   }
 }

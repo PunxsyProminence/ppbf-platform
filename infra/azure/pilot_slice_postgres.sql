@@ -509,6 +509,14 @@ create table if not exists pilot.shadow_feedback (
   helpful           boolean not null,
   rating            integer null check (rating between 1 and 5),
   comment           text null,
+  outcome_signal    text null,
+  correlation_type  text null,
+  correlation_id    text null,
+  verification_state text not null default 'unverified'
+    check (verification_state in ('unverified', 'durable_client', 'human_reviewed')),
+  human_review_required boolean not null default true,
+  reviewed_by_account_id text null references pilot.accounts(account_id) on delete set null,
+  reviewed_at       timestamptz null,
   created_at        timestamptz not null default now()
 );
 
@@ -748,3 +756,516 @@ create index if not exists idx_admin_track_assignments_updated
 
 create index if not exists idx_admin_gym_capability_access_updated
   on pilot.admin_gym_capability_access(updated_at desc);
+
+-- SHADOW durable conversations, privacy workflows, jobs, learning, and formulas.
+-- These are deployment-time tables. Application request handlers must never
+-- create or alter schema at runtime.
+create table if not exists pilot.shadow_chat_sessions (
+  conversation_id uuid primary key,
+  organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+  account_id text not null references pilot.accounts(account_id) on delete cascade,
+  athlete_id text null,
+  title text not null default 'New conversation',
+  session_type text not null default 'quick_round',
+  deleted_at timestamptz null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  foreign key (organization_id, athlete_id)
+    references pilot.athletes(organization_id, athlete_id)
+    on delete cascade
+);
+
+create index if not exists idx_shadow_chat_sessions_owner
+  on pilot.shadow_chat_sessions(organization_id, account_id, updated_at desc)
+  where deleted_at is null;
+
+create table if not exists pilot.shadow_chat_messages (
+  message_id uuid primary key,
+  conversation_id uuid not null references pilot.shadow_chat_sessions(conversation_id) on delete cascade,
+  organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+  account_id text not null references pilot.accounts(account_id) on delete cascade,
+  role text not null check (role in ('user', 'assistant')),
+  content text not null,
+  response_state text null check (response_state in ('ok', 'filtered')),
+  topic text not null default 'general',
+  session_type text not null default 'quick_round',
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_shadow_chat_messages_conversation
+  on pilot.shadow_chat_messages(organization_id, account_id, conversation_id, created_at asc);
+
+create table if not exists pilot.shadow_human_review_queue (
+  review_id uuid primary key,
+  organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+  conversation_id uuid null references pilot.shadow_chat_sessions(conversation_id) on delete set null,
+  account_id text not null references pilot.accounts(account_id) on delete cascade,
+  category text not null,
+  severity text not null check (severity in ('moderate', 'high', 'critical')),
+  summary text not null,
+  status text not null default 'open'
+    check (status in ('open', 'in_review', 'resolved', 'dismissed')),
+  metadata jsonb not null default '{}'::jsonb,
+  reviewed_by text null,
+  reviewed_at timestamptz null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_shadow_human_review_org_status
+  on pilot.shadow_human_review_queue(organization_id, status, created_at desc);
+
+create table if not exists pilot.shadow_data_deletion_requests (
+  request_id uuid primary key,
+  organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+  account_id text not null references pilot.accounts(account_id) on delete cascade,
+  status text not null default 'pending'
+    check (status in ('pending', 'approved', 'completed', 'denied')),
+  requested_at timestamptz not null default now(),
+  completed_at timestamptz null,
+  processed_by text null
+);
+
+create index if not exists idx_shadow_deletion_requests_org_status
+  on pilot.shadow_data_deletion_requests(organization_id, status, requested_at desc);
+
+create table if not exists pilot.shadow_chat_memory_corrections (
+  correction_id uuid primary key,
+  organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+  account_id text not null references pilot.accounts(account_id) on delete cascade,
+  fact_key text not null,
+  corrected_value text null,
+  action text not null check (action in ('replace', 'forget')),
+  status text not null default 'pending'
+    check (status in ('pending', 'approved', 'applied', 'denied')),
+  reviewed_by_account_id text null,
+  reviewed_at timestamptz null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_shadow_memory_corrections_owner
+  on pilot.shadow_chat_memory_corrections(organization_id, account_id, created_at desc);
+
+create table if not exists pilot.shadow_jobs (
+  job_id uuid primary key default gen_random_uuid(),
+  job_type text not null
+    check (job_type in (
+      'heavy_bag_session', 'scout_report', 'board_summary',
+      'library_update', 'film_study', 'learning_loop'
+    )),
+  organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+  account_id text not null references pilot.accounts(account_id) on delete cascade,
+  subject_id text null,
+  role text not null,
+  status text not null default 'pending'
+    check (status in ('pending', 'running', 'completed', 'failed', 'cancelled')),
+  input_payload jsonb not null default '{}'::jsonb,
+  output_payload jsonb null,
+  error_message text null
+    check (error_message is null or error_message ~ '^[A-Z][A-Z0-9_]{2,79}$'),
+  safety_status text not null default 'pending'
+    check (safety_status in ('pending', 'passed', 'filtered', 'not_applicable')),
+  priority integer not null default 3 check (priority between 1 and 5),
+  retry_count integer not null default 0 check (retry_count >= 0),
+  max_retries integer not null default 3 check (max_retries between 1 and 10),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  started_at timestamptz null,
+  completed_at timestamptz null,
+  expires_at timestamptz not null default now() + interval '24 hours',
+  foreign key (organization_id, subject_id)
+    references pilot.athletes(organization_id, athlete_id)
+    on delete cascade
+);
+
+create index if not exists idx_shadow_jobs_status_priority
+  on pilot.shadow_jobs(status, priority asc, created_at asc)
+  where status = 'pending';
+
+create index if not exists idx_shadow_jobs_owner_created
+  on pilot.shadow_jobs(organization_id, account_id, created_at desc);
+
+create index if not exists idx_shadow_jobs_subject_created
+  on pilot.shadow_jobs(organization_id, subject_id, created_at desc)
+  where subject_id is not null;
+
+create table if not exists pilot.shadow_research_requirements (
+  research_requirement_id bigserial primary key,
+  organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+  source_event_name text not null,
+  source_entity_type text not null,
+  source_entity_id text not null,
+  research_requirement text not null,
+  knowledge_gap text not null,
+  evidence_label text null,
+  source_status text not null,
+  source_confidence_tier text not null,
+  source_verification_state text not null,
+  status text not null default 'open' check (status in ('open', 'resolved')),
+  created_by_account_id text not null,
+  created_by_role text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  resolved_at timestamptz null,
+  unique (organization_id, source_event_name, source_entity_type, source_entity_id)
+);
+
+create index if not exists idx_shadow_research_requirements_org_created
+  on pilot.shadow_research_requirements(organization_id, created_at desc);
+
+create table if not exists pilot.shadow_recommendation_effectiveness (
+  effectiveness_id bigserial primary key,
+  organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+  account_id text not null references pilot.accounts(account_id) on delete cascade,
+  feedback_id bigint null unique references pilot.shadow_feedback(feedback_id) on delete set null,
+  recommendation_id text null,
+  recommendation_type text not null,
+  outcome text not null check (outcome in ('improved', 'neutral', 'degraded', 'unknown')),
+  effectiveness_score numeric(4,3) null
+    check (effectiveness_score between 0 and 1),
+  verification_state text not null default 'unverified'
+    check (verification_state in ('unverified', 'durable_client', 'human_reviewed')),
+  human_review_required boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_shadow_recommendation_effectiveness_org_created
+  on pilot.shadow_recommendation_effectiveness(organization_id, created_at desc);
+
+create table if not exists pilot.shadow_learning_events (
+  event_id uuid primary key default gen_random_uuid(),
+  organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+  account_id text not null references pilot.accounts(account_id) on delete cascade,
+  role text not null,
+  feedback_id bigint not null references pilot.shadow_feedback(feedback_id) on delete cascade,
+  shadow_event_id bigint null references pilot.shadow_events(shadow_event_id) on delete set null,
+  message_id text not null,
+  topic text not null default 'general',
+  session_type text not null default 'quick_round',
+  outcome_signal text not null,
+  effectiveness_score numeric(4,3) null
+    check (effectiveness_score between 0 and 1),
+  verification_state text not null default 'unverified'
+    check (verification_state in ('unverified', 'durable_client', 'human_reviewed')),
+  human_review_required boolean not null default true,
+  actions_taken jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  unique (feedback_id, verification_state)
+);
+
+create index if not exists idx_learning_events_org_date
+  on pilot.shadow_learning_events(organization_id, created_at desc);
+
+create table if not exists pilot.shadow_library_review_flags (
+  flag_id uuid primary key default gen_random_uuid(),
+  organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+  account_id text null references pilot.accounts(account_id) on delete set null,
+  feedback_id bigint null references pilot.shadow_feedback(feedback_id) on delete set null,
+  topic text not null,
+  session_type text null,
+  outcome_signal text null,
+  user_note text null,
+  flag_count integer not null default 1 check (flag_count >= 1),
+  review_state text not null default 'pending'
+    check (review_state in ('pending', 'approved', 'rejected', 'resolved')),
+  proposed_action text null check (proposed_action in ('promote', 'demote', 'retain')),
+  flagged_at timestamptz not null default now(),
+  last_flagged_at timestamptz not null default now(),
+  latest_outcome_signal text null,
+  reviewed_by_account_id text null,
+  reviewed_at timestamptz null,
+  unique (organization_id, topic)
+);
+
+create index if not exists idx_shadow_library_review_flags_org_state
+  on pilot.shadow_library_review_flags(organization_id, review_state, last_flagged_at desc);
+
+create table if not exists pilot.shadow_monthly_stats (
+  monthly_stat_id bigserial primary key,
+  organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+  month text not null check (month ~ '^[0-9]{4}-[0-9]{2}$'),
+  interaction_count integer not null default 0 check (interaction_count >= 0),
+  avg_filter_rate numeric(6,5) null check (avg_filter_rate between 0 and 1),
+  avg_effectiveness_score numeric(6,5) null
+    check (avg_effectiveness_score between 0 and 1),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organization_id, month)
+);
+
+-- Typed, append-only observations for deterministic SHADOW formulas.
+create table if not exists pilot.shadow_formula_observations (
+  observation_id text primary key,
+  organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+  athlete_id text null,
+  context_id text not null,
+  observation_kind text not null,
+  numeric_value numeric null,
+  unit text not null,
+  dimensions jsonb not null default '{}'::jsonb,
+  observed_at timestamptz not null,
+  source_type text not null,
+  source_quality text not null
+    check (source_quality in ('verified', 'high', 'moderate', 'low', 'failed')),
+  source_reference_id text not null,
+  source_quality_notes text null,
+  idempotency_key text not null,
+  supersedes_observation_id text null references pilot.shadow_formula_observations(observation_id),
+  created_by_account_id text null references pilot.accounts(account_id) on delete set null,
+  created_at timestamptz not null default now(),
+  foreign key (organization_id, athlete_id)
+    references pilot.athletes(organization_id, athlete_id)
+    on delete cascade
+);
+
+alter table pilot.shadow_formula_observations
+  add column if not exists dimensions jsonb not null default '{}'::jsonb,
+  add column if not exists idempotency_key text;
+update pilot.shadow_formula_observations
+set idempotency_key = observation_id
+where idempotency_key is null;
+alter table pilot.shadow_formula_observations
+  alter column idempotency_key set not null;
+create unique index if not exists idx_shadow_formula_observations_idempotency
+  on pilot.shadow_formula_observations(organization_id, idempotency_key);
+
+create index if not exists idx_shadow_formula_observations_scope
+  on pilot.shadow_formula_observations(
+    organization_id, athlete_id, context_id, observation_kind, observed_at desc
+  );
+create unique index if not exists idx_shadow_formula_observations_supersedes
+  on pilot.shadow_formula_observations(organization_id, supersedes_observation_id)
+  where supersedes_observation_id is not null;
+
+create table if not exists pilot.shadow_formula_results (
+  result_id text primary key,
+  calculation_key text not null,
+  formula_id text not null,
+  formula_version text not null,
+  output_key text not null,
+  policy_version text not null,
+  parameters jsonb not null default '{}'::jsonb,
+  organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+  athlete_id text null,
+  context_id text null,
+  numeric_value numeric null,
+  unit text not null,
+  computed_at timestamptz not null,
+  input_observation_ids text[] not null default '{}',
+  provenance jsonb not null default '[]'::jsonb,
+  validation_state text not null
+    check (validation_state in ('valid', 'warning', 'invalid', 'insufficient', 'unsupported')),
+  hard_blocks text[] not null default '{}',
+  warnings text[] not null default '{}',
+  confidence text not null
+    check (confidence in ('HIGH', 'MODERATE', 'LOW', 'INSUFFICIENT')),
+  completeness numeric(6,5) not null check (completeness between 0 and 1),
+  worst_source_quality text null,
+  unavailable_reason text null,
+  human_review_required boolean not null default false,
+  created_at timestamptz not null default now(),
+  foreign key (organization_id, athlete_id)
+    references pilot.athletes(organization_id, athlete_id)
+    on delete cascade
+);
+
+alter table pilot.shadow_formula_results
+  add column if not exists calculation_key text,
+  add column if not exists output_key text,
+  add column if not exists policy_version text,
+  add column if not exists parameters jsonb not null default '{}'::jsonb;
+update pilot.shadow_formula_results
+set calculation_key = coalesce(calculation_key, result_id),
+    output_key = coalesce(output_key, 'value'),
+    policy_version = coalesce(policy_version, formula_version)
+where calculation_key is null
+   or output_key is null
+   or policy_version is null;
+alter table pilot.shadow_formula_results
+  alter column calculation_key set not null,
+  alter column output_key set not null,
+  alter column policy_version set not null;
+create unique index if not exists idx_shadow_formula_results_calculation
+  on pilot.shadow_formula_results(organization_id, calculation_key);
+
+create index if not exists idx_shadow_formula_results_scope
+  on pilot.shadow_formula_results(
+    organization_id, athlete_id, formula_id, output_key, formula_version, computed_at desc
+  );
+create index if not exists idx_shadow_formula_results_output_scope
+  on pilot.shadow_formula_results(
+    organization_id, athlete_id, formula_id, output_key, formula_version, computed_at desc
+  );
+
+create table if not exists pilot.shadow_formula_baseline_snapshots (
+  baseline_snapshot_id uuid primary key default gen_random_uuid(),
+  calculation_key text not null,
+  organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+  athlete_id text not null,
+  formula_id text not null,
+  formula_version text not null,
+  metric_key text not null,
+  unit text not null,
+  policy_version text not null,
+  parameters jsonb not null default '{}'::jsonb,
+  window_size integer not null check (window_size between 1 and 1000),
+  history_status text not null
+    check (history_status in ('insufficient_history', 'building', 'adequate')),
+  baseline_mean numeric null,
+  baseline_sample_sd numeric null,
+  observation_ids text[] not null default '{}',
+  effective_at timestamptz not null,
+  created_at timestamptz not null default now(),
+  foreign key (organization_id, athlete_id)
+    references pilot.athletes(organization_id, athlete_id)
+    on delete cascade
+);
+
+alter table pilot.shadow_formula_baseline_snapshots
+  add column if not exists calculation_key text,
+  add column if not exists metric_key text,
+  add column if not exists unit text,
+  add column if not exists policy_version text,
+  add column if not exists parameters jsonb not null default '{}'::jsonb;
+update pilot.shadow_formula_baseline_snapshots
+set calculation_key = coalesce(calculation_key, baseline_snapshot_id::text),
+    metric_key = coalesce(metric_key, formula_id),
+    unit = coalesce(unit, 'unitless'),
+    policy_version = coalesce(policy_version, formula_version)
+where calculation_key is null
+   or metric_key is null
+   or unit is null
+   or policy_version is null;
+alter table pilot.shadow_formula_baseline_snapshots
+  alter column calculation_key set not null,
+  alter column metric_key set not null,
+  alter column unit set not null,
+  alter column policy_version set not null;
+create unique index if not exists idx_shadow_formula_baseline_calculation
+  on pilot.shadow_formula_baseline_snapshots(
+    organization_id, athlete_id, metric_key, calculation_key
+  );
+
+create index if not exists idx_shadow_formula_baseline_scope
+  on pilot.shadow_formula_baseline_snapshots(
+    organization_id, athlete_id, metric_key, formula_id, effective_at desc
+  );
+create index if not exists idx_shadow_formula_baseline_metric_scope
+  on pilot.shadow_formula_baseline_snapshots(
+    organization_id, athlete_id, metric_key, formula_id, effective_at desc
+  );
+
+do $shadow_formula_foundation_constraints$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'pilot.shadow_formula_observations'::regclass
+      and conname = 'shadow_formula_observations_dimensions_check'
+  ) then
+    alter table pilot.shadow_formula_observations
+      add constraint shadow_formula_observations_dimensions_check
+      check (jsonb_typeof(dimensions) = 'object');
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'pilot.shadow_formula_observations'::regclass
+      and conname = 'shadow_formula_observations_idempotency_key_check'
+  ) then
+    alter table pilot.shadow_formula_observations
+      add constraint shadow_formula_observations_idempotency_key_check
+      check (length(btrim(idempotency_key)) between 1 and 300);
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'pilot.shadow_formula_results'::regclass
+      and conname = 'shadow_formula_results_identity_check'
+  ) then
+    alter table pilot.shadow_formula_results
+      add constraint shadow_formula_results_identity_check
+      check (
+        length(btrim(calculation_key)) between 1 and 300
+        and length(btrim(output_key)) between 1 and 120
+        and length(btrim(policy_version)) between 1 and 120
+        and jsonb_typeof(parameters) = 'object'
+      );
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'pilot.shadow_formula_baseline_snapshots'::regclass
+      and conname = 'shadow_formula_baseline_identity_check'
+  ) then
+    alter table pilot.shadow_formula_baseline_snapshots
+      add constraint shadow_formula_baseline_identity_check
+      check (
+        length(btrim(calculation_key)) between 1 and 300
+        and length(btrim(metric_key)) between 1 and 200
+        and length(btrim(unit)) between 1 and 80
+        and length(btrim(policy_version)) between 1 and 120
+        and jsonb_typeof(parameters) = 'object'
+      );
+  end if;
+end
+$shadow_formula_foundation_constraints$;
+
+alter table pilot.shadow_feedback
+  add column if not exists outcome_signal text null,
+  add column if not exists correlation_type text null,
+  add column if not exists correlation_id text null,
+  add column if not exists verification_state text not null default 'unverified',
+  add column if not exists human_review_required boolean not null default true,
+  add column if not exists reviewed_by_account_id text null references pilot.accounts(account_id) on delete set null,
+  add column if not exists reviewed_at timestamptz null;
+
+do $shadow_feedback_constraints$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conrelid = 'pilot.shadow_feedback'::regclass
+      and conname = 'shadow_feedback_verification_state_check'
+  ) then
+    alter table pilot.shadow_feedback
+      add constraint shadow_feedback_verification_state_check
+      check (verification_state in ('unverified', 'durable_client', 'human_reviewed'));
+  end if;
+  if not exists (
+    select 1
+    from pg_constraint
+    where conrelid = 'pilot.shadow_feedback'::regclass
+      and conname = 'shadow_feedback_reviewed_by_account_id_fkey'
+  ) then
+    alter table pilot.shadow_feedback
+      add constraint shadow_feedback_reviewed_by_account_id_fkey
+      foreign key (reviewed_by_account_id)
+      references pilot.accounts(account_id)
+      on delete set null;
+  end if;
+end
+$shadow_feedback_constraints$;
+
+create index if not exists idx_shadow_feedback_correlation
+  on pilot.shadow_feedback(organization_id, account_id, correlation_type, correlation_id);
+
+create unique index if not exists idx_shadow_feedback_unique_message
+  on pilot.shadow_feedback(organization_id, account_id, correlation_id)
+  where correlation_type = 'shadow_message'
+    and correlation_id is not null;
+
+alter table pilot.shadow_authority_checks
+  add column if not exists source_confidence_tier text null,
+  add column if not exists source_verification_state text null;
+
+-- Durable database-backed rate-limit buckets. These keep enforcement
+-- consistent across container replicas and survive process restarts.
+create table if not exists pilot.shadow_rate_limit_buckets (
+  organization_id text not null references pilot.organizations(organization_id) on delete cascade,
+  account_id text not null references pilot.accounts(account_id) on delete cascade,
+  endpoint_key text not null,
+  window_started_at timestamptz not null,
+  window_seconds integer not null check (window_seconds between 1 and 86400),
+  request_count integer not null default 0 check (request_count >= 0),
+  updated_at timestamptz not null default now(),
+  primary key (organization_id, account_id, endpoint_key, window_started_at)
+);
+
+create index if not exists idx_shadow_rate_limit_buckets_window
+  on pilot.shadow_rate_limit_buckets(window_started_at, updated_at);

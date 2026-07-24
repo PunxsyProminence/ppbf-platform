@@ -43,6 +43,9 @@ export async function GET(
     if (!row) {
       return hiddenNotFound();
     }
+    if (row.status !== 'ready') {
+      return hiddenNotFound();
+    }
 
     if (row.athlete_id) {
       try {

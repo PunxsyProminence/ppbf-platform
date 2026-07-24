@@ -8,7 +8,7 @@ import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
 
-const MANAGEABLE_ROLES: PilotRole[] = ['organization_admin', 'admin', 'coach', 'athlete', 'parent', 'volunteer', 'staff'];
+const MANAGEABLE_ROLES: PilotRole[] = ['organization_admin', 'admin', 'coach', 'athlete', 'parent', 'board', 'volunteer', 'staff'];
 
 function isManageableRole(role: string): role is Exclude<PilotRole, 'platform_owner'> {
   return MANAGEABLE_ROLES.includes(role as PilotRole);

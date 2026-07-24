@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import RoleSessionGate from './RoleSessionGate';
-import ShadowChatButton from './ShadowChatButton';
 import type { ClubRole } from './roleRoutes';
 import type { BoardOverviewMetric, BoardSeatConfig, BoardSeatSlug } from '@/app/board/boardWorkspaceConfig';
 
@@ -85,17 +84,6 @@ const roleModulesBySeat: Record<BoardSeatSlug, ModuleGroup[]> = {
   ],
 };
 
-const boardShadowSignals: Record<BoardSeatSlug, string[]> = {
-  president: ['Policy review reminder: Mission governance policy cycle due this week', 'Governance deadline: Strategic review session in 4 days', 'Resolution follow-up: Executive accountability resolution awaiting closeout'],
-  chair: ['Committee oversight alert: Governance committee report pending', 'Governance deadline: Meeting governance checklist due in 2 days', 'Policy review reminder: Bylaws update packet requires chair review'],
-  'vice-chair': ['Governance continuity alert: Succession planning review due tomorrow', 'Committee oversight alert: Cross-committee alignment update pending', 'Strategic cycle reminder: Leadership development review approaching'],
-  treasurer: ['Compliance alert: Grant oversight review window opens in 3 days', 'Filing deadline reminder: Annual finance filing placeholder approaching', 'Risk alert: Reserve monitoring threshold review pending'],
-  secretary: ['Filing deadline reminder: Annual filing calendar update due', 'Resolution follow-up: Board action register entries need closeout notes', 'Governance deadline: Document integrity review scheduled this week'],
-  'safety-director': ['Compliance alert: Program compliance checkpoint due in 24 hours', 'Risk alert: Safety governance review item requires follow-up', 'Policy review reminder: Youth protection policy cycle is active'],
-  'community-director': ['Committee oversight alert: Community impact report pending', 'Governance deadline: Fundraising oversight review due in 2 days', 'Strategic cycle reminder: Partner development review approaching'],
-  'at-large': ['Special review alert: Independent oversight memo pending', 'Risk alert: Strategic project oversight item flagged for review', 'Governance deadline: Board accountability checkpoint due this week'],
-};
-
 function sharedTabCards(tab: WorkspaceTab) {
   const cardsByTab: Record<WorkspaceTab, Array<{ title: string; detail: string }>> = {
     Overview: [
@@ -166,9 +154,9 @@ function sharedTabCards(tab: WorkspaceTab) {
       { title: 'Retention Controls', detail: 'Governance record lifecycle controls visible to relevant seats.' },
     ],
     SHADOW: [
-      { title: 'Governance SHADOW Feed', detail: 'Policy review reminders, governance deadlines, resolution follow-ups, committee oversight, and compliance alerts.' },
+      { title: 'Governance generation unavailable', detail: 'Board chat and background generation remain disabled.' },
       { title: 'Boundary Enforcement', detail: 'No athlete data, coach data, parent records, or admin-only controls in this board SHADOW view.' },
-      { title: 'Role-Aware Signals', detail: 'Each seat sees only governance signals that match role responsibilities.' },
+      { title: 'Aggregate-only API', detail: 'Only fixed organization-level counts, rates, and suppressed status buckets are available.' },
     ],
   };
 
@@ -178,7 +166,6 @@ function sharedTabCards(tab: WorkspaceTab) {
 export default function BoardMemberDashboard({ seat, overviewMetrics, links, allowedRoles }: Readonly<BoardMemberDashboardProps>) {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('Overview');
   const modules = roleModulesBySeat[seat.slug];
-  const shadowSignals = boardShadowSignals[seat.slug];
   const cards = useMemo(() => sharedTabCards(activeTab), [activeTab]);
 
   return (
@@ -280,16 +267,12 @@ export default function BoardMemberDashboard({ seat, overviewMetrics, links, all
               </article>
 
               <article className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
-                <h2 className="text-2xl font-black text-[var(--black)]">Board SHADOW (Governance Only)</h2>
-                <p className="mt-2 text-base leading-7 text-[var(--gray-dark)]">Role-specific governance SHADOW can surface policy review reminders, governance deadlines, resolution follow-ups, committee oversight, compliance alerts, filing deadlines, strategic review cycles, and risk alerts.</p>
+                <h2 className="text-2xl font-black text-[var(--black)]">Board intelligence unavailable</h2>
+                <p className="mt-2 text-base leading-7 text-[var(--gray-dark)]">Board chat and generated background summaries remain disabled. Only the dedicated, authenticated organization-aggregate summary API is available.</p>
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
                   <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-                    <p className="text-[13px] font-mono uppercase tracking-[0.14em] text-[var(--red-primary)]">Active Signals</p>
-                    <ul className="mt-2 space-y-1 text-sm leading-6 text-[var(--gray-dark)]">
-                      {shadowSignals.map((signal) => (
-                        <li key={signal}>- {signal}</li>
-                      ))}
-                    </ul>
+                    <p className="text-[13px] font-mono uppercase tracking-[0.14em] text-[var(--red-primary)]">Generation status</p>
+                    <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">Disabled. No model call or background Board job is available.</p>
                   </div>
                   <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
                     <p className="text-[13px] font-mono uppercase tracking-[0.14em] text-[var(--red-primary)]">Data Boundary</p>
@@ -329,9 +312,6 @@ export default function BoardMemberDashboard({ seat, overviewMetrics, links, all
 
               <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
                 <h2 className="text-xl font-black text-[var(--black)]">Workspace Links</h2>
-                <div className="mt-3">
-                  <ShadowChatButton context="Board Member Dashboard" />
-                </div>
                 <div className="mt-4 grid gap-2">
                   {links.map((link) => (
                     <Link

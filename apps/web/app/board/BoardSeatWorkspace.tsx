@@ -17,11 +17,9 @@ export default function BoardSeatWorkspace({ member }: BoardSeatWorkspaceProps) 
     <BoardMemberDashboard
       seat={seat}
       overviewMetrics={boardOverviewStrip}
-      allowedRoles={[seat.allowedRole]}
+      allowedRoles={['board']}
       links={[
         { label: 'Board hub', href: '/board' },
-        { label: 'Governance Operations', href: '/operations' },
-        { label: 'Board Operations Floor', href: '/operations' },
       ]}
     />
   );

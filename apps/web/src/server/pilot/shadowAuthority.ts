@@ -31,42 +31,6 @@ interface ShadowAuthorityDecision {
   reason: string;
 }
 
-let ensured = false;
-
-async function ensureShadowAuthorityTable(): Promise<void> {
-  if (ensured) {
-    return;
-  }
-
-  await query(
-    `create table if not exists pilot.shadow_authority_checks (
-      authority_check_id bigserial primary key,
-      organization_id text not null,
-      actor_account_id text null,
-      actor_role text null,
-      action text not null,
-      automation_mode text not null,
-      confidence_tier text not null,
-      source_confidence_tier text null,
-      source_verification_state text null,
-      allowed boolean not null,
-      reason text not null,
-      metadata jsonb not null default '{}'::jsonb,
-      created_at timestamptz not null default now()
-    )`,
-  );
-
-  await query(
-    `create index if not exists idx_shadow_authority_checks_org_created
-     on pilot.shadow_authority_checks(organization_id, created_at desc)`,
-  );
-
-  await query(`alter table pilot.shadow_authority_checks add column if not exists source_confidence_tier text null`);
-  await query(`alter table pilot.shadow_authority_checks add column if not exists source_verification_state text null`);
-
-  ensured = true;
-}
-
 function isForbiddenAutomaticClearanceAction(action: string): boolean {
   const normalized = action.toLowerCase();
   return (
@@ -109,7 +73,6 @@ function decideShadowAuthority(input: ShadowAuthorityCheckInput): ShadowAuthorit
 export async function assertShadowAuthority(input: ShadowAuthorityCheckInput): Promise<void> {
   const decision = decideShadowAuthority(input);
 
-  await ensureShadowAuthorityTable();
   await query(
     `insert into pilot.shadow_authority_checks
      (organization_id, actor_account_id, actor_role, action, automation_mode, confidence_tier, source_confidence_tier, source_verification_state, allowed, reason, metadata)

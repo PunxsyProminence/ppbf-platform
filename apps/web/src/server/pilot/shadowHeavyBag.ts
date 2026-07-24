@@ -8,8 +8,10 @@ import type { ShadowContextOutput } from './shadowContextBuilder';
 import type { ShadowClassification } from './shadowClassifier';
 import { routeRequest, type ShadowSessionType, type RoutingDecision } from './shadowRouter';
 import { enqueueJob } from './shadowJobQueue';
-import { buildPersonalizationPrompt } from './shadowProfiling';
 import type { ProfileTierResult } from './shadowProfiling';
+import { budgetConversationHistory } from './shadowConversationHistory';
+
+const HEAVY_BAG_PROVIDER_TIMEOUT_MS = 15_000;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -25,6 +27,7 @@ export interface HeavyBagInput {
   sessionType: ShadowSessionType;
   athleteId?: string;
   systemPromptBase: string;
+  conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
 }
 
 export interface HeavyBagResult {
@@ -63,20 +66,28 @@ export async function executeHeavyBagSync(
     body: JSON.stringify({
       messages: [
         { role: 'system', content: systemPrompt },
+        ...budgetConversationHistory(input.conversationHistory ?? []).map((message) => ({
+          role: message.role,
+          content: message.content,
+        })),
         { role: 'user', content: input.message },
       ],
       temperature: routing.temperature,
       max_completion_tokens: routing.maxTokens,
     }),
+    signal: AbortSignal.timeout(HEAVY_BAG_PROVIDER_TIMEOUT_MS),
   });
 
   if (!apiResponse.ok) {
-    const err = await apiResponse.text();
-    throw new Error(`Heavy Bag API error ${apiResponse.status}: ${err}`);
+    throw new Error(`Heavy Bag API request failed with status ${apiResponse.status}`);
   }
 
-  const data = await apiResponse.json();
-  const response = data.choices?.[0]?.message?.content ?? '';
+  const data = await apiResponse.json() as {
+    choices?: Array<{ message?: { content?: unknown } }>;
+  };
+  const response = typeof data.choices?.[0]?.message?.content === 'string'
+    ? data.choices[0].message.content.trim()
+    : '';
 
   return {
     mode: 'sync',
@@ -98,14 +109,17 @@ export async function executeHeavyBagAsync(input: HeavyBagInput): Promise<HeavyB
     jobType: sessionTypeToJobType(input.sessionType),
     organizationId: input.organizationId,
     accountId: input.userId,
+    subjectId: input.athleteId ?? null,
     role: input.role,
     inputPayload: {
+      requestMode: 'chat',
       message: input.message,
       athleteId: input.athleteId,
       sessionType: input.sessionType,
       complexity: input.classification.complexity,
       topic: input.classification.topic,
-      contextSummary: input.contextOutput.context.slice(0, 500), // Truncated for job payload
+      authenticatedRole: input.role,
+      authorizedContext: input.contextOutput.context.slice(0, 12_000),
       profileTier: input.tierResult.tier,
     },
     priority: priorityForSessionType(input.sessionType),
@@ -121,7 +135,9 @@ export async function executeHeavyBagAsync(input: HeavyBagInput): Promise<HeavyB
 
 /**
  * Decide whether to run sync or async based on session type + profile tier.
- * Gold users get sync heavy bag. Others get async for board/scout tasks.
+ * Interactive Heavy Bag remains synchronous until a secure scheduled worker
+ * is configured. Dedicated board/scout producers may still enqueue jobs once
+ * that worker is enabled.
  */
 export function shouldRunAsync(
   sessionType: ShadowSessionType,
@@ -130,12 +146,10 @@ export function shouldRunAsync(
   // Always async for background tasks
   if (sessionType === 'scout_report' || sessionType === 'board_summary') return true;
 
-  // Heavy bag: sync for Gold users (they expect fast deep responses),
-  // async for others
-  if (sessionType === 'heavy_bag') {
-    return profileTier !== 'gold';
-  }
+  // Never strand an interactive Heavy Bag request in an unserviced queue.
+  if (sessionType === 'heavy_bag') return false;
 
+  void profileTier;
   return false;
 }
 
@@ -169,12 +183,6 @@ You are in an **extended coaching session**.
   // Context block
   if (input.contextOutput.context) {
     sections.push(`\n## Session Context\n${input.contextOutput.context}`);
-  }
-
-  // Personalization (Gold tier only)
-  const personalization = buildPersonalizationPrompt(input.userProfile, input.tierResult);
-  if (personalization) {
-    sections.push(personalization);
   }
 
   // Session metadata
@@ -224,6 +232,8 @@ export async function generateScoutReport(input: ScoutReportInput): Promise<{ jo
     accountId: input.userId,
     role: input.role,
     inputPayload: {
+      requestMode: 'profile',
+      authenticatedRole: input.role,
       profileTier: input.tierResult.tier,
       interactionCount: input.profile.interaction_count,
       recentTopics: input.profile.recent_topics,

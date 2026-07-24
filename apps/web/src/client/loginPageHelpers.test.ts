@@ -51,18 +51,21 @@ describe('login page helpers', () => {
     expect(mapPilotLoginRoleToClubRole('coach')).toBe('coach');
     expect(mapPilotLoginRoleToClubRole('athlete')).toBe('athlete');
     expect(mapPilotLoginRoleToClubRole('parent')).toBe('parent');
+    expect(mapPilotLoginRoleToClubRole('board')).toBe('board');
   });
 
   test('routes platform owners to organization provisioning after direct login', () => {
     expect(getPilotLoginRedirectPath('platform_owner')).toBe('/admin/organizations');
     expect(getPilotLoginRedirectPath('organization_admin')).toBe('/admin');
     expect(getPilotLoginRedirectPath('coach')).toBe('/coach/review-queue');
+    expect(getPilotLoginRedirectPath('board')).toBe('/board');
   });
 
   test('permits only the expected announcement roles', () => {
     expect(canPublishAnnouncement('coach')).toBe(true);
     expect(canPublishAnnouncement('admin')).toBe(true);
-    expect(canPublishAnnouncement('board-chair')).toBe(true);
+    expect(canPublishAnnouncement('board')).toBe(false);
+    expect(canPublishAnnouncement('board-chair')).toBe(false);
     expect(canPublishAnnouncement('athlete')).toBe(false);
   });
 
@@ -74,7 +77,7 @@ describe('login page helpers', () => {
         draftAnnouncement: 'Hello',
         announcementAuthorName: 'Coach',
       }),
-    ).toBe('Only Coach, Admin, or Board roles can publish announcements.');
+    ).toBe('Only Coach or Admin roles can publish announcements.');
 
     expect(
       validateAnnouncementPublishInput({

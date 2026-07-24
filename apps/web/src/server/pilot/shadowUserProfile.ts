@@ -51,22 +51,22 @@ export async function getOrCreateShadowUserProfile(
   organizationId: string,
   role: PilotRole,
 ): Promise<ShadowUserProfileRow> {
-  const existing = await queryOne<ShadowUserProfileRow>(
-    `SELECT * FROM pilot.shadow_user_profiles
-     WHERE account_id = $1 AND organization_id = $2`,
-    [accountId, organizationId],
-  );
-
-  if (existing) return existing;
-
   const created = await queryOne<ShadowUserProfileRow>(
     `INSERT INTO pilot.shadow_user_profiles
        (account_id, organization_id, role, interaction_count,
-        recent_topics, athlete_ids_discussed, open_questions,
-        remembered_facts, communication_style,
-        created_at, updated_at)
-     VALUES ($1, $2, $3, 0, '{}', '{}', '{}', '[]'::jsonb, 'unknown', NOW(), NOW())
-     RETURNING *`,
+         recent_topics, athlete_ids_discussed, open_questions,
+         remembered_facts, communication_style,
+         created_at, updated_at)
+      VALUES ($1, $2, $3, 0, '{}', '{}', '{}', '[]'::jsonb, 'unknown', NOW(), NOW())
+      ON CONFLICT (account_id, organization_id)
+      DO UPDATE SET
+        role = EXCLUDED.role,
+        updated_at = CASE
+          WHEN pilot.shadow_user_profiles.role IS DISTINCT FROM EXCLUDED.role
+          THEN NOW()
+          ELSE pilot.shadow_user_profiles.updated_at
+        END
+      RETURNING *`,
     [accountId, organizationId, role],
   );
 
@@ -141,10 +141,14 @@ export async function updateShadowUserProfile(
     await query(
       `UPDATE pilot.shadow_user_profiles
        SET recent_topics = (
-         SELECT array_agg(t) FROM (
-           SELECT unnest(array_append(recent_topics, $3)) AS t
-           LIMIT 10
-         ) sub
+          SELECT COALESCE(array_agg(topic ORDER BY last_ordinality), ARRAY[]::text[])
+          FROM (
+            SELECT topic, MAX(ordinality) AS last_ordinality
+            FROM unnest(array_append(recent_topics, $3)) WITH ORDINALITY AS expanded(topic, ordinality)
+            GROUP BY topic
+            ORDER BY MAX(ordinality) DESC
+            LIMIT 10
+          ) recent
        ),
        interaction_count = interaction_count + 1,
        last_interaction_at = NOW(),
@@ -168,10 +172,15 @@ export async function updateShadowUserProfile(
     await query(
       `UPDATE pilot.shadow_user_profiles
        SET athlete_ids_discussed = (
-         SELECT array_agg(DISTINCT a) FROM (
-           SELECT unnest(array_append(athlete_ids_discussed, $3)) AS a
-           LIMIT 20
-         ) sub
+          SELECT COALESCE(array_agg(athlete_id ORDER BY last_ordinality), ARRAY[]::text[])
+          FROM (
+            SELECT athlete_id, MAX(ordinality) AS last_ordinality
+            FROM unnest(array_append(athlete_ids_discussed, $3)) WITH ORDINALITY
+              AS expanded(athlete_id, ordinality)
+            GROUP BY athlete_id
+            ORDER BY MAX(ordinality) DESC
+            LIMIT 20
+          ) recent
        ),
        updated_at = NOW()
        WHERE account_id = $1 AND organization_id = $2`,

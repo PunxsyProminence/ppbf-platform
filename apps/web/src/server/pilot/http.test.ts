@@ -54,10 +54,13 @@ describe('jsonError', () => {
     expect(await res.json()).toEqual({ error: 'Internal server error' });
   });
 
-  test('logs the real error server-side even though the client response is generic', async () => {
+  test('logs only a sanitized error class server-side', async () => {
     const dbError = new Error('relation "pilot.foo" does not exist');
     await jsonError(dbError).json();
-    expect(consoleErrorSpy).toHaveBeenCalledWith('unhandled-route-error', dbError);
+    expect(consoleErrorSpy).toHaveBeenCalledWith('unhandled-route-error', {
+      errorClass: 'Error',
+    });
+    expect(JSON.stringify(consoleErrorSpy.mock.calls)).not.toContain('pilot.foo');
   });
 
   test('an explicit non-500 fallback status for an unrecognized message is preserved verbatim', async () => {

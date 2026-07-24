@@ -1,6 +1,5 @@
-// shadowProfiling.ts — Bronze / Silver / Gold Profiling Tiers
-// Determines personalization depth based on interaction history and profile richness.
-// Bronze = new users, Silver = developing relationship, Gold = trusted expert.
+// shadowProfiling.ts — Bronze / Silver / Gold trust-progress badges.
+// Badges describe relationship maturity; they must never gate SHADOW capabilities.
 
 import type { ShadowUserProfileRow, RememberedFact } from './shadowUserProfile';
 
@@ -26,26 +25,26 @@ export const TIER_CONFIGS: Record<ProfileTier, ProfileTierConfig> = {
   bronze: {
     tier: 'bronze',
     label: 'Bronze — Getting Started',
-    contextSections: 3,
-    maxRememberedFacts: 0,
-    includesAthleteHistory: false,
-    includesPatternInsights: false,
-    includesCrossSessionMemory: false,
-    systemPromptPersonalization: 'none',
+    contextSections: 12,
+    maxRememberedFacts: 15,
+    includesAthleteHistory: true,
+    includesPatternInsights: true,
+    includesCrossSessionMemory: true,
+    systemPromptPersonalization: 'full',
     scoutReportEligible: false,
-    description: 'New user. Generic coaching context. No personalization yet.',
+    description: 'New relationship. Badge only; capabilities are controlled by server policy.',
   },
   silver: {
     tier: 'silver',
     label: 'Silver — Building Trust',
-    contextSections: 6,
-    maxRememberedFacts: 5,
+    contextSections: 12,
+    maxRememberedFacts: 15,
     includesAthleteHistory: true,
-    includesPatternInsights: false,
+    includesPatternInsights: true,
     includesCrossSessionMemory: true,
-    systemPromptPersonalization: 'light',
+    systemPromptPersonalization: 'full',
     scoutReportEligible: false,
-    description: 'Regular user. Light personalization. Session memory active.',
+    description: 'Developing relationship. Badge only; capabilities are controlled by server policy.',
   },
   gold: {
     tier: 'gold',
@@ -56,8 +55,8 @@ export const TIER_CONFIGS: Record<ProfileTier, ProfileTierConfig> = {
     includesPatternInsights: true,
     includesCrossSessionMemory: true,
     systemPromptPersonalization: 'full',
-    scoutReportEligible: true,
-    description: 'Power user. Full personalization. Cross-session pattern memory. Scout Report eligible.',
+    scoutReportEligible: false,
+    description: 'Established relationship. Badge only; capabilities are controlled by server policy.',
   },
 };
 
@@ -221,28 +220,11 @@ export function checkScoutReportEligibility(
   profile: ShadowUserProfileRow,
   tierResult: ProfileTierResult,
 ): ScoutReportEligibility {
-  if (!tierResult.config.scoutReportEligible) {
-    return {
-      eligible: false,
-      reason: `${tierResult.config.label} tier — reach Gold tier to generate Scout Reports`,
-      requiredInteractions: 50,
-      currentInteractions: profile.interaction_count,
-    };
-  }
-
-  if (profile.interaction_count < 20) {
-    return {
-      eligible: false,
-      reason: 'Insufficient interaction history for meaningful Scout Report',
-      requiredInteractions: 20,
-      currentInteractions: profile.interaction_count,
-    };
-  }
-
+  void tierResult;
   return {
-    eligible: true,
-    reason: 'Gold tier with sufficient history — Scout Report available',
-    requiredInteractions: 20,
+    eligible: false,
+    reason: 'Scout Reports are unavailable until the secure reviewed worker is enabled',
+    requiredInteractions: 0,
     currentInteractions: profile.interaction_count,
   };
 }

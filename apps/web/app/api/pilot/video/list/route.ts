@@ -34,14 +34,17 @@ export async function GET(request: NextRequest) {
     let rows: VideoSessionRow[];
 
     if (principal.role === 'athlete') {
+      if (!principal.athleteId) {
+        return NextResponse.json({ items: [] });
+      }
       rows = await query<VideoSessionRow>(
         `select video_session_id, title, notes, file_name, file_size_bytes, mime_type, status, athlete_id, uploaded_by_account_id, created_at
          from pilot.video_sessions
-         where organization_id = $1 and athlete_id = (
-           select athlete_id from pilot.athletes where account_id = $2 and organization_id = $1 limit 1
-         )
+         where organization_id = $1
+           and athlete_id = $2
+           and status = 'ready'
          order by created_at desc limit $3`,
-        [principal.organizationId, principal.accountId, limit],
+        [principal.organizationId, principal.athleteId, limit],
       );
     } else if (principal.role === 'parent') {
       if (!athleteId) {
@@ -51,7 +54,7 @@ export async function GET(request: NextRequest) {
       rows = await query<VideoSessionRow>(
         `select video_session_id, title, notes, file_name, file_size_bytes, mime_type, status, athlete_id, uploaded_by_account_id, created_at
          from pilot.video_sessions
-         where organization_id = $1 and athlete_id = $2
+         where organization_id = $1 and athlete_id = $2 and status = 'ready'
          order by created_at desc limit $3`,
         [principal.organizationId, athleteId, limit],
       );

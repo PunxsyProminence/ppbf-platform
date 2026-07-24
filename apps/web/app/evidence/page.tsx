@@ -1,112 +1,184 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import FeatureSurface from '@/components/FeatureSurface';
-import { apiBase } from '@/lib/apiBase';
+import { useCallback, useEffect, useState } from 'react';
 
-interface ShadowObservationItem {
-  id: string;
-  source: 'event' | 'telemetry';
-  label: string;
-  entity_type: string | null;
-  entity_id: string | null;
-  review_state: 'pending_review' | 'approved' | 'rejected' | 'promoted' | 'unknown';
-  created_at: string;
+import RoleStandaloneView from '@/components/RoleStandaloneView';
+
+type ReviewState = 'pending_review' | 'approved' | 'rejected';
+
+interface ReviewSource {
+  source_id: string;
+  title: string;
+  publisher: string | null;
+  source_type: string;
+  status: string;
+  approval_state: ReviewState;
+  verification_state: string;
+}
+
+interface ReviewDocument {
+  document_id: string;
+  source_id: string;
+  document_name: string;
+  ingest_state: string;
+  index_completed_at: string | null;
+  approval_state: ReviewState;
+  verification_state: string;
+  extraction_error: string | null;
+  chunk_count: number;
+}
+
+interface ReviewQueue {
+  sources: ReviewSource[];
+  documents: ReviewDocument[];
 }
 
 export default function EvidenceReviewPage() {
-  const [items, setItems] = useState<ShadowObservationItem[]>([]);
-  const [errorMessage, setErrorMessage] = useState('');
+  const [queue, setQueue] = useState<ReviewQueue>({ sources: [], documents: [] });
+  const [error, setError] = useState('');
+  const [busyKey, setBusyKey] = useState('');
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const response = await fetch(`${apiBase()}/api/pilot/shadow/observation-projection`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ limit: 120 }),
-        });
-
-        if (!response.ok) {
-          throw new Error('Unable to load SHADOW observation projection.');
-        }
-
-        const payload = (await response.json()) as { items?: ShadowObservationItem[] };
-        setItems(payload.items ?? []);
-        setErrorMessage('');
-      } catch (error) {
-        setItems([]);
-        setErrorMessage(error instanceof Error ? error.message : 'Unable to load SHADOW observation projection.');
-      }
-    })();
+  const fetchQueue = useCallback(async (): Promise<ReviewQueue> => {
+    const response = await fetch('/api/pilot/shadow/evidence/review?limit=200', {
+      cache: 'no-store',
+    });
+    if (!response.ok) throw new Error('Unable to load the evidence review queue.');
+    return response.json() as Promise<ReviewQueue>;
   }, []);
 
-  const grouped = useMemo(() => {
-    return {
-      pending: items.filter((item) => item.review_state === 'pending_review'),
-      approved: items.filter((item) => item.review_state === 'approved'),
-      rejected: items.filter((item) => item.review_state === 'rejected'),
-      other: items.filter((item) => !['pending_review', 'approved', 'rejected'].includes(item.review_state)),
-    };
-  }, [items]);
+  useEffect(() => {
+    void fetchQueue().then(
+      setQueue,
+      (loadError: unknown) => {
+        setError(loadError instanceof Error ? loadError.message : 'Unable to load evidence.');
+      },
+    );
+  }, [fetchQueue]);
+
+  const update = async (payload: Record<string, string>) => {
+    const key = `${payload.entityType}:${payload.entityId}:${payload.action}`;
+    setBusyKey(key);
+    setError('');
+    try {
+      const response = await fetch('/api/pilot/shadow/evidence/review', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? 'Evidence review failed.');
+      }
+      setQueue(await fetchQueue());
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : 'Evidence review failed.');
+    } finally {
+      setBusyKey('');
+    }
+  };
+
+  const reviewButtons = (entityType: 'source' | 'document', entityId: string) => (
+    <div className="flex gap-2">
+      {(['approved', 'rejected'] as const).map((approvalState) => {
+        const key = `${entityType}:${entityId}:review`;
+        return (
+          <button
+            key={approvalState}
+            type="button"
+            disabled={busyKey === key}
+            onClick={() => void update({
+              entityType,
+              entityId,
+              action: 'review',
+              approvalState,
+            })}
+            className="border border-[#8b4444] bg-[#211717] px-3 py-1 text-xs font-mono uppercase text-[#e8d7c6] disabled:opacity-50"
+          >
+            {approvalState === 'approved' ? 'Approve + verify' : 'Reject'}
+          </button>
+        );
+      })}
+    </div>
+  );
 
   return (
-    <FeatureSurface
-      eyebrow="Evidence Review"
-      title="Verification lane for submitted intake items"
-      description="SHADOW observation projection read model for review and validation workflows."
-      status="ready"
-      currentStage="evidence"
-      primaryLinks={[
-        { label: 'Research intake', href: '/research' },
-        { label: 'Knowledge graph', href: '/knowledge-graph' },
-      ]}
-      stats={[
-        { label: 'Current Stage', value: 'Evidence Review' },
-        { label: 'Next Stage', value: 'Knowledge Graph' },
-        { label: 'Review Mode', value: 'SHADOW Projection' },
-        { label: 'Items', value: String(items.length) },
-      ]}
+    <RoleStandaloneView
+      roleLabel="Evidence Review"
+      routeLabel="/evidence"
+      allowedRoles={['admin']}
     >
-      <div className="space-y-4">
-        {errorMessage ? <section className="border-2 border-[#8b4444] bg-[#1a1a1a]/60 p-4 text-sm text-[#f0c4c4]">{errorMessage}</section> : null}
+      <div className="space-y-6">
+        <header className="border-2 border-[#8b4444] bg-[#111] p-5">
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">SHADOW evidence</p>
+          <h1 className="mt-2 text-3xl font-black text-[#f2e7da]">Evidence Review Queue</h1>
+          <p className="mt-2 text-sm text-[#cfbfae]">
+            Only approved, verified, fully indexed documents can support SHADOW citations.
+          </p>
+        </header>
 
-        {!errorMessage && items.length === 0 ? (
-          <section className="border-2 border-[#8b4444] bg-[#1a1a1a]/60 p-4">
-            <p className="text-[12px] font-mono uppercase tracking-[0.16em] text-[#d4a574]">Empty State</p>
-            <p className="mt-2 text-[14px] text-[#cfbfae]">No SHADOW observation records are available yet.</p>
-          </section>
-        ) : null}
+        {error ? <p className="border border-[#8b4444] bg-[#2a1414] p-3 text-sm text-[#f0c4c4]">{error}</p> : null}
 
-        {[
-          { title: 'Needs Review', items: grouped.pending },
-          { title: 'Accepted', items: grouped.approved },
-          { title: 'Rejected', items: grouped.rejected },
-          { title: 'Other States', items: grouped.other },
-        ].map((group) => (
-          <section key={group.title} className="border-2 border-[#8b4444] bg-[#1a1a1a]/60 p-4">
-            <p className="text-[12px] font-mono uppercase tracking-[0.16em] text-[#d4a574]">{group.title}</p>
-            {group.items.length === 0 ? (
-              <p className="mt-2 text-sm text-[#b0a095]">No items.</p>
-            ) : (
-              <div className="mt-3 space-y-3">
-                {group.items.map((item) => (
-                  <article key={item.id} className="border border-[#5a4a3a] bg-[#101010] p-3">
-                    <p className="text-[16px] font-bold text-[#e8d7c6]">{item.label}</p>
-                    <div className="mt-2 grid gap-1 text-[14px] text-[#cfbfae] md:grid-cols-2">
-                      <p>Source: {item.source}</p>
-                      <p>Review State: {item.review_state}</p>
-                      <p>Entity Type: {item.entity_type || 'n/a'}</p>
-                      <p>Entity ID: {item.entity_id || 'n/a'}</p>
-                    </div>
-                    <p className="mt-2 font-mono text-[12px] uppercase tracking-[0.1em] text-[#d4a574]">-&gt; Points to Knowledge Graph</p>
-                  </article>
-                ))}
+        <section className="space-y-3">
+          <h2 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Sources</h2>
+          {queue.sources.length === 0 ? <p className="text-sm text-[#cfbfae]">No sources are awaiting review.</p> : null}
+          {queue.sources.map((source) => (
+            <article key={source.source_id} className="border border-[#5a4a3a] bg-[#151515] p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-semibold text-[#f2e7da]">{source.title}</h3>
+                  <p className="text-xs text-[#cfbfae]">
+                    {source.publisher || 'Publisher unavailable'} · {source.source_type} · {source.status}
+                  </p>
+                  <p className="mt-1 text-xs font-mono text-[#a99a8b]">
+                    {source.approval_state} / {source.verification_state}
+                  </p>
+                </div>
+                {reviewButtons('source', source.source_id)}
               </div>
-            )}
-          </section>
-        ))}
+            </article>
+          ))}
+        </section>
+
+        <section className="space-y-3">
+          <h2 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Documents</h2>
+          {queue.documents.length === 0 ? <p className="text-sm text-[#cfbfae]">No documents are awaiting review.</p> : null}
+          {queue.documents.map((document) => (
+            <article key={document.document_id} className="border border-[#5a4a3a] bg-[#151515] p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-semibold text-[#f2e7da]">{document.document_name}</h3>
+                  <p className="text-xs text-[#cfbfae]">
+                    {document.ingest_state} · {document.chunk_count} indexed chunks
+                  </p>
+                  <p className="mt-1 text-xs font-mono text-[#a99a8b]">
+                    {document.approval_state} / {document.verification_state}
+                  </p>
+                  {document.extraction_error ? (
+                    <p className="mt-1 text-xs text-[#f0c4c4]">Extraction failed; this document cannot be approved.</p>
+                  ) : null}
+                </div>
+                <div className="space-y-2">
+                  {document.chunk_count > 0 && !document.index_completed_at ? (
+                    <button
+                      type="button"
+                      disabled={busyKey === `document:${document.document_id}:complete_indexing`}
+                      onClick={() => void update({
+                        entityType: 'document',
+                        entityId: document.document_id,
+                        action: 'complete_indexing',
+                      })}
+                      className="block border border-[#5a4a3a] bg-[#171d21] px-3 py-1 text-xs font-mono uppercase text-[#d4a574] disabled:opacity-50"
+                    >
+                      Confirm index complete
+                    </button>
+                  ) : null}
+                  {reviewButtons('document', document.document_id)}
+                </div>
+              </div>
+            </article>
+          ))}
+        </section>
       </div>
-    </FeatureSurface>
+    </RoleStandaloneView>
   );
 }

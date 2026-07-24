@@ -1,157 +1,105 @@
-// /api/pilot/shadow/video-analysis/route.ts
-// Video Analysis Job Enqueue & Status Check
-// Phase 3 Scaffolding: Ready for Phase 4 Computer Vision integration (Aug 22, 2026)
+// SHADOW video analysis remains unavailable until an approved, validated
+// computer-vision processor exists. The route fails closed and never creates
+// a placeholder job that could later be mistaken for a real analysis.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requirePrincipal } from '@/src/server/pilot/http';
-import { requireRole } from '@/src/server/pilot/access';
-import { query, queryOne } from '@/src/server/pilot/db';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
+import { hiddenNotFound, isUuid, jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { getJobStatusForActor } from '@/src/server/pilot/shadowJobQueue';
 
 export interface VideoAnalysisRequest {
-  videoUrl: string;       // URL or file path to video
-  athleteId?: string;     // Target athlete for analysis
-  analysisType?: 'pose' | 'technique' | 'biomechanics' | 'full'; // Type of analysis (default: full)
-  timestamp?: string;     // Session timestamp for context
+  videoUrl: string;
+  athleteId?: string;
+  analysisType?: 'pose' | 'technique' | 'biomechanics' | 'full';
+  timestamp?: string;
 }
 
 export interface VideoAnalysisResponse {
   ok: boolean;
   jobId: string;
-  status: 'queued' | 'processing' | 'completed' | 'failed';
+  status: 'queued' | 'processing' | 'completed' | 'failed' | 'unavailable';
   message: string;
-  estimatedDuration?: number; // seconds
-  phase4Placeholder?: string;
+  reason?: string;
 }
 
-// ─── POST: Enqueue Video Analysis ──────────────────────────────────────────
-
-export async function POST(req: NextRequest): Promise<NextResponse<VideoAnalysisResponse>> {
+export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const principal = await requirePrincipal(req);
     requireRole(principal, ['coach', 'admin', 'organization_admin', 'platform_owner']);
 
-    const body = (await req.json()) as VideoAnalysisRequest;
-    if (!body.videoUrl) {
-      return NextResponse.json(
-        {
-          ok: false,
-          jobId: '',
-          status: 'failed',
-          message: 'videoUrl is required',
-        },
-        { status: 400 },
-      );
-    }
-
-    // Insert job into shadow_jobs queue
-    const jobId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-    await query(
-      `INSERT INTO pilot.shadow_jobs (
-         job_id, organization_id, account_id, session_type,
-         input, status, created_at, updated_at
-       ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
-      [
-        jobId,
-        principal.organizationId,
-        principal.accountId,
-        'video_analysis',
-        JSON.stringify({
-          videoUrl: body.videoUrl,
-          athleteId: body.athleteId ?? null,
-          analysisType: body.analysisType ?? 'full',
-          timestamp: body.timestamp ?? new Date().toISOString(),
-        }),
-        'pending',
-      ],
-    );
-
-    return NextResponse.json({
-      ok: true,
-      jobId,
-      status: 'queued',
-      message: 'Video analysis job queued. Phase 4 (Aug 22, 2026) will add Computer Vision analysis.',
-      estimatedDuration: 120,
-      phase4Placeholder: 'Pose estimation, technique scoring, and error detection coming in Phase 4',
-    });
-  } catch (err) {
-    return NextResponse.json(
-      {
+    const body = (await req.json().catch(() => ({}))) as Partial<VideoAnalysisRequest>;
+    if (typeof body.videoUrl !== 'string' || !body.videoUrl.trim()) {
+      return NextResponse.json({
         ok: false,
         jobId: '',
         status: 'failed',
-        message: `Error: ${err instanceof Error ? err.message : 'Unknown error'}`,
-      },
-      { status: 500 },
-    );
+        message: 'videoUrl is required',
+      } satisfies VideoAnalysisResponse, { status: 400 });
+    }
+
+    if (body.athleteId) {
+      await assertActorCanAccessAthlete(principal, body.athleteId);
+    }
+
+    return NextResponse.json({
+      ok: false,
+      jobId: '',
+      status: 'unavailable',
+      message: 'Video analysis is not available yet. No analysis job was created.',
+      reason: 'VIDEO_ANALYSIS_PROCESSOR_UNAVAILABLE',
+    } satisfies VideoAnalysisResponse, { status: 503 });
+  } catch (error) {
+    return jsonError(error);
   }
 }
 
-// ─── GET: Check Video Analysis Job Status ────────────────────────────────────
-
-export async function GET(req: NextRequest): Promise<NextResponse<VideoAnalysisResponse>> {
+export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const principal = await requirePrincipal(req);
     const jobId = req.nextUrl.searchParams.get('jobId');
-
     if (!jobId) {
-      return NextResponse.json(
-        {
-          ok: false,
-          jobId: '',
-          status: 'failed',
-          message: 'jobId query parameter is required',
-        },
-        { status: 400 },
-      );
-    }
-
-    const job = await queryOne<{
-      job_id: string;
-      status: string;
-      output: string | null;
-      error: string | null;
-    }>(
-      `SELECT job_id, status, output, error
-       FROM pilot.shadow_jobs
-       WHERE job_id = $1 AND organization_id = $2`,
-      [jobId, principal.organizationId],
-    );
-
-    if (!job) {
-      return NextResponse.json(
-        {
-          ok: false,
-          jobId,
-          status: 'failed',
-          message: 'Job not found',
-        },
-        { status: 404 },
-      );
-    }
-
-    return NextResponse.json({
-      ok: true,
-      jobId: job.job_id,
-      status: (job.status as 'queued' | 'processing' | 'completed' | 'failed') ?? 'pending',
-      message:
-        job.status === 'completed'
-          ? 'Video analysis complete. Phase 4 will return pose, technique, and biomechanics insights.'
-          : job.status === 'failed'
-            ? `Video analysis failed: ${job.error}`
-            : 'Video analysis in progress (Phase 4 feature)',
-      phase4Placeholder: 'Results available after Phase 4 Computer Vision integration',
-    });
-  } catch (err) {
-    return NextResponse.json(
-      {
+      return NextResponse.json({
         ok: false,
         jobId: '',
         status: 'failed',
-        message: `Error: ${err instanceof Error ? err.message : 'Unknown error'}`,
-      },
-      { status: 500 },
-    );
+        message: 'jobId query parameter is required',
+      } satisfies VideoAnalysisResponse, { status: 400 });
+    }
+    if (!isUuid(jobId)) return hiddenNotFound();
+
+    const job = await getJobStatusForActor(jobId, principal);
+    if (!job || job.sessionType !== 'film_study') {
+      return NextResponse.json({
+        ok: false,
+        jobId,
+        status: 'failed',
+        message: 'Job not found',
+      } satisfies VideoAnalysisResponse, { status: 404 });
+    }
+
+    const status: VideoAnalysisResponse['status'] =
+      job.status === 'pending'
+        ? 'queued'
+        : job.status === 'running'
+          ? 'processing'
+          : job.status === 'completed'
+            ? 'completed'
+            : 'failed';
+
+    return NextResponse.json({
+      ok: job.status === 'completed',
+      jobId: job.jobId,
+      status,
+      message:
+        job.status === 'completed'
+          ? 'Video analysis job completed.'
+          : job.status === 'failed' || job.status === 'cancelled'
+            ? 'Video analysis job did not complete.'
+            : 'Video analysis job is still processing.',
+      ...(job.error ? { reason: job.error } : {}),
+    } satisfies VideoAnalysisResponse);
+  } catch (error) {
+    return jsonError(error);
   }
 }

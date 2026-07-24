@@ -3,6 +3,18 @@ name: deploy-staging
 on:
   workflow_dispatch:
     inputs:
+      expected_sha:
+        description: Exact tested commit SHA to deploy
+        required: true
+        type: string
+      schema_migrations_complete:
+        description: Confirm the required additive staging migrations succeeded
+        required: true
+        default: NOT_CONFIRMED
+        type: choice
+        options:
+          - NOT_CONFIRMED
+          - CONFIRMED
       enable_shadow_gate:
         description: Run the SHADOW E2E gate after deploy
         required: false
@@ -24,6 +36,15 @@ jobs:
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
+
+      - name: Verify Exact Tested SHA And Schema Gate
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          SCHEMA_MIGRATIONS_COMPLETE: ${{ inputs.schema_migrations_complete }}
+        run: |
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          test "$ACTUAL_SHA" = "$EXPECTED_SHA"
+          test "$SCHEMA_MIGRATIONS_COMPLETE" = "CONFIRMED"
 
       - name: Authenticate via Azure OIDC
         uses: azure/login@v2
@@ -49,7 +70,25 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Validate Staging AI Configuration
+        env:
+          AZURE_AI_ENDPOINT: ${{ vars.AZURE_AI_ENDPOINT }}
+          AZURE_AI_DEPLOYMENT_NAME: ${{ vars.AZURE_AI_DEPLOYMENT_NAME }}
+          AZURE_AI_API_VERSION: ${{ vars.AZURE_AI_API_VERSION }}
+        run: |
+          test -n "$AZURE_AI_ENDPOINT"
+          test "$AZURE_AI_DEPLOYMENT_NAME" = "gpt-5-mini-shadow"
+          test "$AZURE_AI_API_VERSION" = "2024-12-01-preview"
+          case "$AZURE_AI_ENDPOINT" in
+            https://shadow-ai.cognitiveservices.azure.com|https://shadow-ai.cognitiveservices.azure.com/) ;;
+            *) exit 1 ;;
+          esac
+
       - name: Deploy to Azure Container App
+        env:
+          AZURE_AI_ENDPOINT: ${{ vars.AZURE_AI_ENDPOINT }}
+          AZURE_AI_DEPLOYMENT_NAME: ${{ vars.AZURE_AI_DEPLOYMENT_NAME }}
+          AZURE_AI_API_VERSION: ${{ vars.AZURE_AI_API_VERSION }}
         run: |
           az containerapp update \
             --name app-ppbf-staging \
@@ -60,9 +99,23 @@ jobs:
               PPBF_AUTH_PROVIDER_WIRED=false \
               AZURE_POSTGRES_CONNECTION_STRING=secretref:azure-postgres-connection-string \
               AZURE_STORAGE_CONNECTION_STRING=secretref:azure-storage-connection-string \
+              AZURE_AI_ENDPOINT="$AZURE_AI_ENDPOINT" \
+              AZURE_AI_DEPLOYMENT_NAME="$AZURE_AI_DEPLOYMENT_NAME" \
+              AZURE_AI_API_VERSION="$AZURE_AI_API_VERSION" \
+              AZURE_AI_KEY=secretref:azure-ai-key \
+              PPBF_SHADOW_MAX_COMPLETION_TOKENS=1024 \
               PPBF_PILOT_BOOTSTRAP_KEY=secretref:ppbf-pilot-bootstrap-key \
               PPBF_PILOT_DEFAULT_ORG_ID=secretref:ppbf-pilot-default-org-id \
               PPBF_PILOT_SHADOW_CONTAINER=secretref:ppbf-pilot-shadow-container
+
+      - name: Verify Staging AI Secret Reference
+        run: |
+          AI_KEY_REF="$(az containerapp show \
+            --name app-ppbf-staging \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "properties.template.containers[0].env[?name=='AZURE_AI_KEY'].secretRef | [0]" \
+            -o tsv)"
+          test "$AI_KEY_REF" = "azure-ai-key"
 
       - name: Resolve Staging API Base URL
         run: |

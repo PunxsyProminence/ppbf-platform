@@ -47,7 +47,18 @@ export function jsonError(error: unknown, fallbackStatus = 500): NextResponse {
   // an explicit, intentional status a route chose for a known condition,
   // so those are left untouched.
   if (fallbackStatus === 500) {
-    console.error('unhandled-route-error', error);
+    const safeClass = error instanceof Error
+      ? error.constructor?.name?.replace(/[^A-Za-z0-9_$-]/g, '').slice(0, 80) || 'Error'
+      : typeof error;
+    const safeCode = error && typeof error === 'object' && 'code' in error
+      && typeof (error as { code?: unknown }).code === 'string'
+      && /^[0-9A-Z_]{3,20}$/.test((error as { code: string }).code)
+      ? (error as { code: string }).code
+      : undefined;
+    console.error('unhandled-route-error', {
+      errorClass: safeClass,
+      ...(safeCode ? { code: safeCode } : {}),
+    });
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 
@@ -55,6 +66,11 @@ export function jsonError(error: unknown, fallbackStatus = 500): NextResponse {
 }
 
 const MAX_SAFE_LIMIT_VALUE = 1_000_000;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function isUuid(value: unknown): value is string {
+  return typeof value === 'string' && UUID_PATTERN.test(value);
+}
 
 // Parses a "limit" query parameter into a finite positive integer clamped to
 // `max`. Returns null for anything that isn't a plain positive integer

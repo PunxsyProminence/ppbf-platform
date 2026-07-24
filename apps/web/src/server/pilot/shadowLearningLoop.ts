@@ -21,6 +21,8 @@ export type OutcomeSignal =
   | 'escalated_to_human'; // User escalated — SHADOW wasn't sufficient
 
 export interface LearningSignal {
+  feedbackId: number;
+  shadowEventId?: number | null;
   messageId: string;
   userId: string;
   organizationId: string;
@@ -30,6 +32,7 @@ export interface LearningSignal {
   outcome: OutcomeSignal;
   responseText?: string;
   userNote?: string;
+  verificationState: 'unverified' | 'durable_client' | 'human_reviewed';
 }
 
 export interface LearningLoopResult {
@@ -37,6 +40,7 @@ export interface LearningLoopResult {
   metricsRecorded: boolean;
   libraryFlagged: boolean;
   factsExtracted: number;
+  humanReviewRequired: boolean;
   actions: string[];
 }
 
@@ -52,13 +56,51 @@ export async function processLearningSignal(
   signal: LearningSignal,
 ): Promise<LearningLoopResult> {
   const actions: string[] = [];
-  const unlockState = await loadUnlockState(signal, actions);
+  if (
+    !Number.isSafeInteger(signal.feedbackId)
+    || signal.feedbackId <= 0
+    || !signal.messageId.trim()
+    || signal.verificationState === 'unverified'
+  ) {
+    actions.push('Learning rejected: durable correlation and verified feedback are required');
+    await safeLogLearningEvent(signal, null, actions);
+    return {
+      profileUpdated: false,
+      metricsRecorded: false,
+      libraryFlagged: false,
+      factsExtracted: 0,
+      humanReviewRequired: true,
+      actions,
+    };
+  }
+
   const effectivenessScore = outcomeToScore(signal.outcome);
   const outcome = outcomeToCategory(signal.outcome);
   const metricsRecorded = await recordMetrics(signal, outcome, effectivenessScore, actions);
+
+  if (signal.verificationState !== 'human_reviewed') {
+    const libraryFlagged = await queueClientSignalForReview(signal, actions);
+    await safeLogLearningEvent(signal, effectivenessScore, actions);
+    return {
+      profileUpdated: false,
+      metricsRecorded,
+      libraryFlagged,
+      factsExtracted: 0,
+      humanReviewRequired: true,
+      actions,
+    };
+  }
+
+  const unlockState = await loadUnlockState(signal, actions);
   const positiveResult = await handlePositiveOutcome(signal, actions, unlockState);
   const libraryFlagged = await handleNegativeOutcome(signal, actions, unlockState);
-  await applyLibraryPromotion(metricsRecorded, signal.organizationId, signal.topic, effectivenessScore, actions, unlockState);
+  await queueLibraryChangeForReview(
+    metricsRecorded,
+    signal,
+    effectivenessScore,
+    actions,
+    unlockState,
+  );
   await maybeUpdateCommunicationStyle(signal, actions);
   await safeLogLearningEvent(signal, effectivenessScore, actions);
 
@@ -67,6 +109,7 @@ export async function processLearningSignal(
     metricsRecorded,
     libraryFlagged,
     factsExtracted: positiveResult.factsExtracted,
+    humanReviewRequired: true,
     actions,
   };
 }
@@ -77,15 +120,15 @@ async function loadUnlockState(signal: LearningSignal, actions: string[]): Promi
       organizationId: signal.organizationId,
       accountId: signal.userId,
     });
-  } catch (err) {
-    actions.push(`Unlock state unavailable: ${err}`);
+  } catch {
+    actions.push('Unlock state unavailable');
     return null;
   }
 }
 
 async function safeLogLearningEvent(
   signal: LearningSignal,
-  effectivenessScore: number,
+  effectivenessScore: number | null,
   actions: string[],
 ): Promise<void> {
   try {
@@ -106,14 +149,17 @@ async function recordMetrics(
       organizationId: signal.organizationId,
       userId: signal.userId,
       role: signal.role,
+      feedbackId: signal.feedbackId,
       recommendationId: signal.messageId,
       outcome,
       effectivenessScore,
+      verificationState: signal.verificationState,
+      humanReviewRequired: signal.verificationState !== 'human_reviewed',
     });
     actions.push(`Effectiveness recorded: ${outcome} (${effectivenessScore})`);
     return true;
-  } catch (err) {
-    actions.push(`Metrics failed: ${err}`);
+  } catch {
+    actions.push('Metrics recording failed');
     return false;
   }
 }
@@ -139,8 +185,8 @@ async function handlePositiveOutcome(
       return { profileUpdated: true, factsExtracted };
     }
     return { profileUpdated: false, factsExtracted: 0 };
-  } catch (err) {
-    actions.push(`Fact extraction failed: ${err}`);
+  } catch {
+    actions.push('Fact extraction failed');
     return { profileUpdated: false, factsExtracted: 0 };
   }
 }
@@ -166,16 +212,15 @@ async function handleNegativeOutcome(
     const researchRequirementId = await createResearchRequirementFromNegativeSignal(signal);
     actions.push(`Research requirement created (#${researchRequirementId})`);
     return true;
-  } catch (err) {
-    actions.push(`Library flag failed: ${err}`);
+  } catch {
+    actions.push('Library review flag failed');
     return false;
   }
 }
 
-async function applyLibraryPromotion(
+async function queueLibraryChangeForReview(
   metricsRecorded: boolean,
-  organizationId: string,
-  topic: string,
+  signal: LearningSignal,
   effectivenessScore: number,
   actions: string[],
   unlockState: ShadowUnlockState | null,
@@ -185,17 +230,61 @@ async function applyLibraryPromotion(
   }
 
   if (!unlockState || !isFeatureEnabled(unlockState, 'auto_library_updates')) {
-    actions.push('Auto library updates remain in observation mode');
+    actions.push('Library changes remain in observation mode');
     return;
   }
 
   try {
-    const action = await promoteOrDemoteLibraryEntry(organizationId, topic, effectivenessScore);
+    const action = await queueLibraryEntryChangeForHumanReview(signal, effectivenessScore);
     if (action) {
       actions.push(action);
     }
-  } catch (err) {
-    actions.push(`Library promotion/demotion skipped: ${err}`);
+  } catch {
+    actions.push('Library review queue update skipped');
+  }
+}
+
+async function queueClientSignalForReview(
+  signal: LearningSignal,
+  actions: string[],
+): Promise<boolean> {
+  try {
+    await query(
+      `INSERT INTO pilot.shadow_library_review_flags (
+         organization_id, account_id, feedback_id, topic, session_type,
+         outcome_signal, user_note, review_state, flagged_at, last_flagged_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', NOW(), NOW())
+       ON CONFLICT (organization_id, topic)
+       DO UPDATE SET
+         flag_count = pilot.shadow_library_review_flags.flag_count
+           + CASE
+               WHEN pilot.shadow_library_review_flags.feedback_id IS DISTINCT FROM EXCLUDED.feedback_id
+               THEN 1
+               ELSE 0
+             END,
+         account_id = EXCLUDED.account_id,
+         feedback_id = EXCLUDED.feedback_id,
+         session_type = EXCLUDED.session_type,
+         outcome_signal = EXCLUDED.outcome_signal,
+         user_note = EXCLUDED.user_note,
+         last_flagged_at = NOW(),
+         latest_outcome_signal = EXCLUDED.outcome_signal,
+         review_state = 'pending'`,
+      [
+        signal.organizationId,
+        signal.userId,
+        signal.feedbackId,
+        signal.topic,
+        signal.sessionType,
+        signal.outcome,
+        signal.userNote ?? null,
+      ],
+    );
+    actions.push('Client feedback queued for human review; no learning was promoted');
+    return true;
+  } catch {
+    actions.push('Client feedback review queue unavailable');
+    return false;
   }
 }
 
@@ -207,8 +296,8 @@ async function maybeUpdateCommunicationStyle(signal: LearningSignal, actions: st
   try {
     await inferCommunicationPreference(signal);
     actions.push('Communication preference updated');
-  } catch (err) {
-    actions.push(`Style update skipped: ${err}`);
+  } catch {
+    actions.push('Style update skipped');
   }
 }
 
@@ -256,49 +345,52 @@ async function extractAndStoreFacts(signal: LearningSignal): Promise<number> {
   return factsToStore.length;
 }
 
-// ─── Library Promotion/Demotion ──────────────────────────────────────────────
-
-/**
- * Auto-promote library entries with >75% effectiveness, demote <40%.
- * Updates shadow_library_review_flags with promotion/demotion action.
- */
-async function promoteOrDemoteLibraryEntry(
-  organizationId: string,
-  topic: string,
+// ─── Human-reviewed library change proposals ────────────────────────────────
+async function queueLibraryEntryChangeForHumanReview(
+  signal: LearningSignal,
   effectivenessScore: number,
 ): Promise<string | null> {
-  if (effectivenessScore >= 0.75) {
-    // Promote: mark for promotion in library flags
-    await query(
-      `INSERT INTO pilot.shadow_library_review_flags (
-         organization_id, topic, session_type, outcome_signal,
-         flag_count, flagged_at
-       ) VALUES ($1, $2, 'auto', 'promote', 1, NOW())
-       ON CONFLICT (organization_id, topic)
-       DO UPDATE SET
-         flag_count = pilot.shadow_library_review_flags.flag_count + 1,
-         last_flagged_at = NOW(),
-         latest_outcome_signal = 'promote'`,
-      [organizationId, topic],
-    );
-    return `Library entry promoted for topic '${topic}' (effectiveness: ${(effectivenessScore * 100).toFixed(0)}%)`;
-  } else if (effectivenessScore < 0.4) {
-    // Demote: mark for demotion
-    await query(
-      `INSERT INTO pilot.shadow_library_review_flags (
-         organization_id, topic, session_type, outcome_signal,
-         flag_count, flagged_at
-       ) VALUES ($1, $2, 'auto', 'demote', 1, NOW())
-       ON CONFLICT (organization_id, topic)
-       DO UPDATE SET
-         flag_count = pilot.shadow_library_review_flags.flag_count + 1,
-         last_flagged_at = NOW(),
-         latest_outcome_signal = 'demote'`,
-      [organizationId, topic],
-    );
-    return `Library entry demoted for topic '${topic}' (effectiveness: ${(effectivenessScore * 100).toFixed(0)}%)`;
-  }
-  return null;
+  const proposedAction =
+    effectivenessScore >= 0.75
+      ? 'promote'
+      : effectivenessScore < 0.4
+        ? 'demote'
+        : 'retain';
+  await query(
+    `INSERT INTO pilot.shadow_library_review_flags (
+       organization_id, account_id, feedback_id, topic, session_type,
+       outcome_signal, flag_count, review_state, proposed_action,
+       flagged_at, last_flagged_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, 1, 'pending', $7, NOW(), NOW())
+     ON CONFLICT (organization_id, topic)
+     DO UPDATE SET
+       flag_count = pilot.shadow_library_review_flags.flag_count
+         + CASE
+             WHEN pilot.shadow_library_review_flags.feedback_id IS DISTINCT FROM EXCLUDED.feedback_id
+             THEN 1
+             ELSE 0
+           END,
+       account_id = EXCLUDED.account_id,
+       feedback_id = EXCLUDED.feedback_id,
+       session_type = EXCLUDED.session_type,
+       outcome_signal = EXCLUDED.outcome_signal,
+       last_flagged_at = NOW(),
+       latest_outcome_signal = EXCLUDED.outcome_signal,
+       proposed_action = EXCLUDED.proposed_action,
+       review_state = 'pending',
+       reviewed_by_account_id = NULL,
+       reviewed_at = NULL`,
+    [
+      signal.organizationId,
+      signal.userId,
+      signal.feedbackId,
+      signal.topic,
+      signal.sessionType,
+      signal.outcome,
+      proposedAction,
+    ],
+  );
+  return `Library '${proposedAction}' proposal queued for human review`;
 }
 
 // ─── Library Flag ─────────────────────────────────────────────────────────────
@@ -307,18 +399,31 @@ async function flagLibraryEntryForReview(signal: LearningSignal): Promise<void> 
   await query(
     `INSERT INTO pilot.shadow_library_review_flags (
        organization_id, account_id, topic, session_type,
-       outcome_signal, user_note, flagged_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
+       feedback_id, outcome_signal, user_note, review_state,
+       flagged_at, last_flagged_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', NOW(), NOW())
      ON CONFLICT (organization_id, topic)
      DO UPDATE SET
-       flag_count = pilot.shadow_library_review_flags.flag_count + 1,
+       flag_count = pilot.shadow_library_review_flags.flag_count
+         + CASE
+             WHEN pilot.shadow_library_review_flags.feedback_id IS DISTINCT FROM EXCLUDED.feedback_id
+             THEN 1
+             ELSE 0
+           END,
+       account_id = EXCLUDED.account_id,
+       feedback_id = EXCLUDED.feedback_id,
+       session_type = EXCLUDED.session_type,
+       outcome_signal = EXCLUDED.outcome_signal,
+       user_note = EXCLUDED.user_note,
        last_flagged_at = NOW(),
-       latest_outcome_signal = $5`,
+       latest_outcome_signal = $6,
+       review_state = 'pending'`,
     [
       signal.organizationId,
       signal.userId,
       signal.topic,
       signal.sessionType,
+      signal.feedbackId,
       signal.outcome,
       signal.userNote ?? null,
     ],
@@ -326,7 +431,9 @@ async function flagLibraryEntryForReview(signal: LearningSignal): Promise<void> 
 }
 
 async function createResearchRequirementFromNegativeSignal(signal: LearningSignal): Promise<number> {
-  const safeTopic = signal.topic && signal.topic.trim().length > 0 ? signal.topic.trim() : 'general';
+  const safeTopic = signal.topic && signal.topic.trim().length > 0
+    ? signal.topic.trim().slice(0, 200)
+    : 'general';
   const sourceEntityId = signal.messageId && signal.messageId.trim().length > 0
     ? signal.messageId
     : `learning-${Date.now()}`;
@@ -387,24 +494,41 @@ async function inferCommunicationPreference(signal: LearningSignal): Promise<voi
 
 async function logLearningEvent(
   signal: LearningSignal,
-  score: number,
+  score: number | null,
   actions: string[],
 ): Promise<void> {
   await query(
     `INSERT INTO pilot.shadow_learning_events (
-       organization_id, account_id, role, message_id,
+       organization_id, account_id, role, feedback_id, shadow_event_id, message_id,
        topic, session_type, outcome_signal, effectiveness_score,
-       actions_taken, created_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, NOW())`,
+       verification_state, human_review_required, actions_taken, created_at
+     ) VALUES (
+       $1, $2, $3, $4, $5, $6,
+       $7, $8, $9, $10,
+       $11, true, $12::jsonb, NOW()
+     )
+     ON CONFLICT (feedback_id, verification_state)
+     DO UPDATE SET
+       shadow_event_id = EXCLUDED.shadow_event_id,
+       message_id = EXCLUDED.message_id,
+       topic = EXCLUDED.topic,
+       session_type = EXCLUDED.session_type,
+       outcome_signal = EXCLUDED.outcome_signal,
+       effectiveness_score = EXCLUDED.effectiveness_score,
+       human_review_required = EXCLUDED.human_review_required,
+       actions_taken = EXCLUDED.actions_taken`,
     [
       signal.organizationId,
       signal.userId,
       signal.role,
+      signal.feedbackId,
+      signal.shadowEventId ?? null,
       signal.messageId,
       signal.topic,
       signal.sessionType,
       signal.outcome,
       score,
+      signal.verificationState,
       JSON.stringify(actions),
     ],
   );
@@ -418,47 +542,49 @@ export interface ShadowScorecard {
   totalInteractions: number;
   positiveOutcomes: number;
   negativeOutcomes: number;
-  positiveRate: number;        // 0–1
-  factsExtracted: number;
+  positiveRate: number | null;        // 0–1
+  factsExtracted: number | null;
   libraryFlagsRaised: number;
   topEngagedTopics: string[];
   profilesAtGold: number;
   profilesAtSilver: number;
   profilesAtBronze: number;
+  unavailableReasons: Record<string, string>;
 }
 
 export async function getScorecard(
   organizationId: string,
   days = 30,
 ): Promise<ShadowScorecard> {
+  const safeDays = Math.max(1, Math.min(365, Math.floor(days)));
   const [events, topTopics, profiles] = await Promise.all([
     queryOne<{
-      total: number;
-      positive: number;
-      negative: number;
-      facts_extracted: number;
+      total: string;
+      positive: string;
+      negative: string;
     }>(
       `SELECT
          COUNT(*) AS total,
          COUNT(*) FILTER (WHERE outcome_signal IN ('thumbs_up', 'followed_advice', 'asked_followup')) AS positive,
-         COUNT(*) FILTER (WHERE outcome_signal IN ('thumbs_down', 'escalated_to_human')) AS negative,
-         COALESCE(SUM((actions_taken::jsonb)->>'factsExtracted')::int, 0) AS facts_extracted
+         COUNT(*) FILTER (WHERE outcome_signal IN ('thumbs_down', 'escalated_to_human')) AS negative
        FROM pilot.shadow_learning_events
        WHERE organization_id = $1
-         AND created_at > NOW() - INTERVAL '${days} days'`,
-      [organizationId],
+         AND verification_state = 'human_reviewed'
+         AND created_at > NOW() - ($2 * INTERVAL '1 day')`,
+      [organizationId, safeDays],
     ),
-    query<{ topic: string; count: number }>(
+    query<{ topic: string; count: string }>(
       `SELECT topic, COUNT(*) AS count
        FROM pilot.shadow_learning_events
        WHERE organization_id = $1
-         AND created_at > NOW() - INTERVAL '${days} days'
+         AND verification_state = 'human_reviewed'
+         AND created_at > NOW() - ($2 * INTERVAL '1 day')
        GROUP BY topic
        ORDER BY count DESC
        LIMIT 5`,
-      [organizationId],
+      [organizationId, safeDays],
     ),
-    queryOne<{ gold: number; silver: number; bronze: number }>(
+    queryOne<{ gold: string; silver: string; bronze: string }>(
       `SELECT
          COUNT(*) FILTER (WHERE interaction_count >= 50) AS gold,
          COUNT(*) FILTER (WHERE interaction_count >= 20 AND interaction_count < 50) AS silver,
@@ -469,23 +595,33 @@ export async function getScorecard(
     ),
   ]);
 
-  const total = events?.total ?? 0;
-  const positive = events?.positive ?? 0;
-  const negative = events?.negative ?? 0;
+  const total = Number.parseInt(events?.total ?? '0', 10);
+  const positive = Number.parseInt(events?.positive ?? '0', 10);
+  const negative = Number.parseInt(events?.negative ?? '0', 10);
+  const flagCount = await queryOne<{ count: string }>(
+    `SELECT COUNT(*) AS count
+     FROM pilot.shadow_library_review_flags
+     WHERE organization_id = $1 AND review_state = 'pending'`,
+    [organizationId],
+  );
 
   return {
     organizationId,
-    period: `Last ${days} days`,
+    period: `Last ${safeDays} days`,
     totalInteractions: total,
     positiveOutcomes: positive,
     negativeOutcomes: negative,
-    positiveRate: total > 0 ? positive / total : 0,
-    factsExtracted: events?.facts_extracted ?? 0,
-    libraryFlagsRaised: (await query('SELECT COUNT(*) as count FROM shadow_library_review_flags WHERE organization_id = $1', [organizationId]))[0]?.count ?? 0,
+    positiveRate: total > 0 ? positive / total : null,
+    factsExtracted: null,
+    libraryFlagsRaised: Number.parseInt(flagCount?.count ?? '0', 10),
     topEngagedTopics: topTopics.map((r) => r.topic),
-    profilesAtGold: profiles?.gold ?? 0,
-    profilesAtSilver: profiles?.silver ?? 0,
-    profilesAtBronze: profiles?.bronze ?? 0,
+    profilesAtGold: Number.parseInt(profiles?.gold ?? '0', 10),
+    profilesAtSilver: Number.parseInt(profiles?.silver ?? '0', 10),
+    profilesAtBronze: Number.parseInt(profiles?.bronze ?? '0', 10),
+    unavailableReasons: {
+      ...(total === 0 ? { positiveRate: 'NO_HUMAN_REVIEWED_OUTCOMES_IN_PERIOD' } : {}),
+      factsExtracted: 'FACT_EXTRACTION_COUNT_NOT_STORED_AS_A_DURABLE_METRIC',
+    },
   };
 }
 
@@ -510,39 +646,3 @@ function outcomeToCategory(signal: OutcomeSignal): 'improved' | 'neutral' | 'deg
   if (['asked_followup', 'session_ended'].includes(signal)) return 'neutral';
   return 'unknown';
 }
-
-// ─── DB Migration SQL ─────────────────────────────────────────────────────────
-
-export const LEARNING_LOOP_MIGRATION = `
-CREATE TABLE IF NOT EXISTS pilot.shadow_learning_events (
-  event_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  organization_id   TEXT NOT NULL,
-  account_id        TEXT NOT NULL,
-  role              TEXT NOT NULL,
-  message_id        TEXT,
-  topic             TEXT NOT NULL DEFAULT 'general',
-  session_type      TEXT NOT NULL DEFAULT 'quick_round',
-  outcome_signal    TEXT NOT NULL,
-  effectiveness_score NUMERIC(4,3),
-  actions_taken     JSONB NOT NULL DEFAULT '[]',
-  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_learning_events_org_date
-  ON pilot.shadow_learning_events (organization_id, created_at DESC);
-
-CREATE TABLE IF NOT EXISTS pilot.shadow_library_review_flags (
-  flag_id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  organization_id   TEXT NOT NULL,
-  account_id        TEXT NOT NULL,
-  topic             TEXT NOT NULL,
-  session_type      TEXT,
-  outcome_signal    TEXT,
-  user_note         TEXT,
-  flag_count        INTEGER NOT NULL DEFAULT 1,
-  flagged_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  last_flagged_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  latest_outcome_signal TEXT,
-  UNIQUE (organization_id, topic)
-);
-`;

@@ -54,6 +54,10 @@ Remember: You are THIS BOARD MEMBER's personal governance AI - your insights sup
 
 Safety: Always recommend legal/compliance review for significant decisions. Governance must remain transparent and accountable.`;
 
+const BOARD_SHADOW_DISABLED = `SHADOW chat is not available to Board accounts.
+
+Use the dedicated aggregate-only Board workspace. Do not access, infer, summarize, or disclose athlete, coach, family, session, video, intake, formula, or personal SHADOW data for this role.`;
+
 const INDIVIDUAL_PERSONAL_SHADOW = `You are a personalized family engagement assistant (SHADOW Family) created specifically for THIS PARENT/GUARDIAN's involvement in their youth athlete's development.
 
 Your role:
@@ -76,6 +80,13 @@ export async function buildPersonalShadowPrompt(
   role: PilotRole,
   userQuery = '',
 ): Promise<PersonalShadowPrompt> {
+  if (role === 'board') {
+    return {
+      systemPrompt: BOARD_SHADOW_DISABLED,
+      userContext: '',
+    };
+  }
+
   try {
     // Load or create user's SHADOW profile
     const profile = await getOrCreateShadowUserProfile(accountId, organizationId, role);
@@ -90,6 +101,7 @@ export async function buildPersonalShadowPrompt(
       organization_admin: BOARD_PERSONAL_SHADOW,
       admin: BOARD_PERSONAL_SHADOW,
       parent: INDIVIDUAL_PERSONAL_SHADOW,
+      board: BOARD_SHADOW_DISABLED,
       volunteer: INDIVIDUAL_PERSONAL_SHADOW,
       staff: INDIVIDUAL_PERSONAL_SHADOW,
       platform_owner: BOARD_PERSONAL_SHADOW,
@@ -113,6 +125,7 @@ export async function buildPersonalShadowPrompt(
       organization_admin: BOARD_PERSONAL_SHADOW,
       admin: BOARD_PERSONAL_SHADOW,
       parent: INDIVIDUAL_PERSONAL_SHADOW,
+      board: BOARD_SHADOW_DISABLED,
       volunteer: INDIVIDUAL_PERSONAL_SHADOW,
       staff: INDIVIDUAL_PERSONAL_SHADOW,
       platform_owner: BOARD_PERSONAL_SHADOW,

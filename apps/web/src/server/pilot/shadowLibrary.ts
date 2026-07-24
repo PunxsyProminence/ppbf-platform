@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import { assertActorCanAccessAthlete } from './access';
+import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
 import { emitShadowEvent } from './shadowEvents';
 import { createShadowResearchRequirement, listShadowResearchRequirements } from './shadowResearch';
@@ -18,6 +20,8 @@ export type ShadowLibrarySourceType =
   | 'other';
 
 export type ShadowLibrarySourceStatus = 'active' | 'archived' | 'rejected' | 'quarantined';
+export type ShadowLibraryApprovalState = 'pending_review' | 'approved' | 'rejected';
+export type ShadowLibraryVerificationState = 'unverified' | 'verified';
 
 export type ShadowLibraryIngestState =
   | 'pending'
@@ -42,6 +46,12 @@ export interface ShadowLibrarySourceRow {
   url: string | null;
   publication_date: string | null;
   status: ShadowLibrarySourceStatus;
+  approval_state: ShadowLibraryApprovalState;
+  verification_state: ShadowLibraryVerificationState;
+  approved_by_account_id: string | null;
+  approved_at: string | null;
+  verified_by_account_id: string | null;
+  verified_at: string | null;
   metadata: Record<string, unknown>;
   created_by_account_id: string | null;
   created_by_role: string | null;
@@ -58,10 +68,32 @@ export interface ShadowLibraryDocumentRow {
   blob_path: string | null;
   content_sha256: string | null;
   ingest_state: ShadowLibraryIngestState;
+  index_completed_at: string | null;
+  approval_state: ShadowLibraryApprovalState;
+  verification_state: ShadowLibraryVerificationState;
+  approved_by_account_id: string | null;
+  approved_at: string | null;
+  verified_by_account_id: string | null;
+  verified_at: string | null;
   extraction_error: string | null;
   metadata: Record<string, unknown>;
   created_by_account_id: string | null;
   created_by_role: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ShadowLibraryReviewDocumentRow {
+  document_id: string;
+  source_id: string;
+  document_name: string;
+  subject_id: string | null;
+  ingest_state: ShadowLibraryIngestState;
+  index_completed_at: string | null;
+  approval_state: ShadowLibraryApprovalState;
+  verification_state: ShadowLibraryVerificationState;
+  extraction_error: string | null;
+  chunk_count: number;
   created_at: string;
   updated_at: string;
 }
@@ -143,19 +175,62 @@ function clampSourceCount(value: number): number {
   return Math.max(1, Math.min(100, Math.trunc(value)));
 }
 
-function normalizeSearchScope(input: {
+function requireEvidenceReviewer(role: PilotRole): void {
+  if (role !== 'organization_admin' && role !== 'admin' && role !== 'platform_owner') {
+    throw new Error('Forbidden: SHADOW evidence review requires an organization administrator');
+  }
+}
+
+function validateReviewState(
+  approvalState: ShadowLibraryApprovalState,
+  verificationState: ShadowLibraryVerificationState,
+): void {
+  if (
+    (approvalState === 'approved' && verificationState !== 'verified')
+    || (approvalState !== 'approved' && verificationState === 'verified')
+  ) {
+    throw new Error('Approved SHADOW evidence must also be verified');
+  }
+}
+
+export function normalizeSearchScope(input: {
   scope?: ShadowLibraryScope;
   subjectId?: string | null;
-  actorRole?: string;
+  actorRole?: PilotRole;
   athleteId?: string | null;
 }) {
   const requestedSubjectId = input.subjectId?.trim() || null;
-  const actorAthleteId = input.actorRole === 'athlete' ? input.athleteId?.trim() || null : null;
-  const effectiveSubjectId = requestedSubjectId || actorAthleteId;
+  const requestedScope = input.scope ?? 'scoped';
+
+  if (input.actorRole === 'athlete') {
+    const actorAthleteId = input.athleteId?.trim() || null;
+    if (!actorAthleteId) {
+      throw new Error('Forbidden: athlete SHADOW library access requires an athlete identity');
+    }
+    if (requestedSubjectId && requestedSubjectId !== actorAthleteId) {
+      throw new Error('Forbidden: athlete cannot search another subject');
+    }
+    return {
+      scope: 'subject' as const,
+      effectiveSubjectId: actorAthleteId,
+    };
+  }
+
+  if (
+    requestedScope === 'master'
+    && input.actorRole !== 'organization_admin'
+    && input.actorRole !== 'admin'
+    && input.actorRole !== 'platform_owner'
+  ) {
+    throw new Error('Forbidden: master SHADOW library scope requires an organization administrator');
+  }
+  if (requestedScope === 'subject' && !requestedSubjectId) {
+    throw new Error('Missing SHADOW library subject');
+  }
 
   return {
-    scope: input.scope ?? 'scoped',
-    effectiveSubjectId,
+    scope: requestedScope,
+    effectiveSubjectId: requestedScope === 'subject' ? requestedSubjectId : null,
   } as const;
 }
 
@@ -197,7 +272,7 @@ function isCanonicalDoctrineResult(result: ShadowLibrarySearchResult | undefined
 async function ensureClaimResearchRequirement(input: {
   organizationId: string;
   actorAccountId: string;
-  actorRole: string;
+  actorRole: PilotRole;
   scope: ShadowLibraryScope;
   subjectId: string | null;
   question: string;
@@ -413,6 +488,104 @@ export async function listShadowLibrarySources(input: {
   );
 }
 
+export async function listShadowLibraryReviewQueue(input: {
+  organizationId: string;
+  limit?: number;
+}): Promise<{
+  sources: ShadowLibrarySourceRow[];
+  documents: ShadowLibraryReviewDocumentRow[];
+}> {
+  const limit = Math.max(1, Math.min(200, Math.trunc(input.limit ?? 100)));
+  const [sources, documents] = await Promise.all([
+    query<ShadowLibrarySourceRow>(
+      `select *
+       from pilot.shadow_library_sources
+       where organization_id = $1
+       order by
+         case approval_state when 'pending_review' then 0 else 1 end,
+         created_at desc
+       limit $2`,
+      [input.organizationId, limit],
+    ),
+    query<ShadowLibraryReviewDocumentRow>(
+      `select
+         d.document_id,
+         d.source_id,
+         d.document_name,
+         d.subject_id,
+         d.ingest_state,
+         d.index_completed_at,
+         d.approval_state,
+         d.verification_state,
+         d.extraction_error,
+         count(c.chunk_id)::integer as chunk_count,
+         d.created_at,
+         d.updated_at
+       from pilot.shadow_library_documents d
+       left join pilot.shadow_library_chunks c
+         on c.organization_id = d.organization_id
+        and c.document_id = d.document_id
+       where d.organization_id = $1
+       group by
+         d.document_id,
+         d.source_id,
+         d.document_name,
+         d.subject_id,
+         d.ingest_state,
+         d.index_completed_at,
+         d.approval_state,
+         d.verification_state,
+         d.extraction_error,
+         d.created_at,
+         d.updated_at
+       order by
+         case d.approval_state when 'pending_review' then 0 else 1 end,
+         d.created_at desc
+       limit $2`,
+      [input.organizationId, limit],
+    ),
+  ]);
+  return { sources, documents };
+}
+
+export async function reviewShadowLibrarySource(input: {
+  organizationId: string;
+  actorAccountId: string;
+  actorRole: PilotRole;
+  sourceId: string;
+  approvalState: ShadowLibraryApprovalState;
+  verificationState: ShadowLibraryVerificationState;
+}): Promise<ShadowLibrarySourceRow> {
+  requireEvidenceReviewer(input.actorRole);
+  validateReviewState(input.approvalState, input.verificationState);
+
+  const row = await queryOne<ShadowLibrarySourceRow>(
+    `update pilot.shadow_library_sources
+     set approval_state = $1,
+         verification_state = $2,
+         approved_by_account_id = case when $1 = 'approved' then $3 else null end,
+         approved_at = case when $1 = 'approved' then now() else null end,
+         verified_by_account_id = case when $2 = 'verified' then $3 else null end,
+         verified_at = case when $2 = 'verified' then now() else null end,
+         updated_at = now()
+     where source_id = $4
+       and organization_id = $5
+     returning *`,
+    [
+      input.approvalState,
+      input.verificationState,
+      input.actorAccountId,
+      input.sourceId,
+      input.organizationId,
+    ],
+  );
+
+  if (!row) {
+    throw new Error('SHADOW_LIBRARY_SOURCE_NOT_FOUND');
+  }
+  return row;
+}
+
 export async function createShadowLibraryDocument(input: {
   organizationId: string;
   actorAccountId: string;
@@ -539,8 +712,15 @@ export async function createShadowLibraryChunk(input: {
 
   await query(
     `update pilot.shadow_library_documents
-     set ingest_state = 'indexed',
-         updated_at = now()
+     set ingest_state = 'chunking',
+         index_completed_at = null,
+         approval_state = 'pending_review',
+         verification_state = 'unverified',
+         approved_by_account_id = null,
+         approved_at = null,
+         verified_by_account_id = null,
+         verified_at = null,
+          updated_at = now()
      where document_id = $1 and organization_id = $2`,
     [document.document_id, input.organizationId],
   );
@@ -574,10 +754,82 @@ export async function createShadowLibraryChunk(input: {
   return row;
 }
 
+export async function completeShadowLibraryDocumentIndexing(input: {
+  organizationId: string;
+  actorAccountId: string;
+  actorRole: PilotRole;
+  documentId: string;
+}): Promise<ShadowLibraryDocumentRow> {
+  requireEvidenceReviewer(input.actorRole);
+  const row = await queryOne<ShadowLibraryDocumentRow>(
+    `update pilot.shadow_library_documents d
+     set ingest_state = 'indexed',
+         index_completed_at = now(),
+         updated_at = now()
+     where d.document_id = $1
+       and d.organization_id = $2
+       and exists (
+         select 1
+         from pilot.shadow_library_chunks c
+         where c.document_id = d.document_id
+           and c.organization_id = d.organization_id
+           and length(trim(c.text_content)) > 0
+       )
+     returning d.*`,
+    [input.documentId, input.organizationId],
+  );
+  if (!row) {
+    throw new Error('SHADOW document cannot be indexed without a non-empty organization-scoped chunk');
+  }
+  return row;
+}
+
+export async function reviewShadowLibraryDocument(input: {
+  organizationId: string;
+  actorAccountId: string;
+  actorRole: PilotRole;
+  documentId: string;
+  approvalState: ShadowLibraryApprovalState;
+  verificationState: ShadowLibraryVerificationState;
+}): Promise<ShadowLibraryDocumentRow> {
+  requireEvidenceReviewer(input.actorRole);
+  validateReviewState(input.approvalState, input.verificationState);
+
+  const row = await queryOne<ShadowLibraryDocumentRow>(
+    `update pilot.shadow_library_documents
+     set approval_state = $1,
+         verification_state = $2,
+         approved_by_account_id = case when $1 = 'approved' then $3 else null end,
+         approved_at = case when $1 = 'approved' then now() else null end,
+         verified_by_account_id = case when $2 = 'verified' then $3 else null end,
+         verified_at = case when $2 = 'verified' then now() else null end,
+         updated_at = now()
+     where document_id = $4
+       and organization_id = $5
+       and (
+         $1 <> 'approved'
+         or (ingest_state = 'indexed' and index_completed_at is not null)
+       )
+     returning *`,
+    [
+      input.approvalState,
+      input.verificationState,
+      input.actorAccountId,
+      input.documentId,
+      input.organizationId,
+    ],
+  );
+
+  if (!row) {
+    throw new Error('SHADOW document is missing or has not completed indexing');
+  }
+  return row;
+}
+
 export async function searchShadowLibrary(input: {
   organizationId: string;
   actorAccountId: string;
-  actorRole: string;
+  actorRole: PilotRole;
   athleteId?: string | null;
   scope?: ShadowLibraryScope;
   subjectId?: string | null;
@@ -590,10 +842,27 @@ export async function searchShadowLibrary(input: {
     actorRole: input.actorRole,
     athleteId: input.athleteId,
   });
-  const terms = tokenizeQuery(input.queryText);
-  const limit = Math.max(1, Math.min(20, Math.trunc(input.limit ?? 8)));
-  const wholeQuery = input.queryText.trim().toLowerCase();
+  const normalizedQuery = input.queryText.trim();
+  if (!normalizedQuery) {
+    throw new Error('Missing SHADOW library query');
+  }
+  const terms = tokenizeQuery(normalizedQuery);
+  const requestedLimit = input.limit ?? 8;
+  if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1) {
+    throw new Error('Invalid SHADOW library result limit');
+  }
+  const limit = Math.min(20, requestedLimit);
+  const wholeQuery = normalizedQuery.toLowerCase().slice(0, 1_000);
   const termPatterns = terms.map((term) => `%${term}%`);
+
+  if (normalized.scope === 'subject' && normalized.effectiveSubjectId) {
+    await assertActorCanAccessAthlete({
+      accountId: input.actorAccountId,
+      organizationId: input.organizationId,
+      role: input.actorRole,
+      athleteId: input.athleteId ?? null,
+    }, normalized.effectiveSubjectId);
+  }
 
   const rows = await query<ShadowLibrarySearchResult>(
     `select
@@ -611,12 +880,12 @@ export async function searchShadowLibrary(input: {
        s.publication_date::text as publication_date,
        c.text_content,
        (
-         case when lower(c.text_content) like '%' || $3 || '%' then 40 else 0 end
-         + case when lower(d.document_name) like '%' || $3 || '%' then 20 else 0 end
-         + case when lower(s.title) like '%' || $3 || '%' then 25 else 0 end
-         + case when cardinality($4::text[]) > 0 then (
-             select count(*)::int * 8
-             from unnest($4::text[]) as term
+          case when lower(c.text_content) like '%' || $4 || '%' then 40 else 0 end
+          + case when lower(d.document_name) like '%' || $4 || '%' then 20 else 0 end
+          + case when lower(s.title) like '%' || $4 || '%' then 25 else 0 end
+          + case when cardinality($5::text[]) > 0 then (
+              select count(*)::int * 8
+              from unnest($5::text[]) as term
              where lower(c.text_content) like term
                 or lower(d.document_name) like term
                 or lower(s.title) like term
@@ -626,28 +895,41 @@ export async function searchShadowLibrary(input: {
      from pilot.shadow_library_chunks c
      join pilot.shadow_library_documents d on d.document_id = c.document_id and d.organization_id = c.organization_id
      join pilot.shadow_library_sources s on s.source_id = c.source_id and s.organization_id = c.organization_id
-     where c.organization_id = $1
-       and s.status = 'active'
-       and (
-         $2::text is null
-         or c.subject_id is null
-         or c.subject_id = $2
-       )
-       and (
-         lower(c.text_content) like '%' || $3 || '%'
-         or lower(d.document_name) like '%' || $3 || '%'
-         or lower(s.title) like '%' || $3 || '%'
-         or exists (
-           select 1
-           from unnest($4::text[]) as term
+      where c.organization_id = $1
+        and s.status = 'active'
+        and s.approval_state = 'approved'
+        and s.verification_state = 'verified'
+        and d.ingest_state = 'indexed'
+        and d.index_completed_at is not null
+        and d.approval_state = 'approved'
+        and d.verification_state = 'verified'
+         and (
+          $2::text = 'master'
+          or ($2::text = 'scoped' and c.subject_id is null)
+          or ($2::text = 'subject' and (c.subject_id is null or c.subject_id = $3))
+        )
+        and (
+          lower(c.text_content) like '%' || $4 || '%'
+          or lower(d.document_name) like '%' || $4 || '%'
+          or lower(s.title) like '%' || $4 || '%'
+          or exists (
+            select 1
+            from unnest($5::text[]) as term
            where lower(c.text_content) like term
               or lower(d.document_name) like term
               or lower(s.title) like term
          )
        )
      order by score desc, s.authority_tier asc, c.ordinal asc, c.created_at asc
-     limit $5`,
-    [input.organizationId, normalized.effectiveSubjectId, wholeQuery, termPatterns, limit],
+      limit $6`,
+    [
+      input.organizationId,
+      normalized.scope,
+      normalized.effectiveSubjectId,
+      wholeQuery,
+      termPatterns,
+      limit,
+    ],
   );
 
   await writeShadowTelemetryEvent({
@@ -668,7 +950,7 @@ export async function searchShadowLibrary(input: {
 export async function createShadowLibraryClaim(input: {
   organizationId: string;
   actorAccountId: string;
-  actorRole: string;
+  actorRole: PilotRole;
   athleteId?: string | null;
   scope?: ShadowLibraryScope;
   subjectId?: string | null;

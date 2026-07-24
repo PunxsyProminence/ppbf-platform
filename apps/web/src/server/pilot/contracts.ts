@@ -5,6 +5,7 @@ export type PilotRole =
   | 'coach'
   | 'athlete'
   | 'parent'
+  | 'board'
   | 'volunteer'
   | 'staff';
 

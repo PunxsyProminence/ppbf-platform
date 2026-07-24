@@ -1,7 +1,8 @@
 // Core SHADOW Chat Validation Engine
 // Doctrine enforcement through request validation, topic classification, and response filtering
 
-import { query } from './db';
+import { assertActorCanAccessAthlete } from './access';
+import type { PilotRole } from './contracts';
 
 // 5-minute org-level context cache — avoids 3 DB queries per request
 const contextCache = new Map<string, { value: string; expiresAt: number }>();
@@ -36,12 +37,12 @@ export type HighRiskTopic =
   | 'return_to_play'
   | 'medical_clearance'
   | 'youth_safety'
+  | 'urgent_symptom'
   | 'none';
 
 export interface HighRiskClassification {
   topic: HighRiskTopic;
   isHighRisk: boolean;
-  confidenceLevel: number;
   educationalApproach: boolean;
   examples: {
     allowed: string[];
@@ -69,7 +70,11 @@ export interface ShadowResponseValidation {
   message: string;
   reasons: string[];
   requiresHumanReview: boolean;
+  citationIds: string[];
 }
+
+export const SHADOW_SAFE_FILTERED_RESPONSE =
+  'I can’t safely provide that generated answer. SHADOW filtered it before display. Consult a qualified coach or medical professional for the next decision. RESEARCH NEEDED — the answer did not pass safety validation.';
 
 // Classify high-risk topics and determine routing
 export function classifyHighRiskTopic(userMessage: string): HighRiskClassification {
@@ -78,20 +83,21 @@ export function classifyHighRiskTopic(userMessage: string): HighRiskClassificati
   const topics: Array<[HighRiskTopic, RegExp]> = [
     ['concussion', /concuss/i],
     ['head_trauma', /(head|brain)\s+(trauma|injury)/i],
-    ['loss_of_consciousness', /(loss|loss\s+of|lack)\s+of\s+consciousness|unconscious|passed\s+out/i],
+    ['loss_of_consciousness', /(loss|loss\s+of|lack)\s+of\s+consciousness|unconscious|passed\s+out|knocked\s+out|\bko['’]?d\b|blacked\s+out/i],
     ['dizziness', /dizzy|dizziness|vertigo/i],
-    ['dehydration', /dehydrat|dry|thirst/i],
-    ['weight_cutting', /(weight.*cut|cut\s+weight|rapid\s+weight)/i],
-    ['rapid_weight_loss', /rapid.*weight|fast\s+weight/i],
+    ['dehydration', /dehydrat|(?:extreme|excessive)\s+thirst|unable\s+to\s+keep\s+fluids?\s+down/i],
+    ['weight_cutting', /(weight.*cut|cut\s+weight|rapid\s+weight|make\s+weight)/i],
+    ['rapid_weight_loss', /rapid.*weight|fast\s+weight|lose\s+\d+(?:\.\d+)?\s*(?:pounds?|lbs?|kilograms?|kgs?)\s+(?:this|in\s+(?:a|one))\s+week/i],
     ['chest_pain', /(chest|heart)\s+pain|cardiac/i],
     ['fainting', /faint|syncope/i],
     ['medication', /(take|taking|took)\s+(medicine|medication|drug|pill)/i],
     ['prescription', /prescrip|prescription|prescribed|Rx/i],
-    ['surgery', /surgery|surgical|operation|operated/i],
-    ['injection', /inject|shot|needle|vaccine/i],
+    ['surgery', /surgery|surgical|underwent\s+an?\s+operation|operation\s+on\s+(?:me|my|the)|operated\s+on/i],
+    ['injection', /inject|needle|vaccine|medical\s+shot|cortisone\s+shot|steroid\s+shot/i],
     ['return_to_play', /(return.*play|cleared.*play|cleared\s+to)/i],
     ['medical_clearance', /(medical|doctor)\s+clear|cleared|clearance/i],
     ['youth_safety', /(minor|child|kid|young)\s+(safety|harm)/i],
+    ['urgent_symptom', /(can(?:not|'t)\s+breathe|shortness\s+of\s+breath|trouble\s+breathing|blurr(?:y|ed)?\s+vision|vision.{0,12}blurr(?:y|ed)?|double\s+vision|can(?:not|'t)\s+see|seeing\s+stars|seizure|convulsion|headache|nausea|nauseous|neck.{0,20}(numb|weak|tingl)|severe\s+bleeding|bleeding.{0,20}(won't|will\s+not)\s+stop|abdominal\s+pain|stomach\s+pain|vomit(?:ing)?\s+blood|slurred\s+speech|unequal\s+pupils?|can(?:not|'t)\s+move|sudden\s+weakness)/i],
   ];
 
   let classifiedTopic: HighRiskTopic = 'none';
@@ -102,7 +108,10 @@ export function classifyHighRiskTopic(userMessage: string): HighRiskClassificati
     }
   }
 
-  const isEducationalQuery = /what\s+(is|are)|why|how|research|understand|learn|educational|context|background/i.test(msg);
+  const hasEducationalFraming = /\bwhat\s+(is|are|causes?|can|could|does)\b|research|understand|learn|educational|context|background|how\s+(is|are|does|do)\s+(an?|the|athletes?|coaches?|organizations?)/i.test(msg);
+  const hasPersonalFraming = /\b(i|me|my|mine|we|our)\b/i.test(msg)
+    || /\b(now|currently|today|just happened|during training|after sparring)\b/i.test(msg);
+  const isEducationalQuery = hasEducationalFraming && !hasPersonalFraming;
 
   const examples: Record<HighRiskTopic, { allowed: string[]; blocked: string[] }> = {
     concussion: {
@@ -169,6 +178,10 @@ export function classifyHighRiskTopic(userMessage: string): HighRiskClassificati
       allowed: ['What safety measures protect young athletes?', 'What are best practices for youth sports?'],
       blocked: ['Is this safe for a child?', 'Can a minor do this?'],
     },
+    urgent_symptom: {
+      allowed: ['What can cause shortness of breath?', 'What are general warning signs after a head impact?'],
+      blocked: ['I cannot breathe after that hit.', 'My vision is blurry after sparring.'],
+    },
     none: {
       allowed: [],
       blocked: [],
@@ -178,7 +191,6 @@ export function classifyHighRiskTopic(userMessage: string): HighRiskClassificati
   return {
     topic: classifiedTopic,
     isHighRisk: classifiedTopic !== 'none',
-    confidenceLevel: isEducationalQuery ? 0.9 : 0.7,
     educationalApproach: isEducationalQuery,
     examples: examples[classifiedTopic],
   };
@@ -202,7 +214,15 @@ export function validateShadowRequest(
 
   const hasRapidWeightCutLanguage = /how\s+do\s+i\s+cut\s+weight/i.test(message)
     || normalizedMessage.includes('lose weight quickly')
-    || normalizedMessage.includes('cut weight for my weight class');
+    || normalizedMessage.includes('cut weight for my weight class')
+    || /\b(?:i\s+(?:need|have)\s+to|help\s+me|how\s+(?:can|do)\s+i)\b.{0,35}\bmake\s+weight\b/i.test(message)
+    || /\b(?:i\s+(?:need|want|have)\s+to\s+)?lose\s+\d+(?:\.\d+)?\s*(?:pounds?|lbs?|kilograms?|kgs?)\s+(?:this|in\s+(?:a|one))\s+week\b/i.test(message);
+
+  const hasPersonalContext = /\b(i|me|my|mine|we|our)\b/i.test(message)
+    || /\b(now|currently|today|just happened|during training|after sparring|after (?:a|that|the) hit)\b/i.test(message);
+  const hasUrgentSymptom = /(can(?:not|'t)\s+breathe|shortness\s+of\s+breath|trouble\s+breathing|blurr(?:y|ed)?\s+vision|vision.{0,12}blurr(?:y|ed)?|double\s+vision|can(?:not|'t)\s+see|seeing\s+stars|seizure|convulsion|headache|nausea|nauseous|neck.{0,20}(numb|weak|tingl)|severe\s+bleeding|bleeding.{0,20}(won't|will\s+not)\s+stop|abdominal\s+pain|stomach\s+pain|vomit(?:ing)?\s+blood|slurred\s+speech|unequal\s+pupils?|can(?:not|'t)\s+move|sudden\s+weakness)/i.test(message);
+  const hasAcuteImpactConcern = /(?:after|from).{0,30}(?:hit|blow|punch|fall).{0,60}(?:pain|numb|weak|tingl|blur|bleed|dizz|confus|vomit|can(?:not|'t))/i.test(message);
+  const hasPersonalHealthConcern = /\b(hurt|hurts|hurting|pain|painful|sore|soreness|swollen|swelling|injured|injury|sprain(?:ed|ing)?|strain(?:ed|ing)?|bruised|bruising|numb|numbness|tingling|stiff|stiffness)\b/i.test(message);
 
   // Direct prescription or weight-cutting directives are blocked even when phrased as questions.
   if (hasPrescriptionLanguage || hasRapidWeightCutLanguage) {
@@ -216,7 +236,32 @@ export function validateShadowRequest(
 
   // Educational queries are allowed
   if (classification.educationalApproach) {
-    return { valid: true };
+    return {
+      valid: true,
+      highRisk: classification.isHighRisk,
+      topic: classification.topic,
+      classification: classification.isHighRisk ? classification.topic : undefined,
+    };
+  }
+
+  if (hasPersonalContext && (hasUrgentSymptom || hasAcuteImpactConcern)) {
+    return {
+      valid: false,
+      error: 'Potential emergency: stop participation and contact local emergency services or an onsite licensed medical professional now.',
+      highRisk: true,
+      topic: classification.topic === 'none' ? 'urgent_symptom' : classification.topic,
+      classification: 'urgent_personal_symptom',
+    };
+  }
+
+  if (hasPersonalContext && hasPersonalHealthConcern) {
+    return {
+      valid: false,
+      error: 'Personal pain, injury, and treatment questions require evaluation by a qualified medical professional. SHADOW can only provide general educational information.',
+      highRisk: true,
+      topic: classification.topic,
+      classification: 'personal_health_concern',
+    };
   }
 
   // Check for diagnosis claims
@@ -230,7 +275,11 @@ export function validateShadowRequest(
   }
 
   // Check for clearance claims
-  if (/clear|cleared|cleared to|cleared for/i.test(message)) {
+  if (
+    /\bmedical\s+clear(?:ed|ance)?\b/i.test(message)
+    || /\bclear(?:ed|ance)?\b.{0,40}\b(play|train|training|compete|competition|return|contact|spar|sparring)\b/i.test(message)
+    || /\b(play|train|training|compete|competition|return|contact|spar|sparring)\b.{0,40}\bclear(?:ed|ance)?\b/i.test(message)
+  ) {
     return {
       valid: false,
       error: 'Medical clearance decisions require professional medical authority.',
@@ -249,109 +298,172 @@ export function validateShadowRequest(
     };
   }
 
-  return { valid: true };
+  if (classification.isHighRisk) {
+    const emergencyTopic = (
+      classification.topic === 'chest_pain'
+      || classification.topic === 'fainting'
+      || classification.topic === 'loss_of_consciousness'
+    );
+    return {
+      valid: false,
+      error: emergencyTopic
+        ? 'Potential emergency: stop participation and contact local emergency services or an onsite licensed medical professional now.'
+        : 'Personal high-risk health and safety concerns require immediate human evaluation. SHADOW can only provide general educational information.',
+      highRisk: true,
+      topic: classification.topic,
+      classification: classification.topic,
+    };
+  }
+
+  return { valid: true, highRisk: false, topic: 'none' };
 }
 
 // Retrieve context based on user role and authorization
 export async function retrieveShadowContext(params: {
-  userRole: string;
+  userRole: PilotRole;
   userId: string;
   organizationId: string;
+  actorAthleteId?: string | null;
   athleteId?: string;
 }): Promise<ShadowContextResult> {
-  const { userRole, userId, organizationId, athleteId } = params;
+  const { userRole, userId, organizationId, actorAthleteId = null, athleteId } = params;
 
-  // Board members see organization-level aggregates only
-  if (userRole === 'board_member' && athleteId) {
-    return {
-      context: '',
-      authorized: false,
-      reason: 'Board members view organization-level aggregates only, not athlete-specific context.',
-    };
-  }
-
-  // Athletes can only access their own context
-  if (userRole === 'athlete' && athleteId && userId !== athleteId) {
-    return {
-      context: '',
-      authorized: false,
-      reason: 'Athletes can only access their own context.',
-    };
-  }
-
-  // Use cache for org-level context (athlete-specific queries are not cached)
-  const cacheKey = athleteId ? `${organizationId}:${athleteId}` : `${organizationId}:org`;
-  const cached = getCachedContext(cacheKey);
-  if (cached) return { context: cached, authorized: true };
-
-  // Coaches can only see assigned athletes in their organization
-  if (userRole === 'coach' && athleteId) {
-    let isAssigned = false;
+  if (athleteId) {
     try {
-      const rows = await query<{count: number}>(
-        `SELECT 1 FROM pilot.coach_assignments 
-         WHERE coach_id = $1 AND athlete_id = $2 AND organization_id = $3`,
-        [userId, athleteId, organizationId],
+      await assertActorCanAccessAthlete(
+        {
+          accountId: userId,
+          role: userRole,
+          organizationId,
+          athleteId: actorAthleteId,
+        },
+        athleteId,
       );
-      isAssigned = rows.length > 0;
     } catch {
-      isAssigned = false;
-    }
-
-    if (!isAssigned) {
       return {
         context: '',
         authorized: false,
-        reason: 'Coach is not assigned to this athlete.',
+        reason: 'Not authorized to access this athlete context.',
       };
     }
   }
 
-  // Retrieve context (simplified for MVP)
-  const context = `Context for ${athleteId || userId} in organization ${organizationId}`;
+  // Use cache for org-level context (athlete-specific queries are not cached)
+  const cacheKey = `${organizationId}:${userRole}:${athleteId ?? 'org'}`;
+  const cached = getCachedContext(cacheKey);
+  if (cached) return { context: cached, authorized: true };
+
+  const context = athleteId
+    ? `Authorized role: ${userRole}. Authorized organization: ${organizationId}. Authorized athlete scope: ${athleteId}.`
+    : `Authorized role: ${userRole}. Authorized organization scope: ${organizationId}. Athlete-specific data is not authorized for this request.`;
   setCachedContext(cacheKey, context);
   return { context, authorized: true };
 }
 
 // Validate and filter LLM response before display
-export function validateShadowResponse(response: string): ShadowResponseValidation {
+export function validateShadowResponse(
+  response: string,
+  options: { allowedEvidenceIds?: string[]; verifiedSourceIds?: string[] } = {},
+): ShadowResponseValidation {
   let filtered = false;
   const reasons: string[] = [];
-  const message = response;
+  let message = response;
+  const normalized = response.toLowerCase().replace(/\s+/g, ' ');
 
   // Check for diagnosis claims
-  if (/you (have|have a|got|get|experience|develop).*(?:concussion|fracture|injury|pain|sprain|strain|trauma|condition|disease|syndrome|disorder)/i.test(response)) {
+  if (
+    /\b(you|your symptoms|the athlete|this)\b.{0,40}\b(have|has|definitely|confirm|confirms|proves|means)\b.{0,60}\b(concussion|fracture|injury|disease|syndrome|disorder|condition)\b/.test(normalized)
+    || /you (have|have a|got|get|experience|develop).*(?:concussion|fracture|injury|pain|sprain|strain|trauma|condition|disease|syndrome|disorder)/i.test(response)
+  ) {
     filtered = true;
     reasons.push('Contains diagnostic claim without evidence or human deference');
   }
 
   // Check for direct prescription claims
-  if (/\byou should\b/i.test(response)) {
+  if (
+    /\b(take|start|stop|increase|decrease|double|dose|use)\b.{0,40}\b(medication|medicine|drug|pill|ibuprofen|acetaminophen|supplement|injection)\b/.test(normalized)
+  ) {
     filtered = true;
     reasons.push('Contains prescriptive claim without medical authority');
   }
 
+  if (
+    /\b(?:rest|avoid\s+training)\s+(?:for\s+)?\d+(?:\.\d+)?\s*(?:minutes?|hours?|days?|weeks?)\b/.test(normalized)
+    || /\b(?:ice|apply\s+ice)\b.{0,30}\b\d+(?:\.\d+)?\s*(?:minutes?|hours?)\b/.test(normalized)
+    || /\b(?:start|begin|do|perform)\b.{0,25}\b(?:rehab|rehabilitation|therapeutic)\b/.test(normalized)
+    || /\b(?:you\s+(?:should|need\s+to|must)|i\s+recommend(?:\s+that)?\s+you)\b.{0,60}\b(?:ice|immobilize|tape|compress|elevate|massage|rehab|treat)\b/.test(normalized)
+  ) {
+    filtered = true;
+    reasons.push('Contains a personal treatment directive without medical authority');
+  }
+
   // Check for clearance claims
-  if (/(you are|you're).*cleared|you.*cleared to|you.*cleared for/i.test(response)) {
+  if (
+    /(you are|you're).*cleared|you.*cleared to|you.*cleared for/i.test(response)
+    || /\b(you are|the athlete is|safe to|may now|can now)\b.{0,40}\b(cleared|return to play|return to training|resume contact|compete)\b/.test(normalized)
+  ) {
     filtered = true;
     reasons.push('Contains clearance claim without medical authority');
   }
 
-  // Require confidence markers or human deferral
-  const hasConfidenceMarker = /research|research requirement|unknown|unclear|requires|needs validation|evidence suggests|data shows|studies indicate/i.test(response);
+  if (
+    /\b(system prompt|api key|secret|password|other organization|another tenant)\b.{0,80}\b(is|equals|contains|show|reveal|access)\b/.test(normalized)
+  ) {
+    filtered = true;
+    reasons.push('May disclose protected instructions, secrets, or cross-tenant information');
+  }
+
+  if (
+    /\b(ignore|disregard|override|do not contact)\b.{0,50}\b(doctor|physician|clinician|medical professional|coach|policy)\b/.test(normalized)
+  ) {
+    filtered = true;
+    reasons.push('Attempts to override human authority');
+  }
+
+  const allowedEvidenceIds = new Set(
+    (options.allowedEvidenceIds ?? options.verifiedSourceIds ?? [])
+      .filter((evidenceId) => (
+        typeof evidenceId === 'string'
+        && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(evidenceId)
+      )),
+  );
+  const citationMatches = [...response.matchAll(/\[E:([^\]\r\n]{1,200})\]/gi)];
+  const citationIds: string[] = [];
+  let hasInvalidCitation = false;
+  for (const match of citationMatches) {
+    const evidenceId = match[1]?.trim() ?? '';
+    if (!allowedEvidenceIds.has(evidenceId)) {
+      hasInvalidCitation = true;
+      continue;
+    }
+    if (!citationIds.includes(evidenceId)) citationIds.push(evidenceId);
+  }
+  if (/\[E:/i.test(response) && citationMatches.length === 0) {
+    hasInvalidCitation = true;
+  }
+  if (hasInvalidCitation) {
+    filtered = true;
+    reasons.push('Contains an unknown, malformed, or unauthorized evidence citation');
+  }
+  const makesEvidenceClaim = /\b(research|studies?|data|evidence|clinical guidance|literature)\s+(suggests?|shows?|indicates?|demonstrates?|proves?|supports?)\b/i.test(response);
+  const makesQuantifiedEvidenceClaim = /\b\d+(?:\.\d+)?%\b|\b\d+\s+(?:similar\s+)?(cases?|athletes?|participants?|studies?)\b/i.test(response);
+  if ((makesEvidenceClaim || makesQuantifiedEvidenceClaim) && citationIds.length === 0) {
+    filtered = true;
+    reasons.push('Makes an evidence or quantitative claim without an exact retrieved evidence citation');
+  }
+
   const hasDeferralLanguage = /professional|medical authority|clinician|doctor|physician|medical evaluation/i.test(response);
   const hasHumanReviewLanguage = /requires? professional medical evaluation|needs? professional medical evaluation|further study required|professional medical authority|clinician|doctor|physician/i.test(response);
 
-  if (!hasConfidenceMarker && !hasDeferralLanguage && filtered) {
-    reasons.push('Missing confidence markers or human deferral language');
+  if (filtered && !hasDeferralLanguage) {
+    reasons.push('Missing human deferral language');
   }
-
-  if (!filtered && /research suggests|further study required|needs validation|unknown|unclear|you should\b/i.test(response)) {
-    reasons.push('Requires human review');
-  }
-
-  if (hasConfidenceMarker || hasDeferralLanguage || hasHumanReviewLanguage) {
+  if (hasHumanReviewLanguage) {
     reasons.push('Human review required');
+  }
+
+  if (filtered) {
+    message = SHADOW_SAFE_FILTERED_RESPONSE;
   }
 
   return {
@@ -360,6 +472,7 @@ export function validateShadowResponse(response: string): ShadowResponseValidati
     message,
     reasons,
     requiresHumanReview: filtered || reasons.length > 0,
+    citationIds: filtered ? [] : citationIds,
   };
 }
 
@@ -402,7 +515,7 @@ DOCTRINE — NON-NEGOTIABLE:
 1. Never diagnose a condition — redirect to a professional medical authority or clinician.
 2. Never prescribe treatment or medication.
 3. Never grant medical clearance or return-to-play approval.
-4. Always use confidence markers: PROVEN (50+ cases, 90%+ success) / EMERGING (10–49 cases, 60–89%) / EXPERIMENTAL (<10 or <60%) / RESEARCH NEEDED (insufficient data).
+4. Use PROVEN, EMERGING, or EXPERIMENTAL only when the authorized context supplies verified evidence IDs and an approved classification for the exact claim. Otherwise use RESEARCH NEEDED. Never invent case counts, success percentages, citations, confidence values, or outcomes.
 5. Flag unknowns as research requirements — not guesses.
 6. Defer all final decisions to coaches, athletes, or medical professionals.
 
@@ -416,11 +529,10 @@ RESPONSE STRUCTURE:
 4. Clear deferral to human authority when needed
 5. Offer to dig deeper if appropriate
 
-EXAMPLE — readiness drop:
-"Readiness down 15% this week. That's your body telling you something — could be overtraining, poor sleep, stress, or all three. Embrace the suck, but work with it, not against it.
-Suggestion: Reduce volume 15–20%, add a rest day. PROVEN — 247 similar cases, 94% improved in 5–7 days.
-Unknowns: sleep, nutrition, stress — not tracked, which means we're guessing. That's a research gap.
-Coach decides: don't implement anything without a conversation first."
+EXAMPLE — incomplete readiness data:
+"The available readiness observation is below the recorded personal baseline, but the current inputs do not establish why.
+Unknowns: sleep, soreness, nutrition, stress, session duration, and post-session RPE are incomplete or unverified. RESEARCH NEEDED.
+Discuss the observation with the athlete and coach. If symptoms or a medical concern are present, defer to an appropriately qualified medical professional. Do not prescribe a training change from this observation alone."
 
 EXAMPLE — diagnosis request:
 "Can't tell you if you have a concussion — that's not my lane, and anyone who gives you that answer over a chat is doing you a disservice.

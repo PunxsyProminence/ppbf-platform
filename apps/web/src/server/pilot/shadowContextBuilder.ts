@@ -56,7 +56,7 @@ function buildQuickRoundContext(input: ShadowContextBuilderInput): string {
 
   const userProfileSection = [
     `## User Profile`,
-    `- Role: ${profile.role}`,
+    `- Authenticated Role: ${input.userRole}`,
     `- Expertise Level: ${expertiseLevel}`,
     `- Interaction History: ${profile.interaction_count} previous interactions`,
   ];
@@ -69,7 +69,7 @@ function buildQuickRoundContext(input: ShadowContextBuilderInput): string {
     : [];
 
   const topicsSection = profile.recent_topics && profile.recent_topics.length > 0
-    ? [`## Recent Discussion Topics`, `- ${profile.recent_topics.slice(0, 5).join(', ')}`]
+    ? [`## Recent Discussion Topics`, `- ${profile.recent_topics.slice(-5).join(', ')}`]
     : [];
 
   const questionsSection = profile.open_questions && profile.open_questions.length > 0
@@ -93,12 +93,9 @@ function buildQuickRoundContext(input: ShadowContextBuilderInput): string {
 }
 
 /**
- * Heavy Bag context: Full, comprehensive reasoning
- * - All 9 weighting dimensions applied
- * - Full athlete context (if applicable)
- * - Research requirements and knowledge gaps
- * - Organization patterns
- * - Confidence scoring on all items
+ * Heavy Bag context: deeper user-owned context for reasoning.
+ * Athlete records and research evidence are supplied only by separately
+ * authorized retrieval paths; this builder never implies that they exist.
  */
 function buildHeavyBagContext(input: ShadowContextBuilderInput): string {
   const profile = input.userProfile;
@@ -111,7 +108,7 @@ function buildHeavyBagContext(input: ShadowContextBuilderInput): string {
 function buildHeavyBagSections(profile: ShadowUserProfileRow, input: ShadowContextBuilderInput, queryType: ShadowQueryType): string[] {
   const userContextSection = [
     `## User Context`,
-    `- Role: ${profile.role}`,
+    `- Authenticated Role: ${input.userRole}`,
     `- Organization: ${input.organizationId}`,
     `- Interaction Count: ${profile.interaction_count}`,
     `- Last Interaction: ${profile.last_interaction_at || 'Never'}`,
@@ -183,7 +180,11 @@ function buildQuestionsSection(profile: ShadowUserProfileRow): string[] {
 
 function buildAthleteSection(profile: ShadowUserProfileRow, input: ShadowContextBuilderInput): string[] {
   return input.athleteId && profile.athlete_ids_discussed?.includes(input.athleteId)
-    ? [`## Athlete Context`, `- Currently discussing: Athlete ${input.athleteId}`]
+    ? [
+        `## Authorized Subject Reference`,
+        `- Subject identifier: ${input.athleteId}`,
+        `- No athlete record data is present in this profile context.`,
+      ]
     : [];
 }
 
@@ -197,14 +198,15 @@ function buildQuerySection(queryType: ShadowQueryType): string[] {
 
 function buildAuthoritySection(userRole: PilotRole): string[] {
   const authorityMap: Record<PilotRole, string> = {
-    coach: 'Can make coaching decisions, recommend training modifications, refer to medical',
-    admin: 'Can make organizational decisions, access all data, approve changes',
-    athlete: 'Can request information, provide feedback, ask clarifying questions',
-    parent: 'Can request athlete progress info, ask general questions',
-    organization_admin: 'Can manage organization settings and user access',
-    platform_owner: 'Full platform access and governance',
-    volunteer: 'Can provide coaching support within organization',
-    staff: 'Can access organization data and assist with operations',
+    coach: 'May use records only for athletes currently assigned to this coach; may provide coaching guidance but not medical diagnosis or clearance',
+    admin: 'Organization-scoped administration; athlete records require a separate successful subject authorization check',
+    athlete: 'May use only the authenticated athlete’s own record when separately authorized',
+    parent: 'May use only records for an athlete linked to this parent when separately authorized',
+    board: 'Aggregate governance only; SHADOW chat and athlete-record context are not authorized for this role',
+    organization_admin: 'Organization-scoped administration; athlete records require a separate successful subject authorization check',
+    platform_owner: 'Platform governance only; organization-private athlete records are denied by default',
+    volunteer: 'General organization support only; no athlete-record access by default',
+    staff: 'General organization operations only; no athlete-record access by default',
   };
   return [
     `## Role-Based Decision Authority`,
@@ -217,6 +219,24 @@ function buildAuthoritySection(userRole: PilotRole): string[] {
  */
 export function buildShadowContext(input: ShadowContextBuilderInput): ShadowContextOutput {
   const tier = input.tier;
+
+  // Board accounts use the dedicated, aggregate-only Board workspace. If this
+  // context helper is reached outside the guarded chat route, return no
+  // profile, athlete, coaching, or remembered-fact context.
+  if (input.userRole === 'board') {
+    return {
+      context: buildAuthoritySection('board').join('\n'),
+      metadata: {
+        tier,
+        topicType: 'general',
+        contextItemCount: 1,
+        totalWeight: 0,
+        includesAthleteData: false,
+        includesResearchRequirements: false,
+      },
+    };
+  }
+
   const queryType = detectQueryType(input.userMessage);
 
   let context: string;
@@ -240,8 +260,8 @@ export function buildShadowContext(input: ShadowContextBuilderInput): ShadowCont
       topicType: queryType,
       contextItemCount,
       totalWeight,
-      includesAthleteData: tier === 'heavy_bag' && !!input.athleteId,
-      includesResearchRequirements: tier === 'heavy_bag',
+      includesAthleteData: false,
+      includesResearchRequirements: false,
     },
   };
 }

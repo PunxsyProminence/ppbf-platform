@@ -84,4 +84,24 @@ describe('GET /api/pilot/auth/microsoft/callback', () => {
     expect(res.status).toBe(307);
     expect(res.cookies.get('ppbf_pilot_session')).toBeUndefined();
   });
+
+  test('redirects an authenticated Board account to the aggregate-only Board hub', async () => {
+    mockLogin.mockResolvedValueOnce({
+      token: 'board-token',
+      principal: {
+        accountId: 'board@example.com',
+        role: 'board',
+        organizationId: 'org-1',
+        athleteId: null,
+        sessionToken: 'board-token',
+        authProvider: 'microsoft',
+      },
+    });
+
+    const res = await GET(request());
+
+    expect(res.status).toBe(307);
+    expect(res.headers.get('location')).toBe('https://ppbf.example/board');
+    expect(res.cookies.get('ppbf_pilot_session')?.value).toBe('board-token');
+  });
 });

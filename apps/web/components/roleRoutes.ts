@@ -3,6 +3,7 @@ export type ClubRole =
   | 'coach'
   | 'parent'
   | 'admin'
+  | 'board'
   | 'board-president'
   | 'board-chair'
   | 'board-vice-chair'
@@ -45,6 +46,12 @@ export const roleRoutes: RoleRoute[] = [
     label: 'Admin',
     description: 'Opens platform capability and governance controls.',
     href: '/admin',
+  },
+  {
+    role: 'board',
+    label: 'Board',
+    description: 'Opens the aggregate-only board governance hub.',
+    href: '/board',
   },
   {
     role: 'board-president',

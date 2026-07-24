@@ -57,6 +57,18 @@ describe('SHADOW Context Builder', () => {
       expect(result.metadata.totalWeight).toBeLessThan(0.5);
     });
 
+    test('uses the authenticated role instead of a stale stored profile role', () => {
+      const result = buildShadowContext({
+        ...baseInput,
+        tier: 'quick_round',
+        userRole: 'athlete',
+        userProfile: { ...mockUserProfile, role: 'coach' },
+      });
+
+      expect(result.context).toContain('Authenticated Role: athlete');
+      expect(result.context).not.toContain('Authenticated Role: coach');
+    });
+
     test('includes communication preference in Quick Round', () => {
       const result = buildShadowContext({
         ...baseInput,
@@ -75,6 +87,21 @@ describe('SHADOW Context Builder', () => {
 
       expect(result.context).toContain('Recent Discussion Topics');
       expect(result.context).toContain('technique');
+    });
+
+    test('uses the newest half of a chronological recent-topic window', () => {
+      const result = buildShadowContext({
+        ...baseInput,
+        tier: 'quick_round',
+        userProfile: {
+          ...mockUserProfile,
+          recent_topics: ['old-1', 'old-2', 'old-3', 'old-4', 'old-5', 'new-1', 'new-2', 'new-3', 'new-4', 'new-5'],
+        },
+      });
+
+      expect(result.context).not.toContain('old-1');
+      expect(result.context).toContain('new-1');
+      expect(result.context).toContain('new-5');
     });
 
     test('includes open questions in Quick Round', () => {
@@ -129,23 +156,24 @@ describe('SHADOW Context Builder', () => {
       expect(result.context).toContain('data_driven');
     });
 
-    test('includes athlete data in Heavy Bag when provided', () => {
+    test('does not claim an athlete identifier is athlete record data', () => {
       const result = buildShadowContext({
         ...baseInput,
         tier: 'heavy_bag',
         athleteId: 'athlete-1',
       });
 
-      expect(result.metadata.includesAthleteData).toBe(true);
+      expect(result.context).toContain('Authorized Subject Reference');
+      expect(result.metadata.includesAthleteData).toBe(false);
     });
 
-    test('includes research requirements marker in Heavy Bag', () => {
+    test('does not claim research requirements that were not retrieved', () => {
       const result = buildShadowContext({
         ...baseInput,
         tier: 'heavy_bag',
       });
 
-      expect(result.metadata.includesResearchRequirements).toBe(true);
+      expect(result.metadata.includesResearchRequirements).toBe(false);
     });
 
     test('sets higher total weight for Heavy Bag', () => {
@@ -262,6 +290,46 @@ describe('SHADOW Context Builder', () => {
       });
 
       expect(result.context).toContain('admin');
+      expect(result.context).not.toContain('access all data');
+    });
+
+    test('states that platform owners cannot access private athlete records by default', () => {
+      const ownerResult = buildShadowContext({
+        ...baseInput,
+        tier: 'heavy_bag',
+        userRole: 'platform_owner',
+      });
+
+      expect(ownerResult.context).toContain('organization-private athlete records are denied by default');
+      expect(ownerResult.context).not.toContain('Full platform access');
+    });
+
+    test.each(['staff', 'volunteer'] as const)(
+      'does not grant %s athlete-record access in prompt context',
+      (role) => {
+        const result = buildShadowContext({
+          ...baseInput,
+          tier: 'heavy_bag',
+          userRole: role,
+        });
+        expect(result.context).toContain('no athlete-record access by default');
+      },
+    );
+
+    test('returns only a fail-closed aggregate boundary for Board', () => {
+      const result = buildShadowContext({
+        ...baseInput,
+        tier: 'heavy_bag',
+        userRole: 'board',
+        athleteId: 'athlete-1',
+      });
+
+      expect(result.context).toContain('Aggregate governance only');
+      expect(result.context).toContain('SHADOW chat and athlete-record context are not authorized');
+      expect(result.context).not.toContain('athlete-1');
+      expect(result.context).not.toContain('data_driven');
+      expect(result.metadata.includesAthleteData).toBe(false);
+      expect(result.metadata.totalWeight).toBe(0);
     });
 
     test('adjusts context for athlete role', () => {

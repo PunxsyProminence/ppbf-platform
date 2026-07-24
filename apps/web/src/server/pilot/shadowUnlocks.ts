@@ -67,47 +67,10 @@ const DEFAULT_THRESHOLD_CONFIG: Record<ShadowFeatureKey, {
   fine_tuning_pipeline: {
     metricKey: 'org_labeled_training_examples',
     minValue: 500,
-    activationMode: 'observation',
-    description: 'Mark organization as ready for custom SHADOW fine-tuning pipeline.',
+    activationMode: 'disabled',
+    description: 'Disabled until an approved training-data, evaluation, privacy, fairness, and drift-governance process exists. Human-reviewed event volume alone is not model readiness.',
   },
 };
-
-export const SHADOW_UNLOCKS_MIGRATION = `
-CREATE TABLE IF NOT EXISTS pilot.shadow_feature_thresholds (
-  organization_id TEXT NOT NULL REFERENCES pilot.organizations(organization_id) ON DELETE CASCADE,
-  feature_key TEXT NOT NULL,
-  metric_key TEXT NOT NULL,
-  min_value INTEGER NOT NULL CHECK (min_value >= 0),
-  activation_mode TEXT NOT NULL DEFAULT 'enabled',
-  description TEXT NOT NULL DEFAULT '',
-  created_by_account_id TEXT NULL,
-  updated_by_account_id TEXT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  PRIMARY KEY (organization_id, feature_key)
-);
-
-CREATE TABLE IF NOT EXISTS pilot.shadow_feature_unlock_snapshots (
-  organization_id TEXT NOT NULL REFERENCES pilot.organizations(organization_id) ON DELETE CASCADE,
-  account_id TEXT NOT NULL,
-  feature_key TEXT NOT NULL,
-  metric_key TEXT NOT NULL,
-  unlocked BOOLEAN NOT NULL,
-  activation_mode TEXT NOT NULL,
-  satisfied BOOLEAN NOT NULL,
-  current_value INTEGER NOT NULL DEFAULT 0,
-  threshold_value INTEGER NOT NULL DEFAULT 0,
-  details JSONB NOT NULL DEFAULT '{}'::jsonb,
-  evaluated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  PRIMARY KEY (organization_id, account_id, feature_key)
-);
-
-CREATE INDEX IF NOT EXISTS idx_shadow_feature_thresholds_org
-  ON pilot.shadow_feature_thresholds (organization_id, feature_key);
-
-CREATE INDEX IF NOT EXISTS idx_shadow_feature_unlock_snapshots_org_eval
-  ON pilot.shadow_feature_unlock_snapshots (organization_id, evaluated_at DESC);
-`;
 
 function defaultThresholdRows(organizationId: string): ShadowFeatureThreshold[] {
   return (Object.entries(DEFAULT_THRESHOLD_CONFIG) as Array<[ShadowFeatureKey, typeof DEFAULT_THRESHOLD_CONFIG[ShadowFeatureKey]]>)
@@ -199,15 +162,19 @@ async function collectMetricValues(organizationId: string, accountId: string): P
       `SELECT COUNT(*) AS count
        FROM pilot.shadow_feedback
        WHERE organization_id = $1
-         AND account_id = $2
-         AND helpful = true
-         AND (rating IS NULL OR rating >= 4)`,
+          AND account_id = $2
+          AND helpful = true
+          AND (rating IS NULL OR rating >= 4)
+          AND verification_state IN ('durable_client', 'human_reviewed')
+          AND correlation_type = 'shadow_message'
+          AND correlation_id IS NOT NULL`,
       [organizationId, accountId],
     ),
     queryOne<{ count: string }>(
       `SELECT COUNT(*) AS count
        FROM pilot.shadow_learning_events
        WHERE organization_id = $1
+         AND verification_state = 'human_reviewed'
          AND outcome_signal IN ('thumbs_up', 'thumbs_down', 'followed_advice', 'ignored_advice', 'asked_followup', 'escalated_to_human')`,
       [organizationId],
     ),
@@ -215,8 +182,10 @@ async function collectMetricValues(organizationId: string, accountId: string): P
       `SELECT COUNT(*) AS count
        FROM pilot.shadow_jobs
        WHERE organization_id = $1
-         AND job_type = 'scout_report'
-         AND status = 'completed'`,
+          AND job_type = 'scout_report'
+          AND status = 'completed'
+          AND safety_status = 'passed'
+          AND output_payload->>'resultStatus' = 'ok'`,
       [organizationId],
     ),
     queryOne<{ count: string }>(
@@ -224,6 +193,7 @@ async function collectMetricValues(organizationId: string, accountId: string): P
        FROM pilot.shadow_learning_events
        WHERE organization_id = $1
          AND message_id IS NOT NULL
+         AND verification_state = 'human_reviewed'
          AND outcome_signal IN ('thumbs_up', 'thumbs_down', 'followed_advice', 'ignored_advice', 'asked_followup', 'escalated_to_human')`,
       [organizationId],
     ),

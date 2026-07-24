@@ -2,8 +2,8 @@
 // DELETE /api/pilot/shadow/jobs?jobId=xxx — Cancel a pending job
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/src/server/pilot/access';
-import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
-import { getOrgJobs, cancelJob } from '@/src/server/pilot/shadowJobQueue';
+import { isUuid, jsonError, parseSafeLimit, requirePrincipal } from '@/src/server/pilot/http';
+import { cancelJobForActor, getJobsForActor } from '@/src/server/pilot/shadowJobQueue';
 
 export const runtime = 'nodejs';
 
@@ -13,9 +13,12 @@ export async function GET(request: NextRequest) {
     requireRole(principal, ['admin', 'organization_admin', 'coach', 'platform_owner']);
 
     const url = new URL(request.url);
-    const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '20', 10), 100);
+    const limit = parseSafeLimit(url.searchParams.get('limit'), 20, 100);
+    if (limit === null) {
+      return NextResponse.json({ error: 'Invalid limit' }, { status: 400 });
+    }
 
-    const jobs = await getOrgJobs(principal.organizationId, limit);
+    const jobs = await getJobsForActor(principal, limit);
     return NextResponse.json({ ok: true, jobs });
   } catch (error) {
     return jsonError(error);
@@ -32,8 +35,11 @@ export async function DELETE(request: NextRequest) {
     if (!jobId) {
       return NextResponse.json({ error: 'Missing jobId' }, { status: 400 });
     }
+    if (!isUuid(jobId)) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
 
-    const cancelled = await cancelJob(jobId, principal.organizationId);
+    const cancelled = await cancelJobForActor(jobId, principal);
     return NextResponse.json({ ok: cancelled, jobId });
   } catch (error) {
     return jsonError(error);

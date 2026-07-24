@@ -13,9 +13,9 @@ import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
 
-const SUPPORTED_CREATE_ROLES: PilotRole[] = ['organization_admin', 'coach', 'athlete', 'parent'];
+const SUPPORTED_CREATE_ROLES: PilotRole[] = ['organization_admin', 'coach', 'athlete', 'parent', 'board'];
 
-function assertSupportedCreateRole(role: string): role is 'organization_admin' | 'coach' | 'athlete' | 'parent' {
+function assertSupportedCreateRole(role: string): role is 'organization_admin' | 'coach' | 'athlete' | 'parent' | 'board' {
   return SUPPORTED_CREATE_ROLES.includes(role as PilotRole);
 }
 
@@ -46,8 +46,8 @@ export async function POST(request: NextRequest) {
       throw new Error('Unsupported role');
     }
 
-    if (role === 'organization_admin') {
-      await createOrRotateAdminAccount(accountId, pin, organizationId, 'organization_admin');
+    if (role === 'organization_admin' || role === 'board') {
+      await createOrRotateAdminAccount(accountId, pin, organizationId, role);
     } else if (role === 'coach') {
       await createCoachAccount(accountId, pin, organizationId);
     } else if (role === 'athlete') {

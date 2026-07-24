@@ -194,9 +194,13 @@ function filterStateForActor(
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
+    const role = principal.role;
+    if (role === 'board') {
+      throw new Error('Forbidden: Board role is aggregate-only');
+    }
     const actor: SchedulerActor = {
       accountId: principal.accountId,
-      role: principal.role,
+      role,
       organizationId: principal.organizationId,
       athleteId: principal.athleteId,
     };
@@ -224,9 +228,13 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
+    const role = principal.role;
+    if (role === 'board') {
+      throw new Error('Forbidden: Board role is aggregate-only');
+    }
     const actor: SchedulerActor = {
       accountId: principal.accountId,
-      role: principal.role,
+      role,
       organizationId: principal.organizationId,
       athleteId: principal.athleteId,
     };

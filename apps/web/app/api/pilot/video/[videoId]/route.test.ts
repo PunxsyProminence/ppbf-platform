@@ -46,7 +46,7 @@ const videoRow = (overrides: Record<string, unknown> = {}) => ({
   file_name: 'f.mp4',
   file_size_bytes: 100,
   mime_type: 'video/mp4',
-  status: 'uploaded',
+  status: 'ready',
   athlete_id: 'ath-1',
   blob_path: 'org-1/vid-1/f.mp4',
   uploaded_by_account_id: 'coach-1',
@@ -73,6 +73,18 @@ describe('GET /api/pilot/video/[videoId]', () => {
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: 'Not found' });
   });
+
+  test.each(['uploaded', 'processing', 'quarantined', 'infected', 'error', 'archived'])(
+    'non-ready %s video never receives a playback URL',
+    async (status) => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+      mockQueryOne.mockResolvedValueOnce(videoRow({ status }));
+      const res = await call();
+      expect(res.status).toBe(404);
+      const { getPilotVideoSasUrl } = jest.requireMock('@/src/server/pilot/blob');
+      expect(getPilotVideoSasUrl).not.toHaveBeenCalled();
+    },
+  );
 
   test('cross-organization video id returns the same hidden not-found response as a nonexistent id', async () => {
     // The row fetch is itself organization-scoped, so a video belonging to
