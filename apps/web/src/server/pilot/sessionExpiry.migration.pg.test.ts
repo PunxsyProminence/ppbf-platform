@@ -295,6 +295,129 @@ describe('migration on a pre-existing (legacy) database', () => {
   });
 });
 
+describe('session-expiry migration preflight: null-organization accounts', () => {
+  // A fresh install's accounts.organization_id is NOT NULL (canonical
+  // schema), but production was found running with that constraint never
+  // enforced -- exactly the legacy shape these tests reproduce, alongside
+  // the other legacy-database stripping already done above.
+  async function asLegacyDatabase(name: string): Promise<Client> {
+    const client = await newTestDatabase(name);
+    await client.query(await readSql(SCHEMA_SQL_PATH));
+    await client.query('alter table pilot.session_tokens drop column expires_at');
+    await client.query('drop index if exists idx_pilot_session_tokens_expires_at');
+    await client.query('drop index if exists idx_pilot_session_tokens_account_id');
+    await client.query('alter table pilot.accounts alter column organization_id drop not null');
+    return client;
+  }
+
+  test('a null-org legitimate platform owner: migration succeeds and the account receives no membership row', async () => {
+    const client = await asLegacyDatabase('ppbf_test_preflight_platform_owner');
+    try {
+      await client.query(
+        `insert into pilot.accounts (account_id, role, organization_id, is_platform_owner, active_flag)
+         values ($1, 'platform_owner', null, true, true)`,
+        ['preflight-owner-1'],
+      );
+
+      await expect(client.query(await readSql(MIGRATION_SQL_PATH))).resolves.toBeDefined();
+
+      const membership = await client.query('select 1 from pilot.organization_memberships where account_id = $1', [
+        'preflight-owner-1',
+      ]);
+      expect(membership.rowCount).toBe(0);
+
+      const account = await client.query<{ organization_id: string | null }>(
+        'select organization_id from pilot.accounts where account_id = $1',
+        ['preflight-owner-1'],
+      );
+      expect(account.rows[0].organization_id).toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a null-org non-platform account: migration fails safely and nothing is applied', async () => {
+    const client = await asLegacyDatabase('ppbf_test_preflight_invalid_account');
+    try {
+      await client.query(
+        `insert into pilot.accounts (account_id, role, organization_id, is_platform_owner, active_flag)
+         values ($1, 'coach', null, false, true)`,
+        ['preflight-invalid-1'],
+      );
+
+      await expect(client.query(await readSql(MIGRATION_SQL_PATH))).rejects.toThrow(/preflight failed/);
+
+      // Fails closed: every statement before the preflight check (including
+      // the session_tokens.expires_at ADD COLUMN) was rolled back with it --
+      // no partial rollout, same guarantee as an injected mid-migration
+      // failure.
+      const { rows } = await client.query<{ column_name: string }>(
+        `select column_name from information_schema.columns
+         where table_schema = 'pilot' and table_name = 'session_tokens' and column_name = 'expires_at'`,
+      );
+      expect(rows).toHaveLength(0);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a normal account still gets its missing membership backfilled alongside a legitimate platform owner', async () => {
+    const client = await asLegacyDatabase('ppbf_test_preflight_mixed');
+    try {
+      await client.query(
+        `insert into pilot.organizations (organization_id, organization_name, status) values ($1, 'Preflight Org', 'active')`,
+        ['preflight-mixed-org'],
+      );
+      await client.query(
+        `insert into pilot.accounts (account_id, role, organization_id, is_platform_owner, active_flag)
+         values ($1, 'coach', $2, false, true), ($3, 'platform_owner', null, true, true)`,
+        ['preflight-mixed-coach-1', 'preflight-mixed-org', 'preflight-mixed-owner-1'],
+      );
+
+      await client.query(await readSql(MIGRATION_SQL_PATH));
+
+      const coachMembership = await client.query<{ role: string }>(
+        'select role from pilot.organization_memberships where account_id = $1 and organization_id = $2',
+        ['preflight-mixed-coach-1', 'preflight-mixed-org'],
+      );
+      expect(coachMembership.rows[0]?.role).toBe('coach'); // backfilled, matching accounts.role
+
+      const ownerMembership = await client.query('select 1 from pilot.organization_memberships where account_id = $1', [
+        'preflight-mixed-owner-1',
+      ]);
+      expect(ownerMembership.rowCount).toBe(0); // still correctly excluded
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the migration remains transactional and idempotent around the preflight check', async () => {
+    const client = await asLegacyDatabase('ppbf_test_preflight_idempotent');
+    try {
+      await client.query(
+        `insert into pilot.accounts (account_id, role, organization_id, is_platform_owner, active_flag)
+         values ($1, 'platform_owner', null, true, true)`,
+        ['preflight-idempotent-owner-1'],
+      );
+
+      await client.query(await readSql(MIGRATION_SQL_PATH));
+
+      // Re-running: the preflight still passes (same legitimate platform
+      // owner, still null-org), and every statement below it is itself
+      // idempotent (IF NOT EXISTS / ON CONFLICT DO NOTHING), so a second run
+      // succeeds with no error and causes no further change.
+      await expect(client.query(await readSql(MIGRATION_SQL_PATH))).resolves.toBeDefined();
+
+      const membership = await client.query('select 1 from pilot.organization_memberships where account_id = $1', [
+        'preflight-idempotent-owner-1',
+      ]);
+      expect(membership.rowCount).toBe(0);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
 describe('the migration runner itself rolls back on failure -- no partial rollout', () => {
   let client: Client;
   let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
