@@ -57,12 +57,39 @@ alter table pilot.session_tokens alter column expires_at set default (now() + in
 create index if not exists idx_pilot_session_tokens_expires_at on pilot.session_tokens(expires_at);
 create index if not exists idx_pilot_session_tokens_account_id on pilot.session_tokens(account_id);
 
--- 4) resolvePrincipal now requires an active pilot.organization_memberships
+-- 4) Preflight: any null-organization account must be a legitimate platform
+--    owner (role = 'platform_owner' AND is_platform_owner = true). Platform
+--    owners are intentionally org-less -- resolvePrincipal already bypasses
+--    the organization/membership check for them -- so the backfill below
+--    deliberately skips them rather than assigning a bootstrap
+--    organization_id they should never have. Any other null-organization
+--    account is data this migration was never designed to reconcile; fail
+--    closed (and roll back everything above) rather than silently drop or
+--    misassign it.
+do $$
+declare
+  invalid_count integer;
+begin
+  select count(*) into invalid_count
+  from pilot.accounts
+  where organization_id is null
+    and not (role = 'platform_owner' and is_platform_owner = true);
+
+  if invalid_count > 0 then
+    raise exception 'session-expiry migration preflight failed: % account(s) have a null organization_id and are not a legitimate platform owner', invalid_count;
+  end if;
+end $$;
+
+-- 5) resolvePrincipal now requires an active pilot.organization_memberships
 --    row matching the session's organization. Some account-creation paths
 --    (athlete/coach/parent onboarding) never wrote a membership row, so
 --    backfill one for every account that's missing it, matching the
 --    account's current role and organization. This mirrors the same
---    idempotent backfill already used by the multi-org migration.
+--    idempotent backfill already used by the multi-org migration. Null-org
+--    accounts are excluded -- the preflight above already proved every one
+--    of them is a legitimate platform owner, and organization_memberships.
+--    organization_id is NOT NULL, so they must never reach this insert.
 insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
 select account_id, organization_id, role, active_flag from pilot.accounts
+where organization_id is not null
 on conflict (account_id, organization_id) do nothing;
