@@ -22,13 +22,13 @@ afterEach(() => {
 });
 
 describe('new sessions store expires_at', () => {
-  test('loginWithAccountIdAndPin inserts a 24-hour expires_at', async () => {
+  test('loginWithAccountIdAndPin inserts a 24-hour expires_at for athlete local sessions', async () => {
     mockQueryOne.mockResolvedValueOnce({
       account_id: 'acct-1',
-      role: 'coach',
+      role: 'athlete',
       organization_id: 'org-1',
       is_platform_owner: false,
-      athlete_id: null,
+      athlete_id: 'ath-1',
       auth_provider: 'ppbf_local',
       pin_hash: 'hash',
       active_flag: true,
@@ -49,6 +49,26 @@ describe('new sessions store expires_at', () => {
     expect(expiresAt).toBeInstanceOf(Date);
     expect(expiresAt.getTime()).toBeGreaterThanOrEqual(before + SESSION_ABSOLUTE_LIFETIME_MS);
     expect(expiresAt.getTime()).toBeLessThanOrEqual(after + SESSION_ABSOLUTE_LIFETIME_MS);
+  });
+
+  test('loginWithAccountIdAndPin rejects non-athlete local accounts before writing a session', async () => {
+    mockQueryOne.mockResolvedValueOnce({
+      account_id: 'coach-1',
+      role: 'coach',
+      organization_id: 'org-1',
+      is_platform_owner: false,
+      athlete_id: null,
+      auth_provider: 'ppbf_local',
+      pin_hash: 'hash',
+      active_flag: true,
+      has_master_shadow_access: false,
+      organization_status: 'active',
+    });
+
+    const result = await loginWithAccountIdAndPin('coach-1', '123456');
+
+    expect(result).toBeNull();
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 
   test('loginWithMicrosoftEmail inserts a 24-hour expires_at', async () => {

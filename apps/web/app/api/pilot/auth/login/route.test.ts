@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { POST } from './route';
 import { loginWithAccountIdAndPin } from '@/src/server/pilot/auth';
 import { SESSION_ABSOLUTE_LIFETIME_SECONDS } from '@/src/server/pilot/sessionPolicy';
+import { checkRateLimit, recordFailedAttempt, clearRateLimit } from '@/src/server/pilot/rateLimit';
 
 jest.mock('@/src/server/pilot/auth', () => ({
   loginWithAccountIdAndPin: jest.fn(),
@@ -12,7 +13,17 @@ jest.mock('@/src/server/pilot/audit', () => ({
   writePilotAuditEvent: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('@/src/server/pilot/rateLimit', () => ({
+  getClientIp: jest.fn(() => '127.0.0.1'),
+  checkRateLimit: jest.fn(() => ({ isLimited: false })),
+  recordFailedAttempt: jest.fn(),
+  clearRateLimit: jest.fn(),
+}));
+
 const mockLogin = loginWithAccountIdAndPin as jest.Mock;
+const mockCheckRateLimit = checkRateLimit as jest.Mock;
+const mockRecordFailedAttempt = recordFailedAttempt as jest.Mock;
+const mockClearRateLimit = clearRateLimit as jest.Mock;
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -32,9 +43,9 @@ describe('POST /api/pilot/auth/login', () => {
       token: 'a-token',
       principal: {
         accountId: 'acct-cookie-1',
-        role: 'coach',
+        role: 'athlete',
         organizationId: 'org-1',
-        athleteId: null,
+        athleteId: 'ath-1',
         sessionToken: 'a-token',
         authProvider: 'ppbf_local',
       },
@@ -54,5 +65,43 @@ describe('POST /api/pilot/auth/login', () => {
     const res = await POST(request('acct-cookie-2'));
     expect(res.status).toBe(401);
     expect(res.cookies.get('ppbf_pilot_session')).toBeUndefined();
+    expect(mockRecordFailedAttempt).toHaveBeenCalledTimes(2);
+  });
+
+  test('returns 429 when account lockout is active', async () => {
+    mockCheckRateLimit
+      .mockReturnValueOnce({ isLimited: true, delayMs: 30000 })
+      .mockReturnValueOnce({ isLimited: false });
+
+    const res = await POST(request('acct-locked'));
+    expect(res.status).toBe(429);
+    expect(mockLogin).not.toHaveBeenCalled();
+  });
+
+  test('clears rate-limit counters after successful login', async () => {
+    mockLogin.mockResolvedValueOnce({
+      token: 'b-token',
+      principal: {
+        accountId: 'acct-cookie-3',
+        role: 'athlete',
+        organizationId: 'org-1',
+        athleteId: 'ath-1',
+        sessionToken: 'b-token',
+        authProvider: 'ppbf_local',
+      },
+    });
+
+    const res = await POST(request('acct-cookie-3'));
+    expect(res.status).toBe(200);
+    expect(mockClearRateLimit).toHaveBeenCalledTimes(2);
+  });
+
+  test('returns invalid credentials when auth service rejects privileged local PIN login', async () => {
+    mockLogin.mockResolvedValueOnce(null);
+
+    const res = await POST(request('coach-acct'));
+    expect(res.status).toBe(401);
+    expect(res.cookies.get('ppbf_pilot_session')).toBeUndefined();
+    expect(mockRecordFailedAttempt).toHaveBeenCalledTimes(2);
   });
 });

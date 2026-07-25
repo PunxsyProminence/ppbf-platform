@@ -52,16 +52,16 @@ afterEach(() => {
 });
 
 describe('session revocation after credential changes', () => {
-  test('createOrUpdateAthleteAccount revokes sessions when updating an existing account (PIN change)', async () => {
+  test('createOrUpdateAthleteAccount revokes sessions when updating an existing account', async () => {
     mockQuery.mockResolvedValueOnce([{ organization_id: 'org-1' }]); // existing account lookup
-    await createOrUpdateAthleteAccount('acct-1', 'ath-1', '123456', 'org-1');
+    await createOrUpdateAthleteAccount('acct-1', 'ath-1', 'org-1');
     expect(revokeCalls()).toHaveLength(1);
     expect(revokeCalls()[0][1]).toEqual(['acct-1']);
   });
 
   test('createOrUpdateAthleteAccount does not revoke anything for a brand-new account', async () => {
     mockQuery.mockResolvedValueOnce([]); // no existing account
-    await createOrUpdateAthleteAccount('acct-new', 'ath-1', '123456', 'org-1');
+    await createOrUpdateAthleteAccount('acct-new', 'ath-1', 'org-1');
     expect(revokeCalls()).toHaveLength(0);
   });
 

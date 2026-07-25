@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { POST } from './route';
-import { createOrRotateAdminAccount } from '@/src/server/pilot/auth';
+import { createOrUpdateAthleteAccount } from '@/src/server/pilot/auth';
 import { requirePrincipal } from '@/src/server/pilot/http';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -10,10 +10,7 @@ jest.mock('@/src/server/pilot/http', () => {
 });
 
 jest.mock('@/src/server/pilot/auth', () => ({
-  createCoachAccount: jest.fn(),
-  createOrRotateAdminAccount: jest.fn(),
   createOrUpdateAthleteAccount: jest.fn(),
-  createParentAccount: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/audit', () => ({
@@ -21,7 +18,7 @@ jest.mock('@/src/server/pilot/audit', () => ({
 }));
 
 const mockRequirePrincipal = jest.mocked(requirePrincipal);
-const mockCreateAccount = jest.mocked(createOrRotateAdminAccount);
+const mockCreateAthleteAccount = jest.mocked(createOrUpdateAthleteAccount);
 
 beforeEach(() => {
   jest.resetAllMocks();
@@ -33,10 +30,10 @@ beforeEach(() => {
     sessionToken: 'token',
     authProvider: 'ppbf_local',
   });
-  mockCreateAccount.mockResolvedValue(undefined);
+  mockCreateAthleteAccount.mockResolvedValue(undefined);
 });
 
-test('allows the platform-authorized account path to create a Board account', async () => {
+test('creates athlete account in pending activation state without requiring PIN', async () => {
   const response = await POST(new NextRequest(
     'http://localhost/api/pilot/platform/users/create',
     {
@@ -44,23 +41,40 @@ test('allows the platform-authorized account path to create a Board account', as
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         organization_id: 'org-1',
-        account_id: 'board-account',
-        role: 'board',
-        pin: '123456',
+        account_id: 'athlete-account',
+        role: 'athlete',
+        athlete_id: 'ath-1',
       }),
     },
   ));
 
   expect(response.status).toBe(200);
-  expect(mockCreateAccount).toHaveBeenCalledWith(
-    'board-account',
-    '123456',
-    'org-1',
-    'board',
-  );
+  expect(mockCreateAthleteAccount).toHaveBeenCalledWith('athlete-account', 'ath-1', 'org-1');
   await expect(response.json()).resolves.toMatchObject({
     ok: true,
-    role: 'board',
-    athlete_id: null,
+    role: 'athlete',
+    athlete_id: 'ath-1',
+    account_state: 'pending_pin_activation',
+  });
+});
+
+test('rejects outdated privileged local-PIN role creation paths', async () => {
+  const response = await POST(new NextRequest(
+    'http://localhost/api/pilot/platform/users/create',
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        organization_id: 'org-1',
+        account_id: 'coach-account',
+        role: 'coach',
+      }),
+    },
+  ));
+
+  expect(response.status).toBe(400);
+  expect(mockCreateAthleteAccount).not.toHaveBeenCalled();
+  await expect(response.json()).resolves.toMatchObject({
+    error: 'Unsupported role: privileged accounts must be Microsoft-authenticated',
   });
 });

@@ -6,10 +6,11 @@ jest.mock('./db', () => ({
 }));
 
 import { resolvePrincipal } from './auth';
-import { queryOne } from './db';
+import { query, queryOne } from './db';
 import { PILOT_SESSION_COOKIE } from './env';
 
 const mockQueryOne = queryOne as jest.Mock;
+const mockQuery = query as jest.Mock;
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -24,10 +25,10 @@ function requestWithToken(token = 'a-real-session-token') {
 function validRow(overrides: Record<string, unknown> = {}) {
   return {
     account_id: 'acct-1',
-    role: 'coach',
+    role: 'athlete',
     organization_id: 'org-1',
     is_platform_owner: false,
-    athlete_id: null,
+    athlete_id: 'ath-1',
     auth_provider: 'ppbf_local',
     active_flag: true,
     has_master_shadow_access: false,
@@ -48,7 +49,19 @@ describe('resolvePrincipal', () => {
     const principal = await resolvePrincipal(requestWithToken());
     expect(principal).not.toBeNull();
     expect(principal?.accountId).toBe('acct-1');
-    expect(principal?.role).toBe('coach');
+    expect(principal?.role).toBe('athlete');
+  });
+
+  test('rejects and revokes a preexisting privileged local session token', async () => {
+    mockQueryOne.mockResolvedValueOnce(validRow({ role: 'coach', athlete_id: null }));
+
+    const principal = await resolvePrincipal(requestWithToken('legacy-priv-token'));
+
+    expect(principal).toBeNull();
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql).toContain('update pilot.session_tokens set revoked_at = now()');
+    expect(params).toHaveLength(1);
+    expect(params[0]).toMatch(/^[a-f0-9]{64}$/);
   });
 
   test('the underlying query enforces revocation, expiration, and active membership in SQL', async () => {

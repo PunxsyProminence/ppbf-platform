@@ -1,21 +1,16 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
-import {
-  createCoachAccount,
-  createOrRotateAdminAccount,
-  createOrUpdateAthleteAccount,
-  createParentAccount,
-} from '@/src/server/pilot/auth';
+import { createOrUpdateAthleteAccount } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import type { PilotRole } from '@/src/server/pilot/contracts';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
 
-const SUPPORTED_CREATE_ROLES: PilotRole[] = ['organization_admin', 'coach', 'athlete', 'parent', 'board'];
+const SUPPORTED_CREATE_ROLES: PilotRole[] = ['athlete'];
 
-function assertSupportedCreateRole(role: string): role is 'organization_admin' | 'coach' | 'athlete' | 'parent' | 'board' {
+function assertSupportedCreateRole(role: string): role is 'athlete' {
   return SUPPORTED_CREATE_ROLES.includes(role as PilotRole);
 }
 
@@ -35,29 +30,21 @@ export async function POST(request: NextRequest) {
     const organizationId = body.organization_id?.trim() || '';
     const accountId = body.account_id?.trim() || '';
     const role = body.role?.trim() || '';
-    const pin = body.pin?.trim() || '';
     const athleteId = body.athlete_id?.trim() || '';
 
-    if (!organizationId || !accountId || !role || !pin) {
-      throw new Error('Missing organization_id, account_id, role, or pin');
+    if (!organizationId || !accountId || !role) {
+      throw new Error('Missing organization_id, account_id, or role');
     }
 
     if (!assertSupportedCreateRole(role)) {
-      throw new Error('Unsupported role');
+      throw new Error('Unsupported role: privileged accounts must be Microsoft-authenticated');
     }
 
-    if (role === 'organization_admin' || role === 'board') {
-      await createOrRotateAdminAccount(accountId, pin, organizationId, role);
-    } else if (role === 'coach') {
-      await createCoachAccount(accountId, pin, organizationId);
-    } else if (role === 'athlete') {
-      if (!athleteId) {
-        throw new Error('Missing athlete_id for athlete role');
-      }
-      await createOrUpdateAthleteAccount(accountId, athleteId, pin, organizationId);
-    } else {
-      await createParentAccount(accountId, pin, organizationId);
+    if (!athleteId) {
+      throw new Error('Missing athlete_id for athlete role');
     }
+
+    await createOrUpdateAthleteAccount(accountId, athleteId, organizationId);
 
     // Each of the create/rotate functions above already assigns the
     // matching organization membership atomically alongside the account
@@ -74,6 +61,7 @@ export async function POST(request: NextRequest) {
         action: 'platform_owner_create_user',
         role,
         athlete_id: athleteId || null,
+        account_state: 'pending_pin_activation',
       },
     });
 
@@ -83,6 +71,7 @@ export async function POST(request: NextRequest) {
       organization_id: organizationId,
       role,
       athlete_id: athleteId || null,
+      account_state: 'pending_pin_activation',
     });
   } catch (error) {
     return jsonError(error);

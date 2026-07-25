@@ -6,6 +6,7 @@ import { getPilotDefaultOrganizationId, PILOT_SESSION_COOKIE } from './env';
 import { createOpaqueToken, hashPin, hashToken, verifyPin } from './security';
 import { computeSessionExpiry, parseRetentionDays } from './sessionPolicy';
 import { query, queryOne, withTransaction } from './db';
+import { validatePinPolicy } from './pinPolicy';
 
 export interface PilotPrincipal {
   accountId: string;
@@ -101,6 +102,12 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
 
   const pinIsValid = await verifyPin(pin, data.pin_hash);
   if (!pinIsValid) {
+    return null;
+  }
+
+  // PIN sessions are athlete self-service only. Enforce before creating
+  // any session token row so privileged local sessions are never minted.
+  if (data.role !== 'athlete') {
     return null;
   }
 
@@ -229,6 +236,17 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
     return null;
   }
 
+  // Fail closed: legacy or pre-deployment privileged local sessions are not
+  // valid under athlete-only PIN policy. Revoke the session row immediately
+  // so subsequent checks also fail without re-evaluating this branch.
+  if (row.auth_provider === 'ppbf_local' && row.role !== 'athlete') {
+    await query(
+      'update pilot.session_tokens set revoked_at = now() where token_hash = $1 and revoked_at is null',
+      [tokenHash],
+    );
+    return null;
+  }
+
   const organizationId = row.organization_id || getPilotDefaultOrganizationId();
   if (!row.is_platform_owner && row.organization_status && row.organization_status !== 'active') {
     return null;
@@ -315,6 +333,7 @@ export async function cleanupExpiredSessions(retentionDays: number = 7): Promise
 }
 
 export async function resetAccountPin(accountId: string, pin: string, organizationId: string): Promise<void> {
+  validatePinPolicy(pin);
   const pinHash = await hashPin(pin);
 
   await withTransaction(async (client) => {
@@ -325,7 +344,10 @@ export async function resetAccountPin(accountId: string, pin: string, organizati
     const result = await client.query<{ account_id: string }>(
       `update pilot.accounts
        set pin_hash = $1, updated_at = now()
-       where account_id = $2 and organization_id = $3 and is_platform_owner = false
+       where account_id = $2
+         and organization_id = $3
+         and role = 'athlete'
+         and is_platform_owner = false
        returning account_id`,
       [pinHash, accountId, organizationId],
     );
@@ -338,20 +360,74 @@ export async function resetAccountPin(accountId: string, pin: string, organizati
   });
 }
 
-export async function createAthleteAccount(accountId: string, athleteId: string, pin: string, organizationId: string): Promise<void> {
+export async function activateAccountPin(accountId: string, pin: string, organizationId: string): Promise<void> {
+  validatePinPolicy(pin);
   const pinHash = await hashPin(pin);
+
+  await withTransaction(async (client) => {
+    const result = await client.query<{ account_id: string }>(
+      `update pilot.accounts
+       set pin_hash = $1,
+           active_flag = true,
+           updated_at = now()
+       where account_id = $2
+         and organization_id = $3
+         and role = 'athlete'
+         and is_platform_owner = false
+       returning account_id`,
+      [pinHash, accountId, organizationId],
+    );
+
+    if (result.rows.length === 0) {
+      throw new Error('Account not found or cannot be activated');
+    }
+
+    await client.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+       values ($1, $2, 'athlete', true)
+       on conflict (account_id, organization_id) do update
+         set role = 'athlete',
+             active_flag = true,
+             updated_at = now()`,
+      [accountId, organizationId],
+    );
+
+    await revokeAllSessionsForAccountTx(client, accountId);
+  });
+}
+
+export async function createAthleteAccount(
+  accountId: string,
+  athleteId: string,
+  organizationIdOrLegacyPin: string,
+  maybeOrganizationId?: string,
+): Promise<void> {
+  const organizationId = maybeOrganizationId ?? organizationIdOrLegacyPin;
 
   await withTransaction(async (client) => {
     await client.query(
       'insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner) values ($1, $2, $3, $4, $5, $6, $7)',
-      [accountId, 'athlete', organizationId, athleteId, pinHash, true, false],
+      [accountId, 'athlete', organizationId, athleteId, null, false, false],
     );
-    await assignOrganizationMembershipTx(client, accountId, organizationId, 'athlete');
+    await client.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+       values ($1, $2, 'athlete', false)
+       on conflict (account_id, organization_id) do update
+         set role = 'athlete',
+             active_flag = false,
+             updated_at = now()`,
+      [accountId, organizationId],
+    );
   });
 }
 
-export async function createOrUpdateAthleteAccount(accountId: string, athleteId: string, pin: string, organizationId: string): Promise<void> {
-  const pinHash = await hashPin(pin);
+export async function createOrUpdateAthleteAccount(
+  accountId: string,
+  athleteId: string,
+  organizationIdOrLegacyPin: string,
+  maybeOrganizationId?: string,
+): Promise<void> {
+  const organizationId = maybeOrganizationId ?? organizationIdOrLegacyPin;
 
   // Check if account exists and verify ownership
   const existingAccount = await query<{ organization_id: string }>(
@@ -377,9 +453,17 @@ export async function createOrUpdateAthleteAccount(accountId: string, athleteId:
            active_flag = $4,
            updated_at = now()
          where account_id = $5 and organization_id = $6`,
-        ['athlete', athleteId, pinHash, true, accountId, organizationId],
+        ['athlete', athleteId, null, false, accountId, organizationId],
       );
-      await assignOrganizationMembershipTx(client, accountId, organizationId, 'athlete');
+      await client.query(
+        `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+         values ($1, $2, 'athlete', false)
+         on conflict (account_id, organization_id) do update
+           set role = 'athlete',
+               active_flag = false,
+               updated_at = now()`,
+        [accountId, organizationId],
+      );
       await revokeAllSessionsForAccountTx(client, accountId);
     });
   } else {
@@ -388,9 +472,17 @@ export async function createOrUpdateAthleteAccount(accountId: string, athleteId:
       await client.query(
         `insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner)
          values ($1, $2, $3, $4, $5, $6, $7)`,
-        [accountId, 'athlete', organizationId, athleteId, pinHash, true, false],
+        [accountId, 'athlete', organizationId, athleteId, null, false, false],
       );
-      await assignOrganizationMembershipTx(client, accountId, organizationId, 'athlete');
+      await client.query(
+        `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+         values ($1, $2, 'athlete', false)
+         on conflict (account_id, organization_id) do update
+           set role = 'athlete',
+               active_flag = false,
+               updated_at = now()`,
+        [accountId, organizationId],
+      );
     });
   }
 }

@@ -522,11 +522,35 @@ describe('session revocation regressions (real database, real application code)'
     }
   }
 
-  test('a newly created organization admin can authenticate, and resolvePrincipal resolves the session end-to-end', async () => {
+  test('a Microsoft-authenticated organization admin can authenticate, and resolvePrincipal resolves the session end-to-end', async () => {
     await seedOrganization('org-new-admin');
-    await auth.createOrRotateAdminAccount('admin-new-1', '123456', 'org-new-admin', 'organization_admin');
+    await rawQuery(
+      `insert into pilot.accounts
+        (account_id, login_email, auth_provider, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner)
+       values ($1, $2, 'microsoft', 'organization_admin', $3, null, null, true, false)
+       on conflict (account_id) do update
+         set login_email = excluded.login_email,
+             auth_provider = 'microsoft',
+             role = 'organization_admin',
+             organization_id = excluded.organization_id,
+             athlete_id = null,
+             pin_hash = null,
+             active_flag = true,
+             is_platform_owner = false,
+             updated_at = now()`,
+      ['admin-new-1', 'admin-new-1@ppbf.test', 'org-new-admin'],
+    );
+    await rawQuery(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+       values ($1, $2, 'organization_admin', true)
+       on conflict (account_id, organization_id) do update
+         set role = 'organization_admin',
+             active_flag = true,
+             updated_at = now()`,
+      ['admin-new-1', 'org-new-admin'],
+    );
 
-    const login = await auth.loginWithAccountIdAndPin('admin-new-1', '123456');
+    const login = await auth.loginWithMicrosoftEmail('admin-new-1@ppbf.test');
     expect(login).not.toBeNull();
 
     const principal = await auth.resolvePrincipal(requestWithSessionCookie(login!.token));
@@ -536,19 +560,44 @@ describe('session revocation regressions (real database, real application code)'
     expect(principal?.role).toBe('organization_admin');
   });
 
-  test('a rotated admin keeps an active matching membership; the old session is revoked and the new session resolves', async () => {
+  test('a Microsoft-authenticated organization admin role update keeps an active matching membership; the old session is revoked and the new session resolves', async () => {
     await seedOrganization('org-rotate-admin');
-    await auth.createOrRotateAdminAccount('admin-rotate-1', '111111', 'org-rotate-admin', 'organization_admin');
-    const firstLogin = await auth.loginWithAccountIdAndPin('admin-rotate-1', '111111');
+    await rawQuery(
+      `insert into pilot.accounts
+        (account_id, login_email, auth_provider, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner)
+       values ($1, $2, 'microsoft', 'organization_admin', $3, null, null, true, false)
+       on conflict (account_id) do update
+         set login_email = excluded.login_email,
+             auth_provider = 'microsoft',
+             role = 'organization_admin',
+             organization_id = excluded.organization_id,
+             athlete_id = null,
+             pin_hash = null,
+             active_flag = true,
+             is_platform_owner = false,
+             updated_at = now()`,
+      ['admin-rotate-1', 'admin-rotate-1@ppbf.test', 'org-rotate-admin'],
+    );
+    await rawQuery(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+       values ($1, $2, 'organization_admin', true)
+       on conflict (account_id, organization_id) do update
+         set role = 'organization_admin',
+             active_flag = true,
+             updated_at = now()`,
+      ['admin-rotate-1', 'org-rotate-admin'],
+    );
+
+    const firstLogin = await auth.loginWithMicrosoftEmail('admin-rotate-1@ppbf.test');
     expect(firstLogin).not.toBeNull();
 
-    await auth.createOrRotateAdminAccount('admin-rotate-1', '222222', 'org-rotate-admin', 'organization_admin');
+    await auth.upsertOrganizationMembership('admin-rotate-1', 'org-rotate-admin', 'organization_admin', true);
 
     // The session established before rotation must no longer resolve.
     const oldPrincipal = await auth.resolvePrincipal(requestWithSessionCookie(firstLogin!.token));
     expect(oldPrincipal).toBeNull();
 
-    const secondLogin = await auth.loginWithAccountIdAndPin('admin-rotate-1', '222222');
+    const secondLogin = await auth.loginWithMicrosoftEmail('admin-rotate-1@ppbf.test');
     expect(secondLogin).not.toBeNull();
 
     const newPrincipal = await auth.resolvePrincipal(requestWithSessionCookie(secondLogin!.token));
@@ -569,8 +618,9 @@ describe('session revocation regressions (real database, real application code)'
     await seedOrganization('org-A-inherit');
     await seedOrganization('org-B-inherit');
 
-    await auth.createCoachAccount('coach-cross-org-1', '123456', 'org-A-inherit');
-    const loginA = await auth.loginWithAccountIdAndPin('coach-cross-org-1', '123456');
+    await auth.createOrUpdateAthleteAccount('athlete-cross-org-1', 'athlete-cross-org-1', 'org-A-inherit');
+    await auth.activateAccountPin('athlete-cross-org-1', '123456', 'org-A-inherit');
+    const loginA = await auth.loginWithAccountIdAndPin('athlete-cross-org-1', '123456');
     expect(loginA).not.toBeNull();
 
     const principalBefore = await auth.resolvePrincipal(requestWithSessionCookie(loginA!.token));
@@ -578,7 +628,7 @@ describe('session revocation regressions (real database, real application code)'
 
     // Grant this same account a new, higher-privilege membership in a
     // different organization.
-    await auth.upsertOrganizationMembership('coach-cross-org-1', 'org-B-inherit', 'organization_admin', true);
+    await auth.upsertOrganizationMembership('athlete-cross-org-1', 'org-B-inherit', 'organization_admin', true);
 
     // The old org-A session is revoked -- it can never resolve again, so it
     // can never be observed carrying the organization_admin role granted in
@@ -591,8 +641,9 @@ describe('session revocation regressions (real database, real application code)'
     await seedOrganization('org-primary-A');
     await seedOrganization('org-secondary-B');
 
-    await auth.createCoachAccount('coach-secondary-1', '123456', 'org-primary-A');
-    const loginInPrimary = await auth.loginWithAccountIdAndPin('coach-secondary-1', '123456');
+    await auth.createOrUpdateAthleteAccount('athlete-secondary-1', 'athlete-secondary-1', 'org-primary-A');
+    await auth.activateAccountPin('athlete-secondary-1', '123456', 'org-primary-A');
+    const loginInPrimary = await auth.loginWithAccountIdAndPin('athlete-secondary-1', '123456');
     expect(loginInPrimary).not.toBeNull();
 
     // This account also holds an active membership in a second organization,
@@ -603,18 +654,18 @@ describe('session revocation regressions (real database, real application code)'
     // couldn't recognize.
     await rawQuery(
       `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
-       values ($1, $2, 'coach', true)
+       values ($1, $2, 'athlete', true)
        on conflict (account_id, organization_id) do update set active_flag = true`,
-      ['coach-secondary-1', 'org-secondary-B'],
+      ['athlete-secondary-1', 'org-secondary-B'],
     );
     const secondaryOrgTokenHash = 'secondary-org-session-hash-1';
     await rawQuery(
       `insert into pilot.session_tokens (token_hash, account_id, organization_id, expires_at)
        values ($1, $2, $3, now() + interval '24 hours')`,
-      [secondaryOrgTokenHash, 'coach-secondary-1', 'org-secondary-B'],
+      [secondaryOrgTokenHash, 'athlete-secondary-1', 'org-secondary-B'],
     );
 
-    await auth.revokeAllSessionsForAccountInOrganization('coach-secondary-1', 'org-secondary-B');
+    await auth.revokeAllSessionsForAccountInOrganization('athlete-secondary-1', 'org-secondary-B');
 
     const [secondaryRow] = await rawQuery<{ revoked_at: Date | null }>(
       'select revoked_at from pilot.session_tokens where token_hash = $1',
@@ -684,9 +735,10 @@ describe('session revocation regressions (real database, real application code)'
 
   test('cookie lifetime and the database session expire at the same time (24 hours)', async () => {
     await seedOrganization('org-cookie-align');
-    await auth.createCoachAccount('coach-cookie-1', '123456', 'org-cookie-align');
+    await auth.createOrUpdateAthleteAccount('athlete-cookie-1', 'athlete-cookie-1', 'org-cookie-align');
+    await auth.activateAccountPin('athlete-cookie-1', '123456', 'org-cookie-align');
     const before = Date.now();
-    const login = await auth.loginWithAccountIdAndPin('coach-cookie-1', '123456');
+    const login = await auth.loginWithAccountIdAndPin('athlete-cookie-1', '123456');
     const after = Date.now();
     expect(login).not.toBeNull();
 
@@ -699,5 +751,26 @@ describe('session revocation regressions (real database, real application code)'
     const { SESSION_ABSOLUTE_LIFETIME_MS } = await import('./sessionPolicy');
     expect(row.expires_at.getTime()).toBeGreaterThanOrEqual(before + SESSION_ABSOLUTE_LIFETIME_MS - 1000);
     expect(row.expires_at.getTime()).toBeLessThanOrEqual(after + SESSION_ABSOLUTE_LIFETIME_MS + 1000);
+  });
+
+  test('coach/admin local PIN login is rejected and writes no session row', async () => {
+    await seedOrganization('org-local-pin-deny');
+
+    await auth.createCoachAccount('coach-local-pin-deny-1', '123456', 'org-local-pin-deny');
+    await auth.createOrRotateAdminAccount('admin-local-pin-deny-1', '123456', 'org-local-pin-deny', 'organization_admin');
+
+    const coachLogin = await auth.loginWithAccountIdAndPin('coach-local-pin-deny-1', '123456');
+    const adminLogin = await auth.loginWithAccountIdAndPin('admin-local-pin-deny-1', '123456');
+
+    expect(coachLogin).toBeNull();
+    expect(adminLogin).toBeNull();
+
+    const rows = await rawQuery<{ count: string }>(
+      `select count(*)::text as count
+       from pilot.session_tokens
+       where account_id in ($1, $2)`,
+      ['coach-local-pin-deny-1', 'admin-local-pin-deny-1'],
+    );
+    expect(rows[0]?.count).toBe('0');
   });
 });
