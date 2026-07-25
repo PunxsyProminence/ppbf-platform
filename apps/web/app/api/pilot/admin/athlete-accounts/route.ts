@@ -3,13 +3,13 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import { createAthleteAccount } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
-import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { jsonError, requireHighAssurancePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
-    const principal = await requirePrincipal(request);
+    const principal = await requireHighAssurancePrincipal(request);
     requireRole(principal, ['organization_admin']);
     if (!isOrganizationAdminRole(principal.role)) {
       throw new Error('Forbidden: role not allowed');

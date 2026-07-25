@@ -52,6 +52,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 
+    if (loginResult.principal.role !== 'athlete') {
+      // PIN-auth sessions are athlete self-service only.
+      recordFailedAttempt(accountKey);
+      recordFailedAttempt(ipKey);
+      return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+    }
+
     // Successful login: clear rate limits
     clearRateLimit(accountKey);
     clearRateLimit(ipKey);

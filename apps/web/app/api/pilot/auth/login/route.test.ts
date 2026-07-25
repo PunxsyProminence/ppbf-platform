@@ -43,9 +43,9 @@ describe('POST /api/pilot/auth/login', () => {
       token: 'a-token',
       principal: {
         accountId: 'acct-cookie-1',
-        role: 'coach',
+        role: 'athlete',
         organizationId: 'org-1',
-        athleteId: null,
+        athleteId: 'ath-1',
         sessionToken: 'a-token',
         authProvider: 'ppbf_local',
       },
@@ -94,5 +94,24 @@ describe('POST /api/pilot/auth/login', () => {
     const res = await POST(request('acct-cookie-3'));
     expect(res.status).toBe(200);
     expect(mockClearRateLimit).toHaveBeenCalledTimes(2);
+  });
+
+  test('denies non-athlete PIN sessions for privileged roles', async () => {
+    mockLogin.mockResolvedValueOnce({
+      token: 'priv-token',
+      principal: {
+        accountId: 'coach-acct',
+        role: 'coach',
+        organizationId: 'org-1',
+        athleteId: null,
+        sessionToken: 'priv-token',
+        authProvider: 'ppbf_local',
+      },
+    });
+
+    const res = await POST(request('coach-acct'));
+    expect(res.status).toBe(401);
+    expect(res.cookies.get('ppbf_pilot_session')).toBeUndefined();
+    expect(mockRecordFailedAttempt).toHaveBeenCalledTimes(2);
   });
 });

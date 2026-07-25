@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { clearRoleSession, getPostLoginRoute, getRoleSessionSnapshot, subscribeRoleSession } from './roleSession';
 import type { ClubRole } from './roleRoutes';
+import { apiBase } from '@/lib/apiBase';
 
 interface RoleSessionGateProps {
   readonly allowedRoles: ClubRole[];
@@ -13,8 +14,12 @@ interface RoleSessionGateProps {
 export default function RoleSessionGate({ allowedRoles, children }: RoleSessionGateProps) {
   const router = useRouter();
   const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
+  const [verifiedAssuranceSessionKey, setVerifiedAssuranceSessionKey] = useState<string | null>(null);
 
   const allowed = !!session && (session.role === 'admin' || allowedRoles.includes(session.role));
+  const requiresHighAssurance = !!session && session.role !== 'athlete';
+  const sessionKey = session ? `${session.role}:${session.expiresAt ?? 'none'}` : null;
+  const assuranceVerified = !requiresHighAssurance || verifiedAssuranceSessionKey === sessionKey;
 
   useEffect(() => {
     if (!session) {
@@ -25,11 +30,55 @@ export default function RoleSessionGate({ allowedRoles, children }: RoleSessionG
 
     if (!allowed) {
       router.replace(getPostLoginRoute(session));
+      return;
     }
 
-  }, [allowed, router, session]);
+    if (!requiresHighAssurance) {
+      return;
+    }
 
-  if (!session || !allowed) {
+    let canceled = false;
+
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/auth/session`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+
+        const payload = (await response.json().catch(() => ({ authenticated: false }))) as {
+          authenticated?: boolean;
+          auth_provider?: 'ppbf_local' | 'microsoft';
+        };
+
+        if (canceled) {
+          return;
+        }
+
+        const highAssurance = !!payload.authenticated && payload.auth_provider === 'microsoft';
+        if (!highAssurance) {
+          clearRoleSession();
+          router.replace('/login?error=privileged_auth_required');
+          return;
+        }
+
+        setVerifiedAssuranceSessionKey(sessionKey);
+      } catch {
+        if (canceled) {
+          return;
+        }
+        clearRoleSession();
+        router.replace('/login?error=privileged_auth_required');
+      }
+    })();
+
+    return () => {
+      canceled = true;
+    };
+
+  }, [allowed, requiresHighAssurance, router, session, sessionKey]);
+
+  if (!session || !allowed || !assuranceVerified) {
     return (
       <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
         <div className="text-center">
