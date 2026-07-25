@@ -231,6 +231,12 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
             <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
               If you don&apos;t have an Account ID or PIN, or if you&apos;ve forgotten your PIN, contact your gym admin or coach. They can create a new account or reset your PIN.
             </p>
+            <Link
+              href="/athlete/sign-in"
+              className="mt-3 inline-flex min-h-[40px] items-center rounded-lg border border-[var(--red-primary)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--red-primary)]"
+            >
+              Open Simple Athlete PIN Sign-In
+            </Link>
           </div>
           <div className="rounded-lg border border-[rgba(0,0,0,0.12)] bg-white p-3">
             <p className="text-xs font-semibold text-[var(--black)] mb-2">📢 Latest Updates</p>

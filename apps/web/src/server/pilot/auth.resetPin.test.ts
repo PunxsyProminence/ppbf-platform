@@ -17,7 +17,7 @@ jest.mock('./security', () => ({
   hashToken: jest.fn(),
 }));
 
-import { resetAccountPin } from './auth';
+import { activateAccountPin, resetAccountPin } from './auth';
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -62,5 +62,42 @@ describe('resetAccountPin', () => {
     currentClient.query.mockRejectedValueOnce(new Error('connection lost')); // revoke fails
 
     await expect(resetAccountPin('acct-1', '123456', 'org-1')).rejects.toThrow('connection lost');
+  });
+
+  test('rejects policy-invalid PIN values before attempting any write', async () => {
+    currentClient = fakeClient();
+
+    await expect(resetAccountPin('acct-1', '12ab', 'org-1')).rejects.toThrow('PIN must contain only digits');
+    expect(currentClient.query).not.toHaveBeenCalled();
+  });
+});
+
+describe('activateAccountPin', () => {
+  test('activates an athlete account PIN and revokes existing sessions in one transaction', async () => {
+    currentClient = fakeClient();
+    currentClient.query.mockResolvedValueOnce({ rows: [{ account_id: 'ath-acct-1' }] });
+    currentClient.query.mockResolvedValueOnce({ rows: [] });
+
+    await activateAccountPin('ath-acct-1', '123456', 'org-1');
+
+    expect(currentClient.query).toHaveBeenCalledTimes(2);
+    const [updateSql, updateParams] = currentClient.query.mock.calls[0];
+    expect(updateSql).toContain('update pilot.accounts');
+    expect(updateSql).toContain('active_flag = true');
+    expect(updateParams).toEqual(['hashed-new-pin', 'ath-acct-1', 'org-1']);
+
+    const [revokeSql, revokeParams] = currentClient.query.mock.calls[1];
+    expect(revokeSql).toContain('update pilot.session_tokens');
+    expect(revokeParams).toEqual(['ath-acct-1']);
+  });
+
+  test('rejects activation when account is outside organization scope', async () => {
+    currentClient = fakeClient();
+    currentClient.query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(activateAccountPin('ath-acct-1', '123456', 'org-2')).rejects.toThrow(
+      'Account not found or cannot be activated',
+    );
+    expect(currentClient.query).toHaveBeenCalledTimes(1);
   });
 });

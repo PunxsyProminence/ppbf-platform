@@ -6,6 +6,7 @@ import { getPilotDefaultOrganizationId, PILOT_SESSION_COOKIE } from './env';
 import { createOpaqueToken, hashPin, hashToken, verifyPin } from './security';
 import { computeSessionExpiry, parseRetentionDays } from './sessionPolicy';
 import { query, queryOne, withTransaction } from './db';
+import { validatePinPolicy } from './pinPolicy';
 
 export interface PilotPrincipal {
   accountId: string;
@@ -315,6 +316,7 @@ export async function cleanupExpiredSessions(retentionDays: number = 7): Promise
 }
 
 export async function resetAccountPin(accountId: string, pin: string, organizationId: string): Promise<void> {
+  validatePinPolicy(pin);
   const pinHash = await hashPin(pin);
 
   await withTransaction(async (client) => {
@@ -332,6 +334,32 @@ export async function resetAccountPin(accountId: string, pin: string, organizati
 
     if (result.rows.length === 0) {
       throw new Error('Account not found or cannot be reset');
+    }
+
+    await revokeAllSessionsForAccountTx(client, accountId);
+  });
+}
+
+export async function activateAccountPin(accountId: string, pin: string, organizationId: string): Promise<void> {
+  validatePinPolicy(pin);
+  const pinHash = await hashPin(pin);
+
+  await withTransaction(async (client) => {
+    const result = await client.query<{ account_id: string }>(
+      `update pilot.accounts
+       set pin_hash = $1,
+           active_flag = true,
+           updated_at = now()
+       where account_id = $2
+         and organization_id = $3
+         and role = 'athlete'
+         and is_platform_owner = false
+       returning account_id`,
+      [pinHash, accountId, organizationId],
+    );
+
+    if (result.rows.length === 0) {
+      throw new Error('Account not found or cannot be activated');
     }
 
     await revokeAllSessionsForAccountTx(client, accountId);
