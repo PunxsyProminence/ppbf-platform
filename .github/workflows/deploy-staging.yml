@@ -61,6 +61,7 @@ jobs:
           az acr login --name "$ACR_NAME"
 
       - name: Build and Push Container Image to ACR
+        id: build-image
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -69,6 +70,23 @@ jobs:
           tags: ${{ env.ACR_LOGIN_SERVER }}/ppbf-frontend:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Capture Staging Image Digest
+        run: |
+          DIGEST='${{ steps.build-image.outputs.digest }}'
+          test -n "$DIGEST"
+          printf '%s\n' "$DIGEST" > staging-image-digest.txt
+          {
+            echo '### Staging image digest'
+            echo ''
+            echo "$DIGEST"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Staging Digest Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-image-digest
+          path: staging-image-digest.txt
 
       - name: Validate Staging AI Configuration
         env:
@@ -93,7 +111,7 @@ jobs:
           az containerapp update \
             --name app-ppbf-staging \
             --resource-group "$RESOURCE_GROUP" \
-            --image "${ACR_LOGIN_SERVER}/ppbf-frontend:${{ github.sha }}" \
+            --image "${ACR_LOGIN_SERVER}/ppbf-frontend@${{ steps.build-image.outputs.digest }}" \
             --set-env-vars \
               PPBF_ONBOARDING_LIVE_SAVE=false \
               PPBF_AUTH_PROVIDER_WIRED=false \

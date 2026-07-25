@@ -29,6 +29,10 @@ on:
         description: "Full commit SHA on main you intend to deploy (must exactly match the checked-out commit)"
         required: true
         type: string
+      release_digest:
+        description: "Immutable image digest captured from staging (sha256:...)"
+        required: true
+        type: string
       migrations_complete:
         description: "Type CONFIRMED to attest all database migrations this commit depends on are already applied to production"
         required: true
@@ -67,6 +71,13 @@ jobs:
             exit 1
           fi
 
+      - name: Verify supplied release digest format
+        run: |
+          if ! printf '%s' "${{ inputs.release_digest }}" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+            echo "::error::release_digest must be a sha256 digest captured from staging."
+            exit 1
+          fi
+
   build-and-deploy:
     needs: guard
     runs-on: ubuntu-latest
@@ -86,9 +97,6 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Log in to Azure Container Registry
         run: |
           az acr login --name "$ACR_NAME"
@@ -105,19 +113,16 @@ jobs:
           echo "username=$ACR_USERNAME" >> "$GITHUB_OUTPUT"
           echo "password=$ACR_PASSWORD" >> "$GITHUB_OUTPUT"
 
-      - name: Build and Push Container Image to ACR
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Dockerfile
-          push: true
-          tags: |
-            ${{ env.ACR_LOGIN_SERVER }}/ppbf-frontend:${{ github.sha }}
-            ${{ env.ACR_LOGIN_SERVER }}/ppbf-frontend:prod-latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Verify release digest exists in ACR
+        run: |
+          RELEASE_DIGEST='${{ inputs.release_digest }}'
+          MANIFEST_DIGEST="$(az acr repository show-manifests --name "$ACR_NAME" --repository ppbf-frontend --query "[?digest=='${{ inputs.release_digest }}'] | [0].digest" -o tsv)"
+          if [ "$MANIFEST_DIGEST" != "$RELEASE_DIGEST" ]; then
+            echo "::error::release digest '$RELEASE_DIGEST' was not found in ACR for ppbf-frontend."
+            exit 1
+          fi
 
-      - name: Deploy to Azure Container App (Production)
+      - name: Deploy Tested Digest to Azure Container App (Production)
         uses: azure/container-apps-deploy-action@v1
         with:
           acrName: ${{ env.ACR_NAME }}
@@ -125,7 +130,7 @@ jobs:
           acrPassword: ${{ steps.acr-credentials.outputs.password }}
           resourceGroup: ${{ env.RESOURCE_GROUP }}
           containerAppName: ${{ env.CONTAINER_APP_NAME }}
-          imageToDeploy: ${{ env.ACR_LOGIN_SERVER }}/ppbf-frontend:${{ github.sha }}
+          imageToDeploy: ${{ env.ACR_LOGIN_SERVER }}/ppbf-frontend@${{ inputs.release_digest }}
           environmentVariables: >-
             PPBF_ONBOARDING_LIVE_SAVE=false
             PPBF_AUTH_PROVIDER_WIRED=false
