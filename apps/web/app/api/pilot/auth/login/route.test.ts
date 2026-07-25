@@ -96,18 +96,8 @@ describe('POST /api/pilot/auth/login', () => {
     expect(mockClearRateLimit).toHaveBeenCalledTimes(2);
   });
 
-  test('denies non-athlete PIN sessions for privileged roles', async () => {
-    mockLogin.mockResolvedValueOnce({
-      token: 'priv-token',
-      principal: {
-        accountId: 'coach-acct',
-        role: 'coach',
-        organizationId: 'org-1',
-        athleteId: null,
-        sessionToken: 'priv-token',
-        authProvider: 'ppbf_local',
-      },
-    });
+  test('returns invalid credentials when auth service rejects privileged local PIN login', async () => {
+    mockLogin.mockResolvedValueOnce(null);
 
     const res = await POST(request('coach-acct'));
     expect(res.status).toBe(401);

@@ -56,6 +56,17 @@ describe('resetAccountPin', () => {
     expect(currentClient.query).toHaveBeenCalledTimes(1);
   });
 
+  test('rejects reset for non-athlete accounts', async () => {
+    currentClient = fakeClient();
+    currentClient.query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(resetAccountPin('coach-1', '123456', 'org-1')).rejects.toThrow(
+      'Account not found or cannot be reset',
+    );
+
+    expect(currentClient.query).toHaveBeenCalledTimes(1);
+  });
+
   test('does not report success when the revoke step fails after the PIN update', async () => {
     currentClient = fakeClient();
     currentClient.query.mockResolvedValueOnce({ rows: [{ account_id: 'acct-1' }] }); // update succeeds
@@ -73,20 +84,26 @@ describe('resetAccountPin', () => {
 });
 
 describe('activateAccountPin', () => {
-  test('activates an athlete account PIN and revokes existing sessions in one transaction', async () => {
+  test('activates athlete account PIN, enables membership, and revokes existing sessions in one transaction', async () => {
     currentClient = fakeClient();
     currentClient.query.mockResolvedValueOnce({ rows: [{ account_id: 'ath-acct-1' }] });
+    currentClient.query.mockResolvedValueOnce({ rows: [] });
     currentClient.query.mockResolvedValueOnce({ rows: [] });
 
     await activateAccountPin('ath-acct-1', '123456', 'org-1');
 
-    expect(currentClient.query).toHaveBeenCalledTimes(2);
+    expect(currentClient.query).toHaveBeenCalledTimes(3);
     const [updateSql, updateParams] = currentClient.query.mock.calls[0];
     expect(updateSql).toContain('update pilot.accounts');
     expect(updateSql).toContain('active_flag = true');
     expect(updateParams).toEqual(['hashed-new-pin', 'ath-acct-1', 'org-1']);
 
-    const [revokeSql, revokeParams] = currentClient.query.mock.calls[1];
+    const [membershipSql, membershipParams] = currentClient.query.mock.calls[1];
+    expect(membershipSql).toContain('insert into pilot.organization_memberships');
+    expect(membershipSql).toContain('active_flag = true');
+    expect(membershipParams).toEqual(['ath-acct-1', 'org-1']);
+
+    const [revokeSql, revokeParams] = currentClient.query.mock.calls[2];
     expect(revokeSql).toContain('update pilot.session_tokens');
     expect(revokeParams).toEqual(['ath-acct-1']);
   });

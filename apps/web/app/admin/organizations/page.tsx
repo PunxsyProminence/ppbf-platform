@@ -38,10 +38,8 @@ export default function SetupWizard() {
   const [gymId, setGymId] = useState('');
   const [gymName, setGymName] = useState('');
 
-  // Step 2: Create Admin Account
+  // Step 2: Confirm Microsoft-authenticated admin onboarding path
   const [adminAccountId, setAdminAccountId] = useState('');
-  const [adminPin, setAdminPin] = useState('');
-  const [adminConfirmPin, setAdminConfirmPin] = useState('');
 
   // Step 3: Configure Features
   const [gymCapabilityAccess, setGymCapabilityAccess] = useState<Record<string, boolean>>({});
@@ -56,7 +54,7 @@ export default function SetupWizard() {
     void (async () => {
       try {
         const response = await fetch('/api/pilot/auth/session', {
-          method: 'GET',
+          method: 'POST',
           credentials: 'include',
         });
 
@@ -65,9 +63,9 @@ export default function SetupWizard() {
           return;
         }
 
-        const data = (await response.json()) as { authProvider?: string; role?: string };
-        // Check if authenticated via Microsoft
-        const isMicrosoft = data.authProvider === 'microsoft';
+        const data = (await response.json()) as { auth_provider?: string; role?: string };
+        // Check if authenticated via Microsoft.
+        const isMicrosoft = data.auth_provider === 'microsoft';
         setIsMicrosoftSession(isMicrosoft);
         setSessionRole(data.role ?? null);
       } catch {
@@ -131,19 +129,12 @@ export default function SetupWizard() {
     return `Gym "${gymName}" created successfully!`;
   }
 
-  async function createAdminAccount() {
-    if (!adminAccountId.trim()) throw new Error('Please enter an Admin Account ID');
-    if (!adminPin.trim()) throw new Error('Please enter a PIN code');
-    if (adminPin !== adminConfirmPin) throw new Error('PINs do not match');
-    if (adminPin.length < 4) throw new Error('PIN must be at least 4 characters');
+  async function confirmAdminOnboardingPath() {
+    if (!adminAccountId.trim()) {
+      throw new Error('Please enter the organization admin account identifier used for Microsoft sign-in mapping');
+    }
 
-    await postJson('/api/pilot/platform/users/create', {
-      organization_id: gymId.trim(),
-      account_id: adminAccountId.trim(),
-      role: 'organization_admin',
-      pin: adminPin,
-    });
-    return `Admin account "${adminAccountId}" created successfully!`;
+    return `Microsoft-authenticated admin onboarding confirmed for "${adminAccountId}". Continue to feature setup.`;
   }
 
   async function saveCapabilities() {
@@ -206,7 +197,7 @@ export default function SetupWizard() {
   }
 
   const canStep1 = gymId.trim() && gymName.trim();
-  const canStep2 = adminAccountId.trim() && adminPin.trim() && adminPin === adminConfirmPin && adminPin.length >= 4;
+  const canStep2 = adminAccountId.trim().length > 0;
   const step1Complete = completedSteps.includes(1);
   const step2Complete = completedSteps.includes(2);
 
@@ -330,7 +321,7 @@ export default function SetupWizard() {
           )}
         </section>
 
-        {/* Step 2: Create Admin Account */}
+        {/* Step 2: Microsoft-Authenticated Admin Path */}
         <section
           className={`rounded-2xl border-2 p-6 transition ${
             step === 2
@@ -340,9 +331,9 @@ export default function SetupWizard() {
         >
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1">
-              <h2 className="text-lg font-bold">Step 2: Create Your Admin Account</h2>
+              <h2 className="text-lg font-bold">Step 2: Confirm Admin Access Path</h2>
               <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
-                This will be your first user account. You&apos;ll use the Account ID and PIN to sign in to PPBF.
+                Privileged admin access must use Microsoft-authenticated sign-in. PIN sessions are athlete-only.
               </p>
             </div>
             {step2Complete && <span className="text-2xl">✓</span>}
@@ -352,39 +343,16 @@ export default function SetupWizard() {
             <div className="mt-6 space-y-4">
               <div className="rounded-lg border border-[rgba(184,59,52,0.2)] bg-[rgba(184,59,52,0.05)] p-4">
                 <p className="text-xs font-semibold text-[var(--red-primary)] uppercase tracking-[0.1em]">⚠️ Important Setup Note</p>
-                <p className="mt-2 text-sm text-[var(--gray-dark)]">The account created here becomes an <strong>Organization Admin</strong> with PIN-based sign-in. This is separate from your platform_owner Microsoft account (used above). Organization admins manage their gym&apos;s day-to-day operations.</p>
+                <p className="mt-2 text-sm text-[var(--gray-dark)]">This setup flow no longer creates organization admin PIN accounts. Organization admins must be provisioned through the Microsoft-authenticated account path.</p>
               </div>
               <div>
-                <label className="block text-sm font-semibold text-[var(--black)]">Organization Admin Account ID</label>
-                <p className="mt-1 text-xs text-[var(--gray-dark)]">A unique identifier for the organization admin. Example: &quot;coach-john&quot; or &quot;admin-001&quot;</p>
+                <label className="block text-sm font-semibold text-[var(--black)]">Organization Admin Account Identifier</label>
+                <p className="mt-1 text-xs text-[var(--gray-dark)]">Record the account identifier that will be mapped to Microsoft-authenticated sign-in for this gym administrator.</p>
                 <input
                   type="text"
                   value={adminAccountId}
                   onChange={(e) => setAdminAccountId(e.target.value)}
-                  placeholder="coach-john"
-                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-[var(--black)]">PIN (4+ digits)</label>
-                <p className="mt-1 text-xs text-[var(--gray-dark)]">A secure PIN code for sign-in. Avoid predictable patterns (1234, 5678). Example: 5832 or 2947</p>
-                <input
-                  type="password"
-                  value={adminPin}
-                  onChange={(e) => setAdminPin(e.target.value)}
-                  placeholder="••••"
-                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-[var(--black)]">Confirm PIN</label>
-                <input
-                  type="password"
-                  value={adminConfirmPin}
-                  onChange={(e) => setAdminConfirmPin(e.target.value)}
-                  placeholder="••••"
+                  placeholder="admin-gym-001"
                   className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                 />
               </div>
@@ -393,7 +361,7 @@ export default function SetupWizard() {
                 type="button"
                 disabled={!canStep2 || isBusy}
                 onClick={() => {
-                  void runAction(createAdminAccount).then((success) => {
+                  void runAction(confirmAdminOnboardingPath).then((success) => {
                     if (success) {
                       setCompletedSteps([...completedSteps, 2]);
                       setStep(3);
@@ -402,7 +370,7 @@ export default function SetupWizard() {
                 }}
                 className="h-11 w-full rounded-lg border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isBusy ? 'Creating...' : 'Create Admin Account & Continue'}
+                {isBusy ? 'Saving...' : 'Confirm Microsoft Admin Path & Continue'}
               </button>
             </div>
           )}
@@ -478,10 +446,10 @@ export default function SetupWizard() {
             <div className="space-y-3 rounded-lg bg-white p-4 border border-[rgba(0,0,0,0.12)]">
               <p className="text-sm font-semibold text-[var(--black)]">Next Steps:</p>
               <ol className="space-y-2 text-sm text-[var(--gray-dark)]">
-                <li><strong>1. Sign out</strong> from your platform_owner account</li>
-                <li><strong>2. Sign in with PIN:</strong> Use the Organization Admin account ID and PIN you just created</li>
-                <li><strong>3. Create team accounts:</strong> Set up coach and athlete accounts from the admin dashboard</li>
-                <li><strong>4. Manage features:</strong> Access the capabilities you selected (check-in, notes, announcements, etc.)</li>
+                <li><strong>1. Keep privileged sign-in Microsoft-authenticated:</strong> do not use PIN for admin/coach/board access</li>
+                <li><strong>2. Provision athlete accounts as pending:</strong> activate each athlete PIN in Admin PIN Control</li>
+                <li><strong>3. Use the admin dashboard:</strong> configure operations and capabilities for this gym</li>
+                <li><strong>4. Verify access boundaries:</strong> PIN works for athlete self-service only</li>
               </ol>
             </div>
 

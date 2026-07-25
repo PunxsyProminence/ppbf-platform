@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 
 import { POST } from './route';
 import { activateAccountPin, resetAccountPin } from '@/src/server/pilot/auth';
-import { requireHighAssurancePrincipal } from '@/src/server/pilot/http';
+import { requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
 
 jest.mock('@/src/server/pilot/auth', () => ({
   activateAccountPin: jest.fn().mockResolvedValue(undefined),
@@ -10,7 +10,7 @@ jest.mock('@/src/server/pilot/auth', () => ({
 }));
 
 jest.mock('@/src/server/pilot/http', () => ({
-  requireHighAssurancePrincipal: jest.fn(),
+  requireMicrosoftAuthenticatedPrincipal: jest.fn(),
   jsonError: (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     if (message.startsWith('Unauthorized')) return new Response(JSON.stringify({ error: message }), { status: 401 });
@@ -24,7 +24,7 @@ jest.mock('@/src/server/pilot/audit', () => ({
   writePilotAuditEvent: jest.fn().mockResolvedValue(undefined),
 }));
 
-const mockRequireHighAssurancePrincipal = requireHighAssurancePrincipal as jest.Mock;
+const mockRequireMicrosoftAuthenticatedPrincipal = requireMicrosoftAuthenticatedPrincipal as jest.Mock;
 const mockActivate = activateAccountPin as jest.Mock;
 const mockReset = resetAccountPin as jest.Mock;
 
@@ -42,7 +42,7 @@ afterEach(() => {
 
 describe('POST /api/pilot/admin/accounts/pin-reset', () => {
   test('denies PIN-auth sessions for privileged PIN-management actions', async () => {
-    mockRequireHighAssurancePrincipal.mockRejectedValueOnce(new Error('Forbidden: high-assurance authentication required'));
+    mockRequireMicrosoftAuthenticatedPrincipal.mockRejectedValueOnce(new Error('Forbidden: Microsoft-authenticated session required'));
 
     const response = await POST(makeRequest({ account_id: 'ath-1', pin: '123456', mode: 'reset' }));
     expect(response.status).toBe(403);
@@ -51,7 +51,7 @@ describe('POST /api/pilot/admin/accounts/pin-reset', () => {
   });
 
   test('requires an authenticated organization admin', async () => {
-    mockRequireHighAssurancePrincipal.mockResolvedValueOnce({
+    mockRequireMicrosoftAuthenticatedPrincipal.mockResolvedValueOnce({
       accountId: 'coach-1',
       role: 'coach',
       organizationId: 'org-1',
@@ -67,7 +67,7 @@ describe('POST /api/pilot/admin/accounts/pin-reset', () => {
   });
 
   test('activates PIN only within principal organization scope', async () => {
-    mockRequireHighAssurancePrincipal.mockResolvedValueOnce({
+    mockRequireMicrosoftAuthenticatedPrincipal.mockResolvedValueOnce({
       accountId: 'admin@punxsyprominence.org',
       role: 'organization_admin',
       organizationId: 'org-1',
@@ -84,7 +84,7 @@ describe('POST /api/pilot/admin/accounts/pin-reset', () => {
   });
 
   test('resets PIN and revokes sessions via auth service', async () => {
-    mockRequireHighAssurancePrincipal.mockResolvedValueOnce({
+    mockRequireMicrosoftAuthenticatedPrincipal.mockResolvedValueOnce({
       accountId: 'admin@punxsyprominence.org',
       role: 'organization_admin',
       organizationId: 'org-1',

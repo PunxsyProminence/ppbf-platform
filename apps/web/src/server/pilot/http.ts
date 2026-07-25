@@ -12,13 +12,14 @@ export async function requirePrincipal(request: NextRequest): Promise<PilotPrinc
   return principal;
 }
 
-// High-assurance principal requirement for privileged operations. PIN/local
-// sessions are explicitly restricted to athlete self-service and cannot be
-// used for user management, role management, or other privileged actions.
-export async function requireHighAssurancePrincipal(request: NextRequest): Promise<PilotPrincipal> {
+// Microsoft-authenticated principal requirement for privileged operations.
+// PIN/local sessions are explicitly restricted to athlete self-service and
+// cannot be used for user management, role management, or other privileged
+// actions.
+export async function requireMicrosoftAuthenticatedPrincipal(request: NextRequest): Promise<PilotPrincipal> {
   const principal = await requirePrincipal(request);
   if (principal.authProvider !== 'microsoft') {
-    throw new Error('Forbidden: high-assurance authentication required');
+    throw new Error('Forbidden: Microsoft-authenticated session required');
   }
   return principal;
 }
