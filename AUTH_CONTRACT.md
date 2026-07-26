@@ -19,9 +19,13 @@ Relevant source files:
 - [apps/web/src/server/pilot/auth.ts](apps/web/src/server/pilot/auth.ts)
 - [apps/web/components/roleRoutes.ts](apps/web/components/roleRoutes.ts)
 
-## Required Endpoints
+## Endpoint Contract
 
-### POST /auth/login
+Login, logout, and session are already implemented (at the `/api/pilot/auth/*`
+paths listed above under Observed Current Behavior) and match the contract
+below. `GET /auth/roles` is the one proposed addition, not yet built.
+
+### POST /auth/login (implemented)
 
 Request body:
 
@@ -64,7 +68,7 @@ Session behavior:
 - Session token is opaque.
 - Server stores the hashed token in the database.
 
-### POST /auth/logout
+### POST /auth/logout (implemented)
 
 Request:
 
@@ -87,7 +91,7 @@ Session behavior:
 - Revoke the token server-side.
 - Clear the session cookie.
 
-### GET /auth/session
+### GET /auth/session (implemented)
 
 Request:
 
@@ -115,7 +119,7 @@ Status codes:
 - `200` always for a valid request path
 - `500` unexpected server failure
 
-### GET /auth/roles
+### GET /auth/roles (proposed, not built)
 
 Purpose:
 
