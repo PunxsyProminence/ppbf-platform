@@ -223,6 +223,7 @@ Non-negotiable provenance rule:
 - The referenced platform audit was performed against `C:\Projects\ppbf-platform` in a dirty checkout that was behind `origin/main`.
 - Never treat those findings as verified current truth until they are reconciled against current source and deployed versions.
 - Never modify that dirty checkout as part of remediation validation.
+- Record each finding against current-truth evidence before scheduling remediation; dirty-checkout observations are provisional only.
 
 ### Phase 0 - Verify Every Finding on Current Truth
 
@@ -452,6 +453,11 @@ Phase 0 classification progress:
 - Confirmed current: session endpoint method/field contract mismatch and frontend local-session gate divergence.
 - Confirmed current: announcement routes accepted caller-controlled `organization_id` and relied on shared operator PIN path.
 - Verified current: root `npm test` already dispatches to the real repo test runner, so P1.2 is not an active implementation blocker.
+
+Reconciliation ledger:
+- Current-truth issues that remain actionable are limited to findings that still reproduce against current `origin/main`, the exact production source version, or current deployment workflow behavior.
+- Resolved since the audited checkout: the root test runner now reaches real workspace suites, and current-session revalidation already marked the shadow debug and video-list items as non-blockers.
+- Requires runtime verification: any production/staging release-SHA mapping or workflow-target claim must be validated against the exact deployed artifact and workflow configuration before it can be treated as current truth.
 
 Implemented this session:
 1. P0.1 (partial complete)
