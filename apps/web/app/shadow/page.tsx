@@ -274,6 +274,7 @@ function ShadowChatPageContent() {
   const [conversationId, setConversationId] = useState<string>();
   const [conversationAthleteId, setConversationAthleteId] = useState<string>();
   const [unlockHints, setUnlockHints] = useState<ShadowUnlockHint[]>([]);
+  const [modelStatus, setModelStatus] = useState<Record<string, { displayName: string; available: boolean; tier: string }>>({});
   const [savedSessions, setSavedSessions] = useState<OwnedShadowConversation[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const [restoringSessionId, setRestoringSessionId] = useState<string>();
@@ -401,6 +402,29 @@ function ShadowChatPageContent() {
       cancelled = true;
     };
   }, [authChecked, userRole]);
+
+  useEffect(() => {
+    if (!capabilitiesLoaded || !allowedSessionTypes.includes('heavy_bag')) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/shadow/models`, { credentials: 'include' });
+        if (!response.ok) return;
+        const payload = await response.json() as {
+          models?: Record<string, { displayName: string; available: boolean; tier: string }>;
+        };
+        if (!cancelled && payload.models) {
+          setModelStatus(payload.models);
+        }
+      } catch {
+        // Model status is purely informational -- a failed fetch just means
+        // the panel stays empty, nothing else in the page depends on it.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [capabilitiesLoaded, allowedSessionTypes]);
 
   useEffect(() => {
     if (!capabilitiesLoaded) return;
@@ -951,6 +975,20 @@ function ShadowChatPageContent() {
             ) : null}
             <div ref={messagesEndRef} />
           </div>
+
+          {allowedSessionTypes.includes('heavy_bag') && Object.keys(modelStatus).length > 0 ? (
+            <div className="mb-3 flex flex-wrap gap-2 font-mono text-[9px] uppercase tracking-[0.08em] text-[#8a8a8a]">
+              {Object.values(modelStatus).map((model) => (
+                <span
+                  key={model.displayName}
+                  className={`border px-2 py-1 ${model.available ? 'border-[#4a8a4a] text-[#4a8a4a]' : 'border-[#5a4a3a] text-[#5a4a3a]'}`}
+                  title={`${model.tier} tier -- ${model.available ? 'live' : 'not deployed yet'}`}
+                >
+                  {model.available ? '● ' : '○ '}{model.displayName}
+                </span>
+              ))}
+            </div>
+          ) : null}
 
           {/* Input */}
           <form onSubmit={handleSendMessage} className="flex gap-2">

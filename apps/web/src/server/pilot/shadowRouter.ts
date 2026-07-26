@@ -23,7 +23,7 @@ export interface ShadowModel {
 }
 
 const MODEL_REGISTRY: Record<string, ShadowModel> = {
-  // ── Currently deployed ───────────────────────────────────────────────────
+  // ── Currently deployed (shadow-ai / ppbf-shadow-rg, eastus) ─────────────
   'gpt-5-mini-shadow': {
     deploymentName: 'gpt-5-mini-shadow',
     displayName: 'GPT-5 Mini (Quick Round)',
@@ -33,8 +33,6 @@ const MODEL_REGISTRY: Record<string, ShadowModel> = {
     tier: 'quick',
     available: true,
   },
-
-  // ── Add when quota is granted ────────────────────────────────────────────
   'gpt-5-shadow': {
     deploymentName: 'gpt-5-shadow',
     displayName: 'GPT-5 (Heavy Bag)',
@@ -42,16 +40,18 @@ const MODEL_REGISTRY: Record<string, ShadowModel> = {
     isReasoningModel: true,
     maxCompletionTokens: 16384,
     tier: 'heavy',
-    available: false, // Flip to true after: az cognitiveservices account deployment create ...
+    available: true,
   },
   'gpt-5-vision-shadow': {
     deploymentName: 'gpt-5-vision-shadow',
+    // Same underlying gpt-5 model (natively multimodal) under its own
+    // deployment alias -- Azure's catalog has no separate "vision" model.
     displayName: 'GPT-5 Vision (Film Study)',
     supportsVision: true,
-    isReasoningModel: false,
-    maxCompletionTokens: 4096,
+    isReasoningModel: true,
+    maxCompletionTokens: 16384,
     tier: 'vision',
-    available: false,
+    available: true,
   },
 };
 
