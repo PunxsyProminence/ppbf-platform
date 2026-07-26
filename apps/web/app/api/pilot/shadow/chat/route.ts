@@ -23,7 +23,14 @@ import { buildShadowContext } from '@/src/server/pilot/shadowContextBuilder';
 import { routeRequest, tierToSessionType } from '@/src/server/pilot/shadowRouter';
 import { classifyProfileTier, buildPersonalizationPrompt } from '@/src/server/pilot/shadowProfiling';
 import { executeHeavyBagSync } from '@/src/server/pilot/shadowHeavyBag';
-import { evaluateShadowUnlockState, isFeatureEnabled, type ShadowUnlockState } from '@/src/server/pilot/shadowUnlocks';
+import {
+  evaluateShadowUnlockState,
+  isFeatureEnabled,
+  buildShadowUnlockHints,
+  type ShadowUnlockState,
+  type ShadowUnlockHint,
+} from '@/src/server/pilot/shadowUnlocks';
+import { deriveEvidenceTier, type ShadowEvidenceTier } from '@/src/server/pilot/shadowEvidenceTier';
 import {
   appendConversationExchange,
   assertConversationAccess,
@@ -74,6 +81,9 @@ export interface ShadowChatResponse {
   async?: boolean; // True if response is async (jobId instead of response)
   jobId?: string; // Present when async=true — poll /api/pilot/shadow/jobs/[jobId]
   citations?: ShadowEvidenceCitation[];
+  evidenceTier: ShadowEvidenceTier;
+  handoff?: string;
+  unlockHints?: ShadowUnlockHint[];
   error?: string;
 }
 
@@ -84,6 +94,27 @@ const FALLBACK_RESPONSES: Record<string, string> = {
   return_to_play: 'Return-to-play decisions require medical professional evaluation. SHADOW can help you understand RTP protocols and evidence-based recovery frameworks.',
   medical_clearance: 'Medical clearance decisions are made by qualified medical professionals. SHADOW can help you understand what clearance evaluations typically include.',
 };
+
+// Human-handoff guidance for specific high-risk topics. Anything not listed
+// here still gets a non-empty handoff via DEFAULT_HANDOFF_MESSAGE below --
+// handoff must never be empty when a response requires human review.
+const HANDOFF_MESSAGES: Record<string, string> = {
+  concussion: 'Loop in your medical staff before any return-to-activity decision.',
+  weight_cutting: 'Talk to your medical team and sports nutritionist before changing any weight-cut plan.',
+  return_to_play: 'Return-to-play calls belong to a qualified medical professional -- bring this to them directly.',
+  medical_clearance: 'Medical clearance is a licensed professional\'s call, not SHADOW\'s -- follow up with them directly.',
+};
+const DEFAULT_HANDOFF_MESSAGE = 'This needs a human coach, medical professional, or your organization admin to weigh in directly -- please follow up with them.';
+
+function resolveHandoff(input: { requiresHumanReview: boolean; topic: string | undefined }): string | undefined {
+  if (!input.requiresHumanReview && !input.topic) {
+    return undefined;
+  }
+  if (input.topic && HANDOFF_MESSAGES[input.topic]) {
+    return HANDOFF_MESSAGES[input.topic];
+  }
+  return DEFAULT_HANDOFF_MESSAGE;
+}
 
 const PROVIDER_TIMEOUT_MS = 15_000;
 const MAX_MESSAGE_LENGTH = 12_000;
@@ -317,6 +348,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           createdAt: new Date().toISOString(),
           filtered: true,
           requiresHumanReview: false,
+          evidenceTier: 'RESEARCH_NEEDED',
+          handoff: resolveHandoff({ requiresHumanReview: false, topic: undefined }),
           error: 'Request body must be valid JSON.',
         },
         { status: 400 },
@@ -356,6 +389,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           createdAt: new Date().toISOString(),
           filtered: true,
           requiresHumanReview: false,
+          evidenceTier: 'RESEARCH_NEEDED',
+          handoff: resolveHandoff({ requiresHumanReview: false, topic: undefined }),
           error: 'Request fields are invalid or exceed their allowed size.',
         },
         { status: 400 },
@@ -415,6 +450,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           createdAt: new Date().toISOString(),
           filtered: true,
           requiresHumanReview: false,
+          evidenceTier: 'RESEARCH_NEEDED',
+          handoff: resolveHandoff({ requiresHumanReview: false, topic: undefined }),
           tier: effectiveTier,
           complexity: classification.complexity,
           error: 'The requested SHADOW session type is not available from chat.',
@@ -432,6 +469,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           createdAt: new Date().toISOString(),
           filtered: false,
           requiresHumanReview: false,
+          evidenceTier: 'RESEARCH_NEEDED',
+          handoff: resolveHandoff({ requiresHumanReview: false, topic: undefined }),
           tier: effectiveTier,
           complexity: classification.complexity,
           error: 'Background worker unavailable.',
@@ -472,6 +511,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           filtered: true,
           requiresHumanReview: true,
           highRiskTopic: requestValidation.topic,
+          evidenceTier: 'RESEARCH_NEEDED',
+          handoff: resolveHandoff({ requiresHumanReview: true, topic: requestValidation.topic }),
           tier: effectiveTier,
           complexity: classification.complexity,
           error: requestValidation.error,
@@ -519,6 +560,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           createdAt: new Date().toISOString(),
           filtered: true,
           requiresHumanReview: false,
+          evidenceTier: 'RESEARCH_NEEDED',
+          handoff: resolveHandoff({ requiresHumanReview: false, topic: undefined }),
           tier: effectiveTier,
           complexity: classification.complexity,
           error: roleBasedContext.reason,
@@ -655,6 +698,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       console.error('SHADOW audit logging failed');
     }
 
+    const responseTopic = requestValidation.topic && requestValidation.topic !== 'none'
+      ? requestValidation.topic
+      : undefined;
+    const responseRequiresHumanReview = responseValidation.requiresHumanReview || state === 'filtered';
+
     return NextResponse.json({
       success: state === 'ok' || state === 'queued',
       state,
@@ -663,10 +711,15 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       conversationId,
       createdAt: createdAt.toISOString(),
       filtered: responseValidation.filtered,
-      requiresHumanReview: responseValidation.requiresHumanReview || state === 'filtered',
-      highRiskTopic: requestValidation.topic && requestValidation.topic !== 'none'
-        ? requestValidation.topic
-        : undefined,
+      requiresHumanReview: responseRequiresHumanReview,
+      highRiskTopic: responseTopic,
+      evidenceTier: deriveEvidenceTier({
+        isAnsweredState: state === 'ok',
+        evidenceAvailability: evidenceBundle.availability,
+        citationCount: responseValidation.citationIds.length,
+      }),
+      handoff: resolveHandoff({ requiresHumanReview: responseRequiresHumanReview, topic: responseTopic }),
+      unlockHints: buildShadowUnlockHints(unlockState),
       tier: effectiveTier,
       complexity: classification.complexity,
       sessionType,
@@ -687,6 +740,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           createdAt: new Date().toISOString(),
           filtered: true,
           requiresHumanReview: false,
+          evidenceTier: 'RESEARCH_NEEDED',
+          handoff: resolveHandoff({ requiresHumanReview: false, topic: undefined }),
           error: 'Rate limit exceeded.',
         },
         {
@@ -705,6 +760,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           createdAt: new Date().toISOString(),
           filtered: true,
           requiresHumanReview: false,
+          evidenceTier: 'RESEARCH_NEEDED',
+          handoff: resolveHandoff({ requiresHumanReview: false, topic: undefined }),
           error: 'Not found',
         },
         { status: 404 },
@@ -729,6 +786,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
         createdAt: new Date().toISOString(),
         filtered: state === 'filtered',
         requiresHumanReview: false,
+        evidenceTier: 'RESEARCH_NEEDED',
+        handoff: resolveHandoff({ requiresHumanReview: false, topic: undefined }),
         error: payload.error,
       },
       { status },

@@ -88,6 +88,7 @@ jest.mock('@/src/server/pilot/shadowHeavyBag', () => ({
 jest.mock('@/src/server/pilot/shadowUnlocks', () => ({
   evaluateShadowUnlockState: jest.fn(),
   isFeatureEnabled: jest.fn(() => false),
+  buildShadowUnlockHints: jest.fn(() => undefined),
 }));
 
 jest.mock('@/src/server/pilot/azureAiRuntime', () => ({
