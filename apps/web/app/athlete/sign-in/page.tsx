@@ -3,6 +3,10 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
+import {
+  createPersistentRoleSession,
+  loadAuthoritativeRoleSession,
+} from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
 
 interface LoginPayload {
@@ -32,6 +36,7 @@ export default function AthletePinSignInPage() {
     try {
       const response = await fetch(`${apiBase()}/api/pilot/auth/login`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           account_id: accountId.trim(),
@@ -49,7 +54,13 @@ export default function AthletePinSignInPage() {
         throw new Error('This sign-in page is for athlete accounts only.');
       }
 
-      router.replace('/athlete/dashboard');
+      const resolution = await loadAuthoritativeRoleSession(`${apiBase()}/api/pilot/auth/session`);
+      if (!resolution.ok || resolution.session.role !== 'athlete') {
+        throw new Error('The athlete session could not be verified. Please sign in again.');
+      }
+
+      createPersistentRoleSession(resolution.session.role);
+      router.replace(resolution.destination);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Sign in failed.');
     } finally {

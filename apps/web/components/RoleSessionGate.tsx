@@ -1,8 +1,13 @@
 'use client';
 
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { clearRoleSession, getPostLoginRoute, getRoleSessionSnapshot, subscribeRoleSession } from './roleSession';
+import {
+  clearRoleSession,
+  createPersistentRoleSession,
+  isRoleSessionAllowed,
+  loadAuthoritativeRoleSession,
+} from './roleSession';
 import type { ClubRole } from './roleRoutes';
 import { apiBase } from '@/lib/apiBase';
 
@@ -13,77 +18,87 @@ interface RoleSessionGateProps {
 
 export default function RoleSessionGate({ allowedRoles, children }: RoleSessionGateProps) {
   const router = useRouter();
-  const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
-  const [verifiedAssuranceSessionKey, setVerifiedAssuranceSessionKey] = useState<string | null>(null);
-
-  const allowed = !!session && (session.role === 'admin' || allowedRoles.includes(session.role));
-  const requiresHighAssurance = !!session && session.role !== 'athlete';
-  const sessionKey = session ? `${session.role}:${session.expiresAt ?? 'none'}` : null;
-  const assuranceVerified = !requiresHighAssurance || verifiedAssuranceSessionKey === sessionKey;
+  const [accessResult, setAccessResult] = useState<{
+    verificationKey: string;
+    state: 'authorized' | 'retryable';
+  } | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
+  const allowedRolesKey = [...allowedRoles].sort().join('|');
+  const verificationKey = `${allowedRolesKey}:${retryNonce}`;
+  const accessState = accessResult?.verificationKey === verificationKey
+    ? accessResult.state
+    : 'checking';
 
   useEffect(() => {
-    if (!session) {
-      clearRoleSession();
-      router.replace('/login');
-      return;
-    }
-
-    if (!allowed) {
-      router.replace(getPostLoginRoute(session));
-      return;
-    }
-
-    if (!requiresHighAssurance) {
-      return;
-    }
-
-    let canceled = false;
+    const controller = new AbortController();
+    const expectedRoles = allowedRolesKey
+      .split('|')
+      .filter((role): role is ClubRole => role.length > 0);
 
     void (async () => {
       try {
-        const response = await fetch(`${apiBase()}/api/pilot/auth/session`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-        });
+        const resolution = await loadAuthoritativeRoleSession(
+          `${apiBase()}/api/pilot/auth/session`,
+          { signal: controller.signal },
+        );
 
-        const payload = (await response.json().catch(() => ({ authenticated: false }))) as {
-          authenticated?: boolean;
-          auth_provider?: 'ppbf_local' | 'microsoft';
-        };
-
-        if (canceled) {
+        if (controller.signal.aborted) {
           return;
         }
 
-        const highAssurance = !!payload.authenticated && payload.auth_provider === 'microsoft';
-        if (!highAssurance) {
+        if (!resolution.ok) {
+          if (resolution.reason === 'server_error') {
+            setAccessResult({ verificationKey, state: 'retryable' });
+            return;
+          }
+
           clearRoleSession();
-          router.replace('/login?error=privileged_auth_required');
+          const errorPath = resolution.reason === 'privileged_auth_required'
+            ? '/login?error=privileged_auth_required'
+            : resolution.reason === 'unsupported_role'
+              ? '/login?error=unsupported_role'
+              : '/login';
+          router.replace(errorPath);
           return;
         }
 
-        setVerifiedAssuranceSessionKey(sessionKey);
-      } catch {
-        if (canceled) {
+        const session = createPersistentRoleSession(resolution.session.role);
+        if (!isRoleSessionAllowed(session, expectedRoles)) {
+          router.replace(resolution.destination);
           return;
         }
-        clearRoleSession();
-        router.replace('/login?error=privileged_auth_required');
+
+        setAccessResult({ verificationKey, state: 'authorized' });
+      } catch (error) {
+        if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
+          return;
+        }
+        setAccessResult({ verificationKey, state: 'retryable' });
       }
     })();
 
     return () => {
-      canceled = true;
+      controller.abort();
     };
+  }, [allowedRolesKey, router, verificationKey]);
 
-  }, [allowed, requiresHighAssurance, router, session, sessionKey]);
-
-  if (!session || !allowed || !assuranceVerified) {
+  if (accessState !== 'authorized') {
     return (
       <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
         <div className="text-center">
           <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--red-primary)]">Secure Session</p>
-          <h1 className="mt-3 font-display text-3xl tracking-tight">Checking access</h1>
+          <h1 className="mt-3 font-display text-3xl tracking-tight">
+            {accessState === 'retryable' ? 'Unable to verify access' : 'Checking access'}
+          </h1>
+          {accessState === 'retryable' && (
+            <button
+              type="button"
+              onClick={() => setRetryNonce((value) => value + 1)}
+              className="mt-5 min-h-[44px] rounded-full border-2 border-[var(--black)] bg-[var(--red-primary)] px-5 text-sm font-black uppercase tracking-[0.12em] text-white"
+            >
+              Retry
+            </button>
+          )}
         </div>
       </main>
     );

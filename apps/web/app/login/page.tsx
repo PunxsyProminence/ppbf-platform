@@ -5,12 +5,14 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { type ClubRole } from '@/components/roleRoutes';
 import { apiBase } from '@/lib/apiBase';
-import { createPersistentRoleSession, getPostLoginRoute, readRoleSession, clearRoleSession } from '@/components/roleSession';
+import {
+  clearRoleSession,
+  createPersistentRoleSession,
+  loadAuthoritativeRoleSession,
+} from '@/components/roleSession';
 import {
   createMicrosoftSignInHandler,
-  getPilotLoginRedirectPath,
   getTabButtonClass,
-  mapPilotLoginRoleToClubRole,
   validateAnnouncementPublishInput,
 } from '@/src/client/loginPageHelpers';
 
@@ -395,29 +397,42 @@ function LoginPageContent() {
 
     if (shouldLogout) {
       clearRoleSession();
-      void fetch(`${apiBase()}/api/pilot/auth/logout`, { method: 'POST' });
-    }
-
-    const session = readRoleSession();
-    if (!session || shouldLogout) {
+      void fetch(`${apiBase()}/api/pilot/auth/logout`, {
+        method: 'POST',
+        credentials: 'include',
+      });
       return;
     }
 
-    if (session.role === 'athlete') {
-      void (async () => {
-        const response = await fetch(`${apiBase()}/api/pilot/auth/session`, { method: 'POST' });
-        const payload = (await response.json().catch(() => ({ authenticated: false }))) as { authenticated?: boolean };
-        if (payload.authenticated) {
-          router.replace(getPostLoginRoute(session));
+    const controller = new AbortController();
+
+    void (async () => {
+      try {
+        const resolution = await loadAuthoritativeRoleSession(
+          `${apiBase()}/api/pilot/auth/session`,
+          { signal: controller.signal },
+        );
+        if (controller.signal.aborted) {
           return;
         }
-        clearRoleSession();
-      })();
-      return;
-    }
 
-    router.replace(getPostLoginRoute(session));
+        if (!resolution.ok) {
+          if (resolution.reason !== 'server_error') {
+            clearRoleSession();
+          }
+          return;
+        }
 
+        createPersistentRoleSession(resolution.session.role);
+        router.replace(resolution.destination);
+      } catch (error) {
+        if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
+          return;
+        }
+      }
+    })();
+
+    return () => controller.abort();
   }, [router]);
 
   useEffect(() => {
@@ -538,6 +553,7 @@ function LoginPageContent() {
 
       const response = await fetch(`${apiBase()}/api/pilot/auth/login`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           account_id: acctId, 
@@ -564,8 +580,17 @@ function LoginPageContent() {
         return;
       }
 
-      createPersistentRoleSession(mapPilotLoginRoleToClubRole(result.role));
-      router.replace(getPilotLoginRedirectPath(result.role, result.has_master_shadow_access));
+      const resolution = await loadAuthoritativeRoleSession(`${apiBase()}/api/pilot/auth/session`);
+      if (!resolution.ok) {
+        if (resolution.reason !== 'server_error') {
+          clearRoleSession();
+        }
+        setLoginError('The server session could not be verified. Please sign in again.');
+        return;
+      }
+
+      createPersistentRoleSession(resolution.session.role);
+      router.replace(resolution.destination);
     } catch (error) {
       if (error instanceof Error) {
         if (error.name === 'AbortError') {

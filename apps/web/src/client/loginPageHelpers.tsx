@@ -1,46 +1,15 @@
 import type { ReactElement } from 'react';
 
 import type { ClubRole } from '@/components/roleRoutes';
+import { mapPilotRoleToClubRole } from '@/components/roleSession';
 
 export function mapPilotLoginRoleToClubRole(role: string): ClubRole {
-  if (role === 'coach' || role === 'athlete' || role === 'parent' || role === 'board') {
-    return role;
+  const mappedRole = mapPilotRoleToClubRole(role);
+  if (!mappedRole) {
+    throw new Error('Unsupported authenticated role');
   }
 
-  return 'admin';
-}
-
-export function getPilotLoginRedirectPath(role: string, hasMasterShadowAccess?: boolean): string {
-  if (role === 'platform_owner') {
-    return '/admin/organizations';
-  }
-
-  if (role === 'organization_admin' || role === 'admin') {
-    return '/admin';
-  }
-
-  // Coaches with master shadow access get admin hub (organizational layer)
-  if (role === 'coach' && hasMasterShadowAccess) {
-    return '/admin';
-  }
-
-  if (role === 'coach') {
-    return '/coach/review-queue';
-  }
-
-  if (role === 'athlete') {
-    return '/athlete/dashboard';
-  }
-
-  if (role === 'parent') {
-    return '/parent/dashboard';
-  }
-
-  if (role === 'board') {
-    return '/board';
-  }
-
-  return '/admin';
+  return mappedRole;
 }
 
 export function canPublishAnnouncement(role: ClubRole): boolean {

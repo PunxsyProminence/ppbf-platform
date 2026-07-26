@@ -1,6 +1,5 @@
 import {
   canPublishAnnouncement,
-  getPilotLoginRedirectPath,
   getMicrosoftStartUrl,
   getTabButtonClass,
   mapPilotLoginRoleToClubRole,
@@ -54,11 +53,9 @@ describe('login page helpers', () => {
     expect(mapPilotLoginRoleToClubRole('board')).toBe('board');
   });
 
-  test('routes platform owners to organization provisioning after direct login', () => {
-    expect(getPilotLoginRedirectPath('platform_owner')).toBe('/admin/organizations');
-    expect(getPilotLoginRedirectPath('organization_admin')).toBe('/admin');
-    expect(getPilotLoginRedirectPath('coach')).toBe('/coach/review-queue');
-    expect(getPilotLoginRedirectPath('board')).toBe('/board');
+  test('never defaults an unknown authenticated role to admin', () => {
+    expect(() => mapPilotLoginRoleToClubRole('future_super_admin'))
+      .toThrow('Unsupported authenticated role');
   });
 
   test('permits only the expected announcement roles', () => {

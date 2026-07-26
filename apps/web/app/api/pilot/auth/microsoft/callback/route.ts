@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { getPilotRoleDestination } from '@/src/shared/pilotRoleRouting';
 import { loginWithMicrosoftEmail } from '@/src/server/pilot/auth';
 import { PILOT_SESSION_COOKIE } from '@/src/server/pilot/env';
 import {
@@ -27,28 +28,6 @@ import { SESSION_ABSOLUTE_LIFETIME_SECONDS } from '@/src/server/pilot/sessionPol
 
 export const runtime = 'nodejs';
 
-function routeForRole(role: string): string {
-  if (role === 'platform_owner') {
-    return '/admin/organizations';
-  }
-  if (role === 'organization_admin' || role === 'admin') {
-    return '/admin';
-  }
-  if (role === 'athlete') {
-    return '/athlete/dashboard';
-  }
-  if (role === 'coach') {
-    return '/coach/review-queue';
-  }
-  if (role === 'parent') {
-    return '/parent/dashboard';
-  }
-  if (role === 'board') {
-    return '/board';
-  }
-  return '/admin';
-}
-
 function clearTempCookies(response: NextResponse): void {
   response.cookies.set(MICROSOFT_AUTH_STATE_COOKIE, '', { path: '/', maxAge: 0 });
   response.cookies.set(MICROSOFT_AUTH_VERIFIER_COOKIE, '', { path: '/', maxAge: 0 });
@@ -58,6 +37,7 @@ function clearTempCookies(response: NextResponse): void {
 
 function redirectToLogin(publicOrigin: string, error: string): NextResponse {
   const response = NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(error)}`, publicOrigin));
+  response.headers.set('Cache-Control', 'no-store');
   clearTempCookies(response);
   return response;
 }
@@ -194,21 +174,20 @@ export async function GET(request: NextRequest) {
     const loginResult = await loginWithMicrosoftEmail(identityEmail);
 
     if (!loginResult) {
-      const denied = NextResponse.redirect(new URL('/login?error=not-invited', publicOrigin));
-      clearTempCookies(denied);
-      return denied;
+      return redirectToLogin(publicOrigin, 'not-invited');
     }
 
     if (loginResult.principal.role === 'platform_owner' && identityEmail !== primaryOwnerEmail) {
       throw new Error('Forbidden: platform owner identity mismatch');
     }
 
-    const defaultPostLogin = routeForRole(loginResult.principal.role);
-    const destinationPath = loginResult.principal.role === 'board'
-      ? defaultPostLogin
-      : (config.postLoginPath || defaultPostLogin);
+    const destinationPath = getPilotRoleDestination(loginResult.principal.role);
+    if (!destinationPath) {
+      throw new Error('Forbidden: unsupported authenticated role');
+    }
     const destination = new URL(destinationPath, publicOrigin);
     const response = NextResponse.redirect(destination);
+    response.headers.set('Cache-Control', 'no-store');
     const secure = shouldUseSecureCookie({
       nextUrlProtocol: request.nextUrl.protocol,
       forwardedProtoHeader: request.headers.get('x-forwarded-proto'),
@@ -238,7 +217,7 @@ export async function GET(request: NextRequest) {
       return redirectToLogin(publicOrigin, 'auth-state-expired');
     }
 
-    if (message.startsWith('Forbidden: platform owner identity mismatch')) {
+    if (message.startsWith('Forbidden:')) {
       return redirectToLogin(publicOrigin, 'auth-forbidden');
     }
 
