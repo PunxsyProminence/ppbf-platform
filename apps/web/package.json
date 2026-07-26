@@ -21,7 +21,9 @@
     "gate:pilot:shadow-e2e": "node scripts/pilot-shadow-intake-gate.mjs",
     "audit:mock-ingest": "tsx scripts/run-mock-ingest.ts",
     "test:e2e:board": "playwright test e2e/board-governance.spec.ts",
-    "test:e2e:board:update": "playwright test e2e/board-governance.spec.ts --update-snapshots"
+    "test:e2e:board:update": "playwright test e2e/board-governance.spec.ts --update-snapshots",
+    "test:e2e:homepage": "playwright test e2e/public-homepage.spec.ts",
+    "test:e2e:homepage:update": "playwright test e2e/public-homepage.spec.ts --update-snapshots"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.28.0",
