@@ -189,6 +189,50 @@ function buildWorkoutFloorTasks({ readiness, checkInAt, activeGoal }: WorkoutBui
   return [...core, ...readinessSpecific, ...closeout];
 }
 
+// Fast-Track observation feed: best-effort only. The athlete's session
+// check-in (POST /api/pilot/sessions, above) already fully succeeds or fails
+// on its own -- these calls only enrich SHADOW's formula engine with a
+// Session Load (RPE x duration) input, so a failure here must never block or
+// roll back the primary check-in.
+async function submitFastTrackObservations(input: {
+  athleteId: string;
+  contextId: string;
+  observedAt: string;
+  rpe: number;
+  durationMinutes: number;
+  painFlag: boolean;
+  medicalReadAck: boolean;
+}): Promise<void> {
+  const observations = [
+    {
+      kind: 'session_rpe' as const,
+      value: input.rpe,
+      unit: 'rpe_0_10' as const,
+      dimensions: { painFlag: input.painFlag, medicalReadAck: input.medicalReadAck },
+    },
+    {
+      kind: 'duration' as const,
+      value: input.durationMinutes,
+      unit: 'minutes' as const,
+    },
+  ];
+
+  await Promise.allSettled(observations.map((observation) => fetch('/api/pilot/shadow/formulas/observations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      athleteId: input.athleteId,
+      contextId: input.contextId,
+      kind: observation.kind,
+      value: observation.value,
+      unit: observation.unit,
+      dimensions: observation.dimensions ?? {},
+      observedAt: input.observedAt,
+      idempotencyKey: `${input.contextId}-${observation.kind}`,
+    }),
+  })));
+}
+
 export default function AthleteWorkspace() {
   const [activeTab, setActiveTab] = useState<TabID>('my-dashboard');
   const [backendAthleteId, setBackendAthleteId] = useState<string | null>(null);
@@ -202,6 +246,11 @@ export default function AthleteWorkspace() {
   const [hydrationStatus, setHydrationStatus] = useState(8);
   const [readinessToTrain, setReadinessToTrain] = useState(8);
   const [injuryFlag, setInjuryFlag] = useState(false);
+  // Fast-Track: the minimum-friction data path so athletes who won't fill out
+  // a rich Deep-Track sparring log still contribute something SHADOW's
+  // formula engine can use (Session Load needs RPE * duration).
+  const [sessionDurationMinutes, setSessionDurationMinutes] = useState(60);
+  const [medicalReadAck, setMedicalReadAck] = useState(false);
   const [expandedCheckIn, setExpandedCheckIn] = useState(false);
   const [selectedPainLocation, setSelectedPainLocation] = useState<string | null>(null);
   const [showPainModal, setShowPainModal] = useState(false);
@@ -480,11 +529,12 @@ export default function AthleteWorkspace() {
       // Floor plan persistence is secondary to session check-in.
     }
 
+    const sessionId = `session_${Date.now()}`;
     const sessionResponse = await fetch('/api/pilot/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        session_id: `session_${Date.now()}`,
+        session_id: sessionId,
         athlete_id: backendAthleteId,
         date: now.toISOString().slice(0, 10),
         rpe: readinessToTrain,
@@ -501,6 +551,16 @@ export default function AthleteWorkspace() {
       const payload = (await sessionResponse.json().catch(() => ({ error: 'Session persistence failed' }))) as { error?: string };
       setBackendSyncMessage(payload.error || 'Session persistence failed');
     }
+
+    void submitFastTrackObservations({
+      athleteId: backendAthleteId,
+      contextId: sessionId,
+      observedAt: now.toISOString(),
+      rpe: readinessToTrain,
+      durationMinutes: sessionDurationMinutes,
+      painFlag: injuryFlag,
+      medicalReadAck,
+    });
   };
 
   const handleCheckOut = () => {
@@ -689,6 +749,22 @@ export default function AthleteWorkspace() {
                       <input id="readiness-train" type="range" min="1" max="10" value={readinessToTrain} onChange={(e) => setReadinessToTrain(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
                       <p className="text-xs text-[#8a8a8a] mt-1">{readinessToTrain}/10</p>
                     </div>
+                    <div>
+                      <label className="text-sm text-[#b0a095] block mb-2" htmlFor="session-duration">Session Duration (minutes)</label>
+                      <input
+                        id="session-duration"
+                        type="number"
+                        min={1}
+                        max={480}
+                        value={sessionDurationMinutes}
+                        onChange={(e) => setSessionDurationMinutes(Math.max(1, Number.parseInt(e.target.value, 10) || 0))}
+                        className="w-full h-9 px-3 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none"
+                      />
+                    </div>
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input type="checkbox" checked={medicalReadAck} onChange={(e) => setMedicalReadAck(e.target.checked)} className="w-4 h-4" />
+                      <span>I&apos;ve reviewed today&apos;s safety/medical notice</span>
+                    </label>
                   </div>
                 </div>
 
