@@ -7,12 +7,9 @@ import RevenueFundingCenter from '@/components/RevenueFundingCenter';
 import ShadowChatButton from '@/components/ShadowChatButton';
 import {
   allTrackIds,
-  athleteProfiles,
-  getDefaultTrackAssignments,
   normalizeTrackAssignments,
   trackManifests,
   type TrackAssignments,
-  type TrackID,
 } from '@/components/trackAssignments';
 
 type CapabilityStatus = 'DRAFT' | 'ACTIVE' | 'BLOCKED' | 'ARCHIVED';
@@ -20,6 +17,8 @@ type CapabilityVisibility = 'Internal' | 'Role-Bound' | 'Public Placeholder';
 type TabKey = 'overview' | 'library' | 'matrix' | 'builder' | 'revenue';
 type AssignmentFilter = 'all' | 'assigned' | 'unassigned';
 type MatrixFilter = 'all' | 'unassigned' | 'multi-role' | 'draft' | 'active';
+type LoadState = 'loading' | 'ready' | 'unavailable';
+type SaveState = 'unchanged' | 'unsaved' | 'saving' | 'saved' | 'error';
 
 type RoleName =
   | 'Athlete'
@@ -249,22 +248,12 @@ const seedCapabilityBlueprints: Array<{ capabilityId: string; name: string; grou
   },
 ];
 
-const TRACK_CAPABILITY_PREVIEW: Record<TrackID, string[]> = {
-  non_contact: ['CAP-001'],
-  usa_boxing: ['CAP-001', 'CAP-003'],
-  a2p: ['CAP-002', 'CAP-003'],
-  pro: ['CAP-002', 'CAP-003'],
-  collegiate: ['CAP-001', 'CAP-003'],
-  usa_masters: ['CAP-001', 'CAP-002'],
-  spec_ops: ['CAP-002'],
-};
-
-const INTEGRATION_STUBS = [
-  'Capability CRUD adapter (replace localStorage repository)',
-  'Role-assignment policy adapter (replace local matrix toggles)',
-  'Audit telemetry dispatcher (replace local event trace list)',
-  'Authoritative timestamp source (replace local Date values)',
-  'Track-capability mapping service (replace preview map)',
+const IMPLEMENTATION_NOTES = [
+  'Capability and gym-access changes use the organization-scoped backend only after an explicit Save.',
+  'Role-assignment policy validation is still required before this console can enforce policy.',
+  'Event traces below are browser-session diagnostics only; they are not an audit ledger.',
+  'Timestamps created in the builder remain browser-generated until the backend supplies authoritative values.',
+  'Track manifests are reference material; athlete assignment editing remains unavailable until verified athlete IDs are supplied.',
 ];
 
 const TAB_KEY_SET = new Set<TabKey>(['overview', 'library', 'matrix', 'builder', 'revenue']);
@@ -277,7 +266,7 @@ function parseTabKey(raw: string | null): TabKey | null {
   return TAB_KEY_SET.has(raw as TabKey) ? (raw as TabKey) : null;
 }
 
-const fallbackCapabilities: Capability[] = seedCapabilityBlueprints.map((item, index) => {
+const capabilityReferenceCatalog: Capability[] = seedCapabilityBlueprints.map((item, index) => {
   const nowIso = new Date().toISOString();
   return {
     id: index + 1,
@@ -296,27 +285,6 @@ const fallbackCapabilities: Capability[] = seedCapabilityBlueprints.map((item, i
     updatedAt: nowIso,
   };
 });
-
-function mergeSeedCapabilities(existing: Capability[]): Capability[] {
-  const nowIso = new Date().toISOString();
-  const byCapabilityId = new Set(existing.map((capability) => capability.capabilityId));
-  const additions: Capability[] = [];
-
-  for (const seed of fallbackCapabilities) {
-    if (byCapabilityId.has(seed.capabilityId)) {
-      continue;
-    }
-
-    additions.push({
-      ...seed,
-      id: existing.length + additions.length + 1,
-      createdAt: nowIso,
-      updatedAt: nowIso,
-    });
-  }
-
-  return [...existing, ...additions];
-}
 
 function toCapabilityStatus(raw: unknown): CapabilityStatus {
   if (typeof raw !== 'string') return 'DRAFT';
@@ -385,10 +353,12 @@ function formatDateLabel(value: string): string {
 }
 
 export default function AdminCapabilitiesPage() {
-  const [capabilities, setCapabilities] = useState<Capability[]>(fallbackCapabilities);
-  const [capabilitiesHydrated, setCapabilitiesHydrated] = useState(false);
-  const [trackAssignmentsHydrated, setTrackAssignmentsHydrated] = useState(false);
-  const [gymCapabilityHydrated, setGymCapabilityHydrated] = useState(false);
+  const [capabilities, setCapabilities] = useState<Capability[]>([]);
+  const [capabilityLoadState, setCapabilityLoadState] = useState<LoadState>('loading');
+  const [capabilitySaveState, setCapabilitySaveState] = useState<SaveState>('unchanged');
+  const [trackAssignmentLoadState, setTrackAssignmentLoadState] = useState<LoadState>('loading');
+  const [gymCapabilityLoadState, setGymCapabilityLoadState] = useState<LoadState>('loading');
+  const [gymCapabilitySaveState, setGymCapabilitySaveState] = useState<SaveState>('unchanged');
   const [activeTab, setActiveTab] = useState<TabKey>(() => {
     if (typeof window === 'undefined') {
       return 'overview';
@@ -396,8 +366,7 @@ export default function AdminCapabilitiesPage() {
 
     return parseTabKey(new URLSearchParams(window.location.search).get('tab')) ?? 'overview';
   });
-  const [selectedAthleteId, setSelectedAthleteId] = useState(athleteProfiles[0].id);
-  const [trackAssignments, setTrackAssignments] = useState<TrackAssignments>(() => getDefaultTrackAssignments());
+  const [trackAssignments, setTrackAssignments] = useState<TrackAssignments>({});
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterRole, setFilterRole] = useState<'ALL' | RoleName>('ALL');
@@ -453,32 +422,18 @@ export default function AdminCapabilitiesPage() {
         });
 
         if (!response.ok) {
-          setTrackAssignmentsHydrated(true);
+          setTrackAssignmentLoadState('unavailable');
           return;
         }
 
         const payload = (await response.json()) as { assignments?: unknown };
         setTrackAssignments(normalizeTrackAssignments(payload.assignments));
+        setTrackAssignmentLoadState('ready');
       } catch {
-        // Keep default track assignments if backend load fails.
-      } finally {
-        setTrackAssignmentsHydrated(true);
+        setTrackAssignmentLoadState('unavailable');
       }
     })();
   }, []);
-
-  useEffect(() => {
-    if (!trackAssignmentsHydrated) {
-      return;
-    }
-
-    void fetch('/api/pilot/admin/track-assignments', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ assignments: trackAssignments }),
-    });
-  }, [trackAssignments, trackAssignmentsHydrated]);
 
   useEffect(() => {
     void (async () => {
@@ -489,35 +444,21 @@ export default function AdminCapabilitiesPage() {
         });
 
         if (!response.ok) {
-          setCapabilitiesHydrated(true);
+          setCapabilityLoadState('unavailable');
           return;
         }
 
         const payload = (await response.json()) as { capabilities?: Partial<Capability>[] };
-        if (Array.isArray(payload.capabilities) && payload.capabilities.length > 0) {
-          const hydrated = payload.capabilities.map((item, index) => hydrateCapability(item, index));
-          setCapabilities(mergeSeedCapabilities(hydrated));
-        }
+        const hydrated = Array.isArray(payload.capabilities)
+          ? payload.capabilities.map((item, index) => hydrateCapability(item, index))
+          : [];
+        setCapabilities(hydrated);
+        setCapabilityLoadState('ready');
       } catch {
-        // Keep fallback capability set if backend load fails.
-      } finally {
-        setCapabilitiesHydrated(true);
+        setCapabilityLoadState('unavailable');
       }
     })();
   }, []);
-
-  useEffect(() => {
-    if (!capabilitiesHydrated) {
-      return;
-    }
-
-    void fetch('/api/pilot/admin/capabilities', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ capabilities }),
-    });
-  }, [capabilities, capabilitiesHydrated]);
 
   useEffect(() => {
     void (async () => {
@@ -528,32 +469,18 @@ export default function AdminCapabilitiesPage() {
         });
 
         if (!response.ok) {
-          setGymCapabilityHydrated(true);
+          setGymCapabilityLoadState('unavailable');
           return;
         }
 
         const payload = (await response.json()) as { capabilityAccess?: Record<string, boolean> };
         setGymCapabilityAccess(payload.capabilityAccess || {});
+        setGymCapabilityLoadState('ready');
       } catch {
-        // Keep default gym capability access if backend load fails.
-      } finally {
-        setGymCapabilityHydrated(true);
+        setGymCapabilityLoadState('unavailable');
       }
     })();
   }, []);
-
-  useEffect(() => {
-    if (!gymCapabilityHydrated) {
-      return;
-    }
-
-    void fetch('/api/pilot/admin/gym-capabilities', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ capabilityAccess: gymCapabilityAccess }),
-    });
-  }, [gymCapabilityAccess, gymCapabilityHydrated]);
 
   const categoryOptions = useMemo(
     () => ['ALL', ...new Set([...CATEGORY_OPTIONS, ...capabilities.map((item) => item.group)])],
@@ -634,24 +561,15 @@ export default function AdminCapabilitiesPage() {
   const pendingReview = useMemo(() => capabilities.filter((item) => item.reviewNeeded || item.status === 'DRAFT'), [capabilities]);
   const draftCapabilities = useMemo(() => capabilities.filter((item) => item.status === 'DRAFT'), [capabilities]);
 
-  const assignedTracks = trackAssignments[selectedAthleteId] ?? ['non_contact'];
-
   function updateCapability(id: number, updater: (source: Capability) => Capability) {
+    if (capabilityLoadState !== 'ready') {
+      return;
+    }
+
     setCapabilities((current) =>
       current.map((capability) => (capability.id === id ? { ...updater(capability), updatedAt: new Date().toISOString() } : capability)),
     );
-  }
-
-  function toggleTrackAssignment(trackId: TrackID) {
-    setTrackAssignments((current) => {
-      const existing = current[selectedAthleteId] ?? [];
-      const next = existing.includes(trackId) ? existing.filter((id) => id !== trackId) : [...existing, trackId];
-
-      return {
-        ...current,
-        [selectedAthleteId]: next.length > 0 ? next : ['non_contact'],
-      };
-    });
+    setCapabilitySaveState('unsaved');
   }
 
   function setCapabilityStatus(id: number, nextStatus: CapabilityStatus) {
@@ -664,11 +582,16 @@ export default function AdminCapabilitiesPage() {
   }
 
   function removeCapability(id: number) {
+    if (capabilityLoadState !== 'ready') {
+      return;
+    }
+
     setCapabilities((current) => current.filter((capability) => capability.id !== id));
+    setCapabilitySaveState('unsaved');
     if (editingCapabilityId === id) {
       resetBuilder();
     }
-    logTrace('capability archived', `Capability #${id} removed from local console`);
+    logTrace('capability removed', `Capability #${id} removed from the unsaved working copy`);
   }
 
   function toggleCapabilityRole(id: number, role: RoleName) {
@@ -685,11 +608,62 @@ export default function AdminCapabilitiesPage() {
   }
 
   function toggleGymCapabilityAccess(capabilityId: string) {
+    if (gymCapabilityLoadState !== 'ready') {
+      return;
+    }
+
     setGymCapabilityAccess((current) => ({
       ...current,
       [capabilityId]: !current[capabilityId],
     }));
+    setGymCapabilitySaveState('unsaved');
     logTrace('gym capability toggled', `${capabilityId} -> ${gymCapabilityAccess[capabilityId] ? 'OFF' : 'ON'}`);
+  }
+
+  async function persistCapabilities() {
+    if (capabilityLoadState !== 'ready' || capabilitySaveState === 'saving') {
+      return;
+    }
+
+    setCapabilitySaveState('saving');
+    try {
+      const response = await fetch('/api/pilot/admin/capabilities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ capabilities }),
+      });
+      if (!response.ok) {
+        throw new Error('Capability save failed');
+      }
+      setCapabilitySaveState('saved');
+      logTrace('capabilities saved', `${capabilities.length} live capability records persisted`);
+    } catch {
+      setCapabilitySaveState('error');
+    }
+  }
+
+  async function persistGymCapabilityAccess() {
+    if (gymCapabilityLoadState !== 'ready' || gymCapabilitySaveState === 'saving') {
+      return;
+    }
+
+    setGymCapabilitySaveState('saving');
+    try {
+      const response = await fetch('/api/pilot/admin/gym-capabilities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ capabilityAccess: gymCapabilityAccess }),
+      });
+      if (!response.ok) {
+        throw new Error('Gym capability save failed');
+      }
+      setGymCapabilitySaveState('saved');
+      logTrace('gym access saved', `${Object.keys(gymCapabilityAccess).length} access settings persisted`);
+    } catch {
+      setGymCapabilitySaveState('error');
+    }
   }
 
   function exportCapabilities() {
@@ -748,7 +722,7 @@ export default function AdminCapabilitiesPage() {
   }
 
   function saveCapability() {
-    if (!builderName.trim() || !builderCategory.trim()) {
+    if (capabilityLoadState !== 'ready' || !builderName.trim() || !builderCategory.trim()) {
       return;
     }
 
@@ -769,7 +743,7 @@ export default function AdminCapabilitiesPage() {
         notes: builderNotes.trim(),
         reviewNeeded: builderStatus === 'DRAFT' || allRoles.length === 0,
       }));
-      logTrace('capability edited', `Saved edits for capability #${editingCapabilityId}`);
+      logTrace('capability edited', `Applied unsaved edits for capability #${editingCapabilityId}`);
     } else {
       const nextId = capabilities.length > 0 ? Math.max(...capabilities.map((item) => item.id)) + 1 : 1;
       const nowIso = new Date().toISOString();
@@ -790,7 +764,8 @@ export default function AdminCapabilitiesPage() {
         updatedAt: nowIso,
       };
       setCapabilities((current) => [nextCapability, ...current]);
-      logTrace('capability created', `Created ${nextCapability.capabilityId} - ${nextCapability.name}`);
+      setCapabilitySaveState('unsaved');
+      logTrace('capability created', `Added ${nextCapability.capabilityId} - ${nextCapability.name} to the unsaved working copy`);
     }
 
     resetBuilder();
@@ -837,7 +812,8 @@ export default function AdminCapabilitiesPage() {
               <button
                 type="button"
                 onClick={exportCapabilities}
-                className="inline-flex h-11 items-center border border-[#8b4444] bg-[#0f0f0f] px-4 text-[14px] font-bold text-[#d4a574] transition hover:border-[#d4a574]"
+                disabled={capabilityLoadState !== 'ready'}
+                className="inline-flex h-11 items-center border border-[#8b4444] bg-[#0f0f0f] px-4 text-[14px] font-bold text-[#d4a574] transition hover:border-[#d4a574] disabled:cursor-not-allowed disabled:border-[#3a3a3a] disabled:text-[#81766c]"
               >
                 EXPORT JSON
               </button>
@@ -846,10 +822,96 @@ export default function AdminCapabilitiesPage() {
         </header>
 
         <section className="border-b border-[#4a4a4a] bg-[#111111] px-6 py-3 text-[14px] text-[#b0a095]">
-          All actions remain local to this front-end console. Jason approval required for production changes.
+          Live organization data is loaded from the backend. Edits stay in an unsaved working copy until you choose an explicit Save action.
         </section>
 
         <div className="mx-auto max-w-[1500px] space-y-8 px-6 py-8">
+          <section className="grid gap-4 lg:grid-cols-3" aria-label="Live admin data status">
+            <article className="border border-[#3a3a3a] bg-[#141414] p-4">
+              <p className="text-[12px] font-mono uppercase tracking-[0.16em] text-[#d4a574]">Live Capabilities</p>
+              <p className="mt-2 text-[14px] text-[#cfbfae]">
+                {capabilityLoadState === 'loading' && 'Loading organization capability records…'}
+                {capabilityLoadState === 'unavailable' && 'Unavailable. No fallback or sample records are being shown.'}
+                {capabilityLoadState === 'ready' && capabilities.length === 0 && 'Loaded successfully. No capabilities are stored for this organization.'}
+                {capabilityLoadState === 'ready' && capabilities.length > 0 && `${capabilities.length} stored capability records loaded.`}
+              </p>
+              <p className="mt-2 text-[12px] text-[#9f9184]">
+                The {capabilityReferenceCatalog.length}-item design catalog is reference-only and is never merged into live data.
+              </p>
+              <button
+                type="button"
+                onClick={() => void persistCapabilities()}
+                disabled={
+                  capabilityLoadState !== 'ready' ||
+                  capabilitySaveState === 'saving' ||
+                  (capabilitySaveState !== 'unsaved' && capabilitySaveState !== 'error')
+                }
+                className="mt-3 h-11 border border-[#8b4444] bg-[#5a2a2a] px-4 text-[13px] font-bold text-[#f2e7da] disabled:cursor-not-allowed disabled:border-[#3a3a3a] disabled:bg-[#1a1a1a] disabled:text-[#81766c]"
+              >
+                {capabilitySaveState === 'saving' ? 'SAVING…' : 'SAVE CAPABILITY CHANGES'}
+              </button>
+              <p className="mt-2 text-[12px] text-[#b9ab9d]">
+                Save status:{' '}
+                {capabilitySaveState === 'unchanged' && 'No unsaved changes'}
+                {capabilitySaveState === 'unsaved' && 'Unsaved changes'}
+                {capabilitySaveState === 'saving' && 'Saving'}
+                {capabilitySaveState === 'saved' && 'Saved'}
+                {capabilitySaveState === 'error' && 'Save failed — retry available'}
+              </p>
+            </article>
+
+            <article className="border border-[#3a3a3a] bg-[#141414] p-4">
+              <p className="text-[12px] font-mono uppercase tracking-[0.16em] text-[#d4a574]">Gym Capability Access</p>
+              <p className="mt-2 text-[14px] text-[#cfbfae]">
+                {gymCapabilityLoadState === 'loading' && 'Loading organization access settings…'}
+                {gymCapabilityLoadState === 'unavailable' && 'Unavailable. Existing access settings will not be overwritten.'}
+                {gymCapabilityLoadState === 'ready' &&
+                  Object.keys(gymCapabilityAccess).length === 0 &&
+                  'Loaded successfully. No gym capability access settings are stored.'}
+                {gymCapabilityLoadState === 'ready' &&
+                  Object.keys(gymCapabilityAccess).length > 0 &&
+                  `${Object.keys(gymCapabilityAccess).length} stored access settings loaded.`}
+              </p>
+              <button
+                type="button"
+                onClick={() => void persistGymCapabilityAccess()}
+                disabled={
+                  gymCapabilityLoadState !== 'ready' ||
+                  gymCapabilitySaveState === 'saving' ||
+                  (gymCapabilitySaveState !== 'unsaved' && gymCapabilitySaveState !== 'error')
+                }
+                className="mt-3 h-11 border border-[#8b4444] bg-[#5a2a2a] px-4 text-[13px] font-bold text-[#f2e7da] disabled:cursor-not-allowed disabled:border-[#3a3a3a] disabled:bg-[#1a1a1a] disabled:text-[#81766c]"
+              >
+                {gymCapabilitySaveState === 'saving' ? 'SAVING…' : 'SAVE GYM ACCESS CHANGES'}
+              </button>
+              <p className="mt-2 text-[12px] text-[#b9ab9d]">
+                Save status:{' '}
+                {gymCapabilitySaveState === 'unchanged' && 'No unsaved changes'}
+                {gymCapabilitySaveState === 'unsaved' && 'Unsaved changes'}
+                {gymCapabilitySaveState === 'saving' && 'Saving'}
+                {gymCapabilitySaveState === 'saved' && 'Saved'}
+                {gymCapabilitySaveState === 'error' && 'Save failed — retry available'}
+              </p>
+            </article>
+
+            <article className="border border-[#3a3a3a] bg-[#141414] p-4">
+              <p className="text-[12px] font-mono uppercase tracking-[0.16em] text-[#d4a574]">Track Assignments</p>
+              <p className="mt-2 text-[14px] text-[#cfbfae]">
+                {trackAssignmentLoadState === 'loading' && 'Loading stored track assignment records…'}
+                {trackAssignmentLoadState === 'unavailable' && 'Unavailable. No default assignments are being substituted.'}
+                {trackAssignmentLoadState === 'ready' &&
+                  Object.keys(trackAssignments).length === 0 &&
+                  'Loaded successfully. No track assignments are stored.'}
+                {trackAssignmentLoadState === 'ready' &&
+                  Object.keys(trackAssignments).length > 0 &&
+                  `${Object.keys(trackAssignments).length} stored assignment records loaded with unverified athlete identities.`}
+              </p>
+              <p className="mt-3 text-[12px] leading-5 text-[#b9ab9d]">
+                Editing is disabled until the backend supplies organization-scoped, verified athlete IDs. Track manifests below are reference-only.
+              </p>
+            </article>
+          </section>
+
           <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
             {[
               { label: 'TOTAL CAPABILITIES', value: dashboardCounts.total },
@@ -975,7 +1037,7 @@ export default function AdminCapabilitiesPage() {
                   <div>
                     <h2 className="text-[20px] font-bold text-[#f2e7da]">Capability On/Off Switchboard</h2>
                     <p className="mt-2 text-[14px] leading-6 text-[#bfb3a6]">
-                      Turn platform capabilities on or off, then mirror the same access for gym admins you hand capabilities to.
+                      Stage capability status and gym-access changes here, then use the explicit Save actions above to persist them.
                     </p>
                   </div>
                   <Link
@@ -1016,7 +1078,7 @@ export default function AdminCapabilitiesPage() {
                   <div className="space-y-3">
                     <p className="text-[14px] font-semibold uppercase tracking-[0.12em] text-[#d4a574]">Gym Admin Access</p>
                     <p className="text-[14px] leading-6 text-[#bfb3a6]">
-                      Grant a gym admin the same capability access, then let them flip it on or off inside their organization.
+                      Stage whether gym admins can manage each capability. Nothing is persisted until you save gym access changes.
                     </p>
                     {switchboardCapabilities.map((capability) => {
                       const allowed = !!gymCapabilityAccess[capability.capabilityId];
@@ -1029,10 +1091,11 @@ export default function AdminCapabilitiesPage() {
                           <button
                             type="button"
                             onClick={() => toggleGymCapabilityAccess(capability.capabilityId)}
+                            disabled={gymCapabilityLoadState !== 'ready'}
                             className={`inline-flex h-10 items-center rounded-full border px-4 text-[12px] font-bold uppercase tracking-[0.12em] transition ${
                               allowed
                                 ? 'border-[#8b4444] bg-[#5a2a2a] text-[#f2e7da]'
-                                : 'border-[#2d2d2d] bg-[#111111] text-[#cfbfae] hover:border-[#8b4444]'
+                                : 'border-[#2d2d2d] bg-[#111111] text-[#cfbfae] hover:border-[#8b4444] disabled:cursor-not-allowed disabled:text-[#81766c]'
                             }`}
                           >
                             {allowed ? 'Enabled' : 'Disabled'}
@@ -1045,53 +1108,31 @@ export default function AdminCapabilitiesPage() {
               </article>
 
               <article className="border border-[#8b4444] bg-[#141414] p-6">
-                <h2 className="text-[20px] font-bold text-[#f2e7da]">FRONT-END TRACK ASSIGNMENT PREVIEW</h2>
+                <h2 className="text-[20px] font-bold text-[#f2e7da]">TRACK MANIFEST REFERENCE</h2>
                 <p className="mt-2 text-[14px] leading-6 text-[#bfb3a6]">
-                  Active Track Assignments are displayed here in preview mode for capability planning and role exposure checks.
+                  These manifests describe planned track content. They are not live athlete assignments, recommendations, or automatic safety decisions.
                 </p>
-                <div className="mt-4 grid gap-4 lg:grid-cols-[300px_1fr]">
-                  <div>
-                    <label className="mb-2 block text-[14px] font-semibold text-[#cfbfae]" htmlFor="athleteProfile">
-                      Active athlete profile
-                    </label>
-                    <select
-                      id="athleteProfile"
-                      value={selectedAthleteId}
-                      onChange={(event) => setSelectedAthleteId(event.target.value)}
-                      className="h-11 w-full border border-[#3a3a3a] bg-[#0f0f0f] px-3 text-[16px] text-[#f2e7da]"
-                    >
-                      {athleteProfiles.map((profile) => (
-                        <option key={profile.id} value={profile.id}>
-                          {profile.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">
-                    {allTrackIds.map((trackId) => {
-                      const assigned = assignedTracks.includes(trackId);
-                      return (
-                        <button
-                          key={trackId}
-                          type="button"
-                          onClick={() => toggleTrackAssignment(trackId)}
-                          className={`grid gap-2 border px-4 py-4 text-left ${
-                            assigned
-                              ? 'border-[#8b4444] bg-[#351717] text-[#f2e7da]'
-                              : 'border-[#2d2d2d] bg-[#1a1a1a] text-[#cfbfae]'
-                          }`}
-                        >
-                          <span className="text-[18px] font-semibold">{trackManifests[trackId].name}</span>
-                          <span className="text-[14px]">Assigned Capabilities: {TRACK_CAPABILITY_PREVIEW[trackId].length} preview mapped</span>
-                          <span className="text-[14px]">Assigned Roles: Athlete / Coach</span>
-                          <span className="text-[14px]">Status: {assigned ? 'Assigned' : 'Unassigned'}</span>
-                          <span className="text-[14px]">Review Needed: {assigned ? 'No' : 'Yes'}</span>
-                          <span className="text-[14px] text-[#b9ab9d]">{TRACK_CAPABILITY_PREVIEW[trackId].join(', ')}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                <div className="mt-4 border border-[#5a4a3a] bg-[#1a1a1a] p-4 text-[14px] text-[#cfbfae]">
+                  <p className="font-semibold text-[#f2e7da]">Assignment editing unavailable</p>
+                  <p className="mt-1 leading-6">
+                    The current API does not return a verified athlete directory, so stored assignment keys remain identity-unverified and are not
+                    presented as athlete profiles. Missing or unknown tracks are never converted to Non-Contact.
+                  </p>
+                </div>
+                <div className="mt-4 grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(280px,1fr))]">
+                  {allTrackIds.map((trackId) => (
+                    <article key={trackId} className="grid gap-2 border border-[#2d2d2d] bg-[#1a1a1a] px-4 py-4 text-[#cfbfae]">
+                      <p className="text-[12px] font-mono uppercase tracking-[0.12em] text-[#d4a574]">Reference manifest — not assigned</p>
+                      <h3 className="text-[18px] font-semibold text-[#f2e7da]">{trackManifests[trackId].name}</h3>
+                      <p className="text-[14px] leading-6">{trackManifests[trackId].desc}</p>
+                      <p className="mt-1 text-[13px] font-semibold uppercase tracking-[0.08em] text-[#b9ab9d]">Example focus content</p>
+                      <ul className="list-disc space-y-1 pl-5 text-[13px] leading-5 text-[#b9ab9d]">
+                        {trackManifests[trackId].focusWorkout.map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    </article>
+                  ))}
                 </div>
               </article>
             </section>
@@ -1556,7 +1597,7 @@ export default function AdminCapabilitiesPage() {
               <article className="border border-[#8b4444] bg-[#141414] p-6">
                 <h2 className="text-[20px] font-bold text-[#f2e7da]">Capability Builder</h2>
                 <p className="mt-2 text-[14px] leading-6 text-[#bfb3a6]">
-                  Create and manage capability definitions without leaving the Admin Console.
+                  Prepare capability changes in the working copy. Use Save Capability Changes at the top of the page to persist them.
                 </p>
 
                 <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -1705,9 +1746,10 @@ export default function AdminCapabilitiesPage() {
                   <button
                     type="button"
                     onClick={saveCapability}
-                    className="h-11 border border-[#8b4444] bg-[#5a2a2a] px-4 text-[14px] font-bold text-[#f2e7da]"
+                    disabled={capabilityLoadState !== 'ready'}
+                    className="h-11 border border-[#8b4444] bg-[#5a2a2a] px-4 text-[14px] font-bold text-[#f2e7da] disabled:cursor-not-allowed disabled:border-[#3a3a3a] disabled:bg-[#1a1a1a] disabled:text-[#81766c]"
                   >
-                    SAVE CAPABILITY
+                    APPLY TO UNSAVED CHANGES
                   </button>
                   <button
                     type="button"
@@ -1759,12 +1801,12 @@ export default function AdminCapabilitiesPage() {
                 onClick={() => setShowIntegrationStubs((current) => !current)}
                 className="h-11 border border-[#3a3a3a] bg-[#1a1a1a] px-4 text-[14px] font-bold text-[#cfbfae]"
               >
-                {showIntegrationStubs ? 'Hide' : 'Show'} backend integration stubs
+                {showIntegrationStubs ? 'Hide' : 'Show'} implementation status notes
               </button>
 
               {showIntegrationStubs && (
                 <div className="mt-3 border border-[#2d2d2d] bg-[#111111]">
-                  {INTEGRATION_STUBS.map((item) => (
+                  {IMPLEMENTATION_NOTES.map((item) => (
                     <div key={item} className="border-b border-[#232323] px-4 py-3 text-[14px] text-[#b9ab9d] last:border-b-0">
                       {item}
                     </div>

@@ -13,18 +13,7 @@ export interface TrackManifest {
   focusWorkout: string[];
 }
 
-export interface AthleteProfile {
-  id: string;
-  label: string;
-}
-
 export type TrackAssignments = Record<string, TrackID[]>;
-
-export const athleteProfiles: AthleteProfile[] = [
-  { id: 'athlete-001', label: 'Athlete 001 - Youth Foundation' },
-  { id: 'athlete-002', label: 'Athlete 002 - Competition Prep' },
-  { id: 'athlete-003', label: 'Athlete 003 - Collegiate Candidate' },
-];
 
 export const trackManifests: Record<TrackID, TrackManifest> = {
   non_contact: {
@@ -101,53 +90,30 @@ export const trackManifests: Record<TrackID, TrackManifest> = {
 
 export const allTrackIds = Object.keys(trackManifests) as TrackID[];
 
-export function getDefaultTrackAssignments(): TrackAssignments {
-  return {
-    'athlete-001': ['non_contact', 'usa_boxing'],
-    'athlete-002': ['usa_boxing', 'a2p', 'pro'],
-    'athlete-003': ['non_contact', 'collegiate'],
-  };
-}
-
 function sanitizeTracks(input: unknown): TrackID[] {
   if (!Array.isArray(input)) {
-    return ['non_contact'];
+    return [];
   }
 
-  const valid = input.filter((item): item is TrackID => typeof item === 'string' && allTrackIds.includes(item as TrackID));
-  return valid.length > 0 ? valid : ['non_contact'];
+  return input.filter((item): item is TrackID => typeof item === 'string' && allTrackIds.includes(item as TrackID));
 }
 
 export function normalizeTrackAssignments(input: unknown): TrackAssignments {
-  const defaults = getDefaultTrackAssignments();
-  if (!input || typeof input !== 'object') {
-    return defaults;
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return {};
   }
 
   const parsed = input as Record<string, unknown>;
   const normalized: TrackAssignments = {};
 
-  for (const profile of athleteProfiles) {
-    normalized[profile.id] = sanitizeTracks(parsed[profile.id]);
+  for (const [athleteId, rawTracks] of Object.entries(parsed)) {
+    const normalizedAthleteId = athleteId.trim();
+    if (!normalizedAthleteId) {
+      continue;
+    }
+
+    normalized[normalizedAthleteId] = sanitizeTracks(rawTracks);
   }
 
   return normalized;
-}
-
-export function loadTrackAssignments(): TrackAssignments {
-  return getDefaultTrackAssignments();
-}
-
-export function saveTrackAssignments(assignments: TrackAssignments) {
-  // Placeholder for future persistence logic
-  void assignments;
-}
-
-export function readActiveAthleteProfileId() {
-  return athleteProfiles[0].id;
-}
-
-export function saveActiveAthleteProfileId(profileId: string) {
-  // Placeholder for future persistence logic
-  void profileId;
 }

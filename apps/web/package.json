@@ -23,6 +23,7 @@
     "gate:pilot:shadow-e2e": "node scripts/pilot-shadow-intake-gate.mjs",
     "audit:mock-ingest": "tsx scripts/run-mock-ingest.ts",
     "test:e2e:board": "playwright test e2e/board-governance.spec.ts",
+    "test:e2e:truthful-v1": "playwright test e2e/truthful-v1.spec.ts",
     "test:e2e:board:update": "playwright test e2e/board-governance.spec.ts --update-snapshots"
   },
   "dependencies": {

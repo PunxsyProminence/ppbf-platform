@@ -1,13 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import React, { useEffect, useMemo, useState } from 'react';
-import { CoachSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
+import React, { useCallback, useEffect, useState } from 'react';
+import { CoachSummaryPanel, HelpPanel } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
 import { cx, ui } from './uiStyles';
 
 type TabID = 'dashboard' | 'floor' | 'athlete-floor-plans' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
-type SessionMode = 'Group' | 'One-on-One';
 type ReadinessStatus = 'GREEN' | 'YELLOW' | 'RED';
 
 interface CoachAthleteFloorPlan {
@@ -28,36 +27,9 @@ interface Athlete {
   id: string;
   name: string;
   track: string;
-  readiness: 'GREEN' | 'YELLOW' | 'RED';
-  injuryFlag: boolean;
-  attendance: 'Present' | 'Late' | 'Excused' | 'Absent';
-}
-
-interface WorkoutBlock {
-  id: string;
-  title: string;
-  duration: number;
-  status: 'Not Started' | 'In Progress' | 'Completed' | 'Skipped';
-  objective: string;
-  trainingItems: string[];
-  coachingCues: string[];
-}
-
-interface CoachTask {
-  id: string;
-  title: string;
-  dueDate: string;
-  priority: 'High' | 'Normal' | 'Low';
-  status: 'Open' | 'In Progress' | 'Completed';
-  relatedAthlete?: string;
-}
-
-interface CoachGoal {
-  id: string;
-  title: string;
-  category: string;
-  progress: number;
-  dueDate: string;
+  readiness: ReadinessStatus | null;
+  injuryFlag: boolean | null;
+  attendance: 'Present' | 'Late' | 'Excused' | 'Absent' | null;
 }
 
 interface ShadowReviewQueueItem {
@@ -79,51 +51,25 @@ interface ShadowObservationItem {
 function readinessDotClass(readiness: Athlete['readiness']): string {
   if (readiness === 'GREEN') return 'bg-green-500';
   if (readiness === 'YELLOW') return 'bg-yellow-500';
-  return 'bg-red-500';
-}
-
-function priorityTone(priority: CoachTask['priority']): string {
-  if (priority === 'High') return 'bg-red-900 text-red-200';
-  if (priority === 'Normal') return 'bg-yellow-900 text-yellow-200';
-  return 'bg-blue-900 text-blue-200';
-}
-
-function taskStatusTone(status: CoachTask['status']): string {
-  if (status === 'Open') return 'bg-[#6b4a2a] text-[#d4a574]';
-  if (status === 'In Progress') return 'bg-[#4a6b2a] text-[#b4d474]';
-  return 'bg-[#4a4a6b] text-[#a4a4d4]';
-}
-
-function blockCardTone(status: WorkoutBlock['status']): string {
-  if (status === 'Completed') return 'bg-green-900/20 border-green-700';
-  if (status === 'In Progress') return 'bg-yellow-900/20 border-yellow-700';
-  return 'bg-[#0f0f0f] border-[#8b4444]';
-}
-
-function blockStatusTone(status: WorkoutBlock['status']): string {
-  if (status === 'Completed') return 'bg-green-900 text-green-200';
-  if (status === 'In Progress') return 'bg-yellow-900 text-yellow-200';
-  return 'bg-[#4a4a4a] text-[#8a8a8a]';
-}
-
-function readinessBadgeTone(readiness: Athlete['readiness']): string {
-  if (readiness === 'GREEN') return 'bg-green-900 text-green-200';
-  if (readiness === 'YELLOW') return 'bg-yellow-900 text-yellow-200';
-  return 'bg-red-900 text-red-200';
+  if (readiness === 'RED') return 'bg-red-500';
+  return 'bg-[#6f6f6f]';
 }
 
 export default function CoachWorkspace() {
   const [activeTab, setActiveTab] = useState<TabID>('dashboard');
-  const [sessionMode, setSessionMode] = useState<SessionMode>('Group');
   const [athleteFloorPlans, setAthleteFloorPlans] = useState<CoachAthleteFloorPlan[]>([]);
+  const [floorPlansLoading, setFloorPlansLoading] = useState(true);
+  const [floorPlansError, setFloorPlansError] = useState('');
   const [coachAccountId, setCoachAccountId] = useState('');
+  const [coachSessionError, setCoachSessionError] = useState('');
   const [reviewSessionId, setReviewSessionId] = useState('');
-  const [reviewDecision, setReviewDecision] = useState('approved');
+  const [reviewDecision, setReviewDecision] = useState('');
   const [reviewNotes, setReviewNotes] = useState('');
   const [reviewSyncMessage, setReviewSyncMessage] = useState('');
   const [shadowQueue, setShadowQueue] = useState<ShadowReviewQueueItem[]>([]);
   const [shadowObservations, setShadowObservations] = useState<ShadowObservationItem[]>([]);
   const [shadowReadError, setShadowReadError] = useState('');
+  const [shadowLoading, setShadowLoading] = useState(true);
 
   // Dashboard data - Real API
   const [athletes, setAthletes] = useState<Athlete[]>([]);
@@ -132,305 +78,139 @@ export default function CoachWorkspace() {
 
   const [selectedAthleteId, setSelectedAthleteId] = useState<string | null>(null);
 
-  const [coachTasks, setCoachTasks] = useState<CoachTask[]>([]);
+  const loadFloorPlans = useCallback(async () => {
+    setFloorPlansLoading(true);
+    setFloorPlansError('');
+    try {
+      const response = await fetch('/api/pilot/floor-plans?limit=50', {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error('Athlete floor-plan drafts are unavailable.');
+      }
 
-  const workoutBlocks = useMemo<WorkoutBlock[]>(() => {
-    if (sessionMode === 'One-on-One') {
-      return [
-        {
-          id: 'wb_1',
-          title: 'Individual Warmup + Movement Prep',
-          duration: 10,
-          status: 'Completed',
-          objective: 'Prime mechanics and movement quality before technical rounds.',
-          trainingItems: [
-            '2 rounds jump rope x 2:00 with 0:30 reset',
-            'Hip/ankle mobility circuit x 6 minutes',
-            'Mirror stance checks and guard alignment x 2 minutes',
-          ],
-          coachingCues: ['Nose over toes in stance', 'Shoulders relaxed, guard alive'],
-        },
-        {
-          id: 'wb_2',
-          title: 'Footwork and Angle Entry',
-          duration: 15,
-          status: 'In Progress',
-          objective: 'Build clean entries and exits from jab range.',
-          trainingItems: [
-            '4 x 2:00 ladder step + pivot (inside/outside)',
-            'Cone angle entry drill 3 x 90s',
-            'Reactive call-outs: left exit/right exit x 4 sets',
-          ],
-          coachingCues: ['Push from rear foot, do not hop', 'Exit with hands home'],
-        },
-        {
-          id: 'wb_3',
-          title: 'Targeted Technical Rounds',
-          duration: 15,
-          status: 'Not Started',
-          objective: 'Refine high-value combinations with defensive responsibility.',
-          trainingItems: [
-            'Pad rounds: 3 x 3:00 (jab-cross-slip-cross focus)',
-            'Defense return drill: slip-counter x 3 sets',
-            '30-second burst finisher each round',
-          ],
-          coachingCues: ['Exhale on impact', 'Head off center after second shot'],
-        },
-        {
-          id: 'wb_4',
-          title: 'Conditioning Micro-Block',
-          duration: 10,
-          status: 'Not Started',
-          objective: 'Support repeat power without technique breakdown.',
-          trainingItems: [
-            'Battle rope intervals 6 x 30:30',
-            'Med-ball rotational throws 3 x 8 each side',
-            'Core brace plank ladder 3 sets',
-          ],
-          coachingCues: ['Quality over speed', 'Maintain posture under fatigue'],
-        },
-        {
-          id: 'wb_5',
-          title: 'Cooldown + Review',
-          duration: 5,
-          status: 'Not Started',
-          objective: 'Recover and lock one technical takeaway.',
-          trainingItems: ['Breath downshift x 2 minutes', 'Stretch reset x 3 minutes'],
-          coachingCues: ['Identify one repeatable win from session'],
-        },
-      ];
+      const payload = (await response.json()) as { items?: CoachAthleteFloorPlan[] };
+      setAthleteFloorPlans(payload.items ?? []);
+    } catch (error) {
+      setAthleteFloorPlans([]);
+      setFloorPlansError(error instanceof Error ? error.message : 'Athlete floor-plan drafts are unavailable.');
+    } finally {
+      setFloorPlansLoading(false);
     }
+  }, []);
 
-    return [
-      {
-        id: 'wb_1',
-        title: 'Group Warmup Flow',
-        duration: 10,
-        status: 'Completed',
-        objective: 'Raise heart rate and establish class rhythm safely.',
-        trainingItems: [
-          'Jump rope cadence ladder: 3 x 90s',
-          'Dynamic mobility line drills: hips, thoracic, ankles',
-          'Guard and stance shadow round x 2:00',
-        ],
-        coachingCues: ['Eyes up, shoulders down', 'Move with stance integrity'],
-      },
-      {
-        id: 'wb_2',
-        title: 'Footwork Pods',
-        duration: 15,
-        status: 'In Progress',
-        objective: 'Install directional movement under control and spacing.',
-        trainingItems: [
-          'Station A: forward/backward step-and-stop x 3 sets',
-          'Station B: lateral shuffle + pivot x 3 sets',
-          'Station C: partner mirror footwork x 3 sets',
-        ],
-        coachingCues: ['Stay balanced at every stop', 'Hands in position during movement'],
-      },
-      {
-        id: 'wb_3',
-        title: 'Defense + Combo Circuit',
-        duration: 15,
-        status: 'Not Started',
-        objective: 'Connect defensive reactions to simple scoring combinations.',
-        trainingItems: [
-          'Slip line: jab-slip-jab x 3 rounds',
-          'Partner feed: parry-cross-hook x 3 rounds',
-          'Coach call reaction: block/roll/return x 6 sets',
-        ],
-        coachingCues: ['Defense first, then fire', 'Reset feet before second phase'],
-      },
-      {
-        id: 'wb_4',
-        title: 'Group Conditioning',
-        duration: 15,
-        status: 'Not Started',
-        objective: 'Build engine while preserving technical form standards.',
-        trainingItems: [
-          'Bag intervals 5 x 2:00 (45s active recovery)',
-          'Bodyweight circuit: squat, pushup, mountain climber x 3 rounds',
-          'Finisher: 60-second nonstop straight punches',
-        ],
-        coachingCues: ['Form before pace', 'Match breathing to output'],
-      },
-      {
-        id: 'wb_5',
-        title: 'Cooldown + Team Debrief',
-        duration: 5,
-        status: 'Not Started',
-        objective: 'Return to baseline and reinforce key class lesson.',
-        trainingItems: ['Guided breathing x 2 minutes', 'Mobility reset x 2 minutes', 'Team takeaway x 1 minute'],
-        coachingCues: ['Name one technical habit to repeat next session'],
-      },
-    ];
-  }, [sessionMode]);
-
-  const [coachGoals] = useState<CoachGoal[]>([
-    { id: 'cg_1', title: 'Complete 10 athlete film reviews', category: 'Development', progress: 30, dueDate: '2026-09-30' },
-    { id: 'cg_2', title: 'Improve class retention', category: 'Coaching', progress: 65, dueDate: '2026-12-31' },
-    { id: 'cg_3', title: 'Bronze Certification', category: 'Certification', progress: 45, dueDate: '2026-10-15' }
-  ]);
-
-  const sessionStatus = 'In Progress';
-  const activeAthletes = athletes.filter(a => a.attendance !== 'Absent').length;
-  const injuryFlags = athletes.filter(a => a.injuryFlag).length;
-  const redReadinessCount = athletes.filter((athlete) => athlete.readiness === 'RED').length;
-  const yellowReadinessCount = athletes.filter((athlete) => athlete.readiness === 'YELLOW').length;
-  const reviewsNeeded = coachTasks.filter(t => t.status === 'Open' && t.title.includes('Review')).length;
-  const assignmentsDue = coachTasks.filter(t => t.status === 'Open').length;
-
-  useEffect(() => {
-    const loadPlans = async () => {
-      try {
-        const response = await fetch('/api/pilot/floor-plans?limit=50', {
-          method: 'GET',
-          credentials: 'include',
-        });
-        if (!response.ok) {
-          throw new Error('Failed to load athlete floor plans');
-        }
-
-        const payload = (await response.json()) as { items?: CoachAthleteFloorPlan[] };
-        setAthleteFloorPlans(payload.items || []);
-      } catch {
-        setAthleteFloorPlans([]);
+  const loadAthletes = useCallback(async () => {
+    setAthletesLoading(true);
+    setAthletesError(null);
+    try {
+      const response = await fetch('/api/pilot/athletes/list', {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error('The athlete roster is unavailable.');
       }
-    };
 
-    void loadPlans();
+      const data = (await response.json()) as {
+        items?: Array<{ athlete_id: string; full_name?: string; gym_status?: string }>;
+      };
+      const athleteList: Athlete[] = (data.items ?? []).map((item) => ({
+        id: item.athlete_id,
+        name: item.full_name || 'Name not reported',
+        track: item.gym_status || 'Track not reported',
+        readiness: null,
+        injuryFlag: null,
+        attendance: null,
+      }));
+
+      setAthletes(athleteList);
+      setSelectedAthleteId((current) => current ?? athleteList[0]?.id ?? null);
+    } catch (error) {
+      setAthletesError(error instanceof Error ? error.message : 'The athlete roster is unavailable.');
+      setAthletes([]);
+    } finally {
+      setAthletesLoading(false);
+    }
+  }, []);
+
+  const loadShadowReadModels = useCallback(async () => {
+    setShadowLoading(true);
+    setShadowReadError('');
+    try {
+      const [queueResult, observationResult] = await Promise.allSettled([
+        fetch('/api/pilot/shadow/review-projection', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ limit: 20 }),
+        }),
+        fetch('/api/pilot/shadow/observation-projection', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ limit: 20 }),
+        }),
+      ]);
+
+      let queueError = '';
+      let observationError = '';
+
+      if (queueResult.status === 'fulfilled' && queueResult.value.ok) {
+        const queuePayload = (await queueResult.value.json()) as { queue?: ShadowReviewQueueItem[] };
+        setShadowQueue(queuePayload.queue ?? []);
+      } else {
+        setShadowQueue([]);
+        queueError = 'review projection';
+      }
+
+      if (observationResult.status === 'fulfilled' && observationResult.value.ok) {
+        const observationPayload = (await observationResult.value.json()) as { items?: ShadowObservationItem[] };
+        setShadowObservations(observationPayload.items ?? []);
+      } else {
+        setShadowObservations([]);
+        observationError = 'observation projection';
+      }
+
+      if (queueError || observationError) {
+        const failed = [queueError, observationError].filter(Boolean).join(' and ');
+        setShadowReadError(`Unable to load SHADOW ${failed}.`);
+      }
+    } catch {
+      setShadowQueue([]);
+      setShadowObservations([]);
+      setShadowReadError('Unable to load SHADOW read models.');
+    } finally {
+      setShadowLoading(false);
+    }
+  }, []);
+
+  const loadCoachSession = useCallback(async () => {
+    setCoachSessionError('');
+    try {
+      const response = await fetch('/api/pilot/auth/session', { method: 'POST' });
+      const payload = (await response.json()) as { authenticated?: boolean; account_id?: string };
+      if (response.ok && payload.authenticated && payload.account_id) {
+        setCoachAccountId(payload.account_id);
+        return;
+      }
+
+      setCoachAccountId('');
+      setCoachSessionError('Coach session is unavailable. Sign in again before saving a review.');
+    } catch {
+      setCoachAccountId('');
+      setCoachSessionError('Coach session could not be checked. Retry after confirming your connection.');
+    }
   }, []);
 
   useEffect(() => {
-    void (async () => {
-      try {
-        const response = await fetch('/api/pilot/auth/session', { method: 'POST' });
-        const payload = (await response.json()) as { authenticated?: boolean; account_id?: string };
-        if (response.ok && payload.authenticated && payload.account_id) {
-          setCoachAccountId(payload.account_id);
-        }
-      } catch {
-        // Leave manual entry available if auth session is unavailable.
-      }
-    })();
-  }, []);
+    const loadTimer = window.setTimeout(() => {
+      void loadFloorPlans();
+      void loadAthletes();
+      void loadShadowReadModels();
+      void loadCoachSession();
+    }, 0);
 
-  // Fetch athletes for the organization
-  useEffect(() => {
-    void (async () => {
-      try {
-        setAthletesLoading(true);
-        setAthletesError(null);
-        const response = await fetch('/api/pilot/athletes/list', {
-          method: 'GET',
-          credentials: 'include',
-        });
-        if (!response.ok) throw new Error('Failed to load athletes');
-        
-        const data = (await response.json()) as { items?: Array<{ athlete_id: string; full_name?: string; gym_status?: string }> };
-        const items = data.items || [];
-        
-        // Convert PilotAthlete to Athlete format
-        const readinessValues: Array<'GREEN' | 'YELLOW' | 'RED'> = ['GREEN', 'YELLOW', 'RED'];
-        const athleteList: Athlete[] = items.slice(0, 3).map((item, index: number) => ({
-          id: item.athlete_id,
-          name: item.full_name || 'Unknown',
-          track: item.gym_status || 'Foundations',
-          readiness: readinessValues[index % 3],
-          injuryFlag: false,
-          attendance: 'Present'
-        }));
-        
-        setAthletes(athleteList);
-        if (athleteList.length > 0 && !selectedAthleteId) {
-          setSelectedAthleteId(athleteList[0].id);
-        }
-      } catch (error) {
-        setAthletesError(error instanceof Error ? error.message : 'Failed to load athletes');
-        // Fallback: set empty list but don't block UI
-        setAthletes([]);
-      } finally {
-        setAthletesLoading(false);
-      }
-    })();
-  }, [selectedAthleteId]);
-
-  // Fetch coach tasks (hardcoded for now since backend doesn't have coach-tasks endpoint yet)
-  useEffect(() => {
-    void (async () => {
-      try {
-        // SHADOW endpoint integrated: POST /api/pilot/shadow/chat
-        // For now, generate default tasks pending backend coach-tasks API
-        const defaultTasks: CoachTask[] = [
-          { id: 't_1', title: 'Review athlete goals', dueDate: '2026-07-13', priority: 'High', status: 'Open' },
-          { id: 't_2', title: 'Approve track applications', dueDate: '2026-07-14', priority: 'High', status: 'Open' },
-          { id: 't_3', title: 'Conduct athlete evaluations', dueDate: '2026-07-15', priority: 'Normal', status: 'In Progress' },
-          { id: 't_4', title: 'Film review - last session', dueDate: '2026-07-16', priority: 'Normal', status: 'Open' },
-          { id: 't_5', title: 'Submit monthly report', dueDate: '2026-07-20', priority: 'Normal', status: 'Open' }
-        ];
-        setCoachTasks(defaultTasks);
-      } catch {
-        // Task loading error - UI will show empty state
-      }
-    })();
-  }, []);
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        const [queueResult, observationResult] = await Promise.allSettled([
-          fetch('/api/pilot/shadow/review-projection', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ limit: 20 }),
-          }),
-          fetch('/api/pilot/shadow/observation-projection', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ limit: 20 }),
-          }),
-        ]);
-
-        let queueError = '';
-        let observationError = '';
-
-        if (queueResult.status === 'fulfilled') {
-          if (queueResult.value.ok) {
-            const queuePayload = (await queueResult.value.json()) as {
-              queue?: ShadowReviewQueueItem[];
-            };
-            setShadowQueue(queuePayload.queue ?? []);
-          } else {
-            queueError = 'review projection';
-          }
-        } else {
-          queueError = 'review projection';
-        }
-
-        if (observationResult.status === 'fulfilled') {
-          if (observationResult.value.ok) {
-            const observationPayload = (await observationResult.value.json()) as {
-              items?: ShadowObservationItem[];
-            };
-            setShadowObservations(observationPayload.items ?? []);
-          } else {
-            observationError = 'observation projection';
-          }
-        } else {
-          observationError = 'observation projection';
-        }
-
-        if (queueError || observationError) {
-          const failed = [queueError, observationError].filter(Boolean).join(' and ');
-          setShadowReadError(`Unable to load SHADOW ${failed}.`);
-        } else {
-          setShadowReadError('');
-        }
-      } catch (error) {
-        setShadowReadError(error instanceof Error ? error.message : 'Unable to load SHADOW read models.');
-      }
-    })();
-  }, []);
+    return () => window.clearTimeout(loadTimer);
+  }, [loadAthletes, loadCoachSession, loadFloorPlans, loadShadowReadModels]);
 
   async function submitCoachReview() {
     if (!reviewSessionId.trim()) {
@@ -443,31 +223,40 @@ export default function CoachWorkspace() {
       return;
     }
 
-    const now = new Date().toISOString();
-    const reviewId = `review_${Date.now()}`;
-
-    const response = await fetch('/api/pilot/coach-reviews', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        review_id: reviewId,
-        session_id: reviewSessionId.trim(),
-        coach_id: coachAccountId,
-        decision: reviewDecision,
-        notes: reviewNotes || 'Coach review from Coach Workspace',
-        approved_flag: reviewDecision === 'approved',
-        created_at: now,
-        updated_at: now,
-      }),
-    });
-
-    if (!response.ok) {
-      const payload = (await response.json().catch(() => ({ error: 'Coach review persistence failed' }))) as { error?: string };
-      setReviewSyncMessage(payload.error || 'Coach review persistence failed');
+    if (!reviewDecision) {
+      setReviewSyncMessage('Choose a review decision.');
       return;
     }
 
-    setReviewSyncMessage(`Coach review persisted (${reviewId}).`);
+    const now = new Date().toISOString();
+    const reviewId = `review_${Date.now()}`;
+
+    try {
+      const response = await fetch('/api/pilot/coach-reviews', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          review_id: reviewId,
+          session_id: reviewSessionId.trim(),
+          coach_id: coachAccountId,
+          decision: reviewDecision,
+          notes: reviewNotes.trim(),
+          approved_flag: reviewDecision === 'approved',
+          created_at: now,
+          updated_at: now,
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({ error: 'Coach review could not be saved.' }))) as { error?: string };
+        setReviewSyncMessage(payload.error || 'Coach review could not be saved.');
+        return;
+      }
+
+      setReviewSyncMessage(`Coach review persisted (${reviewId}).`);
+    } catch {
+      setReviewSyncMessage('Coach review could not be saved. Check the connection and retry.');
+    }
   }
 
   return (
@@ -477,8 +266,8 @@ export default function CoachWorkspace() {
         <div className="border-b-2 border-[#8b4444] pb-6 space-y-4">
           <div>
             <p className="text-xs font-mono uppercase tracking-[0.15em] text-[#d4a574]">Coach Development Workspace</p>
-            <h1 className="text-3xl md:text-4xl font-black mt-2">Live Session Management</h1>
-            <p className="text-base text-[#b0a095] mt-2">Manage your program floor, develop yourself, and track athlete progress with SMART goals and assessments.</p>
+            <h1 className="text-3xl md:text-4xl font-black mt-2">Coach Operations Workspace</h1>
+            <p className="text-base text-[#b0a095] mt-2">Review verified organization records. Unconnected services stay visibly unavailable until real data is present.</p>
             <p className="text-sm font-mono uppercase tracking-[0.14em] text-[#cfbfae] mt-2">Old Gauze | Sweat | Grit | Grind | Dedication | Motivation</p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -504,28 +293,12 @@ export default function CoachWorkspace() {
 
         {/* ROLE SUMMARY PANEL */}
         <CoachSummaryPanel
-          sessionStatus={sessionStatus}
-          activeAthletes={activeAthletes}
-          injuryFlags={injuryFlags}
-          reviewsNeeded={reviewsNeeded}
-          assignmentsDue={assignmentsDue}
+          sessionStatus={null}
+          rosterAthletes={athletesLoading || athletesError ? null : athletes.length}
+          healthReports={null}
+          reviewsNeeded={null}
+          assignmentsDue={null}
         />
-
-        {/* MODE TOGGLE */}
-        <div className="flex w-fit gap-2 border-2 border-[#8b4444] bg-[#0f0f0f] p-2">
-          {(['Group', 'One-on-One'] as const).map(mode => (
-            <button
-              key={mode}
-              onClick={() => setSessionMode(mode)}
-              className={cx(
-                ui.modeButtonBase,
-                sessionMode === mode ? ui.modeButtonActive : ui.modeButtonInactive,
-              )}
-            >
-              {mode} Mode
-            </button>
-          ))}
-        </div>
 
         {/* TAB NAVIGATION */}
         <div className={ui.tabContainer}>
@@ -580,7 +353,7 @@ export default function CoachWorkspace() {
                     onClick={() => setActiveTab('floor')}
                     className="min-h-[44px] border border-[#8b4444] bg-[#2a1414] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#e8d7c6] transition hover:bg-[#3a1a1a]"
                   >
-                    Open Live Floor
+                    Floor Status
                   </button>
                   <button
                     type="button"
@@ -594,7 +367,7 @@ export default function CoachWorkspace() {
                     onClick={() => setActiveTab('tasks')}
                     className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#cfbfae] transition hover:border-[#8b4444]"
                   >
-                    Process Tasks
+                    Task Status
                   </button>
                   <button
                     type="button"
@@ -608,19 +381,19 @@ export default function CoachWorkspace() {
 
               <section className="grid gap-3 md:grid-cols-3">
                 <article className="border border-[#5a4a3a] bg-[#101010] px-4 py-3">
-                  <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Readiness Alerts</p>
-                  <p className="mt-2 text-2xl font-black text-[#f2e7da]">{redReadinessCount + yellowReadinessCount}</p>
-                  <p className="text-xs text-[#b0a095]">{redReadinessCount} RED, {yellowReadinessCount} YELLOW</p>
+                  <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Check-in Reports</p>
+                  <p className="mt-2 text-lg font-black text-[#f2e7da]">Not reported</p>
+                  <p className="text-xs text-[#b0a095]">No verified check-in feed is connected.</p>
                 </article>
                 <article className="border border-[#5a4a3a] bg-[#101010] px-4 py-3">
-                  <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Injury Flags</p>
-                  <p className="mt-2 text-2xl font-black text-[#f2e7da]">{injuryFlags}</p>
-                  <p className="text-xs text-[#b0a095]">Escalate before block progression</p>
+                  <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Health Reports</p>
+                  <p className="mt-2 text-lg font-black text-[#f2e7da]">Not reported</p>
+                  <p className="text-xs text-[#b0a095]">This surface does not provide medical clearance.</p>
                 </article>
                 <article className="border border-[#5a4a3a] bg-[#101010] px-4 py-3">
                   <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Open Reviews</p>
-                  <p className="mt-2 text-2xl font-black text-[#f2e7da]">{reviewsNeeded}</p>
-                  <p className="text-xs text-[#b0a095]">Resolve queue items this session</p>
+                  <p className="mt-2 text-lg font-black text-[#f2e7da]">Unavailable</p>
+                  <p className="text-xs text-[#b0a095]">A verified review-count feed is not connected.</p>
                 </article>
               </section>
 
@@ -628,41 +401,23 @@ export default function CoachWorkspace() {
                 title="Coach Dashboard"
                 description="Overview of your session status, athlete roster, and immediate action items."
                 usage={[
-                  'Check session status and athlete readiness before class',
-                  'Review flagged athletes (RED/YELLOW readiness)',
-                  'See athletes with injury concerns',
-                  'Monitor open tasks and due dates'
+                  'Use the roster only for identities returned by the live service',
+                  'Treat missing check-in or health data as not reported',
+                  'Confirm any training decision directly with the athlete and responsible staff'
                 ]}
                 mistakes={[
-                  'Missing injury flags before session start',
-                  'Not reviewing task deadlines',
-                  'Overlooking RED readiness athletes'
+                  'Treating an absent value as a negative report',
+                  'Using this screen as medical or sparring clearance',
+                  'Assuming unsupported task and session data is current'
                 ]}
-                onAskShadow={() => {}}
               />
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Session Status */}
                 <div className={ui.panelSpaced}>
                   <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Today&apos;s Session</h3>
-                  <div className="space-y-3">
-                    <div>
-                      <p className="text-xs text-[#b0a095] block mb-1">Session Name</p>
-                      <p className="text-base font-semibold">Youth Non-Contact Development</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-[#b0a095] block mb-1">Time</p>
-                      <p className="text-base font-semibold">4:00 PM - 5:00 PM</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-[#b0a095] block mb-1">Status</p>
-                      <p className="text-base font-semibold text-green-400">In Progress</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-[#b0a095] block mb-1">Athletes Present</p>
-                      <p className="text-base font-semibold">{activeAthletes}/{athletes.length}</p>
-                    </div>
-                  </div>
+                  <p className="text-base font-semibold">Not connected yet</p>
+                  <p className="text-xs text-[#b0a095]">Session name, time, status, and attendance are unavailable until the scheduler and check-in feeds are connected.</p>
                 </div>
 
                 {/* Athlete Roster */}
@@ -683,10 +438,8 @@ export default function CoachWorkspace() {
                       <div className="flex items-center justify-between mb-1">
                         <p className="text-red-400 text-sm font-semibold">Error loading athletes</p>
                         <button
-                          onClick={() => {
-                            setAthletesError(null);
-                            // Effect will re-run
-                          }}
+                          type="button"
+                          onClick={() => void loadAthletes()}
                           className="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition"
                           aria-label="Retry loading athletes"
                         >
@@ -720,11 +473,9 @@ export default function CoachWorkspace() {
                             <div className={`w-2 h-2 rounded-full ${readinessDotClass(athlete.readiness)}`}></div>
                             <span className="font-semibold">{athlete.name}</span>
                           </div>
-                          <span className="text-xs text-[#8a8a8a]">{athlete.attendance}</span>
+                          <span className="text-xs text-[#8a8a8a]">Attendance: {athlete.attendance ?? 'Not reported'}</span>
                         </div>
-                        {athlete.injuryFlag && (
-                          <p className="text-xs text-red-400 mt-1">🚨 Injury flag active</p>
-                        )}
+                        <p className="mt-1 text-xs text-[#8a8a8a]">Check-in: {athlete.readiness ?? 'Not reported'} · Health report: {athlete.injuryFlag === null ? 'Not reported' : athlete.injuryFlag ? 'Reported' : 'No report on file'}</p>
                       </button>
                     ))}
                   </div>
@@ -733,19 +484,8 @@ export default function CoachWorkspace() {
                 {/* Open Tasks */}
                 <div className="md:col-span-2 border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4">
                   <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Tasks Due</h3>
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {coachTasks.filter(t => t.status !== 'Completed').map(task => (
-                      <div key={task.id} className="border-2 border-[#8b4444] bg-[#0f0f0f] p-3">
-                        <div className="flex justify-between items-start mb-2">
-                          <h4 className="font-semibold">{task.title}</h4>
-                          <span className={`text-xs px-2 py-1 rounded font-semibold ${priorityTone(task.priority)}`}>
-                            {task.priority}
-                          </span>
-                        </div>
-                        <p className="text-xs text-[#b0a095]">Due: {task.dueDate}</p>
-                      </div>
-                    ))}
-                  </div>
+                  <p className="text-base font-semibold">Not connected yet</p>
+                  <p className="text-xs text-[#b0a095]">No coach-task service is connected, so this screen will not invent assignments or deadlines.</p>
                 </div>
               </div>
             </div>
@@ -756,25 +496,38 @@ export default function CoachWorkspace() {
             <div className="space-y-6 animate-fadeIn">
               <HelpPanel
                 title="Athlete Floor Plans"
-                description="Individual athlete workout plans generated at athlete check-in. Separate from coach group and one-on-one floor operations."
+                description="Unverified draft metadata returned by the floor-plan service. Drafts are not medical clearance, sparring approval, or a training prescription."
                 usage={[
-                  'Review each athlete\'s generated plan before live coaching decisions',
-                  'Use readiness color to adjust coaching intensity',
-                  'Confirm task order and due-time pacing',
-                  'Use this tab as individual plan intake, not class block control'
+                  'Confirm the athlete identity and source timestamp',
+                  'Review the underlying source with a responsible human before acting',
+                  'Treat source labels and draft item counts as unverified'
                 ]}
                 mistakes={[
-                  'Treating individual plans as group-session block plan',
-                  'Ignoring RED readiness plans during live coaching',
-                  'Overwriting individual targets with one-size-fits-all flow'
+                  'Treating a draft as an approved plan',
+                  'Using a source label as medical or sparring clearance',
+                  'Assuming missing data means no concern was reported'
                 ]}
-                onAskShadow={() => {}}
               />
 
-              {athleteFloorPlans.length === 0 ? (
+              {floorPlansLoading ? (
                 <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6">
-                  <p className="text-sm text-[#d4a574] font-semibold">No athlete floor plans received yet.</p>
-                  <p className="mt-2 text-sm text-[#b0a095]">Once an athlete checks in and their floor plan auto-generates, it will appear here as an individual coach review tab.</p>
+                  <p className="text-sm text-[#d4a574] font-semibold">Loading unverified drafts…</p>
+                </div>
+              ) : floorPlansError ? (
+                <div className="border-2 border-red-600 bg-red-900/20 p-6">
+                  <p className="text-sm font-semibold text-red-300">{floorPlansError}</p>
+                  <button
+                    type="button"
+                    onClick={() => void loadFloorPlans()}
+                    className="mt-3 border border-red-500 px-3 py-2 text-xs font-bold uppercase text-red-200"
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : athleteFloorPlans.length === 0 ? (
+                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6">
+                  <p className="text-sm text-[#d4a574] font-semibold">No floor-plan drafts reported.</p>
+                  <p className="mt-2 text-sm text-[#b0a095]">This does not indicate that an athlete is cleared or that no follow-up is needed.</p>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -782,28 +535,17 @@ export default function CoachWorkspace() {
                     <article key={`${plan.athleteName}-${plan.generatedAt}-${index}`} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-5 space-y-4">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div>
-                          <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Individual Plan</p>
+                          <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Unverified Draft</p>
                           <h4 className="text-lg font-semibold text-[#e8d7c6]">{plan.athleteName}</h4>
-                          <p className="text-xs text-[#8a8a8a]">Generated {new Date(plan.generatedAt).toLocaleString()}</p>
+                          <p className="text-xs text-[#8a8a8a]">Source timestamp: {new Date(plan.generatedAt).toLocaleString()}</p>
                         </div>
-                        <span className={`inline-flex items-center rounded px-2 py-1 text-xs font-bold ${readinessBadgeTone(plan.readiness)}`}>
-                          {plan.readiness}
+                        <span className="inline-flex items-center rounded bg-[#4a4a4a] px-2 py-1 text-xs font-bold text-[#e8d7c6]">
+                          Source label: {plan.readiness}
                         </span>
                       </div>
-
-                      <div className="grid gap-3 md:grid-cols-2">
-                        {plan.tasks.map((task) => (
-                          <div key={task.id} className="border border-[#694838] bg-[#0f0f0f] p-3">
-                            <div className="flex items-center justify-between gap-2">
-                              <p className="text-sm font-semibold text-[#e8d7c6]">{task.title}</p>
-                              <span className={`text-[11px] font-semibold px-2 py-1 rounded ${task.priority === 'High' ? 'bg-red-900 text-red-200' : 'bg-yellow-900 text-yellow-200'}`}>
-                                {task.priority}
-                              </span>
-                            </div>
-                            <p className="mt-1 text-xs text-[#d4a574]">{task.category} - {task.dueDate}</p>
-                            <p className="mt-2 text-xs text-[#b0a095]">{task.description}</p>
-                          </div>
-                        ))}
+                      <div className="border border-[#694838] bg-[#0f0f0f] p-3">
+                        <p className="text-sm font-semibold text-[#e8d7c6]">{plan.tasks.length} draft item{plan.tasks.length === 1 ? '' : 's'} hidden pending human verification.</p>
+                        <p className="mt-1 text-xs text-[#b0a095]">No action, intensity, or clearance is recommended by this screen.</p>
                       </div>
                     </article>
                   ))}
@@ -815,239 +557,73 @@ export default function CoachWorkspace() {
           {/* FLOOR */}
           {activeTab === 'floor' && (
             <div className="space-y-6 animate-fadeIn">
-              <HelpPanel
-                title="Coach Floor"
-                description="Live session management. Track workout blocks, athlete observations, and make real-time adjustments."
-                usage={[
-                  'Start session when class begins',
-                  'Progress through workout blocks',
-                  'Record quick observations for each athlete',
-                  'Mark modifications for individual athletes',
-                  'End session and review summary'
-                ]}
-                mistakes={[
-                  'Not starting session timer',
-                  'Missing critical observations',
-                  'Forgetting to record modifications'
-                ]}
-                onAskShadow={() => {}}
-              />
-
               <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4">
-                <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Session Workout Plan</h3>
-
-                <div className="space-y-2">
-                  {workoutBlocks.map((block) => (
-                    <div key={block.id} className={`border-2 p-3 rounded ${blockCardTone(block.status)} `}>
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <p className="font-semibold">{block.title}</p>
-                          <p className="text-xs text-[#b0a095]">{block.duration} minutes</p>
-                          <p className="text-xs text-[#d4a574] mt-1">{block.objective}</p>
-                        </div>
-                        <span className={`text-xs px-2 py-1 rounded font-semibold ${blockStatusTone(block.status)}`}>
-                          {block.status}
-                        </span>
-                      </div>
-                      <div className="mt-3 grid gap-2 md:grid-cols-2">
-                        <div className="border border-[#694838] bg-[#111111] p-2">
-                          <p className="text-[11px] font-mono uppercase tracking-[0.08em] text-[#d4a574]">Actual Training</p>
-                          <ul className="mt-1 space-y-1 text-xs text-[#cfbfae]">
-                            {block.trainingItems.map((item) => (
-                              <li key={item}>- {item}</li>
-                            ))}
-                          </ul>
-                        </div>
-                        <div className="border border-[#694838] bg-[#111111] p-2">
-                          <p className="text-[11px] font-mono uppercase tracking-[0.08em] text-[#d4a574]">Coach Cues</p>
-                          <ul className="mt-1 space-y-1 text-xs text-[#cfbfae]">
-                            {block.coachingCues.map((cue) => (
-                              <li key={cue}>- {cue}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="bg-[#0f0f0f] border-2 border-[#8b4444] p-4">
-                  <p className="text-xs text-[#8a8a8a]">Session Progress: 40%</p>
-                  <div className="w-full bg-[#2a2a2a] h-2 mt-2">
-                    <div className="bg-[#d4a574] h-2" style={{width: '40%'}}></div>
-                  </div>
-                </div>
+                <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Coach Floor</h3>
+                <p className="text-base font-semibold">Not connected yet</p>
+                <p className="text-sm text-[#b0a095]">The live session, workout-block, observation, and progress services are not connected. No session status or training plan is shown.</p>
               </div>
             </div>
           )}
 
           {/* DEVELOPMENT */}
           {activeTab === 'development' && (
-            <div className="space-y-6 animate-fadeIn">
-              <HelpPanel
-                title="Coach Development"
-                description="Your personal coaching growth path. Track certifications, skills, and professional development."
-                usage={[
-                  'Review your current coaching level',
-                  'Track certification requirements',
-                  'Set coach development goals',
-                  'Record training hours and completed courses',
-                  'Monitor mentorship progress'
-                ]}
-                mistakes={[
-                  'Neglecting your own development',
-                  'Not tracking training hours',
-                  'Waiting until renewal deadlines'
-                ]}
-                onAskShadow={() => {}}
-              />
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4">
-                  <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Current Certifications</h3>
-                  <div className="space-y-3">
-                    <div className="bg-[#0f0f0f] p-3 border-2 border-[#8b4444]">
-                      <p className="font-semibold">Bronze Certification</p>
-                      <p className="text-xs text-[#8a8a8a] mt-1">Expires: 2026-12-31</p>
-                    </div>
-                    <div className="bg-[#0f0f0f] p-3 border-2 border-[#8b4444]">
-                      <p className="font-semibold">USA Boxing Coach License</p>
-                      <p className="text-xs text-[#8a8a8a] mt-1">Expires: 2027-06-30</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4">
-                  <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Development Topics</h3>
-                  <div className="space-y-2">
-                    {[
-                      'Boxing Technique Instruction',
-                      'Youth Development Psychology',
-                      'Injury Prevention Basics',
-                      'Class Management Skills',
-                      'Adaptive Coaching'
-                    ].map((topic) => (
-                      <label key={topic} className="flex items-center gap-2 cursor-pointer p-2 border-2 border-[#8b4444] bg-[#0f0f0f] hover:bg-[#1a1a1a]">
-                        <input type="checkbox" className="w-4 h-4" />
-                        <span className="text-sm">{topic}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
+            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-3 animate-fadeIn">
+              <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Coach Development</h3>
+              <p className="text-base font-semibold">Not connected yet</p>
+              <p className="text-sm text-[#b0a095]">No verified certification, license, training-hour, or development-topic service is connected.</p>
             </div>
           )}
 
           {/* GOALS */}
           {activeTab === 'goals' && (
-            <div className="space-y-6 animate-fadeIn">
-              <HelpPanel
-                title="Coach Goals"
-                description="Set and track your coaching development goals using SMART framework."
-                usage={[
-                  'Create specific, measurable goals',
-                  'Link to certification or skill development',
-                  'Track progress monthly',
-                  'Reflect on achievements'
-                ]}
-                mistakes={[
-                  'Vague goals without metrics',
-                  'Unrealistic timeframes',
-                  'Not reviewing progress regularly'
-                ]}
-                onAskShadow={() => {}}
-              />
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {coachGoals.map(goal => (
-                  <div key={goal.id} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 space-y-3">
-                    <div className="flex justify-between items-start">
-                      <h4 className="font-semibold">{goal.title}</h4>
-                      <span className="text-xs bg-[#4a4a4a] text-[#8a8a8a] px-2 py-1">{goal.category}</span>
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-xs mb-1">
-                        <span className="text-[#b0a095]">Progress</span>
-                        <span className="font-semibold">{goal.progress}%</span>
-                      </div>
-                      <div className="w-full bg-[#4a4a4a] h-2">
-                        <div className="bg-[#d4a574] h-2" style={{width: `${goal.progress}%`}}></div>
-                      </div>
-                    </div>
-                    <p className="text-xs text-[#b0a095]">Due: {goal.dueDate}</p>
-                  </div>
-                ))}
-              </div>
+            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-3 animate-fadeIn">
+              <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Coach Goals</h3>
+              <p className="text-base font-semibold">Not connected yet</p>
+              <p className="text-sm text-[#b0a095]">No verified coach-goal service is connected, so progress, due dates, and completion values are unavailable.</p>
             </div>
           )}
 
           {/* TASKS */}
           {activeTab === 'tasks' && (
-            <div className="space-y-6 animate-fadeIn">
-              <HelpPanel
-                title="Coach Tasks"
-                description="Mission board with athlete evaluations, reviews, and administrative tasks."
-                usage={[
-                  'Complete task reviews before deadlines',
-                  'Related athlete tasks link to athlete profiles',
-                  'Update status as you work through tasks',
-                  'Prioritize HIGH tasks first'
-                ]}
-                mistakes={[
-                  'Missing task deadlines',
-                  'Not updating task status',
-                  'Ignoring related athlete information'
-                ]}
-                onAskShadow={() => {}}
-              />
-
-              <div className="space-y-3">
-                {coachTasks.map(task => (
-                  <div key={task.id} className={`border-2 p-4 rounded ${
-                    task.status === 'Completed' ? 'bg-[#2a5a2a]/30 border-green-700' : 'bg-[#1a1a1a] border-[#8b4444]'
-                  }`}>
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <h4 className="font-semibold">{task.title}</h4>
-                        <p className="text-xs text-[#b0a095] mt-1">Due: {task.dueDate}</p>
-                      </div>
-                      <div className="flex gap-2">
-                        <span className={`text-xs px-2 py-1 rounded font-semibold ${priorityTone(task.priority)}`}>
-                          {task.priority}
-                        </span>
-                        <span className={`text-xs px-2 py-1 rounded font-semibold ${taskStatusTone(task.status)}`}>
-                          {task.status}
-                        </span>
-                      </div>
-                    </div>
-                    {task.relatedAthlete && (
-                      <p className="text-xs text-[#8a8a8a]">Related: {athletes.find(a => a.id === task.relatedAthlete)?.name}</p>
-                    )}
-                  </div>
-                ))}
-              </div>
+            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-3 animate-fadeIn">
+              <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Coach Tasks</h3>
+              <p className="text-base font-semibold">Not connected yet</p>
+              <p className="text-sm text-[#b0a095]">No verified coach-task service is connected. Assignments, priorities, statuses, and due dates are unavailable.</p>
             </div>
           )}
 
           {/* SHADOW AI */}
           {activeTab === 'shadow' && (
             <div className="space-y-6 animate-fadeIn">
-              <RoleSpecificShadow
-                role="coach"
-                query="Which athletes need attention?"
-                response="3 athletes flagged: Sophia Chen (YELLOW readiness, soreness issues), James Thompson (RED readiness, injury flag). Marcus Rodriguez is GREEN and performing well. Recommend modified rounds for Sophia and observation-only for James."
-              />
-
               <div className="border-2 border-[#d4a574] bg-[#0f0f0f] p-6 space-y-4">
-                <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">SHADOW Coach Assistant</h3>
-                <p className="text-sm text-[#b0a095]">Ask questions about session management, athlete readiness, goals, tasks, or coaching strategy.</p>
+                <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">SHADOW Review Data</h3>
+                <p className="text-sm text-[#b0a095]">Only persisted review and observation records are shown below. This surface does not provide medical clearance, sparring approval, or an automatic training prescription.</p>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
+              {shadowLoading ? (
+                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
+                  <p className="text-sm text-[#b0a095]">Loading SHADOW read models…</p>
+                </div>
+              ) : shadowReadError ? (
+                <div className="border-2 border-red-600 bg-red-900/20 p-3 rounded">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-red-400 text-sm font-semibold">{shadowReadError}</p>
+                    <button
+                      type="button"
+                      onClick={() => void loadShadowReadModels()}
+                      className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition flex-shrink-0"
+                      aria-label="Retry loading SHADOW read models"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid gap-4 md:grid-cols-2">
                 <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
                   <h3 className="font-mono text-xs font-bold uppercase tracking-[0.08em] text-[#d4a574]">SHADOW Review Projection</h3>
                   {shadowQueue.length === 0 ? (
-                    <p className="mt-2 text-xs text-[#b0a095]">No SHADOW queue items returned.</p>
+                    <p className="mt-2 text-xs text-[#b0a095]">No review records reported.</p>
                   ) : (
                     <div className="mt-2 space-y-2">
                       {shadowQueue.slice(0, 6).map((item) => (
@@ -1064,7 +640,7 @@ export default function CoachWorkspace() {
                 <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
                   <h3 className="font-mono text-xs font-bold uppercase tracking-[0.08em] text-[#d4a574]">SHADOW Observation Projection</h3>
                   {shadowObservations.length === 0 ? (
-                    <p className="mt-2 text-xs text-[#b0a095]">No SHADOW observation items returned.</p>
+                    <p className="mt-2 text-xs text-[#b0a095]">No observation records reported.</p>
                   ) : (
                     <div className="mt-2 space-y-2">
                       {shadowObservations.slice(0, 6).map((item) => (
@@ -1078,21 +654,7 @@ export default function CoachWorkspace() {
                   )}
                 </div>
               </div>
-
-              {shadowReadError ? (
-                <div className="border-2 border-red-600 bg-red-900/20 p-3 rounded">
-                  <div className="flex items-center justify-between">
-                    <p className="text-red-400 text-sm font-semibold">{shadowReadError}</p>
-                    <button
-                      onClick={() => setShadowReadError('')}
-                      className="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition flex-shrink-0"
-                      aria-label="Retry loading SHADOW queue"
-                    >
-                      Retry
-                    </button>
-                  </div>
-                </div>
-              ) : null}
+              )}
             </div>
           )}
 
@@ -1100,8 +662,8 @@ export default function CoachWorkspace() {
           {activeTab === 'assessments' && (
             <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
               <h3 className="font-mono font-bold text-[#d4a574] uppercase">Coach Assessments</h3>
-              <p className="text-[#b0a095]">Evaluate coaching effectiveness, communication, and athlete development.</p>
-              <div className="text-sm text-[#8a8a8a]">Coming soon: Leadership assessment, communication effectiveness survey, teaching impact evaluation.</div>
+              <p className="text-base font-semibold">Not connected yet</p>
+              <p className="text-sm text-[#b0a095]">No verified assessment service is connected. Leadership, communication, and teaching-impact results are unavailable.</p>
             </div>
           )}
 
@@ -1109,20 +671,8 @@ export default function CoachWorkspace() {
           {activeTab === 'film-study' && (
             <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
               <h3 className="font-mono font-bold text-[#d4a574] uppercase">Film Study</h3>
-              <p className="text-[#b0a095]">Record observations from training videos and self-evaluations.</p>
-              <div className="text-sm text-[#8a8a8a]">Coming soon: Video upload, timestamp annotations, technical analysis tools.</div>
-              <div className="border border-[#5a4a3a] bg-[#101010] p-3">
-                <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">AI Video Analysis - Planned</p>
-                <p className="mt-1 text-xs text-[#cfbfae]">Video Upload: FRONT-END PLACEHOLDER | Skill Recognition: BACKEND REQUIRED | Technique Scoring: ML REQUIRED</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <Link href="/coach/video-analysis" className="border border-[#8b4444] bg-[#2a1414] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[#e8d7c6]">
-                    Open Video Analysis Surface
-                  </Link>
-                  <Link href="/athlete/video-analysis" className="border border-[#4a4a4a] bg-[#1a1a1a] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[#cfbfae]">
-                    Athlete Feedback Surface
-                  </Link>
-                </div>
-              </div>
+              <p className="text-base font-semibold">Not connected yet</p>
+              <p className="text-sm text-[#b0a095]">Video upload, annotations, skill recognition, and technique scoring are unavailable. No AI analysis is implied.</p>
             </div>
           )}
 
@@ -1133,6 +683,18 @@ export default function CoachWorkspace() {
               <p className="text-[#b0a095]">Comprehensive athlete progress tracking and performance feedback.</p>
               <div className="border border-[#5a4a3a] bg-[#101010] p-3 space-y-3">
                 <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Persist Coach Review</p>
+                {coachSessionError ? (
+                  <div className="flex flex-wrap items-center justify-between gap-2 border border-red-700 bg-red-900/20 p-2">
+                    <p className="text-xs text-red-300">{coachSessionError}</p>
+                    <button
+                      type="button"
+                      onClick={() => void loadCoachSession()}
+                      className="border border-red-500 px-2 py-1 text-xs font-bold uppercase text-red-200"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                ) : null}
                 <input
                   value={reviewSessionId}
                   onChange={(event) => setReviewSessionId(event.target.value)}
@@ -1144,6 +706,7 @@ export default function CoachWorkspace() {
                   onChange={(event) => setReviewDecision(event.target.value)}
                   className="h-11 w-full border border-[#8b4444] bg-[#141414] px-3 text-sm text-[#e8d7c6]"
                 >
+                  <option value="" disabled>Choose a review decision</option>
                   <option value="approved">approved</option>
                   <option value="follow_up">follow_up</option>
                   <option value="hold">hold</option>
@@ -1164,11 +727,8 @@ export default function CoachWorkspace() {
                 {reviewSyncMessage ? <p className="text-xs text-[#d4a574]">{reviewSyncMessage}</p> : null}
               </div>
               <div className="border border-[#5a4a3a] bg-[#101010] p-3">
-                <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Closed-Loop Progression Intelligence - Planned</p>
-                <p className="mt-1 text-xs text-[#cfbfae]">Development Recommendation: PLACEHOLDER | Coach Review Required | Human Review Required</p>
-                <Link href="/coach/progression-intelligence" className="mt-2 inline-flex border border-[#8b4444] bg-[#2a1414] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[#e8d7c6]">
-                  Open Progression Intelligence Surface
-                </Link>
+                <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Progression Intelligence</p>
+                <p className="mt-1 text-xs text-[#cfbfae]">Not connected yet. No development recommendation or automatic clearance is generated here.</p>
               </div>
             </div>
           )}

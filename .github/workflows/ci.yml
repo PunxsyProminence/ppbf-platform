@@ -48,3 +48,9 @@ jobs:
 
       - name: Build production application
         run: npm run build
+
+      - name: Install Chromium for truthful V1 browser checks
+        run: npx playwright install --with-deps chromium
+
+      - name: Run truthful V1 browser regression gate
+        run: npm --workspace web run test:e2e:truthful-v1
