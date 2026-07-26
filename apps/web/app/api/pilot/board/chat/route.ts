@@ -12,10 +12,14 @@ export async function POST(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['organization_admin', 'admin']);
     const body = await request.json() as Record<string, unknown>;
+    const sanitizedBody = { ...body };
+    delete sanitizedBody.organizationId;
+    const forwardedHeaders = new Headers(request.headers);
+    forwardedHeaders.delete('content-length');
     const forwarded = new NextRequest(request.url, {
       method: 'POST',
-      headers: request.headers,
-      body: JSON.stringify({ ...body, sessionType: 'board_summary' }),
+      headers: forwardedHeaders,
+      body: JSON.stringify({ ...sanitizedBody, sessionType: 'board_summary' }),
     });
     return postShadowChat(forwarded);
   } catch (error) {

@@ -11,11 +11,15 @@ export async function POST(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['organization_admin', 'admin', 'athlete']);
     const body = await request.json() as Record<string, unknown>;
+    const sanitizedBody = { ...body };
+    delete sanitizedBody.organizationId;
+    const forwardedHeaders = new Headers(request.headers);
+    forwardedHeaders.delete('content-length');
     const forwarded = new NextRequest(request.url, {
       method: 'POST',
-      headers: request.headers,
+      headers: forwardedHeaders,
       body: JSON.stringify({
-        ...body,
+        ...sanitizedBody,
         ...(principal.role === 'athlete' ? { athleteId: principal.athleteId } : {}),
       }),
     });
