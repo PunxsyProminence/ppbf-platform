@@ -56,7 +56,7 @@ export default function SetupWizard() {
     void (async () => {
       try {
         const response = await fetch('/api/pilot/auth/session', {
-          method: 'GET',
+          method: 'POST',
           credentials: 'include',
         });
 
@@ -65,9 +65,10 @@ export default function SetupWizard() {
           return;
         }
 
-        const data = (await response.json()) as { authProvider?: string; role?: string };
+        const data = (await response.json()) as { authProvider?: string; auth_provider?: string; role?: string };
         // Check if authenticated via Microsoft
-        const isMicrosoft = data.authProvider === 'microsoft';
+        const authProvider = data.auth_provider ?? data.authProvider;
+        const isMicrosoft = authProvider === 'microsoft';
         setIsMicrosoftSession(isMicrosoft);
         setSessionRole(data.role ?? null);
       } catch {
@@ -147,9 +148,10 @@ export default function SetupWizard() {
   }
 
   async function saveCapabilities() {
-    const enabledCapabilities = Object.entries(gymCapabilityAccess)
-      .filter(([, enabled]) => enabled)
-      .map(([id]) => id);
+    const capabilityAccess = Object.fromEntries(
+      Object.entries(gymCapabilityAccess).filter(([, enabled]) => Boolean(enabled)),
+    );
+    const enabledCapabilities = Object.keys(capabilityAccess);
 
     if (enabledCapabilities.length === 0) {
       throw new Error('Please select at least one feature for your gym');
@@ -157,8 +159,7 @@ export default function SetupWizard() {
 
     // Call backend to persist capability settings
     await postJson('/api/pilot/admin/gym-capabilities', {
-      organization_id: gymId.trim(),
-      capabilities: enabledCapabilities,
+      capabilityAccess,
     });
 
     return `Saved ${enabledCapabilities.length} feature${enabledCapabilities.length === 1 ? '' : 's'} for your gym`;
@@ -220,6 +221,14 @@ export default function SetupWizard() {
           <p className="text-base leading-7 text-[var(--gray-dark)]">
             Follow these 3 simple steps to set up your gym in PPBF and start managing athletes.
           </p>
+          <div className="pt-2">
+            <Link
+              href="/login?logout=true"
+              className="inline-flex min-h-[44px] items-center justify-center rounded-lg border-2 border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-light)] px-4 text-xs font-black uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]"
+            >
+              Sign Out Current Session
+            </Link>
+          </div>
         </header>
 
         {/* Progress Indicator */}
@@ -353,6 +362,7 @@ export default function SetupWizard() {
               <div className="rounded-lg border border-[rgba(184,59,52,0.2)] bg-[rgba(184,59,52,0.05)] p-4">
                 <p className="text-xs font-semibold text-[var(--red-primary)] uppercase tracking-[0.1em]">⚠️ Important Setup Note</p>
                 <p className="mt-2 text-sm text-[var(--gray-dark)]">The account created here becomes an <strong>Organization Admin</strong> with PIN-based sign-in. This is separate from your platform_owner Microsoft account (used above). Organization admins manage their gym&apos;s day-to-day operations.</p>
+                <p className="mt-2 text-sm text-[var(--gray-dark)]"><strong>Your PIN is only set when you click</strong> Create Admin Account &amp; Continue.</p>
               </div>
               <div>
                 <label className="block text-sm font-semibold text-[var(--black)]">Organization Admin Account ID</label>
@@ -479,7 +489,7 @@ export default function SetupWizard() {
               <p className="text-sm font-semibold text-[var(--black)]">Next Steps:</p>
               <ol className="space-y-2 text-sm text-[var(--gray-dark)]">
                 <li><strong>1. Sign out</strong> from your platform_owner account</li>
-                <li><strong>2. Sign in with PIN:</strong> Use the Organization Admin account ID and PIN you just created</li>
+                <li><strong>2. Sign in with PIN:</strong> Use account ID <strong>{adminAccountId || 'the one you created in Step 2'}</strong> and the PIN from Step 2</li>
                 <li><strong>3. Create team accounts:</strong> Set up coach and athlete accounts from the admin dashboard</li>
                 <li><strong>4. Manage features:</strong> Access the capabilities you selected (check-in, notes, announcements, etc.)</li>
               </ol>
@@ -487,10 +497,10 @@ export default function SetupWizard() {
 
             <div className="flex flex-col gap-3 sm:flex-row">
               <Link
-                href="/login"
+                href="/login?logout=true"
                 className="flex-1 inline-flex h-11 items-center justify-center rounded-lg border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-6 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)]"
               >
-                Go to Login
+                Sign Out &amp; Go To PIN Login
               </Link>
               <Link
                 href="/admin"

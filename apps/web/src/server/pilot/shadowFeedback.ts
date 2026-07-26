@@ -58,6 +58,12 @@ export async function recordShadowFeedback(input: ShadowFeedbackInput): Promise<
 }
 
 export async function getShadowFeedbackSummary(organizationId: string, days = 30): Promise<ShadowFeedbackSummary> {
+  if (!Number.isFinite(days) || days <= 0) {
+    throw new Error('Invalid days');
+  }
+
+  const safeDays = Math.max(1, Math.min(365, Math.floor(days)));
+
   const row = await queryOne<{
     total_responses: string;
     helpful_count: string;
@@ -69,8 +75,8 @@ export async function getShadowFeedbackSummary(organizationId: string, days = 30
        AVG(rating) AS avg_rating
      FROM pilot.shadow_feedback
      WHERE organization_id = $1
-       AND created_at > NOW() - ($2 || ' days')::INTERVAL`,
-    [organizationId, String(days)],
+       AND created_at > NOW() - ($2::numeric * INTERVAL '1 day')`,
+    [organizationId, safeDays],
   );
 
   const total = parseInt(row?.total_responses ?? '0', 10);
@@ -85,6 +91,12 @@ export async function getShadowFeedbackSummary(organizationId: string, days = 30
 }
 
 export async function listShadowFeedback(organizationId: string, limit = 50): Promise<ShadowFeedbackRow[]> {
+  if (!Number.isFinite(limit) || limit <= 0) {
+    throw new Error('Invalid limit');
+  }
+
+  const safeLimit = Math.max(1, Math.min(250, Math.floor(limit)));
+
   return query<ShadowFeedbackRow>(
     `SELECT feedback_id, organization_id, account_id, role, shadow_event_id,
             recommendation_ref, helpful, rating, comment, created_at
@@ -92,6 +104,6 @@ export async function listShadowFeedback(organizationId: string, limit = 50): Pr
      WHERE organization_id = $1
      ORDER BY created_at DESC
      LIMIT $2`,
-    [organizationId, limit],
+    [organizationId, safeLimit],
   );
 }

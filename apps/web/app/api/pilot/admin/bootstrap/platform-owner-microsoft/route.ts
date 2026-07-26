@@ -12,9 +12,15 @@ export const runtime = 'nodejs';
 
 const PRIMARY_OWNER_EMAIL = 'Admin@punxsyprominence.org';
 const ROOT_ORG_NAME = 'PPBF Root Platform Organization';
+const CONTROL_PLANE_HEADER = 'x-ppbf-control-plane';
 
 export async function POST(request: NextRequest) {
   try {
+    const intent = request.headers.get(CONTROL_PLANE_HEADER)?.trim() || '';
+    if (intent !== 'bootstrap') {
+      throw new Error('Forbidden: control plane request required');
+    }
+
     const bootstrapKey = process.env.PPBF_PILOT_BOOTSTRAP_KEY?.trim() || '';
     const providedKey = request.headers.get('x-ppbf-bootstrap-key')?.trim() || '';
 

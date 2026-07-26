@@ -35,7 +35,7 @@ function ensureBoardIndexAliases() {
 }
 
 function copySwaConfig() {
-  const configFile = path.join(appRoot, 'staticwebapp.config.json');
+  const configFile = path.resolve(appRoot, '..', '..', 'staticwebapp.config.json');
   const outConfigFile = path.join(outRoot, 'staticwebapp.config.json');
 
   if (!fs.existsSync(configFile)) {

@@ -73,6 +73,9 @@ jobs:
     env:
       ACR_NAME: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
       ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io
+      # Intentional legacy naming: the production Container App is hosted in
+      # the rg-ppbf-enterprise-staging resource group. Do not infer target
+      # environment from the resource-group name.
       RESOURCE_GROUP: rg-ppbf-enterprise-staging
       CONTAINER_APP_NAME: app-ppbf-production
     steps:
@@ -92,6 +95,18 @@ jobs:
       - name: Log in to Azure Container Registry
         run: |
           az acr login --name "$ACR_NAME"
+
+      - name: Verify exact production target
+        run: |
+          if [ "$RESOURCE_GROUP" != "rg-ppbf-enterprise-staging" ]; then
+            echo "::error::Unexpected production resource group '$RESOURCE_GROUP'."
+            exit 1
+          fi
+
+          if [ "$CONTAINER_APP_NAME" != "app-ppbf-production" ]; then
+            echo "::error::Unexpected production app name '$CONTAINER_APP_NAME'."
+            exit 1
+          fi
 
       - name: Load Azure Container Registry deploy credentials
         id: acr-credentials

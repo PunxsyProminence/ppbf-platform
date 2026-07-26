@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
-import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { jsonError, parseSafeLimit, requirePrincipal } from '@/src/server/pilot/http';
 import { getGrowthMetrics } from '@/src/server/pilot/shadowMetrics';
 import { queryOne } from '@/src/server/pilot/db';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
@@ -55,9 +55,12 @@ export async function GET(request: NextRequest) {
     await assertShadowRuntimeReadiness({ requiredTables: ['shadow_feedback', 'shadow_learning_events', 'shadow_user_profiles'] });
 
     const url = new URL(request.url);
-    const daysParam = url.searchParams.get('days') ?? '30';
-    const days = Number.parseInt(daysParam, 10);
+    const days = parseSafeLimit(url.searchParams.get('days'), 30, 365);
     const userId = url.searchParams.get('userId');
+
+    if (days === null) {
+      return NextResponse.json({ error: 'Invalid days parameter' }, { status: 400 });
+    }
 
     if (userId) {
       // User-specific metrics

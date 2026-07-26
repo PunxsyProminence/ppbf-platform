@@ -5,7 +5,7 @@ import { jsonError } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
 
-export async function POST(request: NextRequest) {
+async function handleSession(request: NextRequest) {
   try {
     const principal = await resolvePrincipal(request);
     if (!principal) {
@@ -19,8 +19,17 @@ export async function POST(request: NextRequest) {
       organization_id: principal.organizationId,
       athlete_id: principal.athleteId,
       auth_provider: principal.authProvider,
+      authProvider: principal.authProvider,
     });
   } catch (error) {
     return jsonError(error);
   }
+}
+
+export async function POST(request: NextRequest) {
+  return handleSession(request);
+}
+
+export async function GET(request: NextRequest) {
+  return handleSession(request);
 }

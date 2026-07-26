@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
-import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { jsonError, parseSafeLimit, requirePrincipal } from '@/src/server/pilot/http';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import {
   getShadowFeedbackSummary,
@@ -20,8 +20,12 @@ export async function GET(request: NextRequest) {
     await assertShadowRuntimeReadiness({ requiredTables: ['shadow_feedback'] });
 
     const url = new URL(request.url);
-    const days = Number.parseInt(url.searchParams.get('days') ?? '30', 10);
-    const limit = Number.parseInt(url.searchParams.get('limit') ?? '50', 10);
+    const days = parseSafeLimit(url.searchParams.get('days'), 30, 365);
+    const limit = parseSafeLimit(url.searchParams.get('limit'), 50, 250);
+
+    if (days === null || limit === null) {
+      return NextResponse.json({ ok: false, error: 'Invalid days or limit parameter' }, { status: 400 });
+    }
 
     const [summary, items] = await Promise.all([
       getShadowFeedbackSummary(principal.organizationId, days),

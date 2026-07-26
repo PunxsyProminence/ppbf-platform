@@ -431,6 +431,10 @@ export async function getScorecard(
   organizationId: string,
   days = 30,
 ): Promise<ShadowScorecard> {
+  if (!Number.isFinite(days) || days <= 0) {
+    throw new Error('Invalid days');
+  }
+
   const [events, topTopics, profiles] = await Promise.all([
     queryOne<{
       total: number;
@@ -445,18 +449,18 @@ export async function getScorecard(
          COALESCE(SUM((actions_taken::jsonb)->>'factsExtracted')::int, 0) AS facts_extracted
        FROM pilot.shadow_learning_events
        WHERE organization_id = $1
-         AND created_at > NOW() - INTERVAL '${days} days'`,
-      [organizationId],
+         AND created_at > NOW() - ($2::numeric * INTERVAL '1 day')`,
+      [organizationId, days],
     ),
     query<{ topic: string; count: number }>(
       `SELECT topic, COUNT(*) AS count
        FROM pilot.shadow_learning_events
        WHERE organization_id = $1
-         AND created_at > NOW() - INTERVAL '${days} days'
+         AND created_at > NOW() - ($2::numeric * INTERVAL '1 day')
        GROUP BY topic
        ORDER BY count DESC
        LIMIT 5`,
-      [organizationId],
+      [organizationId, days],
     ),
     queryOne<{ gold: number; silver: number; bronze: number }>(
       `SELECT

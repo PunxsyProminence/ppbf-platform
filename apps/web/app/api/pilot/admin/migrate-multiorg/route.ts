@@ -6,8 +6,19 @@ import { jsonError } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
 
+const CONTROL_PLANE_HEADER = 'x-ppbf-control-plane';
+
+function requireControlPlaneIntent(request: NextRequest, expectedValue: string) {
+  const intent = request.headers.get(CONTROL_PLANE_HEADER)?.trim() || '';
+  if (intent !== expectedValue) {
+    throw new Error('Forbidden: control plane request required');
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
+    requireControlPlaneIntent(request, 'migrate');
+
     const bootstrapKey = process.env.PPBF_PILOT_BOOTSTRAP_KEY?.trim() || '';
     const providedKey = request.headers.get('x-ppbf-bootstrap-key')?.trim() || '';
 

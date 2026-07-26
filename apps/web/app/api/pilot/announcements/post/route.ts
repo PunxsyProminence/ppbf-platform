@@ -2,45 +2,41 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { createAnnouncement, isAllowedAnnouncementRole } from '@/src/server/pilot/announcements';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
-import { getPilotDefaultOrganizationId } from '@/src/server/pilot/env';
-import { jsonError } from '@/src/server/pilot/http';
+import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
 
+function mapPrincipalRoleToAnnouncementRole(role: string): 'admin' | 'coach' | null {
+  if (role === 'organization_admin' || role === 'admin' || role === 'platform_owner') {
+    return 'admin';
+  }
+  if (role === 'coach') {
+    return 'coach';
+  }
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   try {
+    const principal = await requirePrincipal(request);
     const body = (await request.json()) as {
-      organization_id?: string;
       message?: string;
       author_name?: string;
       author_role?: string;
       access_pin?: string;
     };
 
-    const organizationId = body.organization_id?.trim() || getPilotDefaultOrganizationId();
+    const organizationId = principal.organizationId;
     const message = body.message?.trim() || '';
-    const authorName = body.author_name?.trim() || '';
-    const authorRole = body.author_role?.trim() || '';
-    const accessPin = body.access_pin?.trim() || '';
+    const authorName = principal.accountId;
+    const authorRole = mapPrincipalRoleToAnnouncementRole(principal.role);
 
     if (!message) {
       throw new Error('Missing message');
     }
 
-    if (!authorName) {
-      throw new Error('Missing author_name');
-    }
-
-    if (!isAllowedAnnouncementRole(authorRole)) {
+    if (!authorRole || !isAllowedAnnouncementRole(authorRole)) {
       throw new Error('Forbidden: role not allowed to post announcements');
-    }
-
-    const requiredPin = process.env.PPBF_OPERATOR_PIN?.trim();
-    if (!requiredPin) {
-      throw new Error('Server misconfiguration: PPBF_OPERATOR_PIN is required');
-    }
-    if (!accessPin || accessPin !== requiredPin) {
-      throw new Error('Forbidden: invalid access PIN');
     }
 
     const announcement = await createAnnouncement({
@@ -52,8 +48,8 @@ export async function POST(request: NextRequest) {
 
     await writePilotAuditEvent({
       event_type: 'create',
-      actor_account_id: null,
-      actor_role: null,
+      actor_account_id: principal.accountId,
+      actor_role: principal.role,
       organization_id: organizationId,
       entity_type: 'announcement',
       entity_id: announcement.announcement_id,

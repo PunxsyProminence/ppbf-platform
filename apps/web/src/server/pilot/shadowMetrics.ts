@@ -50,6 +50,10 @@ export async function getGrowthMetrics(
   organizationId: string,
   days = 30,
 ): Promise<GrowthMetrics> {
+  if (!Number.isFinite(days) || days <= 0) {
+    throw new Error('Invalid days');
+  }
+
   // Parameterized interval using integer days (safe from injection)
   const safeDays = Math.max(1, Math.min(365, Math.floor(days)));
 
