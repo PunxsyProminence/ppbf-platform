@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { createAnnouncement, isAllowedAnnouncementRole } from '@/src/server/pilot/announcements';
+import { resolvePrincipal } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
-import { getPilotDefaultOrganizationId } from '@/src/server/pilot/env';
 import { jsonError } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
@@ -14,14 +14,21 @@ export async function POST(request: NextRequest) {
       message?: string;
       author_name?: string;
       author_role?: string;
-      access_pin?: string;
     };
 
-    const organizationId = body.organization_id?.trim() || getPilotDefaultOrganizationId();
+    const principal = await resolvePrincipal(request);
+    if (!principal) {
+      throw new Error('Unauthorized: login required');
+    }
+
+    if (body.organization_id && body.organization_id.trim() !== principal.organizationId) {
+      throw new Error('Forbidden: organization mismatch');
+    }
+
+    const organizationId = principal.organizationId;
     const message = body.message?.trim() || '';
     const authorName = body.author_name?.trim() || '';
     const authorRole = body.author_role?.trim() || '';
-    const accessPin = body.access_pin?.trim() || '';
 
     if (!message) {
       throw new Error('Missing message');
@@ -35,12 +42,8 @@ export async function POST(request: NextRequest) {
       throw new Error('Forbidden: role not allowed to post announcements');
     }
 
-    const requiredPin = process.env.PPBF_OPERATOR_PIN?.trim();
-    if (!requiredPin) {
-      throw new Error('Server misconfiguration: PPBF_OPERATOR_PIN is required');
-    }
-    if (!accessPin || accessPin !== requiredPin) {
-      throw new Error('Forbidden: invalid access PIN');
+    if (principal.authProvider !== 'microsoft') {
+      throw new Error('Forbidden: Microsoft authentication required');
     }
 
     const announcement = await createAnnouncement({
@@ -52,8 +55,8 @@ export async function POST(request: NextRequest) {
 
     await writePilotAuditEvent({
       event_type: 'create',
-      actor_account_id: null,
-      actor_role: null,
+      actor_account_id: principal.accountId,
+      actor_role: principal.role,
       organization_id: organizationId,
       entity_type: 'announcement',
       entity_id: announcement.announcement_id,

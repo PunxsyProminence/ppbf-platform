@@ -1,21 +1,29 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { jsonError } from '@/src/server/pilot/http';
-import { getPilotDefaultOrganizationId } from '@/src/server/pilot/env';
 import { listAnnouncements } from '@/src/server/pilot/announcements';
+import { resolvePrincipal } from '@/src/server/pilot/auth';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json().catch(() => ({}))) as { organization_id?: string; limit?: number };
+    const principal = await resolvePrincipal(request);
 
-    const organizationId = body.organization_id?.trim() || getPilotDefaultOrganizationId();
-    const announcements = await listAnnouncements(organizationId, body.limit ?? 8);
+    if (!principal) {
+      throw new Error('Unauthorized: login required');
+    }
+
+    if (body.organization_id && body.organization_id.trim() !== principal.organizationId) {
+      throw new Error('Forbidden: organization mismatch');
+    }
+
+    const announcements = await listAnnouncements(principal.organizationId, body.limit ?? 8);
 
     return NextResponse.json({
       ok: true,
-      organization_id: organizationId,
+      organization_id: principal.organizationId,
       announcements,
     });
   } catch (error) {
