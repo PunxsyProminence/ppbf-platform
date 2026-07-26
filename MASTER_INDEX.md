@@ -11,16 +11,20 @@ branches in this repo have repeatedly been many commits behind — verify agains
 
 ## Start here
 
-- [README.md](README.md) — what the project is
+- [README.md](README.md) — what the project is, verified quick start
 - [DEVELOPER_ONBOARDING.md](DEVELOPER_ONBOARDING.md) — getting a local environment running
 - [SEED_GUIDE.md](SEED_GUIDE.md) — seeding data
-- [QUALITY_CHECKLIST.md](QUALITY_CHECKLIST.md) — what to check before shipping
 
 ## Contracts and interfaces
 
 - [AUTH_CONTRACT.md](AUTH_CONTRACT.md) — authentication and principal model
-- [API_DOCS.md](API_DOCS.md) — HTTP surface
 - [docs/FRONTEND_STYLE_CONTRACT.md](docs/FRONTEND_STYLE_CONTRACT.md) — UI conventions
+
+Note: `API_DOCS.md` and `QUALITY_CHECKLIST.md` were archived — both described
+a planned/aspirational state (a placeholder endpoint list and a governance
+checklist) that never matched the real API surface or dev workflow. The real
+HTTP surface lives under `apps/web/app/api/**/route.ts`; the real quality
+gates are `npm run typecheck` / `lint` / `test`.
 
 ## Architecture
 

@@ -57,6 +57,13 @@ anywhere in `apps/web`. The backend that actually shipped is Postgres
 (`pilot.*` schema) via `apps/web/src/server/pilot/*`, with entirely different
 table names. None of this plan was built.
 
+**Never matched reality:** `API_DOCS` was explicitly labeled "(Planned)" /
+"(Future)" and listed four generic endpoints that never resembled the real
+API surface (`apps/web/app/api/pilot/**`). `QUALITY_CHECKLIST` described a
+governance framework ("Continuity Ledger", "Jason approval before promotion")
+that was never the actual dev workflow — the real gates are
+`npm run typecheck` / `lint` / `test`.
+
 **Superseded naming:** `TENANT_ARCHITECTURE` proposed a `tenant_id`-based
 isolation model. The multi-org work that actually shipped used
 `organization_id` instead (see `pilot_slice_postgres_multiorg_migration.sql`
