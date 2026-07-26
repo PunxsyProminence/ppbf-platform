@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useState, type ReactElement } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { type ClubRole } from '@/components/roleRoutes';
@@ -10,13 +10,7 @@ import {
   createPersistentRoleSession,
   loadAuthoritativeRoleSession,
 } from '@/components/roleSession';
-import {
-  createMicrosoftSignInHandler,
-  getTabButtonClass,
-  validateAnnouncementPublishInput,
-} from '@/src/client/loginPageHelpers';
-
-type ActiveTab = 'login' | 'register' | 'announcement';
+import { createMicrosoftSignInHandler } from '@/src/client/loginPageHelpers';
 
 interface LoginAnnouncement {
   id: string;
@@ -257,114 +251,11 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
   );
 }
 
-function RegisterTabContent() {
-  return (
-    <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">Registration</p>
-      <p className="mt-3 text-sm leading-6 text-[var(--black)]">
-        New organizations and user accounts are created inside Organization Provisioning. Sign in with an admin Account ID and PIN first,
-        then open the provisioning workspace to add organizations, admins, coaches, athletes, and parents.
-      </p>
-      <Link
-        href="/admin/organizations"
-        className="mt-4 inline-flex w-full min-h-[44px] items-center justify-center border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 text-xs font-black uppercase tracking-[0.12em] text-[var(--white)] transition hover:bg-[var(--red-highlight)]"
-      >
-        Open Organization Provisioning
-      </Link>
-    </div>
-  );
-}
-
-interface AnnouncementTabProps {
-  announcements: LoginAnnouncement[];
-  announcementAuthorName: string;
-  setAnnouncementAuthorName: (value: string) => void;
-  draftAnnouncement: string;
-  setDraftAnnouncement: (value: string) => void;
-  announcementPin: string;
-  setAnnouncementPin: (value: string) => void;
-  announcementError: string;
-  announcementSavedAt: string | null;
-  publishAnnouncement: () => Promise<void>;
-}
-
-function AnnouncementTabContent(props: Readonly<AnnouncementTabProps>) {
-  return (
-    <>
-      <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">Message Feed</p>
-        <div className="mt-3 grid gap-3">
-          {props.announcements.map((item) => (
-            <AnnouncementCard key={item.id} item={item} />
-          ))}
-        </div>
-      </div>
-
-      <p className="text-xs uppercase tracking-[0.18em] text-[var(--gray-medium)]">Coach, Admin, and Board can publish</p>
-
-      <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-[var(--black)]" htmlFor="announcement-author-name">
-        Your Name
-      </label>
-      <input
-        id="announcement-author-name"
-        type="text"
-        value={props.announcementAuthorName}
-        onChange={(event) => props.setAnnouncementAuthorName(event.target.value)}
-        placeholder="Name shown on announcement"
-        className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
-      />
-
-      <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-[var(--black)]" htmlFor="announcement-draft">
-        Announcement
-      </label>
-      <textarea
-        id="announcement-draft"
-        value={props.draftAnnouncement}
-        onChange={(event) => props.setDraftAnnouncement(event.target.value)}
-        rows={4}
-        className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
-        placeholder="Type message for members..."
-      />
-
-      <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-[var(--black)]" htmlFor="announcement-pin">
-        Access PIN
-      </label>
-      <input
-        id="announcement-pin"
-        type="password"
-        inputMode="numeric"
-        value={props.announcementPin}
-        onChange={(event) => props.setAnnouncementPin(event.target.value)}
-        placeholder="Enter access PIN"
-        className="w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-[var(--black)] outline-none transition placeholder-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:bg-[var(--canvas-tan-light)]"
-      />
-
-      {props.announcementError ? <p className="text-sm text-[var(--red-primary)]">{props.announcementError}</p> : null}
-      {props.announcementSavedAt ? <p className="text-[11px] font-mono text-[var(--gray-medium)]">Last posted: {props.announcementSavedAt}</p> : null}
-
-      <button
-        type="button"
-        onClick={() => void props.publishAnnouncement()}
-        className="mt-2 inline-flex w-full items-center justify-center border-2 border-[var(--black)] bg-[var(--gray-dark)] px-4 py-3 text-sm font-black uppercase tracking-[0.2em] text-[var(--white)] transition hover:bg-[var(--black)]"
-      >
-        Post
-      </button>
-    </>
-  );
-}
-
 function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [selectedRole] = useState<ClubRole>('athlete');
-  const [activeTab, setActiveTab] = useState<ActiveTab>('login');
   const [selectedMethod, setSelectedMethod] = useState<LoginMethod>('pin');
   const [announcements, setAnnouncements] = useState<LoginAnnouncement[]>([DEFAULT_ANNOUNCEMENT]);
-  const [draftAnnouncement, setDraftAnnouncement] = useState('');
-  const [announcementAuthorName, setAnnouncementAuthorName] = useState('');
-  const [announcementPin, setAnnouncementPin] = useState('');
-  const [announcementError, setAnnouncementError] = useState('');
-  const [announcementSavedAt, setAnnouncementSavedAt] = useState<string | null>(null);
   const [loginAccountId, setLoginAccountId] = useState('');
   const [loginPin, setLoginPin] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
@@ -474,67 +365,6 @@ function LoginPageContent() {
     })();
   }, []);
 
-  async function publishAnnouncement() {
-    const validationError = validateAnnouncementPublishInput({
-      selectedRole,
-      announcementPin,
-      draftAnnouncement,
-      announcementAuthorName,
-    });
-
-    if (validationError) {
-      setAnnouncementError(validationError);
-      return;
-    }
-
-    const response = await fetch(`${apiBase()}/api/pilot/announcements/post`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: draftAnnouncement.trim(),
-        author_name: announcementAuthorName.trim(),
-        author_role: selectedRole,
-        access_pin: announcementPin.trim(),
-      }),
-    });
-
-    if (!response.ok) {
-      const payload = (await response.json().catch(() => ({ error: 'Failed to post announcement.' }))) as { error?: string };
-      setAnnouncementError(payload.error || 'Failed to post announcement.');
-      return;
-    }
-
-    const payload = (await response.json()) as {
-      announcement?: {
-        announcement_id: string;
-        message: string;
-        author_name: string;
-        author_role: ClubRole;
-        created_at: string;
-      };
-    };
-
-    const created = payload.announcement;
-    if (!created) {
-      setAnnouncementError('Announcement response missing record.');
-      return;
-    }
-
-    const record: LoginAnnouncement = {
-      id: created.announcement_id,
-      message: created.message,
-      authorName: created.author_name,
-      authorRole: created.author_role,
-      createdAt: new Date(created.created_at).toLocaleString(),
-    };
-
-    setAnnouncements((current) => [record, ...current].slice(0, 12));
-    setAnnouncementError('');
-    setAnnouncementPin('');
-    setDraftAnnouncement('');
-    setAnnouncementSavedAt(record.createdAt);
-  }
-
   async function loginWithPin() {
     const acctId = loginAccountId.trim();
     const pinCode = loginPin.trim();
@@ -608,42 +438,6 @@ function LoginPageContent() {
 
   const microsoftSignIn = createMicrosoftSignInHandler(apiBase());
 
-  const tabContentMap: Record<ActiveTab, ReactElement> = {
-    login: (
-      <LoginTabContent
-        announcements={announcements}
-        signInWithMicrosoft={microsoftSignIn}
-        loginAccountId={loginAccountId}
-        setLoginAccountId={setLoginAccountId}
-        loginPin={loginPin}
-        setLoginPin={setLoginPin}
-        loginBusy={loginBusy}
-        loginError={loginError}
-        loginWithPin={loginWithPin}
-        authErrorMessage={authErrorMessage}
-        selectedMethod={selectedMethod}
-        setSelectedMethod={setSelectedMethod}
-      />
-    ),
-    register: <RegisterTabContent />,
-    announcement: (
-      <AnnouncementTabContent
-        announcements={announcements}
-        announcementAuthorName={announcementAuthorName}
-        setAnnouncementAuthorName={setAnnouncementAuthorName}
-        draftAnnouncement={draftAnnouncement}
-        setDraftAnnouncement={setDraftAnnouncement}
-        announcementPin={announcementPin}
-        setAnnouncementPin={setAnnouncementPin}
-        announcementError={announcementError}
-        announcementSavedAt={announcementSavedAt}
-        publishAnnouncement={publishAnnouncement}
-      />
-    ),
-  };
-
-  const activeTabContent = tabContentMap[activeTab];
-
   return (
     <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       <div className="mx-auto grid min-h-screen w-full max-w-5xl place-items-center px-6 py-10 lg:px-10">
@@ -660,38 +454,25 @@ function LoginPageContent() {
             </div>
             <h1 className="mt-4 text-4xl font-black tracking-[0.1em] text-[var(--black)] md:text-5xl">The Bell</h1>
             <p className="mt-3 text-sm leading-relaxed text-[var(--gray-dark)]">
-              Sign in with Account ID/PIN or Microsoft. Admins can add organizations and user accounts after login.
+              Sign in with your Account ID and PIN, or continue with Microsoft. You&apos;ll land on the right dashboard for your role.
             </p>
           </div>
 
-          <div className="border-b border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan)] px-8 py-6">
-            <div className="grid grid-cols-3 gap-3 rounded-2xl border border-[rgba(0,0,0,0.12)] bg-white p-2 shadow-[var(--shadow-sm)]">
-              <button
-                type="button"
-                onClick={() => setActiveTab('login')}
-                className={`px-4 py-3 text-xs font-black uppercase tracking-[0.2em] transition ${getTabButtonClass(activeTab === 'login')}`}
-              >
-                Login
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('register')}
-                className={`px-4 py-3 text-xs font-black uppercase tracking-[0.2em] transition ${getTabButtonClass(activeTab === 'register')}`}
-              >
-                Register
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('announcement')}
-                className={`px-4 py-3 text-xs font-black uppercase tracking-[0.2em] transition ${getTabButtonClass(activeTab === 'announcement')}`}
-              >
-                Word
-              </button>
-            </div>
-          </div>
-
           <div className="space-y-6 px-8 py-8">
-            {activeTabContent}
+            <LoginTabContent
+              announcements={announcements}
+              signInWithMicrosoft={microsoftSignIn}
+              loginAccountId={loginAccountId}
+              setLoginAccountId={setLoginAccountId}
+              loginPin={loginPin}
+              setLoginPin={setLoginPin}
+              loginBusy={loginBusy}
+              loginError={loginError}
+              loginWithPin={loginWithPin}
+              authErrorMessage={authErrorMessage}
+              selectedMethod={selectedMethod}
+              setSelectedMethod={setSelectedMethod}
+            />
           </div>
         </section>
       </div>
