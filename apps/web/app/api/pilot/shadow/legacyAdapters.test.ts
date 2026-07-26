@@ -67,7 +67,7 @@ describe('legacy SHADOW chat compatibility adapters', () => {
     expect(mockedCanonicalPost).toHaveBeenCalledTimes(2);
   });
 
-  it('overwrites an athlete caller override with the authenticated athlete identity', async () => {
+  it('drops client organization scope and overwrites athlete scope with the authenticated identity', async () => {
     mockedRequirePrincipal.mockResolvedValueOnce({
       accountId: 'account-a',
       organizationId: 'org-a',
@@ -84,10 +84,9 @@ describe('legacy SHADOW chat compatibility adapters', () => {
     }));
 
     const forwarded = mockedCanonicalPost.mock.calls[0][0];
-    await expect(forwarded.json()).resolves.toMatchObject({
+    await expect(forwarded.json()).resolves.toEqual({
       message: 'my training',
       athleteId: 'athlete-a',
-      organizationId: 'org-b',
     });
   });
 
