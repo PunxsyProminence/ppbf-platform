@@ -1,21 +1,55 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getRoleSessionRoute, readRoleSession } from '@/components/roleSession';
+import {
+  clearRoleSession,
+  createPersistentRoleSession,
+  loadAuthoritativeRoleSession,
+} from '@/components/roleSession';
+import { apiBase } from '@/lib/apiBase';
 
 export default function DashboardEntryPage() {
   const router = useRouter();
+  const [retryableForNonce, setRetryableForNonce] = useState<number | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
+  const retryable = retryableForNonce === retryNonce;
 
   useEffect(() => {
-    const session = readRoleSession();
-    if (session) {
-      router.replace(getRoleSessionRoute());
-      return;
-    }
+    const controller = new AbortController();
 
-    router.replace('/login');
-  }, [router]);
+    void (async () => {
+      try {
+        const resolution = await loadAuthoritativeRoleSession(
+          `${apiBase()}/api/pilot/auth/session`,
+          { signal: controller.signal },
+        );
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        if (!resolution.ok) {
+          if (resolution.reason === 'server_error') {
+            setRetryableForNonce(retryNonce);
+            return;
+          }
+          clearRoleSession();
+          router.replace('/login');
+          return;
+        }
+
+        createPersistentRoleSession(resolution.session.role);
+        router.replace(resolution.destination);
+      } catch (error) {
+        if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
+          return;
+        }
+        setRetryableForNonce(retryNonce);
+      }
+    })();
+
+    return () => controller.abort();
+  }, [retryNonce, router]);
 
   return (
     <main className="min-h-screen bg-[#0a0a0a] text-[#e8d7c6]">
@@ -23,8 +57,17 @@ export default function DashboardEntryPage() {
         <p className="text-xs font-mono uppercase tracking-[0.35em] text-[#d4a574]">Dashboard Entry</p>
         <h1 className="mt-3 text-4xl font-black tracking-tight md:text-5xl">The Bell</h1>
         <p className="mt-3 max-w-2xl text-sm leading-6 text-[#b0a095] md:text-base">
-          The browser session decides where you land.
+          Your verified server session decides where you land.
         </p>
+        {retryable && (
+          <button
+            type="button"
+            onClick={() => setRetryNonce((value) => value + 1)}
+            className="mt-5 min-h-[44px] border border-[#8b4444] bg-[#2a1515] px-5 text-sm font-black uppercase tracking-[0.12em] text-[#e8d7c6]"
+          >
+            Retry
+          </button>
+        )}
       </div>
     </main>
   );
