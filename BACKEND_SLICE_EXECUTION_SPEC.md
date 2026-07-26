@@ -166,43 +166,60 @@ Pass criteria:
 
 ---
 
-## Dependency-Ordered Todo List (Autopilot Build Queue)
+## Launch-Focused Queue (PPBF V1)
 
-### Phase 0 - Contract Lock
-1. Create pilot schema namespace/tables for frozen entities only.
-2. Freeze API contracts to frozen fields only.
-3. Define role-action matrix in code constants.
+### Mission
+Deliver a usable PPBF V1 at https://www.punxsyprominence.org where:
+- Jason signs in with Microsoft and can administer the gym.
+- Jason can create, activate, and reset athlete PIN access.
+- All eight athletes can use PIN login.
+- PIN sessions receive athlete access only.
+- Coaches use Microsoft login for privileged access.
+- Athlete dashboard and currently implemented basic SHADOW features work.
+- Phone and tablet workflows are usable.
 
-### Phase 1 - Auth Foundation
-4. Implement Athlete ID + PIN auth tables and hashed PIN verification.
-5. Implement persistent session token/cookie model (remember-device behavior).
-6. Implement logout, admin session revoke, and PIN reset invalidation logic.
-7. Add audit logging for login/logout/revoke/reset events.
+Do not expand the build beyond what is required for this outcome.
 
-### Phase 2 - Core Entity Persistence
-8. Implement Athlete create/save APIs with role enforcement and assigned-athlete checks.
-9. Implement Goal create/save APIs with ownership/assignment enforcement.
-10. Implement Session create/save APIs with ownership/assignment enforcement.
-11. Implement Coach Review create/save APIs with assignment enforcement.
-12. Add create/update audit writes for all four entities.
+### Completed Baseline
+- PR #18 is merged and deployed.
+- Production and staging are healthy.
+- Athlete-only PIN controls are implemented.
+- The current release uses the same staged image in production.
+- Further release-workflow hardening is post-launch unless it directly blocks this V1 release.
 
-### Phase 3 - SHADOW Intake
-13. Implement SHADOW upload API (file to Azure Blob Storage + metadata row).
-14. Implement deterministic classification stage and persistence.
-15. Implement routing stage to review queues and persistence.
-16. Enforce no automatic operational writes from SHADOW intake outputs.
-17. Add SHADOW classification/routing audit events.
+### Immediate Housekeeping
+- Reverse only the exact queue-document edit previously introduced in the dirty checkout.
+- Do not switch branches, clean, stash, reset, restore, stage, commit, or alter any unrelated file in that checkout.
+- After reversing that one edit, leave the dirty checkout alone.
+- Use a fresh isolated worktree from current origin/main for all remaining source work.
 
-### Phase 4 - UI Wiring
-18. Wire login/logout UI to new persistent auth APIs.
-19. Wire Athlete/Goal/Session/Coach Review create/save UI calls to backend APIs.
-20. Keep excluded domains untouched (AI/compliance/publication/progression).
+### Launch Queue
+1. Targeted login truth check
+Inspect only existing authentication, account-management, membership, athlete-number, and relevant UI paths.
 
-### Phase 5 - Verification Gates
-21. Execute mandatory end-to-end pass/fail scenario.
-22. Verify refresh/logout/login/reload persistence and relational integrity.
-23. Verify role boundaries and forbidden athlete field changes.
-24. Verify SHADOW intake stores files, classifies, routes, and awaits human approval.
+Confirm what already works:
+- athlete PIN login
+- Jason Microsoft login
+- athlete dashboard
+- coach interface
+- gym-admin athlete/PIN management
+- PIN activation/reset
+- basic SHADOW access
+- phone/tablet layout
+
+Do not perform another broad repository, Azure, cost, or architecture audit.
+Produce one short list containing only actual launch blockers.
+
+2. Fix the minimum launch blockers
+Create one focused V1-login branch and PR if source or schema changes are required.
+
+Implementation requirements:
+- Microsoft privileged login validates signature, issuer, audience, nonce, expiry, and expected tenant.
+- PIN login remains athlete-only.
+- Coach/admin privileged paths require Microsoft-authenticated sessions.
+- Gym admin can create athlete account entries, then activate/reset athlete PIN.
+- Scope all admin mutations to the caller organization.
+- Keep UI flow usable on phone and tablet.
 
 ## Out of Scope (Do Not Build in This Slice)
 - AI features

@@ -71,4 +71,20 @@ describe('POST /api/pilot/admin/athlete-accounts', () => {
       account_state: 'pending_pin_activation',
     });
   });
+
+  test('allows platform owner to create a pending athlete account', async () => {
+    mockRequireMicrosoftAuthenticatedPrincipal.mockResolvedValueOnce({
+      accountId: 'owner@punxsyprominence.org',
+      role: 'platform_owner',
+      organizationId: 'org-1',
+      athleteId: null,
+      sessionToken: 'token',
+      authProvider: 'microsoft',
+    });
+
+    const response = await POST(makeRequest({ account_id: 'ath-account-2', athlete_id: 'ath-2' }));
+
+    expect(response.status).toBe(200);
+    expect(mockCreateAthleteAccount).toHaveBeenCalledWith('ath-account-2', 'ath-2', 'org-1');
+  });
 });

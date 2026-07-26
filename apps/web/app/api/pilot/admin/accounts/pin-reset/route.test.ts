@@ -99,4 +99,21 @@ describe('POST /api/pilot/admin/accounts/pin-reset', () => {
     expect(mockReset).toHaveBeenCalledWith('ath-account-2', '123456', 'org-1');
     expect(mockActivate).not.toHaveBeenCalled();
   });
+
+  test('allows platform owner to activate athlete PIN in org scope', async () => {
+    mockRequireMicrosoftAuthenticatedPrincipal.mockResolvedValueOnce({
+      accountId: 'owner@punxsyprominence.org',
+      role: 'platform_owner',
+      organizationId: 'org-1',
+      athleteId: null,
+      sessionToken: 'token',
+      authProvider: 'microsoft',
+    });
+
+    const response = await POST(makeRequest({ account_id: 'ath-account-3', pin: '123456', mode: 'activate' }));
+
+    expect(response.status).toBe(200);
+    expect(mockActivate).toHaveBeenCalledWith('ath-account-3', '123456', 'org-1');
+    expect(mockReset).not.toHaveBeenCalled();
+  });
 });
