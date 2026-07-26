@@ -1,8 +1,8 @@
 import { NextRequest } from 'next/server';
 
 import { POST } from './route';
-import { resolvePrincipal } from '@/src/server/pilot/auth';
-import { createAnnouncement, isAllowedAnnouncementRole } from '@/src/server/pilot/announcements';
+import { resolvePrincipal, type PilotPrincipal } from '@/src/server/pilot/auth';
+import { createAnnouncement } from '@/src/server/pilot/announcements';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 
 jest.mock('@/src/server/pilot/auth', () => ({
@@ -11,7 +11,7 @@ jest.mock('@/src/server/pilot/auth', () => ({
 
 jest.mock('@/src/server/pilot/announcements', () => ({
   createAnnouncement: jest.fn(),
-  isAllowedAnnouncementRole: jest.fn(() => true),
+  isAllowedAnnouncementRole: jest.requireActual('@/src/server/pilot/announcements').isAllowedAnnouncementRole,
 }));
 
 jest.mock('@/src/server/pilot/audit', () => ({
@@ -20,12 +20,23 @@ jest.mock('@/src/server/pilot/audit', () => ({
 
 const mockResolvePrincipal = resolvePrincipal as jest.MockedFunction<typeof resolvePrincipal>;
 const mockCreateAnnouncement = createAnnouncement as jest.MockedFunction<typeof createAnnouncement>;
-const mockIsAllowedAnnouncementRole = isAllowedAnnouncementRole as jest.MockedFunction<typeof isAllowedAnnouncementRole>;
 const mockWritePilotAuditEvent = writePilotAuditEvent as jest.MockedFunction<typeof writePilotAuditEvent>;
 
 afterEach(() => {
   jest.clearAllMocks();
 });
+
+function principal(overrides: Partial<PilotPrincipal> = {}): PilotPrincipal {
+  return {
+    accountId: 'coach-1',
+    role: 'coach',
+    organizationId: 'org-1',
+    athleteId: null,
+    sessionToken: 'token-1',
+    authProvider: 'microsoft',
+    ...overrides,
+  } as PilotPrincipal;
+}
 
 function request(body: Record<string, unknown>) {
   return new NextRequest('http://localhost/api/pilot/announcements/post', {
@@ -35,16 +46,38 @@ function request(body: Record<string, unknown>) {
   });
 }
 
+beforeEach(() => {
+  mockCreateAnnouncement.mockResolvedValue({
+    announcement_id: 'ann-1',
+    organization_id: 'org-1',
+    message: 'Hello',
+    author_name: 'Coach',
+    author_role: 'coach',
+    created_at: '2026-07-26T00:00:00.000Z',
+  });
+});
+
 describe('POST /api/pilot/announcements/post', () => {
-  test('rejects organization substitution attempts', async () => {
-    mockResolvePrincipal.mockResolvedValueOnce({
-      accountId: 'coach-1',
-      role: 'coach',
-      organizationId: 'org-1',
-      athleteId: null,
-      sessionToken: 'token-1',
-      authProvider: 'microsoft',
-    });
+  test('rejects an unauthenticated caller', async () => {
+    mockResolvePrincipal.mockResolvedValueOnce(null);
+
+    const res = await POST(request({ message: 'Hello', author_name: 'Coach', author_role: 'coach' }));
+
+    expect(res.status).toBe(401);
+    expect(mockCreateAnnouncement).not.toHaveBeenCalled();
+  });
+
+  test('rejects a PIN-authenticated principal', async () => {
+    mockResolvePrincipal.mockResolvedValueOnce(principal({ authProvider: 'ppbf_local' }));
+
+    const res = await POST(request({ message: 'Hello', author_name: 'Coach', author_role: 'coach' }));
+
+    expect(res.status).toBe(403);
+    expect(mockCreateAnnouncement).not.toHaveBeenCalled();
+  });
+
+  test('ignores a caller-supplied organization_id and scopes to the principal organization', async () => {
+    mockResolvePrincipal.mockResolvedValueOnce(principal());
 
     const res = await POST(request({
       organization_id: 'org-2',
@@ -53,42 +86,55 @@ describe('POST /api/pilot/announcements/post', () => {
       author_role: 'coach',
     }));
 
+    expect(res.status).toBe(200);
+    expect(mockCreateAnnouncement).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'org-1' }));
+  });
+
+  test('does not let a coach claim the admin author role', async () => {
+    mockResolvePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+
+    const res = await POST(request({ message: 'Hello', author_name: 'Coach', author_role: 'admin' }));
+
+    expect(res.status).toBe(200);
+    expect(mockCreateAnnouncement).toHaveBeenCalledWith(expect.objectContaining({ authorRole: 'coach' }));
+  });
+
+  test('does not let a coach claim a board seat', async () => {
+    mockResolvePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+
+    const res = await POST(request({ message: 'Hello', author_name: 'Coach', author_role: 'board-president' }));
+
+    expect(res.status).toBe(200);
+    expect(mockCreateAnnouncement).toHaveBeenCalledWith(expect.objectContaining({ authorRole: 'coach' }));
+  });
+
+  test('lets a board principal pick its own seat but nothing outside the board seats', async () => {
+    mockResolvePrincipal.mockResolvedValueOnce(principal({ role: 'board', accountId: 'board-1' }));
+
+    const allowed = await POST(request({ message: 'Hello', author_name: 'Treasurer', author_role: 'board-treasurer' }));
+    expect(allowed.status).toBe(200);
+    expect(mockCreateAnnouncement).toHaveBeenCalledWith(expect.objectContaining({ authorRole: 'board-treasurer' }));
+
+    mockResolvePrincipal.mockResolvedValueOnce(principal({ role: 'board', accountId: 'board-1' }));
+    const denied = await POST(request({ message: 'Hello', author_name: 'Treasurer', author_role: 'admin' }));
+    expect(denied.status).toBe(403);
+  });
+
+  test('rejects a role that may not post announcements at all', async () => {
+    mockResolvePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', accountId: 'athlete-1' }));
+
+    const res = await POST(request({ message: 'Hello', author_name: 'Athlete', author_role: 'coach' }));
+
     expect(res.status).toBe(403);
     expect(mockCreateAnnouncement).not.toHaveBeenCalled();
   });
 
-  test('requires Microsoft-authenticated principals and records audit without announcement content', async () => {
-    mockResolvePrincipal.mockResolvedValueOnce({
-      accountId: 'coach-1',
-      role: 'coach',
-      organizationId: 'org-1',
-      athleteId: null,
-      sessionToken: 'token-1',
-      authProvider: 'microsoft',
-    });
-    mockIsAllowedAnnouncementRole.mockReturnValueOnce(true);
-    mockCreateAnnouncement.mockResolvedValueOnce({
-      announcement_id: 'ann-1',
-      organization_id: 'org-1',
-      message: 'Hello',
-      author_name: 'Coach',
-      author_role: 'coach',
-      created_at: '2026-07-26T00:00:00.000Z',
-    });
+  test('records the real actor in the audit event without copying the announcement body', async () => {
+    mockResolvePrincipal.mockResolvedValueOnce(principal());
 
-    const res = await POST(request({
-      message: 'Hello',
-      author_name: 'Coach',
-      author_role: 'coach',
-    }));
+    const res = await POST(request({ message: 'Hello', author_name: 'Coach', author_role: 'coach' }));
 
     expect(res.status).toBe(200);
-    expect(mockCreateAnnouncement).toHaveBeenCalledWith({
-      organizationId: 'org-1',
-      message: 'Hello',
-      authorName: 'Coach',
-      authorRole: 'coach',
-    });
     expect(mockWritePilotAuditEvent).toHaveBeenCalledWith(expect.objectContaining({
       actor_account_id: 'coach-1',
       actor_role: 'coach',
@@ -99,25 +145,5 @@ describe('POST /api/pilot/announcements/post', () => {
       },
     }));
     expect(JSON.stringify(mockWritePilotAuditEvent.mock.calls[0]?.[0])).not.toContain('Hello');
-  });
-
-  test('rejects non-Microsoft principals for announcement posting', async () => {
-    mockResolvePrincipal.mockResolvedValueOnce({
-      accountId: 'athlete-1',
-      role: 'athlete',
-      organizationId: 'org-1',
-      athleteId: 'ath-1',
-      sessionToken: 'token-1',
-      authProvider: 'ppbf_local',
-    });
-
-    const res = await POST(request({
-      message: 'Hello',
-      author_name: 'Athlete',
-      author_role: 'coach',
-    }));
-
-    expect(res.status).toBe(403);
-    expect(mockCreateAnnouncement).not.toHaveBeenCalled();
   });
 });

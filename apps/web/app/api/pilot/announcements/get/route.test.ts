@@ -28,7 +28,16 @@ function request(body: Record<string, unknown> = {}) {
 }
 
 describe('POST /api/pilot/announcements/get', () => {
-  test('derives organization scope from the authenticated principal', async () => {
+  test('rejects an unauthenticated caller without reading any announcements', async () => {
+    mockResolvePrincipal.mockResolvedValueOnce(null);
+
+    const res = await POST(request({ organization_id: 'org-2', limit: 5 }));
+
+    expect(res.status).toBe(401);
+    expect(mockListAnnouncements).not.toHaveBeenCalled();
+  });
+
+  test('ignores a caller-supplied organization_id and scopes to the principal organization', async () => {
     mockResolvePrincipal.mockResolvedValueOnce({
       accountId: 'athlete-1',
       role: 'athlete',
@@ -41,11 +50,15 @@ describe('POST /api/pilot/announcements/get', () => {
 
     const res = await POST(request({ organization_id: 'org-2', limit: 5 }));
 
-    expect(res.status).toBe(403);
-    expect(mockListAnnouncements).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(mockListAnnouncements).toHaveBeenCalledWith('org-1', 5);
+    await expect(res.json()).resolves.toMatchObject({
+      ok: true,
+      organization_id: 'org-1',
+    });
   });
 
-  test('returns announcements only for the principal organization', async () => {
+  test('returns announcements for the principal organization', async () => {
     mockResolvePrincipal.mockResolvedValueOnce({
       accountId: 'coach-1',
       role: 'coach',
@@ -60,9 +73,5 @@ describe('POST /api/pilot/announcements/get', () => {
 
     expect(res.status).toBe(200);
     expect(mockListAnnouncements).toHaveBeenCalledWith('org-1', 3);
-    await expect(res.json()).resolves.toMatchObject({
-      ok: true,
-      organization_id: 'org-1',
-    });
   });
 });

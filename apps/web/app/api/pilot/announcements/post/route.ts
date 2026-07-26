@@ -1,34 +1,50 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { createAnnouncement, isAllowedAnnouncementRole } from '@/src/server/pilot/announcements';
-import { resolvePrincipal } from '@/src/server/pilot/auth';
+import {
+  createAnnouncement,
+  isAllowedAnnouncementRole,
+  type AnnouncementAuthorRole,
+} from '@/src/server/pilot/announcements';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
-import { jsonError } from '@/src/server/pilot/http';
+import { jsonError, requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
+import type { PilotRole } from '@/src/server/pilot/contracts';
 
 export const runtime = 'nodejs';
 
+// The author role written onto an announcement is a public claim about who is
+// speaking for the club, so it is constrained by the caller's session role
+// rather than taken from the request body. Board seats are finer-grained than
+// PilotRole, so a board principal may still pick which seat it is posting as --
+// but only from the board seats, and no other role can claim one.
+function resolveAuthorRole(principalRole: PilotRole, requested: string): AnnouncementAuthorRole | null {
+  if (principalRole === 'coach') {
+    return 'coach';
+  }
+
+  if (principalRole === 'platform_owner' || principalRole === 'organization_admin' || principalRole === 'admin') {
+    return 'admin';
+  }
+
+  if (principalRole === 'board') {
+    return isAllowedAnnouncementRole(requested) && requested.startsWith('board-') ? requested : null;
+  }
+
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   try {
+    const principal = await requireMicrosoftAuthenticatedPrincipal(request);
     const body = (await request.json()) as {
-      organization_id?: string;
       message?: string;
       author_name?: string;
       author_role?: string;
     };
 
-    const principal = await resolvePrincipal(request);
-    if (!principal) {
-      throw new Error('Unauthorized: login required');
-    }
-
-    if (body.organization_id && body.organization_id.trim() !== principal.organizationId) {
-      throw new Error('Forbidden: organization mismatch');
-    }
-
     const organizationId = principal.organizationId;
     const message = body.message?.trim() || '';
     const authorName = body.author_name?.trim() || '';
-    const authorRole = body.author_role?.trim() || '';
+    const authorRole = resolveAuthorRole(principal.role, body.author_role?.trim() || '');
 
     if (!message) {
       throw new Error('Missing message');
@@ -38,12 +54,8 @@ export async function POST(request: NextRequest) {
       throw new Error('Missing author_name');
     }
 
-    if (!isAllowedAnnouncementRole(authorRole)) {
+    if (!authorRole) {
       throw new Error('Forbidden: role not allowed to post announcements');
-    }
-
-    if (principal.authProvider !== 'microsoft') {
-      throw new Error('Forbidden: Microsoft authentication required');
     }
 
     const announcement = await createAnnouncement({
