@@ -7,3 +7,15 @@ out/
 *.log
 dist/
 build/
+
+# Local agent worktrees. These are real git worktrees living inside the repo,
+# so without this they get staged as gitlinks and land in commits as bogus
+# submodule entries.
+.claude/worktrees/
+
+# Editor-local settings
+.vscode/
+
+# Scratch output
+.tmp/
+.build-output.txt
