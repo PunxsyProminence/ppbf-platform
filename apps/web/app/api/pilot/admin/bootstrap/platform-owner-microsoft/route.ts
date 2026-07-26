@@ -15,6 +15,11 @@ const ROOT_ORG_NAME = 'PPBF Root Platform Organization';
 
 export async function POST(request: NextRequest) {
   try {
+    const controlPlaneIntent = request.headers.get('x-ppbf-control-plane-intent')?.trim() || '';
+    if (controlPlaneIntent !== 'bootstrap-platform-owner-microsoft') {
+      throw new Error('Forbidden: control plane intent required');
+    }
+
     const bootstrapKey = process.env.PPBF_PILOT_BOOTSTRAP_KEY?.trim() || '';
     const providedKey = request.headers.get('x-ppbf-bootstrap-key')?.trim() || '';
 

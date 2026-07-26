@@ -7,6 +7,11 @@ export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
+    const controlPlaneIntent = request.headers.get('x-ppbf-control-plane-intent')?.trim() || '';
+    if (controlPlaneIntent !== 'bootstrap') {
+      throw new Error('Forbidden: control plane intent required');
+    }
+
     const bootstrapKey = process.env.PPBF_PILOT_BOOTSTRAP_KEY?.trim() || '';
     const providedKey = request.headers.get('x-ppbf-bootstrap-key')?.trim() || '';
 

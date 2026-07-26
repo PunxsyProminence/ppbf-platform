@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { type ClubRole } from '@/components/roleRoutes';
 import { apiBase } from '@/lib/apiBase';
-import { createPersistentRoleSession, getPostLoginRoute, readRoleSession, clearRoleSession } from '@/components/roleSession';
+import { createPersistentRoleSession, clearRoleSession } from '@/components/roleSession';
 import {
   createMicrosoftSignInHandler,
   getPilotLoginRedirectPath,
@@ -13,6 +13,7 @@ import {
   mapPilotLoginRoleToClubRole,
   validateAnnouncementPublishInput,
 } from '@/src/client/loginPageHelpers';
+import { fetchPilotSession, getPilotSessionRedirectPath } from '@/src/client/pilotSession';
 
 type ActiveTab = 'login' | 'register' | 'announcement';
 
@@ -357,6 +358,7 @@ function LoginPageContent() {
   const [selectedRole] = useState<ClubRole>('athlete');
   const [activeTab, setActiveTab] = useState<ActiveTab>('login');
   const [selectedMethod, setSelectedMethod] = useState<LoginMethod>('pin');
+  const [sessionChecking, setSessionChecking] = useState(true);
   const [announcements, setAnnouncements] = useState<LoginAnnouncement[]>([DEFAULT_ANNOUNCEMENT]);
   const [draftAnnouncement, setDraftAnnouncement] = useState('');
   const [announcementAuthorName, setAnnouncementAuthorName] = useState('');
@@ -390,33 +392,46 @@ function LoginPageContent() {
   })();
 
   useEffect(() => {
-    const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
-    const shouldLogout = params.get('logout') === 'true' || params.get('reset') === 'true';
+    let canceled = false;
 
-    if (shouldLogout) {
-      clearRoleSession();
-      void fetch(`${apiBase()}/api/pilot/auth/logout`, { method: 'POST' });
-    }
+    void (async () => {
+      const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+      const shouldLogout = params.get('logout') === 'true' || params.get('reset') === 'true';
 
-    const session = readRoleSession();
-    if (!session || shouldLogout) {
-      return;
-    }
+      setSessionChecking(true);
 
-    if (session.role === 'athlete') {
-      void (async () => {
-        const response = await fetch(`${apiBase()}/api/pilot/auth/session`, { method: 'POST' });
-        const payload = (await response.json().catch(() => ({ authenticated: false }))) as { authenticated?: boolean };
-        if (payload.authenticated) {
-          router.replace(getPostLoginRoute(session));
+      if (shouldLogout) {
+        clearRoleSession();
+        await fetch(`${apiBase()}/api/pilot/auth/logout`, { method: 'POST' });
+      }
+
+      try {
+        const session = await fetchPilotSession();
+
+        if (canceled) {
           return;
         }
-        clearRoleSession();
-      })();
-      return;
-    }
 
-    router.replace(getPostLoginRoute(session));
+        if (session.authenticated && session.role) {
+          router.replace(getPilotSessionRedirectPath(session));
+          return;
+        }
+
+        clearRoleSession();
+        setSessionChecking(false);
+      } catch {
+        if (canceled) {
+          return;
+        }
+
+        clearRoleSession();
+        setSessionChecking(false);
+      }
+    })();
+
+    return () => {
+      canceled = true;
+    };
 
   }, [router]);
 
@@ -618,6 +633,18 @@ function LoginPageContent() {
   };
 
   const activeTabContent = tabContentMap[activeTab];
+
+  if (sessionChecking) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
+        <div className="max-w-sm text-center">
+          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--red-primary)]">Secure Sign-In</p>
+          <h1 className="mt-3 font-display text-3xl tracking-tight">Checking session</h1>
+          <p className="mt-3 text-sm leading-6 text-[var(--gray-dark)]">Verifying your signed-in session before showing the login surface.</p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">

@@ -26,6 +26,7 @@ describe('POST /api/pilot/admin/bootstrap', () => {
       headers: {
         'content-type': 'application/json',
         'x-ppbf-bootstrap-key': 'valid-key',
+        'x-ppbf-control-plane-intent': 'bootstrap',
       },
       body: JSON.stringify({
         account_id: 'admin-1',

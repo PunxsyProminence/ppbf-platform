@@ -2,6 +2,11 @@
 
 This folder contains project documentation, architecture decisions, and guides.
 
+## Audit Truth
+
+- Start with `docs/AUDIT_INDEX.md` for current audit status and evidence rules.
+- Treat other audit documents as historical snapshots unless explicitly marked current.
+
 ## SHADOW Canonical Docs
 
 - SHADOW_AUTHORITY_MODEL.md

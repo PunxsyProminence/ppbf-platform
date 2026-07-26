@@ -84,8 +84,11 @@ jobs:
     env:
       ACR_NAME: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
       ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io
+      # Legacy naming is intentional: production app currently lives in a
+      # resource group whose name includes "staging".
       RESOURCE_GROUP: rg-ppbf-enterprise-staging
       CONTAINER_APP_NAME: app-ppbf-production
+      STAGING_CONTAINER_APP_NAME: app-ppbf-staging
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
@@ -100,6 +103,44 @@ jobs:
       - name: Log in to Azure Container Registry
         run: |
           az acr login --name "$ACR_NAME"
+
+      - name: Hard-assert Azure account and deployment targets
+        run: |
+          set -euo pipefail
+
+          ACCOUNT_SUBSCRIPTION_ID="$(az account show --query id -o tsv)"
+          ACCOUNT_TENANT_ID="$(az account show --query tenantId -o tsv)"
+          if [ "$ACCOUNT_SUBSCRIPTION_ID" != "${{ secrets.AZURE_SUBSCRIPTION_ID }}" ]; then
+            echo "::error::Subscription mismatch. Expected '${{ secrets.AZURE_SUBSCRIPTION_ID }}' but got '$ACCOUNT_SUBSCRIPTION_ID'."
+            exit 1
+          fi
+          if [ "$ACCOUNT_TENANT_ID" != "${{ secrets.AZURE_TENANT_ID }}" ]; then
+            echo "::error::Tenant mismatch. Expected '${{ secrets.AZURE_TENANT_ID }}' but got '$ACCOUNT_TENANT_ID'."
+            exit 1
+          fi
+
+          PROD_APP_ID="$(az containerapp show --name "$CONTAINER_APP_NAME" --resource-group "$RESOURCE_GROUP" --query id -o tsv)"
+          STAGING_APP_ID="$(az containerapp show --name "$STAGING_CONTAINER_APP_NAME" --resource-group "$RESOURCE_GROUP" --query id -o tsv)"
+          test -n "$PROD_APP_ID"
+          test -n "$STAGING_APP_ID"
+          if [ "$PROD_APP_ID" = "$STAGING_APP_ID" ]; then
+            echo "::error::Production and staging Container App IDs are identical. Refusing deployment."
+            exit 1
+          fi
+
+          PROD_ENV_ID="$(az containerapp show --name "$CONTAINER_APP_NAME" --resource-group "$RESOURCE_GROUP" --query properties.managedEnvironmentId -o tsv)"
+          test -n "$PROD_ENV_ID"
+          if ! printf '%s' "$PROD_ENV_ID" | grep -qi '/resourceGroups/rg-ppbf-enterprise-staging/'; then
+            echo "::error::Unexpected managed environment for production app: $PROD_ENV_ID"
+            exit 1
+          fi
+
+          EXPECTED_ACR_ID="$(az acr show --name "$ACR_NAME" --query id -o tsv)"
+          test -n "$EXPECTED_ACR_ID"
+          if ! printf '%s' "$ACR_LOGIN_SERVER" | grep -Eiq '^[-a-z0-9]+\.azurecr\.io$'; then
+            echo "::error::Invalid ACR login server format: $ACR_LOGIN_SERVER"
+            exit 1
+          fi
 
       - name: Load Azure Container Registry deploy credentials
         id: acr-credentials
@@ -116,6 +157,8 @@ jobs:
       - name: Verify release digest exists in ACR
         run: |
           RELEASE_DIGEST='${{ inputs.release_digest }}'
+          # This workflow deploys by immutable digest and requires operators to
+          # supply the digest captured from staging validation.
           MANIFEST_DIGEST="$(az acr repository show-manifests --name "$ACR_NAME" --repository ppbf-frontend --query "[?digest=='${{ inputs.release_digest }}'] | [0].digest" -o tsv)"
           if [ "$MANIFEST_DIGEST" != "$RELEASE_DIGEST" ]; then
             echo "::error::release digest '$RELEASE_DIGEST' was not found in ACR for ppbf-frontend."

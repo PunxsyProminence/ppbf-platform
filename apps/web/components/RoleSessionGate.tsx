@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { clearRoleSession, getPostLoginRoute, getRoleSessionSnapshot, subscribeRoleSession } from './roleSession';
+import { clearRoleSession } from './roleSession';
 import type { ClubRole } from './roleRoutes';
-import { apiBase } from '@/lib/apiBase';
+import { mapPilotLoginRoleToClubRole } from '@/src/client/loginPageHelpers';
+import { fetchPilotSession, getPilotSessionAuthProvider, getPilotSessionRedirectPath } from '@/src/client/pilotSession';
 
 interface RoleSessionGateProps {
   readonly allowedRoles: ClubRole[];
@@ -13,62 +14,54 @@ interface RoleSessionGateProps {
 
 export default function RoleSessionGate({ allowedRoles, children }: RoleSessionGateProps) {
   const router = useRouter();
-  const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
-  const [verifiedAssuranceSessionKey, setVerifiedAssuranceSessionKey] = useState<string | null>(null);
-
-  const allowed = !!session && (session.role === 'admin' || allowedRoles.includes(session.role));
-  const requiresHighAssurance = !!session && session.role !== 'athlete';
-  const sessionKey = session ? `${session.role}:${session.expiresAt ?? 'none'}` : null;
-  const assuranceVerified = !requiresHighAssurance || verifiedAssuranceSessionKey === sessionKey;
+  const [sessionChecking, setSessionChecking] = useState(true);
+  const [authorized, setAuthorized] = useState(false);
 
   useEffect(() => {
-    if (!session) {
-      clearRoleSession();
-      router.replace('/login');
-      return;
-    }
-
-    if (!allowed) {
-      router.replace(getPostLoginRoute(session));
-      return;
-    }
-
-    if (!requiresHighAssurance) {
-      return;
-    }
-
     let canceled = false;
 
     void (async () => {
       try {
-        const response = await fetch(`${apiBase()}/api/pilot/auth/session`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-        });
-
-        const payload = (await response.json().catch(() => ({ authenticated: false }))) as {
-          authenticated?: boolean;
-          auth_provider?: 'ppbf_local' | 'microsoft';
-        };
+        const payload = await fetchPilotSession();
 
         if (canceled) {
           return;
         }
 
-        const highAssurance = !!payload.authenticated && payload.auth_provider === 'microsoft';
-        if (!highAssurance) {
+        if (!payload.authenticated || !payload.role) {
+          clearRoleSession();
+          router.replace('/login');
+          return;
+        }
+
+        const normalizedRole = mapPilotLoginRoleToClubRole(payload.role);
+        const allowed = normalizedRole === 'admin' || allowedRoles.includes(normalizedRole);
+        const authProvider = getPilotSessionAuthProvider(payload);
+        const requiresHighAssurance = normalizedRole !== 'athlete';
+
+        if (!allowed) {
+          clearRoleSession();
+          router.replace(getPilotSessionRedirectPath(payload));
+          return;
+        }
+
+        if (requiresHighAssurance && authProvider !== 'microsoft') {
           clearRoleSession();
           router.replace('/login?error=privileged_auth_required');
           return;
         }
 
-        setVerifiedAssuranceSessionKey(sessionKey);
+        setAuthorized(true);
       } catch {
         if (canceled) {
           return;
         }
         clearRoleSession();
         router.replace('/login?error=privileged_auth_required');
+      } finally {
+        if (!canceled) {
+          setSessionChecking(false);
+        }
       }
     })();
 
@@ -76,9 +69,9 @@ export default function RoleSessionGate({ allowedRoles, children }: RoleSessionG
       canceled = true;
     };
 
-  }, [allowed, requiresHighAssurance, router, session, sessionKey]);
+  }, [allowedRoles, router]);
 
-  if (!session || !allowed || !assuranceVerified) {
+  if (sessionChecking || !authorized) {
     return (
       <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
         <div className="text-center">
