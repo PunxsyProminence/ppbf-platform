@@ -15,10 +15,12 @@ Transform PPBF into a multi-organization platform with strict organization isola
 ## Core architecture principles
 
 1. Every private record is organization-owned.
-2. Organization data is invisible outside its organization unless explicitly delegated.
-3. Platform Owner sees aggregate metrics by default, not private organization content.
-4. Organization membership is authoritative and required for every authenticated user.
-5. Authorization is role + organization scoped.
+2. Organization data is invisible outside its organization to every role except
+   Platform Owner (see Platform owner boundary below for the pilot-phase
+   exception and its de-identification requirement).
+3. Organization membership is authoritative and required for every authenticated user.
+4. Authorization is role + organization scoped, with Platform Owner scoped to
+   the platform as a whole.
 
 ## Organization boundary model
 
@@ -37,21 +39,35 @@ Boundary is enforced in three layers:
 
 ## Platform owner boundary
 
-Platform Owner can:
+**Current intent (pilot phase):** Platform Owner has standing cross-organization
+visibility into platform data, bounded by law rather than an internal
+org-isolation wall. This is deliberate, for two reasons:
+
+1. Operational — Jason needs to navigate and fix issues across organizations
+   while the app is being polished during pilot.
+2. SHADOW's ML/formula engine needs to learn training cause-and-effect
+   patterns across the whole platform, not be blind within one organization's
+   silo.
+
+Data used this way has personal identifiers stripped permanently
+(irreversibly, not just masked) rather than relying on organization boundaries
+for privacy. This is the current stance and may change later (e.g.
+consent-based re-identification), but nothing beyond this is currently
+planned. Whether cross-org visibility narrows back to per-organization
+isolation once the platform moves past pilot, or a paid-tier customization
+model, is an open question — not yet decided.
+
+This does not weaken the SHADOW medical-status write-isolation gate
+(`shadow_medical_administrative_status`): medical data is the category most
+likely to carry real legal constraints even after de-identification, and that
+gate is deliberately strict-by-construction independent of this boundary.
+
+Platform Owner can additionally:
 
 - create organizations
 - assign organization admins
 - activate and deactivate organizations
 - view platform aggregates and benchmarks
-
-Platform Owner cannot automatically view organization-private content such as:
-
-- private messages
-- medical and emergency records
-- private athlete notes
-- internal organization documents
-
-unless explicit delegated permission is granted and audited.
 
 ## Analytics separation
 

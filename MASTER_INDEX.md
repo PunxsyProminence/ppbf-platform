@@ -24,16 +24,15 @@ branches in this repo have repeatedly been many commits behind — verify agains
 
 ## Architecture
 
-- [ORGANIZATION_ARCHITECTURE.md](ORGANIZATION_ARCHITECTURE.md)
-- [ORGANIZATION_ROLE_MODEL.md](ORGANIZATION_ROLE_MODEL.md)
-- [ORGANIZATION_ADMIN_WORKFLOW.md](ORGANIZATION_ADMIN_WORKFLOW.md)
-- [TENANT_ARCHITECTURE.md](TENANT_ARCHITECTURE.md)
-- [PPBF_CORE_ENTITY_MAP_REALITY_BASED.md](PPBF_CORE_ENTITY_MAP_REALITY_BASED.md)
-- [PPBF_RELATIONSHIP_MAP_REALITY_BASED.md](PPBF_RELATIONSHIP_MAP_REALITY_BASED.md)
-- [PPBF_CAPABILITY_MAP_REALITY_BASED.md](PPBF_CAPABILITY_MAP_REALITY_BASED.md)
-- [PPBF_MISSING_CAPABILITY_REGISTER_REALITY_BASED.md](PPBF_MISSING_CAPABILITY_REGISTER_REALITY_BASED.md)
-- [PPBF_DATAVERSE_BLUEPRINT_REALITY_BASED.md](PPBF_DATAVERSE_BLUEPRINT_REALITY_BASED.md)
-- [PPBF_MULTI_GYM_READINESS_NOTES.md](PPBF_MULTI_GYM_READINESS_NOTES.md)
+- [ORGANIZATION_ARCHITECTURE.md](ORGANIZATION_ARCHITECTURE.md) — multi-org isolation
+  model; Platform Owner boundary section reflects standing cross-org visibility
+  into de-identified data for pilot ops + SHADOW learning, not deny-by-default
+- [ORGANIZATION_ROLE_MODEL.md](ORGANIZATION_ROLE_MODEL.md) — role hierarchy and
+  permission matrix; cross-check role names against the live `PilotRole` enum
+  in [apps/web/src/server/pilot/contracts.ts](apps/web/src/server/pilot/contracts.ts)
+- [ORGANIZATION_ADMIN_WORKFLOW.md](ORGANIZATION_ADMIN_WORKFLOW.md) — org
+  lifecycle workflow, tracks closely to real functions in
+  [apps/web/src/server/pilot/auth.ts](apps/web/src/server/pilot/auth.ts)
 
 ## SHADOW
 

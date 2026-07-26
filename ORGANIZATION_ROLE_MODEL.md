@@ -1,24 +1,22 @@
 # Organization Role Model
 
-## Target roles
+## Roles
+
+Live enum: `PilotRole` in [apps/web/src/server/pilot/contracts.ts](apps/web/src/server/pilot/contracts.ts).
 
 - platform_owner
 - organization_admin
+- admin (legacy-compatible with organization_admin, see [access.ts](apps/web/src/server/pilot/access.ts))
+- board
 - coach
 - athlete
 - parent
 - volunteer
 - staff
 
-## Current role mismatch to resolve
-
-Current backend role enum in [apps/web/src/server/pilot/contracts.ts](apps/web/src/server/pilot/contracts.ts) is limited to:
-
-- admin
-- coach
-- athlete
-
-Current UI role set in [apps/web/components/roleRoutes.ts](apps/web/components/roleRoutes.ts) includes board and parent variants not represented in pilot backend role contracts.
+Note: `board`, `volunteer`, and `staff` exist in the live enum but are not
+separately detailed in the permission matrix below — treat coach-level
+constraints as the closest default until a dedicated matrix entry is written.
 
 ## Role hierarchy and authority
 
@@ -37,20 +35,20 @@ Current UI role set in [apps/web/components/roleRoutes.ts](apps/web/components/r
 
 ### Platform Owner
 
-Allowed:
+Allowed (pilot phase — see [ORGANIZATION_ARCHITECTURE.md](ORGANIZATION_ARCHITECTURE.md#platform-owner-boundary)):
 
 - create organization
 - assign organization admin
 - activate/deactivate organization
 - view platform totals and anonymous benchmarks
+- standing cross-organization visibility into de-identified data, for pilot
+  operations and SHADOW's cross-platform ML/formula learning
 
-Denied by default:
+Still gated regardless of the above:
 
-- private messages
-- medical records
-- emergency contacts
-- private athlete notes
-- internal organization documents
+- SHADOW medical-administrative-status writes remain isolated to their own
+  module (`shadow_medical_administrative_status`) — this boundary is not
+  loosened by Platform Owner's data visibility
 
 ### Organization Admin
 
@@ -115,4 +113,6 @@ Authorization decision inputs:
 
 Decision rule:
 
-- deny when organization_id does not match unless operation is explicit platform-owner aggregate analytics action.
+- deny when organization_id does not match, unless the actor is platform_owner
+  (standing cross-organization visibility into de-identified data during
+  pilot, plus explicit aggregate-analytics actions).

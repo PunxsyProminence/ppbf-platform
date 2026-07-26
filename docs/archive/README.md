@@ -46,4 +46,22 @@ Treat every individual finding as unverified until reconfirmed:
 `SESSION_WORK_SUMMARY`, `THANK_YOU_CLOSING`, `ULTIMATE_CLOSING_DOCUMENT`,
 `ULTIMATE_PROJECT_SUMMARY`.
 
+**A dead planning branch, never built:** `PPBF_CAPABILITY_MAP_REALITY_BASED`,
+`PPBF_MISSING_CAPABILITY_REGISTER_REALITY_BASED`,
+`PPBF_CORE_ENTITY_MAP_REALITY_BASED`, `PPBF_RELATIONSHIP_MAP_REALITY_BASED`,
+`PPBF_DATAVERSE_BLUEPRINT_REALITY_BASED`, `PPBF_MULTI_GYM_READINESS_NOTES`.
+Dated 2026-07-13, this five-step sequence planned a Microsoft Dataverse backend
+around entities (`Person`, `ParticipantProfile`, `DecisionLogEntry`, etc.)
+defined in `packages/execution/models.ts` — a package that is not imported
+anywhere in `apps/web`. The backend that actually shipped is Postgres
+(`pilot.*` schema) via `apps/web/src/server/pilot/*`, with entirely different
+table names. None of this plan was built.
+
+**Superseded naming:** `TENANT_ARCHITECTURE` proposed a `tenant_id`-based
+isolation model. The multi-org work that actually shipped used
+`organization_id` instead (see `pilot_slice_postgres_multiorg_migration.sql`
+and the `PilotRole` enum in `apps/web/src/server/pilot/contracts.ts`, which
+already includes `platform_owner` and `organization_admin`). The `tenant_id`
+proposal was never adopted.
+
 Nothing was deleted — this is a move, and full history is in git.
