@@ -40,7 +40,11 @@ interface HelpPanelProps {
   description: string;
   usage: string[];
   mistakes: string[];
-  onAskShadow: () => void;
+  // Optional: a caller with its own inline SHADOW chat input (e.g. one that
+  // pre-fills a suggested question) can pass a real handler here. Callers
+  // without one get a real link into live SHADOW chat instead of a dead
+  // button -- this used to always be a plain button wired to a no-op.
+  onAskShadow?: () => void;
 }
 
 interface RoleSpecificShadowProps {
@@ -288,12 +292,20 @@ export function HelpPanel({
               ))}
             </ul>
           </div>
-          <button
-            onClick={onAskShadow}
-            className="mt-3 w-full border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 py-2 text-xs font-semibold uppercase text-[var(--canvas-tan-light)] transition hover:brightness-110"
-          >
-            ASK SHADOW
-          </button>
+          {onAskShadow ? (
+            <button
+              onClick={onAskShadow}
+              className="mt-3 w-full border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 py-2 text-xs font-semibold uppercase text-[var(--canvas-tan-light)] transition hover:brightness-110"
+            >
+              ASK SHADOW
+            </button>
+          ) : (
+            <ShadowChatButton
+              context={title}
+              label="ASK SHADOW"
+              className="mt-3 w-full border-[var(--black)] bg-[var(--red-primary)] text-[var(--canvas-tan-light)] hover:brightness-110"
+            />
+          )}
         </div>
       )}
     </div>

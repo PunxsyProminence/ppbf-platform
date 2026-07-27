@@ -373,7 +373,6 @@ export default function ParentHub() {
                   'Missing coach communication',
                   'Overlooking skill milestones'
                 ]}
-                onAskShadow={() => {}}
               />
 
               {activeChild && (
@@ -461,7 +460,6 @@ export default function ParentHub() {
                   'Not providing dedicated practice time',
                   'Missing reporting deadlines'
                 ]}
-                onAskShadow={() => {}}
               />
 
               <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4">
@@ -496,7 +494,6 @@ export default function ParentHub() {
                   'Not understanding assignment goals',
                   'Skipping optional evidence uploads'
                 ]}
-                onAskShadow={() => {}}
               />
 
               <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
@@ -538,7 +535,6 @@ export default function ParentHub() {
                   'Minimizing stress or pain mentions',
                   'Not sharing positive observations'
                 ]}
-                onAskShadow={() => {}}
               />
 
               <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
@@ -585,7 +581,6 @@ export default function ParentHub() {
                   'Not reviewing progress regularly',
                   'Not involving the whole family'
                 ]}
-                onAskShadow={() => {}}
               />
 
               <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
@@ -633,7 +628,6 @@ export default function ParentHub() {
                   'Delayed responses to urgent matters',
                   'Not sharing important information'
                 ]}
-                onAskShadow={() => {}}
               />
 
               <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">

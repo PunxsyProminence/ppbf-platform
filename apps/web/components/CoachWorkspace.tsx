@@ -694,7 +694,6 @@ export default function CoachWorkspace() {
                   'Not reviewing task deadlines',
                   'Overlooking RED readiness athletes'
                 ]}
-                onAskShadow={() => {}}
               />
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -835,7 +834,6 @@ export default function CoachWorkspace() {
                   'Ignoring RED readiness plans during live coaching',
                   'Overwriting individual targets with one-size-fits-all flow'
                 ]}
-                onAskShadow={() => {}}
               />
 
               {athleteFloorPlans.length === 0 ? (
@@ -897,7 +895,6 @@ export default function CoachWorkspace() {
                   'Missing critical observations',
                   'Forgetting to record modifications'
                 ]}
-                onAskShadow={() => {}}
               />
 
               <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4">
@@ -966,7 +963,6 @@ export default function CoachWorkspace() {
                   'Not tracking training hours',
                   'Waiting until renewal deadlines'
                 ]}
-                onAskShadow={() => {}}
               />
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1022,7 +1018,6 @@ export default function CoachWorkspace() {
                   'Unrealistic timeframes',
                   'Not reviewing progress regularly'
                 ]}
-                onAskShadow={() => {}}
               />
 
               <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
@@ -1070,7 +1065,6 @@ export default function CoachWorkspace() {
                   'Not updating task status',
                   'Ignoring related athlete information'
                 ]}
-                onAskShadow={() => {}}
               />
 
               <div className="space-y-3">
