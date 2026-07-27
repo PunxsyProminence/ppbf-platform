@@ -92,6 +92,9 @@ export function buildAuthorizeUrl(
   url.searchParams.set('scope', OIDC_SCOPES);
   url.searchParams.set('state', state);
   url.searchParams.set('nonce', nonce);
+  // Force an interactive re-auth instead of silent SSO session reuse.
+  url.searchParams.set('prompt', 'login');
+  url.searchParams.set('max_age', '0');
   url.searchParams.set('code_challenge', codeChallenge);
   url.searchParams.set('code_challenge_method', 'S256');
   return url.toString();

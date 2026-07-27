@@ -46,5 +46,11 @@ jobs:
       - name: Run PostgreSQL migration suite
         run: npm run test:migrations -- --runInBand --detectOpenHandles
 
+      - name: Install Playwright browsers
+        run: npx --workspace web playwright install --with-deps chromium
+
+      - name: Run board governance E2E
+        run: npm --workspace web run test:e2e:board
+
       - name: Build production application
         run: npm run build

@@ -22,6 +22,7 @@ async function submitDeepTrackObservations(input: {
   punchesLanded: number;
   punchesAbsorbed: number;
   focusAchieved: boolean;
+  recoveryNotes: string;
   bodyWeightKg: number | null;
   opponentStance: OpponentStance;
 }): Promise<{ ok: boolean }> {
@@ -43,6 +44,16 @@ async function submitDeepTrackObservations(input: {
 
   if (input.bodyWeightKg != null) {
     observations.push({ kind: 'body_weight', value: input.bodyWeightKg, unit: 'kilograms' });
+  }
+
+  const notes = input.recoveryNotes.trim();
+  if (notes.length > 0) {
+    observations.push({
+      kind: 'recovery_notes',
+      value: 1,
+      unit: 'text_present_0_1',
+      dimensions: { notes: notes.slice(0, 500) },
+    });
   }
 
   const results = await Promise.allSettled(observations.map((observation) => fetch('/api/pilot/shadow/formulas/observations', {
@@ -121,6 +132,7 @@ export default function SparringTelemetryPage() {
         punchesLanded,
         punchesAbsorbed,
         focusAchieved,
+        recoveryNotes,
         bodyWeightKg: bodyWeightKg.trim() ? Number(bodyWeightKg) : null,
         opponentStance,
       });

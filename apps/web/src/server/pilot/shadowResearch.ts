@@ -38,6 +38,12 @@ export interface ShadowResearchRequirementRow {
   resolved_at: string | null;
 }
 
+export interface ShadowResearchRequirementFilter {
+  status?: 'open' | 'resolved';
+  // When provided, only return rows tied to one of these athlete IDs.
+  athleteIds?: string[];
+}
+
 export async function createShadowResearchRequirement(input: ShadowResearchRequirementInput): Promise<number> {
   const row = await queryOne<{ research_requirement_id: number }>(
     `insert into pilot.shadow_research_requirements
@@ -71,7 +77,12 @@ export async function createShadowResearchRequirement(input: ShadowResearchRequi
   return row.research_requirement_id;
 }
 
-export async function listShadowResearchRequirements(organizationId: string, status?: 'open' | 'resolved'): Promise<ShadowResearchRequirementRow[]> {
+export async function listShadowResearchRequirements(
+  organizationId: string,
+  filter: ShadowResearchRequirementFilter = {},
+): Promise<ShadowResearchRequirementRow[]> {
+  const athleteIds = filter.athleteIds ?? [];
+  const hasAthleteScope = athleteIds.length > 0;
   return query<ShadowResearchRequirementRow>(
     `select
        research_requirement_id,
@@ -94,8 +105,14 @@ export async function listShadowResearchRequirements(organizationId: string, sta
      from pilot.shadow_research_requirements
      where organization_id = $1
        and ($2::text is null or status = $2)
+       and (
+         $3::boolean = false
+         or source_entity_id = any($4::text[])
+         or evidence_label = any($4::text[])
+         or metadata->>'subject_id' = any($4::text[])
+       )
      order by created_at desc`,
-    [organizationId, status ?? null],
+    [organizationId, filter.status ?? null, hasAthleteScope, athleteIds],
   );
 }
 

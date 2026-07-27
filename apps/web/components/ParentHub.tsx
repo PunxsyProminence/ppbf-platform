@@ -12,8 +12,8 @@ interface Child {
   id: string;
   name: string;
   track: string;
-  attendancePercent: number;
-  currentProgress: string;
+  attendancePercent: number | null;
+  currentProgress: string | null;
 }
 
 interface HomeAssignment {
@@ -100,77 +100,25 @@ export default function ParentHub() {
   const [children, setChildren] = useState<Child[]>([]);
   const [childrenLoading, setChildrenLoading] = useState(true);
   const [childrenError, setChildrenError] = useState<string | null>(null);
+  const [childrenRetryNonce, setChildrenRetryNonce] = useState(0);
 
   const [activeChildId, setActiveChildId] = useState<string | null>(null);
 
-  const [homeAssignments] = useState<HomeAssignment[]>([
-    { id: 'ha_1', title: 'Watch Footwork Fundamentals Video', dueDate: '2026-07-13', status: 'Pending', description: 'Coach Jason assigned - 12 minute instructional video' },
-    { id: 'ha_2', title: 'Record 2 Rounds of Shadowboxing', dueDate: '2026-07-14', status: 'In Progress', description: 'Evidence upload optional - form check focus' },
-    { id: 'ha_3', title: 'Complete Family Reflection Survey', dueDate: '2026-07-15', status: 'Pending', description: 'How is training affecting home life?' }
-  ]);
+  const [homeAssignments] = useState<HomeAssignment[]>([]);
 
-  const [parentObservations] = useState<ParentObservation[]>([
-    { id: 'po_1', category: 'Energy Level', value: 7, notes: 'Seems energetic after training' },
-    { id: 'po_2', category: 'Sleep Quality', value: 8, notes: 'Good sleep patterns on training days' },
-    { id: 'po_3', category: 'Motivation', value: 8, notes: 'Excited about upcoming belt test' },
-    { id: 'po_4', category: 'Home Behavior', value: 7, notes: 'More focused on schoolwork' }
-  ]);
+  const [parentObservations] = useState<ParentObservation[]>([]);
 
-  const [familyGoals] = useState<FamilyGoal[]>([
-    { id: 'fg_1', title: 'Attend 90% of Sessions', supportAction: 'Maintain consistent schedule', progress: 92, targetDate: '2026-12-31' },
-    { id: 'fg_2', title: 'Maintain Grade Average', supportAction: 'Check homework, reduce distractions', progress: 85, targetDate: '2026-12-31' },
-    { id: 'fg_3', title: 'Prepare for Belt Test', supportAction: 'Support home practice, nutrition', progress: 60, targetDate: '2026-08-15' }
-  ]);
+  const [familyGoals] = useState<FamilyGoal[]>([]);
 
-  const [messages] = useState<ParentMessage[]>([
-    { id: 'm_1', sender: 'coach', subject: 'Great Progress This Week', body: 'Alex showed excellent focus during today\'s session. Footwork improvements are very noticeable.', date: '2026-07-11' },
-    { id: 'm_2', sender: 'coach', subject: 'Upcoming Belt Test', body: 'Jordan is ready for the August test. Recommend continued focus on defensive combinations.', date: '2026-07-10' }
-  ]);
+  const [messages] = useState<ParentMessage[]>([]);
 
-  const [attendanceEntries] = useState<AttendanceEntry[]>([
-    { id: 'att_1', childId: 'c_1', date: '2026-07-08', session: 'Youth Class 4:00 PM', status: 'Present' },
-    { id: 'att_2', childId: 'c_1', date: '2026-07-09', session: 'Youth Class 4:00 PM', status: 'Present' },
-    { id: 'att_3', childId: 'c_1', date: '2026-07-10', session: 'Youth Class 4:00 PM', status: 'Excused' },
-    { id: 'att_4', childId: 'c_2', date: '2026-07-08', session: 'Competition 5:00 PM', status: 'Present' },
-    { id: 'att_5', childId: 'c_2', date: '2026-07-10', session: 'Competition 5:00 PM', status: 'Absent' },
-  ]);
+  const [attendanceEntries] = useState<AttendanceEntry[]>([]);
 
-  const [upcomingSessions] = useState<UpcomingSession[]>([
-    { id: 'up_1', date: '2026-07-14', time: '4:00 PM', title: 'Youth Class', focus: 'Footwork and guard discipline' },
-    { id: 'up_2', date: '2026-07-16', time: '5:00 PM', title: 'Competition Track', focus: 'Combination defense and ring movement' },
-    { id: 'up_3', date: '2026-07-18', time: '10:00 AM', title: 'Saturday Skills', focus: 'Conditioning and spar prep' },
-  ]);
+  const [upcomingSessions] = useState<UpcomingSession[]>([]);
 
-  const [progressMilestones] = useState<ProgressMilestone[]>([
-    { id: 'pm_1', childId: 'c_1', category: 'Technical', title: 'Jab and guard consistency', percent: 82, status: 'On Track' },
-    { id: 'pm_2', childId: 'c_1', category: 'Conditioning', title: 'Round stamina development', percent: 71, status: 'On Track' },
-    { id: 'pm_3', childId: 'c_2', category: 'Technical', title: 'Counter-defense transitions', percent: 64, status: 'Needs Work' },
-    { id: 'pm_4', childId: 'c_2', category: 'Academics', title: 'School attendance compliance', percent: 95, status: 'Achieved' },
-  ]);
+  const [progressMilestones] = useState<ProgressMilestone[]>([]);
 
-  const [parentResources] = useState<ParentResource[]>([
-    {
-      id: 'res_1',
-      title: 'Weekly Parent Support Checklist',
-      type: 'Checklist',
-      summary: 'Simple weekly checklist for attendance, hydration, nutrition, and home drills.',
-      actionLabel: 'Use Checklist',
-    },
-    {
-      id: 'res_2',
-      title: 'SafeSport Family Communication Guidelines',
-      type: 'Policy',
-      summary: 'Family-facing communication boundaries and safety escalation path.',
-      actionLabel: 'Review Policy',
-    },
-    {
-      id: 'res_3',
-      title: 'At-Home Fundamentals Video Pack',
-      type: 'Video',
-      summary: 'Short video references for stance, footwork, and basic combinations.',
-      actionLabel: 'Open Video Pack',
-    },
-  ]);
+  const [parentResources] = useState<ParentResource[]>([]);
 
   const [newMessage, setNewMessage] = useState('');
 
@@ -189,16 +137,14 @@ export default function ParentHub() {
         const data = (await response.json()) as { items?: Array<{ athlete_id: string; full_name?: string }> };
         const items = data.items || [];
         
-        // Convert PilotAthlete to Child format
-        const childList: Child[] = items.map((item, index: number) => {
-          // Generate deterministic placeholder attendance (80-100%) based on item index
-          const placeholderAttendance = 80 + (index % 21);
+        // Do not fabricate attendance/progression values from index-based placeholders.
+        const childList: Child[] = items.map((item) => {
           return {
             id: item.athlete_id,
             name: item.full_name || 'Unknown',
-            track: 'Foundations', // Placeholder - gym_status not available from API
-            attendancePercent: placeholderAttendance,
-            currentProgress: 'Developing skills' // Placeholder - would need separate API
+            track: 'Unavailable',
+            attendancePercent: null,
+            currentProgress: null,
           };
         });
         
@@ -213,11 +159,12 @@ export default function ParentHub() {
         setChildrenLoading(false);
       }
     })();
-  }, [activeChildId]);
+  }, [activeChildId, childrenRetryNonce]);
 
   const activeChild = children.find(c => c.id === activeChildId);
   const tasksDue = homeAssignments.filter(a => a.status !== 'Completed').length;
-  const upcomingEvents = 3;
+  const upcomingEvents = upcomingSessions.length;
+  const hasLiveChildMetrics = activeChild?.attendancePercent !== null && Boolean(activeChild?.currentProgress);
   const activeAttendanceEntries = attendanceEntries.filter((entry) => entry.childId === activeChildId);
   const activeProgressMilestones = progressMilestones.filter((item) => item.childId === activeChildId);
 
@@ -267,12 +214,19 @@ export default function ParentHub() {
 
         {/* ROLE SUMMARY PANEL */}
         <ParentSummaryPanel
-          childProgress={activeChild?.currentProgress || ''}
+          childProgress={activeChild?.currentProgress || 'Unavailable - awaiting backend progression feed'}
           tasksDue={tasksDue}
           upcomingEvents={upcomingEvents}
-          attendancePercent={activeChild?.attendancePercent || 0}
+          attendancePercent={activeChild?.attendancePercent ?? 0}
           unreadMessages={messages.filter(m => !m.read).length}
         />
+
+        {!hasLiveChildMetrics && activeChild ? (
+          <div className="border border-[#8b4444] bg-[#14100d] p-3">
+            <p className="text-xs font-mono uppercase tracking-[0.1em] text-[#d4a574]">Data Availability</p>
+            <p className="mt-1 text-sm text-[#cfbfae]">Attendance and progression metrics are hidden until backend-authoritative feeds are available.</p>
+          </div>
+        ) : null}
 
         {/* CHILD SELECTOR */}
         {childrenLoading && (
@@ -291,7 +245,7 @@ export default function ParentHub() {
               <button
                 onClick={() => {
                   setChildrenError(null);
-                  // Effect will re-run
+                  setChildrenRetryNonce((value) => value + 1);
                 }}
                 className="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition"
                 aria-label="Retry loading children"

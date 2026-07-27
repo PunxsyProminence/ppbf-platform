@@ -5,14 +5,21 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 
-interface ComplianceViolation {
-  violation_id: string;
-  rule_id: string;
-  athlete_id: string;
-  severity: string;
-  status: string;
-  escalation_status: string;
-  created_at: string;
+interface ComplianceSummary {
+  total: number;
+  severity: {
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+  };
+  status: {
+    new: number;
+    acknowledged: number;
+    escalated: number;
+    resolved: number;
+    dismissed: number;
+  };
 }
 
 // ShadowRequirementItem interface available for future use in research requirement tracking
@@ -22,49 +29,46 @@ interface ComplianceViolation {
 // }
 
 export default function BoardComplianceMonitoringPage() {
-  const [violations, setViolations] = useState<ComplianceViolation[]>([]);
+  const [summary, setSummary] = useState<ComplianceSummary | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   const [errorMessage, setErrorMessage] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('');
 
   useEffect(() => {
     void (async () => {
+      setIsLoading(true);
       try {
-        // Fetch violations
-        const violRes = await fetch(`${apiBase()}/api/pilot/compliance/violations?status=${selectedStatus || ''}`);
+        const violRes = await fetch(`${apiBase()}/api/pilot/board/compliance-summary?status=${selectedStatus || ''}`);
         if (!violRes.ok) {
           throw new Error('Unable to load compliance violations.');
         }
-        const violData = (await violRes.json()) as { items?: ComplianceViolation[] };
-        setViolations(violData.items ?? []);
+        const violData = (await violRes.json()) as { ok?: boolean; summary?: ComplianceSummary };
+        if (violData.ok !== true || !violData.summary) {
+          throw new Error('Compliance summary unavailable.');
+        }
+        setSummary(violData.summary);
 
         setErrorMessage('');
       } catch (error) {
-        setViolations([]);
+        setSummary(null);
         setErrorMessage(error instanceof Error ? error.message : 'Unable to load compliance data.');
+      } finally {
+        setIsLoading(false);
       }
     })();
   }, [selectedStatus]);
 
-  const severityCounts = useMemo(
-    () => ({
-      critical: violations.filter((v) => v.severity === 'critical').length,
-      high: violations.filter((v) => v.severity === 'high').length,
-      medium: violations.filter((v) => v.severity === 'medium').length,
-      low: violations.filter((v) => v.severity === 'low').length,
-    }),
-    [violations],
-  );
+  const severityCounts = useMemo(() => summary?.severity ?? null, [summary]);
+  const statusCounts = useMemo(() => summary?.status ?? null, [summary]);
 
-  useMemo(
-    () => ({
-      new: violations.filter((v) => v.status === 'new').length,
-      acknowledged: violations.filter((v) => v.status === 'acknowledged').length,
-      escalated: violations.filter((v) => v.status === 'escalated').length,
-      resolved: violations.filter((v) => v.status === 'resolved').length,
-    }),
-    [violations],
-  );
+  const totalViolations = summary?.total ?? null;
+
+  const metricValue = (value: number | null | undefined) => {
+    if (isLoading) return '...';
+    if (value === null || value === undefined) return '--';
+    return String(value);
+  };
 
   return (
     <RoleSessionGate allowedRoles={['board']}>
@@ -77,25 +81,28 @@ export default function BoardComplianceMonitoringPage() {
               Real-time compliance violation tracking and escalation management.
             </p>
             {errorMessage ? <p className="text-sm text-[var(--red-primary)]">{errorMessage}</p> : null}
+            {!errorMessage && !isLoading && !summary ? (
+              <p className="text-sm text-[var(--red-primary)]">Compliance telemetry is unavailable. Counts are intentionally suppressed.</p>
+            ) : null}
           </header>
 
           {/* Metrics Dashboard */}
           <section className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <article className="border-2 border-[var(--black)] bg-[#fce8e6] p-4">
               <h2 className="text-xs font-bold uppercase tracking-[0.08em] text-[var(--red-primary)]">Critical</h2>
-              <p className="mt-4 text-4xl font-black">{severityCounts.critical}</p>
+              <p className="mt-4 text-4xl font-black">{metricValue(severityCounts?.critical)}</p>
             </article>
             <article className="border-2 border-[var(--black)] bg-[#fff3cd] p-4">
               <h2 className="text-xs font-bold uppercase tracking-[0.08em] text-[#ff9800]">High</h2>
-              <p className="mt-4 text-4xl font-black">{severityCounts.high}</p>
+              <p className="mt-4 text-4xl font-black">{metricValue(severityCounts?.high)}</p>
             </article>
             <article className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
               <h2 className="text-xs font-bold uppercase tracking-[0.08em]">Medium</h2>
-              <p className="mt-4 text-4xl font-black">{severityCounts.medium}</p>
+              <p className="mt-4 text-4xl font-black">{metricValue(severityCounts?.medium)}</p>
             </article>
             <article className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
               <h2 className="text-xs font-bold uppercase tracking-[0.08em]">Low</h2>
-              <p className="mt-4 text-4xl font-black">{severityCounts.low}</p>
+              <p className="mt-4 text-4xl font-black">{metricValue(severityCounts?.low)}</p>
             </article>
           </section>
 
@@ -103,7 +110,7 @@ export default function BoardComplianceMonitoringPage() {
           <section className="mt-8 space-y-4">
             <h2 className="text-lg font-bold uppercase">Filter by Status</h2>
             <div className="flex flex-wrap gap-2">
-              {['', 'new', 'acknowledged', 'escalated', 'resolved'].map((status) => (
+              {['', 'new', 'acknowledged', 'escalated', 'resolved', 'dismissed'].map((status) => (
                 <button
                   key={status || 'all'}
                   onClick={() => setSelectedStatus(status)}
@@ -113,54 +120,41 @@ export default function BoardComplianceMonitoringPage() {
                       : 'border-[var(--black)] bg-[var(--canvas-tan-light)]'
                   }`}
                 >
-                  {status || 'All'} ({status === '' ? violations.length : violations.filter((v) => v.status === status).length})
+                  {status || 'All'} ({status === '' ? metricValue(totalViolations) : metricValue(statusCounts?.[status as keyof NonNullable<typeof statusCounts>])})
                 </button>
               ))}
             </div>
           </section>
 
-          {/* Violations List */}
+          {/* Aggregate View */}
           <section className="mt-8 space-y-4">
-            <h2 className="text-lg font-bold uppercase">Violations</h2>
-            {violations.length === 0 ? (
-              <p className="text-sm text-[var(--gray-dark)]">No violations found.</p>
-            ) : (
-              <div className="space-y-3">
-                {violations.map((violation) => (
-                  <article key={violation.violation_id} className="border-2 border-[var(--black)] bg-white p-4">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1">
-                        <div className="flex gap-2">
-                          {(() => {
-                            let severityClass = 'bg-[var(--canvas-tan-light)]';
-                            if (violation.severity === 'critical') {
-                              severityClass = 'bg-[#fce8e6]';
-                            } else if (violation.severity === 'high') {
-                              severityClass = 'bg-[#fff3cd]';
-                            }
-                            return (
-                              <span className={`text-xs font-bold uppercase px-2 py-1 border border-[var(--black)] ${severityClass}`}>
-                                {violation.severity}
-                              </span>
-                            );
-                          })()}
-                          <span className="text-xs font-bold uppercase px-2 py-1 border border-[var(--black)] bg-[var(--canvas-tan-light)]">
-                            {violation.status}
-                          </span>
-                        </div>
-                        <p className="mt-2 text-sm font-mono">Athlete: {violation.athlete_id}</p>
-                        <p className="text-xs text-[var(--gray-dark)]">
-                          {new Date(violation.created_at).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <button className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-1 text-xs font-bold uppercase">
-                        Review
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
+            <h2 className="text-lg font-bold uppercase">Status Summary</h2>
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
+              <article className="border-2 border-[var(--black)] bg-white p-4">
+                <p className="text-xs font-bold uppercase tracking-[0.08em]">New</p>
+                <p className="mt-2 text-3xl font-black">{metricValue(statusCounts?.new)}</p>
+              </article>
+              <article className="border-2 border-[var(--black)] bg-white p-4">
+                <p className="text-xs font-bold uppercase tracking-[0.08em]">Acknowledged</p>
+                <p className="mt-2 text-3xl font-black">{metricValue(statusCounts?.acknowledged)}</p>
+              </article>
+              <article className="border-2 border-[var(--black)] bg-white p-4">
+                <p className="text-xs font-bold uppercase tracking-[0.08em]">Escalated</p>
+                <p className="mt-2 text-3xl font-black">{metricValue(statusCounts?.escalated)}</p>
+              </article>
+              <article className="border-2 border-[var(--black)] bg-white p-4">
+                <p className="text-xs font-bold uppercase tracking-[0.08em]">Resolved</p>
+                <p className="mt-2 text-3xl font-black">{metricValue(statusCounts?.resolved)}</p>
+              </article>
+              <article className="border-2 border-[var(--black)] bg-white p-4">
+                <p className="text-xs font-bold uppercase tracking-[0.08em]">Dismissed</p>
+                <p className="mt-2 text-3xl font-black">{metricValue(statusCounts?.dismissed)}</p>
+              </article>
+            </div>
+
+            <p className="text-sm text-[var(--gray-dark)]">
+              This board view intentionally exposes aggregate-only compliance telemetry and excludes athlete-level identifiers.
+            </p>
           </section>
 
           <div className="mt-8 flex flex-wrap gap-3">

@@ -14,6 +14,24 @@ const gymCapabilities = [
 ];
 
 export default function SetupWizard() {
+  const testWizardEnabled = process.env.NEXT_PUBLIC_PPBF_ENABLE_TEST_WIZARD === 'true';
+
+  if (!testWizardEnabled) {
+    return (
+      <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
+        <div className="mx-auto w-full max-w-3xl space-y-6 px-6 py-12 lg:px-10">
+          <header className="rounded-[28px] border border-[rgba(0,0,0,0.14)] bg-white p-6 shadow-[var(--shadow-md)]">
+            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--red-primary)]">Setup Wizard</p>
+            <h1 className="mt-2 font-display text-3xl font-black">Test Wizard Disabled</h1>
+            <p className="mt-3 text-sm leading-6 text-[var(--gray-dark)]">
+              This unauthenticated simulation route is disabled by default. Set NEXT_PUBLIC_PPBF_ENABLE_TEST_WIZARD=true only in controlled non-production environments.
+            </p>
+          </header>
+        </div>
+      </main>
+    );
+  }
+
   const [step, setStep] = useState(1);
 
   // Step 1: Create Gym
@@ -209,7 +227,7 @@ export default function SetupWizard() {
                 }}
                 className="h-11 w-full rounded-lg border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isBusy ? 'Creating...' : 'Create Gym &amp; Continue'}
+                {isBusy ? 'Creating...' : 'Create Gym & Continue'}
               </button>
             </div>
           )}

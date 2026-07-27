@@ -290,9 +290,7 @@ function PeopleConsoleContent() {
     }
   }
 
-  const activationUrl = issuedCode
-    ? `${typeof window === 'undefined' ? '' : window.location.origin}/activate?code=${encodeURIComponent(issuedCode.code)}`
-    : '';
+  const activationUrl = `${typeof window === 'undefined' ? '' : window.location.origin}/activate`;
 
   return (
     <main className="min-h-screen bg-[var(--canvas-tan)] px-4 py-8 text-[var(--black)] sm:px-6">
@@ -362,7 +360,7 @@ function PeopleConsoleContent() {
                 }}
                 className="min-h-[44px] rounded-xl border border-[rgba(0,0,0,0.14)] bg-white px-4 text-xs font-black uppercase tracking-[0.12em]"
               >
-                Copy Sign-Up Link
+                Copy Activation Page Link
               </button>
             </div>
 

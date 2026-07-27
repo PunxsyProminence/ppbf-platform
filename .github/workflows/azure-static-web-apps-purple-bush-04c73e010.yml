@@ -1,17 +1,16 @@
-name: Azure Static Web Apps CI/CD
+name: legacy-static-web-apps-manual
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    types: [opened, synchronize, reopened, closed]
-    branches:
-      - main
+  workflow_dispatch:
+    inputs:
+      confirm_legacy_swa_deploy:
+        description: Type LEGACY_SWA_ONLY to run this legacy path intentionally
+        required: true
+        type: string
 
 jobs:
   build_and_deploy_job:
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed')
+    if: inputs.confirm_legacy_swa_deploy == 'LEGACY_SWA_ONLY'
     runs-on: ubuntu-latest
     name: Build and Deploy Job
     steps:
@@ -34,15 +33,12 @@ jobs:
           app_build_command: "npm install && npm run build"
           ###### End of Repository/Build Configurations ######
 
-  close_pull_request_job:
-    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+  blocked_without_confirmation:
+    if: inputs.confirm_legacy_swa_deploy != 'LEGACY_SWA_ONLY'
     runs-on: ubuntu-latest
-    name: Close Pull Request Job
     steps:
-      - name: Close Pull Request
-        id: closepullrequest
-        uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_PURPLE_BUSH_04C73E010 }}
-          action: "close"
-          app_location: "apps/web"
+      - name: Refuse accidental SWA deploy
+        run: |
+          echo "Legacy SWA path is disabled by default."
+          echo "Use deploy-staging.yml / deploy-production.yml for Container Apps releases."
+          exit 1

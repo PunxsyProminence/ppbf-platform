@@ -405,6 +405,44 @@ export async function createAthleteAccount(
   const organizationId = maybeOrganizationId ?? organizationIdOrLegacyPin;
 
   await withTransaction(async (client) => {
+    const athlete = await client.query<{ athlete_id: string }>(
+      `select athlete_id
+       from pilot.athletes
+       where athlete_id = $1 and organization_id = $2`,
+      [athleteId, organizationId],
+    );
+
+    if (athlete.rows.length === 0) {
+      throw new Error('Athlete not found in organization');
+    }
+
+    const existingAthleteBinding = await client.query<{ account_id: string }>(
+      `select account_id
+       from pilot.accounts
+       where athlete_id = $1 and organization_id = $2
+       limit 1`,
+      [athleteId, organizationId],
+    );
+
+    if (existingAthleteBinding.rows.length > 0 && existingAthleteBinding.rows[0].account_id !== accountId) {
+      throw new Error('Athlete is already linked to another account');
+    }
+
+    const existingAccount = await client.query<{ organization_id: string }>(
+      `select organization_id
+       from pilot.accounts
+       where account_id = $1
+       limit 1`,
+      [accountId],
+    );
+
+    if (existingAccount.rows.length > 0) {
+      if (existingAccount.rows[0].organization_id !== organizationId) {
+        throw new Error('Account already exists in another organization');
+      }
+      throw new Error('Account already exists');
+    }
+
     await client.query(
       'insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner) values ($1, $2, $3, $4, $5, $6, $7)',
       [accountId, 'athlete', organizationId, athleteId, null, false, false],

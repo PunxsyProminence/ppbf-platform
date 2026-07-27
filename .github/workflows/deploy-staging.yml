@@ -129,7 +129,8 @@ jobs:
               PPBF_SHADOW_MAX_COMPLETION_TOKENS=1024 \
               PPBF_PILOT_BOOTSTRAP_KEY=secretref:ppbf-pilot-bootstrap-key \
               PPBF_PILOT_DEFAULT_ORG_ID=secretref:ppbf-pilot-default-org-id \
-              PPBF_PILOT_SHADOW_CONTAINER=secretref:ppbf-pilot-shadow-container
+              PPBF_PILOT_SHADOW_CONTAINER=secretref:ppbf-pilot-shadow-container \
+              PPBF_DURABLE_RATE_LIMIT=true
 
       - name: Verify Staging AI Secret Reference
         run: |

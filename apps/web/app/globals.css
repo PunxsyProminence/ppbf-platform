@@ -114,14 +114,16 @@ h6 {
   line-height: var(--leading-tight);
 }
 
-a {
-  color: var(--red-primary);
-  text-decoration: none;
-}
+@layer base {
+  a {
+    color: var(--red-primary);
+    text-decoration: none;
+  }
 
-a:hover {
-  color: var(--red-highlight);
-  text-decoration: underline;
+  a:hover {
+    color: var(--red-highlight);
+    text-decoration: underline;
+  }
 }
 
 :focus-visible {
