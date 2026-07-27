@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import React, { type FormEvent, useEffect, useState } from 'react';
+import React, { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { AthleteSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import { cx, ui } from './uiStyles';
 
@@ -272,8 +272,7 @@ export default function AthleteWorkspace() {
   const [smartGoals, setSmartGoals] = useState<SMARTGoal[]>([]);
   const [goalsLoading, setGoalsLoading] = useState(true);
   const [goalsError, setGoalsError] = useState<string | null>(null);
-  const [goalsRetryNonce, setGoalsRetryNonce] = useState(0);
-  
+
   const [showGoalForm, setShowGoalForm] = useState(false);
   const [newGoalTitle, setNewGoalTitle] = useState('');
   const [newGoalCategory, setNewGoalCategory] = useState<SMARTCategory>('Boxing');
@@ -284,7 +283,6 @@ export default function AthleteWorkspace() {
   const [floorTasks, setFloorTasks] = useState<FloorTask[]>([]);
   const [tasksLoading, setTasksLoading] = useState(true);
   const [tasksError, setTasksError] = useState<string | null>(null);
-  const [tasksRetryNonce, setTasksRetryNonce] = useState(0);
 
   // Drills State
   const [drills] = useState<Drill[]>([
@@ -330,111 +328,141 @@ export default function AthleteWorkspace() {
   }, []);
 
   // Fetch goals when athlete ID is set
-  useEffect(() => {
+  const loadGoals = useCallback(async () => {
     if (!backendAthleteId) {
       return;
     }
 
-    void (async () => {
-      try {
-        setGoalsLoading(true);
-        setGoalsError(null);
-        const response = await fetch(
-          `/api/pilot/goals/list?athlete_id=${encodeURIComponent(backendAthleteId)}`,
-          { method: 'GET', credentials: 'include' }
-        );
-        if (!response.ok) throw new Error('Failed to load goals');
-        
-        const data = (await response.json()) as { items?: Array<{ goal_id: string; title: string; category?: string; target_date?: string; metric?: string; progress_percent?: number; status?: string }> };
-        const items = data.items || [];
-        
-        // Convert PilotGoal to SMARTGoal format
-        const goals: SMARTGoal[] = items.map((item) => ({
-          id: item.goal_id,
-          title: item.title,
-          category: (item.category || 'Boxing') as SMARTCategory,
-          targetDate: item.target_date?.split('T')[0] || '',
-          successMetric: item.metric || '',
-          progressPercent: item.progress_percent || 0,
-          status: (item.status ? item.status.charAt(0).toUpperCase() + item.status.slice(1).toLowerCase() : 'Not Started') as GoalStatus,
-          specific: '',
-          measurable: '',
-          achievable: '',
-          relevant: '',
-          timeBound: ''
-        }));
-        setSmartGoals(goals);
-      } catch (error) {
-        setGoalsError(error instanceof Error ? error.message : 'Failed to load goals');
-      } finally {
-        setGoalsLoading(false);
-      }
-    })();
-  }, [backendAthleteId, goalsRetryNonce]);
+    try {
+      setGoalsLoading(true);
+      setGoalsError(null);
+      const response = await fetch(
+        `/api/pilot/goals/list?athlete_id=${encodeURIComponent(backendAthleteId)}`,
+        { method: 'GET', credentials: 'include' }
+      );
+      if (!response.ok) throw new Error('Failed to load goals');
 
-  // Fetch sessions and convert to floor tasks when athlete ID is set
+      const data = (await response.json()) as { items?: Array<{ goal_id: string; title: string; category?: string; target_date?: string; metric?: string; progress_percent?: number; status?: string }> };
+      const items = data.items || [];
+
+      // Convert PilotGoal to SMARTGoal format
+      const goals: SMARTGoal[] = items.map((item) => ({
+        id: item.goal_id,
+        title: item.title,
+        category: (item.category || 'Boxing') as SMARTCategory,
+        targetDate: item.target_date?.split('T')[0] || '',
+        successMetric: item.metric || '',
+        progressPercent: item.progress_percent || 0,
+        status: (item.status ? item.status.charAt(0).toUpperCase() + item.status.slice(1).toLowerCase() : 'Not Started') as GoalStatus,
+        specific: '',
+        measurable: '',
+        achievable: '',
+        relevant: '',
+        timeBound: ''
+      }));
+      setSmartGoals(goals);
+    } catch (error) {
+      setGoalsError(error instanceof Error ? error.message : 'Failed to load goals');
+    } finally {
+      setGoalsLoading(false);
+    }
+  }, [backendAthleteId]);
+
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadGoals();
+  }, [loadGoals]);
+
+  /**
+   * Load the athlete's floor tasks from their persisted floor plan.
+   *
+   * Check-in writes the generated plan to pilot.athlete_floor_plans via
+   * POST /api/pilot/floor-plans, so that table — not the session list — is the
+   * durable source for what is on the floor. GET returns plans newest-first.
+   */
+  const loadFloorTasks = useCallback(async () => {
     if (!backendAthleteId) {
       return;
     }
 
-    void (async () => {
-      try {
-        setTasksLoading(true);
-        setTasksError(null);
-        const response = await fetch(
-          `/api/pilot/sessions/list?athlete_id=${encodeURIComponent(backendAthleteId)}`,
-          { method: 'GET', credentials: 'include' }
-        );
-        if (!response.ok) throw new Error('Failed to load sessions');
-        
-        const data = (await response.json()) as { items?: Array<{ session_id: string; title: string; date?: string; notes?: string }> };
-        const sessions = data.items || [];
-        
-        const mappedTasks: FloorTask[] = sessions.map((session) => ({
-          id: session.session_id,
-          title: session.title || 'Training Session',
-          category: 'Training',
-          description: session.notes || 'Backend session task entry.',
-          dueDate: session.date || 'Scheduled',
-          completed: false,
-          priority: 'Normal',
-        }));
+    try {
+      setTasksLoading(true);
+      setTasksError(null);
+      const response = await fetch('/api/pilot/floor-plans?limit=1', {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('Failed to load floor plan');
 
-        setFloorTasks(mappedTasks);
-        if (mappedTasks.length === 0) {
-          setBackendSyncMessage('No backend floor tasks are currently assigned.');
-        }
-      } catch (error) {
-        setTasksError(error instanceof Error ? error.message : 'Failed to load sessions');
-        setFloorTasks([]);
-      } finally {
-        setTasksLoading(false);
+      const data = (await response.json()) as {
+        items?: Array<{
+          generatedAt?: string;
+          readiness?: string;
+          tasks?: Array<{
+            id: string;
+            title: string;
+            category?: string;
+            description?: string;
+            dueDate?: string;
+            priority?: string;
+            linkedGoalId?: string;
+          }>;
+        }>;
+      };
+
+      const latestPlan = data.items?.[0] ?? null;
+      const planTasks: FloorTask[] = (latestPlan?.tasks ?? []).map((task) => ({
+        id: task.id,
+        title: task.title,
+        category: (task.category || 'Training') as FloorTask['category'],
+        description: task.description || '',
+        dueDate: task.dueDate || 'Scheduled',
+        completed: false,
+        priority: (task.priority || 'Normal') as FloorTask['priority'],
+        linkedGoalId: task.linkedGoalId,
+      }));
+
+      setFloorTasks(planTasks);
+      if (planTasks.length === 0) {
+        setBackendSyncMessage('No backend floor tasks are currently assigned.');
       }
-    })();
-  }, [backendAthleteId, tasksRetryNonce]);
+    } catch (error) {
+      setTasksError(error instanceof Error ? error.message : 'Failed to load floor plan');
+      setFloorTasks([]);
+    } finally {
+      setTasksLoading(false);
+    }
+  }, [backendAthleteId]);
 
   useEffect(() => {
-    void (async () => {
-      try {
-        const response = await fetch('/api/pilot/shadow/observation-projection', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ limit: 20 }),
-        });
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadFloorTasks();
+  }, [loadFloorTasks]);
 
-        if (!response.ok) {
-          throw new Error('Unable to load SHADOW observation stream.');
-        }
+  const loadShadowObservations = useCallback(async () => {
+    try {
+      const response = await fetch('/api/pilot/shadow/observation-projection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 20 }),
+      });
 
-        const payload = (await response.json()) as { items?: ShadowObservationItem[] };
-        setShadowObservations(payload.items ?? []);
-        setShadowObservationError('');
-      } catch (error) {
-        setShadowObservationError(error instanceof Error ? error.message : 'Unable to load SHADOW observation stream.');
+      if (!response.ok) {
+        throw new Error('Unable to load SHADOW observation stream.');
       }
-    })();
+
+      const payload = (await response.json()) as { items?: ShadowObservationItem[] };
+      setShadowObservations(payload.items ?? []);
+      setShadowObservationError('');
+    } catch (error) {
+      setShadowObservationError(error instanceof Error ? error.message : 'Unable to load SHADOW observation stream.');
+    }
   }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadShadowObservations();
+  }, [loadShadowObservations]);
 
   const handleCreateGoal = async () => {
     if (!newGoalTitle || !newGoalTargetDate || !newGoalSuccessMetric) return;
@@ -530,7 +558,7 @@ export default function AthleteWorkspace() {
     }
 
     try {
-      await fetch('/api/pilot/floor-plans', {
+      const floorPlanResponse = await fetch('/api/pilot/floor-plans', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -538,6 +566,12 @@ export default function AthleteWorkspace() {
           plan: floorPlanPayload,
         }),
       });
+
+      // Re-read the persisted plan so the floor shows what was actually stored
+      // rather than only the locally generated tasks.
+      if (floorPlanResponse.ok) {
+        await loadFloorTasks();
+      }
     } catch {
       // Floor plan persistence is secondary to session check-in.
     }
@@ -983,7 +1017,7 @@ export default function AthleteWorkspace() {
                     <button
                       onClick={() => {
                         setTasksError(null);
-                        setTasksRetryNonce((value) => value + 1);
+                        void loadFloorTasks();
                       }}
                       className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition"
                       aria-label="Retry loading tasks"
@@ -1134,7 +1168,7 @@ export default function AthleteWorkspace() {
                     <button
                       onClick={() => {
                         setGoalsError(null);
-                        setGoalsRetryNonce((value) => value + 1);
+                        void loadGoals();
                       }}
                       className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition"
                       aria-label="Retry loading goals"
@@ -1532,7 +1566,10 @@ export default function AthleteWorkspace() {
                   <div className="mt-2 border border-red-600 bg-red-900/20 p-2 rounded flex items-center justify-between">
                     <p className="text-xs text-red-400 flex-1">{shadowObservationError}</p>
                     <button
-                      onClick={() => setShadowObservationError('')}
+                      onClick={() => {
+                        setShadowObservationError('');
+                        void loadShadowObservations();
+                      }}
                       className="ml-2 px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition flex-shrink-0"
                       aria-label="Retry loading SHADOW observations"
                     >
