@@ -564,6 +564,68 @@ create index if not exists idx_shadow_chat_audit_org_created
 create index if not exists idx_shadow_chat_audit_user_created
   on pilot.shadow_chat_audit(user_id, created_at desc);
 
+-- Per-role chat audit logs (coach/athlete/board/individual assistants).
+create table if not exists pilot.coach_chat_audit (
+  coach_chat_audit_id  bigserial primary key,
+  organization_id      text not null references pilot.organizations(organization_id) on delete cascade,
+  coach_id             text not null,
+  athlete_id           text null,
+  message              text not null,
+  response             text not null,
+  created_at           timestamptz not null default now()
+);
+
+create table if not exists pilot.athlete_chat_audit (
+  athlete_chat_audit_id  bigserial primary key,
+  organization_id        text not null references pilot.organizations(organization_id) on delete cascade,
+  athlete_id             text not null,
+  message                text not null,
+  response               text not null,
+  created_at             timestamptz not null default now()
+);
+
+create table if not exists pilot.board_chat_audit (
+  board_chat_audit_id  bigserial primary key,
+  organization_id      text not null references pilot.organizations(organization_id) on delete cascade,
+  board_member_id      text not null,
+  message              text not null,
+  response             text not null,
+  created_at           timestamptz not null default now()
+);
+
+create table if not exists pilot.individual_chat_audit (
+  individual_chat_audit_id  bigserial primary key,
+  organization_id           text not null references pilot.organizations(organization_id) on delete cascade,
+  user_id                   text not null,
+  message                   text not null,
+  response                  text not null,
+  created_at                timestamptz not null default now()
+);
+
+create index if not exists idx_coach_chat_audit_org_created
+  on pilot.coach_chat_audit(organization_id, created_at desc);
+
+create index if not exists idx_coach_chat_audit_coach_created
+  on pilot.coach_chat_audit(coach_id, created_at desc);
+
+create index if not exists idx_athlete_chat_audit_org_created
+  on pilot.athlete_chat_audit(organization_id, created_at desc);
+
+create index if not exists idx_athlete_chat_audit_athlete_created
+  on pilot.athlete_chat_audit(athlete_id, created_at desc);
+
+create index if not exists idx_board_chat_audit_org_created
+  on pilot.board_chat_audit(organization_id, created_at desc);
+
+create index if not exists idx_board_chat_audit_member_created
+  on pilot.board_chat_audit(board_member_id, created_at desc);
+
+create index if not exists idx_individual_chat_audit_org_created
+  on pilot.individual_chat_audit(organization_id, created_at desc);
+
+create index if not exists idx_individual_chat_audit_user_created
+  on pilot.individual_chat_audit(user_id, created_at desc);
+
 -- SHADOW Progressive Unlocks (configuration-driven threshold engine)
 create table if not exists pilot.shadow_feature_thresholds (
   organization_id       text not null references pilot.organizations(organization_id) on delete cascade,
@@ -757,6 +819,21 @@ create index if not exists idx_admin_track_assignments_updated
 create index if not exists idx_admin_gym_capability_access_updated
   on pilot.admin_gym_capability_access(updated_at desc);
 
+-- Organization-wide announcements shown across role dashboards.
+create table if not exists pilot.announcements (
+  organization_id  text not null references pilot.organizations(organization_id),
+  announcement_id  uuid not null,
+  message          text not null,
+  author_name      text not null,
+  author_role      text not null,
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now(),
+  constraint pilot_announcements_pk primary key (organization_id, announcement_id)
+);
+
+create index if not exists idx_pilot_announcements_org_created
+  on pilot.announcements(organization_id, created_at desc);
+
 -- Coach/athlete video uploads awaiting security review before publication.
 create table if not exists pilot.video_sessions (
   video_session_id      text primary key,
@@ -780,6 +857,191 @@ create index if not exists idx_video_sessions_org_created
 
 create index if not exists idx_video_sessions_athlete
   on pilot.video_sessions(organization_id, athlete_id, created_at desc);
+
+-- Compliance monitoring: rules, detected violations, and board escalations.
+create table if not exists pilot.compliance_rules (
+  rule_id           text primary key,
+  organization_id   text not null references pilot.organizations(organization_id),
+  rule_name         text not null,
+  rule_category     text not null check (rule_category in ('safety', 'technique', 'protocol', 'medical', 'behavioral')),
+  description       text not null,
+  detection_logic   text not null,
+  severity          text not null default 'medium' check (severity in ('critical', 'high', 'medium', 'low')),
+  escalation_level  text not null default 'coach' check (escalation_level in ('coach', 'admin', 'board', 'parent')),
+  active_flag       boolean not null default true,
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now(),
+  constraint pilot_compliance_rules_unique_name unique (organization_id, rule_name)
+);
+
+create table if not exists pilot.compliance_violations (
+  violation_id           text primary key,
+  organization_id        text not null references pilot.organizations(organization_id),
+  rule_id                text not null references pilot.compliance_rules(rule_id),
+  video_session_id       text null references pilot.video_sessions(video_session_id),
+  athlete_id             text not null,
+  detected_by_account_id text not null references pilot.accounts(account_id),
+  violation_timestamp    timestamptz not null,
+  severity               text not null,
+  details                jsonb not null default '{}'::jsonb,
+  evidence_path          text null,
+  status                 text not null default 'new' check (status in ('new', 'acknowledged', 'escalated', 'resolved', 'dismissed')),
+  escalation_status      text not null default 'pending' check (escalation_status in ('pending', 'in_progress', 'resolved', 'escalated_to_board')),
+  created_at             timestamptz not null default now(),
+  updated_at             timestamptz not null default now(),
+  constraint pilot_compliance_violations_fk_athlete foreign key (organization_id, athlete_id)
+    references pilot.athletes(organization_id, athlete_id) on delete cascade
+);
+
+create table if not exists pilot.violation_escalations (
+  escalation_id          text primary key,
+  organization_id        text not null references pilot.organizations(organization_id),
+  violation_id           text not null references pilot.compliance_violations(violation_id) on delete cascade,
+  escalated_by_account_id text not null references pilot.accounts(account_id),
+  escalated_to_role      text not null,
+  escalation_reason      text not null,
+  board_notification_id  text null,
+  action_required        text null,
+  resolved_at            timestamptz null,
+  created_at             timestamptz not null default now(),
+  updated_at             timestamptz not null default now()
+);
+
+create index if not exists idx_compliance_violations_org_athlete
+  on pilot.compliance_violations(organization_id, athlete_id, created_at desc);
+
+create index if not exists idx_compliance_violations_status
+  on pilot.compliance_violations(organization_id, status, escalation_status);
+
+-- Progression intelligence: detected skill gaps, assigned drills, completions.
+create table if not exists pilot.progression_gaps (
+  gap_id            text primary key,
+  organization_id   text not null references pilot.organizations(organization_id),
+  athlete_id        text not null,
+  coach_account_id  text not null references pilot.accounts(account_id),
+  gap_type          text not null check (gap_type in ('technique', 'strength', 'endurance', 'skill', 'mental', 'tactical')),
+  gap_description   text not null,
+  severity          text not null default 'medium' check (severity in ('critical', 'high', 'medium', 'low')),
+  detected_from     text not null,
+  detected_from_id  text null,
+  detection_data    jsonb not null default '{}'::jsonb,
+  status            text not null default 'identified' check (status in ('identified', 'assigned', 'in_progress', 'completed', 'deferred')),
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now(),
+  constraint pilot_progression_gaps_fk_athlete foreign key (organization_id, athlete_id)
+    references pilot.athletes(organization_id, athlete_id) on delete cascade
+);
+
+create table if not exists pilot.drill_assignments (
+  assignment_id         text primary key,
+  organization_id       text not null references pilot.organizations(organization_id),
+  gap_id                text not null references pilot.progression_gaps(gap_id) on delete cascade,
+  athlete_id            text not null,
+  assigned_by_account_id text not null references pilot.accounts(account_id),
+  drill_name            text not null,
+  drill_description     text not null,
+  drill_difficulty      text not null default 'intermediate' check (drill_difficulty in ('beginner', 'intermediate', 'advanced', 'elite')),
+  rep_count             integer null,
+  duration_minutes      integer null,
+  frequency_per_week    integer null,
+  assigned_at           timestamptz not null default now(),
+  due_date              date null,
+  status                text not null default 'assigned' check (status in ('assigned', 'in_progress', 'completed', 'incomplete', 'cancelled')),
+  completion_percentage integer not null default 0,
+  created_at            timestamptz not null default now(),
+  updated_at            timestamptz not null default now(),
+  constraint pilot_drill_assignments_fk_athlete foreign key (organization_id, athlete_id)
+    references pilot.athletes(organization_id, athlete_id) on delete cascade
+);
+
+create table if not exists pilot.assignment_completions (
+  completion_id         text primary key,
+  organization_id       text not null references pilot.organizations(organization_id),
+  assignment_id         text not null references pilot.drill_assignments(assignment_id) on delete cascade,
+  athlete_id            text not null,
+  completed_at          timestamptz not null,
+  reps_completed        integer null,
+  notes                 text not null default '',
+  verification_status   text not null default 'pending' check (verification_status in ('pending', 'verified', 'disputed')),
+  verified_by_account_id text null references pilot.accounts(account_id),
+  verified_at           timestamptz null,
+  created_at            timestamptz not null default now(),
+  updated_at            timestamptz not null default now(),
+  constraint pilot_assignment_completions_fk_athlete foreign key (organization_id, athlete_id)
+    references pilot.athletes(organization_id, athlete_id) on delete cascade
+);
+
+create index if not exists idx_progression_gaps_athlete
+  on pilot.progression_gaps(organization_id, athlete_id, created_at desc);
+
+create index if not exists idx_drill_assignments_status
+  on pilot.drill_assignments(organization_id, status, due_date);
+
+create index if not exists idx_assignment_completions_assignment
+  on pilot.assignment_completions(organization_id, assignment_id);
+
+-- Publication workflow: video publications, their compliance checks, and the
+-- public research library they can be promoted into.
+create table if not exists pilot.video_publications (
+  publication_id            text primary key,
+  organization_id           text not null references pilot.organizations(organization_id),
+  video_session_id          text not null references pilot.video_sessions(video_session_id) on delete cascade,
+  athlete_id                text not null,
+  submitted_by_account_id   text not null references pilot.accounts(account_id),
+  publication_type          text not null check (publication_type in ('research_library', 'public_coaching', 'private_archive')),
+  title                     text not null,
+  description               text not null,
+  tags                      text[] not null default '{}'::text[],
+  approved_by_account_id    text null references pilot.accounts(account_id),
+  compliance_check_status   text not null default 'pending' check (compliance_check_status in ('pending', 'passed', 'failed', 'manual_review')),
+  metadata_complete         boolean not null default false,
+  visibility                text not null default 'private' check (visibility in ('private', 'organization', 'public', 'research')),
+  published_at              timestamptz null,
+  archived_at               timestamptz null,
+  status                    text not null default 'draft' check (status in ('draft', 'pending_review', 'approved', 'published', 'rejected', 'archived')),
+  created_at                timestamptz not null default now(),
+  updated_at                timestamptz not null default now(),
+  constraint pilot_video_publications_fk_athlete foreign key (organization_id, athlete_id)
+    references pilot.athletes(organization_id, athlete_id) on delete cascade
+);
+
+create table if not exists pilot.publication_checks (
+  check_id            text primary key,
+  organization_id     text not null references pilot.organizations(organization_id),
+  publication_id      text not null references pilot.video_publications(publication_id) on delete cascade,
+  check_type          text not null check (check_type in ('compliance', 'safety', 'metadata', 'consent', 'legal')),
+  check_status        text not null check (check_status in ('passed', 'failed', 'warning', 'manual_review')),
+  details             text not null,
+  checked_by_account_id text null references pilot.accounts(account_id),
+  checked_at          timestamptz null,
+  created_at          timestamptz not null default now()
+);
+
+create table if not exists pilot.research_library (
+  library_id        text primary key,
+  organization_id   text not null references pilot.organizations(organization_id),
+  publication_id    text not null references pilot.video_publications(publication_id) on delete cascade,
+  video_session_id  text not null references pilot.video_sessions(video_session_id),
+  title             text not null,
+  description       text not null,
+  tags              text[] not null default '{}'::text[],
+  view_count        integer not null default 0,
+  citation_count    integer not null default 0,
+  last_accessed_at  timestamptz null,
+  published_at      timestamptz not null default now(),
+  archived_at       timestamptz null,
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now()
+);
+
+create index if not exists idx_video_publications_status
+  on pilot.video_publications(organization_id, status, created_at desc);
+
+create index if not exists idx_research_library_published
+  on pilot.research_library(organization_id, published_at desc);
+
+create index if not exists idx_research_library_tags
+  on pilot.research_library(organization_id, tags);
 
 -- SHADOW durable conversations, privacy workflows, jobs, learning, and formulas.
 -- These are deployment-time tables. Application request handlers must never
