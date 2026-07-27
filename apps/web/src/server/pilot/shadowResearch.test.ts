@@ -54,7 +54,7 @@ describe('resolveShadowResearchRequirement', () => {
     });
 
     expect(resolved).toBe(true);
-    const [sql, params] = mockQuery.mock.calls[0];
+    const [sql, params = []] = mockQuery.mock.calls[0];
     expect(sql).toContain("and status = 'open'");
     expect(params[3]).toBe(false);
     expect(params[4]).toEqual([]);
@@ -75,7 +75,7 @@ describe('resolveShadowResearchRequirement', () => {
     });
 
     expect(resolved).toBe(false);
-    const [sql, params] = mockQuery.mock.calls[0];
+    const [sql, params = []] = mockQuery.mock.calls[0];
     expect(sql).toContain('source_entity_id = any($5::text[])');
     expect(params[3]).toBe(true);
     expect(params[4]).toEqual(['athlete-not-theirs']);
