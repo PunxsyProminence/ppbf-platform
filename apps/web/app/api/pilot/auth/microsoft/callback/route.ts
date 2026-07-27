@@ -213,6 +213,15 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown auth error';
 
+    // Always logged, not gated behind PPBF_AUTH_DIAGNOSTICS: a sign-in that
+    // fails here redirects the user to /login with a generic code, so without
+    // this the only record of why production auth broke is gone.
+    console.error('auth.microsoft.callback.failed', {
+      route: request.nextUrl.pathname,
+      host: request.nextUrl.host,
+      message,
+    });
+
     if (message.startsWith('Unauthorized: missing authorization response') || message.startsWith('Unauthorized: invalid state')) {
       return redirectToLogin(publicOrigin, 'auth-state-expired');
     }
