@@ -675,12 +675,16 @@ export async function POST(request: NextRequest) {
         file_name text not null,
         file_size_bytes bigint not null,
         mime_type text not null,
-        status text not null default 'uploaded' check (status in ('uploaded', 'processing', 'ready', 'error', 'archived')),
+        status text not null default 'quarantined' check (status in ('quarantined', 'uploaded', 'processing', 'ready', 'error', 'archived')),
         created_at timestamptz not null default now(),
         updated_at timestamptz not null default now()
       )`,
       `create index if not exists idx_video_sessions_org_created on pilot.video_sessions(organization_id, created_at desc)`,
       `create index if not exists idx_video_sessions_athlete on pilot.video_sessions(organization_id, athlete_id, created_at desc)`,
+      // video_sessions may already exist from before 'quarantined' (the status the
+      // upload handler actually inserts) was added to the allowed status list.
+      `alter table pilot.video_sessions drop constraint if exists video_sessions_status_check`,
+      `alter table pilot.video_sessions add constraint video_sessions_status_check check (status in ('quarantined', 'uploaded', 'processing', 'ready', 'error', 'archived'))`,
       
       // Compliance Monitoring tables
       `create table if not exists pilot.compliance_rules (

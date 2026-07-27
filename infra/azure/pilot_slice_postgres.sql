@@ -757,6 +757,30 @@ create index if not exists idx_admin_track_assignments_updated
 create index if not exists idx_admin_gym_capability_access_updated
   on pilot.admin_gym_capability_access(updated_at desc);
 
+-- Coach/athlete video uploads awaiting security review before publication.
+create table if not exists pilot.video_sessions (
+  video_session_id      text primary key,
+  organization_id       text not null references pilot.organizations(organization_id) on delete cascade,
+  uploaded_by_account_id text not null,
+  athlete_id             text null,
+  title                  text not null,
+  notes                  text not null default '',
+  blob_path              text not null,
+  file_name              text not null,
+  file_size_bytes        bigint not null,
+  mime_type              text not null,
+  status                 text not null default 'quarantined'
+    check (status in ('quarantined', 'uploaded', 'processing', 'ready', 'error', 'archived')),
+  created_at             timestamptz not null default now(),
+  updated_at             timestamptz not null default now()
+);
+
+create index if not exists idx_video_sessions_org_created
+  on pilot.video_sessions(organization_id, created_at desc);
+
+create index if not exists idx_video_sessions_athlete
+  on pilot.video_sessions(organization_id, athlete_id, created_at desc);
+
 -- SHADOW durable conversations, privacy workflows, jobs, learning, and formulas.
 -- These are deployment-time tables. Application request handlers must never
 -- create or alter schema at runtime.
