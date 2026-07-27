@@ -96,6 +96,80 @@ describe('createProvisionalRecommendation', () => {
     expect(mockWithTransaction).not.toHaveBeenCalled();
   });
 
+  test('blocks a medically sensitive recommendation when no clearance record exists at all', async () => {
+    // Fail closed: absence of a status is not a clearance decision. An
+    // athlete with no medical administrative status on file must not sail
+    // through a sparring/weight-cut/clearance recommendation by default.
+    mockGetMedicalStatus.mockResolvedValueOnce(null);
+
+    await expect(createProvisionalRecommendation({
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      recommendationText: 'Clear athlete for full-contact sparring.',
+      expectedOutcome: 'Athlete returns to full sparring load.',
+      createdByAccountId: 'coach-1',
+      createdByRole: 'coach',
+      isMedicallySensitive: true,
+    })).rejects.toBeInstanceOf(MedicalStatusBlockedError);
+
+    expect(mockWithTransaction).not.toHaveBeenCalled();
+  });
+
+  test('blocks a medically sensitive recommendation while status is only pending', async () => {
+    mockGetMedicalStatus.mockResolvedValueOnce({
+      status_id: 'status-2',
+      organization_id: 'org-1',
+      athlete_id: 'athlete-1',
+      status: 'pending',
+      restriction_flags: {},
+      source_reference: null,
+      set_by_account_id: 'coach-1',
+      set_by_role: 'coach',
+      effective_at: '2026-07-27T10:00:00.000Z',
+      created_at: '2026-07-27T10:00:00.000Z',
+    });
+
+    await expect(createProvisionalRecommendation({
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      recommendationText: 'Clear athlete for full-contact sparring.',
+      expectedOutcome: 'Athlete returns to full sparring load.',
+      createdByAccountId: 'coach-1',
+      createdByRole: 'coach',
+      isMedicallySensitive: true,
+    })).rejects.toBeInstanceOf(MedicalStatusBlockedError);
+
+    expect(mockWithTransaction).not.toHaveBeenCalled();
+  });
+
+  test('allows a medically sensitive recommendation only once status is explicitly cleared', async () => {
+    mockGetMedicalStatus.mockResolvedValueOnce({
+      status_id: 'status-3',
+      organization_id: 'org-1',
+      athlete_id: 'athlete-1',
+      status: 'cleared',
+      restriction_flags: {},
+      source_reference: 'physician-note-123',
+      set_by_account_id: 'coach-1',
+      set_by_role: 'coach',
+      effective_at: '2026-07-27T10:00:00.000Z',
+      created_at: '2026-07-27T10:00:00.000Z',
+    });
+
+    const clientQuery = jest.fn().mockResolvedValue({ rows: [recommendationRow()] });
+    mockWithTransaction.mockImplementationOnce(async (fn) => fn({ query: clientQuery }));
+
+    await expect(createProvisionalRecommendation({
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      recommendationText: 'Clear athlete for full-contact sparring.',
+      expectedOutcome: 'Athlete returns to full sparring load.',
+      createdByAccountId: 'coach-1',
+      createdByRole: 'coach',
+      isMedicallySensitive: true,
+    })).resolves.toBeDefined();
+  });
+
   test('does not consult medical status at all when the topic is not flagged sensitive', async () => {
     const clientQuery = jest.fn().mockResolvedValue({ rows: [recommendationRow()] });
     mockWithTransaction.mockImplementation(async (callback) => callback({ query: clientQuery } as never));

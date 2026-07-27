@@ -37,9 +37,13 @@ export async function assertMedicalStatusAllowsRecommendation(
   organizationId: string,
   athleteId: string,
 ): Promise<void> {
+  // Fail closed: only an explicit 'cleared' record allows a medically
+  // sensitive recommendation through. No record on file, 'pending', and
+  // 'restricted'/'not_cleared' all block -- absence of a clearance decision
+  // is not itself a clearance decision.
   const status = await getLatestMedicalAdministrativeStatus(organizationId, athleteId);
-  if (status && (status.status === 'restricted' || status.status === 'not_cleared')) {
-    throw new MedicalStatusBlockedError(status.status);
+  if (!status || status.status !== 'cleared') {
+    throw new MedicalStatusBlockedError(status?.status ?? 'no_record');
   }
 }
 
