@@ -30,9 +30,10 @@ export function getClientIp(request: Request): string {
   // Check headers in order of preference
   const forwardedFor = request.headers.get('x-forwarded-for');
   if (forwardedFor) {
-    // x-forwarded-for can be a comma-separated list; take the last one (client IP)
+    // x-forwarded-for is comma-separated as client, proxy1, proxy2, ...;
+    // each hop appends to the right, so the first entry is the original client.
     const ips = forwardedFor.split(',').map((ip) => ip.trim());
-    return ips[ips.length - 1] || 'unknown';
+    return ips[0] || 'unknown';
   }
 
   const realIp = request.headers.get('x-real-ip');
