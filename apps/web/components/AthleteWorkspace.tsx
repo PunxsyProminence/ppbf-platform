@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import React, { type FormEvent, useEffect, useState } from 'react';
+import React, { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { AthleteSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
+import ShadowChatButton from './ShadowChatButton';
 import { cx, ui } from './uiStyles';
 
 type TabID = 'my-dashboard' | 'athlete-floor' | 'smart-goals' | 'tracks' | 'assessments' | 'bio-checkin' | 'drill-library' | 'rabbit-holes' | 'message-coach' | 'schedule-session' | 'shadow';
@@ -67,13 +68,6 @@ interface Drill {
   minRank: string;
 }
 
-interface ShadowMessage {
-  id: string;
-  sender: 'athlete' | 'shadow';
-  text: string;
-  timestamp: string;
-}
-
 interface ShadowObservationItem {
   id: string;
   source: 'event' | 'telemetry';
@@ -100,30 +94,6 @@ function getGoalStatusTone(status: GoalStatus): string {
   if (status === 'Active') return 'bg-blue-900 text-blue-200';
   if (status === 'Completed') return 'bg-green-900 text-green-200';
   return 'bg-yellow-900 text-yellow-200';
-}
-
-function createInitialShadowMessages(): ShadowMessage[] {
-  const now = Date.now();
-  return [
-    {
-      id: 'sm_1',
-      sender: 'shadow',
-      text: 'Hey! I\'m SHADOW, your AI athletic coach. How\'s your training going today?',
-      timestamp: new Date(now - 600000).toISOString(),
-    },
-    {
-      id: 'sm_2',
-      sender: 'athlete',
-      text: 'Pretty good, but my footwork felt off during drills',
-      timestamp: new Date(now - 540000).toISOString(),
-    },
-    {
-      id: 'sm_3',
-      sender: 'shadow',
-      text: 'Let\'s dig into that. What specific footwork drill were you working on?',
-      timestamp: new Date(now - 480000).toISOString(),
-    },
-  ];
 }
 
 function formatDueTime(checkInAt: Date, offsetMinutes: number): string {
@@ -272,8 +242,7 @@ export default function AthleteWorkspace() {
   const [smartGoals, setSmartGoals] = useState<SMARTGoal[]>([]);
   const [goalsLoading, setGoalsLoading] = useState(true);
   const [goalsError, setGoalsError] = useState<string | null>(null);
-  const [goalsRetryNonce, setGoalsRetryNonce] = useState(0);
-  
+
   const [showGoalForm, setShowGoalForm] = useState(false);
   const [newGoalTitle, setNewGoalTitle] = useState('');
   const [newGoalCategory, setNewGoalCategory] = useState<SMARTCategory>('Boxing');
@@ -284,7 +253,6 @@ export default function AthleteWorkspace() {
   const [floorTasks, setFloorTasks] = useState<FloorTask[]>([]);
   const [tasksLoading, setTasksLoading] = useState(true);
   const [tasksError, setTasksError] = useState<string | null>(null);
-  const [tasksRetryNonce, setTasksRetryNonce] = useState(0);
 
   // Drills State
   const [drills] = useState<Drill[]>([
@@ -295,8 +263,6 @@ export default function AthleteWorkspace() {
   const [completedDrills, setCompletedDrills] = useState<Record<string, boolean>>({});
 
   // Shadow State
-  const [shadowMessages] = useState<ShadowMessage[]>(createInitialShadowMessages);
-  const [shadowInput, setShadowInput] = useState('');
   const [shadowObservations, setShadowObservations] = useState<ShadowObservationItem[]>([]);
   const [shadowObservationError, setShadowObservationError] = useState('');
   const [selectedCoach, setSelectedCoach] = useState('Coach Jason (Head Coach)');
@@ -330,111 +296,141 @@ export default function AthleteWorkspace() {
   }, []);
 
   // Fetch goals when athlete ID is set
-  useEffect(() => {
+  const loadGoals = useCallback(async () => {
     if (!backendAthleteId) {
       return;
     }
 
-    void (async () => {
-      try {
-        setGoalsLoading(true);
-        setGoalsError(null);
-        const response = await fetch(
-          `/api/pilot/goals/list?athlete_id=${encodeURIComponent(backendAthleteId)}`,
-          { method: 'GET', credentials: 'include' }
-        );
-        if (!response.ok) throw new Error('Failed to load goals');
-        
-        const data = (await response.json()) as { items?: Array<{ goal_id: string; title: string; category?: string; target_date?: string; metric?: string; progress_percent?: number; status?: string }> };
-        const items = data.items || [];
-        
-        // Convert PilotGoal to SMARTGoal format
-        const goals: SMARTGoal[] = items.map((item) => ({
-          id: item.goal_id,
-          title: item.title,
-          category: (item.category || 'Boxing') as SMARTCategory,
-          targetDate: item.target_date?.split('T')[0] || '',
-          successMetric: item.metric || '',
-          progressPercent: item.progress_percent || 0,
-          status: (item.status ? item.status.charAt(0).toUpperCase() + item.status.slice(1).toLowerCase() : 'Not Started') as GoalStatus,
-          specific: '',
-          measurable: '',
-          achievable: '',
-          relevant: '',
-          timeBound: ''
-        }));
-        setSmartGoals(goals);
-      } catch (error) {
-        setGoalsError(error instanceof Error ? error.message : 'Failed to load goals');
-      } finally {
-        setGoalsLoading(false);
-      }
-    })();
-  }, [backendAthleteId, goalsRetryNonce]);
+    try {
+      setGoalsLoading(true);
+      setGoalsError(null);
+      const response = await fetch(
+        `/api/pilot/goals/list?athlete_id=${encodeURIComponent(backendAthleteId)}`,
+        { method: 'GET', credentials: 'include' }
+      );
+      if (!response.ok) throw new Error('Failed to load goals');
 
-  // Fetch sessions and convert to floor tasks when athlete ID is set
+      const data = (await response.json()) as { items?: Array<{ goal_id: string; title: string; category?: string; target_date?: string; metric?: string; progress_percent?: number; status?: string }> };
+      const items = data.items || [];
+
+      // Convert PilotGoal to SMARTGoal format
+      const goals: SMARTGoal[] = items.map((item) => ({
+        id: item.goal_id,
+        title: item.title,
+        category: (item.category || 'Boxing') as SMARTCategory,
+        targetDate: item.target_date?.split('T')[0] || '',
+        successMetric: item.metric || '',
+        progressPercent: item.progress_percent || 0,
+        status: (item.status ? item.status.charAt(0).toUpperCase() + item.status.slice(1).toLowerCase() : 'Not Started') as GoalStatus,
+        specific: '',
+        measurable: '',
+        achievable: '',
+        relevant: '',
+        timeBound: ''
+      }));
+      setSmartGoals(goals);
+    } catch (error) {
+      setGoalsError(error instanceof Error ? error.message : 'Failed to load goals');
+    } finally {
+      setGoalsLoading(false);
+    }
+  }, [backendAthleteId]);
+
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadGoals();
+  }, [loadGoals]);
+
+  /**
+   * Load the athlete's floor tasks from their persisted floor plan.
+   *
+   * Check-in writes the generated plan to pilot.athlete_floor_plans via
+   * POST /api/pilot/floor-plans, so that table — not the session list — is the
+   * durable source for what is on the floor. GET returns plans newest-first.
+   */
+  const loadFloorTasks = useCallback(async () => {
     if (!backendAthleteId) {
       return;
     }
 
-    void (async () => {
-      try {
-        setTasksLoading(true);
-        setTasksError(null);
-        const response = await fetch(
-          `/api/pilot/sessions/list?athlete_id=${encodeURIComponent(backendAthleteId)}`,
-          { method: 'GET', credentials: 'include' }
-        );
-        if (!response.ok) throw new Error('Failed to load sessions');
-        
-        const data = (await response.json()) as { items?: Array<{ session_id: string; title: string; date?: string; notes?: string }> };
-        const sessions = data.items || [];
-        
-        const mappedTasks: FloorTask[] = sessions.map((session) => ({
-          id: session.session_id,
-          title: session.title || 'Training Session',
-          category: 'Training',
-          description: session.notes || 'Backend session task entry.',
-          dueDate: session.date || 'Scheduled',
-          completed: false,
-          priority: 'Normal',
-        }));
+    try {
+      setTasksLoading(true);
+      setTasksError(null);
+      const response = await fetch('/api/pilot/floor-plans?limit=1', {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('Failed to load floor plan');
 
-        setFloorTasks(mappedTasks);
-        if (mappedTasks.length === 0) {
-          setBackendSyncMessage('No backend floor tasks are currently assigned.');
-        }
-      } catch (error) {
-        setTasksError(error instanceof Error ? error.message : 'Failed to load sessions');
-        setFloorTasks([]);
-      } finally {
-        setTasksLoading(false);
+      const data = (await response.json()) as {
+        items?: Array<{
+          generatedAt?: string;
+          readiness?: string;
+          tasks?: Array<{
+            id: string;
+            title: string;
+            category?: string;
+            description?: string;
+            dueDate?: string;
+            priority?: string;
+            linkedGoalId?: string;
+          }>;
+        }>;
+      };
+
+      const latestPlan = data.items?.[0] ?? null;
+      const planTasks: FloorTask[] = (latestPlan?.tasks ?? []).map((task) => ({
+        id: task.id,
+        title: task.title,
+        category: (task.category || 'Training') as FloorTask['category'],
+        description: task.description || '',
+        dueDate: task.dueDate || 'Scheduled',
+        completed: false,
+        priority: (task.priority || 'Normal') as FloorTask['priority'],
+        linkedGoalId: task.linkedGoalId,
+      }));
+
+      setFloorTasks(planTasks);
+      if (planTasks.length === 0) {
+        setBackendSyncMessage('No backend floor tasks are currently assigned.');
       }
-    })();
-  }, [backendAthleteId, tasksRetryNonce]);
+    } catch (error) {
+      setTasksError(error instanceof Error ? error.message : 'Failed to load floor plan');
+      setFloorTasks([]);
+    } finally {
+      setTasksLoading(false);
+    }
+  }, [backendAthleteId]);
 
   useEffect(() => {
-    void (async () => {
-      try {
-        const response = await fetch('/api/pilot/shadow/observation-projection', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ limit: 20 }),
-        });
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadFloorTasks();
+  }, [loadFloorTasks]);
 
-        if (!response.ok) {
-          throw new Error('Unable to load SHADOW observation stream.');
-        }
+  const loadShadowObservations = useCallback(async () => {
+    try {
+      const response = await fetch('/api/pilot/shadow/observation-projection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 20 }),
+      });
 
-        const payload = (await response.json()) as { items?: ShadowObservationItem[] };
-        setShadowObservations(payload.items ?? []);
-        setShadowObservationError('');
-      } catch (error) {
-        setShadowObservationError(error instanceof Error ? error.message : 'Unable to load SHADOW observation stream.');
+      if (!response.ok) {
+        throw new Error('Unable to load SHADOW observation stream.');
       }
-    })();
+
+      const payload = (await response.json()) as { items?: ShadowObservationItem[] };
+      setShadowObservations(payload.items ?? []);
+      setShadowObservationError('');
+    } catch (error) {
+      setShadowObservationError(error instanceof Error ? error.message : 'Unable to load SHADOW observation stream.');
+    }
   }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadShadowObservations();
+  }, [loadShadowObservations]);
 
   const handleCreateGoal = async () => {
     if (!newGoalTitle || !newGoalTargetDate || !newGoalSuccessMetric) return;
@@ -530,7 +526,7 @@ export default function AthleteWorkspace() {
     }
 
     try {
-      await fetch('/api/pilot/floor-plans', {
+      const floorPlanResponse = await fetch('/api/pilot/floor-plans', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -538,6 +534,12 @@ export default function AthleteWorkspace() {
           plan: floorPlanPayload,
         }),
       });
+
+      // Re-read the persisted plan so the floor shows what was actually stored
+      // rather than only the locally generated tasks.
+      if (floorPlanResponse.ok) {
+        await loadFloorTasks();
+      }
     } catch {
       // Floor plan persistence is secondary to session check-in.
     }
@@ -835,7 +837,6 @@ export default function AthleteWorkspace() {
                   'Skipping the check-in process',
                   'Assuming academic status is still current'
                 ]}
-                onAskShadow={() => setShadowInput('What should I focus on today?')}
               />
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -964,7 +965,6 @@ export default function AthleteWorkspace() {
                   'Not linking tasks to relevant goals',
                   'Missing deadlines by not checking due dates'
                 ]}
-                onAskShadow={() => setShadowInput('What tasks do I have today?')}
               />
 
               {tasksLoading && (
@@ -983,7 +983,7 @@ export default function AthleteWorkspace() {
                     <button
                       onClick={() => {
                         setTasksError(null);
-                        setTasksRetryNonce((value) => value + 1);
+                        void loadFloorTasks();
                       }}
                       className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition"
                       aria-label="Retry loading tasks"
@@ -1056,7 +1056,6 @@ export default function AthleteWorkspace() {
                     'Unrealistic timeframes',
                     'Not reviewing progress weekly'
                   ]}
-                  onAskShadow={() => setShadowInput('How do I set SMART goals?')}
                 />
               </div>
 
@@ -1134,7 +1133,7 @@ export default function AthleteWorkspace() {
                     <button
                       onClick={() => {
                         setGoalsError(null);
-                        setGoalsRetryNonce((value) => value + 1);
+                        void loadGoals();
                       }}
                       className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition"
                       aria-label="Retry loading goals"
@@ -1186,13 +1185,21 @@ export default function AthleteWorkspace() {
             <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
               <h3 className="font-mono font-bold text-[#d4a574] uppercase">Track Management</h3>
               <p className="text-[#b0a095]">View current track assignment and request upgrades as you progress.</p>
-              <div className="bg-[#0f0f0f] border-2 border-[#8b4444] p-4">
-                <p className="text-sm"><strong>Current Track:</strong> Non-Contact Foundations</p>
-                <p className="text-sm mt-2 text-[#b0a095]">Master basic stance, guard, jab, and program discipline protocols.</p>
-                <p className="text-sm mt-2 text-[#b0a095]"><strong>Program Membership:</strong> Active Member</p>
-                <p className="text-sm mt-1 text-[#b0a095]"><strong>Participation Status:</strong> Scholarship Supported</p>
-                <p className="text-sm mt-1 text-[#b0a095]"><strong>Support Status:</strong> Member Support Active</p>
-                <p className="text-sm mt-1 text-[#b0a095]"><strong>Community Service Credits:</strong> 0 (Display Placeholder)</p>
+              {/* Track assignment, membership, scholarship, and support status
+                  have no backing column anywhere in the schema -- the track
+                  itself would come from pilot.admin_track_assignments, which
+                  does not exist in staging or prod. These were hardcoded to the
+                  same "supported / active member" values for every athlete
+                  regardless of their actual status, which is a billing- and
+                  eligibility-adjacent misstatement, not a placeholder. Show
+                  unavailable honestly until real fields exist. Mirrors the same
+                  correction already applied in ParentHub.tsx. */}
+              <div className="bg-[#0f0f0f] border-2 border-[#8b4444] p-4 space-y-1">
+                <p className="text-sm"><strong>Current Track:</strong> <span className="text-[#8a8a8a]">Unavailable - not yet tracked</span></p>
+                <p className="text-sm mt-2 text-[#b0a095]"><strong>Program Membership:</strong> <span className="text-[#8a8a8a]">Unavailable - not yet tracked</span></p>
+                <p className="text-sm text-[#b0a095]"><strong>Participation Status:</strong> <span className="text-[#8a8a8a]">Unavailable - not yet tracked</span></p>
+                <p className="text-sm text-[#b0a095]"><strong>Support Status:</strong> <span className="text-[#8a8a8a]">Unavailable - not yet tracked</span></p>
+                <p className="text-sm text-[#b0a095]"><strong>Community Service Credits:</strong> <span className="text-[#8a8a8a]">Unavailable - not yet tracked</span></p>
               </div>
             </div>
           )}
@@ -1229,7 +1236,6 @@ export default function AthleteWorkspace() {
                   'Skipping check-in to save time',
                   'Not expanding when RED flags present'
                 ]}
-                onAskShadow={() => setShadowInput('What do these scores mean?')}
               />
 
               <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-6">
@@ -1298,7 +1304,6 @@ export default function AthleteWorkspace() {
                   'Attempting drills above your rank',
                   'Not practicing enough before marking complete'
                 ]}
-                onAskShadow={() => setShadowInput('What drills should I practice?')}
               />
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1352,7 +1357,6 @@ export default function AthleteWorkspace() {
                   'Reading but not doing homework',
                   'Not applying concepts to actual training'
                 ]}
-                onAskShadow={() => setShadowInput('Can you explain biomechanics?')}
               />
 
               <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
@@ -1381,7 +1385,6 @@ export default function AthleteWorkspace() {
                   'Vague questions without context',
                   'Expecting immediate responses'
                 ]}
-                onAskShadow={() => setShadowInput('How do I contact my coach?')}
               />
 
               <div className="border-2 border-red-600 bg-red-900/20 p-4">
@@ -1450,7 +1453,6 @@ export default function AthleteWorkspace() {
                   'Booking while on academic hold',
                   'Booking contact work with RED readiness'
                 ]}
-                onAskShadow={() => setShadowInput('What classes are available?')}
               />
 
               <div className="space-y-4">
@@ -1471,54 +1473,36 @@ export default function AthleteWorkspace() {
             <div className="space-y-6 animate-fadeIn">
               <RoleSpecificShadow
                 role="athlete"
-                query="What workout is next?"
-                response="Your next class is Youth Class on Mon-Thu 4:00-5:00 PM. Focus on Non-Contact developmental work: footwork, shadowboxing, neurocognitive drills."
+                description="Ask SHADOW about your next workout, goals, or progress. Open the real SHADOW chat to get a response -- this workspace does not answer questions inline."
+                chatContext="Athlete Workspace"
               />
 
+              {/* This panel used to render a hardcoded three-message exchange --
+                  including a fabricated athlete utterance -- above a text input
+                  whose Send button had no handler at all, under a description
+                  claiming "nothing here is a canned example". Nothing shown to an
+                  athlete may be a static transcript that could be mistaken for
+                  their own conversation, and a control that cannot send must not
+                  look like one. Route to the real chat instead; see the same
+                  correction in RoleSummaryPanels.tsx. */}
               <div className="border-2 border-[#d4a574] bg-[#0f0f0f] p-6 space-y-4">
-                <div className="space-y-3 max-h-96 overflow-y-auto">
-                  {shadowMessages.map(msg => (
-                    <div key={msg.id} className={`flex ${msg.sender === 'athlete' ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`max-w-xs px-4 py-2 rounded ${
-                        msg.sender === 'athlete'
-                          ? 'bg-blue-900 text-blue-100'
-                          : 'bg-[#4a4a4a] text-[#e8d7c6]'
-                      }`}>
-                        <p className="text-sm">{msg.text}</p>
-                        <p className="text-xs opacity-75 mt-1">{new Date(msg.timestamp).toLocaleTimeString()}</p>
-                      </div>
-                    </div>
-                  ))}
+                <div>
+                  <p className="text-sm font-semibold text-[#d4a574]">SHADOW Chat</p>
+                  <p className="mt-1 text-sm text-[#b0a095]">
+                    In-workspace chat is not available here yet. Open the full SHADOW chat to ask a
+                    question and get a real response.
+                  </p>
                 </div>
 
-                <div className="pt-4 border-t-2 border-[#d4a574] space-y-3">
-                  <div className="space-y-2">
-                    <p className="text-sm font-semibold text-[#d4a574]">Suggested Questions:</p>
-                    <div className="grid grid-cols-1 gap-2">
-                      {suggestedQuestions.map((q) => (
-                        <button
-                          key={q}
-                          onClick={() => setShadowInput(q)}
-                          className="text-left px-3 py-2 bg-[#1a1a1a] border-2 border-[#d4a574] hover:bg-[#2a2a2a] text-sm text-[#d4a574] transition"
-                        >
-                          {q}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                <ShadowChatButton context="Athlete Workspace" />
 
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={shadowInput}
-                      onChange={(e) => setShadowInput(e.target.value)}
-                      placeholder="Ask SHADOW a question..."
-                      className="flex-1 px-3 py-2 bg-[#1a1a1a] border-2 border-[#d4a574] text-[#e8d7c6] focus:outline-none"
-                    />
-                    <button className="px-4 py-2 bg-[#d4a574] hover:bg-[#b08060] text-[#0a0a0a] font-semibold transition">
-                      Send
-                    </button>
-                  </div>
+                <div className="space-y-2 border-t-2 border-[#d4a574] pt-4">
+                  <p className="text-sm font-semibold text-[#d4a574]">Things you can ask SHADOW:</p>
+                  <ul className="list-disc space-y-1 pl-5">
+                    {suggestedQuestions.map((q) => (
+                      <li key={q} className="text-sm text-[#b0a095]">{q}</li>
+                    ))}
+                  </ul>
                 </div>
               </div>
 
@@ -1532,7 +1516,10 @@ export default function AthleteWorkspace() {
                   <div className="mt-2 border border-red-600 bg-red-900/20 p-2 rounded flex items-center justify-between">
                     <p className="text-xs text-red-400 flex-1">{shadowObservationError}</p>
                     <button
-                      onClick={() => setShadowObservationError('')}
+                      onClick={() => {
+                        setShadowObservationError('');
+                        void loadShadowObservations();
+                      }}
                       className="ml-2 px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition flex-shrink-0"
                       aria-label="Retry loading SHADOW observations"
                     >

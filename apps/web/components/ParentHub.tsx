@@ -373,7 +373,6 @@ export default function ParentHub() {
                   'Missing coach communication',
                   'Overlooking skill milestones'
                 ]}
-                onAskShadow={() => {}}
               />
 
               {activeChild && (
@@ -397,21 +396,23 @@ export default function ParentHub() {
                         <p className="text-xs text-[#b0a095] block mb-1">Attendance</p>
                         <p className="text-base font-semibold text-green-400">{activeChild.attendancePercent}%</p>
                       </div>
+                      {/* Membership/scholarship/community-service status has no
+                          backing column anywhere in the schema -- these used to
+                          be hardcoded to the same "supported" values for every
+                          family regardless of their actual status, which is a
+                          real billing-adjacent misstatement, not a placeholder.
+                          Show unavailable honestly until a real field exists. */}
                       <div>
                         <p className="text-xs text-[#b0a095] block mb-1">Membership Status</p>
-                        <p className="text-base font-semibold">Active Member</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-[#b0a095] block mb-1">Support Status</p>
-                        <p className="text-base font-semibold">Scholarship Supported</p>
+                        <p className="text-base font-semibold text-[#8a8a8a]">Unavailable - not yet tracked</p>
                       </div>
                       <div>
                         <p className="text-xs text-[#b0a095] block mb-1">Scholarship Status</p>
-                        <p className="text-base font-semibold">Scholarship Supported</p>
+                        <p className="text-base font-semibold text-[#8a8a8a]">Unavailable - not yet tracked</p>
                       </div>
                       <div>
                         <p className="text-xs text-[#b0a095] block mb-1">Community Service Support Status</p>
-                        <p className="text-base font-semibold">Community Service Supported</p>
+                        <p className="text-base font-semibold text-[#8a8a8a]">Unavailable - not yet tracked</p>
                       </div>
                     </div>
                   </div>
@@ -459,35 +460,19 @@ export default function ParentHub() {
                   'Not providing dedicated practice time',
                   'Missing reporting deadlines'
                 ]}
-                onAskShadow={() => {}}
               />
 
               <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4">
                 <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">This Week&apos;s Parent Support Tasks</h3>
-
-                <div className="space-y-3">
-                  {[
-                    { task: 'Watch Jab Video', completed: false },
-                    { task: 'Record 2 Shadowboxing Rounds', completed: true },
-                    { task: 'Complete Family Reflection', completed: false },
-                    { task: 'Verify School Progress', completed: true },
-                    { task: 'Prepare for Saturday Session', completed: false }
-                  ].map((item) => (
-                    <div key={item.task} className={`border-2 p-3 rounded flex items-center gap-3 ${
-                      item.completed ? 'bg-green-900/20 border-green-700' : 'bg-[#0f0f0f] border-[#8b4444]'
-                    }`}>
-                      <input type="checkbox" checked={item.completed} readOnly aria-label={`${item.task} completion`} className="w-4 h-4" />
-                      <span className="font-semibold">{item.task}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="bg-[#0f0f0f] border-2 border-[#8b4444] p-4">
-                  <p className="text-xs text-[#8a8a8a]">Progress: 40%</p>
-                  <div className="w-full bg-[#2a2a2a] h-2 mt-2">
-                    <div className="bg-[#d4a574] h-2" style={{width: '40%'}}></div>
-                  </div>
-                </div>
+                <p className="max-w-[520px] font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                  PLANNED | NOT YET IMPLEMENTED
+                </p>
+                <p className="text-sm text-[#b0a095]">
+                  There is no parent-task assignment feed wired to the backend yet. The checklist and progress
+                  bar previously shown here were hardcoded example data, not real tasks -- they have been
+                  removed rather than left showing fake completion status. Home assignments from your child&apos;s
+                  coach appear in the Assignments tab once that feed is connected.
+                </p>
               </div>
             </div>
           )}
@@ -509,8 +494,12 @@ export default function ParentHub() {
                   'Not understanding assignment goals',
                   'Skipping optional evidence uploads'
                 ]}
-                onAskShadow={() => {}}
               />
+
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for home assignments yet, so this
+                list is always empty.
+              </p>
 
               <div className="space-y-3">
                 {homeAssignments.map(assignment => (
@@ -546,8 +535,12 @@ export default function ParentHub() {
                   'Minimizing stress or pain mentions',
                   'Not sharing positive observations'
                 ]}
-                onAskShadow={() => {}}
               />
+
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed or entry form for parent observations
+                yet, so this section is always empty.
+              </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {parentObservations.map(obs => (
@@ -588,8 +581,12 @@ export default function ParentHub() {
                   'Not reviewing progress regularly',
                   'Not involving the whole family'
                 ]}
-                onAskShadow={() => {}}
               />
+
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for family goals yet, so this section
+                is always empty.
+              </p>
 
               <div className="space-y-3">
                 {familyGoals.map(goal => (
@@ -631,8 +628,12 @@ export default function ParentHub() {
                   'Delayed responses to urgent matters',
                   'Not sharing important information'
                 ]}
-                onAskShadow={() => {}}
               />
+
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for coach messages yet, so this list
+                is always empty.
+              </p>
 
               <div className="space-y-3 max-h-96 overflow-y-auto">
                 {messages.map(msg => (
@@ -649,14 +650,26 @@ export default function ParentHub() {
 
               <div className="border-2 border-[#d4a574] bg-[#0f0f0f] p-4 space-y-3">
                 <h4 className="font-semibold text-[#d4a574]">Reply to Coach</h4>
+                <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                  PLANNED | NOT YET IMPLEMENTED
+                </p>
+                <p className="text-xs text-[#b0a095]">
+                  There is no coach-messaging backend yet. This field is disabled so a message can&apos;t be typed
+                  and silently discarded -- until this is wired up, contact your child&apos;s coach directly.
+                </p>
                 <textarea
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
-                  placeholder="Type your message..."
-                  className="w-full h-20 px-3 py-2 bg-[#1a1a1a] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none resize-none"
+                  placeholder="Messaging is not yet available."
+                  disabled
+                  className="w-full h-20 px-3 py-2 bg-[#1a1a1a] border-2 border-[#5a4a3a] text-[#8a8a8a] focus:outline-none resize-none cursor-not-allowed"
                 />
-                <button className="px-4 py-2 bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold transition">
-                  Send Message
+                <button
+                  type="button"
+                  disabled
+                  className="px-4 py-2 bg-[#3a2a2a] text-[#8a8a8a] font-semibold cursor-not-allowed"
+                >
+                  Send Message (unavailable)
                 </button>
               </div>
             </div>
@@ -667,6 +680,10 @@ export default function ParentHub() {
             <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
               <h3 className="font-mono font-bold text-[#d4a574] uppercase">Attendance Tracking</h3>
               <p className="text-[#b0a095]">View attendance history and upcoming sessions.</p>
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for attendance history or upcoming
+                sessions yet, so these lists are always empty.
+              </p>
 
               <div className="space-y-2">
                 {activeAttendanceEntries.map((entry) => (
@@ -707,6 +724,11 @@ export default function ParentHub() {
                 </Link>
               </details>
 
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for progress milestones yet, so this
+                list is always empty.
+              </p>
+
               <div className="space-y-3">
                 {activeProgressMilestones.map((milestone) => (
                   <div key={milestone.id} className={`border p-4 ${milestoneStatusTone(milestone.status)}`}>
@@ -734,6 +756,10 @@ export default function ParentHub() {
             <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
               <h3 className="font-mono font-bold text-[#d4a574] uppercase">Parent Support Resources</h3>
               <p className="text-[#b0a095]">Guides, videos, and tips for supporting young athletes.</p>
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for parent resources yet, so this
+                list is always empty.
+              </p>
               <div className="space-y-2">
                 {parentResources.map((resource) => (
                   <div key={resource.id} className="border-2 border-[#8b4444] bg-[#0f0f0f] p-3">
@@ -754,8 +780,8 @@ export default function ParentHub() {
             <div className="space-y-6 animate-fadeIn">
               <RoleSpecificShadow
                 role="parent"
-                query="How can I support my child?"
-                response="Current focus: Footwork development and competition preparation. Support this week by: 1) Ensure practice sessions aren't interrupted, 2) Maintain healthy sleep schedule, 3) Support the home drill assignments, 4) Keep nutrition consistent. Child is progressing well - focus on consistent attendance and positive reinforcement."
+                description="Ask SHADOW how to support your child at home. Tap below to open a live chat scoped to your family -- there is no canned answer here."
+                chatContext="Parent Hub"
               />
             </div>
           )}

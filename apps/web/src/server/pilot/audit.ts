@@ -4,7 +4,14 @@ import { emitShadowEvent } from './shadowEvents';
 import { writeShadowTelemetryEvent } from './shadowTelemetry';
 
 export interface PilotAuditEvent {
-  event_type: 'create' | 'update' | 'login' | 'logout' | 'shadow_classification' | 'shadow_routing';
+  event_type:
+    | 'create'
+    | 'update'
+    | 'login'
+    | 'logout'
+    | 'shadow_classification'
+    | 'shadow_routing'
+    | 'shadow_research_upload_requirement';
   actor_account_id: string | null;
   actor_role: PilotRole | null;
   organization_id: string | null;

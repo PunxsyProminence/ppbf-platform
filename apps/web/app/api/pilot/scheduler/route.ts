@@ -6,21 +6,17 @@ import { assertActorCanAccessAthlete, isOrganizationAdminRole } from '@/src/serv
 import { query } from '@/src/server/pilot/db';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
-  countRegisteredForClass,
   createSchedulerClass,
   createSchedulerCoachingRequest,
-  createSchedulerRegistration,
-  getActiveSchedulerRegistration,
   getSchedulerClassById,
   getSchedulerRegistrationById,
   listSchedulerStore,
   markSchedulerRegistrationReviewed,
+  registerForClassTransactionally,
   setSchedulerClassCover,
-  setSchedulerClassStatus,
   type SchedulerAttendance,
   type SchedulerClass,
   type SchedulerCoachingRequest,
-  type SchedulerRegistration,
   type SchedulerRole,
   type SchedulerStore,
   upsertSchedulerAttendance,
@@ -319,7 +315,13 @@ export async function POST(request: NextRequest) {
       await assertCanActOnAthlete(actor, athleteId);
 
       const now = new Date().toISOString();
-      const registration: SchedulerRegistration = {
+
+      // registerForClassTransactionally locks the class row and does the
+      // already-registered/capacity check and the insert inside one
+      // transaction, closing a race where two concurrent requests could
+      // previously both pass the checks before either committed (duplicate
+      // registrations, or overbooking past capacity).
+      const result = await registerForClassTransactionally(actor.organizationId, classId, athleteId, {
         registration_id: randomUUID(),
         class_id: classId,
         athlete_id: athleteId,
@@ -328,34 +330,23 @@ export async function POST(request: NextRequest) {
         parent_reviewed: actor.role !== 'parent',
         parent_reviewed_at: actor.role === 'parent' ? now : undefined,
         parent_reviewer_account_id: actor.role === 'parent' ? actor.accountId : undefined,
-        status: 'registered',
         created_at: now,
         updated_at: now,
-      };
+      });
 
-      const classItem = await getSchedulerClassById(actor.organizationId, classId);
-      if (!classItem) {
+      if (result.outcome === 'class_not_found') {
         throw new Error('Missing class record');
       }
-
-      const already = await getActiveSchedulerRegistration(actor.organizationId, classId, athleteId);
-      if (already) {
+      if (result.outcome === 'already_registered') {
         throw new Error('Athlete already registered for this class');
       }
 
-      const registeredCount = await countRegisteredForClass(actor.organizationId, classId);
-      const nextStatus = registeredCount >= classItem.capacity ? 'waitlisted' : 'registered';
-
-      await createSchedulerRegistration(actor.organizationId, {
-        ...registration,
-        status: nextStatus,
+      return NextResponse.json({
+        ok: true,
+        class_id: classId,
+        athlete_id: athleteId,
+        status: result.outcome,
       });
-
-      if (registeredCount + 1 >= classItem.capacity && classItem.status !== 'full') {
-        await setSchedulerClassStatus(actor.organizationId, classId, 'full', now);
-      }
-
-      return NextResponse.json({ ok: true, class_id: classId, athlete_id: athleteId });
     }
 
     if (action === 'parent_review_registration') {

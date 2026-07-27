@@ -4,6 +4,7 @@ import type { PilotPrincipal } from './auth';
 import type { PilotRole } from './contracts';
 import { resolvePrincipal } from './auth';
 import { ShadowRuntimeUnavailableError } from './shadowRuntimeError';
+import { MedicalStatusBlockedError } from './shadowRecommendations';
 
 export async function requirePrincipal(request: NextRequest): Promise<PilotPrincipal> {
   const principal = await resolvePrincipal(request);
@@ -46,6 +47,14 @@ export function jsonError(error: unknown, fallbackStatus = 500): NextResponse {
   // environment variable is a server-side availability problem, not a bad
   // request, and must not be reported to the caller as one. The diagnostic
   // detail is logged here and deliberately kept out of the response body.
+  // A blocked clearance is an expected, safe-to-disclose outcome -- not a
+  // server fault -- so it must not fall through to the generic 500 branch
+  // below, which replaces the message with "Internal server error" and
+  // would leave the coach with no idea why the action was refused.
+  if (error instanceof MedicalStatusBlockedError) {
+    return NextResponse.json({ error: error.message }, { status: 409 });
+  }
+
   if (error instanceof ShadowRuntimeUnavailableError) {
     console.error('shadow-runtime-unavailable', {
       ...(error.missingTables.length > 0 ? { missingTables: error.missingTables } : {}),

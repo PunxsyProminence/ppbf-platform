@@ -4,6 +4,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
+import {
+  interpretShadowFeedbackReviewResponse,
+  isShadowFeedbackResolvable,
+  selectShadowFeedbackReviewQueue,
+} from '@/lib/shadowFeedbackReview';
 
 type IntakeStatus = 'Pending' | 'Classified' | 'Staged' | 'Approved' | 'Rejected' | 'Imported';
 type ConfidenceLevel = 'Low' | 'Medium' | 'High';
@@ -71,7 +76,8 @@ interface TelemetryEvent {
     | 'item staged'
     | 'item approved'
     | 'item rejected'
-    | 'item imported';
+    | 'item imported'
+    | 'feedback reviewed';
   payload: Record<string, unknown>;
 }
 
@@ -123,6 +129,41 @@ interface ShadowAuthorityApiResponse {
     actor_role: string | null;
     created_at: string;
   }>;
+}
+
+interface ShadowFeedbackItem {
+  feedback_id: number;
+  account_id: string;
+  role: string;
+  helpful: boolean;
+  rating: number | null;
+  comment: string | null;
+  outcome_signal: string | null;
+  correlation_type: string | null;
+  correlation_id: string | null;
+  verification_state: 'unverified' | 'durable_client' | 'human_reviewed';
+  human_review_required: boolean;
+  created_at: string;
+}
+
+interface ShadowFeedbackApiResponse {
+  ok: boolean;
+  summary: {
+    total_responses: number;
+    helpful_count: number;
+    satisfaction_rate: number;
+    avg_rating: number | null;
+  } | null;
+  items: ShadowFeedbackItem[];
+}
+
+interface ShadowFeedbackReviewApiResponse {
+  ok: boolean;
+  decision?: 'approve' | 'reject';
+  learningPromoted?: boolean;
+  alreadyResolved?: boolean;
+  retryable?: boolean;
+  error?: string;
 }
 
 type QueueSort = 'newest' | 'oldest' | 'status';
@@ -275,6 +316,156 @@ function renderMetricsPanel(
   );
 }
 
+/**
+ * Human review gate for the SHADOW learning loop.
+ *
+ * Feedback is written at `durable_client` and is deliberately never learned
+ * from until a human approves it here. Approving calls PATCH
+ * /api/pilot/shadow/feedback, which is the only path that runs
+ * `processLearningSignal` (profile facts, communication style, effectiveness
+ * metrics, research requirements). Without this panel the queue has no exit.
+ */
+function renderFeedbackReviewPanel(props: {
+  summary: ShadowFeedbackApiResponse['summary'];
+  reviewQueue: ShadowFeedbackItem[];
+  retryQueue: ShadowFeedbackItem[];
+  loading: boolean;
+  error: string;
+  pendingFeedbackId: number | null;
+  onReview: (item: ShadowFeedbackItem, decision: 'approve' | 'reject') => void;
+  onRefresh: () => void;
+}) {
+  const { summary, reviewQueue, retryQueue, loading, error, pendingFeedbackId, onReview, onRefresh } = props;
+
+  const renderItem = (item: ShadowFeedbackItem, mode: 'review' | 'retry') => {
+    const busy = pendingFeedbackId === item.feedback_id;
+    const resolvable = isShadowFeedbackResolvable(item);
+
+    return (
+      <article key={`${mode}-${item.feedback_id}`} className="border border-[#3f8b5b]/30 bg-[#0f1f14] p-3">
+        <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-[#c9f0d7]/60">
+          <span>#{item.feedback_id}</span>
+          <span>{item.role}</span>
+          <span className={item.helpful ? 'text-[#7fd7a0]' : 'text-[#e39a9a]'}>
+            {item.helpful ? 'Helpful' : 'Not helpful'}
+          </span>
+          {item.outcome_signal && <span>{item.outcome_signal}</span>}
+          {item.rating != null && <span>Rating {item.rating}</span>}
+          <span className="text-[#c9f0d7]/40">{item.created_at}</span>
+        </div>
+
+        {item.comment ? (
+          <p className="mt-2 text-[13px] leading-6 text-[#c9f0d7]/90">{item.comment}</p>
+        ) : (
+          <p className="mt-2 text-[13px] italic text-[#c9f0d7]/40">No comment provided.</p>
+        )}
+
+        {mode === 'retry' && (
+          <p className="mt-2 text-[12px] leading-5 text-[#e3c99a]">
+            Review was recorded, but durable learning promotion did not complete. Retry to finish promoting it.
+          </p>
+        )}
+
+        {!resolvable && (
+          <p className="mt-2 text-[12px] leading-5 text-[#e39a9a]">
+            Not reviewable: only feedback correlated to a durable SHADOW message can be promoted
+            {item.correlation_type ? ` (this item is “${item.correlation_type}”)` : ' (no correlation recorded)'}.
+          </p>
+        )}
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={busy || !resolvable}
+            onClick={() => onReview(item, 'approve')}
+            className="border border-[#3f8b5b] px-3 py-1 font-mono text-[11px] uppercase tracking-[0.14em] text-[#c9f0d7] transition hover:bg-[#3f8b5b]/25 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {busy ? 'Working…' : mode === 'retry' ? 'Retry promotion' : 'Approve for learning'}
+          </button>
+          {mode === 'review' && (
+            <button
+              type="button"
+              disabled={busy || !resolvable}
+              onClick={() => onReview(item, 'reject')}
+              className="border border-[#8b4444] px-3 py-1 font-mono text-[11px] uppercase tracking-[0.14em] text-[#e8d7c6] transition hover:bg-[#8b4444]/25 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Reject
+            </button>
+          )}
+        </div>
+      </article>
+    );
+  };
+
+  return (
+    <section className="col-span-full border-2 border-[#3f8b5b]/40 bg-[#0a1a0f] p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#c9f0d7]/70">
+            SHADOW Learning Review — Human Approval Gate
+          </p>
+          <p className="mt-1 text-[13px] leading-6 text-[#c9f0d7]/70">
+            Nothing SHADOW learns from user feedback is applied until it is approved here.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          {loading && <span className="text-xs text-[#c9f0d7]/40">Loading…</span>}
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={loading}
+            className="border border-[#3f8b5b]/60 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.14em] text-[#c9f0d7] transition hover:bg-[#3f8b5b]/25 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      {summary && (
+        <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {([
+            ['Responses (30d)', summary.total_responses],
+            ['Helpful', summary.helpful_count],
+            ['Satisfaction', `${(summary.satisfaction_rate * 100).toFixed(1)}%`],
+            ['Avg Rating', summary.avg_rating != null ? summary.avg_rating.toFixed(2) : '—'],
+          ] as [string, string | number][]).map(([label, value]) => (
+            <div key={label} className="border border-[#3f8b5b]/30 bg-[#0f1f14] p-3 text-center">
+              <p className="text-[11px] font-mono uppercase tracking-[0.12em] text-[#c9f0d7]/60">{label}</p>
+              <p className="mt-1 text-xl font-black text-[#c9f0d7]">{value}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {error && (
+        <p className="mb-3 border border-[#8b4444] bg-[#1a0f0f] p-3 text-[13px] leading-6 text-[#e8b4b4]">{error}</p>
+      )}
+
+      {retryQueue.length > 0 && (
+        <div className="mb-4">
+          <p className="mb-2 text-[11px] font-mono uppercase tracking-[0.14em] text-[#e3c99a]">
+            Promotion retry required ({retryQueue.length})
+          </p>
+          <div className="space-y-3">{retryQueue.map((item) => renderItem(item, 'retry'))}</div>
+        </div>
+      )}
+
+      <p className="mb-2 text-[11px] font-mono uppercase tracking-[0.14em] text-[#c9f0d7]/60">
+        Awaiting review ({reviewQueue.length})
+      </p>
+      {reviewQueue.length === 0 ? (
+        <p className="text-xs text-[#c9f0d7]/40">
+          {loading ? 'Loading feedback…' : 'No feedback is awaiting human review.'}
+        </p>
+      ) : (
+        <div className="max-h-[420px] space-y-3 overflow-y-auto pr-1">
+          {reviewQueue.map((item) => renderItem(item, 'review'))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function AdminShadowConsolePage() {
   const [consoleLogs, setConsoleLogs] = useState<ConsoleLogEntry[]>([
     {
@@ -318,6 +509,15 @@ export default function AdminShadowConsolePage() {
     newLibraryPatterns: number;
   } | null>(null);
   const [metricsLoading, setMetricsLoading] = useState(false);
+  const [feedbackSummary, setFeedbackSummary] = useState<ShadowFeedbackApiResponse['summary']>(null);
+  const [feedbackReviewQueue, setFeedbackReviewQueue] = useState<ShadowFeedbackItem[]>([]);
+  // Items whose review was recorded but whose learning promotion returned a
+  // retryable failure. The GET projection cannot identify these (it does not
+  // expose learning-event presence), so they are tracked for this session only.
+  const [feedbackRetryQueue, setFeedbackRetryQueue] = useState<ShadowFeedbackItem[]>([]);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
+  const [feedbackError, setFeedbackError] = useState('');
+  const [feedbackPendingId, setFeedbackPendingId] = useState<number | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const handleItemActionRef = useRef(handleItemAction);
@@ -345,6 +545,13 @@ export default function AdminShadowConsolePage() {
 
     void refreshShadowOperationalReads().catch(() => {
       // Keep console operational when SHADOW telemetry/authority reads are unavailable.
+    });
+
+    void refreshShadowFeedbackReviews().catch((error) => {
+      setFeedbackReviewQueue([]);
+      setFeedbackError(
+        error instanceof Error ? error.message : 'Failed to load SHADOW feedback review queue',
+      );
     });
 
     // Load growth metrics asynchronously
@@ -403,6 +610,93 @@ export default function AdminShadowConsolePage() {
 
     setPendingQueue(mapped);
     setBackendQueueReady(true);
+  }
+
+  async function refreshShadowFeedbackReviews() {
+    setFeedbackLoading(true);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/shadow/feedback?limit=200`);
+      const payload = (await response.json().catch(() => null)) as
+        | (Partial<ShadowFeedbackApiResponse> & { error?: string })
+        | null;
+
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.error || 'Failed to load SHADOW feedback review queue');
+      }
+
+      setFeedbackSummary(payload.summary ?? null);
+      setFeedbackReviewQueue(selectShadowFeedbackReviewQueue(payload.items ?? []));
+      setFeedbackError('');
+    } finally {
+      setFeedbackLoading(false);
+    }
+  }
+
+  async function handleFeedbackReview(item: ShadowFeedbackItem, decision: 'approve' | 'reject') {
+    setFeedbackPendingId(item.feedback_id);
+    setFeedbackError('');
+
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/shadow/feedback`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ feedbackId: item.feedback_id, decision }),
+      });
+      const payload = (await response.json().catch(() => null)) as ShadowFeedbackReviewApiResponse | null;
+      const outcome = interpretShadowFeedbackReviewResponse({
+        status: response.status,
+        payload,
+        feedbackId: item.feedback_id,
+        decision,
+      });
+
+      // The review landed but downstream learning promotion did not. Keep the
+      // item actionable instead of letting the failure disappear.
+      if (outcome.kind === 'retry_required') {
+        setFeedbackRetryQueue((prev) => (
+          prev.some((entry) => entry.feedback_id === item.feedback_id) ? prev : [item, ...prev]
+        ));
+        setFeedbackError(outcome.message);
+        appendConsoleLog({
+          source: 'SHADOW',
+          dataType: 'System',
+          status: 'Learning Promotion Retry Required',
+          message: outcome.message,
+          destination: 'SHADOW Local State',
+        });
+        await refreshShadowFeedbackReviews();
+        return;
+      }
+
+      if (outcome.kind !== 'resolved') {
+        throw new Error(outcome.message);
+      }
+
+      setFeedbackRetryQueue((prev) => prev.filter((entry) => entry.feedback_id !== item.feedback_id));
+      appendConsoleLog({
+        source: 'Admin',
+        dataType: 'System',
+        status: outcome.decision === 'approve' ? 'Feedback Approved' : 'Feedback Rejected',
+        message: outcome.alreadyResolved
+          ? `Feedback #${item.feedback_id} was already resolved; decision re-confirmed as ${outcome.decision}.`
+          : `Feedback #${item.feedback_id} ${outcome.decision === 'approve' ? 'approved for learning' : 'rejected'}.`,
+        destination: 'SHADOW Local State',
+      });
+      appendTelemetry('feedback reviewed', { feedbackId: item.feedback_id, decision: outcome.decision });
+      await refreshShadowFeedbackReviews();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : `Failed to ${decision} feedback`;
+      setFeedbackError(message);
+      appendConsoleLog({
+        source: 'SHADOW',
+        dataType: 'System',
+        status: 'Feedback Review Failed',
+        message,
+        destination: 'SHADOW Local State',
+      });
+    } finally {
+      setFeedbackPendingId(null);
+    }
   }
 
   async function refreshShadowOperationalReads() {
@@ -927,6 +1221,25 @@ export default function AdminShadowConsolePage() {
       <main className="grid gap-6 xl:grid-cols-[1.25fr_0.95fr]">
         {/* ── SHADOW Growth Metrics ─────────────────────────────────── */}
         {renderMetricsPanel(growthMetrics, metricsLoading)}
+        {/* ── SHADOW Learning Review (human approval gate) ──────────── */}
+        {renderFeedbackReviewPanel({
+          summary: feedbackSummary,
+          reviewQueue: feedbackReviewQueue,
+          retryQueue: feedbackRetryQueue,
+          loading: feedbackLoading,
+          error: feedbackError,
+          pendingFeedbackId: feedbackPendingId,
+          onReview: (item, decision) => {
+            void handleFeedbackReview(item, decision);
+          },
+          onRefresh: () => {
+            void refreshShadowFeedbackReviews().catch((error) => {
+              setFeedbackError(
+                error instanceof Error ? error.message : 'Failed to load SHADOW feedback review queue',
+              );
+            });
+          },
+        })}
         <section className="space-y-6 border-4 border-[#8b4444] bg-[#0a0a0a]/70 p-6">
           <div className="mb-6 border-b border-[#8b4444]/20 pb-4">
             <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">AI/ML Telemetry Scout</p>

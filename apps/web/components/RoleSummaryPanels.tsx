@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import ShadowChatButton from './ShadowChatButton';
 
 interface AthleteSummaryPanelProps {
   readiness: 'GREEN' | 'YELLOW' | 'RED';
@@ -39,13 +40,17 @@ interface HelpPanelProps {
   description: string;
   usage: string[];
   mistakes: string[];
-  onAskShadow: () => void;
+  // Optional: a caller with its own inline SHADOW chat input (e.g. one that
+  // pre-fills a suggested question) can pass a real handler here. Callers
+  // without one get a real link into live SHADOW chat instead of a dead
+  // button -- this used to always be a plain button wired to a no-op.
+  onAskShadow?: () => void;
 }
 
 interface RoleSpecificShadowProps {
   role: 'athlete' | 'coach' | 'parent' | 'admin';
-  query: string;
-  response: string;
+  description: string;
+  chatContext: string;
 }
 
 function getAttendanceColor(attendancePercent: number): string {
@@ -287,12 +292,20 @@ export function HelpPanel({
               ))}
             </ul>
           </div>
-          <button
-            onClick={onAskShadow}
-            className="mt-3 w-full border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 py-2 text-xs font-semibold uppercase text-[var(--canvas-tan-light)] transition hover:brightness-110"
-          >
-            ASK SHADOW
-          </button>
+          {onAskShadow ? (
+            <button
+              onClick={onAskShadow}
+              className="mt-3 w-full border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 py-2 text-xs font-semibold uppercase text-[var(--canvas-tan-light)] transition hover:brightness-110"
+            >
+              ASK SHADOW
+            </button>
+          ) : (
+            <ShadowChatButton
+              context={title}
+              label="ASK SHADOW"
+              className="mt-3 w-full border-[var(--black)] bg-[var(--red-primary)] text-[var(--canvas-tan-light)] hover:brightness-110"
+            />
+          )}
         </div>
       )}
     </div>
@@ -302,8 +315,8 @@ export function HelpPanel({
 // ROLE-SPECIFIC SHADOW COMPONENT
 export function RoleSpecificShadow({
   role,
-  query,
-  response
+  description,
+  chatContext
 }: Readonly<RoleSpecificShadowProps>) {
   const roleIdentity = {
     athlete: 'SHADOW (ATHLETE MODE)',
@@ -319,11 +332,21 @@ export function RoleSpecificShadow({
     admin: 'border-[var(--black)]'
   }[role];
 
+  // This card intentionally shows no canned question/answer example. A prior
+  // version displayed a hardcoded sample exchange (including, in the coach
+  // case, specific fabricated athlete names and injury/readiness flags) as if
+  // it were a live SHADOW response. Every response shown to a user must come
+  // from the real chat below/linked here, never a static placeholder that
+  // could be mistaken for real guidance about a real athlete.
   return (
-    <div className={`border-l-4 ${borderColor} space-y-2 bg-[var(--canvas-tan-light)] p-4 font-mono text-xs`}>
+    <div className={`border-l-4 ${borderColor} space-y-3 bg-[var(--canvas-tan-light)] p-4 font-mono text-xs`}>
       <p className="text-[var(--red-primary)]">&gt; {roleIdentity}</p>
-      <p className="text-[var(--gray-dark)]">&gt; {query}</p>
-      <p className="mt-3 whitespace-pre-wrap text-[var(--black)]">{response}</p>
+      <p className="whitespace-pre-wrap text-[var(--black)]">{description}</p>
+      <ShadowChatButton
+        context={chatContext}
+        label="Ask SHADOW"
+        className="border-[var(--black)] bg-[var(--canvas-tan-light)] text-[var(--black)] hover:bg-[var(--canvas-tan-dark)]"
+      />
     </div>
   );
 }

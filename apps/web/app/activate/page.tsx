@@ -1,8 +1,8 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useState } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 
 import { apiBase } from '@/lib/apiBase';
 
@@ -32,7 +32,6 @@ function countCodeCharacters(formatted: string): number {
 
 function ActivatePageContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   const [stage, setStage] = useState<Stage>('code');
   const [code, setCode] = useState('');
@@ -43,14 +42,12 @@ function ActivatePageContent() {
   const [accountId, setAccountId] = useState('');
   const [signedIn, setSignedIn] = useState(false);
 
-  // A code can arrive in a link (/activate?code=...) as well as by hand.
-  useEffect(() => {
-    const fromLink = searchParams.get('code');
-    if (fromLink) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setCode(formatCodeInput(fromLink));
-    }
-  }, [searchParams]);
+  // The activation code is deliberately NOT accepted from the query string.
+  // A one-time credential in a URL leaks into browser and proxy history,
+  // Referer headers, and access logs, and is trivially forwarded to someone
+  // else. Nothing in the app generates such a link: admin/people copies a bare
+  // /activate URL and the code travels separately on the athlete's slip, so
+  // requiring it to be entered here costs nothing and closes that exposure.
 
   const codeComplete = countCodeCharacters(code) === CODE_LENGTH;
   const pinValid = PIN_PATTERN.test(pin);
@@ -322,7 +319,7 @@ function ActivatePageContent() {
 }
 
 export default function ActivatePage() {
-  // useSearchParams requires a suspense boundary for static rendering.
+  // Suspense boundary kept for static rendering of this client page.
   return (
     <Suspense fallback={null}>
       <ActivatePageContent />
