@@ -157,7 +157,7 @@ describe('createProvisionalRecommendation', () => {
     });
 
     const clientQuery = jest.fn().mockResolvedValue({ rows: [recommendationRow()] });
-    mockWithTransaction.mockImplementationOnce(async (fn) => fn({ query: clientQuery }));
+    mockWithTransaction.mockImplementationOnce(async (fn) => fn({ query: clientQuery } as never));
 
     await expect(createProvisionalRecommendation({
       organizationId: 'org-1',

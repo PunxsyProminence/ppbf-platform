@@ -23,7 +23,11 @@ const DEFAULT_EXPIRY_HOURS = 72;
 
 export class MedicalStatusBlockedError extends Error {
   constructor(readonly status: string) {
-    super(`Recommendation blocked: athlete's medical administrative status is '${status}'.`);
+    super(
+      status === 'no_record'
+        ? "Blocked: this athlete has no medical administrative status on file yet. A medically sensitive decision requires an explicit 'cleared' status -- set one in the Medical Status panel before recording this decision."
+        : `Blocked: this athlete's medical administrative status is '${status}', not 'cleared'. Set status to 'cleared' in the Medical Status panel before recording this decision, or leave it as-is if the athlete should not yet participate.`,
+    );
     this.name = 'MedicalStatusBlockedError';
   }
 }

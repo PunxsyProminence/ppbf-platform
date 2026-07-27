@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { CoachSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
 import { cx, ui } from './uiStyles';
@@ -304,56 +304,57 @@ export default function CoachWorkspace() {
   useEffect(() => {
     void (async () => {
       try {
-        const response = await fetch('/api/pilot/auth/session', { method: 'POST' });
+        const response = await fetch('/api/pilot/auth/session', { method: 'POST', credentials: 'include' });
         const payload = (await response.json()) as { authenticated?: boolean; account_id?: string };
         if (response.ok && payload.authenticated && payload.account_id) {
           setCoachAccountId(payload.account_id);
         }
       } catch {
-        // Leave manual entry available if auth session is unavailable.
+        // coachAccountId stays unset; submitCoachReview reports the failure.
       }
     })();
   }, []);
 
   // Fetch athletes for the organization
+  const loadAthletes = useCallback(async () => {
+    try {
+      setAthletesLoading(true);
+      setAthletesError(null);
+      const response = await fetch('/api/pilot/athletes/list', {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('Failed to load athletes');
+
+      const data = (await response.json()) as { items?: Array<{ athlete_id: string; full_name?: string; gym_status?: string }> };
+      const items = data.items || [];
+
+      // Convert PilotAthlete to Athlete format
+      const readinessValues: Array<'GREEN' | 'YELLOW' | 'RED'> = ['GREEN', 'YELLOW', 'RED'];
+      const athleteList: Athlete[] = items.slice(0, 3).map((item, index: number) => ({
+        id: item.athlete_id,
+        name: item.full_name || 'Unknown',
+        track: item.gym_status || 'Foundations',
+        readiness: readinessValues[index % 3],
+        injuryFlag: false,
+        attendance: 'Present'
+      }));
+
+      setAthletes(athleteList);
+      setSelectedAthleteId((current) => current || athleteList[0]?.id || current);
+    } catch (error) {
+      setAthletesError(error instanceof Error ? error.message : 'Failed to load athletes');
+      // Fallback: set empty list but don't block UI
+      setAthletes([]);
+    } finally {
+      setAthletesLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    void (async () => {
-      try {
-        setAthletesLoading(true);
-        setAthletesError(null);
-        const response = await fetch('/api/pilot/athletes/list', {
-          method: 'GET',
-          credentials: 'include',
-        });
-        if (!response.ok) throw new Error('Failed to load athletes');
-        
-        const data = (await response.json()) as { items?: Array<{ athlete_id: string; full_name?: string; gym_status?: string }> };
-        const items = data.items || [];
-        
-        // Convert PilotAthlete to Athlete format
-        const readinessValues: Array<'GREEN' | 'YELLOW' | 'RED'> = ['GREEN', 'YELLOW', 'RED'];
-        const athleteList: Athlete[] = items.slice(0, 3).map((item, index: number) => ({
-          id: item.athlete_id,
-          name: item.full_name || 'Unknown',
-          track: item.gym_status || 'Foundations',
-          readiness: readinessValues[index % 3],
-          injuryFlag: false,
-          attendance: 'Present'
-        }));
-        
-        setAthletes(athleteList);
-        if (athleteList.length > 0 && !selectedAthleteId) {
-          setSelectedAthleteId(athleteList[0].id);
-        }
-      } catch (error) {
-        setAthletesError(error instanceof Error ? error.message : 'Failed to load athletes');
-        // Fallback: set empty list but don't block UI
-        setAthletes([]);
-      } finally {
-        setAthletesLoading(false);
-      }
-    })();
-  }, [selectedAthleteId]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadAthletes();
+  }, [loadAthletes]);
 
   // Fetch coach tasks (hardcoded for now since backend doesn't have coach-tasks endpoint yet)
   useEffect(() => {
@@ -375,17 +376,18 @@ export default function CoachWorkspace() {
     })();
   }, []);
 
-  useEffect(() => {
-    void (async () => {
+  const loadShadowData = useCallback(async () => {
       try {
         const [queueResult, observationResult] = await Promise.allSettled([
           fetch('/api/pilot/shadow/review-projection', {
             method: 'POST',
+            credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ limit: 20 }),
           }),
           fetch('/api/pilot/shadow/observation-projection', {
             method: 'POST',
+            credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ limit: 20 }),
           }),
@@ -429,10 +431,16 @@ export default function CoachWorkspace() {
       } catch (error) {
         setShadowReadError(error instanceof Error ? error.message : 'Unable to load SHADOW read models.');
       }
-    })();
   }, []);
 
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadShadowData();
+  }, [loadShadowData]);
+
   async function submitCoachReview() {
+    setReviewSyncMessage('');
+
     if (!reviewSessionId.trim()) {
       setReviewSyncMessage('Session ID is required.');
       return;
@@ -446,20 +454,27 @@ export default function CoachWorkspace() {
     const now = new Date().toISOString();
     const reviewId = `review_${Date.now()}`;
 
-    const response = await fetch('/api/pilot/coach-reviews', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        review_id: reviewId,
-        session_id: reviewSessionId.trim(),
-        coach_id: coachAccountId,
-        decision: reviewDecision,
-        notes: reviewNotes || 'Coach review from Coach Workspace',
-        approved_flag: reviewDecision === 'approved',
-        created_at: now,
-        updated_at: now,
-      }),
-    });
+    let response: Response;
+    try {
+      response = await fetch('/api/pilot/coach-reviews', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          review_id: reviewId,
+          session_id: reviewSessionId.trim(),
+          coach_id: coachAccountId,
+          decision: reviewDecision,
+          notes: reviewNotes || 'Coach review from Coach Workspace',
+          approved_flag: reviewDecision === 'approved',
+          created_at: now,
+          updated_at: now,
+        }),
+      });
+    } catch {
+      setReviewSyncMessage('Network error -- coach review was not saved. Please try again.');
+      return;
+    }
 
     if (!response.ok) {
       const payload = (await response.json().catch(() => ({ error: 'Coach review persistence failed' }))) as { error?: string };
@@ -683,10 +698,7 @@ export default function CoachWorkspace() {
                       <div className="flex items-center justify-between mb-1">
                         <p className="text-red-400 text-sm font-semibold">Error loading athletes</p>
                         <button
-                          onClick={() => {
-                            setAthletesError(null);
-                            // Effect will re-run
-                          }}
+                          onClick={() => void loadAthletes()}
                           className="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition"
                           aria-label="Retry loading athletes"
                         >
@@ -1084,7 +1096,7 @@ export default function CoachWorkspace() {
                   <div className="flex items-center justify-between">
                     <p className="text-red-400 text-sm font-semibold">{shadowReadError}</p>
                     <button
-                      onClick={() => setShadowReadError('')}
+                      onClick={() => void loadShadowData()}
                       className="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition flex-shrink-0"
                       aria-label="Retry loading SHADOW queue"
                     >
