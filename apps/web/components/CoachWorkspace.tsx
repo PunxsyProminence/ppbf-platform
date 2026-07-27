@@ -1046,8 +1046,8 @@ export default function CoachWorkspace() {
             <div className="space-y-6 animate-fadeIn">
               <RoleSpecificShadow
                 role="coach"
-                query="Which athletes need attention?"
-                response="3 athletes flagged: Sophia Chen (YELLOW readiness, soreness issues), James Thompson (RED readiness, injury flag). Marcus Rodriguez is GREEN and performing well. Recommend modified rounds for Sophia and observation-only for James."
+                description="Ask SHADOW about session management, athlete readiness, goals, tasks, or coaching strategy. Every answer below and in the assistant panel comes from a live request scoped to your roster -- nothing here is a canned example."
+                chatContext="Coach Workspace"
               />
 
               <div className="border-2 border-[#d4a574] bg-[#0f0f0f] p-6 space-y-4">

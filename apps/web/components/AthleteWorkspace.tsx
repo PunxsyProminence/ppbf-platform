@@ -1471,8 +1471,8 @@ export default function AthleteWorkspace() {
             <div className="space-y-6 animate-fadeIn">
               <RoleSpecificShadow
                 role="athlete"
-                query="What workout is next?"
-                response="Your next class is Youth Class on Mon-Thu 4:00-5:00 PM. Focus on Non-Contact developmental work: footwork, shadowboxing, neurocognitive drills."
+                description="Ask SHADOW about your next workout, goals, or progress. The chat below responds to what's actually on your schedule -- nothing here is a canned example."
+                chatContext="Athlete Workspace"
               />
 
               <div className="border-2 border-[#d4a574] bg-[#0f0f0f] p-6 space-y-4">
