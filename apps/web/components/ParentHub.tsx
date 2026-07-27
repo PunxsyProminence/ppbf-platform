@@ -499,6 +499,11 @@ export default function ParentHub() {
                 onAskShadow={() => {}}
               />
 
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for home assignments yet, so this
+                list is always empty.
+              </p>
+
               <div className="space-y-3">
                 {homeAssignments.map(assignment => (
                   <div key={assignment.id} className={`border-2 p-4 rounded ${assignmentCardTone(assignment.status)}`}>
@@ -535,6 +540,11 @@ export default function ParentHub() {
                 ]}
                 onAskShadow={() => {}}
               />
+
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed or entry form for parent observations
+                yet, so this section is always empty.
+              </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {parentObservations.map(obs => (
@@ -578,6 +588,11 @@ export default function ParentHub() {
                 onAskShadow={() => {}}
               />
 
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for family goals yet, so this section
+                is always empty.
+              </p>
+
               <div className="space-y-3">
                 {familyGoals.map(goal => (
                   <div key={goal.id} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 space-y-3">
@@ -620,6 +635,11 @@ export default function ParentHub() {
                 ]}
                 onAskShadow={() => {}}
               />
+
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for coach messages yet, so this list
+                is always empty.
+              </p>
 
               <div className="space-y-3 max-h-96 overflow-y-auto">
                 {messages.map(msg => (
@@ -666,6 +686,10 @@ export default function ParentHub() {
             <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
               <h3 className="font-mono font-bold text-[#d4a574] uppercase">Attendance Tracking</h3>
               <p className="text-[#b0a095]">View attendance history and upcoming sessions.</p>
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for attendance history or upcoming
+                sessions yet, so these lists are always empty.
+              </p>
 
               <div className="space-y-2">
                 {activeAttendanceEntries.map((entry) => (
@@ -706,6 +730,11 @@ export default function ParentHub() {
                 </Link>
               </details>
 
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for progress milestones yet, so this
+                list is always empty.
+              </p>
+
               <div className="space-y-3">
                 {activeProgressMilestones.map((milestone) => (
                   <div key={milestone.id} className={`border p-4 ${milestoneStatusTone(milestone.status)}`}>
@@ -733,6 +762,10 @@ export default function ParentHub() {
             <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
               <h3 className="font-mono font-bold text-[#d4a574] uppercase">Parent Support Resources</h3>
               <p className="text-[#b0a095]">Guides, videos, and tips for supporting young athletes.</p>
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for parent resources yet, so this
+                list is always empty.
+              </p>
               <div className="space-y-2">
                 {parentResources.map((resource) => (
                   <div key={resource.id} className="border-2 border-[#8b4444] bg-[#0f0f0f] p-3">
