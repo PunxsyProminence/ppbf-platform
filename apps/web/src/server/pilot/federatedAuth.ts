@@ -130,7 +130,12 @@ export async function exchangeCodeForIdToken(
   });
 
   if (!response.ok) {
-    throw new Error('Failed to exchange authorization code');
+    // Microsoft names the exact failure in the response body (invalid_client
+    // for a stale secret, invalid_grant for a redirect_uri or PKCE mismatch).
+    // Discarding it leaves an auth outage with no diagnosable cause. The body
+    // carries error codes, never the client secret.
+    const detail = (await response.text().catch(() => '')).slice(0, 500);
+    throw new Error(`Failed to exchange authorization code (${response.status}): ${detail}`);
   }
 
   const tokens = (await response.json()) as TokenResponse;
