@@ -16,6 +16,20 @@ import {
 } from '@/client/shadowSessions';
 import ShadowChatButton from '@/components/ShadowChatButton';
 
+// How much verified evidence actually backed a response -- drives the
+// message background darkness (bigger shadow = more evidenced). Independent
+// of ShadowResponseState (ok/filtered/degraded/queued): a response can be
+// state 'ok' and still be EXPERIMENTAL/RESEARCH_NEEDED if nothing concrete
+// was cited.
+type ShadowEvidenceTier = 'PROVEN' | 'EMERGING' | 'EXPERIMENTAL' | 'RESEARCH_NEEDED';
+
+interface ShadowUnlockHint {
+  featureKey: string;
+  unlocked: boolean;
+  progress: number;
+  closeToUnlocking: boolean;
+}
+
 interface ShadowMessage {
   id: string;
   type: 'user' | 'shadow';
@@ -29,6 +43,8 @@ interface ShadowMessage {
   feedbackSent?: boolean;
   feedbackEligible?: boolean;
   state?: ShadowResponseState;
+  evidenceTier?: ShadowEvidenceTier;
+  handoff?: string;
 }
 
 interface ExplainabilityChain {
@@ -54,6 +70,33 @@ interface ShadowAIResult {
   jobId?: string;
   error?: string;
   explainability?: ExplainabilityChain;
+  evidenceTier?: ShadowEvidenceTier;
+  handoff?: string;
+  unlockHints?: ShadowUnlockHint[];
+}
+
+// A response that never actually reached the server (network failure,
+// timed-out job poll, etc.) has no real evidence to grade -- always render
+// it as the flattest/least-shadowed tier rather than defaulting to blank.
+const NO_SERVER_EVIDENCE_TIER: ShadowEvidenceTier = 'RESEARCH_NEEDED';
+
+// Darkest (most evidenced) to lightest (least evidenced) -- "the bigger the
+// shadow, the more authentic the message."
+const EVIDENCE_TIER_STYLES: Record<ShadowEvidenceTier, string> = {
+  PROVEN: 'border-2 border-[#d4a574] bg-black text-[#f2e7da] shadow-[0_0_18px_rgba(0,0,0,0.9)]',
+  EMERGING: 'border-2 border-[#d4a574] bg-[#2a1f0f] text-[#e8d7c6] shadow-[0_0_10px_rgba(0,0,0,0.6)]',
+  EXPERIMENTAL: 'border-2 border-[#8a7358] bg-[#3a3020] text-[#d8cdbd]',
+  RESEARCH_NEEDED: 'border-2 border-[#6a6258] bg-[#5a5248] text-[#1a1a1a]',
+};
+
+function getEvidenceTierLabel(tier: ShadowEvidenceTier): string {
+  const labels: Record<ShadowEvidenceTier, string> = {
+    PROVEN: 'Proven',
+    EMERGING: 'Emerging',
+    EXPERIMENTAL: 'Experimental',
+    RESEARCH_NEEDED: 'Research Needed',
+  };
+  return labels[tier];
 }
 
 type ShadowResponseState = 'ok' | 'filtered' | 'degraded' | 'queued';
@@ -230,6 +273,8 @@ function ShadowChatPageContent() {
   const [allowedSessionTypes, setAllowedSessionTypes] = useState<string[]>(['quick_round']);
   const [conversationId, setConversationId] = useState<string>();
   const [conversationAthleteId, setConversationAthleteId] = useState<string>();
+  const [unlockHints, setUnlockHints] = useState<ShadowUnlockHint[]>([]);
+  const [modelStatus, setModelStatus] = useState<Record<string, { displayName: string; available: boolean; tier: string }>>({});
   const [savedSessions, setSavedSessions] = useState<OwnedShadowConversation[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const [restoringSessionId, setRestoringSessionId] = useState<string>();
@@ -359,6 +404,29 @@ function ShadowChatPageContent() {
   }, [authChecked, userRole]);
 
   useEffect(() => {
+    if (!capabilitiesLoaded || !allowedSessionTypes.includes('heavy_bag')) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/shadow/models`, { credentials: 'include' });
+        if (!response.ok) return;
+        const payload = await response.json() as {
+          models?: Record<string, { displayName: string; available: boolean; tier: string }>;
+        };
+        if (!cancelled && payload.models) {
+          setModelStatus(payload.models);
+        }
+      } catch {
+        // Model status is purely informational -- a failed fetch just means
+        // the panel stays empty, nothing else in the page depends on it.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [capabilitiesLoaded, allowedSessionTypes]);
+
+  useEffect(() => {
     if (!capabilitiesLoaded) return;
     const controller = new AbortController();
 
@@ -398,7 +466,7 @@ function ShadowChatPageContent() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  function addMessage(type: 'user' | 'shadow', text: string, meta?: Partial<Pick<ShadowMessage, 'id' | 'tier' | 'profileTier' | 'modelUsed' | 'isAsync' | 'jobId' | 'state' | 'feedbackEligible'>>) {
+  function addMessage(type: 'user' | 'shadow', text: string, meta?: Partial<Pick<ShadowMessage, 'id' | 'tier' | 'profileTier' | 'modelUsed' | 'isAsync' | 'jobId' | 'state' | 'feedbackEligible' | 'evidenceTier' | 'handoff'>>) {
     const newMessage: ShadowMessage = {
       id: createMessageId(),
       type,
@@ -574,10 +642,16 @@ function ShadowChatPageContent() {
       isAsync: data.state === 'queued',
       jobId: data.jobId,
       state: data.state,
+      evidenceTier: data.evidenceTier ?? NO_SERVER_EVIDENCE_TIER,
+      handoff: data.handoff,
       feedbackEligible: (
         data.state === 'ok' || data.state === 'filtered'
       ) && Boolean(data.conversationId) && Boolean(data.messageId),
     });
+
+    if (data.unlockHints?.length) {
+      setUnlockHints(data.unlockHints);
+    }
 
     if (data.state === 'queued' && data.jobId) {
       void pollQueuedShadowJob(data.jobId, messageId);
@@ -599,7 +673,7 @@ function ShadowChatPageContent() {
         }
         setMessages((prev) => prev.map((msg) => (
           msg.id === messageId
-            ? { ...msg, text: 'SHADOW could not verify the queued result. No generated guidance was displayed.', isAsync: false, state: 'degraded' }
+            ? { ...msg, text: 'SHADOW could not verify the queued result. No generated guidance was displayed.', isAsync: false, state: 'degraded', evidenceTier: NO_SERVER_EVIDENCE_TIER }
             : msg
         )));
         return;
@@ -623,6 +697,9 @@ function ShadowChatPageContent() {
                   : 'SHADOW withheld or could not produce this queued result. No generated guidance was displayed.',
                 isAsync: false,
                 state: safeCompletion ? 'ok' : 'degraded',
+                // The job-status poll doesn't carry evidenceTier -- the real
+                // graded result lives in Scout Reports, not this chat bubble.
+                evidenceTier: NO_SERVER_EVIDENCE_TIER,
                 feedbackEligible: false,
               }
             : msg
@@ -633,7 +710,7 @@ function ShadowChatPageContent() {
       if (status.status === 'failed' || status.status === 'cancelled') {
         setMessages((prev) => prev.map((msg) => (
           msg.id === messageId
-            ? { ...msg, text: 'Heavy Bag Session failed. No generated guidance was displayed.', isAsync: false, state: 'degraded' }
+            ? { ...msg, text: 'Heavy Bag Session failed. No generated guidance was displayed.', isAsync: false, state: 'degraded', evidenceTier: NO_SERVER_EVIDENCE_TIER }
             : msg
         )));
         return;
@@ -651,6 +728,7 @@ function ShadowChatPageContent() {
             text: 'SHADOW could not confirm the queued result in time. No generated guidance was displayed.',
             isAsync: false,
             state: 'degraded',
+            evidenceTier: NO_SERVER_EVIDENCE_TIER,
           }
         : msg
     )));
@@ -665,7 +743,7 @@ function ShadowChatPageContent() {
       addMessage(
         'shadow',
         error.safeMessage,
-        { state: error.status >= 500 ? 'degraded' : 'filtered' },
+        { state: error.status >= 500 ? 'degraded' : 'filtered', evidenceTier: NO_SERVER_EVIDENCE_TIER },
       );
       return;
     }
@@ -673,7 +751,7 @@ function ShadowChatPageContent() {
     addMessage(
       'shadow',
       'SHADOW could not reach the secure chat service. No generated or fallback guidance was displayed.',
-      { state: 'degraded' },
+      { state: 'degraded', evidenceTier: NO_SERVER_EVIDENCE_TIER },
     );
   }
 
@@ -748,6 +826,18 @@ function ShadowChatPageContent() {
           </div>
         </section>
 
+        {unlockHints.some((hint) => hint.closeToUnlocking) ? (
+          <section
+            aria-label="SHADOW features close to unlocking"
+            className="mb-4 border-2 border-[#d4a574] bg-[#151510] p-3 text-xs text-[#d4a574]"
+          >
+            <p className="font-mono uppercase tracking-[0.14em]">
+              {unlockHints.filter((hint) => hint.closeToUnlocking).length} feature
+              {unlockHints.filter((hint) => hint.closeToUnlocking).length === 1 ? '' : 's'} close to unlocking
+            </p>
+          </section>
+        ) : null}
+
         <section
           aria-label="Saved SHADOW sessions"
           className="mb-4 border-2 border-[#5a4a3a] bg-[#111111] p-4"
@@ -820,17 +910,28 @@ function ShadowChatPageContent() {
                 className={`flex gap-3 ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-md px-4 py-3 ${
+                  className={`max-w-md px-4 py-3 transition-colors ${
                     msg.type === 'user'
                       ? 'border-2 border-[#dc2626] bg-[#2a1a1a] text-[#ff6b6b]'
-                      : 'border-2 border-[#d4a574] bg-[#2a1f0f] text-[#e8d7c6]'
+                      : EVIDENCE_TIER_STYLES[msg.evidenceTier ?? 'EMERGING']
                   }`}
                 >
                   <p className="text-xs leading-6">{msg.text}</p>
+                  {msg.type === 'shadow' && msg.evidenceTier ? (
+                    <p className="mt-2 text-[9px] font-bold uppercase tracking-[0.12em] opacity-70">
+                      Evidence: {getEvidenceTierLabel(msg.evidenceTier)}
+                    </p>
+                  ) : null}
                   {msg.type === 'shadow' && msg.state && msg.state !== 'ok' ? (
-                    <p className="mt-2 text-[9px] font-bold uppercase tracking-[0.12em] text-[#d4a574]">
+                    <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.12em] opacity-70">
                       State: {msg.state}
                     </p>
+                  ) : null}
+                  {msg.type === 'shadow' && msg.handoff ? (
+                    <div className="mt-2 border-2 border-[#dc2626] bg-[#2a1414] px-3 py-2">
+                      <p className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#ff6b6b]">Human Handoff Required</p>
+                      <p className="mt-1 text-[10px] leading-5 text-[#ffb3b3]">{msg.handoff}</p>
+                    </div>
                   ) : null}
                   {msg.tier ? (
                     <div className="mt-3 space-y-2 border-t border-[#5a4a3a] pt-2">
@@ -874,6 +975,20 @@ function ShadowChatPageContent() {
             ) : null}
             <div ref={messagesEndRef} />
           </div>
+
+          {allowedSessionTypes.includes('heavy_bag') && Object.keys(modelStatus).length > 0 ? (
+            <div className="mb-3 flex flex-wrap gap-2 font-mono text-[9px] uppercase tracking-[0.08em] text-[#8a8a8a]">
+              {Object.values(modelStatus).map((model) => (
+                <span
+                  key={model.displayName}
+                  className={`border px-2 py-1 ${model.available ? 'border-[#4a8a4a] text-[#4a8a4a]' : 'border-[#5a4a3a] text-[#5a4a3a]'}`}
+                  title={`${model.tier} tier -- ${model.available ? 'live' : 'not deployed yet'}`}
+                >
+                  {model.available ? '● ' : '○ '}{model.displayName}
+                </span>
+              ))}
+            </div>
+          ) : null}
 
           {/* Input */}
           <form onSubmit={handleSendMessage} className="flex gap-2">

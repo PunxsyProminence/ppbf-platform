@@ -16,6 +16,10 @@ const formulaFoundationMigrationPath = path.join(
   repositoryRoot,
   'infra/azure/pilot_slice_postgres_shadow_formula_foundation_migration.sql',
 );
+const decisionLoopMigrationPath = path.join(
+  repositoryRoot,
+  'infra/azure/pilot_slice_postgres_shadow_decision_loop_migration.sql',
+);
 const runnerPath = path.join(
   repositoryRoot,
   'apps/web/scripts/pilot-apply-shadow-runtime-migration.mjs',
@@ -28,6 +32,7 @@ describe('SHADOW runtime migration contract', () => {
     formulaFoundationMigrationPath,
     'utf8',
   );
+  const decisionLoopMigration = fs.readFileSync(decisionLoopMigrationPath, 'utf8');
   const runner = fs.readFileSync(runnerPath, 'utf8');
 
   test('keeps the additive migration transactional and aligned with required tables', () => {
@@ -176,6 +181,36 @@ describe('SHADOW runtime migration contract', () => {
     expect(migration).not.toContain('shadow_formula_results_identity_check');
   });
 
+  test('keeps the decision-loop migration transactional and free of new writes to existing tables', () => {
+    expect(decisionLoopMigration.trim()).toMatch(/^--[\s\S]*\nbegin;/i);
+    expect(decisionLoopMigration.trim()).toMatch(/commit;$/i);
+
+    const decisionLoopTables = [
+      'pilot.shadow_medical_administrative_status',
+      'pilot.shadow_recommendations',
+      'pilot.shadow_decisions',
+      'pilot.shadow_near_misses',
+      'pilot.shadow_decision_outcomes',
+      'pilot.shadow_audit_entries',
+    ];
+    for (const table of decisionLoopTables) {
+      expect(decisionLoopMigration).toContain(table);
+    }
+
+    // Recommendations must always start provisional -- the only place a
+    // caller could sneak a different default in would be right here.
+    expect(decisionLoopMigration).toContain("status text not null default 'provisional'");
+    expect(decisionLoopMigration).toContain(
+      "check (status in ('provisional', 'accepted', 'rejected', 'expired', 'superseded'))",
+    );
+    // This migration only adds new tables -- no ALTER on any existing one,
+    // including shadow_recommendation_effectiveness (the unrelated, post-hoc
+    // chat-feedback scoring table).
+    expect(decisionLoopMigration).not.toMatch(/\balter\s+table\b/i);
+    expect(decisionLoopMigration).not.toMatch(/\bupdate\s+pilot\./i);
+    expect(decisionLoopMigration).not.toMatch(/\bdelete\s+from\s+pilot\./i);
+  });
+
   test('uses the ordered approved additive migrations and hard-asserts the target', () => {
     for (const migrationFile of [
       'pilot_slice_postgres_shadow_runtime_migration.sql',
@@ -183,6 +218,7 @@ describe('SHADOW runtime migration contract', () => {
       'pilot_slice_postgres_shadow_evidence_migration.sql',
       'pilot_slice_postgres_shadow_job_lease_migration.sql',
       'pilot_slice_postgres_board_role_migration.sql',
+      'pilot_slice_postgres_shadow_decision_loop_migration.sql',
     ]) {
       expect(runner).toContain(migrationFile);
     }
@@ -195,7 +231,7 @@ describe('SHADOW runtime migration contract', () => {
 
   test('accepts the approved leading comments before the transaction boundary', () => {
     const moduleUrl = pathToFileURL(runnerPath).href;
-    for (const transactionalPath of [migrationPath, formulaFoundationMigrationPath]) {
+    for (const transactionalPath of [migrationPath, formulaFoundationMigrationPath, decisionLoopMigrationPath]) {
       const migrationUrl = pathToFileURL(transactionalPath).href;
       execFileSync(
         process.execPath,
@@ -223,5 +259,11 @@ describe('SHADOW runtime migration contract', () => {
     expect(runner).toContain('formula_uniqueness_ready');
     expect(runner).toContain('lease_expires_at');
     expect(runner).toContain('board_membership_role_ready');
+    expect(runner).toContain('medical_status_ready');
+    expect(runner).toContain('recommendations_ready');
+    expect(runner).toContain('decisions_ready');
+    expect(runner).toContain('near_misses_ready');
+    expect(runner).toContain('decision_outcomes_ready');
+    expect(runner).toContain('audit_entries_ready');
   });
 });

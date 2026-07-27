@@ -304,6 +304,37 @@ export function isFeatureEnabled(
   return unlockState.features[featureKey]?.unlocked ?? false;
 }
 
+export interface ShadowUnlockHint {
+  featureKey: ShadowFeatureKey;
+  unlocked: boolean;
+  progress: number; // 0-1, current metric value relative to its threshold
+  closeToUnlocking: boolean;
+}
+
+const CLOSE_TO_UNLOCKING_PROGRESS = 0.8;
+
+// Trimmed, client-safe projection of unlock state -- omits metricKey/
+// activationMode/raw currentValue/thresholdValue, which are internal
+// operational detail, not something to surface in a chat response.
+export function buildShadowUnlockHints(unlockState: ShadowUnlockState | null): ShadowUnlockHint[] | undefined {
+  if (!unlockState) {
+    return undefined;
+  }
+
+  return (Object.values(unlockState.features) as ShadowFeatureStatus[]).map((status) => {
+    const progress = status.thresholdValue > 0
+      ? Math.min(1, Math.max(0, status.currentValue / status.thresholdValue))
+      : (status.satisfied ? 1 : 0);
+
+    return {
+      featureKey: status.featureKey,
+      unlocked: status.unlocked,
+      progress,
+      closeToUnlocking: !status.unlocked && progress >= CLOSE_TO_UNLOCKING_PROGRESS,
+    };
+  });
+}
+
 export async function listShadowThresholds(organizationId: string, accountId: string): Promise<ShadowFeatureThreshold[]> {
   return getThresholdRows(organizationId, accountId);
 }

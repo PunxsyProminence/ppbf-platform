@@ -11,6 +11,7 @@ const MIGRATION_FILES = [
   'pilot_slice_postgres_shadow_evidence_migration.sql',
   'pilot_slice_postgres_shadow_job_lease_migration.sql',
   'pilot_slice_postgres_board_role_migration.sql',
+  'pilot_slice_postgres_shadow_decision_loop_migration.sql',
 ];
 
 const READINESS_QUERY = `
@@ -131,7 +132,13 @@ const COMPLETION_READINESS_QUERY = `
       where conrelid = 'pilot.organization_memberships'::regclass
         and contype = 'c'
         and pg_get_constraintdef(oid) ilike '%board%'
-    ) as board_membership_role_ready
+    ) as board_membership_role_ready,
+    to_regclass('pilot.shadow_medical_administrative_status') is not null as medical_status_ready,
+    to_regclass('pilot.shadow_recommendations') is not null as recommendations_ready,
+    to_regclass('pilot.shadow_decisions') is not null as decisions_ready,
+    to_regclass('pilot.shadow_near_misses') is not null as near_misses_ready,
+    to_regclass('pilot.shadow_decision_outcomes') is not null as decision_outcomes_ready,
+    to_regclass('pilot.shadow_audit_entries') is not null as audit_entries_ready
 `;
 
 function required(name) {
