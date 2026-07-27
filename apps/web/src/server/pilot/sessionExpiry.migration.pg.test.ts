@@ -191,6 +191,52 @@ describe('fresh-install schema', () => {
     expect(names).toContain('idx_pilot_session_tokens_expires_at');
     expect(names).toContain('idx_pilot_session_tokens_account_id');
   });
+
+  // pilot.video_sessions used to exist only as an inline `create table` inside
+  // the migrate-multiorg admin route, so a fresh install never had it at all
+  // and its status CHECK drifted from what the upload handler actually writes.
+  // These lock both halves of that fix down.
+  test('video_sessions exists on a fresh install of the tracked schema', async () => {
+    const { rows } = await client.query(
+      `select 1 from information_schema.tables
+       where table_schema = 'pilot' and table_name = 'video_sessions'`,
+    );
+    expect(rows).toHaveLength(1);
+  });
+
+  test("video_sessions accepts 'quarantined', the status the upload handler writes", async () => {
+    await client.query(
+      `insert into pilot.organizations (organization_id, organization_name, status)
+       values ('vs-org', 'Video Org', 'active')
+       on conflict (organization_id) do nothing`,
+    );
+
+    await expect(
+      client.query(
+        `insert into pilot.video_sessions
+           (video_session_id, organization_id, uploaded_by_account_id, title,
+            blob_path, file_name, file_size_bytes, mime_type, status)
+         values ('vs-quarantined', 'vs-org', 'vs-acct', 'Clip',
+                 'vs-org/vs-quarantined/source.mp4', 'clip.mp4', 1024, 'video/mp4', 'quarantined')`,
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  test('video_sessions still rejects a status outside the allowed set', async () => {
+    await expect(
+      client.query(
+        `insert into pilot.video_sessions
+           (video_session_id, organization_id, uploaded_by_account_id, title,
+            blob_path, file_name, file_size_bytes, mime_type, status)
+         values ('vs-bogus', 'vs-org', 'vs-acct', 'Clip',
+                 'vs-org/vs-bogus/source.mp4', 'clip.mp4', 1024, 'video/mp4', 'not_a_real_status')`,
+      ),
+    ).rejects.toMatchObject({ code: '23514' });
+  });
+
+  test('the tracked schema is idempotent on re-apply', async () => {
+    await expect(client.query(await readSql(SCHEMA_SQL_PATH))).resolves.toBeDefined();
+  });
 });
 
 describe('migration on a pre-existing (legacy) database', () => {
