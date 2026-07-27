@@ -205,6 +205,16 @@ export default function PublicPortalPage() {
     addTrace('FAQ opened', question);
   }
 
+  // There is no backend endpoint for public interest submissions -- this form
+  // has never sent anything anywhere. addTrace only writes to local React
+  // state (see above), so a real visitor's name/email/phone/message is held
+  // in memory and lost on refresh. The confirmation message below used to
+  // say "Interest received for front-end review... Admin review required,"
+  // which told a real prospective volunteer/member that a human would see
+  // their submission when nobody ever will. Do not restore that wording
+  // without wiring this to a real, rate-limited, unauthenticated intake
+  // endpoint first -- that is a new public write surface and needs its own
+  // security review, not a quick patch here.
   function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!consentToContact) {
@@ -212,8 +222,12 @@ export default function PublicPortalPage() {
       return;
     }
 
-    setConfirmation('Interest received for front-end review. No account was created. Admin review required.');
-    addTrace('intake form submitted', `${fullName || 'Visitor'} submitted interest as ${visitorType} for ${programInterest}.`);
+    setConfirmation(
+      'This form is not yet connected to staff -- nothing you entered was sent or saved. '
+      + 'To reach us directly right now, contact Punxsy Prominence Boxing and Fitness, '
+      + '204 Pennsylvania Ave, Big Run, PA 15715.',
+    );
+    addTrace('intake form submitted', `${fullName || 'Visitor'} filled out interest as ${visitorType} for ${programInterest}; NOT PERSISTED -- no backend exists to receive this yet.`);
   }
 
   return (
@@ -327,6 +341,10 @@ export default function PublicPortalPage() {
 
         <section id="interest-intake" className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-sm)]">
           <h2 className="text-[20px] font-black text-[var(--black)]">PUBLIC INTEREST INTAKE</h2>
+          <p className="mt-2 text-[13px] font-semibold text-[var(--red-primary)]">
+            This form is not yet connected to staff. To reach us directly right now, contact Punxsy Prominence
+            Boxing and Fitness, 204 Pennsylvania Ave, Big Run, PA 15715.
+          </p>
           <form className="mt-4 grid gap-3" onSubmit={handleSubmit}>
             <input
               value={fullName}
