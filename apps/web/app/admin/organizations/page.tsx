@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
+import { usePilotSession } from '@/components/usePilotSession';
+
 
 type FeedbackKind = 'success' | 'error' | 'info';
 
@@ -30,9 +32,10 @@ async function postJson(path: string, body: Record<string, unknown>) {
 
 export default function SetupWizard() {
   const [step, setStep] = useState(1);
-  const [isMicrosoftSession, setIsMicrosoftSession] = useState(false);
-  const [sessionRole, setSessionRole] = useState<string | null>(null);
-  const [authChecked, setAuthChecked] = useState(false);
+  const session = usePilotSession();
+  const isMicrosoftSession = session.authProvider === 'microsoft';
+  const sessionRole = session.role;
+  const authChecked = !session.loading;
 
   // Step 1: Create Gym
   const [gymId, setGymId] = useState('');
@@ -48,33 +51,6 @@ export default function SetupWizard() {
   const [feedback, setFeedback] = useState<{ kind: FeedbackKind; text: string } | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
-
-  // Auth check
-  useEffect(() => {
-    void (async () => {
-      try {
-        const response = await fetch('/api/pilot/auth/session', {
-          method: 'POST',
-          credentials: 'include',
-        });
-
-        if (!response.ok) {
-          setAuthChecked(true);
-          return;
-        }
-
-        const data = (await response.json()) as { auth_provider?: string; role?: string };
-        // Check if authenticated via Microsoft.
-        const isMicrosoft = data.auth_provider === 'microsoft';
-        setIsMicrosoftSession(isMicrosoft);
-        setSessionRole(data.role ?? null);
-      } catch {
-        // Fall through
-      } finally {
-        setAuthChecked(true);
-      }
-    })();
-  }, []);
 
   // Load gym capabilities
   useEffect(() => {

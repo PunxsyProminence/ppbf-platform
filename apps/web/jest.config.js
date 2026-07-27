@@ -4,7 +4,13 @@ module.exports = {
   testEnvironment: 'node',
   testMatch: ['**/*.test.ts'],
   moduleNameMapper: {
-    '^@/(.*)$': '<rootDir>/$1',
+    // Must mirror tsconfig.json's "paths", which resolves "@/*" against
+    // ./src/* before ./*. Mapping only to the root meant any module importing
+    // "@/lib/..." (which lives at src/lib) was resolvable by tsc and the Next
+    // build but not by Jest, so such a module simply could not be unit tested.
+    // The two directory sets do not overlap, so trying src first shadows
+    // nothing at the root.
+    '^@/(.*)$': ['<rootDir>/src/$1', '<rootDir>/$1'],
   },
   transform: {
     '^.+\\.tsx?$': ['ts-jest', {

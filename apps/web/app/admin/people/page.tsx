@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
+import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
 
 interface Member {
@@ -60,6 +61,45 @@ function signInStatus(member: Member): { label: string; tone: 'ok' | 'pending' |
   }
 
   return { label: 'PIN set', tone: 'ok' };
+}
+
+/**
+ * Shown when someone reaches this page whose role cannot use it -- in
+ * practice a platform owner arriving by bookmark or typed URL, since the
+ * header entry point is hidden for them.
+ *
+ * Every route behind this console is organization-scoped and rejects a
+ * platform owner by design: managing a gym's roster belongs to that gym's
+ * admin. Rather than let the roster fetch fail with a bare "Forbidden", say
+ * why and point at the surface that does the caller's job.
+ */
+function WrongRoleNotice() {
+  return (
+    <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
+      <div className="mx-auto max-w-xl space-y-5 text-center">
+        <p className="text-xs font-mono uppercase tracking-[0.3em] text-[var(--red-primary)]">Different Console</p>
+        <h1 className="font-display text-3xl font-black">People is managed per gym</h1>
+        <p className="text-sm leading-7 text-[var(--gray-dark)]">
+          This console belongs to a gym admin — it manages one organization&apos;s coaches, staff, and athletes. As
+          platform owner you create organizations and appoint their admins, and they take it from there.
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <Link
+            href="/admin/organizations"
+            className="inline-flex min-h-[48px] items-center justify-center rounded-full border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-6 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-[var(--red-highlight)]"
+          >
+            Organization Provisioning
+          </Link>
+          <Link
+            href="/admin"
+            className="inline-flex min-h-[48px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-6 text-sm font-black uppercase tracking-[0.12em] transition hover:bg-[var(--canvas-tan)]"
+          >
+            Admin Home
+          </Link>
+        </div>
+      </div>
+    </main>
+  );
 }
 
 function PeopleConsoleContent() {
@@ -571,10 +611,30 @@ function PeopleConsoleContent() {
   );
 }
 
+function PeopleConsoleRoleSwitch() {
+  const session = usePilotSession();
+
+  if (session.loading) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
+        <p className="text-sm text-[var(--gray-dark)]">Loading...</p>
+      </main>
+    );
+  }
+
+  // RoleSessionGate already proved the caller is some flavour of admin; this
+  // narrows further, because 'admin' there also covers platform owners.
+  if (!isOrganizationAdminSessionRole(session.role)) {
+    return <WrongRoleNotice />;
+  }
+
+  return <PeopleConsoleContent />;
+}
+
 export default function PeopleConsolePage() {
   return (
     <RoleSessionGate allowedRoles={['admin']}>
-      <PeopleConsoleContent />
+      <PeopleConsoleRoleSwitch />
     </RoleSessionGate>
   );
 }
