@@ -130,7 +130,7 @@ const faqItems = [
   },
   {
     question: 'Does submitting this form create an account?',
-    answer: 'No. This public form only records interest in the front-end demo state. Admin review is required before any real onboarding.',
+    answer: 'No. Submitting this form only records your interest for staff follow-up. It does not create an account or enroll you in anything -- a staff member reviews every submission before any real onboarding begins.',
   },
 ];
 
@@ -168,8 +168,13 @@ export default function PublicPortalPage() {
   const [preferredContactMethod, setPreferredContactMethod] = useState<(typeof contactMethodOptions)[number]>('Email');
   const [message, setMessage] = useState('');
   const [consentToContact, setConsentToContact] = useState(false);
+  // Hidden honeypot field -- real visitors never see or fill this in (see the
+  // input below, which is visually hidden and excluded from tab order). Any
+  // value here marks the submission as almost certainly automated.
+  const [website, setWebsite] = useState('');
   const [formStarted, setFormStarted] = useState(false);
   const [confirmation, setConfirmation] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [openFaq, setOpenFaq] = useState<string | null>(null);
   const [telemetryTraces, setTelemetryTraces] = useState<TelemetryTrace[]>([]);
 
@@ -205,29 +210,65 @@ export default function PublicPortalPage() {
     addTrace('FAQ opened', question);
   }
 
-  // There is no backend endpoint for public interest submissions -- this form
-  // has never sent anything anywhere. addTrace only writes to local React
-  // state (see above), so a real visitor's name/email/phone/message is held
-  // in memory and lost on refresh. The confirmation message below used to
-  // say "Interest received for front-end review... Admin review required,"
-  // which told a real prospective volunteer/member that a human would see
-  // their submission when nobody ever will. Do not restore that wording
-  // without wiring this to a real, rate-limited, unauthenticated intake
-  // endpoint first -- that is a new public write surface and needs its own
-  // security review, not a quick patch here.
-  function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
+  // Posts to /api/pilot/public-interest -- the one unauthenticated write
+  // endpoint in this app. See that route for the rate limiting, honeypot,
+  // and server-side validation this relies on; nothing here is trusted
+  // beyond the browser.
+  async function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!consentToContact) {
       setConfirmation('Please provide consent to be contacted before submitting.');
       return;
     }
+    if (submitting) {
+      return;
+    }
 
-    setConfirmation(
-      'This form is not yet connected to staff -- nothing you entered was sent or saved. '
-      + 'To reach us directly right now, contact Punxsy Prominence Boxing and Fitness, '
-      + '204 Pennsylvania Ave, Big Run, PA 15715.',
-    );
-    addTrace('intake form submitted', `${fullName || 'Visitor'} filled out interest as ${visitorType} for ${programInterest}; NOT PERSISTED -- no backend exists to receive this yet.`);
+    setSubmitting(true);
+    setConfirmation('');
+    try {
+      const response = await fetch('/api/pilot/public-interest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          full_name: fullName,
+          email,
+          phone: phone || undefined,
+          visitor_type: visitorType,
+          program_interest: programInterest,
+          preferred_contact_method: preferredContactMethod,
+          message: message || undefined,
+          consent_to_contact: consentToContact,
+          website,
+        }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+
+      if (!response.ok || !payload.ok) {
+        setConfirmation(
+          payload.error
+          || 'Something went wrong submitting this form. Please try again, or contact us directly at '
+          + '204 Pennsylvania Ave, Big Run, PA 15715.',
+        );
+        return;
+      }
+
+      setConfirmation('Thank you -- your interest has been received. A staff member will follow up with you.');
+      addTrace('intake form submitted', `${fullName || 'Visitor'} submitted interest as ${visitorType} for ${programInterest}.`);
+      setFullName('');
+      setEmail('');
+      setPhone('');
+      setMessage('');
+      setConsentToContact(false);
+    } catch {
+      setConfirmation(
+        'Network error -- this was not submitted. Please try again, or contact us directly at '
+        + '204 Pennsylvania Ave, Big Run, PA 15715.',
+      );
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -341,11 +382,20 @@ export default function PublicPortalPage() {
 
         <section id="interest-intake" className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-sm)]">
           <h2 className="text-[20px] font-black text-[var(--black)]">PUBLIC INTEREST INTAKE</h2>
-          <p className="mt-2 text-[13px] font-semibold text-[var(--red-primary)]">
-            This form is not yet connected to staff. To reach us directly right now, contact Punxsy Prominence
-            Boxing and Fitness, 204 Pennsylvania Ave, Big Run, PA 15715.
-          </p>
           <form className="mt-4 grid gap-3" onSubmit={handleSubmit}>
+            {/* Honeypot: visually hidden and out of tab order, so a real
+                visitor never encounters it, but most simple bots fill in
+                every field they can find. */}
+            <input
+              type="text"
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+              tabIndex={-1}
+              autoComplete="off"
+              aria-hidden="true"
+              className="absolute h-0 w-0 opacity-0"
+              style={{ position: 'absolute', left: '-9999px' }}
+            />
             <input
               value={fullName}
               onChange={(e) => {
@@ -446,9 +496,10 @@ export default function PublicPortalPage() {
 
             <button
               type="submit"
-              className="min-h-[44px] border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 text-[14px] font-bold text-[var(--white)] transition hover:bg-[var(--red-highlight)]"
+              disabled={submitting}
+              className="min-h-[44px] border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 text-[14px] font-bold text-[var(--white)] transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Submit Interest
+              {submitting ? 'Submitting...' : 'Submit Interest'}
             </button>
 
             {confirmation && <p className="text-[14px] text-[var(--red-primary)]">{confirmation}</p>}
