@@ -158,6 +158,12 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
             <p className="mt-2 text-sm text-[var(--gray-dark)] leading-relaxed">
               Enter your Account ID and PIN. Ask your coach or admin if you don&apos;t have one.
             </p>
+            <p className="mt-3 rounded-lg border border-[rgba(0,0,0,0.12)] bg-[var(--canvas-tan-light)] px-3 py-2 text-sm text-[var(--gray-dark)]">
+              First time here with an activation code?{' '}
+              <Link href="/activate" className="font-semibold text-[var(--red-primary)] underline">
+                Set up your account
+              </Link>
+            </p>
           </div>
 
           <div className="grid gap-3">

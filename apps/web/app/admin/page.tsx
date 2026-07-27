@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import RevenueFundingCenter from '@/components/RevenueFundingCenter';
+import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import ShadowChatButton from '@/components/ShadowChatButton';
 import {
   allTrackIds,
@@ -385,6 +386,12 @@ function formatDateLabel(value: string): string {
 }
 
 export default function AdminCapabilitiesPage() {
+  const pilotSession = usePilotSession();
+  // The People console is organization-scoped; every route behind it rejects a
+  // platform owner. Showing the entry point to someone who can only receive a
+  // 403 from it is worse than not showing it at all -- they get Organization
+  // Provisioning instead, which is the surface that actually does their job.
+  const canManagePeople = isOrganizationAdminSessionRole(pilotSession.role);
   const [capabilities, setCapabilities] = useState<Capability[]>(fallbackCapabilities);
   const [capabilitiesHydrated, setCapabilitiesHydrated] = useState(false);
   const [trackAssignmentsHydrated, setTrackAssignmentsHydrated] = useState(false);
@@ -810,6 +817,14 @@ export default function AdminCapabilitiesPage() {
             </div>
             <div className="flex flex-wrap gap-3">
               <ShadowChatButton context="Admin Hub" />
+              {canManagePeople && (
+                <Link
+                  href="/admin/people"
+                  className="inline-flex h-11 items-center border border-[#8b4444] bg-[#5a2a2a] px-4 text-[14px] font-bold text-[#f2e7da] transition hover:bg-[#7a3a3a]"
+                >
+                  PEOPLE
+                </Link>
+              )}
               <Link
                 href="/admin/shadow"
                 className="inline-flex h-11 items-center border border-[#8b4444] bg-[#5a2a2a] px-4 text-[14px] font-bold text-[#f2e7da] transition hover:bg-[#7a3a3a]"

@@ -1,0 +1,103 @@
+import { NextResponse, type NextRequest } from 'next/server';
+
+import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { jsonError, requireMicrosoftAuthenticatedPrincipal, requireRole } from '@/src/server/pilot/http';
+import {
+  createOrUpdateMicrosoftStaffAccount,
+  isInvitableStaffRole,
+  listOrganizationMembers,
+} from '@/src/server/pilot/staffProvisioning';
+
+export const runtime = 'nodejs';
+
+// Lists every member of an organization. Platform-owner scoped, so the
+// organization is an explicit parameter rather than the caller's own.
+export async function GET(request: NextRequest) {
+  try {
+    const principal = await requireMicrosoftAuthenticatedPrincipal(request);
+    requireRole(principal, ['platform_owner']);
+
+    const organizationId = request.nextUrl.searchParams.get('organization_id')?.trim() || '';
+    if (!organizationId) {
+      throw new Error('Missing organization_id');
+    }
+
+    const members = await listOrganizationMembers(organizationId);
+
+    return NextResponse.json({ ok: true, organization_id: organizationId, members });
+  } catch (error) {
+    return jsonError(error);
+  }
+}
+
+/**
+ * Provisions a Microsoft-authenticated staff account (coach, organization
+ * admin, board, staff, volunteer, parent) in any organization.
+ *
+ * This does not send anything. It maps an email address onto a role, which is
+ * what makes that person's Microsoft sign-in resolve to a PPBF session. The
+ * invitee must separately exist in the PPBF Entra tenant -- as a member or a
+ * B2B guest -- because the OAuth callback rejects any token whose tenant
+ * claim does not match.
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const principal = await requireMicrosoftAuthenticatedPrincipal(request);
+    requireRole(principal, ['platform_owner']);
+
+    const body = (await request.json()) as {
+      organization_id?: string;
+      login_email?: string;
+      role?: string;
+      account_id?: string;
+    };
+
+    const organizationId = body.organization_id?.trim() || '';
+    const loginEmail = body.login_email?.trim() || '';
+    const role = body.role?.trim() || '';
+
+    if (!organizationId || !loginEmail || !role) {
+      throw new Error('Missing organization_id, login_email, or role');
+    }
+
+    if (!isInvitableStaffRole(role)) {
+      throw new Error('Unsupported role');
+    }
+
+    const result = await createOrUpdateMicrosoftStaffAccount({
+      loginEmail,
+      organizationId,
+      role,
+      accountIdHint: body.account_id?.trim() || undefined,
+    });
+
+    await writePilotAuditEvent({
+      event_type: result.created ? 'create' : 'update',
+      actor_account_id: principal.accountId,
+      actor_role: principal.role,
+      organization_id: organizationId,
+      entity_type: 'account',
+      entity_id: result.accountId,
+      details: {
+        action: 'platform_owner_provision_staff',
+        role: result.role,
+        login_email: result.loginEmail,
+        auth_provider: 'microsoft',
+      },
+    });
+
+    return NextResponse.json({
+      ok: true,
+      account_id: result.accountId,
+      organization_id: result.organizationId,
+      role: result.role,
+      login_email: result.loginEmail,
+      created: result.created,
+      // Surfaced so the console can tell the operator the invite is only half
+      // done until the identity exists in the tenant.
+      requires_entra_guest_invite: true,
+    });
+  } catch (error) {
+    return jsonError(error);
+  }
+}
