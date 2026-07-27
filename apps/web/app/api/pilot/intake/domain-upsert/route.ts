@@ -28,7 +28,7 @@ function asString(value: unknown, fallback = ''): string {
 export async function POST(request: NextRequest) { // NOSONAR
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['organization_admin', 'coach']);
+    requireRole(principal, ['organization_admin', 'coach', 'athlete']);
 
     const body = (await request.json()) as {
       entity_type?: 'emergency_contact' | 'medical' | 'waiver' | 'assessment' | 'attendance' | 'readiness' | 'coach_note' | 'guardian_link';
@@ -42,6 +42,14 @@ export async function POST(request: NextRequest) { // NOSONAR
     const automationMode = body.automation_mode ?? 'assisted';
     if (!entityType || !athleteId || !body.payload) {
       throw new Error('Missing entity_type, athlete_id, or payload');
+    }
+
+    // Athletes may only self-report their own readiness. Every other entity
+    // type here (medical, waiver, assessment, attendance, coach_note,
+    // guardian_link) is a coach/admin-authored record about an athlete, not
+    // something an athlete should be able to write for themselves.
+    if (principal.role === 'athlete' && entityType !== 'readiness') {
+      throw new Error('Forbidden: athletes may only self-report readiness');
     }
 
     await assertShadowAuthority({

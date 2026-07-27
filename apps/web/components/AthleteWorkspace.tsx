@@ -542,7 +542,26 @@ export default function AthleteWorkspace() {
       // Floor plan persistence is secondary to session check-in.
     }
 
+    try {
+      await fetch('/api/pilot/intake/domain-upsert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entity_type: 'readiness',
+          athlete_id: backendAthleteId,
+          payload: {
+            score: readinessToTrain,
+            category: readiness,
+            measured_at: now.toISOString(),
+          },
+        }),
+      });
+    } catch {
+      // Readiness history persistence is secondary to session check-in.
+    }
+
     const sessionId = `session_${Date.now()}`;
+    const checkInSummary = `Sleep ${sleepHours}h, energy ${energyLevel}/10, hydration ${hydrationStatus}/10, motivation ${motivation}/10, soreness ${soreness}/10.`;
     const sessionResponse = await fetch('/api/pilot/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -551,7 +570,7 @@ export default function AthleteWorkspace() {
         athlete_id: backendAthleteId,
         date: now.toISOString().slice(0, 10),
         rpe: readinessToTrain,
-        notes: checkInNotes || `Auto check-in readiness ${readiness}`,
+        notes: checkInNotes ? `${checkInNotes} — ${checkInSummary}` : `Auto check-in readiness ${readiness}. ${checkInSummary}`,
         completed_flag: false,
         created_at: now.toISOString(),
         updated_at: now.toISOString(),
