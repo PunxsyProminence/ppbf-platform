@@ -1,19 +1,45 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
+import { query } from '@/src/server/pilot/db';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import { createShadowResearchRequirement, listShadowResearchRequirements, resolveShadowResearchRequirement } from '@/src/server/pilot/shadowResearch';
+import { ORGANIZATION_MEMBER_ROLES, SHADOW_PROJECTION_READ_ROLES } from '@/src/server/pilot/shadowRoleSets';
 
 export const runtime = 'nodejs';
 
 async function handleList(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['organization_admin', 'admin', 'coach', 'athlete', 'parent', 'volunteer', 'staff']);
+    requireRole(principal, [...SHADOW_PROJECTION_READ_ROLES]);
     await assertShadowRuntimeReadiness({ requiredTables: ['shadow_research_requirements'] });
 
-    const items = await listShadowResearchRequirements(principal.organizationId);
+    let athleteScope: string[] | undefined;
+
+    if (principal.role === 'parent') {
+      const links = await query<{ athlete_id: string }>(
+        `select gl.athlete_id
+         from pilot.guardian_links gl
+         where gl.organization_id = $1
+           and gl.parent_id in (
+             select parent_id
+             from pilot.parents
+             where organization_id = $1
+               and account_id = $2
+           )`,
+        [principal.organizationId, principal.accountId],
+      );
+
+      athleteScope = links.map((row) => row.athlete_id);
+      if (athleteScope.length === 0) {
+        return NextResponse.json({ ok: true, organization_id: principal.organizationId, items: [] });
+      }
+    }
+
+    const items = await listShadowResearchRequirements(principal.organizationId, {
+      athleteIds: athleteScope,
+    });
 
     return NextResponse.json({ ok: true, organization_id: principal.organizationId, items });
   } catch (error) {
@@ -25,10 +51,13 @@ export async function GET(request: NextRequest) {
   return handleList(request);
 }
 
+// Creating and resolving research requirements is an in-organization authoring
+// act, so platform_owner is deliberately excluded here even though it can read
+// the list above. Omega observes knowledge gaps; it does not author them.
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['organization_admin', 'admin', 'coach', 'athlete', 'parent', 'volunteer', 'staff']);
+    requireRole(principal, [...ORGANIZATION_MEMBER_ROLES]);
     await assertShadowRuntimeReadiness({ requiredTables: ['shadow_research_requirements'] });
 
     const body = (await request.json().catch(() => ({}))) as {

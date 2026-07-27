@@ -21,6 +21,23 @@ export interface ComplianceViolation {
   created_at: string;
 }
 
+export interface ComplianceViolationSummary {
+  total: number;
+  severity: {
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+  };
+  status: {
+    new: number;
+    acknowledged: number;
+    escalated: number;
+    resolved: number;
+    dismissed: number;
+  };
+}
+
 export async function createComplianceViolation(params: {
   organizationId: string;
   ruleId: string;
@@ -179,4 +196,61 @@ export async function getComplianceRulesByCategory(
   sql += ` order by severity desc`;
 
   return query<ComplianceRule>(sql, params);
+}
+
+export async function getOrganizationViolationSummary(
+  organizationId: string,
+  status?: string,
+): Promise<ComplianceViolationSummary> {
+  let sql = `
+    select
+      count(*)::int as total,
+      count(*) filter (where severity = 'critical')::int as critical,
+      count(*) filter (where severity = 'high')::int as high,
+      count(*) filter (where severity = 'medium')::int as medium,
+      count(*) filter (where severity = 'low')::int as low,
+      count(*) filter (where status = 'new')::int as status_new,
+      count(*) filter (where status = 'acknowledged')::int as status_acknowledged,
+      count(*) filter (where status = 'escalated')::int as status_escalated,
+      count(*) filter (where status = 'resolved')::int as status_resolved,
+      count(*) filter (where status = 'dismissed')::int as status_dismissed
+    from pilot.compliance_violations
+    where organization_id = $1
+  `;
+  const params: unknown[] = [organizationId];
+
+  if (status) {
+    sql += ` and status = $2`;
+    params.push(status);
+  }
+
+  const row = await queryOne<{
+    total: number;
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+    status_new: number;
+    status_acknowledged: number;
+    status_escalated: number;
+    status_resolved: number;
+    status_dismissed: number;
+  }>(sql, params);
+
+  return {
+    total: row?.total ?? 0,
+    severity: {
+      critical: row?.critical ?? 0,
+      high: row?.high ?? 0,
+      medium: row?.medium ?? 0,
+      low: row?.low ?? 0,
+    },
+    status: {
+      new: row?.status_new ?? 0,
+      acknowledged: row?.status_acknowledged ?? 0,
+      escalated: row?.status_escalated ?? 0,
+      resolved: row?.status_resolved ?? 0,
+      dismissed: row?.status_dismissed ?? 0,
+    },
+  };
 }

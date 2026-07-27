@@ -84,6 +84,7 @@ const StatusBadge = ({ status, type }: { status: string; type: 'gap' | 'assignme
 };
 
 export default function AthleteProgressionIntelligencePage() {
+  const [athleteId, setAthleteId] = useState<string | null>(null);
   const [gaps, setGaps] = useState<ProgressionGap[]>([]);
   const [assignments, setAssignments] = useState<DrillAssignment[]>([]);
   const [completions, setCompletions] = useState<AssignmentCompletion[]>([]);
@@ -91,13 +92,33 @@ export default function AthleteProgressionIntelligencePage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch('/api/pilot/auth/session', { method: 'POST' });
+        const payload = (await response.json()) as { authenticated?: boolean; athlete_id?: string };
+        if (!response.ok || !payload.authenticated || !payload.athlete_id) {
+          throw new Error('Unable to resolve athlete session. Sign in again.');
+        }
+        setAthleteId(payload.athlete_id);
+      } catch (err) {
+        setErrorMessage(err instanceof Error ? err.message : 'Unable to resolve athlete session.');
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!athleteId) {
+      return;
+    }
+
     const fetchData = async () => {
       try {
         setLoading(true);
         setErrorMessage(null);
 
         // Fetch gaps
-        const gapsRes = await fetch(`${apiBase()}/api/pilot/progression/gaps`, {
+        const gapsRes = await fetch(`${apiBase()}/api/pilot/progression/gaps?athlete_id=${encodeURIComponent(athleteId)}`, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
@@ -107,7 +128,7 @@ export default function AthleteProgressionIntelligencePage() {
         setGaps(gapsData.items || []);
 
         // Fetch assignments
-        const assignRes = await fetch(`${apiBase()}/api/pilot/progression/assignments`, {
+        const assignRes = await fetch(`${apiBase()}/api/pilot/progression/assignments?athlete_id=${encodeURIComponent(athleteId)}`, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
@@ -142,7 +163,7 @@ export default function AthleteProgressionIntelligencePage() {
     };
 
     fetchData();
-  }, []);
+  }, [athleteId]);
 
   const getCompletionsForAssignment = (assignmentId: string) => {
     return completions.filter((c) => c.assignment_id === assignmentId);

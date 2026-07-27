@@ -117,6 +117,11 @@ jobs:
               PPBF_AUTH_PROVIDER_WIRED=false \
               AZURE_POSTGRES_CONNECTION_STRING=secretref:azure-postgres-connection-string \
               AZURE_STORAGE_CONNECTION_STRING=secretref:azure-storage-connection-string \
+              PPBF_MS_TENANT_ID=secretref:ppbf-ms-tenant-id \
+              PPBF_MS_CLIENT_ID=secretref:ppbf-ms-client-id \
+              PPBF_MS_CLIENT_SECRET=secretref:ppbf-ms-client-secret \
+              PPBF_MS_REDIRECT_URI=secretref:ppbf-ms-redirect-uri \
+              PPBF_MS_POST_LOGIN_PATH=secretref:ppbf-ms-post-login-path \
               AZURE_AI_ENDPOINT="$AZURE_AI_ENDPOINT" \
               AZURE_AI_DEPLOYMENT_NAME="$AZURE_AI_DEPLOYMENT_NAME" \
               AZURE_AI_API_VERSION="$AZURE_AI_API_VERSION" \
@@ -124,7 +129,8 @@ jobs:
               PPBF_SHADOW_MAX_COMPLETION_TOKENS=1024 \
               PPBF_PILOT_BOOTSTRAP_KEY=secretref:ppbf-pilot-bootstrap-key \
               PPBF_PILOT_DEFAULT_ORG_ID=secretref:ppbf-pilot-default-org-id \
-              PPBF_PILOT_SHADOW_CONTAINER=secretref:ppbf-pilot-shadow-container
+              PPBF_PILOT_SHADOW_CONTAINER=secretref:ppbf-pilot-shadow-container \
+              PPBF_DURABLE_RATE_LIMIT=true
 
       - name: Verify Staging AI Secret Reference
         run: |

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import React, { useEffect, useState } from 'react';
+import React, { type FormEvent, useEffect, useState } from 'react';
 import { AthleteSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import { cx, ui } from './uiStyles';
 
@@ -80,6 +80,14 @@ interface ShadowObservationItem {
   label: string;
   review_state: 'pending_review' | 'approved' | 'rejected' | 'promoted' | 'unknown';
   created_at: string;
+}
+
+interface PainLogEntry {
+  id: string;
+  location: string;
+  type: PainType;
+  severity: number;
+  capturedAt: string;
 }
 
 function getReadinessLevel(readinessToTrain: number): ReadinessLevel {
@@ -256,11 +264,15 @@ export default function AthleteWorkspace() {
   const [showPainModal, setShowPainModal] = useState(false);
   const [currentPainType, setCurrentPainType] = useState<PainType>('Dull');
   const [currentPainSeverity, setCurrentPainSeverity] = useState(3);
+  const [painLog, setPainLog] = useState<PainLogEntry[]>([]);
+  const [isSavingPain, setIsSavingPain] = useState(false);
+  const [painSaveMessage, setPainSaveMessage] = useState('');
 
   // Goals State - Real API data
   const [smartGoals, setSmartGoals] = useState<SMARTGoal[]>([]);
   const [goalsLoading, setGoalsLoading] = useState(true);
   const [goalsError, setGoalsError] = useState<string | null>(null);
+  const [goalsRetryNonce, setGoalsRetryNonce] = useState(0);
   
   const [showGoalForm, setShowGoalForm] = useState(false);
   const [newGoalTitle, setNewGoalTitle] = useState('');
@@ -272,6 +284,7 @@ export default function AthleteWorkspace() {
   const [floorTasks, setFloorTasks] = useState<FloorTask[]>([]);
   const [tasksLoading, setTasksLoading] = useState(true);
   const [tasksError, setTasksError] = useState<string | null>(null);
+  const [tasksRetryNonce, setTasksRetryNonce] = useState(0);
 
   // Drills State
   const [drills] = useState<Drill[]>([
@@ -286,12 +299,13 @@ export default function AthleteWorkspace() {
   const [shadowInput, setShadowInput] = useState('');
   const [shadowObservations, setShadowObservations] = useState<ShadowObservationItem[]>([]);
   const [shadowObservationError, setShadowObservationError] = useState('');
+  const [selectedCoach, setSelectedCoach] = useState('Coach Jason (Head Coach)');
+  const [coachMessageBody, setCoachMessageBody] = useState('');
+  const [isSendingCoachMessage, setIsSendingCoachMessage] = useState(false);
+  const [coachMessageStatus, setCoachMessageStatus] = useState('');
 
   // Session Log State
-  const [sessionLog, setSessionLog] = useState<Array<{id: string; checkInTime: string; checkOutTime?: string; notes: string}>>([
-    { id: 'sess_1', checkInTime: '2026-07-11 4:00 PM', checkOutTime: '2026-07-11 5:30 PM', notes: 'Great session! Felt strong' },
-    { id: 'sess_2', checkInTime: '2026-07-10 4:00 PM', checkOutTime: '2026-07-10 5:15 PM', notes: 'Slight shoulder soreness, recovered well' }
-  ]);
+  const [sessionLog, setSessionLog] = useState<Array<{id: string; checkInTime: string; checkOutTime?: string; notes: string}>>([]);
   const [sessionActive, setSessionActive] = useState(false);
   const [checkInTime, setCheckInTime] = useState<string | null>(null);
   const [checkInNotes, setCheckInNotes] = useState('');
@@ -356,7 +370,7 @@ export default function AthleteWorkspace() {
         setGoalsLoading(false);
       }
     })();
-  }, [backendAthleteId]);
+  }, [backendAthleteId, goalsRetryNonce]);
 
   // Fetch sessions and convert to floor tasks when athlete ID is set
   useEffect(() => {
@@ -377,29 +391,28 @@ export default function AthleteWorkspace() {
         const data = (await response.json()) as { items?: Array<{ session_id: string; title: string; date?: string; notes?: string }> };
         const sessions = data.items || [];
         
-        // If no sessions exist, show placeholder tasks
-        if (sessions.length === 0) {
-          setFloorTasks([
-            { id: 'ft_1', title: 'Morning Readiness Check-In', category: 'Check-In', description: 'Complete biological readiness survey', dueDate: '7:00 AM', completed: false, priority: 'High' },
-            { id: 'ft_2', title: 'Warmup Drills - Footwork', category: 'Training', description: 'Execute prescribed footwork progression', dueDate: '4:00 PM', completed: false, priority: 'High' },
-            { id: 'ft_3', title: 'Conditioning Block', category: 'Training', description: 'Complete 30-minute conditioning session', dueDate: '5:00 PM', completed: false, priority: 'Normal' },
-            { id: 'ft_4', title: 'Goal Review Journal', category: 'Homework', description: 'Reflect on weekly SMART goal progress', dueDate: '8:00 PM', completed: false, priority: 'Normal' }
-          ]);
+        const mappedTasks: FloorTask[] = sessions.map((session) => ({
+          id: session.session_id,
+          title: session.title || 'Training Session',
+          category: 'Training',
+          description: session.notes || 'Backend session task entry.',
+          dueDate: session.date || 'Scheduled',
+          completed: false,
+          priority: 'Normal',
+        }));
+
+        setFloorTasks(mappedTasks);
+        if (mappedTasks.length === 0) {
+          setBackendSyncMessage('No backend floor tasks are currently assigned.');
         }
       } catch (error) {
         setTasksError(error instanceof Error ? error.message : 'Failed to load sessions');
-        // Fallback to default tasks
-        setFloorTasks([
-          { id: 'ft_1', title: 'Morning Readiness Check-In', category: 'Check-In', description: 'Complete biological readiness survey', dueDate: '7:00 AM', completed: false, priority: 'High' },
-          { id: 'ft_2', title: 'Warmup Drills - Footwork', category: 'Training', description: 'Execute prescribed footwork progression', dueDate: '4:00 PM', completed: false, priority: 'High' },
-          { id: 'ft_3', title: 'Conditioning Block', category: 'Training', description: 'Complete 30-minute conditioning session', dueDate: '5:00 PM', completed: false, priority: 'Normal' },
-          { id: 'ft_4', title: 'Goal Review Journal', category: 'Homework', description: 'Reflect on weekly SMART goal progress', dueDate: '8:00 PM', completed: false, priority: 'Normal' }
-        ]);
+        setFloorTasks([]);
       } finally {
         setTasksLoading(false);
       }
     })();
-  }, [backendAthleteId]);
+  }, [backendAthleteId, tasksRetryNonce]);
 
   useEffect(() => {
     void (async () => {
@@ -575,6 +588,102 @@ export default function AthleteWorkspace() {
       setSessionActive(false);
       setCheckInTime(null);
       setCheckInNotes('');
+    }
+  };
+
+  const handleSavePainReport = async () => {
+    if (!selectedPainLocation) {
+      return;
+    }
+
+    const now = new Date();
+    const newPainLogEntry: PainLogEntry = {
+      id: `pain_${Date.now()}`,
+      location: selectedPainLocation,
+      type: currentPainType,
+      severity: currentPainSeverity,
+      capturedAt: now.toISOString(),
+    };
+
+    setIsSavingPain(true);
+    setPainSaveMessage('');
+
+    try {
+      setPainLog((current) => [newPainLogEntry, ...current]);
+      setInjuryFlag(true);
+      setSoreness((current) => Math.max(current, currentPainSeverity));
+
+      if (backendAthleteId) {
+        const response = await fetch('/api/pilot/shadow/formulas/observations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            athleteId: backendAthleteId,
+            contextId: newPainLogEntry.id,
+            kind: 'pain_report',
+            value: currentPainSeverity,
+            unit: 'severity_1_10',
+            dimensions: {
+              location: selectedPainLocation,
+              painType: currentPainType,
+              injuryFlag: true,
+            },
+            observedAt: now.toISOString(),
+            idempotencyKey: `${newPainLogEntry.id}-pain_report`,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Pain report was saved locally but telemetry persistence failed.');
+        }
+
+        setPainSaveMessage('Pain report saved and shared with coaching telemetry.');
+      } else {
+        setPainSaveMessage('Pain report saved locally. Sign in again to sync with coaching telemetry.');
+      }
+
+      setShowPainModal(false);
+    } catch (error) {
+      setPainSaveMessage(error instanceof Error ? error.message : 'Pain report save failed.');
+    } finally {
+      setIsSavingPain(false);
+    }
+  };
+
+  const handleSendCoachMessage = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const message = coachMessageBody.trim();
+    if (!message) {
+      setCoachMessageStatus('Write a message before sending.');
+      return;
+    }
+
+    setIsSendingCoachMessage(true);
+    setCoachMessageStatus('');
+
+    try {
+      const response = await fetch('/api/pilot/athlete/chat', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: `Coach message for ${selectedCoach}: ${message}`,
+          sessionType: 'individual_support',
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({ error: 'Message delivery failed.' }))) as { error?: string };
+        throw new Error(payload.error || 'Message delivery failed.');
+      }
+
+      setCoachMessageBody('');
+      setCoachMessageStatus('Message sent. Coach response will appear in your SHADOW conversation log.');
+    } catch (error) {
+      setCoachMessageStatus(error instanceof Error ? error.message : 'Message delivery failed.');
+    } finally {
+      setIsSendingCoachMessage(false);
     }
   };
 
@@ -795,6 +904,14 @@ export default function AthleteWorkspace() {
                         </button>
                       ))}
                     </div>
+                    {painSaveMessage ? (
+                      <p className="text-xs text-[#d4a574]">{painSaveMessage}</p>
+                    ) : null}
+                    {painLog[0] ? (
+                      <p className="text-xs text-[#8a8a8a]">
+                        Last report: {painLog[0].location} ({painLog[0].type}, {painLog[0].severity}/10)
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -866,7 +983,7 @@ export default function AthleteWorkspace() {
                     <button
                       onClick={() => {
                         setTasksError(null);
-                        // Effect will re-run with backendAthleteId
+                        setTasksRetryNonce((value) => value + 1);
                       }}
                       className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition"
                       aria-label="Retry loading tasks"
@@ -912,6 +1029,12 @@ export default function AthleteWorkspace() {
                   </div>
                 ))}
               </div>
+
+              {!tasksLoading && !tasksError && floorTasks.length === 0 && (
+                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 text-center">
+                  <p className="text-[#b0a095]">No backend floor tasks are available for this athlete yet.</p>
+                </div>
+              )}
             </div>
           )}
 
@@ -1011,7 +1134,7 @@ export default function AthleteWorkspace() {
                     <button
                       onClick={() => {
                         setGoalsError(null);
-                        // Effect will re-run with backendAthleteId
+                        setGoalsRetryNonce((value) => value + 1);
                       }}
                       className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition"
                       aria-label="Retry loading goals"
@@ -1267,10 +1390,15 @@ export default function AthleteWorkspace() {
 
               <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4">
                 <h3 className="font-mono font-bold text-[#d4a574]">Send Message to Coach</h3>
-                <form className="space-y-4">
+                <form onSubmit={handleSendCoachMessage} className="space-y-4">
                   <div>
                     <label className="block text-sm font-semibold mb-2" htmlFor="message-coach-select">Coach</label>
-                    <select id="message-coach-select" className="w-full px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none">
+                    <select
+                      id="message-coach-select"
+                      value={selectedCoach}
+                      onChange={(event) => setSelectedCoach(event.target.value)}
+                      className="w-full px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none"
+                    >
                       <option>Coach Jason (Head Coach)</option>
                       <option>Coach Danielle (Fitness Director)</option>
                     </select>
@@ -1279,12 +1407,19 @@ export default function AthleteWorkspace() {
                     <label className="block text-sm font-semibold mb-2" htmlFor="message-coach-body">Your Message</label>
                     <textarea
                       id="message-coach-body"
+                      value={coachMessageBody}
+                      onChange={(event) => setCoachMessageBody(event.target.value)}
                       placeholder="Type your message..."
                       className="w-full h-24 px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none resize-none"
                     />
                   </div>
-                  <button className="w-full bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold py-2 transition">
-                    Send Message
+                  {coachMessageStatus ? <p className="text-xs text-[#d4a574]">{coachMessageStatus}</p> : null}
+                  <button
+                    type="submit"
+                    disabled={isSendingCoachMessage}
+                    className="w-full bg-[#8b4444] hover:bg-[#5a2a2a] disabled:bg-[#4a4a4a] text-white font-semibold py-2 transition"
+                  >
+                    {isSendingCoachMessage ? 'Sending...' : 'Send Message'}
                   </button>
                 </form>
               </div>
@@ -1443,7 +1578,13 @@ export default function AthleteWorkspace() {
                 </div>
               </div>
               <div className="flex gap-2">
-                <button onClick={() => setShowPainModal(false)} className="flex-1 bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold py-2 transition">Save</button>
+                <button
+                  onClick={() => void handleSavePainReport()}
+                  disabled={isSavingPain}
+                  className="flex-1 bg-[#8b4444] hover:bg-[#5a2a2a] disabled:bg-[#4a4a4a] text-white font-semibold py-2 transition"
+                >
+                  {isSavingPain ? 'Saving...' : 'Save'}
+                </button>
                 <button onClick={() => setShowPainModal(false)} className="flex-1 bg-[#4a4a4a] hover:bg-[#5a5a5a] text-white font-semibold py-2 transition">Cancel</button>
               </div>
             </div>

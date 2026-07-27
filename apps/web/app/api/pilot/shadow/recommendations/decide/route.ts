@@ -4,10 +4,9 @@ import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/acc
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import { decideOnRecommendation } from '@/src/server/pilot/shadowRecommendations';
+import { DECISION_LOOP_ROLES } from '@/src/server/pilot/shadowRoleSets';
 
 export const runtime = 'nodejs';
-
-const DECISION_LOOP_ROLES = ['coach', 'organization_admin', 'admin'] as const;
 
 function boundedString(value: unknown, maximum: number): value is string {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= maximum;

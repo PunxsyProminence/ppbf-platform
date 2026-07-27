@@ -8,10 +8,10 @@ import {
   setMedicalAdministrativeStatus,
   type MedicalAdministrativeStatusValue,
 } from '@/src/server/pilot/shadowMedicalStatus';
+import { SHADOW_PHI_ROLES } from '@/src/server/pilot/shadowRoleSets';
 
 export const runtime = 'nodejs';
 
-const DECISION_LOOP_ROLES = ['coach', 'organization_admin', 'admin'] as const;
 const STATUS_VALUES = new Set<string>(['cleared', 'restricted', 'not_cleared', 'pending']);
 
 function boundedString(value: unknown, maximum: number): value is string {
@@ -21,7 +21,10 @@ function boundedString(value: unknown, maximum: number): value is string {
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, [...DECISION_LOOP_ROLES]);
+    // SHADOW_PHI_ROLES, not the projection read set: medical clearance is
+    // organization-private health information and platform_owner must never
+    // reach it. See shadowRoleSets.ts for why Omega is narrower here, not wider.
+    requireRole(principal, [...SHADOW_PHI_ROLES]);
 
     const athleteId = request.nextUrl.searchParams.get('athleteId');
     if (!boundedString(athleteId, 300)) {
@@ -48,7 +51,10 @@ interface MedicalStatusRequestBody {
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, [...DECISION_LOOP_ROLES]);
+    // SHADOW_PHI_ROLES, not the projection read set: medical clearance is
+    // organization-private health information and platform_owner must never
+    // reach it. See shadowRoleSets.ts for why Omega is narrower here, not wider.
+    requireRole(principal, [...SHADOW_PHI_ROLES]);
 
     const body = (await request.json().catch(() => ({}))) as MedicalStatusRequestBody;
     if (

@@ -5,7 +5,15 @@ import { loginWithAccountIdAndPin } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { PILOT_SESSION_COOKIE } from '@/src/server/pilot/env';
 import { jsonError } from '@/src/server/pilot/http';
-import { checkRateLimit, clearRateLimit, getClientIp, recordFailedAttempt } from '@/src/server/pilot/rateLimit';
+import {
+  checkDurableRateLimit,
+  checkRateLimit,
+  clearDurableRateLimit,
+  clearRateLimit,
+  getClientIp,
+  recordDurableFailedAttempt,
+  recordFailedAttempt,
+} from '@/src/server/pilot/rateLimit';
 import { SESSION_ABSOLUTE_LIFETIME_SECONDS } from '@/src/server/pilot/sessionPolicy';
 
 export const runtime = 'nodejs';
@@ -29,10 +37,17 @@ export async function POST(request: NextRequest) {
 
   try {
     // Checked before parsing so a limited caller cannot keep the endpoint busy.
-    if (checkRateLimit(ipKey).isLimited) {
+    const volatileLimit = checkRateLimit(ipKey);
+    const durableLimit = await checkDurableRateLimit(ipKey);
+    if (volatileLimit.isLimited || durableLimit.isLimited) {
       return NextResponse.json(
         { error: 'Too many activation attempts. Please try again later.' },
-        { status: 429 },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(Math.ceil((Math.max(volatileLimit.delayMs ?? 0, durableLimit.delayMs ?? 0)) / 1000) || 1),
+          },
+        },
       );
     }
 
@@ -56,12 +71,14 @@ export async function POST(request: NextRequest) {
       // else is a failed guess at the code.
       if (!message.startsWith('PIN')) {
         recordFailedAttempt(ipKey);
+        await recordDurableFailedAttempt(ipKey);
       }
 
       throw error;
     }
 
     clearRateLimit(ipKey);
+    await clearDurableRateLimit(ipKey);
 
     await writePilotAuditEvent({
       event_type: 'update',

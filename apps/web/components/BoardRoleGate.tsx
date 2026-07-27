@@ -42,6 +42,17 @@ export default function BoardRoleGate({
           return;
         }
 
+        if (
+          response.ok
+          && payload?.authenticated === true
+          && typeof payload.role === 'string'
+          && payload.role.startsWith('board-')
+        ) {
+          clearRoleSession();
+          router.replace('/board');
+          return;
+        }
+
         clearRoleSession();
         router.replace('/login');
       } catch {

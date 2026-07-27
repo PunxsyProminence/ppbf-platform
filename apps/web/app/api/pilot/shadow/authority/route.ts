@@ -10,7 +10,11 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['organization_admin', 'admin', 'coach']);
+    // Read-only listing of authority checks (governance audit records).
+    // platform_owner is added because reading governance signal is the core of
+    // the Omega tier; the existing coach/admin audience is intentionally NOT
+    // widened to athlete/parent here.
+    requireRole(principal, ['organization_admin', 'admin', 'coach', 'platform_owner']);
     await assertShadowRuntimeReadiness({ requiredTables: ['shadow_authority_checks'] });
 
     const body = (await request.json().catch(() => ({}))) as {

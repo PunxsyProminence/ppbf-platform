@@ -10,7 +10,7 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['organization_admin', 'admin', 'coach', 'parent']);
+    requireRole(principal, ['organization_admin', 'admin', 'coach', 'parent', 'platform_owner']);
     await assertShadowRuntimeReadiness({ requiredTables: ['intake_cases', 'intake_documents', 'shadow_events'] });
 
     const body = (await request.json().catch(() => ({}))) as {

@@ -4,10 +4,10 @@ import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/acc
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import { flagNearMiss, listNearMisses, type ShadowNearMissSeverity } from '@/src/server/pilot/shadowNearMisses';
+import { DECISION_LOOP_ROLES } from '@/src/server/pilot/shadowRoleSets';
 
 export const runtime = 'nodejs';
 
-const DECISION_LOOP_ROLES = ['coach', 'organization_admin', 'admin'] as const;
 const SEVERITIES = new Set<string>(['low', 'moderate', 'high', 'critical']);
 const REQUIRED_TABLES = ['shadow_near_misses', 'shadow_audit_entries'];
 

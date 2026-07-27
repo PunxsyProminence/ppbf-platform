@@ -38,7 +38,7 @@ export default function GlobalRoleHeader() {
             Operations
           </Link>
           <Link
-            href="/login"
+            href="/dashboard"
             className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-1 text-[11px] font-mono text-[var(--black)] transition hover:bg-[var(--canvas-tan)]"
           >
             Bell

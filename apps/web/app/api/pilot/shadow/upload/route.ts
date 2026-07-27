@@ -27,6 +27,10 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
+    // platform_owner is deliberately excluded: uploading source material into an
+    // organization's SHADOW library is an in-organization authoring act, not a
+    // platform-governance one. Omega reads across organizations; it does not
+    // write content into them.
     requireRole(principal, ['organization_admin', 'coach']);
     await assertShadowRuntimeReadiness({
       requireBlob: true,

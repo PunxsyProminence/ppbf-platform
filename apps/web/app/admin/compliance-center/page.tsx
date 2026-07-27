@@ -19,6 +19,8 @@ interface ComplianceViolation {
 export default function AdminComplianceCenterPage() {
   const [violations, setViolations] = useState<ComplianceViolation[]>([]);
   const [errorMessage, setErrorMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [dataAuthoritative, setDataAuthoritative] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [severityFilter, setSeverityFilter] = useState<string>('all');
   const [selectedViolation, setSelectedViolation] = useState<ComplianceViolation | null>(null);
@@ -38,30 +40,38 @@ export default function AdminComplianceCenterPage() {
   // Load violations
   useEffect(() => {
     void (async () => {
+      setIsLoading(true);
       try {
         const res = await fetch(`${apiBase()}/api/pilot/compliance/violations`);
-        if (res.ok) {
-          const data = (await res.json()) as { items?: ComplianceViolation[] };
-          const allViolations = data.items ?? [];
-          setViolations(allViolations);
-
-          // Calculate metrics
-          const calc = {
-            total: allViolations.length,
-            critical: allViolations.filter((v) => v.severity === 'critical').length,
-            high: allViolations.filter((v) => v.severity === 'high').length,
-            medium: allViolations.filter((v) => v.severity === 'medium').length,
-            low: allViolations.filter((v) => v.severity === 'low').length,
-            new: allViolations.filter((v) => v.status === 'new').length,
-            acknowledged: allViolations.filter((v) => v.status === 'acknowledged').length,
-            escalated: allViolations.filter((v) => v.status === 'escalated').length,
-            resolved: allViolations.filter((v) => v.status === 'resolved').length,
-          };
-          setMetrics(calc);
+        if (!res.ok) {
+          throw new Error('Unable to load compliance violations');
         }
+
+        const data = (await res.json()) as { items?: ComplianceViolation[] };
+        const allViolations = data.items ?? [];
+        setViolations(allViolations);
+
+        // Calculate metrics
+        const calc = {
+          total: allViolations.length,
+          critical: allViolations.filter((v) => v.severity === 'critical').length,
+          high: allViolations.filter((v) => v.severity === 'high').length,
+          medium: allViolations.filter((v) => v.severity === 'medium').length,
+          low: allViolations.filter((v) => v.severity === 'low').length,
+          new: allViolations.filter((v) => v.status === 'new').length,
+          acknowledged: allViolations.filter((v) => v.status === 'acknowledged').length,
+          escalated: allViolations.filter((v) => v.status === 'escalated').length,
+          resolved: allViolations.filter((v) => v.status === 'resolved').length,
+        };
+        setMetrics(calc);
+        setDataAuthoritative(true);
         setErrorMessage('');
       } catch (error) {
+        setDataAuthoritative(false);
+        setViolations([]);
         setErrorMessage(error instanceof Error ? error.message : 'Unable to load violations');
+      } finally {
+        setIsLoading(false);
       }
     })();
   }, []);
@@ -145,6 +155,12 @@ export default function AdminComplianceCenterPage() {
 
   const filteredViolations = getFilteredViolations();
 
+  const metricValue = (value: number) => {
+    if (isLoading) return '...';
+    if (!dataAuthoritative) return '--';
+    return String(value);
+  };
+
   return (
     <RoleStandaloneView
       roleLabel="Admin Workspace"
@@ -158,29 +174,32 @@ export default function AdminComplianceCenterPage() {
           <h1 className="mt-2 text-3xl font-black text-[#f2e7da]">Compliance Center</h1>
           <p className="mt-2 text-sm text-[#cfbfae]">Review, manage, and escalate athlete compliance violations.</p>
           {errorMessage ? <p className="mt-2 text-xs text-[#f0c4c4]">{errorMessage}</p> : null}
+          {!errorMessage && !isLoading && !dataAuthoritative ? (
+            <p className="mt-2 text-xs text-[#f0c4c4]">Compliance metrics are unavailable and intentionally not shown as zero.</p>
+          ) : null}
         </header>
 
         {/* Metrics Dashboard */}
         <section className="grid grid-cols-2 gap-3 sm:grid-cols-5">
           <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-3 text-center">
             <p className="text-xs text-[#cfbfae]">Total</p>
-            <p className="text-2xl font-bold text-[#f2e7da]">{metrics.total}</p>
+            <p className="text-2xl font-bold text-[#f2e7da]">{metricValue(metrics.total)}</p>
           </div>
           <div className="border-2 border-[#fce8e6] bg-[#1a1a1a] p-3 text-center">
             <p className="text-xs text-[#d32f2f]">Critical</p>
-            <p className="text-2xl font-bold text-[#f2e7da]">{metrics.critical}</p>
+            <p className="text-2xl font-bold text-[#f2e7da]">{metricValue(metrics.critical)}</p>
           </div>
           <div className="border-2 border-[#fff3cd] bg-[#1a1a1a] p-3 text-center">
             <p className="text-xs text-[#f57c00]">High</p>
-            <p className="text-2xl font-bold text-[#f2e7da]">{metrics.high}</p>
+            <p className="text-2xl font-bold text-[#f2e7da]">{metricValue(metrics.high)}</p>
           </div>
           <div className="border-2 border-[#e3f2fd] bg-[#1a1a1a] p-3 text-center">
             <p className="text-xs text-[#1976d2]">Medium</p>
-            <p className="text-2xl font-bold text-[#f2e7da]">{metrics.medium}</p>
+            <p className="text-2xl font-bold text-[#f2e7da]">{metricValue(metrics.medium)}</p>
           </div>
           <div className="border-2 border-[#f1f8e9] bg-[#1a1a1a] p-3 text-center">
             <p className="text-xs text-[#388e3c]">Low</p>
-            <p className="text-2xl font-bold text-[#f2e7da]">{metrics.low}</p>
+            <p className="text-2xl font-bold text-[#f2e7da]">{metricValue(metrics.low)}</p>
           </div>
         </section>
 
@@ -215,7 +234,7 @@ export default function AdminComplianceCenterPage() {
             </select>
           </div>
           <div className="ml-auto text-xs text-[#9a8a7a]">
-            Showing {filteredViolations.length} of {violations.length}
+            Showing {dataAuthoritative ? filteredViolations.length : '--'} of {dataAuthoritative ? violations.length : '--'}
           </div>
         </section>
 

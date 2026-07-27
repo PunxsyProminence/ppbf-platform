@@ -301,7 +301,7 @@ export default function SetupWizard() {
                 }}
                 className="h-11 w-full rounded-lg border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isBusy ? 'Creating...' : 'Create Gym &amp; Continue'}
+                {isBusy ? 'Creating...' : 'Create Gym & Continue'}
               </button>
             </div>
           )}

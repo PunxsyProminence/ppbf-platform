@@ -4,13 +4,14 @@ import { requireRole } from '@/src/server/pilot/access';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import { listShadowTelemetry } from '@/src/server/pilot/shadowReadModels';
+import { SHADOW_PROJECTION_READ_ROLES } from '@/src/server/pilot/shadowRoleSets';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['organization_admin', 'admin', 'coach', 'athlete', 'parent', 'volunteer', 'staff']);
+    requireRole(principal, [...SHADOW_PROJECTION_READ_ROLES]);
     await assertShadowRuntimeReadiness({ requiredTables: ['shadow_telemetry_events'] });
 
     const body = (await request.json().catch(() => ({}))) as {
