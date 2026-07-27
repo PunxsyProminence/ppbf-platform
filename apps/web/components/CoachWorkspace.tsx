@@ -28,9 +28,16 @@ interface Athlete {
   id: string;
   name: string;
   track: string;
-  readiness: 'GREEN' | 'YELLOW' | 'RED';
-  injuryFlag: boolean;
-  attendance: 'Present' | 'Late' | 'Excused' | 'Absent';
+  // 'UNKNOWN' / null / 'Unknown' below are real states, not placeholders --
+  // there is no backend feed for per-athlete readiness, injury status, or
+  // today's attendance yet. A prior version fabricated these (round-robin
+  // GREEN/YELLOW/RED, injuryFlag always false, attendance always 'Present')
+  // and attached them to real athlete names, which is a false-reassurance
+  // safety bug, not a cosmetic one -- a coach could read "no injury flag" as
+  // a real clearance signal. Never default these to a reassuring value.
+  readiness: 'GREEN' | 'YELLOW' | 'RED' | 'UNKNOWN';
+  injuryFlag: boolean | null;
+  attendance: 'Present' | 'Late' | 'Excused' | 'Absent' | 'Unknown';
 }
 
 interface WorkoutBlock {
@@ -79,7 +86,8 @@ interface ShadowObservationItem {
 function readinessDotClass(readiness: Athlete['readiness']): string {
   if (readiness === 'GREEN') return 'bg-green-500';
   if (readiness === 'YELLOW') return 'bg-yellow-500';
-  return 'bg-red-500';
+  if (readiness === 'RED') return 'bg-red-500';
+  return 'bg-gray-500';
 }
 
 function priorityTone(priority: CoachTask['priority']): string {
@@ -109,7 +117,8 @@ function blockStatusTone(status: WorkoutBlock['status']): string {
 function readinessBadgeTone(readiness: Athlete['readiness']): string {
   if (readiness === 'GREEN') return 'bg-green-900 text-green-200';
   if (readiness === 'YELLOW') return 'bg-yellow-900 text-yellow-200';
-  return 'bg-red-900 text-red-200';
+  if (readiness === 'RED') return 'bg-red-900 text-red-200';
+  return 'bg-gray-800 text-gray-300';
 }
 
 export default function CoachWorkspace() {
@@ -266,17 +275,28 @@ export default function CoachWorkspace() {
     ];
   }, [sessionMode]);
 
-  const [coachGoals] = useState<CoachGoal[]>([
-    { id: 'cg_1', title: 'Complete 10 athlete film reviews', category: 'Development', progress: 30, dueDate: '2026-09-30' },
-    { id: 'cg_2', title: 'Improve class retention', category: 'Coaching', progress: 65, dueDate: '2026-12-31' },
-    { id: 'cg_3', title: 'Bronze Certification', category: 'Certification', progress: 45, dueDate: '2026-10-15' }
-  ]);
+  // There is no backend feed for coach development goals yet. This used to
+  // be 3 hardcoded goals with fake progress percentages shown identically to
+  // every coach regardless of who was logged in -- removed rather than left
+  // as fake personal data.
+  const [coachGoals] = useState<CoachGoal[]>([]);
 
-  const sessionStatus = 'In Progress';
-  const activeAthletes = athletes.filter(a => a.attendance !== 'Absent').length;
+  // There is no backend session-status feed yet (see the "Today's Session"
+  // panel below, which shows the same honest state).
+  const sessionStatus = 'Unavailable - not yet tracked';
+
+  // Attendance/injury/readiness are currently always 'Unknown'/null/'UNKNOWN'
+  // (see loadAthletes) -- these counts are real aggregations, but over data
+  // that isn't tracked yet, so every stat derived from them below is
+  // rendered with an explicit "not tracked" state instead of a bare number.
+  // A bare 0 here would read as "confirmed zero injuries," which is false.
+  const trackedAttendanceCount = athletes.filter(a => a.attendance !== 'Unknown').length;
+  const activeAthletes = athletes.filter(a => a.attendance !== 'Absent' && a.attendance !== 'Unknown').length;
   const injuryFlags = athletes.filter(a => a.injuryFlag).length;
+  const injuryTrackingAvailable = athletes.some(a => a.injuryFlag !== null);
   const redReadinessCount = athletes.filter((athlete) => athlete.readiness === 'RED').length;
   const yellowReadinessCount = athletes.filter((athlete) => athlete.readiness === 'YELLOW').length;
+  const readinessTrackingAvailable = athletes.some((athlete) => athlete.readiness !== 'UNKNOWN');
   const reviewsNeeded = coachTasks.filter(t => t.status === 'Open' && t.title.includes('Review')).length;
   const assignmentsDue = coachTasks.filter(t => t.status === 'Open').length;
 
@@ -329,15 +349,18 @@ export default function CoachWorkspace() {
       const data = (await response.json()) as { items?: Array<{ athlete_id: string; full_name?: string; gym_status?: string }> };
       const items = data.items || [];
 
-      // Convert PilotAthlete to Athlete format
-      const readinessValues: Array<'GREEN' | 'YELLOW' | 'RED'> = ['GREEN', 'YELLOW', 'RED'];
-      const athleteList: Athlete[] = items.slice(0, 3).map((item, index: number) => ({
+      // Convert PilotAthlete to Athlete format. Readiness, injury flag, and
+      // attendance have no backend source yet -- do not fabricate them (see
+      // the Athlete interface comment). Do not truncate the roster either; a
+      // silent slice(0, 3) here would hide real athletes from the coach with
+      // no indication anything was cut.
+      const athleteList: Athlete[] = items.map((item) => ({
         id: item.athlete_id,
         name: item.full_name || 'Unknown',
         track: item.gym_status || 'Foundations',
-        readiness: readinessValues[index % 3],
-        injuryFlag: false,
-        attendance: 'Present'
+        readiness: 'UNKNOWN',
+        injuryFlag: null,
+        attendance: 'Unknown'
       }));
 
       setAthletes(athleteList);
@@ -624,13 +647,31 @@ export default function CoachWorkspace() {
               <section className="grid gap-3 md:grid-cols-3">
                 <article className="border border-[#5a4a3a] bg-[#101010] px-4 py-3">
                   <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Readiness Alerts</p>
-                  <p className="mt-2 text-2xl font-black text-[#f2e7da]">{redReadinessCount + yellowReadinessCount}</p>
-                  <p className="text-xs text-[#b0a095]">{redReadinessCount} RED, {yellowReadinessCount} YELLOW</p>
+                  {readinessTrackingAvailable ? (
+                    <>
+                      <p className="mt-2 text-2xl font-black text-[#f2e7da]">{redReadinessCount + yellowReadinessCount}</p>
+                      <p className="text-xs text-[#b0a095]">{redReadinessCount} RED, {yellowReadinessCount} YELLOW</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="mt-2 text-2xl font-black text-[#8a8a8a]">Not tracked</p>
+                      <p className="text-xs text-[#b0a095]">No backend readiness feed yet -- do not read this as &quot;zero flags&quot;</p>
+                    </>
+                  )}
                 </article>
                 <article className="border border-[#5a4a3a] bg-[#101010] px-4 py-3">
                   <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Injury Flags</p>
-                  <p className="mt-2 text-2xl font-black text-[#f2e7da]">{injuryFlags}</p>
-                  <p className="text-xs text-[#b0a095]">Escalate before block progression</p>
+                  {injuryTrackingAvailable ? (
+                    <>
+                      <p className="mt-2 text-2xl font-black text-[#f2e7da]">{injuryFlags}</p>
+                      <p className="text-xs text-[#b0a095]">Escalate before block progression</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="mt-2 text-2xl font-black text-[#8a8a8a]">Not tracked</p>
+                      <p className="text-xs text-[#b0a095]">No backend injury feed yet -- do not read this as &quot;no injuries&quot;</p>
+                    </>
+                  )}
                 </article>
                 <article className="border border-[#5a4a3a] bg-[#101010] px-4 py-3">
                   <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Open Reviews</p>
@@ -660,22 +701,33 @@ export default function CoachWorkspace() {
                 {/* Session Status */}
                 <div className={ui.panelSpaced}>
                   <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Today&apos;s Session</h3>
+                  <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                    PLANNED | NOT YET IMPLEMENTED
+                  </p>
+                  <p className="text-xs text-[#b0a095]">
+                    There is no scheduling backend feed yet -- session name, time, and status below are not
+                    real. Check your actual schedule directly until this is wired up.
+                  </p>
                   <div className="space-y-3">
                     <div>
                       <p className="text-xs text-[#b0a095] block mb-1">Session Name</p>
-                      <p className="text-base font-semibold">Youth Non-Contact Development</p>
+                      <p className="text-base font-semibold text-[#8a8a8a]">Unavailable - not yet tracked</p>
                     </div>
                     <div>
                       <p className="text-xs text-[#b0a095] block mb-1">Time</p>
-                      <p className="text-base font-semibold">4:00 PM - 5:00 PM</p>
+                      <p className="text-base font-semibold text-[#8a8a8a]">Unavailable - not yet tracked</p>
                     </div>
                     <div>
                       <p className="text-xs text-[#b0a095] block mb-1">Status</p>
-                      <p className="text-base font-semibold text-green-400">In Progress</p>
+                      <p className="text-base font-semibold text-[#8a8a8a]">Unavailable - not yet tracked</p>
                     </div>
                     <div>
                       <p className="text-xs text-[#b0a095] block mb-1">Athletes Present</p>
-                      <p className="text-base font-semibold">{activeAthletes}/{athletes.length}</p>
+                      <p className="text-base font-semibold">
+                        {trackedAttendanceCount > 0 ? `${activeAthletes}/${athletes.length}` : (
+                          <span className="text-[#8a8a8a]">Not tracked</span>
+                        )}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -729,7 +781,10 @@ export default function CoachWorkspace() {
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <div className={`w-2 h-2 rounded-full ${readinessDotClass(athlete.readiness)}`}></div>
+                            <div
+                              className={`w-2 h-2 rounded-full ${readinessDotClass(athlete.readiness)}`}
+                              title={athlete.readiness === 'UNKNOWN' ? 'Readiness not tracked' : `Readiness: ${athlete.readiness}`}
+                            ></div>
                             <span className="font-semibold">{athlete.name}</span>
                           </div>
                           <span className="text-xs text-[#8a8a8a]">{athlete.attendance}</span>
@@ -969,6 +1024,11 @@ export default function CoachWorkspace() {
                 ]}
                 onAskShadow={() => {}}
               />
+
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for coach goals yet, so this section
+                is always empty.
+              </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {coachGoals.map(goal => (
