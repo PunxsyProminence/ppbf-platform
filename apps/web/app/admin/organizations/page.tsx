@@ -38,8 +38,8 @@ export default function SetupWizard() {
   const [gymId, setGymId] = useState('');
   const [gymName, setGymName] = useState('');
 
-  // Step 2: Confirm Microsoft-authenticated admin onboarding path
-  const [adminAccountId, setAdminAccountId] = useState('');
+  // Step 2: Provision the gym's first organization admin
+  const [adminEmail, setAdminEmail] = useState('');
 
   // Step 3: Configure Features
   const [gymCapabilityAccess, setGymCapabilityAccess] = useState<Record<string, boolean>>({});
@@ -129,12 +129,22 @@ export default function SetupWizard() {
     return `Gym "${gymName}" created successfully!`;
   }
 
-  async function confirmAdminOnboardingPath() {
-    if (!adminAccountId.trim()) {
-      throw new Error('Please enter the organization admin account identifier used for Microsoft sign-in mapping');
+  async function createOrganizationAdmin() {
+    const email = adminEmail.trim();
+    if (!email) {
+      throw new Error('Please enter the Microsoft email address for this gym’s admin');
     }
 
-    return `Microsoft-authenticated admin onboarding confirmed for "${adminAccountId}". Continue to feature setup.`;
+    // Maps the email onto the organization_admin role. This is what makes
+    // their Microsoft sign-in resolve to a PPBF session -- without it there is
+    // no way for anyone but the platform owner to sign in to this gym.
+    await postJson('/api/pilot/platform/staff', {
+      organization_id: gymId.trim(),
+      login_email: email,
+      role: 'organization_admin',
+    });
+
+    return `${email} is now the gym admin. If they are outside your Microsoft tenant, invite them as an Entra guest before they try to sign in.`;
   }
 
   async function saveCapabilities() {
@@ -197,7 +207,7 @@ export default function SetupWizard() {
   }
 
   const canStep1 = gymId.trim() && gymName.trim();
-  const canStep2 = adminAccountId.trim().length > 0;
+  const canStep2 = adminEmail.trim().length > 0;
   const step1Complete = completedSteps.includes(1);
   const step2Complete = completedSteps.includes(2);
 
@@ -331,9 +341,9 @@ export default function SetupWizard() {
         >
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1">
-              <h2 className="text-lg font-bold">Step 2: Confirm Admin Access Path</h2>
+              <h2 className="text-lg font-bold">Step 2: Add The Gym Admin</h2>
               <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
-                Privileged admin access must use Microsoft-authenticated sign-in. PIN sessions are athlete-only.
+                Every gym needs one person who can manage it. They sign in with Microsoft — PINs are athlete-only.
               </p>
             </div>
             {step2Complete && <span className="text-2xl">✓</span>}
@@ -342,17 +352,20 @@ export default function SetupWizard() {
           {step === 2 && (
             <div className="mt-6 space-y-4">
               <div className="rounded-lg border border-[rgba(184,59,52,0.2)] bg-[rgba(184,59,52,0.05)] p-4">
-                <p className="text-xs font-semibold text-[var(--red-primary)] uppercase tracking-[0.1em]">⚠️ Important Setup Note</p>
-                <p className="mt-2 text-sm text-[var(--gray-dark)]">This setup flow no longer creates organization admin PIN accounts. Organization admins must be provisioned through the Microsoft-authenticated account path.</p>
+                <p className="text-xs font-semibold text-[var(--red-primary)] uppercase tracking-[0.1em]">This is two steps, not one</p>
+                <p className="mt-2 text-sm text-[var(--gray-dark)]">
+                  Saving here gives this person the gym admin role in PPBF. If their email is outside your Microsoft
+                  tenant, you also have to invite them as a guest in Entra ID — sign-in is rejected until both are done.
+                </p>
               </div>
               <div>
-                <label className="block text-sm font-semibold text-[var(--black)]">Organization Admin Account Identifier</label>
-                <p className="mt-1 text-xs text-[var(--gray-dark)]">Record the account identifier that will be mapped to Microsoft-authenticated sign-in for this gym administrator.</p>
+                <label className="block text-sm font-semibold text-[var(--black)]">Gym Admin Microsoft Email</label>
+                <p className="mt-1 text-xs text-[var(--gray-dark)]">The exact address they will sign in with.</p>
                 <input
-                  type="text"
-                  value={adminAccountId}
-                  onChange={(e) => setAdminAccountId(e.target.value)}
-                  placeholder="admin-gym-001"
+                  type="email"
+                  value={adminEmail}
+                  onChange={(e) => setAdminEmail(e.target.value)}
+                  placeholder="owner@goldenboxing.org"
                   className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                 />
               </div>
@@ -361,7 +374,7 @@ export default function SetupWizard() {
                 type="button"
                 disabled={!canStep2 || isBusy}
                 onClick={() => {
-                  void runAction(confirmAdminOnboardingPath).then((success) => {
+                  void runAction(createOrganizationAdmin).then((success) => {
                     if (success) {
                       setCompletedSteps([...completedSteps, 2]);
                       setStep(3);
@@ -370,7 +383,7 @@ export default function SetupWizard() {
                 }}
                 className="h-11 w-full rounded-lg border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isBusy ? 'Saving...' : 'Confirm Microsoft Admin Path & Continue'}
+                {isBusy ? 'Saving...' : 'Add Gym Admin & Continue'}
               </button>
             </div>
           )}
@@ -446,19 +459,19 @@ export default function SetupWizard() {
             <div className="space-y-3 rounded-lg bg-white p-4 border border-[rgba(0,0,0,0.12)]">
               <p className="text-sm font-semibold text-[var(--black)]">Next Steps:</p>
               <ol className="space-y-2 text-sm text-[var(--gray-dark)]">
-                <li><strong>1. Keep privileged sign-in Microsoft-authenticated:</strong> do not use PIN for admin/coach/board access</li>
-                <li><strong>2. Provision athlete accounts as pending:</strong> activate each athlete PIN in Admin PIN Control</li>
-                <li><strong>3. Use the admin dashboard:</strong> configure operations and capabilities for this gym</li>
-                <li><strong>4. Verify access boundaries:</strong> PIN works for athlete self-service only</li>
+                <li><strong>1. Invite the gym admin as an Entra guest</strong> if their email is outside your Microsoft tenant — they cannot sign in until you do</li>
+                <li><strong>2. Have them sign in with Microsoft</strong> and open People to add their coaches</li>
+                <li><strong>3. They add athletes in People</strong> and hand out the one-time activation codes</li>
+                <li><strong>4. Athletes activate themselves</strong> at /activate and choose their own PIN</li>
               </ol>
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row">
               <Link
-                href="/login"
+                href="/admin/people"
                 className="flex-1 inline-flex h-11 items-center justify-center rounded-lg border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-6 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)]"
               >
-                Go to Login
+                Manage People
               </Link>
               <Link
                 href="/admin"

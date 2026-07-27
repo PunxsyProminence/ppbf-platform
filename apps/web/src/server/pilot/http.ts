@@ -50,6 +50,9 @@ export function jsonError(error: unknown, fallbackStatus = 500): NextResponse {
   if (message.startsWith('Missing') || message.startsWith('Request body') || message.startsWith('Unsupported') || message.startsWith('PIN')) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
+  if (message.startsWith('Not found')) {
+    return NextResponse.json({ error: message }, { status: 404 });
+  }
 
   // Anything else is an unexpected failure (database, parser, upstream
   // provider, ...). The fallback status of 500 means the caller never

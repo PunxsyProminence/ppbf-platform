@@ -811,6 +811,12 @@ export default function AdminCapabilitiesPage() {
             <div className="flex flex-wrap gap-3">
               <ShadowChatButton context="Admin Hub" />
               <Link
+                href="/admin/people"
+                className="inline-flex h-11 items-center border border-[#8b4444] bg-[#5a2a2a] px-4 text-[14px] font-bold text-[#f2e7da] transition hover:bg-[#7a3a3a]"
+              >
+                PEOPLE
+              </Link>
+              <Link
                 href="/admin/shadow"
                 className="inline-flex h-11 items-center border border-[#8b4444] bg-[#5a2a2a] px-4 text-[14px] font-bold text-[#f2e7da] transition hover:bg-[#7a3a3a]"
               >
