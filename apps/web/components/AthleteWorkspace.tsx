@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import React, { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { AthleteSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
+import ShadowChatButton from './ShadowChatButton';
 import { cx, ui } from './uiStyles';
 
 type TabID = 'my-dashboard' | 'athlete-floor' | 'smart-goals' | 'tracks' | 'assessments' | 'bio-checkin' | 'drill-library' | 'rabbit-holes' | 'message-coach' | 'schedule-session' | 'shadow';
@@ -67,13 +68,6 @@ interface Drill {
   minRank: string;
 }
 
-interface ShadowMessage {
-  id: string;
-  sender: 'athlete' | 'shadow';
-  text: string;
-  timestamp: string;
-}
-
 interface ShadowObservationItem {
   id: string;
   source: 'event' | 'telemetry';
@@ -100,30 +94,6 @@ function getGoalStatusTone(status: GoalStatus): string {
   if (status === 'Active') return 'bg-blue-900 text-blue-200';
   if (status === 'Completed') return 'bg-green-900 text-green-200';
   return 'bg-yellow-900 text-yellow-200';
-}
-
-function createInitialShadowMessages(): ShadowMessage[] {
-  const now = Date.now();
-  return [
-    {
-      id: 'sm_1',
-      sender: 'shadow',
-      text: 'Hey! I\'m SHADOW, your AI athletic coach. How\'s your training going today?',
-      timestamp: new Date(now - 600000).toISOString(),
-    },
-    {
-      id: 'sm_2',
-      sender: 'athlete',
-      text: 'Pretty good, but my footwork felt off during drills',
-      timestamp: new Date(now - 540000).toISOString(),
-    },
-    {
-      id: 'sm_3',
-      sender: 'shadow',
-      text: 'Let\'s dig into that. What specific footwork drill were you working on?',
-      timestamp: new Date(now - 480000).toISOString(),
-    },
-  ];
 }
 
 function formatDueTime(checkInAt: Date, offsetMinutes: number): string {
@@ -293,8 +263,6 @@ export default function AthleteWorkspace() {
   const [completedDrills, setCompletedDrills] = useState<Record<string, boolean>>({});
 
   // Shadow State
-  const [shadowMessages] = useState<ShadowMessage[]>(createInitialShadowMessages);
-  const [shadowInput, setShadowInput] = useState('');
   const [shadowObservations, setShadowObservations] = useState<ShadowObservationItem[]>([]);
   const [shadowObservationError, setShadowObservationError] = useState('');
   const [selectedCoach, setSelectedCoach] = useState('Coach Jason (Head Coach)');
@@ -869,7 +837,6 @@ export default function AthleteWorkspace() {
                   'Skipping the check-in process',
                   'Assuming academic status is still current'
                 ]}
-                onAskShadow={() => setShadowInput('What should I focus on today?')}
               />
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -998,7 +965,6 @@ export default function AthleteWorkspace() {
                   'Not linking tasks to relevant goals',
                   'Missing deadlines by not checking due dates'
                 ]}
-                onAskShadow={() => setShadowInput('What tasks do I have today?')}
               />
 
               {tasksLoading && (
@@ -1090,7 +1056,6 @@ export default function AthleteWorkspace() {
                     'Unrealistic timeframes',
                     'Not reviewing progress weekly'
                   ]}
-                  onAskShadow={() => setShadowInput('How do I set SMART goals?')}
                 />
               </div>
 
@@ -1220,13 +1185,21 @@ export default function AthleteWorkspace() {
             <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
               <h3 className="font-mono font-bold text-[#d4a574] uppercase">Track Management</h3>
               <p className="text-[#b0a095]">View current track assignment and request upgrades as you progress.</p>
-              <div className="bg-[#0f0f0f] border-2 border-[#8b4444] p-4">
-                <p className="text-sm"><strong>Current Track:</strong> Non-Contact Foundations</p>
-                <p className="text-sm mt-2 text-[#b0a095]">Master basic stance, guard, jab, and program discipline protocols.</p>
-                <p className="text-sm mt-2 text-[#b0a095]"><strong>Program Membership:</strong> Active Member</p>
-                <p className="text-sm mt-1 text-[#b0a095]"><strong>Participation Status:</strong> Scholarship Supported</p>
-                <p className="text-sm mt-1 text-[#b0a095]"><strong>Support Status:</strong> Member Support Active</p>
-                <p className="text-sm mt-1 text-[#b0a095]"><strong>Community Service Credits:</strong> 0 (Display Placeholder)</p>
+              {/* Track assignment, membership, scholarship, and support status
+                  have no backing column anywhere in the schema -- the track
+                  itself would come from pilot.admin_track_assignments, which
+                  does not exist in staging or prod. These were hardcoded to the
+                  same "supported / active member" values for every athlete
+                  regardless of their actual status, which is a billing- and
+                  eligibility-adjacent misstatement, not a placeholder. Show
+                  unavailable honestly until real fields exist. Mirrors the same
+                  correction already applied in ParentHub.tsx. */}
+              <div className="bg-[#0f0f0f] border-2 border-[#8b4444] p-4 space-y-1">
+                <p className="text-sm"><strong>Current Track:</strong> <span className="text-[#8a8a8a]">Unavailable - not yet tracked</span></p>
+                <p className="text-sm mt-2 text-[#b0a095]"><strong>Program Membership:</strong> <span className="text-[#8a8a8a]">Unavailable - not yet tracked</span></p>
+                <p className="text-sm text-[#b0a095]"><strong>Participation Status:</strong> <span className="text-[#8a8a8a]">Unavailable - not yet tracked</span></p>
+                <p className="text-sm text-[#b0a095]"><strong>Support Status:</strong> <span className="text-[#8a8a8a]">Unavailable - not yet tracked</span></p>
+                <p className="text-sm text-[#b0a095]"><strong>Community Service Credits:</strong> <span className="text-[#8a8a8a]">Unavailable - not yet tracked</span></p>
               </div>
             </div>
           )}
@@ -1263,7 +1236,6 @@ export default function AthleteWorkspace() {
                   'Skipping check-in to save time',
                   'Not expanding when RED flags present'
                 ]}
-                onAskShadow={() => setShadowInput('What do these scores mean?')}
               />
 
               <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-6">
@@ -1332,7 +1304,6 @@ export default function AthleteWorkspace() {
                   'Attempting drills above your rank',
                   'Not practicing enough before marking complete'
                 ]}
-                onAskShadow={() => setShadowInput('What drills should I practice?')}
               />
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1386,7 +1357,6 @@ export default function AthleteWorkspace() {
                   'Reading but not doing homework',
                   'Not applying concepts to actual training'
                 ]}
-                onAskShadow={() => setShadowInput('Can you explain biomechanics?')}
               />
 
               <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
@@ -1415,7 +1385,6 @@ export default function AthleteWorkspace() {
                   'Vague questions without context',
                   'Expecting immediate responses'
                 ]}
-                onAskShadow={() => setShadowInput('How do I contact my coach?')}
               />
 
               <div className="border-2 border-red-600 bg-red-900/20 p-4">
@@ -1484,7 +1453,6 @@ export default function AthleteWorkspace() {
                   'Booking while on academic hold',
                   'Booking contact work with RED readiness'
                 ]}
-                onAskShadow={() => setShadowInput('What classes are available?')}
               />
 
               <div className="space-y-4">
@@ -1505,54 +1473,36 @@ export default function AthleteWorkspace() {
             <div className="space-y-6 animate-fadeIn">
               <RoleSpecificShadow
                 role="athlete"
-                description="Ask SHADOW about your next workout, goals, or progress. The chat below responds to what's actually on your schedule -- nothing here is a canned example."
+                description="Ask SHADOW about your next workout, goals, or progress. Open the real SHADOW chat to get a response -- this workspace does not answer questions inline."
                 chatContext="Athlete Workspace"
               />
 
+              {/* This panel used to render a hardcoded three-message exchange --
+                  including a fabricated athlete utterance -- above a text input
+                  whose Send button had no handler at all, under a description
+                  claiming "nothing here is a canned example". Nothing shown to an
+                  athlete may be a static transcript that could be mistaken for
+                  their own conversation, and a control that cannot send must not
+                  look like one. Route to the real chat instead; see the same
+                  correction in RoleSummaryPanels.tsx. */}
               <div className="border-2 border-[#d4a574] bg-[#0f0f0f] p-6 space-y-4">
-                <div className="space-y-3 max-h-96 overflow-y-auto">
-                  {shadowMessages.map(msg => (
-                    <div key={msg.id} className={`flex ${msg.sender === 'athlete' ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`max-w-xs px-4 py-2 rounded ${
-                        msg.sender === 'athlete'
-                          ? 'bg-blue-900 text-blue-100'
-                          : 'bg-[#4a4a4a] text-[#e8d7c6]'
-                      }`}>
-                        <p className="text-sm">{msg.text}</p>
-                        <p className="text-xs opacity-75 mt-1">{new Date(msg.timestamp).toLocaleTimeString()}</p>
-                      </div>
-                    </div>
-                  ))}
+                <div>
+                  <p className="text-sm font-semibold text-[#d4a574]">SHADOW Chat</p>
+                  <p className="mt-1 text-sm text-[#b0a095]">
+                    In-workspace chat is not available here yet. Open the full SHADOW chat to ask a
+                    question and get a real response.
+                  </p>
                 </div>
 
-                <div className="pt-4 border-t-2 border-[#d4a574] space-y-3">
-                  <div className="space-y-2">
-                    <p className="text-sm font-semibold text-[#d4a574]">Suggested Questions:</p>
-                    <div className="grid grid-cols-1 gap-2">
-                      {suggestedQuestions.map((q) => (
-                        <button
-                          key={q}
-                          onClick={() => setShadowInput(q)}
-                          className="text-left px-3 py-2 bg-[#1a1a1a] border-2 border-[#d4a574] hover:bg-[#2a2a2a] text-sm text-[#d4a574] transition"
-                        >
-                          {q}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                <ShadowChatButton context="Athlete Workspace" />
 
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={shadowInput}
-                      onChange={(e) => setShadowInput(e.target.value)}
-                      placeholder="Ask SHADOW a question..."
-                      className="flex-1 px-3 py-2 bg-[#1a1a1a] border-2 border-[#d4a574] text-[#e8d7c6] focus:outline-none"
-                    />
-                    <button className="px-4 py-2 bg-[#d4a574] hover:bg-[#b08060] text-[#0a0a0a] font-semibold transition">
-                      Send
-                    </button>
-                  </div>
+                <div className="space-y-2 border-t-2 border-[#d4a574] pt-4">
+                  <p className="text-sm font-semibold text-[#d4a574]">Things you can ask SHADOW:</p>
+                  <ul className="list-disc space-y-1 pl-5">
+                    {suggestedQuestions.map((q) => (
+                      <li key={q} className="text-sm text-[#b0a095]">{q}</li>
+                    ))}
+                  </ul>
                 </div>
               </div>
 
