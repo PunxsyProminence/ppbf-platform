@@ -1,4 +1,4 @@
-import { query, queryOne } from './db';
+import { query, queryOne, withTransaction } from './db';
 
 export type SchedulerRole = 'athlete' | 'parent' | 'coach' | 'organization_admin' | 'admin';
 
@@ -242,6 +242,96 @@ export async function createSchedulerRegistration(organizationId: string, item: 
       item.updated_at,
     ],
   );
+}
+
+export type RegisterForClassOutcome =
+  | { outcome: 'class_not_found' }
+  | { outcome: 'already_registered' }
+  | { outcome: 'registered' | 'waitlisted'; registrationId: string };
+
+// Replaces the old check-then-insert sequence (getActiveSchedulerRegistration
+// + countRegisteredForClass + createSchedulerRegistration as three separate,
+// unlocked round trips), which raced under concurrent requests: two
+// simultaneous registrations for the same athlete/class could both pass the
+// "not already registered" check, and near a class's capacity limit,
+// concurrent registrations could all read the same pre-insert count and all
+// be marked 'registered' instead of correctly waitlisting the ones over
+// capacity. Locking the class row with `for update` first serializes every
+// concurrent registration attempt against that class -- regardless of which
+// athlete -- so both races close. A partial unique index on
+// (organization_id, class_id, athlete_id) where status <> 'cancelled' backs
+// this up at the database level independent of this function.
+export async function registerForClassTransactionally(
+  organizationId: string,
+  classId: string,
+  athleteId: string,
+  registration: Omit<SchedulerRegistration, 'status'>,
+): Promise<RegisterForClassOutcome> {
+  return withTransaction(async (client) => {
+    const classResult = await client.query<{ capacity: number; status: string }>(
+      `select capacity, status
+       from pilot.scheduler_classes
+       where organization_id = $1 and class_id = $2
+       for update`,
+      [organizationId, classId],
+    );
+    const classRow = classResult.rows[0];
+    if (!classRow) {
+      return { outcome: 'class_not_found' };
+    }
+
+    const existing = await client.query<{ registration_id: string }>(
+      `select registration_id
+       from pilot.scheduler_registrations
+       where organization_id = $1 and class_id = $2 and athlete_id = $3 and status <> 'cancelled'
+       limit 1`,
+      [organizationId, classId, athleteId],
+    );
+    if (existing.rows.length > 0) {
+      return { outcome: 'already_registered' };
+    }
+
+    const countResult = await client.query<{ count: string }>(
+      `select count(*)::text as count
+       from pilot.scheduler_registrations
+       where organization_id = $1 and class_id = $2 and status = 'registered'`,
+      [organizationId, classId],
+    );
+    const registeredCount = Number.parseInt(countResult.rows[0]?.count ?? '0', 10);
+    const status: SchedulerRegistration['status'] = registeredCount >= classRow.capacity ? 'waitlisted' : 'registered';
+
+    await client.query(
+      `insert into pilot.scheduler_registrations (
+         organization_id, registration_id, class_id, athlete_id,
+         requested_by_role, requested_by_account_id,
+         parent_reviewed, parent_reviewed_at, parent_reviewer_account_id,
+         status, created_at, updated_at
+       ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+      [
+        organizationId,
+        registration.registration_id,
+        classId,
+        athleteId,
+        registration.requested_by_role,
+        registration.requested_by_account_id,
+        registration.parent_reviewed,
+        registration.parent_reviewed_at ?? null,
+        registration.parent_reviewer_account_id ?? null,
+        status,
+        registration.created_at,
+        registration.updated_at,
+      ],
+    );
+
+    if (status === 'registered' && registeredCount + 1 >= classRow.capacity && classRow.status !== 'full') {
+      await client.query(
+        `update pilot.scheduler_classes set status = 'full', updated_at = $3 where organization_id = $1 and class_id = $2`,
+        [organizationId, classId, registration.updated_at],
+      );
+    }
+
+    return { outcome: status, registrationId: registration.registration_id };
+  });
 }
 
 export async function markSchedulerRegistrationReviewed(
