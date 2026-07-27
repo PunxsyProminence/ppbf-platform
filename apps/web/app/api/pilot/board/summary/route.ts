@@ -9,7 +9,7 @@ export const runtime = 'nodejs';
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['board']);
+    requireRole(principal, ['board', 'platform_owner']);
 
     const summary = await getBoardSummary(principal.organizationId);
     return NextResponse.json(

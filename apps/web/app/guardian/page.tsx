@@ -1,6 +1,17 @@
+'use client';
+
 import FeatureSurface from '@/components/FeatureSurface';
+import RoleStandaloneView from '@/components/RoleStandaloneView';
 
 export default function GuardianPortalPage() {
+  return (
+    <RoleStandaloneView roleLabel="Guardian Portal" routeLabel="/guardian" allowedRoles={['parent']} showShellHeader={false}>
+      <GuardianPortalContent />
+    </RoleStandaloneView>
+  );
+}
+
+function GuardianPortalContent() {
   return (
     <FeatureSurface
       eyebrow="Guardian Portal"

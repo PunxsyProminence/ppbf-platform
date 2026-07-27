@@ -75,8 +75,16 @@ export function jsonError(error: unknown, fallbackStatus = 500): NextResponse {
   if (message.startsWith('Missing') || message.startsWith('Request body') || message.startsWith('Unsupported') || message.startsWith('PIN')) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
-  if (message.startsWith('Not found')) {
+  if (message.startsWith('Not found') || message.startsWith('Athlete not found')) {
     return NextResponse.json({ error: message }, { status: 404 });
+  }
+
+  // A caller retrying a partially-failed create (e.g. account created but
+  // code issuance failed) hits this on the second attempt -- it must read
+  // as "already done", not an opaque 500, or the UI has no way to tell the
+  // admin the account already exists and stop them retrying forever.
+  if (message.startsWith('Account already exists') || message.startsWith('Athlete is already linked')) {
+    return NextResponse.json({ error: message }, { status: 409 });
   }
 
   // Anything else is an unexpected failure (database, parser, upstream
