@@ -9,10 +9,10 @@ import {
   listDecisionOutcomes,
   type ShadowDecisionMatchState,
 } from '@/src/server/pilot/shadowDecisionOutcomes';
+import { DECISION_LOOP_ROLES } from '@/src/server/pilot/shadowRoleSets';
 
 export const runtime = 'nodejs';
 
-const DECISION_LOOP_ROLES = ['coach', 'organization_admin', 'admin'] as const;
 const MATCH_STATES = new Set<string>(['match', 'partial', 'miss', 'confounded']);
 const REQUIRED_TABLES = ['shadow_decision_outcomes', 'shadow_decisions', 'shadow_audit_entries'];
 

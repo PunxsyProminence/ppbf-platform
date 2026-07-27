@@ -234,7 +234,10 @@ export default function PublicPortalPage() {
             >
               Member Login
             </Link>
-            <ShadowChatButton context="Public Portal" label="ASK SHADOW" />
+            {/* Members only: SHADOW requires an authenticated session, and this
+                button sends signed-out visitors to /login. The label says so
+                rather than advertising a public chat surface that does not exist. */}
+            <ShadowChatButton context="Public Portal" label="MEMBER SHADOW CHAT" />
             <Link
               href="/help#tester-guide"
               className="inline-flex min-h-[40px] items-center justify-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"
@@ -502,7 +505,8 @@ export default function PublicPortalPage() {
         <section className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-sm)]">
           <h2 className="text-[20px] font-black text-[var(--black)]">PUBLIC QUICK LINKS</h2>
           <div className="mt-3 flex flex-wrap gap-2">
-            <ShadowChatButton context="Public Quick Links" label="Public SHADOW Chat" />
+            {/* Members only -- see note on the portal header button above. */}
+            <ShadowChatButton context="Public Quick Links" label="Member SHADOW Chat" />
             {[
               { label: 'Public FAQ', href: '/public#public-faq' },
               { label: 'Interest Intake', href: '/public#interest-intake' },

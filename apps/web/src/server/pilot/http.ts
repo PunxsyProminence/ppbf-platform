@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import type { PilotPrincipal } from './auth';
 import type { PilotRole } from './contracts';
 import { resolvePrincipal } from './auth';
+import { ShadowRuntimeUnavailableError } from './shadowRuntimeError';
 
 export async function requirePrincipal(request: NextRequest): Promise<PilotPrincipal> {
   const principal = await resolvePrincipal(request);
@@ -40,6 +41,21 @@ export function hiddenNotFound(): NextResponse {
 
 export function jsonError(error: unknown, fallbackStatus = 500): NextResponse {
   const message = error instanceof Error ? error.message : 'Unknown server error';
+
+  // Checked by type before any message matching. A missing migration or unset
+  // environment variable is a server-side availability problem, not a bad
+  // request, and must not be reported to the caller as one. The diagnostic
+  // detail is logged here and deliberately kept out of the response body.
+  if (error instanceof ShadowRuntimeUnavailableError) {
+    console.error('shadow-runtime-unavailable', {
+      ...(error.missingTables.length > 0 ? { missingTables: error.missingTables } : {}),
+      ...(error.missingEnvVar ? { missingEnvVar: error.missingEnvVar } : {}),
+    });
+    return NextResponse.json(
+      { error: 'SHADOW is temporarily unavailable. Please try again later.' },
+      { status: 503 },
+    );
+  }
 
   if (message.startsWith('Unauthorized')) {
     return NextResponse.json({ error: message }, { status: 401 });

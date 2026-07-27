@@ -9,10 +9,10 @@ import {
   MedicalStatusBlockedError,
   type ShadowRecommendationStatus,
 } from '@/src/server/pilot/shadowRecommendations';
+import { DECISION_LOOP_ROLES } from '@/src/server/pilot/shadowRoleSets';
 
 export const runtime = 'nodejs';
 
-const DECISION_LOOP_ROLES = ['coach', 'organization_admin', 'admin'] as const;
 const RECOMMENDATION_STATUSES = new Set<string>(['provisional', 'accepted', 'rejected', 'expired', 'superseded']);
 const REQUIRED_TABLES = ['shadow_recommendations', 'shadow_audit_entries'];
 

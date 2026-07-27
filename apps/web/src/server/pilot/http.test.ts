@@ -1,4 +1,5 @@
 import { jsonError, parseSafeLimit } from './http';
+import { ShadowRuntimeUnavailableError } from './shadowRuntimeError';
 
 describe('jsonError', () => {
   let consoleErrorSpy: jest.SpyInstance;
@@ -27,6 +28,39 @@ describe('jsonError', () => {
     const res = jsonError(new Error('Missing athlete_id'));
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: 'Missing athlete_id' });
+  });
+
+  // An unapplied migration is a server-side availability problem. It previously
+  // surfaced as a 400 because its message began with "Missing", which blamed the
+  // caller for a deployment gap and is how the 400 on /api/pilot/shadow/metrics
+  // went undiagnosed.
+  test('maps an unmigrated SHADOW runtime to 503, not 400', async () => {
+    const res = jsonError(new ShadowRuntimeUnavailableError({
+      missingTables: ['shadow_chat_sessions', 'shadow_learning_events'],
+    }));
+    expect(res.status).toBe(503);
+  });
+
+  test('does not disclose missing table names or env var names to the caller', async () => {
+    const res = jsonError(new ShadowRuntimeUnavailableError({
+      missingTables: ['shadow_chat_sessions'],
+      missingEnvVar: 'AZURE_POSTGRES_CONNECTION_STRING',
+    }));
+    const body = JSON.stringify(await res.json());
+    expect(body).not.toContain('shadow_chat_sessions');
+    expect(body).not.toContain('AZURE_POSTGRES_CONNECTION_STRING');
+  });
+
+  // The typed error above must not have widened the "Missing" prefix rule.
+  // These are genuine client errors from shadowLibrary.ts and must stay 400,
+  // otherwise a bad request gets reported as a platform outage.
+  test.each([
+    'Missing SHADOW library query',
+    'Missing SHADOW library subject',
+  ])('keeps %s as a 400 client error', async (message) => {
+    const res = jsonError(new Error(message));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: message });
   });
 
   test('an unexpected database error returns a generic 500 message, not the raw internal message', async () => {

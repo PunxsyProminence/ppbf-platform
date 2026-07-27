@@ -5,10 +5,10 @@ import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import { listDecisions, recordDecision, RecommendationNotActionableError } from '@/src/server/pilot/shadowDecisions';
 import { MedicalStatusBlockedError } from '@/src/server/pilot/shadowRecommendations';
+import { DECISION_LOOP_ROLES } from '@/src/server/pilot/shadowRoleSets';
 
 export const runtime = 'nodejs';
 
-const DECISION_LOOP_ROLES = ['coach', 'organization_admin', 'admin'] as const;
 const REQUIRED_TABLES = ['shadow_decisions', 'shadow_audit_entries'];
 
 function boundedString(value: unknown, maximum: number): value is string {

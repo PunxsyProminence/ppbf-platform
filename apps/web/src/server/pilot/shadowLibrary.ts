@@ -33,7 +33,18 @@ export type ShadowLibraryIngestState =
   | 'quarantined';
 
 export type ShadowCoverageState = 'covered' | 'partial' | 'uncovered' | 'unknown';
-export type ShadowLibraryScope = 'master' | 'scoped' | 'subject';
+// 'master' was removed deliberately. It selected no subject predicate at all in
+// the search query, so it returned every athlete-scoped chunk in an organization
+// regardless of whether the caller was authorized for those athletes -- the
+// per-athlete check in searchShadowLibrary only runs for 'subject' scope. It had
+// no callers (the sole production caller, retrieveShadowEvidenceBundle, always
+// passes 'subject' or 'scoped'), so removing it changes no behavior today and
+// deletes the only code path able to read across athletes.
+//
+// If an organization-wide need appears later, do NOT reintroduce a wildcard.
+// Expand it to an explicit list of athlete ids the caller has been checked
+// against, so that "everything" is never representable as a single value.
+export type ShadowLibraryScope = 'scoped' | 'subject';
 export type ShadowLibraryClaimStatus = 'supported' | 'weak' | 'unsupported';
 
 export interface ShadowLibrarySourceRow {
@@ -216,13 +227,11 @@ export function normalizeSearchScope(input: {
     };
   }
 
-  if (
-    requestedScope === 'master'
-    && input.actorRole !== 'organization_admin'
-    && input.actorRole !== 'admin'
-    && input.actorRole !== 'platform_owner'
-  ) {
-    throw new Error('Forbidden: master SHADOW library scope requires an organization administrator');
+  // Fail closed on anything that is not a recognized scope. The type union
+  // already blocks this for TypeScript callers; this guard covers values
+  // arriving from JSON or from a future untyped call site.
+  if (requestedScope !== 'scoped' && requestedScope !== 'subject') {
+    throw new Error('Forbidden: unrecognized SHADOW library scope');
   }
   if (requestedScope === 'subject' && !requestedSubjectId) {
     throw new Error('Missing SHADOW library subject');
@@ -254,19 +263,6 @@ function buildClaimNarrative(results: ShadowLibrarySearchResult[]): string {
     .slice(0, 500);
 
   return `Library-backed answer from current SHADOW evidence: ${snippetSummary}${snippetSummary.endsWith('.') ? '' : '.'} Primary sources: ${sourceSummary}.`;
-}
-
-function isCanonicalDoctrineResult(result: ShadowLibrarySearchResult | undefined, scope: ShadowLibraryScope): boolean {
-  if (!result) {
-    return false;
-  }
-
-  return (
-    scope === 'master'
-    && result.source_type === 'internal_policy'
-    && result.authority_tier === 1
-    && result.document_name === 'SHADOW Canonical Authority Model'
-  );
 }
 
 async function ensureClaimResearchRequirement(input: {
@@ -903,9 +899,11 @@ export async function searchShadowLibrary(input: {
         and d.index_completed_at is not null
         and d.approval_state = 'approved'
         and d.verification_state = 'verified'
+        -- Every branch constrains subject_id. There is no scope value that
+        -- selects athlete-scoped chunks without naming the subject, so an
+        -- unrecognized scope matches nothing rather than matching everything.
          and (
-          $2::text = 'master'
-          or ($2::text = 'scoped' and c.subject_id is null)
+          ($2::text = 'scoped' and c.subject_id is null)
           or ($2::text = 'subject' and (c.subject_id is null or c.subject_id = $3))
         )
         and (
@@ -976,14 +974,13 @@ export async function createShadowLibraryClaim(input: {
   });
 
   const distinctSourceCount = new Set(evidence.map((item) => item.source_id)).size;
-  const canonicalDoctrine = isCanonicalDoctrineResult(evidence[0], normalized.scope);
   let status: ShadowLibraryClaimStatus;
   let confidence: number;
 
-  if (canonicalDoctrine && evidence.length >= 1) {
-    status = 'supported';
-    confidence = 0.82;
-  } else if (distinctSourceCount >= 2 && evidence.length >= 2) {
+  // The canonical-doctrine shortcut that used to sit here required scope
+  // 'master', which no caller could produce, so it never fired. It was removed
+  // with that scope; dropping it is behavior-preserving.
+  if (distinctSourceCount >= 2 && evidence.length >= 2) {
     status = 'supported';
     confidence = 0.78;
   } else if (evidence.length >= 1) {

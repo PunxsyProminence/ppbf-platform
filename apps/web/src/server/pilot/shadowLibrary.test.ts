@@ -58,19 +58,29 @@ describe('SHADOW library search scope', () => {
     })).toThrow('Forbidden: athlete SHADOW library access requires an athlete identity');
   });
 
-  it('reserves master scope for organization administrators', () => {
-    expect(() => normalizeSearchScope({
-      actorRole: 'coach',
-      scope: 'master',
-    })).toThrow('Forbidden: master SHADOW library scope requires an organization administrator');
+  // Regression guard. 'master' scope applied no subject predicate in the search
+  // query, so it returned every athlete-scoped chunk in an organization to any
+  // caller who could name it -- including an organization admin who had not been
+  // authorized for those specific athletes. It is removed, and no role may
+  // resurrect it, not even platform_owner.
+  it.each(['coach', 'organization_admin', 'admin', 'platform_owner'] as const)(
+    'rejects the removed master scope for %s',
+    (actorRole) => {
+      expect(() => normalizeSearchScope({
+        actorRole,
+        // Cast is deliberate: the union no longer admits 'master'. This asserts
+        // the runtime guard holds for callers that bypass the type, such as
+        // values arriving from JSON.
+        scope: 'master' as unknown as Parameters<typeof normalizeSearchScope>[0]['scope'],
+      })).toThrow('Forbidden: unrecognized SHADOW library scope');
+    },
+  );
 
-    expect(normalizeSearchScope({
+  it('rejects any unrecognized scope rather than defaulting to a wide one', () => {
+    expect(() => normalizeSearchScope({
       actorRole: 'organization_admin',
-      scope: 'master',
-    })).toEqual({
-      scope: 'master',
-      effectiveSubjectId: null,
-    });
+      scope: 'all' as unknown as Parameters<typeof normalizeSearchScope>[0]['scope'],
+    })).toThrow('Forbidden: unrecognized SHADOW library scope');
   });
 
   it('requires a subject ID for explicit subject scope', () => {

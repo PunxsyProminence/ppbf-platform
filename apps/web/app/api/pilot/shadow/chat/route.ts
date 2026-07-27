@@ -14,6 +14,7 @@ import {
   SHADOW_SYSTEM_PROMPT,
 } from '@/src/server/pilot/shadowChat';
 import { buildAzureAiChatCompletionsUrl, getAzureAiRuntimeConfig } from '@/src/server/pilot/azureAiRuntime';
+import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import {
   getOrCreateShadowUserProfile,
   updateShadowUserProfile,
@@ -397,6 +398,25 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       );
     }
     const message = rawMessage.trim();
+
+    // Chat was the only SHADOW route without a readiness guard, which is why an
+    // unmigrated environment surfaced here as an opaque 500 rather than a 503
+    // naming the missing tables. Every table listed below is written on a path
+    // that is NOT wrapped in a local catch, so its absence fails the request:
+    // rate limiting inserts a bucket before anything else runs, and the
+    // conversation write happens after a successful model response -- which
+    // would otherwise discard an answer the user already paid for.
+    // Tables used only by best-effort, catch-wrapped writes (the human-review
+    // queue, the evidence bundle, the chat audit row) are deliberately omitted
+    // so that a partially migrated environment can still serve chat.
+    await assertShadowRuntimeReadiness({
+      requiredTables: [
+        'shadow_rate_limit_buckets',
+        'shadow_user_profiles',
+        'shadow_chat_sessions',
+        'shadow_chat_messages',
+      ],
+    });
 
     await enforceShadowRateLimit({
       organizationId,

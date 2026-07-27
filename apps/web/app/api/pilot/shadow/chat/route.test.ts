@@ -18,6 +18,8 @@ import { classifyRequest } from '@/src/server/pilot/shadowClassifier';
 import { executeHeavyBagSync } from '@/src/server/pilot/shadowHeavyBag';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { retrieveShadowEvidenceBundle } from '@/src/server/pilot/shadowEvidence';
+import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
+import { ShadowRuntimeUnavailableError } from '@/src/server/pilot/shadowRuntimeError';
 
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
@@ -31,6 +33,10 @@ jest.mock('@/src/server/pilot/access', () => ({
 
 jest.mock('@/src/server/pilot/db', () => ({
   query: jest.fn(),
+}));
+
+jest.mock('@/src/server/pilot/shadowReadiness', () => ({
+  assertShadowRuntimeReadiness: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/shadowChat', () => {
@@ -515,6 +521,62 @@ describe('POST /api/pilot/shadow/chat trust boundary', () => {
     expect(payload.success).toBe(false);
     expect(payload.state).toBe('filtered');
     expect(global.fetch).toBe(originalFetch);
+  });
+});
+
+describe('SHADOW chat readiness guard', () => {
+  // Production was missing shadow_rate_limit_buckets, shadow_chat_sessions and
+  // shadow_chat_messages. Because chat had no readiness guard, the very first
+  // write -- the rate-limit bucket insert -- raised Postgres 42P01, which
+  // jsonError rendered as a generic 500. Every SHADOW chat request failed, and
+  // the cause was invisible in the response. These assertions keep chat from
+  // regressing back to an opaque failure.
+  const mockReadiness = jest.mocked(assertShadowRuntimeReadiness);
+
+  test('returns 503, not 500, when the SHADOW schema is not migrated', async () => {
+    mockReadiness.mockRejectedValueOnce(new ShadowRuntimeUnavailableError({
+      missingTables: ['shadow_rate_limit_buckets', 'shadow_chat_sessions'],
+    }));
+
+    const response = await POST(postRequest({ message: 'How do I improve footwork?' }));
+
+    expect(response.status).toBe(503);
+  });
+
+  test('does not disclose missing table names to the caller', async () => {
+    mockReadiness.mockRejectedValueOnce(new ShadowRuntimeUnavailableError({
+      missingTables: ['shadow_rate_limit_buckets'],
+    }));
+
+    const response = await POST(postRequest({ message: 'How do I improve footwork?' }));
+
+    expect(JSON.stringify(await response.json())).not.toContain('shadow_rate_limit_buckets');
+  });
+
+  test('fails before touching the rate limiter', async () => {
+    // The guard has to run before the first write, otherwise it cannot prevent
+    // the 42P01 it exists to convert into an honest status. enforceShadowRateLimit
+    // is that first write, so this ordering assertion is the whole point.
+    mockReadiness.mockRejectedValueOnce(new ShadowRuntimeUnavailableError({
+      missingTables: ['shadow_rate_limit_buckets'],
+    }));
+
+    await POST(postRequest({ message: 'How do I improve footwork?' }));
+
+    expect(mockEnforceRateLimit).not.toHaveBeenCalled();
+  });
+
+  test('requires the tables whose writes are not catch-wrapped', async () => {
+    await POST(postRequest({ message: 'How do I improve footwork?' }));
+
+    expect(mockReadiness).toHaveBeenCalledWith({
+      requiredTables: expect.arrayContaining([
+        'shadow_rate_limit_buckets',
+        'shadow_user_profiles',
+        'shadow_chat_sessions',
+        'shadow_chat_messages',
+      ]),
+    });
   });
 });
 
