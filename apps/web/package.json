@@ -13,6 +13,7 @@
     "pilot:apply-multiorg": "node scripts/pilot-apply-multiorg-migration.mjs",
     "pilot:apply-session-expiry": "node scripts/pilot-apply-session-expiry-migration.mjs",
     "pilot:apply-shadow-runtime": "node scripts/pilot-apply-shadow-runtime-migration.mjs",
+    "pilot:apply-public-interest": "node scripts/pilot-apply-public-interest-migration.mjs",
     "session:cleanup": "tsx scripts/pilot-cleanup-sessions.ts",
     "seed:shadow:library": "node scripts/seed-shadow-library.mjs",
     "gate:pilot": "node scripts/pilot-gate.mjs",
