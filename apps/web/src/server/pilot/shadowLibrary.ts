@@ -280,7 +280,7 @@ async function ensureClaimResearchRequirement(input: {
     return null;
   }
 
-  const openItems = await listShadowResearchRequirements(input.organizationId, 'open');
+  const openItems = await listShadowResearchRequirements(input.organizationId, { status: 'open' });
   const duplicate = openItems.find((item) => {
     const metadata = (item.metadata ?? {}) as Record<string, unknown>;
     return metadata.question === input.question && metadata.scope === input.scope && metadata.subject_id === input.subjectId;
@@ -340,7 +340,7 @@ async function ensureCoverageGapResearchRequirement(input: {
     return;
   }
 
-  const openItems = await listShadowResearchRequirements(input.organizationId, 'open');
+  const openItems = await listShadowResearchRequirements(input.organizationId, { status: 'open' });
   const duplicate = openItems.some((item) => {
     const metadata = (item.metadata ?? {}) as Record<string, unknown>;
     return metadata.capability_key === input.row.capability_key && metadata.coverage_state === input.coverageState;
