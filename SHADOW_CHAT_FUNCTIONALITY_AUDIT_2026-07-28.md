@@ -173,6 +173,60 @@ It is linked from the real chat as "The Library", and the chat's own guidance pa
 Research Intake."* Users are routed from a real assistant to a fake one at precisely the
 moment they most need a real answer.
 
+### 2.4a The response safety validator passes unevidenced directives and fabricated stats  **[V, empirically probed]**
+
+Added in the follow-up pass. This is the most consequential finding after §2.1.
+
+`validateShadowResponse` gates **medical** language well and **evidence-framing phrases** well, but
+its quantified-claim detection is phrase-list-based rather than semantic, so near-identical
+claims get opposite treatment. Measured by calling the real validator directly:
+
+| Response text | `filtered` |
+|---|---|
+| `Data shows 94% of athletes improve with this plan.` | ✅ true |
+| `94% of athletes improve with this plan.` | ❌ **false** |
+| `This drill is proven to increase punch power by 30%.` | ❌ **false** |
+| `I have seen 247 athletes improve doing this.` | ✅ true |
+| `You should cut 8 pounds this week because it is best for your bracket.` | ❌ **false** |
+| `Cut water weight by sitting in a sauna the night before weigh-in.` | ❌ **false** |
+| `Always spar full contact the day before a bout.` | ❌ **false** |
+| `You have a concussion and should rest for 3 weeks.` (control) | ✅ true, 3 reasons |
+
+Three distinct gaps:
+
+1. **Strip the framing phrase and the same statistic passes.** Row 1 is filtered only because
+   of `Data shows`; row 2 carries the identical unsupported 94% and is returned as `state: 'ok'`.
+2. **The word "proven" is not a trigger at all** — even though `PROVEN` is the platform's own
+   top evidence tier, and the injected EVIDENCE BOUNDARY prompt (`chat/route.ts:238`) explicitly
+   forbids describing a claim as "proven" without verified evidence. The prompt instructs it;
+   the validator does not enforce it.
+3. **Weight cutting is gated on the request but not the response.** It is one of only four
+   topics with a dedicated `FALLBACK_RESPONSES` entry and `HANDOFF_MESSAGES` entry. Ask for a
+   weight-cut directive and the request validator blocks you; if the model *volunteers* one, the
+   response validator lets it through with no filter, no reason, and no handoff banner.
+
+All three land as `state: 'ok'` — persisted, rendered, and (per §2.1) reopenable with
+"well-evidenced" styling.
+
+### 2.4b `shadowChat.test.ts.disabled` — mostly superseded, but one live regression  **[V]**
+
+I diffed the 220-line disabled suite (30 tests) against the 415-line live suite (33 tests).
+Most of it is **obsolete, not lost**, and that is worth stating plainly:
+
+- `blocks diagnosis questions` and `allows educational medical questions` **are** still covered
+  live — consolidated into a `test.each` table (`shadowChat.test.ts:28-38`). A name-based search
+  suggests coverage was dropped; it was not.
+- `blocks board member access to athlete-specific context` and `requires coach assignment
+  verification` are obsolete: `board_member` no longer exists in `contracts.ts`, and the
+  `organization-level aggregates only` / `not assigned` branches no longer exist in
+  `shadowChat.ts`. Authorization now delegates to the canonical `assertActorCanAccessAthlete`
+  helper, which the live suite covers *better* (3 tests, including fail-closed).
+
+One assertion is a genuine regression. Disabled Test 11 asserted that
+`'You should do X because it is best.'` would be filtered or produce reasons. Run against
+today's validator it returns `filtered: false, reasons: []`. That is the same hole §2.4a maps —
+the disabled file is the only place in the repo that ever guarded it, and it is invisible to CI.
+
 ### 2.5 Feedback failures are silent  **[U]**
 
 `page.tsx:586` catches only 401/403. Every other failure — 404, 429, 500 — is swallowed, so
@@ -233,20 +287,51 @@ Imported only by their own test, or by nothing at all:
 Two independent bronze/silver/gold implementations is the notable part — it means the
 medal shown next to each message has two competing definitions in the tree.
 
-### 3.4 Capabilities advertised with no implementation  **[U]**
+### 3.4 Session rename and delete are fully built, tested, and unreachable  **[V]** — upgraded from [U]
 
-`shadowChatCapabilities.ts:30` — `canManageSessions`, `canExportConversationHistory`, and
-`canRequestDeletion` are all reported `true` to the client, but no UI reaches a route that
-implements them. Reported by an agent; the absence of session delete/rename/export controls
-in `app/shadow/page.tsx` is consistent with this, but I did not verify each route.
+`shadowChatCapabilities.ts:30` reports `canManageSessions: true`. The backend genuinely
+delivers it: `sessions/[conversationId]/route.ts` implements `PATCH` (rename, via
+`renameConversation`, line 52) and `DELETE` (line 74), both with tests
+(`route.test.ts:116`). They authorize correctly and return sensible 400/404s.
 
-### 3.5 Evidence citations are persisted, served, then discarded  **[U]**
+No UI calls either one. Grepping `method: 'DELETE'` and `PATCH` across `app/` and
+`components/` returns only test files — `app/shadow/page.tsx` calls the `GET` and nothing else.
+So this is not an unimplemented capability; it is a complete, tested backend with no front end.
+Users are told they can manage sessions and have no control that does it.
 
-Reported at `shadowSessions.ts:122`: `parseMessage` drops citations that both APIs return.
-Consistent with the parser I read (it whitelists five fields), and with
-`getShadowChatCapabilities` hardcoding `canViewEvidence: false`. Worth confirming.
+`canExportConversationHistory: true` and `canRequestDeletion: true` are likewise advertised
+with no UI affordance.
+
+### 3.5 Chat citations are computed, returned, and silently dropped  **[V]** — corrected from [U]
+
+The agent claimed `shadowSessions.ts:122` discards citations the restore APIs return. **That
+mechanism is wrong** and I am refuting it: neither `sessions/route.ts` nor
+`sessions/[conversationId]/route.ts` mentions citations or evidence at all, so there is nothing
+on the restore path for the parser to drop.
+
+The real defect is on the live chat path. `chat/route.ts:750` returns a `citations` array built
+from the evidence bundle, and the client never references the field anywhere — not in
+`ShadowAIResult`, not in `ShadowMessage`, not in the renderer. Every request pays for evidence
+retrieval and citation extraction, and the result is discarded on arrival. That is also why
+`getShadowChatCapabilities` can hardcode `canViewEvidence: false` while the server does the work.
 
 ---
+
+### 3.6 `MANUAL_OVERRIDE_ROLES` is duplicated in the one file that matters most  **[V]**
+
+`shadowRoleSets.ts` exists specifically to stop this. Its header comment says so outright:
+*"these lists were copy-pasted across route files -- DECISION_LOOP_ROLES existed identically in
+six files ... Divergence between copies is invisible in review and is exactly how platform_owner
+ended up locked out of routes it was expected to reach."*
+
+`chat/route.ts` does not import `shadowRoleSets` at all. It declares its own
+`const MANUAL_OVERRIDE_ROLES = new Set<PilotRole>([...])` at line 299, parallel to the canonical
+export at `shadowRoleSets.ts:64-69`.
+
+The two lists are **identical today** (`coach`, `admin`, `organization_admin`, `platform_owner`),
+so there is no live bug — this is a latent one, filed at low severity. But it is the exact
+failure mode the module was written to prevent, reproduced in the highest-traffic consumer, and
+§1.2 is a working example of what role-list divergence costs.
 
 ## 4. The ML layer: is the learning loop closed?
 
@@ -335,24 +420,43 @@ Hypotheses I checked and **refuted** — these are fine:
 - Restored assistant messages **are** feedback-eligible (`shadowSessions.ts:201`).
 - The human-review approval UI genuinely exists (`admin/shadow/page.tsx:640`) — it is the
   credentials bug, not absence, that breaks it.
-- Rate limiting, the two-stage safety validator, conversation persistence, and
-  `assertConversationAccess` are all substantively implemented.
+- Rate limiting, conversation persistence, and `assertConversationAccess` are all substantively
+  implemented. The safety validator is real and effective **on medical language specifically** —
+  see §2.4a for where it stops.
+- No role passes `requireRole` on the chat route and then hits a surprise 403 mid-flow.
+  `retrieveShadowContext` returns `authorized: false` in exactly one place
+  (`shadowChat.ts:345`), for athlete-context denial delegated to the canonical access helper.
+  `platform_owner`, `staff`, and `volunteer` are all fine here. Hypothesis refuted.
+- The live `shadowChat.test.ts` is *better* than the disabled suite it replaced on role
+  authorization — it tests delegation to one canonical helper, including the fail-closed case,
+  rather than duplicating role logic. See §2.4b.
 
 ---
 
 ## 6. Not audited
 
-Lost to the session-token limit. No conclusions should be drawn about these:
+Originally 7 dimensions were lost to a session-token limit. A follow-up pass closed the two
+highest-value ones. Current state:
 
-**Wiring:** capabilities-and-roles · safety-evidence-pipeline · jobs-feedback-unlocks ·
-sibling-chat-surfaces (`/admin/shadow` internals, `/shadow/scout`, workspace-embedded chat)
+**Closed in the follow-up pass:**
+- **safety-evidence-pipeline** → §2.4a (validator gaps, empirically probed) and §2.4b
+  (`shadowChat.test.ts.disabled` diffed and resolved)
+- **capabilities-and-roles** → §3.4 (rename/delete unreachable), §3.5 (citations dropped),
+  §3.6 (role-set duplication), plus the mid-flow-403 hypothesis refuted in §5
 
-**ML:** classification-routing-evidence · library-knowledge-readmodels ·
-spec-vs-implementation (the conformance table against `docs/SHADOW_ML_ARCHITECTURE_SPEC.md`)
+**Still not audited. No conclusions should be drawn about these:**
+- **jobs-feedback-unlocks** — partially covered by §3.1 and §4, but the feedback correlation
+  path and `shadowMetrics` read side were never audited end to end
+- **sibling-chat-surfaces** — `/admin/shadow`'s 1667 lines of internals, `/shadow/scout`, and
+  workspace-embedded chat beyond what §1.4/§1.5/§2.4 cover
+- **classification-routing-evidence (ML)** — partially covered by §2.2/§2.3
+- **library-knowledge-readmodels (ML)** — `shadowLibrary.ts` is 1208 lines and largely unexamined
+- **spec-vs-implementation (ML)** — the conformance table against
+  `docs/SHADOW_ML_ARCHITECTURE_SPEC.md` was never built
 
-Also unexamined: `src/server/pilot/shadowChat.test.ts.disabled` — a disabled safety-validator
-test suite, invisible to the 890-test baseline. Worth diffing against the live suite to see
-what coverage was dropped and why.
+**Still true:** this is a floor on what is wrong, not a complete accounting. Note also that
+every remaining **[U]** finding in §2.5, §2.6 and §4.2 lacks an adversarial verification pass —
+the verifier agents all died on the same token limit, so those are leads, not conclusions.
 
 ---
 
@@ -364,10 +468,19 @@ what coverage was dropped and why.
 3. **§1.1, §1.2, §1.3** — three independent always-fails bugs, each small.
 4. **§2.1** — carry `evidenceTier` and `handoff` through persistence and restore. The safety
    banner loss is the most consequential single defect in the report.
-5. **§2.4** — either wire `/research/chat` to a real endpoint or stop calling it "The
+5. **§2.4a** — close the response-validator gaps: make `proven` a trigger, catch bare
+   percentages without a framing phrase, and gate weight cutting on the response side as well as
+   the request side. Then re-enable disabled Test 11 (§2.4b) as a regression guard — it is the
+   only thing in the repo that ever caught this, and it is currently invisible to CI.
+6. **§2.4** — either wire `/research/chat` to a real endpoint or stop calling it "The
    Library" and stop routing users there for evidence.
-6. **§2.2, §2.3** — make Quick Round honour the routing it displays.
-7. **§3.1** — decide: build the worker, or delete the async scaffolding and the UI that
+7. **§2.2, §2.3** — make Quick Round honour the routing it displays.
+8. **§3.1** — decide: build the worker, or delete the async scaffolding and the UI that
    depends on it. Leaving it half-present is what produced the unreachable unlock.
-8. **§3.3** — delete or wire the orphaned modules; collapse the two competing tier systems.
-9. Re-run the 7 unaudited dimensions and the verification pass.
+9. **§3.3** — delete or wire the orphaned modules; collapse the two competing tier systems.
+10. **§3.4** — build the UI for session rename/delete, or stop advertising
+    `canManageSessions`. The backend is already done and tested.
+11. **§3.6** — have `chat/route.ts` import `MANUAL_OVERRIDE_ROLES` from `shadowRoleSets`
+    instead of redeclaring it. Cheap, and it removes a latent repeat of §1.2.
+12. Audit the 5 dimensions still uncovered (§6) and run the adversarial verification pass over
+    the remaining **[U]** findings.
