@@ -13,6 +13,13 @@ const gymCapabilities = [
   { id: 'publication', label: 'Content Publishing', description: 'Allow coaches to share videos, photos, and updates.' },
 ];
 
+// The disabled-route notice lives in this wrapper rather than as an early
+// return inside the wizard itself. The wizard body opens with ten useState
+// calls, so returning before them made hook order depend on
+// NEXT_PUBLIC_PPBF_ENABLE_TEST_WIZARD -- a rules-of-hooks violation that failed
+// lint and would break if the flag were ever read from anything but a
+// build-time constant. Gating at the component boundary also means the disabled
+// path initializes no wizard state at all.
 export default function SetupWizard() {
   const testWizardEnabled = process.env.NEXT_PUBLIC_PPBF_ENABLE_TEST_WIZARD === 'true';
 
@@ -32,6 +39,10 @@ export default function SetupWizard() {
     );
   }
 
+  return <SetupWizardContent />;
+}
+
+function SetupWizardContent() {
   const [step, setStep] = useState(1);
 
   // Step 1: Create Gym
