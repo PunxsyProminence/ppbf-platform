@@ -124,21 +124,22 @@ export default function SetupWizard() {
   }
 
   async function saveCapabilities() {
-    const enabledCapabilities = Object.entries(gymCapabilityAccess)
-      .filter(([, enabled]) => enabled)
-      .map(([id]) => id);
+    const enabledCount = Object.values(gymCapabilityAccess).filter(Boolean).length;
 
-    if (enabledCapabilities.length === 0) {
+    if (enabledCount === 0) {
       throw new Error('Please select at least one feature for your gym');
     }
 
-    // Call backend to persist capability settings
+    // Call backend to persist capability settings. organization_id targets the
+    // gym just created in step 1 -- without it (and without capabilityAccess
+    // matching the route's actual field name/shape) this silently saved an
+    // empty capability set to the platform owner's own organization instead.
     await postJson('/api/pilot/admin/gym-capabilities', {
       organization_id: gymId.trim(),
-      capabilities: enabledCapabilities,
+      capabilityAccess: gymCapabilityAccess,
     });
 
-    return `Saved ${enabledCapabilities.length} feature${enabledCapabilities.length === 1 ? '' : 's'} for your gym`;
+    return `Saved ${enabledCount} feature${enabledCount === 1 ? '' : 's'} for your gym`;
   }
 
   const hasPlatformAccess = isMicrosoftSession && sessionRole === 'platform_owner';
