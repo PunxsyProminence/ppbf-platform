@@ -13,8 +13,14 @@ Findings are tagged by how they were established:
 - **[U]** — reported by an audit agent but **not** independently verified. The verification
   pass was lost to a session-token limit, so these are leads, not conclusions.
 
-7 of 13 planned audit dimensions did not complete (same limit). They are listed under
-*Not audited* at the end. This report is therefore a floor on what is wrong, not a ceiling.
+Of 13 planned dimensions, 6 completed in the first pass and 7 were cut short by a token limit.
+A follow-up pass closed 3 of those 7 (safety-evidence-pipeline → §2.4a/§2.4b,
+capabilities-and-roles → §3.4/§3.5/§3.6, library-knowledge-readmodels → §3.0) and upgraded
+§2.5 and §2.6 from [U] to [V]. **4 dimensions remain unaudited**, listed in §6.
+
+Everything still tagged **[U]** — now confined to §4.2 — has had no adversarial verification.
+Treat that list as a to-check queue, not as established fact. This report is a floor on what is
+wrong, not a ceiling.
 
 ---
 
@@ -227,17 +233,33 @@ One assertion is a genuine regression. Disabled Test 11 asserted that
 today's validator it returns `filtered: false, reasons: []`. That is the same hole §2.4a maps —
 the disabled file is the only place in the repo that ever guarded it, and it is invisible to CI.
 
-### 2.5 Feedback failures are silent  **[U]**
+### 2.5 Feedback failures are silent  **[V]** — upgraded from [U]
 
-`page.tsx:586` catches only 401/403. Every other failure — 404, 429, 500 — is swallowed, so
-the thumb click simply does nothing with no message. Not independently verified, but
-consistent with the `sendFeedback` body I did read.
+`sendFeedback` (`page.tsx:580-595`) has exactly one branch in its `catch`: 401/403 → clear
+session and redirect. There is no `else`, no state update, no message. So every other failure is
+swallowed with **zero** user-visible effect — the thumb stays unclicked, `feedbackSent` is never
+set, and nothing indicates anything happened.
 
-### 2.6 A 404 wedges the conversation  **[U]**
+Two failures reach this path in normal use: 404 (`'The SHADOW message was not found.'`, which
+§1.2's role mismatch and any expired correlation produce) and 429 (the route's own 30/min limit).
+Because the UI gives no signal, the natural user response is to click again — spending more of
+the rate limit on a request that cannot succeed.
 
-Reported at `page.tsx:737`: a 404 from chat leaves the stale `conversationId` in state, so
-every subsequent send fails until the user discovers "New chat". Plausible from the code
-structure; not independently verified.
+### 2.6 A 404 wedges the conversation  **[V]** — upgraded from [U]
+
+`setConversationId` is called at five sites: the declaration (274), `handleNewChat` → `undefined`
+(494), restore success (533), restore-404 handling → `undefined` (553), and send success (606).
+It is **not** called in `handleAIFallback` (737-756).
+
+So when the chat POST returns 404 — which `chat/route.ts:773-789` does for
+`SHADOW_CONVERSATION_NOT_FOUND`, reachable once a conversation is deleted via the `DELETE` route
+in §3.4 — the dead `conversationId` stays in React state. Every subsequent send re-attaches it
+and 404s again, showing only *"SHADOW could not process that request."* The chat is wedged until
+the user happens to find "New chat", which nothing points them toward.
+
+The asymmetry is what makes this an oversight rather than a design choice: the **restore** path
+explicitly clears a stale id on 404 (line 553), and drops the session from the list with an
+explanatory notice. The **send** path does neither.
 
 ---
 
@@ -316,6 +338,54 @@ retrieval and citation extraction, and the result is discarded on arrival. That 
 `getShadowChatCapabilities` can hardcode `canViewEvidence: false` while the server does the work.
 
 ---
+
+### 3.0 The SHADOW Library has no ingestion path — `seed:shadow:library` 404s  **[V]**
+
+Found in the follow-up pass. This is the strongest single finding after §2.1, because it closes
+a chain the first pass could only guess at.
+
+`package.json:18` registers `seed:shadow:library` as the supported way to populate the Library.
+`scripts/seed-shadow-library.mjs` is an HTTP client — it logs in with an admin PIN and POSTs to
+four endpoints. **None of those four routes exist:**
+
+| Endpoint the seed script POSTs to | Exists? |
+|---|---|
+| `api/pilot/shadow/library/sources` | ❌ **404** |
+| `api/pilot/shadow/library/documents` | ❌ **404** |
+| `api/pilot/shadow/library/chunks` | ❌ **404** |
+| `api/pilot/shadow/library/capability-coverage` | ❌ **404** |
+| `api/pilot/shadow/library/claims` | ✅ |
+| `api/pilot/shadow/library/search` | ✅ |
+
+`ls app/api/pilot/shadow/library/` returns exactly `claims` and `search`.
+
+That explains six orphaned exports in `shadowLibrary.ts` precisely — they are the handlers those
+missing routes would have called: `createShadowLibrarySource`, `listShadowLibrarySources`,
+`createShadowLibraryDocument`, `createShadowLibraryChunk`, `upsertShadowCapabilityMap`,
+`recomputeShadowCapabilityCoverage`, `listShadowCapabilityCoverage`.
+
+Note the shape of the gap: the **read** path is wired (`searchShadowLibrary` ← `shadowEvidence.ts`
+← chat), and the **review** path is wired (`evidence/review/route.ts` calls the review-queue and
+`completeShadowLibraryDocumentIndexing` functions). Only the **write** path is absent — and
+`completeShadowLibraryDocumentIndexing` is reachable while the three functions that must run
+before it are not. Also note `shadow/upload/route.ts` inserts into `pilot.shadow_intake`, not the
+Library tables, so uploads are not a back door either.
+
+**The verified cascade.** Because nothing can put content into the Library through any supported
+path, on any environment where the seed was attempted and appeared to fail:
+
+1. `searchShadowLibrary` returns empty →
+2. `retrieveShadowEvidenceBundle` returns no evidence →
+3. `deriveEvidenceTier` receives `citationCount: 0` and unavailable availability, so every
+   response lands on the same tier →
+4. the four-tier evidence shading in the chat UI (§2.1) is decorative in practice →
+5. the `citations` array at `chat/route.ts:750` is always empty, which makes §3.5 moot in
+   practice even though the wiring gap is real.
+
+So the entire evidence story — the retrieval, the grading, the shading, the citation plumbing —
+rests on a Library that cannot be filled. `getShadowChatCapabilities` hardcoding
+`canViewEvidence: false` turns out to be honest, just for a different reason than its comment
+gives.
 
 ### 3.6 `MANUAL_OVERRIDE_ROLES` is duplicated in the one file that matters most  **[V]**
 
@@ -444,19 +514,24 @@ highest-value ones. Current state:
 - **capabilities-and-roles** → §3.4 (rename/delete unreachable), §3.5 (citations dropped),
   §3.6 (role-set duplication), plus the mid-flow-403 hypothesis refuted in §5
 
+- **library-knowledge-readmodels** → §3.0 (no ingestion path; the export/caller map for all 14
+  `shadowLibrary.ts` functions is in that section)
+- **§2.5 and §2.6** upgraded from [U] to [V]
+
 **Still not audited. No conclusions should be drawn about these:**
-- **jobs-feedback-unlocks** — partially covered by §3.1 and §4, but the feedback correlation
-  path and `shadowMetrics` read side were never audited end to end
-- **sibling-chat-surfaces** — `/admin/shadow`'s 1667 lines of internals, `/shadow/scout`, and
-  workspace-embedded chat beyond what §1.4/§1.5/§2.4 cover
+- **jobs-feedback-unlocks** — partially covered by §3.1, §3.0 and §4, but the
+  `verifyShadowFeedbackCorrelation` path and the `shadowMetrics` read side were never traced
+  end to end
+- **sibling-chat-surfaces** — `/admin/shadow`'s 1667 lines of internals and `/shadow/scout`
+  beyond what §1.4/§1.5/§2.4 cover
 - **classification-routing-evidence (ML)** — partially covered by §2.2/§2.3
-- **library-knowledge-readmodels (ML)** — `shadowLibrary.ts` is 1208 lines and largely unexamined
 - **spec-vs-implementation (ML)** — the conformance table against
   `docs/SHADOW_ML_ARCHITECTURE_SPEC.md` was never built
 
-**Still true:** this is a floor on what is wrong, not a complete accounting. Note also that
-every remaining **[U]** finding in §2.5, §2.6 and §4.2 lacks an adversarial verification pass —
-the verifier agents all died on the same token limit, so those are leads, not conclusions.
+**Still true:** this is a floor on what is wrong, not a complete accounting. Every **[U]**
+finding remaining in §4.2 lacks an adversarial verification pass — the verifier agents all died
+on the same token limit, so those are leads, not conclusions. Treat the §4.2 list as a to-check
+queue, not as established fact.
 
 ---
 
@@ -472,15 +547,19 @@ the verifier agents all died on the same token limit, so those are leads, not co
    percentages without a framing phrase, and gate weight cutting on the response side as well as
    the request side. Then re-enable disabled Test 11 (§2.4b) as a regression guard — it is the
    only thing in the repo that ever caught this, and it is currently invisible to CI.
-6. **§2.4** — either wire `/research/chat` to a real endpoint or stop calling it "The
+6. **§3.0** — build the four missing `library/{sources,documents,chunks,capability-coverage}`
+   routes so `seed:shadow:library` can actually run, or remove the script and stop shipping an
+   evidence pipeline whose source of truth cannot be filled. Everything in the evidence story —
+   retrieval, grading, the four-tier shading, the citation plumbing — is downstream of this.
+7. **§2.4** — either wire `/research/chat` to a real endpoint or stop calling it "The
    Library" and stop routing users there for evidence.
-7. **§2.2, §2.3** — make Quick Round honour the routing it displays.
-8. **§3.1** — decide: build the worker, or delete the async scaffolding and the UI that
+8. **§2.2, §2.3** — make Quick Round honour the routing it displays.
+9. **§3.1** — decide: build the worker, or delete the async scaffolding and the UI that
    depends on it. Leaving it half-present is what produced the unreachable unlock.
-9. **§3.3** — delete or wire the orphaned modules; collapse the two competing tier systems.
-10. **§3.4** — build the UI for session rename/delete, or stop advertising
+10. **§3.3** — delete or wire the orphaned modules; collapse the two competing tier systems.
+11. **§3.4** — build the UI for session rename/delete, or stop advertising
     `canManageSessions`. The backend is already done and tested.
-11. **§3.6** — have `chat/route.ts` import `MANUAL_OVERRIDE_ROLES` from `shadowRoleSets`
+12. **§3.6** — have `chat/route.ts` import `MANUAL_OVERRIDE_ROLES` from `shadowRoleSets`
     instead of redeclaring it. Cheap, and it removes a latent repeat of §1.2.
-12. Audit the 5 dimensions still uncovered (§6) and run the adversarial verification pass over
+13. Audit the 5 dimensions still uncovered (§6) and run the adversarial verification pass over
     the remaining **[U]** findings.
