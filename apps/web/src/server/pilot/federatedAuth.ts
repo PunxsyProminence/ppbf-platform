@@ -94,7 +94,15 @@ export function buildAuthorizeUrl(
   url.searchParams.set('nonce', nonce);
   // Force an interactive re-auth instead of silent SSO session reuse.
   url.searchParams.set('prompt', 'login');
-  url.searchParams.set('max_age', '0');
+  // Deliberately no max_age. When max_age is present Entra pins the id_token's
+  // expiry to auth_time and clamps its lifetime to five minutes, so any sign-in
+  // where the user spends longer than that on the Microsoft pages -- MFA
+  // approval, the "Stay signed in?" step, or simply typing slowly -- arrives
+  // back at the callback already expired and validateClaims correctly rejects
+  // it as 'Expired token', bouncing the user to /login with a generic error.
+  // The 'prompt' parameter above is what actually forces the fresh interactive
+  // login; max_age added no security on top of it, only an invisible
+  // five-minute stopwatch that intermittently locked users out.
   url.searchParams.set('code_challenge', codeChallenge);
   url.searchParams.set('code_challenge_method', 'S256');
   return url.toString();
