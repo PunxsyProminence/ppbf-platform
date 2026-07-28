@@ -233,12 +233,28 @@ function PeopleConsoleContent() {
         throw new Error(createPayload.error || 'Could not create that athlete account');
       }
 
-      // Immediately mint the code so the admin leaves this form holding the
-      // thing they actually need to hand the athlete.
-      await issueCode(athleteAccountId.trim());
-
+      // The account now exists server-side regardless of what happens next,
+      // so the form must not stay primed to resubmit the same account_id/
+      // athlete_id -- that would just hit "Account already exists" on retry.
+      const createdAccountId = athleteAccountId.trim();
       setAthleteAccountId('');
       setAthleteId('');
+
+      try {
+        // Immediately mint the code so the admin leaves this form holding the
+        // thing they actually need to hand the athlete.
+        await issueCode(createdAccountId);
+      } catch (codeError) {
+        setError(
+          codeError instanceof Error
+            ? `Athlete account created, but activation code issuance failed: ${codeError.message}`
+            : 'Athlete account created, but activation code issuance failed.',
+        );
+      }
+
+      // Refresh the roster either way -- the account was created even if
+      // code issuance above failed, and the admin needs to see it to retry
+      // issuing a code rather than retrying account creation.
       await load();
       setTab('people');
     } catch (addError) {

@@ -217,7 +217,7 @@ export default function ParentHub() {
           childProgress={activeChild?.currentProgress || 'Unavailable - awaiting backend progression feed'}
           tasksDue={tasksDue}
           upcomingEvents={upcomingEvents}
-          attendancePercent={activeChild?.attendancePercent ?? 0}
+          attendancePercent={activeChild?.attendancePercent ?? null}
           unreadMessages={messages.filter(m => !m.read).length}
         />
 
@@ -390,11 +390,15 @@ export default function ParentHub() {
                       </div>
                       <div>
                         <p className="text-xs text-[#b0a095] block mb-1">Progress</p>
-                        <p className="text-base font-semibold">{activeChild.currentProgress}</p>
+                        <p className="text-base font-semibold">{activeChild.currentProgress || 'Unavailable - awaiting backend progression feed'}</p>
                       </div>
                       <div>
                         <p className="text-xs text-[#b0a095] block mb-1">Attendance</p>
-                        <p className="text-base font-semibold text-green-400">{activeChild.attendancePercent}%</p>
+                        {activeChild.attendancePercent !== null ? (
+                          <p className="text-base font-semibold text-green-400">{activeChild.attendancePercent}%</p>
+                        ) : (
+                          <p className="text-base font-semibold">Unavailable - not yet tracked</p>
+                        )}
                       </div>
                       {/* Membership/scholarship/community-service status has no
                           backing column anywhere in the schema -- these used to

@@ -1,5 +1,8 @@
 export function getPilotRoleDestination(role: unknown): string | null {
-  if (role === 'platform_owner' || role === 'organization_admin' || role === 'admin') {
+  if (role === 'platform_owner') {
+    return '/admin/platform';
+  }
+  if (role === 'organization_admin' || role === 'admin') {
     return '/admin';
   }
   if (role === 'coach') {

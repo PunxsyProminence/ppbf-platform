@@ -119,7 +119,7 @@ describe('roleSession display cache', () => {
 
 describe('authoritative server role resolution', () => {
   test.each([
-    ['platform_owner', 'admin', '/admin'],
+    ['platform_owner', 'admin', '/admin/platform'],
     ['organization_admin', 'admin', '/admin'],
     ['admin', 'admin', '/admin'],
     ['coach', 'coach', '/coach/review-queue'],

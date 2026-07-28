@@ -123,7 +123,7 @@ describe('GET /api/pilot/auth/microsoft/callback', () => {
   });
 
   test.each([
-    ['platform_owner', '/admin'],
+    ['platform_owner', '/admin/platform'],
     ['organization_admin', '/admin'],
     ['admin', '/admin'],
     ['coach', '/coach/review-queue'],

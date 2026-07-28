@@ -122,7 +122,14 @@ export async function resolveShadowResearchRequirement(input: {
   resolvedByAccountId: string;
   resolvedByRole: string;
   metadata?: Record<string, unknown>;
+  // When provided (a parent caller), the row must match one of these athlete
+  // IDs via the same source_entity_id/evidence_label/metadata.subject_id
+  // heuristic listShadowResearchRequirements uses -- otherwise a parent could
+  // resolve any other family's requirement in the org by guessing/enumerating
+  // an id, even though the list view is already correctly scoped.
+  athleteIds?: string[];
 }): Promise<boolean> {
+  const hasAthleteScope = (input.athleteIds?.length ?? 0) > 0;
   const rows = await query<{
     research_requirement_id: number;
   }>(
@@ -133,12 +140,24 @@ export async function resolveShadowResearchRequirement(input: {
      where organization_id = $1
        and research_requirement_id = $2
        and status = 'open'
+       and (
+         $4::boolean = false
+         or source_entity_id = any($5::text[])
+         or evidence_label = any($5::text[])
+         or metadata->>'subject_id' = any($5::text[])
+       )
      returning research_requirement_id`,
-    [input.organizationId, input.researchRequirementId, JSON.stringify({
-      resolved_by_account_id: input.resolvedByAccountId,
-      resolved_by_role: input.resolvedByRole,
-      ...(input.metadata ?? {}),
-    })],
+    [
+      input.organizationId,
+      input.researchRequirementId,
+      JSON.stringify({
+        resolved_by_account_id: input.resolvedByAccountId,
+        resolved_by_role: input.resolvedByRole,
+        ...(input.metadata ?? {}),
+      }),
+      hasAthleteScope,
+      input.athleteIds ?? [],
+    ],
   );
 
   return rows.length > 0;

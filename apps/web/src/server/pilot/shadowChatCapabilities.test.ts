@@ -29,6 +29,38 @@ describe('SHADOW chat capabilities', () => {
     expect(getShadowChatCapabilities('platform_owner').canReviewSafetyEvents).toBe(true);
   });
 
+  // Omega is broader in breadth but strictly narrower in depth than an
+  // organization admin (see shadowRoleSets.ts). Collapsing it back into
+  // 'master' would erase the depth restriction, so these assert the split.
+  it('gives platform_owner its own omega mode, not organization-admin master', () => {
+    const omega = getShadowChatCapabilities('platform_owner');
+    expect(omega.mode).toBe('omega');
+    expect(getShadowChatCapabilities('organization_admin').mode).toBe('master');
+    expect(getShadowChatCapabilities('admin').mode).toBe('master');
+    expect(getShadowChatCapabilities('coach').mode).toBe('scoped');
+  });
+
+  it('grants omega cross-organization read and denies it protected health information', () => {
+    const omega = getShadowChatCapabilities('platform_owner');
+    expect(omega.crossOrganizationRead).toBe(true);
+    expect(omega.canAccessProtectedHealthInformation).toBe(false);
+  });
+
+  it('keeps protected health information with in-organization roles only', () => {
+    expect(getShadowChatCapabilities('organization_admin').canAccessProtectedHealthInformation).toBe(true);
+    expect(getShadowChatCapabilities('admin').canAccessProtectedHealthInformation).toBe(true);
+    expect(getShadowChatCapabilities('organization_admin').crossOrganizationRead).toBe(false);
+    expect(getShadowChatCapabilities('coach').crossOrganizationRead).toBe(false);
+    expect(getShadowChatCapabilities('athlete').crossOrganizationRead).toBe(false);
+  });
+
+  it('retains the tier affordances omega genuinely shares with organization admins', () => {
+    const omega = getShadowChatCapabilities('platform_owner');
+    expect(omega.allowedSessionTypes).toContain('heavy_bag');
+    expect(omega.canUseManualTier).toBe(true);
+    expect(omega.canManageSessions).toBe(true);
+  });
+
   it('does not advertise evidence until verified retrieval is wired into chat', () => {
     expect(getShadowChatCapabilities('organization_admin').canViewEvidence).toBe(false);
     expect(getShadowChatCapabilities('coach').canViewEvidence).toBe(false);
