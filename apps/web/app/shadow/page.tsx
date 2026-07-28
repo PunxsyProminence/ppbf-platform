@@ -209,7 +209,18 @@ function appendContext(base: string, context: string, prefix: string) {
   return `${base} ${prefix} ${context}.`;
 }
 
-function buildWelcomeMessage(mode: 'master' | 'scoped', role: string, context: string, subject: string) {
+// Omega is the cross-organization platform tier. It is deliberately not an
+// alias for 'master': it reads operational signal across organizations but
+// never organization-private athlete records, so it states that scope plainly
+// rather than presenting as an organization admin with a wider reach.
+type ShadowChatMode = 'omega' | 'master' | 'scoped';
+
+function buildWelcomeMessage(mode: ShadowChatMode, role: string, context: string, subject: string) {
+  if (mode === 'omega') {
+    const base = 'Omega online. I read operational and aggregate signal across organizations. Ask about platform-wide patterns, capability coverage, evidence gaps, or governance. Organization-private athlete records, medical clearance, and SafeSport content are out of scope for this tier';
+    return appendContext(base, context, 'from');
+  }
+
   if (mode === 'master') {
     const base = `Master SHADOW online for ${role || 'admin'}. I speak from the organizational layer. Ask about doctrine, evidence gaps, capability growth, research requirements, or cross-system learning`;
     return appendContext(base, context, 'from');
@@ -224,7 +235,10 @@ function buildWelcomeMessage(mode: 'master' | 'scoped', role: string, context: s
   return appendContext(base, context, 'from');
 }
 
-function buildHeading(mode: 'master' | 'scoped', subject: string) {
+function buildHeading(mode: ShadowChatMode, subject: string) {
+  if (mode === 'omega') {
+    return { heading: 'OMEGA', intro: 'Cross-organization operational and aggregate intelligence.', scopeSummary: 'Platform tier. No organization-private athlete records.' };
+  }
   if (mode === 'master') {
     return { heading: 'MASTER SHADOW', intro: 'Organizational intelligence, doctrine, and learning oversight.', scopeSummary: 'Master SHADOW for admin/organizational intelligence.' };
   }
@@ -234,7 +248,8 @@ function buildHeading(mode: 'master' | 'scoped', subject: string) {
   return { heading: 'SHADOW', intro: 'Scoped role-aware SHADOW conversation.', scopeSummary: 'Role-scoped SHADOW view.' };
 }
 
-function getModeHeadingLabel(mode: 'master' | 'scoped'): string {
+function getModeHeadingLabel(mode: ShadowChatMode): string {
+  if (mode === 'omega') return 'Omega';
   return mode === 'master' ? 'The Architect' : 'The Scout';
 }
 
@@ -254,7 +269,7 @@ function ShadowChatPageContent() {
   const [userRole, setUserRole] = useState<string>(() => (typeof window !== 'undefined' ? readRoleSession()?.role ?? '' : ''));
   const [authChecked, setAuthChecked] = useState(false);
   const [capabilitiesLoaded, setCapabilitiesLoaded] = useState(false);
-  const [mode, setMode] = useState<'master' | 'scoped'>('scoped');
+  const [mode, setMode] = useState<ShadowChatMode>('scoped');
   const context = '';
   const subject = '';
   const roleLabel = (userRole || 'guest').toUpperCase();
@@ -371,7 +386,14 @@ function ShadowChatPageContent() {
           )
           : ['quick_round'];
         if (!cancelled) {
-          const serverMode = payload.capabilities?.mode === 'master' ? 'master' : 'scoped';
+          // Omega must be recognized explicitly. Falling through to 'scoped'
+          // would silently strip the platform tier of affordances it holds.
+          const rawMode = payload.capabilities?.mode;
+          const serverMode: ShadowChatMode = rawMode === 'omega'
+            ? 'omega'
+            : rawMode === 'master'
+              ? 'master'
+              : 'scoped';
           setMode(serverMode);
           setAllowedSessionTypes(sessionTypes);
           if (!sessionTypes.includes('heavy_bag')) setHeavyBagMode(false);
