@@ -3,6 +3,7 @@ import {
   listOwnedShadowSessions,
   loadOwnedShadowSessionMessages,
   mapStoredShadowMessage,
+  RESTORED_MESSAGE_FALLBACK_TIER,
   ShadowSessionsRequestError,
 } from './shadowSessions';
 
@@ -103,12 +104,48 @@ describe('SHADOW session client', () => {
       });
   });
 
+  test('replays the stored evidence grade and handoff instead of a default', () => {
+    expect(mapStoredShadowMessage({
+      messageId: 'graded-message',
+      role: 'assistant',
+      content: 'Bounded answer',
+      responseState: 'ok',
+      evidenceTier: 'RESEARCH_NEEDED',
+      handoff: 'Talk to your medical team before changing any weight-cut plan.',
+      createdAt: '2026-07-24T12:00:00.000Z',
+    })).toMatchObject({
+      evidenceTier: 'RESEARCH_NEEDED',
+      handoff: 'Talk to your medical team before changing any weight-cut plan.',
+    });
+  });
+
+  test('an ungraded assistant message restores at the flattest tier, never a better one', () => {
+    // Rows written before evidence_tier existed have no grade to recover. The
+    // renderer used to default these to EMERGING -- the second darkest, meaning
+    // well-evidenced -- which silently promoted an unevidenced answer.
+    const restored = mapStoredShadowMessage({
+      messageId: 'ungraded-message',
+      role: 'assistant',
+      content: 'Legacy answer with no stored grade',
+      responseState: 'ok',
+      evidenceTier: null,
+      handoff: null,
+      createdAt: '2026-07-24T12:00:00.000Z',
+    });
+    expect(restored.evidenceTier).toBe(RESTORED_MESSAGE_FALLBACK_TIER);
+    expect(restored.evidenceTier).toBe('RESEARCH_NEEDED');
+    expect(restored.evidenceTier).not.toBe('EMERGING');
+    expect(restored.handoff).toBeUndefined();
+  });
+
   test('makes only durable assistant messages eligible for feedback', () => {
     expect(mapStoredShadowMessage({
       messageId: 'assistant-message',
       role: 'assistant',
       content: 'Bounded answer',
       responseState: 'filtered',
+      evidenceTier: 'EXPERIMENTAL',
+      handoff: null,
       createdAt: '2026-07-24T12:00:00.000Z',
     })).toMatchObject({
       id: 'assistant-message',
@@ -122,6 +159,8 @@ describe('SHADOW session client', () => {
       role: 'user',
       content: 'Question',
       responseState: null,
+      evidenceTier: null,
+      handoff: null,
       createdAt: '2026-07-24T12:00:00.000Z',
     })).toMatchObject({
       type: 'user',

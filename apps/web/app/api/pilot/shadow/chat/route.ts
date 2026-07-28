@@ -637,6 +637,22 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     let messageId = transientMessageId;
     let conversationId: string | undefined;
 
+    // Computed before persistence so the stored row and the response body carry
+    // identical values -- a restored conversation has to replay what the user
+    // was shown, not a recomputed approximation of it.
+    const persistedEvidenceTier = deriveEvidenceTier({
+      isAnsweredState: state === 'ok',
+      evidenceAvailability: evidenceBundle.availability,
+      citationCount: responseValidation.citationIds.length,
+    });
+    const persistedRequiresHumanReview = responseValidation.requiresHumanReview || state === 'filtered';
+    const persistedHandoff = resolveHandoff({
+      requiresHumanReview: persistedRequiresHumanReview,
+      topic: requestValidation.topic && requestValidation.topic !== 'none'
+        ? requestValidation.topic
+        : undefined,
+    });
+
     if (state === 'ok' || state === 'filtered') {
       conversationId = await resolveConversation({
         actor: principal,
@@ -653,6 +669,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
         sessionType,
         topic: interactionTopic,
         responseState: state,
+        evidenceTier: persistedEvidenceTier,
+        handoff: persistedHandoff,
         evidence: evidenceBundle.bundleId
           ? {
               bundleId: evidenceBundle.bundleId,
@@ -721,7 +739,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     const responseTopic = requestValidation.topic && requestValidation.topic !== 'none'
       ? requestValidation.topic
       : undefined;
-    const responseRequiresHumanReview = responseValidation.requiresHumanReview || state === 'filtered';
+    const responseRequiresHumanReview = persistedRequiresHumanReview;
 
     return NextResponse.json({
       success: state === 'ok' || state === 'queued',
@@ -733,12 +751,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       filtered: responseValidation.filtered,
       requiresHumanReview: responseRequiresHumanReview,
       highRiskTopic: responseTopic,
-      evidenceTier: deriveEvidenceTier({
-        isAnsweredState: state === 'ok',
-        evidenceAvailability: evidenceBundle.availability,
-        citationCount: responseValidation.citationIds.length,
-      }),
-      handoff: resolveHandoff({ requiresHumanReview: responseRequiresHumanReview, topic: responseTopic }),
+      evidenceTier: persistedEvidenceTier,
+      handoff: persistedHandoff,
       unlockHints: buildShadowUnlockHints(unlockState),
       tier: effectiveTier,
       complexity: classification.complexity,

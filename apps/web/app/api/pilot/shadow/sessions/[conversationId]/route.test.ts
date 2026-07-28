@@ -43,6 +43,8 @@ test('restores the authenticated owner messages in server order', async () => {
     role: 'assistant',
     content: 'Use the evidence currently available.',
     responseState: 'ok',
+    evidenceTier: 'PROVEN',
+    handoff: null,
     createdAt: '2026-07-24T12:00:01.000Z',
   }]);
 

@@ -527,6 +527,11 @@ function ShadowChatPageContent() {
         return {
           ...mapped,
           tier: mapped.type === 'shadow' ? restoredTier : undefined,
+          // evidenceTier and handoff come from the stored row, so a reopened
+          // conversation shows the grade the answer was given and keeps its
+          // "Human Handoff Required" banner.
+          evidenceTier: mapped.type === 'shadow' ? mapped.evidenceTier : undefined,
+          handoff: mapped.type === 'shadow' ? mapped.handoff : undefined,
         };
       });
 
@@ -913,7 +918,7 @@ function ShadowChatPageContent() {
                   className={`max-w-md px-4 py-3 transition-colors ${
                     msg.type === 'user'
                       ? 'border-2 border-[#dc2626] bg-[#2a1a1a] text-[#ff6b6b]'
-                      : EVIDENCE_TIER_STYLES[msg.evidenceTier ?? 'EMERGING']
+                      : EVIDENCE_TIER_STYLES[msg.evidenceTier ?? NO_SERVER_EVIDENCE_TIER]
                   }`}
                 >
                   <p className="text-xs leading-6">{msg.text}</p>

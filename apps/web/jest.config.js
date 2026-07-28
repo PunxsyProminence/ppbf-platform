@@ -1,8 +1,16 @@
 /** @type {import('ts-jest').JestConfigWithTsJest} */
 module.exports = {
   preset: 'ts-jest',
+  // 'node' stays the default so the existing server-side suites keep their
+  // startup cost. Component tests opt into a DOM per file with a
+  // `@jest-environment jsdom` docblock -- see shadowMessageRender.test.tsx.
   testEnvironment: 'node',
-  testMatch: ['**/*.test.ts'],
+  // .test.tsx was absent here, and the environment had no jsdom, so every file
+  // under app/ and components/ was untestable by construction: the whole client
+  // layer sat outside the suite while it reported green. The transform below
+  // already handled tsx, so only the pattern and the DOM environment were
+  // missing.
+  testMatch: ['**/*.test.ts', '**/*.test.tsx'],
   moduleNameMapper: {
     // Must mirror tsconfig.json's "paths", which resolves "@/*" against
     // ./src/* before ./*. Mapping only to the root meant any module importing

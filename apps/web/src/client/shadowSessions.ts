@@ -1,5 +1,24 @@
 export type StoredShadowResponseState = 'ok' | 'filtered';
 
+export type StoredShadowEvidenceTier =
+  | 'PROVEN'
+  | 'EMERGING'
+  | 'EXPERIMENTAL'
+  | 'RESEARCH_NEEDED';
+
+// Messages written before evidence_tier existed have no grade to recover, and a
+// missing grade must never be read as a good one. RESEARCH_NEEDED is the
+// flattest tier, which matches what the live chat already does for a response
+// that never reached the server.
+export const RESTORED_MESSAGE_FALLBACK_TIER: StoredShadowEvidenceTier = 'RESEARCH_NEEDED';
+
+function isStoredEvidenceTier(value: unknown): value is StoredShadowEvidenceTier {
+  return value === 'PROVEN'
+    || value === 'EMERGING'
+    || value === 'EXPERIMENTAL'
+    || value === 'RESEARCH_NEEDED';
+}
+
 export interface OwnedShadowConversation {
   conversationId: string;
   title: string;
@@ -14,6 +33,8 @@ export interface StoredShadowConversationMessage {
   role: 'user' | 'assistant';
   content: string;
   responseState: StoredShadowResponseState | null;
+  evidenceTier: StoredShadowEvidenceTier | null;
+  handoff: string | null;
   createdAt: string;
 }
 
@@ -23,6 +44,8 @@ export interface RestoredShadowMessage {
   text: string;
   timestamp: string;
   state?: StoredShadowResponseState;
+  evidenceTier: StoredShadowEvidenceTier;
+  handoff?: string;
   feedbackEligible: boolean;
 }
 
@@ -119,11 +142,25 @@ function parseMessage(value: unknown): StoredShadowConversationMessage {
   if (responseState !== null && responseState !== 'ok' && responseState !== 'filtered') {
     throw new ShadowSessionsRequestError(502, 'SHADOW session messages were malformed.');
   }
+  const evidenceTier = value.evidenceTier;
+  if (
+    evidenceTier !== null
+    && evidenceTier !== undefined
+    && !isStoredEvidenceTier(evidenceTier)
+  ) {
+    throw new ShadowSessionsRequestError(502, 'SHADOW session messages were malformed.');
+  }
+  const handoff = value.handoff;
+  if (handoff !== null && handoff !== undefined && typeof handoff !== 'string') {
+    throw new ShadowSessionsRequestError(502, 'SHADOW session messages were malformed.');
+  }
   return {
     messageId: requiredString(value, 'messageId'),
     role,
     content: requiredString(value, 'content'),
     responseState,
+    evidenceTier: isStoredEvidenceTier(evidenceTier) ? evidenceTier : null,
+    handoff: typeof handoff === 'string' && handoff.trim() ? handoff : null,
     createdAt: requiredIsoTimestamp(value, 'createdAt'),
   };
 }
@@ -198,6 +235,14 @@ export function mapStoredShadowMessage(
       second: '2-digit',
     }),
     state,
+    // A user turn has no grade of its own; grading only describes SHADOW's
+    // answers. Assistant turns fall back to the flattest tier rather than the
+    // renderer's old EMERGING default, which silently promoted ungraded
+    // answers to look well-evidenced.
+    evidenceTier: message.role === 'assistant'
+      ? (message.evidenceTier ?? RESTORED_MESSAGE_FALLBACK_TIER)
+      : RESTORED_MESSAGE_FALLBACK_TIER,
+    handoff: message.role === 'assistant' ? (message.handoff ?? undefined) : undefined,
     feedbackEligible: message.role === 'assistant' && Boolean(state),
   };
 }

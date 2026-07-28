@@ -12,6 +12,16 @@ export type ShadowConversationSessionType =
   | 'recovery_round';
 
 export type ShadowStoredResponseState = 'ok' | 'filtered';
+
+// Mirrors the client's ShadowEvidenceTier. Stored per assistant message so a
+// restored conversation shows the grade the answer was actually given rather
+// than falling back to a flattering default -- see the migration note on
+// pilot.shadow_chat_messages.
+export type ShadowStoredEvidenceTier =
+  | 'PROVEN'
+  | 'EMERGING'
+  | 'EXPERIMENTAL'
+  | 'RESEARCH_NEEDED';
 export type ShadowReviewStatus = 'open' | 'in_review' | 'resolved' | 'dismissed';
 export type ShadowEvidenceClaimStatus = 'supported' | 'research_needed' | 'unavailable' | 'filtered';
 
@@ -29,6 +39,8 @@ export interface ShadowConversationMessage {
   role: 'user' | 'assistant';
   content: string;
   responseState: ShadowStoredResponseState | null;
+  evidenceTier: ShadowStoredEvidenceTier | null;
+  handoff: string | null;
   createdAt: string;
   citations?: Array<{
     evidenceId: string;
@@ -160,6 +172,11 @@ export async function appendConversationExchange(input: {
   sessionType: ShadowConversationSessionType;
   topic: string;
   responseState: ShadowStoredResponseState;
+  // Both are stored so a restored conversation replays what the user actually
+  // saw. Omitting evidenceTier is not the same as grading a message well: the
+  // read path maps null to RESEARCH_NEEDED.
+  evidenceTier?: ShadowStoredEvidenceTier;
+  handoff?: string;
   evidence?: {
     bundleId: string;
     availability: 'available' | 'unavailable';
@@ -187,10 +204,10 @@ export async function appendConversationExchange(input: {
     const assistantMessageId = randomUUID();
     await client.query(
       `insert into pilot.shadow_chat_messages
-         (message_id, conversation_id, organization_id, account_id, role, content, response_state, topic, session_type, created_at)
+         (message_id, conversation_id, organization_id, account_id, role, content, response_state, topic, session_type, evidence_tier, handoff, created_at)
        values
-         ($1, $2, $3, $4, 'user', $5, null, $9, $10, statement_timestamp()),
-         ($6, $2, $3, $4, 'assistant', $7, $8, $9, $10, statement_timestamp() + interval '1 microsecond')`,
+         ($1, $2, $3, $4, 'user', $5, null, $9, $10, null, null, statement_timestamp()),
+         ($6, $2, $3, $4, 'assistant', $7, $8, $9, $10, $11, $12, statement_timestamp() + interval '1 microsecond')`,
       [
         userMessageId,
         input.conversationId,
@@ -202,6 +219,8 @@ export async function appendConversationExchange(input: {
         input.responseState,
         input.topic.replace(/\s+/g, ' ').trim().slice(0, 100) || 'general',
         input.sessionType,
+        input.evidenceTier ?? null,
+        input.handoff?.slice(0, 500) ?? null,
       ],
     );
     await client.query(
@@ -292,6 +311,8 @@ export async function loadConversationMessages(input: {
     role: 'user' | 'assistant';
     content: string;
     response_state: ShadowStoredResponseState | null;
+    evidence_tier: ShadowStoredEvidenceTier | null;
+    handoff: string | null;
     created_at: Date;
     citations: Array<{
       evidenceId: string;
@@ -305,6 +326,8 @@ export async function loadConversationMessages(input: {
        m.role,
        m.content,
        m.response_state,
+       m.evidence_tier,
+       m.handoff,
        m.created_at,
        coalesce(
          jsonb_agg(
@@ -342,7 +365,7 @@ export async function loadConversationMessages(input: {
        and m.account_id = $2
        and m.conversation_id = $3
        and s.deleted_at is null
-     group by m.message_id, m.role, m.content, m.response_state, m.created_at
+     group by m.message_id, m.role, m.content, m.response_state, m.evidence_tier, m.handoff, m.created_at
      order by m.created_at desc,
               case m.role when 'assistant' then 1 else 0 end desc,
               m.message_id desc
@@ -354,6 +377,8 @@ export async function loadConversationMessages(input: {
     role: row.role,
     content: row.content,
     responseState: row.response_state,
+    evidenceTier: row.evidence_tier,
+    handoff: row.handoff,
     createdAt: row.created_at.toISOString(),
     citations: Array.isArray(row.citations) ? row.citations : [],
   }));
