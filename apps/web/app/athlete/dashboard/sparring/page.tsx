@@ -11,6 +11,15 @@ const PUNCH_TYPES: PunchType[] = ['Jab', 'Cross', 'Hook', 'Uppercut', 'Body', 'O
 // the time to log a full sparring session, in exchange for the formula
 // engine actually being able to compute Accuracy, Connect Differential,
 // Contact Exposure, Focus Attainment, and 7-Day Weight Change from it.
+interface DeepTrackResult {
+  ok: boolean;
+  // Set when the server raised a safety review because contact was logged for an
+  // athlete with no current medical clearance. The submission still succeeded --
+  // the record is kept deliberately -- but the athlete should be told, not left
+  // to discover it from a coach later.
+  safetyReviewRaised: boolean;
+}
+
 async function submitDeepTrackObservations(input: {
   athleteId: string;
   contextId: string;
@@ -25,7 +34,7 @@ async function submitDeepTrackObservations(input: {
   recoveryNotes: string;
   bodyWeightKg: number | null;
   opponentStance: OpponentStance;
-}): Promise<{ ok: boolean }> {
+}): Promise<DeepTrackResult> {
   const baseDimensions = { opponentStance: input.opponentStance };
 
   const observations: Array<{
@@ -56,7 +65,8 @@ async function submitDeepTrackObservations(input: {
     });
   }
 
-  const results = await Promise.allSettled(observations.map((observation) => fetch('/api/pilot/shadow/formulas/observations', {
+  const results = await Promise.allSettled(observations.map(async (observation) => {
+    const response = await fetch('/api/pilot/shadow/formulas/observations', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -69,9 +79,22 @@ async function submitDeepTrackObservations(input: {
       observedAt: input.observedAt,
       idempotencyKey: `${input.contextId}-${observation.kind}`,
     }),
-  })));
+    });
 
-  return { ok: results.every((result) => result.status === 'fulfilled' && result.value.ok) };
+    const payload = (await response.json().catch(() => ({}))) as {
+      safetyReview?: { raised?: boolean };
+    };
+    return { ok: response.ok, safetyReviewRaised: payload.safetyReview?.raised === true };
+  }));
+
+  const fulfilled = results.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
+
+  return {
+    ok: fulfilled.length === results.length && fulfilled.every((value) => value.ok),
+    // Any one of the contact observations tripping the gate is enough; they all
+    // concern the same session.
+    safetyReviewRaised: fulfilled.some((value) => value.safetyReviewRaised),
+  };
 }
 
 export default function SparringTelemetryPage() {
@@ -121,7 +144,7 @@ export default function SparringTelemetryPage() {
     const observedAt = new Date().toISOString();
 
     try {
-      const { ok } = await submitDeepTrackObservations({
+      const { ok, safetyReviewRaised } = await submitDeepTrackObservations({
         athleteId,
         contextId,
         observedAt,
@@ -139,8 +162,13 @@ export default function SparringTelemetryPage() {
 
       const timestamp = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
       setLastSubmitted(timestamp);
+      const savedMessage = safetyReviewRaised
+        ? 'Telemetry saved. Because there is no current medical clearance on file for this athlete, '
+          + 'a safety review has been raised for your coach. The session was still recorded -- do not re-enter it.'
+        : 'Telemetry saved and sent to the SHADOW formula engine for coach review.';
+
       setStatusMessage(ok
-        ? 'Telemetry saved and sent to the SHADOW formula engine for coach review.'
+        ? savedMessage
         : 'Telemetry partially saved. Some metrics may be missing from coach review.');
     } finally {
       setIsSubmitting(false);

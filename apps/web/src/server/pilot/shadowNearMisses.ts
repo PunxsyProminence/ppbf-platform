@@ -16,11 +16,20 @@ export interface ShadowNearMissRow {
   created_at: string;
 }
 
-// Human-flagged only in this pass. A system-detected heuristic (e.g. an
-// acute:chronic contact-exposure ratio crossing a threshold with no
-// decision on file) is a real product decision -- what ratio, what window --
-// that shouldn't be invented as a side effect of this module; it's
-// deliberately out of scope, not an oversight.
+/**
+ * Records a near miss for coach/admin review.
+ *
+ * `detectedBy` defaults to 'human', which is how every caller before the
+ * contact-clearance gate used this: a person noticing something and flagging it.
+ * The gate passes 'system' -- it is a deterministic rule (contact logged for an
+ * athlete with no current medical clearance), not a heuristic, so it does not
+ * carry the "what threshold, what window" product question that kept
+ * system-detected flagging out of this module originally.
+ *
+ * `detected_by_account_id` is still the submitting account even for a system
+ * detection: knowing who filed the observation that tripped the rule is the
+ * useful provenance, and the column is nullable rather than required.
+ */
 export async function flagNearMiss(input: {
   organizationId: string;
   athleteId: string;
@@ -29,13 +38,14 @@ export async function flagNearMiss(input: {
   severity: ShadowNearMissSeverity;
   detectedByAccountId: string;
   detectedByRole: string;
+  detectedBy?: 'system' | 'human';
   metadata?: Record<string, unknown>;
 }): Promise<ShadowNearMissRow> {
   return withTransaction(async (client) => {
     const result = await client.query<ShadowNearMissRow>(
       `insert into pilot.shadow_near_misses
        (organization_id, athlete_id, decision_id, description, severity, detected_by, detected_by_account_id, metadata)
-       values ($1,$2,$3,$4,$5,'human',$6,$7::jsonb)
+       values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)
        returning near_miss_id, organization_id, athlete_id, decision_id, description, severity, detected_by, detected_by_account_id, metadata, created_at`,
       [
         input.organizationId,
@@ -43,6 +53,7 @@ export async function flagNearMiss(input: {
         input.decisionId ?? null,
         input.description,
         input.severity,
+        input.detectedBy ?? 'human',
         input.detectedByAccountId,
         JSON.stringify(input.metadata ?? {}),
       ],

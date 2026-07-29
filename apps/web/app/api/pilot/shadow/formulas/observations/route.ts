@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
+import { flagContactWithoutClearance } from '@/src/server/pilot/contactClearanceGate';
 import {
   deterministicKey,
 } from '@/src/server/pilot/formulas/identity';
@@ -114,6 +115,21 @@ export async function POST(request: NextRequest) {
       ],
     });
 
+    // Runs BEFORE the observation is stored, so a failure here aborts the whole
+    // request rather than quietly persisting contact nobody was alerted to. The
+    // observation write below is idempotency-keyed, so a retry is safe. See
+    // contactClearanceGate.ts for why this flags rather than refuses.
+    const clearance = await flagContactWithoutClearance({
+      organizationId: principal.organizationId,
+      athleteId: body.athleteId,
+      kind: body.kind,
+      value: body.value as number | null,
+      actorAccountId: principal.accountId,
+      actorRole: principal.role,
+      contextId: body.contextId.trim(),
+      observedAt: new Date(body.observedAt).toISOString(),
+    });
+
     const sourceType = principal.role === 'athlete'
       ? 'manual'
       : principal.role === 'coach'
@@ -156,6 +172,18 @@ export async function POST(request: NextRequest) {
       ok: true,
       observation,
       recalculatedResultCount: recalculated.length,
+      // Surfaced rather than silent: whoever logged this should know a review
+      // was raised, and the sparring page displays this back to them.
+      ...(clearance.flagged
+        ? {
+            safetyReview: {
+              raised: true,
+              reason: 'contact_without_medical_clearance',
+              medicalStatus: clearance.medicalStatus,
+              severity: clearance.severity,
+            },
+          }
+        : {}),
     });
   } catch (error) {
     if (error instanceof FormulaRepositoryError) {

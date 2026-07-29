@@ -36,7 +36,14 @@ beforeEach(() => {
 });
 
 describe('flagNearMiss', () => {
-  test('always records detected_by as the literal "human", never a caller-supplied value', async () => {
+  // This previously asserted detected_by was hardcoded to the literal 'human' in
+  // the SQL. That invariant was relaxed deliberately, not accidentally: the
+  // contact-clearance gate needs to record a system detection, and it is a
+  // deterministic rule rather than the heuristic that originally kept
+  // system-detected flagging out of this module. What still has to hold is that
+  // every existing caller, none of which passes detectedBy, keeps getting
+  // 'human' -- so the default is asserted rather than the literal.
+  test('defaults detected_by to human, so existing callers are unchanged', async () => {
     const clientQuery = jest.fn().mockResolvedValue({ rows: [nearMissRow()] });
     mockWithTransaction.mockImplementation(async (callback) => callback({ query: clientQuery } as never));
 
@@ -50,8 +57,48 @@ describe('flagNearMiss', () => {
     });
 
     expect(result.detected_by).toBe('human');
+    const [, params] = clientQuery.mock.calls[0];
+    expect(params[5]).toBe('human');
+  });
+
+  test('records a system detection when one is explicitly requested', async () => {
+    const clientQuery = jest.fn().mockResolvedValue({ rows: [nearMissRow({ detected_by: 'system' })] });
+    mockWithTransaction.mockImplementation(async (callback) => callback({ query: clientQuery } as never));
+
+    await flagNearMiss({
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      description: 'Contact logged for an athlete with no current medical clearance.',
+      severity: 'critical',
+      detectedByAccountId: 'coach-1',
+      detectedByRole: 'coach',
+      detectedBy: 'system',
+    });
+
+    const [, params] = clientQuery.mock.calls[0];
+    expect(params[5]).toBe('system');
+  });
+
+  // detected_by is now a bind parameter rather than an inlined literal, so the
+  // value must never be interpolated into the statement text -- the database
+  // check constraint (system|human) is what rejects anything else.
+  test('passes detected_by as a bind parameter, not interpolated SQL', async () => {
+    const clientQuery = jest.fn().mockResolvedValue({ rows: [nearMissRow({ detected_by: 'system' })] });
+    mockWithTransaction.mockImplementation(async (callback) => callback({ query: clientQuery } as never));
+
+    await flagNearMiss({
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      description: 'Contact logged without clearance.',
+      severity: 'critical',
+      detectedByAccountId: 'coach-1',
+      detectedByRole: 'coach',
+      detectedBy: 'system',
+    });
+
     const [sql] = clientQuery.mock.calls[0];
-    expect(String(sql)).toContain("'human'");
+    expect(String(sql)).not.toContain("'system'");
+    expect(String(sql)).not.toContain("'human'");
   });
 
   test('writes an audit entry recording the severity and any linked decision', async () => {
