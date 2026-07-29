@@ -8,6 +8,8 @@ create table if not exists pilot.accounts (
   role text not null check (role in ('admin', 'coach', 'athlete')),
   athlete_id text null,
   pin_hash text not null,
+  -- True while the account still holds the admin-issued bootstrap PIN.
+  must_change_pin boolean not null default false,
   active_flag boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),

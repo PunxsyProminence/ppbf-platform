@@ -41,14 +41,18 @@ import {
 } from '@/src/server/pilot/shadowConversations';
 import {
   enforceShadowRateLimit,
+  resolveShadowRateLimit,
+  shadowRateLimitMessage,
   ShadowRateLimitExceeded,
 } from '@/src/server/pilot/shadowRateLimit';
 import { getShadowChatCapabilities } from '@/src/server/pilot/shadowChatCapabilities';
 import { MANUAL_OVERRIDE_ROLES as MANUAL_OVERRIDE_ROLE_LIST } from '@/src/server/pilot/shadowRoleSets';
 import {
+  PLATFORM_SCOPE_UNAVAILABLE_CONTEXT,
   formatPlatformRollup,
   getPlatformRollup,
   mentionsCrossOrganizationScope,
+  platformRollupEvidenceIds,
 } from '@/src/server/pilot/omegaPlatformContext';
 import { budgetConversationHistory } from '@/src/server/pilot/shadowConversationHistory';
 import {
@@ -128,13 +132,35 @@ const PROVIDER_TIMEOUT_MS = 15_000;
 const MAX_MESSAGE_LENGTH = 12_000;
 const DEGRADED_RESPONSE = 'SHADOW is temporarily unavailable. No generated guidance was returned. Please try again later or contact your organization for support.';
 
+/**
+ * A reasoning deployment spends completion budget on reasoning tokens before it
+ * emits a single visible character, and Azure counts both against
+ * max_completion_tokens. Measured against the configured gpt-5-mini deployment on
+ * real SHADOW prompts:
+ *
+ *   budget 1024 -- finish_reason "length", reasoning_tokens 1024, NO content, on
+ *                  three attempts out of three. Empty content is read as failure
+ *                  here, so every turn answered with DEGRADED_RESPONSE. That is
+ *                  every role, not one tier: SHADOW chat could not answer at all.
+ *   budget 2048 -- delivered sometimes, truncated mid-sentence at others.
+ *   budget 8192 -- delivered 3/3, spending 964 / 1682 / 2054 completion tokens.
+ *
+ * The default is therefore twice the observed peak, so an unusually long answer
+ * finishes rather than truncating, and the ceiling leaves room for a longer prompt
+ * or a heavier-reasoning deployment without a code change. Nothing is charged for
+ * headroom -- billing follows tokens actually produced, not the budget. The floor
+ * stays low for a non-reasoning deployment, where it is purely a cost control.
+ */
+const DEFAULT_MAX_COMPLETION_TOKENS = 4_096;
+const MAX_COMPLETION_TOKENS_CEILING = 8_192;
+
 export function resolveShadowMaxCompletionTokens(
   rawValue: string | undefined = process.env.PPBF_SHADOW_MAX_COMPLETION_TOKENS,
 ): number {
-  if (rawValue === undefined || rawValue.trim() === '') return 1_024;
+  if (rawValue === undefined || rawValue.trim() === '') return DEFAULT_MAX_COMPLETION_TOKENS;
   const parsed = Number(rawValue);
-  if (!Number.isFinite(parsed)) return 1_024;
-  return Math.max(256, Math.min(2_048, Math.trunc(parsed)));
+  if (!Number.isFinite(parsed)) return DEFAULT_MAX_COMPLETION_TOKENS;
+  return Math.max(256, Math.min(MAX_COMPLETION_TOKENS_CEILING, Math.trunc(parsed)));
 }
 
 async function withProviderTimeout<T>(operation: Promise<T>): Promise<T> {
@@ -191,11 +217,27 @@ async function callAzureOpenAI(
     }
 
     const data = await azureResponse.json() as {
-      choices?: Array<{ message?: { content?: unknown } }>;
+      choices?: Array<{ message?: { content?: unknown }; finish_reason?: string }>;
+      usage?: {
+        completion_tokens?: number;
+        completion_tokens_details?: { reasoning_tokens?: number };
+      };
     };
     const response = typeof data.choices?.[0]?.message?.content === 'string'
       ? data.choices[0].message.content.trim()
       : '';
+    // An HTTP 200 carrying no content is the failure mode a reasoning deployment
+    // produces when it exhausts max_completion_tokens on reasoning. Without this
+    // it logged nothing at all -- the turn simply came back degraded, which reads
+    // as a provider outage and took a live probe to identify.
+    if (!response) {
+      console.error('Azure AI returned no content', {
+        finishReason: data.choices?.[0]?.finish_reason,
+        completionTokens: data.usage?.completion_tokens,
+        reasoningTokens: data.usage?.completion_tokens_details?.reasoning_tokens,
+        budget: resolveShadowMaxCompletionTokens(),
+      });
+    }
     return { response, success: response.length > 0 };
   } catch (error) {
     const reason = error instanceof Error && (
@@ -432,16 +474,12 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     await enforceShadowRateLimit({
       organizationId,
       accountId: userId,
-      endpointKey: 'chat',
-      limit: 20,
-      windowSeconds: 60,
+      ...resolveShadowRateLimit('chat'),
     });
     await enforceShadowRateLimit({
       organizationId,
       accountId: userId,
-      endpointKey: 'chat_daily',
-      limit: 100,
-      windowSeconds: 86_400,
+      ...resolveShadowRateLimit('chat_daily'),
     });
 
     if (athleteId) {
@@ -623,15 +661,27 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // unconditionally for platform_owner, and the evidence bundle below stays
     // scoped to the caller's own organization.
     const chatCapabilities = getShadowChatCapabilities(userRole as PilotRole);
-    const platformContext = chatCapabilities.crossOrganizationRead
-      && mentionsCrossOrganizationScope(message)
-      ? await getPlatformRollup()
-          .then(formatPlatformRollup)
-          .catch(() => {
-            console.error('SHADOW platform rollup unavailable');
-            return '';
-          })
+    const wantsPlatformScope = chatCapabilities.crossOrganizationRead
+      && mentionsCrossOrganizationScope(message);
+    const platformRollup = wantsPlatformScope
+      ? await getPlatformRollup().catch((error) => {
+          console.error('SHADOW platform rollup unavailable', error);
+          return null;
+        })
+      : null;
+    // Falling back to '' here would drop the block and leave the model answering
+    // a cross-gym question from its single-gym persona with nothing to signal the
+    // gap -- which the platform owner reads as a real answer about the whole
+    // platform. Naming the gap keeps a failed rollup degraded instead of
+    // confidently wrong. Covers an empty render too, not only a thrown rollup.
+    const platformContext = wantsPlatformScope
+      ? (platformRollup ? formatPlatformRollup(platformRollup) : '') || PLATFORM_SCOPE_UNAVAILABLE_CONTEXT
       : '';
+    // Rollup figures are quantities, and validateShadowResponse discards a stated
+    // quantity that carries no authorized citation. Rather than exempt this path
+    // from that rule -- the same rule that stops an uncited clinical claim -- each
+    // rendered gym carries a server-derived evidence id, authorized here.
+    const platformEvidenceIds = platformRollup ? platformRollupEvidenceIds(platformRollup) : [];
 
     const authorizedContextOutput = {
       ...contextOutput,
@@ -663,8 +713,14 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
 
     // Step 7: Validate response BEFORE displaying to user
     const responseValidation = validateShadowResponse(llmResponse, {
-      allowedEvidenceIds: evidenceBundle.allowedEvidenceIds,
+      allowedEvidenceIds: [...evidenceBundle.allowedEvidenceIds, ...platformEvidenceIds],
     });
+    // Platform-rollup ids are authorized for validation but are not library
+    // evidence, so they are kept out of the bundle's own citation record rather
+    // than persisted against a bundle they do not belong to.
+    const platformEvidenceIdSet = new Set(platformEvidenceIds);
+    const bundleCitationIds = responseValidation.citationIds
+      .filter((citationId) => !platformEvidenceIdSet.has(citationId));
     const finalResponse = responseValidation.message;
     const citations = publicEvidenceCitations(evidenceBundle, responseValidation.citationIds);
     const state: ShadowResponseState = responseValidation.filtered ? 'filtered' : providerState;
@@ -709,7 +765,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           ? {
               bundleId: evidenceBundle.bundleId,
               availability: evidenceBundle.availability,
-              citationIds: responseValidation.citationIds,
+              citationIds: bundleCitationIds,
             }
           : undefined,
       });
@@ -803,7 +859,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
         {
           success: false,
           state: 'filtered',
-          response: 'SHADOW is receiving too many requests from this account. Please wait briefly and try again.',
+          response: shadowRateLimitMessage(error.retryAfterSeconds),
           messageId: `msg_${Date.now()}`,
           createdAt: new Date().toISOString(),
           filtered: true,

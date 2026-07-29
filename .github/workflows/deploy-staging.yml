@@ -102,6 +102,13 @@ jobs:
             *) exit 1 ;;
           esac
 
+      # PPBF_SHADOW_MAX_COMPLETION_TOKENS was 1024, which is below what the
+      # gpt-5-mini deployment spends on reasoning alone -- Azure counts reasoning
+      # against this budget, and at 1024 it returned finish_reason "length" with
+      # reasoning_tokens 1024 and NO content, so every SHADOW turn in staging
+      # degraded. 4096 matches DEFAULT_MAX_COMPLETION_TOKENS in the chat route.
+      # It stays set explicitly rather than deferring to the code default,
+      # because --set-env-vars cannot unset the stale value already on the app.
       - name: Deploy to Azure Container App
         env:
           AZURE_AI_ENDPOINT: ${{ vars.AZURE_AI_ENDPOINT }}
@@ -126,7 +133,7 @@ jobs:
               AZURE_AI_DEPLOYMENT_NAME="$AZURE_AI_DEPLOYMENT_NAME" \
               AZURE_AI_API_VERSION="$AZURE_AI_API_VERSION" \
               AZURE_AI_KEY=secretref:azure-ai-key \
-              PPBF_SHADOW_MAX_COMPLETION_TOKENS=1024 \
+              PPBF_SHADOW_MAX_COMPLETION_TOKENS=4096 \
               PPBF_PILOT_BOOTSTRAP_KEY=secretref:ppbf-pilot-bootstrap-key \
               PPBF_PILOT_DEFAULT_ORG_ID=secretref:ppbf-pilot-default-org-id \
               PPBF_PILOT_SHADOW_CONTAINER=secretref:ppbf-pilot-shadow-container \

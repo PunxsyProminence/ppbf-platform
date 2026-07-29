@@ -20,13 +20,19 @@ export interface AuthoritativePilotSessionPayload {
   authenticated?: unknown;
   role?: unknown;
   auth_provider?: unknown;
+  must_change_pin?: unknown;
 }
 
 export type AuthoritativeRoleSessionResolution =
   | { ok: true; session: RoleSession; destination: string }
   | {
       ok: false;
-      reason: 'unauthenticated' | 'unsupported_role' | 'privileged_auth_required' | 'server_error';
+      reason:
+        | 'unauthenticated'
+        | 'unsupported_role'
+        | 'privileged_auth_required'
+        | 'pin_change_required'
+        | 'server_error';
     };
 
 function isClubRole(value: unknown): value is ClubRole {
@@ -221,6 +227,15 @@ export function resolveAuthoritativeRoleSession(
 
   if (role !== 'athlete' && payload.auth_provider !== 'microsoft') {
     return { ok: false, reason: 'privileged_auth_required' };
+  }
+
+  // Authenticated, but still on the starting PIN the gym handed out. The
+  // server refuses every route except the PIN change in this state, so
+  // sending this session on to its dashboard would render a page made
+  // entirely of 403s. It is not 'unauthenticated' either -- bouncing to
+  // /login would loop, because signing in again lands right back here.
+  if (payload.must_change_pin === true) {
+    return { ok: false, reason: 'pin_change_required' };
   }
 
   return {

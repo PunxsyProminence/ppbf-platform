@@ -18,6 +18,13 @@ import { classifyRequest } from '@/src/server/pilot/shadowClassifier';
 import { executeHeavyBagSync } from '@/src/server/pilot/shadowHeavyBag';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { retrieveShadowEvidenceBundle } from '@/src/server/pilot/shadowEvidence';
+import { getBoardSummary } from '@/src/server/pilot/boardSummary';
+import { getGrowthMetrics } from '@/src/server/pilot/shadowMetrics';
+import {
+  PLATFORM_SCOPE_UNAVAILABLE_CONTEXT,
+  clearPlatformRollupCache,
+  platformGymEvidenceId,
+} from '@/src/server/pilot/omegaPlatformContext';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import { ShadowRuntimeUnavailableError } from '@/src/server/pilot/shadowRuntimeError';
 
@@ -110,10 +117,19 @@ jest.mock('@/src/server/pilot/shadowConversations', () => ({
   queueHumanReview: jest.fn(),
 }));
 
-jest.mock('@/src/server/pilot/shadowRateLimit', () => ({
-  enforceShadowRateLimit: jest.fn(),
-  ShadowRateLimitExceeded: class ShadowRateLimitExceeded extends Error {},
-}));
+// Only the enforcer is mocked. resolveShadowRateLimit and shadowRateLimitMessage
+// are pure and stay REAL, so the limits asserted below are the limits the route
+// actually applies -- a hand-written stub here would let the two drift apart.
+jest.mock('@/src/server/pilot/shadowRateLimit', () => {
+  const actual = jest.requireActual('@/src/server/pilot/shadowRateLimit');
+  return { ...actual, enforceShadowRateLimit: jest.fn() };
+});
+
+// The rollup's two leaf data sources. omegaPlatformContext itself is left REAL
+// so these tests exercise the actual wiring -- trigger, render, evidence
+// authorization -- rather than asserting that a mock was called.
+jest.mock('@/src/server/pilot/boardSummary', () => ({ getBoardSummary: jest.fn() }));
+jest.mock('@/src/server/pilot/shadowMetrics', () => ({ getGrowthMetrics: jest.fn() }));
 
 jest.mock('@/src/server/pilot/shadowEvidence', () => ({
   retrieveShadowEvidenceBundle: jest.fn(),
@@ -163,6 +179,8 @@ const mockEnforceRateLimit = jest.mocked(enforceShadowRateLimit);
 const mockClassifyRequest = jest.mocked(classifyRequest);
 const mockExecuteHeavyBagSync = jest.mocked(executeHeavyBagSync);
 const mockRetrieveEvidence = jest.mocked(retrieveShadowEvidenceBundle);
+const mockBoardSummary = jest.mocked(getBoardSummary);
+const mockGrowthMetrics = jest.mocked(getGrowthMetrics);
 const originalFetch = global.fetch;
 
 function principal(overrides: Partial<PilotPrincipal> = {}): PilotPrincipal {
@@ -258,20 +276,20 @@ describe('POST /api/pilot/shadow/chat trust boundary', () => {
     expect(systemPrompt).toContain('EVIDENCE UNAVAILABLE');
     expect(systemPrompt).toContain('Never invent citations, case counts, confidence values, or outcomes');
     expect(systemPrompt).not.toContain('org-attacker');
-    expect(providerBody.max_completion_tokens).toBe(1024);
+    expect(providerBody.max_completion_tokens).toBe(4096);
     expect(requestInit.signal).toBeDefined();
     expect(mockEnforceRateLimit).toHaveBeenNthCalledWith(1, {
       organizationId: 'org-session',
       accountId: 'account-1',
       endpointKey: 'chat',
-      limit: 20,
+      limit: 30,
       windowSeconds: 60,
     });
     expect(mockEnforceRateLimit).toHaveBeenNthCalledWith(2, {
       organizationId: 'org-session',
       accountId: 'account-1',
       endpointKey: 'chat_daily',
-      limit: 100,
+      limit: 400,
       windowSeconds: 86_400,
     });
     expect(mockAppendConversationExchange).toHaveBeenCalledWith(expect.objectContaining({
@@ -586,13 +604,192 @@ describe('SHADOW chat readiness guard', () => {
 
 describe('SHADOW completion-token budget', () => {
   test.each([
-    [undefined, 1024],
-    ['', 1024],
-    ['not-a-number', 1024],
+    [undefined, 4096],
+    ['', 4096],
+    ['not-a-number', 4096],
     ['64', 256],
     ['1025.9', 1025],
-    ['99999', 2048],
+    ['99999', 8192],
   ])('bounds %p to %p tokens', (raw, expected) => {
     expect(resolveShadowMaxCompletionTokens(raw)).toBe(expected);
+  });
+
+  // Measured, not guessed. The configured gpt-5-mini deployment spent all 1024
+  // tokens of the old default on reasoning and returned no content at all, so
+  // every SHADOW turn came back degraded; at 2048 it truncated mid-sentence. The
+  // observed peak was 2054 completion tokens, so the default must clear it with
+  // room to spare or long answers get cut off.
+  test('the default clears the measured peak completion spend', () => {
+    expect(resolveShadowMaxCompletionTokens(undefined)).toBeGreaterThan(2054);
+  });
+
+  test('the ceiling can be raised past the default without a code change', () => {
+    expect(resolveShadowMaxCompletionTokens('6000')).toBe(6000);
+  });
+});
+
+// The Omega cross-organization path had unit coverage on both ends -- the
+// renderer and the validator -- but nothing asserting the route actually joins
+// them. These cover the four outcomes that matter: no other role can reach the
+// block, an in-scope question gets it, an out-of-scope one does not, and a
+// failed rollup is disclosed rather than silently dropped.
+describe('Omega cross-organization breadth', () => {
+  const CROSS_GYM_QUESTION = 'How are all the gyms doing this month?';
+
+  function boardSummaryFixture() {
+    return {
+      scope: 'organization_aggregate',
+      minimumCohortSize: 5,
+      generatedAt: '2026-07-28T00:00:00.000Z',
+      activeAthletes: { status: 'available', count: 12 },
+      trainingSessions30Days: { status: 'available', count: 40, completedCount: 30, completionRate: 0.75 },
+      goalStatusBuckets: {
+        active: { status: 'available', count: 6 },
+        completed: { status: 'available', count: 2 },
+        other: { status: 'available', count: 1 },
+      },
+      coachReviews30Days: { status: 'available', count: 9, approvedCount: 8, approvalRate: 0.888 },
+    };
+  }
+
+  function growthFixture() {
+    return {
+      period: '30d',
+      totalInteractions: 17,
+      avgSatisfaction: null,
+      avgEffectiveness: null,
+      recommendationsMade: 0,
+      researchRequirementsCreated: 0,
+      researchRequirementsClosed: 0,
+      newLibraryPatterns: 0,
+      filterRate: null,
+      positiveOutcomeRate: null,
+      unavailableReasons: {},
+    };
+  }
+
+  /** Only the organization listing is answered; every other query stays empty. */
+  function organizationsResolve(rows: unknown[]) {
+    mockQuery.mockImplementation(async (sql: string) => (
+      sql.includes('pilot.organizations') ? rows : []
+    ) as never);
+  }
+
+  function organizationsReject(error: Error) {
+    mockQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('pilot.organizations')) throw error;
+      return [] as never;
+    });
+  }
+
+  function respondWith(content: string) {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content } }] }),
+    }) as unknown as typeof fetch;
+  }
+
+  function systemPrompt(): string {
+    const requestInit = (global.fetch as jest.Mock).mock.calls[0][1] as RequestInit;
+    return JSON.parse(String(requestInit.body)).messages[0].content as string;
+  }
+
+  beforeEach(() => {
+    // The rollup memo is module-level and would otherwise survive between tests.
+    clearPlatformRollupCache();
+    mockRequirePrincipal.mockResolvedValue(principal({
+      role: 'platform_owner',
+      organizationId: 'org-platform',
+    }));
+    mockRetrieveShadowContext.mockResolvedValue({
+      authorized: true,
+      context: 'Authorized role: platform_owner.',
+    });
+    mockBoardSummary.mockResolvedValue(boardSummaryFixture() as never);
+    mockGrowthMetrics.mockResolvedValue(growthFixture() as never);
+    organizationsResolve([
+      { organization_id: 'gym-a', organization_name: 'Alpha Boxing', status: 'active', total_count: '1' },
+    ]);
+    respondWith('Nothing further to report.');
+  });
+
+  test('renders the rollup and authorizes its evidence token for the platform owner', async () => {
+    const response = await POST(postRequest({ message: CROSS_GYM_QUESTION }));
+
+    expect(response.status).toBe(200);
+    const prompt = systemPrompt();
+    expect(prompt).toContain('PLATFORM-WIDE CONTEXT (OMEGA SCOPE)');
+    expect(prompt).toContain('Alpha Boxing');
+    expect(prompt).toContain('active athletes: 12');
+    expect(prompt).toContain(`[E:${platformGymEvidenceId('gym-a')}]`);
+    expect(prompt).not.toContain('OMEGA SCOPE): UNAVAILABLE');
+  });
+
+  // The reason the citable-id design exists: without an authorized token the
+  // validator discards every cross-gym answer as an uncited quantity.
+  test('a cited cross-gym figure survives response validation', async () => {
+    respondWith(`Alpha Boxing has 12 athletes [E:${platformGymEvidenceId('gym-a')}].`);
+
+    const payload = await (await POST(postRequest({ message: CROSS_GYM_QUESTION }))).json();
+
+    expect(payload.state).toBe('ok');
+    expect(payload.response).toContain('12 athletes');
+    expect(payload.response).not.toBe(SHADOW_SAFE_FILTERED_RESPONSE);
+  });
+
+  // Platform ids are authorized for validation only. They are not rows in the
+  // evidence bundle, so persisting them would record a citation to an item the
+  // evidence tables have never heard of.
+  test('does not persist a platform token as an evidence-bundle citation', async () => {
+    respondWith(`Alpha Boxing has 12 athletes [E:${platformGymEvidenceId('gym-a')}].`);
+
+    await POST(postRequest({ message: CROSS_GYM_QUESTION }));
+
+    expect(mockAppendConversationExchange).toHaveBeenCalledWith(expect.objectContaining({
+      evidence: expect.objectContaining({ citationIds: [] }),
+    }));
+  });
+
+  test('no other role reaches the block, even asking the same question', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin' }));
+    mockRetrieveShadowContext.mockResolvedValue({
+      authorized: true,
+      context: 'Authorized role: organization_admin.',
+    });
+
+    await POST(postRequest({ message: CROSS_GYM_QUESTION }));
+
+    expect(systemPrompt()).not.toContain('PLATFORM-WIDE CONTEXT');
+    expect(mockBoardSummary).not.toHaveBeenCalled();
+  });
+
+  test('a single-gym question from the platform owner costs no fan-out', async () => {
+    await POST(postRequest({ message: 'How is my gym doing this month?' }));
+
+    expect(systemPrompt()).not.toContain('PLATFORM-WIDE CONTEXT');
+    expect(mockBoardSummary).not.toHaveBeenCalled();
+  });
+
+  // Dropping the block on failure left the model answering a cross-gym question
+  // from its single-gym persona with no sign anything was missing.
+  test('discloses a failed rollup instead of answering as though nothing is missing', async () => {
+    organizationsReject(new Error('db unreachable'));
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await POST(postRequest({ message: CROSS_GYM_QUESTION }));
+
+    expect(response.status).toBe(200);
+    const prompt = systemPrompt();
+    expect(prompt).toContain(PLATFORM_SCOPE_UNAVAILABLE_CONTEXT);
+    expect(prompt).toContain('Do NOT substitute this gym\'s own figures');
+    expect(prompt).not.toContain('Alpha Boxing');
+  });
+
+  test('discloses an empty rollup the same way, rather than rendering nothing', async () => {
+    organizationsResolve([]);
+
+    await POST(postRequest({ message: CROSS_GYM_QUESTION }));
+
+    expect(systemPrompt()).toContain('OMEGA SCOPE): UNAVAILABLE');
   });
 });

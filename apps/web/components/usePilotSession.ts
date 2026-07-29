@@ -26,6 +26,10 @@ export interface PilotSession {
   organizationId: string | null;
   authProvider: 'ppbf_local' | 'microsoft' | null;
   accountId: string | null;
+  // True while the account is still on the admin-issued starting PIN. The
+  // server refuses every route except the PIN change in this state, so a UI
+  // that ignored this would render a dashboard made entirely of 403s.
+  mustChangePin: boolean;
 }
 
 export interface PilotSessionState extends PilotSession {
@@ -37,6 +41,7 @@ const EMPTY: PilotSession = {
   organizationId: null,
   authProvider: null,
   accountId: null,
+  mustChangePin: false,
 };
 
 /**
@@ -92,6 +97,7 @@ export function usePilotSession(): PilotSessionState {
           organization_id?: string;
           auth_provider?: string;
           account_id?: string;
+          must_change_pin?: boolean;
         };
 
         if (payload.authenticated !== true) {
@@ -108,6 +114,7 @@ export function usePilotSession(): PilotSessionState {
               ? payload.auth_provider
               : null,
           accountId: payload.account_id ?? null,
+          mustChangePin: payload.must_change_pin === true,
         });
       } catch (error) {
         if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
