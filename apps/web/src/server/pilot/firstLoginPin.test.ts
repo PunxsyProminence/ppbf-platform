@@ -2,7 +2,7 @@ import type { NextRequest } from 'next/server';
 
 import { requirePrincipal, requirePrincipalAllowingPinChange } from './http';
 import { resolvePrincipal } from './auth';
-import { DEFAULT_FIRST_LOGIN_PIN, validatePinPolicy } from './pinPolicy';
+import { DEFAULT_FIRST_LOGIN_PIN, assertChosenPinAllowed, validatePinPolicy } from './pinPolicy';
 import { resolveAuthoritativeRoleSession } from '../../../components/roleSession';
 
 jest.mock('./auth', () => ({
@@ -33,6 +33,29 @@ const request = {} as NextRequest;
 describe('the bootstrap PIN itself', () => {
   test('satisfies the PIN policy, so nothing downstream needs a special case', () => {
     expect(() => validatePinPolicy(DEFAULT_FIRST_LOGIN_PIN)).not.toThrow();
+  });
+});
+
+// The starting PIN is published in pinPolicy.ts and printed in the admin UI, so
+// it is only safe while must_change_pin is set with it. validatePinPolicy has to
+// keep accepting it -- the admin "back to the starting PIN" reset sets exactly
+// this value -- so the refusal belongs on the paths where a PIN is CHOSEN.
+describe('the starting PIN can be issued but never chosen', () => {
+  test('validatePinPolicy still accepts it, so admin reset keeps working', () => {
+    expect(() => validatePinPolicy(DEFAULT_FIRST_LOGIN_PIN)).not.toThrow();
+  });
+
+  test('choosing it is refused', () => {
+    expect(() => assertChosenPinAllowed(DEFAULT_FIRST_LOGIN_PIN))
+      .toThrow('That is the starting PIN everyone is given. Choose a different one.');
+  });
+
+  test('surrounding whitespace does not sneak it past', () => {
+    expect(() => assertChosenPinAllowed(`  ${DEFAULT_FIRST_LOGIN_PIN} `)).toThrow('starting PIN');
+  });
+
+  test('any other policy-valid PIN is allowed', () => {
+    expect(() => assertChosenPinAllowed('428913')).not.toThrow();
   });
 });
 

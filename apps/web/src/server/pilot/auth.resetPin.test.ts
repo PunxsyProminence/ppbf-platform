@@ -43,6 +43,21 @@ describe('resetAccountPin', () => {
     expect(revokeParams).toEqual(['acct-1']);
   });
 
+  // The admin UI promises "they will have to choose a new one when they sign in",
+  // and its "back to the starting PIN" button resets to the published
+  // DEFAULT_FIRST_LOGIN_PIN. Without must_change_pin the promise was false and
+  // the reset handed out full access on a PIN anybody can read.
+  test('forces a PIN change, because a reset PIN is always known to someone else', async () => {
+    currentClient = fakeClient();
+    currentClient.query.mockResolvedValueOnce({ rows: [{ account_id: 'acct-1' }] });
+    currentClient.query.mockResolvedValueOnce({ rows: [] });
+
+    await resetAccountPin('acct-1', '123456', 'org-1');
+
+    const [updateSql] = currentClient.query.mock.calls[0];
+    expect(updateSql).toContain('must_change_pin = true');
+  });
+
   test('never revokes sessions when the account is not found or not owned by this organization', async () => {
     currentClient = fakeClient();
     currentClient.query.mockResolvedValueOnce({ rows: [] }); // update ... returning finds nothing

@@ -6,7 +6,7 @@ import { getPilotDefaultOrganizationId, PILOT_SESSION_COOKIE } from './env';
 import { createOpaqueToken, hashPin, hashToken, verifyPin } from './security';
 import { computeSessionExpiry, parseRetentionDays } from './sessionPolicy';
 import { query, queryOne, withTransaction } from './db';
-import { DEFAULT_FIRST_LOGIN_PIN, validatePinPolicy } from './pinPolicy';
+import { DEFAULT_FIRST_LOGIN_PIN, assertChosenPinAllowed, validatePinPolicy } from './pinPolicy';
 
 export interface PilotPrincipal {
   accountId: string;
@@ -359,9 +359,16 @@ export async function resetAccountPin(accountId: string, pin: string, organizati
     // for this account in one transaction: if any step fails, nothing
     // commits, so a caller is never told a reset succeeded while the old
     // PIN or an old session is still valid.
+    //
+    // must_change_pin is set because a reset PIN is always known to somebody
+    // other than the athlete -- the admin who typed it, and in the case of the
+    // "back to the starting PIN" button in /admin/people, anyone at all, since
+    // that PIN is published. The admin UI already tells the athlete they will
+    // have to choose a new one on next sign-in; without this line that promise
+    // was simply untrue, and the reset handed out full access on 123456.
     const result = await client.query<{ account_id: string }>(
       `update pilot.accounts
-       set pin_hash = $1, updated_at = now()
+       set pin_hash = $1, must_change_pin = true, updated_at = now()
        where account_id = $2
          and organization_id = $3
          and role = 'athlete'
@@ -499,6 +506,11 @@ export async function createAthleteAccount(
  */
 export async function changeOwnPin(accountId: string, currentPin: string, newPin: string): Promise<void> {
   validatePinPolicy(newPin);
+  // Rejecting same-as-current is not enough on its own. An athlete who moved off
+  // the starting PIN and later came back to it would clear must_change_pin while
+  // sitting on a PIN that is published in pinPolicy.ts and printed in the admin
+  // UI -- full access to anyone who knows the sign-in ID.
+  assertChosenPinAllowed(newPin);
 
   if (currentPin.trim() === newPin.trim()) {
     throw new Error('PIN must be different from the current PIN');
