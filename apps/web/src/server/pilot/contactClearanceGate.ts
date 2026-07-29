@@ -1,0 +1,133 @@
+import type { ObservationKind } from './formulas/types';
+import { getLatestMedicalAdministrativeStatus } from './shadowMedicalStatus';
+import { flagNearMiss } from './shadowNearMisses';
+import type { ShadowNearMissSeverity } from './shadowNearMisses';
+
+/**
+ * The observation kinds that mean an athlete physically took contact.
+ *
+ * Deliberately narrow. `punch_attempted` and `punch_landed` are excluded: those
+ * are equally true of bag and mitt work, so treating them as contact would flag
+ * ordinary conditioning. What is left is contact by definition -- a contact
+ * level, rounds of contact, and punches absorbed, which cannot happen without a
+ * partner.
+ */
+export const CONTACT_OBSERVATION_KINDS: readonly ObservationKind[] = [
+  'contact_level',
+  'contact_rounds',
+  'punch_absorbed',
+];
+
+const CONTACT_KIND_SET: ReadonlySet<string> = new Set(CONTACT_OBSERVATION_KINDS);
+
+/**
+ * True when this observation records contact that actually occurred.
+ *
+ * A value of zero is not contact -- it is the athlete or coach recording that
+ * there was none ("None" is the 0 position on the contact-level slider), which is
+ * useful data and must not trip a safety flag. Null is the "no reading" case and
+ * is likewise not evidence of contact.
+ */
+export function isContactObservation(kind: string, value: number | null): boolean {
+  return CONTACT_KIND_SET.has(kind) && value !== null && value > 0;
+}
+
+/**
+ * Severity for contact logged without a current clearance.
+ *
+ * 'not_cleared' and 'restricted' are affirmative medical decisions that this
+ * athlete should not be taking contact, so contact happening anyway is the most
+ * serious version of this and is critical. 'pending' and a missing record mean
+ * nobody has decided yet -- still a real gap that needs a human to look, but a
+ * process failure rather than a known contraindication being overridden.
+ */
+function severityForStatus(status: string): ShadowNearMissSeverity {
+  return status === 'not_cleared' || status === 'restricted' ? 'critical' : 'high';
+}
+
+function describe(status: string, kind: string, value: number, athleteId: string): string {
+  const situation = status === 'no_record'
+    ? 'has no medical administrative status on file'
+    : `has medical administrative status '${status}', not 'cleared'`;
+
+  return `Contact was logged for athlete ${athleteId}, who ${situation}. `
+    + `Observation '${kind}' recorded a value of ${value}. The observation was kept -- `
+    + 'it is evidence of what happened and must not be discarded -- but the contact '
+    + 'occurred without a current clearance on file and needs review.';
+}
+
+export interface ContactClearanceOutcome {
+  /** True when a near miss was raised for this observation. */
+  readonly flagged: boolean;
+  /** The status that caused the flag, for the caller's response body. */
+  readonly medicalStatus?: string;
+  readonly severity?: ShadowNearMissSeverity;
+}
+
+/**
+ * Raises a near miss when a contact observation arrives for an athlete without a
+ * current medical clearance.
+ *
+ * WHY THIS DOES NOT REFUSE THE WRITE. The obvious reading of the safety rule --
+ * "sparring requires medical clearance", as packages/execution/safetyGate.ts puts
+ * it -- suggests rejecting the request. That is the wrong control at this point in
+ * the system. This route records contact that has ALREADY happened; refusing the
+ * write does not un-spar the athlete, it destroys the only record that it
+ * occurred, and it teaches whoever is logging to leave the contact fields blank
+ * next time. Under-reporting is the failure mode that actually hurts an athlete.
+ * So the observation is kept and a near miss is raised, which is visible to
+ * coaches on the decision-loop surface.
+ *
+ * Fails toward alerting: callers invoke this BEFORE persisting the observation,
+ * so a database problem while flagging aborts the whole request rather than
+ * silently storing contact nobody was told about. A retry is safe because the
+ * observation write is idempotency-keyed. The cost of that ordering is a possible
+ * near miss for an observation that then failed to save -- an over-alert, which is
+ * the right direction to be wrong in.
+ */
+export async function flagContactWithoutClearance(input: {
+  organizationId: string;
+  athleteId: string;
+  kind: string;
+  value: number | null;
+  actorAccountId: string;
+  actorRole: string;
+  contextId: string;
+  observedAt: string;
+}): Promise<ContactClearanceOutcome> {
+  if (!isContactObservation(input.kind, input.value)) {
+    return { flagged: false };
+  }
+
+  // Fail closed, matching assertMedicalStatusAllowsRecommendation: only an
+  // explicit 'cleared' record counts. Absence of a clearance decision is not a
+  // clearance decision.
+  const record = await getLatestMedicalAdministrativeStatus(input.organizationId, input.athleteId);
+  if (record?.status === 'cleared') {
+    return { flagged: false };
+  }
+
+  const status = record?.status ?? 'no_record';
+  const severity = severityForStatus(status);
+  const value = input.value as number;
+
+  await flagNearMiss({
+    organizationId: input.organizationId,
+    athleteId: input.athleteId,
+    description: describe(status, input.kind, value, input.athleteId),
+    severity,
+    detectedBy: 'system',
+    detectedByAccountId: input.actorAccountId,
+    detectedByRole: input.actorRole,
+    metadata: {
+      trigger: 'contact_observation_without_medical_clearance',
+      observation_kind: input.kind,
+      observation_value: value,
+      medical_status: status,
+      context_id: input.contextId,
+      observed_at: input.observedAt,
+    },
+  });
+
+  return { flagged: true, medicalStatus: status, severity };
+}

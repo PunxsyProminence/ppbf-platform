@@ -132,7 +132,12 @@ create table if not exists pilot.shadow_intake (
 
 create table if not exists pilot.audit_events (
   audit_id bigint generated always as identity primary key,
-  event_type text not null check (event_type in ('create', 'update', 'login', 'logout', 'shadow_classification', 'shadow_routing')),
+  -- Canonical audit event vocabulary. The authoritative list lives in
+  -- apps/web/src/server/pilot/auditEventTypes.ts, and
+  -- auditEventVocabulary.test.ts asserts this constraint matches it -- these
+  -- two previously drifted, and the missing value failed every SHADOW
+  -- research-requirement upload at the audit write.
+  event_type text not null check (event_type in ('create', 'update', 'login', 'logout', 'shadow_classification', 'shadow_routing', 'shadow_research_upload_requirement')),
   actor_account_id text null,
   actor_role text null,
   organization_id text null references pilot.organizations(organization_id),

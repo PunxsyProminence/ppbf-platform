@@ -1,17 +1,13 @@
+import type { AuditEventType } from './auditEventTypes';
 import type { PilotRole } from './contracts';
 import { query } from './db';
 import { emitShadowEvent } from './shadowEvents';
 import { writeShadowTelemetryEvent } from './shadowTelemetry';
 
 export interface PilotAuditEvent {
-  event_type:
-    | 'create'
-    | 'update'
-    | 'login'
-    | 'logout'
-    | 'shadow_classification'
-    | 'shadow_routing'
-    | 'shadow_research_upload_requirement';
+  // Derived from AUDIT_EVENT_TYPES rather than restated, so this type and the
+  // database check constraint cannot drift apart again.
+  event_type: AuditEventType;
   actor_account_id: string | null;
   actor_role: PilotRole | null;
   organization_id: string | null;

@@ -93,7 +93,7 @@ export async function run() {
 
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
-  const migrationPath = path.resolve(__dirname, '../../../infra/azure/pilot_slice_postgres_first_login_pin_migration.sql');
+  const migrationPath = path.resolve(__dirname, '../../../infra/azure/pilot_slice_postgres_audit_event_vocabulary_migration.sql');
 
   const sql = await fs.readFile(migrationPath, 'utf8');
 
@@ -109,8 +109,8 @@ export async function run() {
     await client.end();
   }
 
-  console.log(`Applied first-login PIN migration: ${migrationPath}`);
-  console.log('PILOT FIRST-LOGIN PIN MIGRATION PASS');
+  console.log(`Applied audit event vocabulary migration: ${migrationPath}`);
+  console.log('PILOT AUDIT EVENT VOCABULARY MIGRATION PASS');
 }
 
 // Only run as a CLI side effect when this file is executed directly (e.g.
@@ -122,7 +122,7 @@ if (isMainModule) {
   try {
     await run();
   } catch (error) {
-    console.error('PILOT FIRST-LOGIN PIN MIGRATION FAIL');
+    console.error('PILOT AUDIT EVENT VOCABULARY MIGRATION FAIL');
     console.error(String(error));
     process.exit(1);
   }
