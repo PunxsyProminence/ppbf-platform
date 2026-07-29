@@ -153,6 +153,7 @@ jobs:
               AZURE_AI_DEPLOYMENT_NAME=secretref:azure-ai-deployment-name \
               AZURE_AI_API_VERSION=secretref:azure-ai-api-version \
               AZURE_AI_KEY=secretref:azure-ai-key \
+              PPBF_SHADOW_MAX_COMPLETION_TOKENS=4096 \
               PPBF_DURABLE_RATE_LIMIT=true
 
       - name: Resolve Production Base URL
