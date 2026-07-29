@@ -1,5 +1,6 @@
 import type { PilotRole } from './contracts';
 import type { ShadowConversationSessionType } from './shadowConversations';
+import { SHADOW_PHI_ROLES } from './shadowRoleSets';
 
 /**
  * Chat capability tiers.
@@ -21,9 +22,14 @@ export interface ShadowChatCapabilities {
    */
   crossOrganizationRead: boolean;
   /**
-   * Always false for Omega. PHI and clearance state are organization-private;
-   * see SHADOW_PHI_ROLES, which excludes platform_owner and is asserted by
-   * shadowRoleSets.test.ts.
+   * Mirrors SHADOW_PHI_ROLES; it does NOT enforce anything.
+   *
+   * Enforcement lives at the routes that touch clinical state -- see
+   * medical-status/route.ts, which calls requireRole(principal,
+   * [...SHADOW_PHI_ROLES]). This field exists so a chat surface can describe
+   * its own scope without restating that list, and is derived from it rather
+   * than recomputed, so the two cannot drift. Do not treat a true value here
+   * as authorization: check the role set at the point of access.
    */
   canAccessProtectedHealthInformation: boolean;
   allowedSessionTypes: ShadowConversationSessionType[];
@@ -48,7 +54,7 @@ export function getShadowChatCapabilities(role: PilotRole): ShadowChatCapabiliti
   return {
     mode: omega ? 'omega' : organizationAdmin ? 'master' : 'scoped',
     crossOrganizationRead: omega,
-    canAccessProtectedHealthInformation: organizationAdmin,
+    canAccessProtectedHealthInformation: SHADOW_PHI_ROLES.includes(role),
     allowedSessionTypes: canOverride
       ? ['quick_round', 'heavy_bag']
       : ['quick_round'],

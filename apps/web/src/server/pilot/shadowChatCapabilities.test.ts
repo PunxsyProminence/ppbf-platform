@@ -1,3 +1,5 @@
+import { SHADOW_PHI_ROLES } from './shadowRoleSets';
+import type { PilotRole } from './contracts';
 import { canUseShadowSessionType, getShadowChatCapabilities } from './shadowChatCapabilities';
 
 describe('SHADOW chat capabilities', () => {
@@ -71,5 +73,32 @@ describe('SHADOW chat capabilities', () => {
     expect(canUseShadowSessionType('athlete', 'heavy_bag')).toBe(false);
     expect(canUseShadowSessionType('coach', 'heavy_bag')).toBe(true);
     expect(canUseShadowSessionType('coach', 'invented_mode')).toBe(false);
+  });
+});
+
+// This field is derived from SHADOW_PHI_ROLES rather than recomputed, so it
+// cannot drift from the list the medical-status route actually enforces on.
+// An earlier hardcoded version restated it as "organization admins only" and
+// silently misreported coaches, who are in that role set and can reach
+// clinical state.
+describe('protected-health-information flag tracks SHADOW_PHI_ROLES exactly', () => {
+  test.each<[PilotRole, boolean]>([
+    ['coach', true],
+    ['organization_admin', true],
+    ['admin', true],
+    ['platform_owner', false],
+    ['athlete', false],
+    ['parent', false],
+    ['board', false],
+    ['volunteer', false],
+    ['staff', false],
+  ])('%s -> %p', (role, expected) => {
+    expect(getShadowChatCapabilities(role).canAccessProtectedHealthInformation).toBe(expected);
+  });
+
+  test('every role in SHADOW_PHI_ROLES reports true', () => {
+    for (const role of SHADOW_PHI_ROLES) {
+      expect(getShadowChatCapabilities(role).canAccessProtectedHealthInformation).toBe(true);
+    }
   });
 });
