@@ -24,6 +24,52 @@ wrong, not a ceiling.
 
 ---
 
+## Status since publication
+
+Eight findings have been fixed since this report was written. Each row below was re-verified
+against the merged tree at `d59bad7`, not assumed from the PR titles.
+
+| Finding | Status | Fixed by |
+|---|---|---|
+| 0 — client layer untestable (`jest.config.js`) | ✅ fixed | #39 |
+| §1.1 — `/api/pilot/board/chat` 503s on every request | ✅ fixed | #41 |
+| §1.2 — `platform_owner` logged out by a thumbs-up | ✅ fixed | #41 |
+| §1.3 — athlete "message your coach" 400s | ✅ fixed | #41 |
+| §1.4 — `/admin/shadow` sends no credentials | ✅ fixed | #39 |
+| §2.1 — restore drops evidence grade and handoff | ✅ fixed | #39 |
+| §2.5 — feedback failures are silent | ✅ fixed | #41 |
+| §3.0 — SHADOW Library has no ingestion path | ✅ fixed | **#43** |
+
+§3.0 was fixed independently of this audit's follow-up work. All four routes
+(`library/{sources,documents,chunks,capability-coverage}`) now exist with real handlers, and all
+seven previously-orphaned `shadowLibrary.ts` exports are wired to them. `seed:shadow:library`
+now has endpoints to POST to.
+
+**This materially changes §4.** That section concluded the learning loop was not closed partly
+because its only human-approval path ran through an `/admin/shadow` page that could not
+authenticate. With §1.4 fixed, that path works. The loop is now *closed behind a manual
+approval step and a 20-approval unlock* — still demanding, and still gated by
+`communication_style` being unwritable (§4.1), but no longer broken. Read §4 with that
+correction in mind.
+
+**Everything else in this report was re-verified as still live**, including: §2.2 (displayed
+model is not the model that answered), §2.3 (`quick_round` escalates to `heavy_bag`), §2.4
+(`/research/chat` is still a hardcoded keyword mock), §2.4a (validator passes `proven`, bare
+percentages, and volunteered weight-cut directives), §2.6 (a 404 wedges the conversation), §3.1
+(`resolvedAsync: false` on all paths — the async pipeline is still dead), §3.2 (query params
+still ignored), §3.3 (`shadowExplainability`, `shadowPersonalization`, `shadowProfileProgression`
+still have zero non-test importers), §3.4 (still no UI calling session rename or delete), §3.5,
+and §3.6 (`chat/route.ts` still redeclares `MANUAL_OVERRIDE_ROLES`).
+
+One item found after publication and not yet written up as a numbered finding: **39 bare-path
+`/api/...` fetches across 13 files** (`AthleteWorkspace` 9, `admin/page` 6, `CoachWorkspace` 6,
+`schedule` 4, …) versus 76 using `apiBase()`. In the SWA static-export deployment `apiBase()`
+returns the Container App FQDN, so bare paths reach the static host instead of the API — the
+same class as §1.4 but wider. `app/athlete/progression-intelligence/page.tsx` uses both styles,
+which suggests an unfinished migration rather than a deliberate split.
+
+---
+
 ## 0. Why the green build proves nothing about the chat UI  **[V]**
 
 `apps/web/jest.config.js:4-5`
@@ -537,17 +583,19 @@ queue, not as established fact.
 
 ## Suggested order of work
 
-1. **`jest.config.js`** — add `.test.tsx` + jsdom. Without this nothing below stays fixed.
-2. **§1.4** — add `credentials: 'include'` to all 9 `/admin/shadow` fetches. One-line-each
+Items marked ✅ have since landed; see *Status since publication* above.
+
+1. ✅ **`jest.config.js`** — add `.test.tsx` + jsdom. Without this nothing below stays fixed.
+2. ✅ **§1.4** — add `credentials: 'include'` to all 9 `/admin/shadow` fetches. One-line-each
    fix that also unblocks the learning loop's only human-approval path.
-3. **§1.1, §1.2, §1.3** — three independent always-fails bugs, each small.
-4. **§2.1** — carry `evidenceTier` and `handoff` through persistence and restore. The safety
+3. ✅ **§1.1, §1.2, §1.3** — three independent always-fails bugs, each small.
+4. ✅ **§2.1** — carry `evidenceTier` and `handoff` through persistence and restore. The safety
    banner loss is the most consequential single defect in the report.
 5. **§2.4a** — close the response-validator gaps: make `proven` a trigger, catch bare
    percentages without a framing phrase, and gate weight cutting on the response side as well as
    the request side. Then re-enable disabled Test 11 (§2.4b) as a regression guard — it is the
    only thing in the repo that ever caught this, and it is currently invisible to CI.
-6. **§3.0** — build the four missing `library/{sources,documents,chunks,capability-coverage}`
+6. ✅ **§3.0** — build the four missing `library/{sources,documents,chunks,capability-coverage}`
    routes so `seed:shadow:library` can actually run, or remove the script and stop shipping an
    evidence pipeline whose source of truth cannot be filled. Everything in the evidence story —
    retrieval, grading, the four-tier shading, the citation plumbing — is downstream of this.
