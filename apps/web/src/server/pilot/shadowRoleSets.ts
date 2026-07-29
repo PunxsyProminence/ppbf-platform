@@ -67,3 +67,24 @@ export const MANUAL_OVERRIDE_ROLES: readonly PilotRole[] = [
   'organization_admin',
   'platform_owner',
 ];
+
+// Roles permitted to write into the SHADOW Library: register sources and
+// documents, add chunks, and define capability coverage rules.
+//
+// This deliberately matches requireEvidenceReviewer in shadowLibrary.ts, which
+// already gates completeShadowLibraryDocumentIndexing -- the step that
+// finalizes these same documents. Curating evidence and approving it are the
+// same authority, so the write path must not be broader or narrower than the
+// approval path it feeds.
+//
+// platform_owner is present because organization doctrine is operational
+// content, not PHI. That is not a general athlete-data grant: a document
+// carrying a subject_id is athlete-scoped, and the documents route runs
+// assertActorCanAccessAthlete for those, which refuses platform_owner
+// outright. Omega can curate an organization's doctrine; it cannot author
+// evidence about a named athlete.
+export const SHADOW_LIBRARY_CURATOR_ROLES: readonly PilotRole[] = [
+  'organization_admin',
+  'admin',
+  'platform_owner',
+];
