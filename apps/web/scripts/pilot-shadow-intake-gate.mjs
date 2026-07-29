@@ -12,10 +12,15 @@ import os from 'node:os';
 import path from 'node:path';
 import PDFDocument from 'pdfkit';
 
+import { mintGateSession } from './lib/gate-session.mjs';
+
+// Populated by run() as sessions are minted, and drained in the finally block
+// at the bottom of this file so nothing is left live if the gate throws.
+const sessionsToRevoke = [];
+
 const baseUrl = process.env.PILOT_GATE_BASE_URL || 'http://localhost:3000';
-const bootstrapKey = process.env.PPBF_PILOT_BOOTSTRAP_KEY || '';
+const connectionString = process.env.AZURE_POSTGRES_CONNECTION_STRING || '';
 const adminAccountId = process.env.PILOT_ADMIN_ACCOUNT_ID || '';
-const adminPin = process.env.PILOT_ADMIN_PIN || '';
 const organizationId = process.env.PILOT_ORG_A_ID || process.env.PPBF_PILOT_DEFAULT_ORG_ID || '';
 const organizationName = process.env.PILOT_ORG_A_NAME || '';
 
@@ -23,6 +28,8 @@ const athleteAccountId = process.env.PILOT_SHADOW_ATHLETE_ACCOUNT_ID || '';
 const athletePin = process.env.PILOT_SHADOW_ATHLETE_PIN || '';
 const athleteId = process.env.PILOT_SHADOW_ATHLETE_ID || '';
 const guardianAccountId = process.env.PILOT_SHADOW_GUARDIAN_ACCOUNT_ID || '';
+// Still required: the promotion step provisions the guardian account and sets
+// this PIN on it, even though a parent can no longer sign in with one.
 const guardianPin = process.env.PILOT_SHADOW_GUARDIAN_PIN || '';
 const guardianParentId = process.env.PILOT_SHADOW_GUARDIAN_PARENT_ID || '';
 
@@ -42,24 +49,26 @@ const documentMatrix = [
 ];
 
 try {
-  requireEnv('PPBF_PILOT_BOOTSTRAP_KEY', bootstrapKey);
+  // The administrator and guardian fixtures are authenticated by minting a
+  // session directly (see lib/gate-session.mjs), because a PIN login cannot
+  // produce a session for either role. The athlete still signs in with a PIN,
+  // which is a real supported path and worth exercising here.
+  requireEnv('AZURE_POSTGRES_CONNECTION_STRING', connectionString);
   requireEnv('PILOT_ADMIN_ACCOUNT_ID', adminAccountId);
-  requireEnv('PILOT_ADMIN_PIN', adminPin);
   requireEnv('PILOT_ORG_A_ID or PPBF_PILOT_DEFAULT_ORG_ID', organizationId);
   requireEnv('PILOT_ORG_A_NAME', organizationName);
   requireEnv('PILOT_SHADOW_ATHLETE_ACCOUNT_ID', athleteAccountId);
   requireEnv('PILOT_SHADOW_ATHLETE_PIN', athletePin);
   requireEnv('PILOT_SHADOW_ATHLETE_ID', athleteId);
   requireEnv('PILOT_SHADOW_GUARDIAN_ACCOUNT_ID', guardianAccountId);
-  requireEnv('PILOT_SHADOW_GUARDIAN_PIN', guardianPin);
   requireEnv('PILOT_SHADOW_GUARDIAN_PARENT_ID', guardianParentId);
 } catch (error) {
   console.error(String(error));
   process.exit(1);
 }
 
-function createClient(name) {
-  let cookieHeader = '';
+function createClient(name, initialCookie = '') {
+  let cookieHeader = initialCookie;
 
   return {
     async call(pathname, { method = 'GET', body, formData } = {}) {
@@ -107,24 +116,6 @@ async function writePdf(filePath, title, details) {
   });
 }
 
-async function maybeBootstrapAdmin() {
-  if (!bootstrapKey) return;
-
-  await fetch(`${baseUrl}/api/pilot/admin/bootstrap`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-ppbf-bootstrap-key': bootstrapKey,
-    },
-    body: JSON.stringify({
-      account_id: adminAccountId,
-      pin: adminPin,
-      organization_id: organizationId,
-      organization_name: organizationName,
-      bootstrap_role: 'organization_admin',
-    }),
-  });
-}
 
 async function uploadRequiredDocuments(admin, tempDir) {
   const uploaded = [];
@@ -259,17 +250,19 @@ function assertAthleteSession(athleteSession) {
 }
 
 async function run() {
-  const admin = createClient('shadow-admin');
-  const athlete = createClient('shadow-athlete');
-  const guardian = createClient('shadow-guardian');
-
-  await maybeBootstrapAdmin();
-
-  console.log('1) Admin login');
-  await admin.call('/api/pilot/auth/login', {
-    method: 'POST',
-    body: { account_id: adminAccountId, pin: adminPin },
+  console.log('1) Mint administrator session');
+  const adminSession = await mintGateSession({
+    connectionString,
+    accountId: adminAccountId,
+    expectedRole: 'organization_admin',
   });
+  sessionsToRevoke.push(adminSession);
+
+  const admin = createClient('shadow-admin', adminSession.cookie);
+  const athlete = createClient('shadow-athlete');
+  // The guardian account does not exist yet -- the promotion step below is what
+  // creates it -- so its session is minted at step 11, not here.
+  let guardian;
 
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ppbf-shadow-intake-'));
 
@@ -430,11 +423,24 @@ async function run() {
     throw new Error('Athlete cannot retrieve persisted profile');
   }
 
-  console.log('11) Verify guardian login and retrieval permissions');
-  await guardian.call('/api/pilot/auth/login', {
-    method: 'POST',
-    body: { account_id: guardianAccountId, pin: guardianPin },
+  console.log('11) Verify guardian retrieval permissions');
+  // A parent cannot sign in with a PIN -- PIN sessions are athlete-only -- so
+  // the guardian is authenticated the same way the administrator is.
+  //
+  // This will refuse while the promotion step above still provisions guardians
+  // through createParentAccount, which writes a local PIN account. Such an
+  // account cannot hold a session at all: resolvePrincipal revokes any
+  // ppbf_local non-athlete session on sight. mintGateSession reports that
+  // precisely rather than letting it surface as an unexplained 401, and the
+  // gate will pass once guardians are provisioned through the Microsoft invite
+  // path that 'parent' is already listed for in INVITABLE_STAFF_ROLES.
+  const guardianSession = await mintGateSession({
+    connectionString,
+    accountId: guardianAccountId,
+    expectedRole: 'parent',
   });
+  sessionsToRevoke.push(guardianSession);
+  guardian = createClient('shadow-guardian', guardianSession.cookie);
 
   const guardianDomain = await guardian.call('/api/pilot/intake/domain-get', {
     method: 'POST',
@@ -465,4 +471,16 @@ try {
   console.error('SHADOW INTAKE GATE FAIL');
   console.error(String(error));
   process.exit(1);
+} finally {
+  // Runs on success and on failure alike. A gate that fails partway through is
+  // exactly the case where a live administrator session must not be left
+  // behind, so revocation failures are reported rather than thrown -- they must
+  // not mask the original error or turn a passing gate into a failing one.
+  for (const session of sessionsToRevoke) {
+    try {
+      await session.revoke();
+    } catch (revokeError) {
+      console.error(`WARNING: could not revoke a gate session: ${String(revokeError)}`);
+    }
+  }
 }

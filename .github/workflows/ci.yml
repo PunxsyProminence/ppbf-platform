@@ -43,8 +43,14 @@ jobs:
       - name: Run all fast regression tests
         run: npm test
 
+      # Each .pg suite runs in its own Jest process (see the test:migrations:*
+      # scripts). They spin up separate embedded Postgres instances and load
+      # ESM-only modules through a native dynamic import; sharing one process
+      # made a suite's import resolve after another suite's environment had been
+      # torn down. --runInBand is therefore implicit -- each invocation runs a
+      # single file -- so no extra flags are passed through here.
       - name: Run PostgreSQL migration suite
-        run: npm run test:migrations -- --runInBand --detectOpenHandles
+        run: npm run test:migrations
 
       - name: Install Playwright browsers
         run: npx --workspace web playwright install --with-deps chromium
