@@ -1023,17 +1023,58 @@ No direct hard conflict found where current pilot code explicitly violates SHADO
 
 ## 20) Gaps Before Azure Schema Hardens
 
-Required before hardening:
+This list was written 2026-07-19, before the multi-org migration and most of the
+SHADOW runtime work. Statuses below were verified against the schema and code on
+`main` on 2026-07-29; the original wording of each item is preserved so it can be
+matched against older documents that cite it by number.
 
-1. Add canonical SHADOW event vocabulary mapping and begin emitting canonical event names.
-2. Add centralized SHADOW authority-check abstraction for domain writes.
-3. Add dedicated SHADOW telemetry writer and table.
-4. Add explicit SHADOW authority-check and promotion records as first-class objects.
-5. Add source confidence and verification-state fields for evidence-bearing objects.
-6. Reserve gym_id and program_id in SHADOW spine tables with nullable rollout.
-7. Add research requirement workflow for knowledge gaps.
-8. Add recommendation accountability schema and event lifecycle.
-9. Add failure intelligence capture path tied to corrective goals and lessons.
+1. **Add canonical SHADOW event vocabulary mapping and begin emitting canonical
+   event names.** — DONE for `pilot.audit_events`. The vocabulary now lives in one
+   place, `apps/web/src/server/pilot/auditEventTypes.ts`, with the TypeScript type
+   derived from it and `auditEventVocabulary.test.ts` asserting the SQL check
+   constraint agrees. This was not merely missing: the two declarations had already
+   drifted, and `shadow_research_upload_requirement` was rejected by the database
+   on every SHADOW research-requirement upload.
+   STILL OPEN for `pilot.shadow_events.event_name`, which is unconstrained `text`
+   and is synthesized at runtime (`SHADOW_AUDIT_${TYPE}_${ENTITY}` in `audit.ts`),
+   so the set of emitted names is unbounded and cannot be enumerated.
+2. **Add centralized SHADOW authority-check abstraction for domain writes.** —
+   PARTIAL. `shadowAuthority.ts` exists but only four modules import it, so it is
+   not yet the single chokepoint this item describes.
+3. **Add dedicated SHADOW telemetry writer and table.** — DONE.
+   `pilot.shadow_telemetry_events` plus `shadowTelemetry.ts`.
+4. **Add explicit SHADOW authority-check and promotion records as first-class
+   objects.** — DONE. `pilot.shadow_authority_checks`.
+5. **Add source confidence and verification-state fields for evidence-bearing
+   objects.** — PARTIAL. `confidence` exists on formula facts, and
+   `verification_state` on `shadow_recommendation_effectiveness` and
+   `shadow_learning_events`, but per-table rather than as a general property of
+   evidence-bearing objects.
+6. **Reserve gym_id and program_id in SHADOW spine tables with nullable rollout.**
+   — SUPERSEDED, do not implement as written. The multi-org migration landed
+   2026-07-20, one day after this list, and `organization_id` IS the gym
+   identifier: `/admin/organizations` creates an organization from `gymId`/
+   `gymName`, and the People console labels it "Gym". It was implemented better
+   than proposed here — `not null` with a foreign key, rather than a nullable
+   reservation. Adding a separate `gym_id` now would create two columns meaning
+   the same thing. `program_id` remains unbuilt, but there is no program entity to
+   reference: "program" appears only in prose and prompts, and the nearest real
+   concept is `pilot.admin_track_assignments`. Reserving a key to a table that does
+   not exist would be speculative.
+7. **Add research requirement workflow for knowledge gaps.** — DONE.
+   `pilot.shadow_research_requirements`.
+8. **Add recommendation accountability schema and event lifecycle.** — DONE.
+   `pilot.shadow_recommendation_effectiveness` carries `outcome`,
+   `effectiveness_score`, and a `verification_state` lifecycle
+   (`unverified` → `durable_client` → `human_reviewed`).
+9. **Add failure intelligence capture path tied to corrective goals and lessons.**
+   — MOSTLY DONE. `pilot.shadow_learning_events` captures outcome signal,
+   effectiveness, and `actions_taken`, linked to `shadow_feedback` and
+   `shadow_events`. The "tied to corrective goals" half is not wired: no column
+   references `pilot.goals`.
+
+Net: items 3, 4, 7, and 8 are complete; 1 is complete for audit events and open for
+shadow events; 2, 5, and 9 are partial; 6 should be struck rather than built.
 
 Minimum additive schema reservation path (documented only, not implemented here):
 
