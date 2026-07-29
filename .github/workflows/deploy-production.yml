@@ -97,22 +97,6 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Log in to Azure Container Registry
-        run: |
-          az acr login --name "$ACR_NAME"
-
-      - name: Load Azure Container Registry deploy credentials
-        id: acr-credentials
-        run: |
-          ACR_USERNAME="$(az acr credential show --name "$ACR_NAME" --query username -o tsv)"
-          ACR_PASSWORD="$(az acr credential show --name "$ACR_NAME" --query 'passwords[0].value' -o tsv)"
-          test -n "$ACR_USERNAME"
-          test -n "$ACR_PASSWORD"
-          echo "::add-mask::$ACR_USERNAME"
-          echo "::add-mask::$ACR_PASSWORD"
-          echo "username=$ACR_USERNAME" >> "$GITHUB_OUTPUT"
-          echo "password=$ACR_PASSWORD" >> "$GITHUB_OUTPUT"
-
       - name: Verify release digest exists in ACR
         run: |
           RELEASE_DIGEST='${{ inputs.release_digest }}'
@@ -122,34 +106,54 @@ jobs:
             exit 1
           fi
 
+      # This deploy is digest-only: deploy-staging builds and pushes the image,
+      # and this workflow just repoints the production Container App at an
+      # already-tested digest. So it needs the ACR *control* plane only.
+      #
+      # It previously ran `az acr login` and azure/container-apps-deploy-action@v1,
+      # and that action performs its own nested `docker login` against
+      # <acr>.azurecr.io. For a digest-only deploy that data-plane login buys
+      # nothing, and it is a real failure surface -- on 2026-07-29 it failed a
+      # production deploy outright with:
+      #   Error response from daemon: Get "https://<acr>.azurecr.io/v2/":
+      #   dial tcp 20.62.128.7:443: connect: connection refused
+      # while every `az` control-plane call in the very same run succeeded. The
+      # registry has publicNetworkAccess=Enabled on the Basic SKU, which cannot
+      # carry network rules at all, so that was tier throughput and not an
+      # access rule -- retrying the same dispatch went green minutes later.
+      #
+      # The Container App holds its own ACR pull credentials
+      # (properties.configuration.registries[].passwordSecretRef), so it pulls
+      # the digest itself and the runner never touches the registry data plane.
+      # deploy-staging.yml already updates its app this way.
+      #
+      # --set-env-vars updates the listed variables and leaves the rest in
+      # place; it cannot unset a stale value already on the app.
       - name: Deploy Tested Digest to Azure Container App (Production)
-        uses: azure/container-apps-deploy-action@v1
-        with:
-          acrName: ${{ env.ACR_NAME }}
-          acrUsername: ${{ steps.acr-credentials.outputs.username }}
-          acrPassword: ${{ steps.acr-credentials.outputs.password }}
-          resourceGroup: ${{ env.RESOURCE_GROUP }}
-          containerAppName: ${{ env.CONTAINER_APP_NAME }}
-          imageToDeploy: ${{ env.ACR_LOGIN_SERVER }}/ppbf-frontend@${{ inputs.release_digest }}
-          environmentVariables: >-
-            PPBF_ONBOARDING_LIVE_SAVE=false
-            PPBF_AUTH_PROVIDER_WIRED=false
-            AZURE_POSTGRES_CONNECTION_STRING=secretref:azure-postgres-connection-string
-            AZURE_STORAGE_CONNECTION_STRING=secretref:azure-storage-connection-string
-            PPBF_MS_TENANT_ID=secretref:ppbf-ms-tenant-id
-            PPBF_MS_CLIENT_ID=secretref:ppbf-ms-client-id
-            PPBF_MS_CLIENT_SECRET=secretref:ppbf-ms-client-secret
-            PPBF_MS_REDIRECT_URI=secretref:ppbf-ms-redirect-uri
-            PPBF_MS_POST_LOGIN_PATH=secretref:ppbf-ms-post-login-path
-            PPBF_PILOT_BOOTSTRAP_KEY=secretref:ppbf-pilot-bootstrap-key
-            PPBF_PILOT_DEFAULT_ORG_ID=secretref:ppbf-pilot-default-org-id
-            PPBF_PILOT_SHADOW_CONTAINER=secretref:ppbf-pilot-shadow-container
-            PPBF_PRIMARY_OWNER_EMAIL=secretref:ppbf-primary-owner-email
-            AZURE_AI_ENDPOINT=secretref:azure-ai-endpoint
-            AZURE_AI_DEPLOYMENT_NAME=secretref:azure-ai-deployment-name
-            AZURE_AI_API_VERSION=secretref:azure-ai-api-version
-            AZURE_AI_KEY=secretref:azure-ai-key
-            PPBF_DURABLE_RATE_LIMIT=true
+        run: |
+          az containerapp update \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "${ACR_LOGIN_SERVER}/ppbf-frontend@${{ inputs.release_digest }}" \
+            --set-env-vars \
+              PPBF_ONBOARDING_LIVE_SAVE=false \
+              PPBF_AUTH_PROVIDER_WIRED=false \
+              AZURE_POSTGRES_CONNECTION_STRING=secretref:azure-postgres-connection-string \
+              AZURE_STORAGE_CONNECTION_STRING=secretref:azure-storage-connection-string \
+              PPBF_MS_TENANT_ID=secretref:ppbf-ms-tenant-id \
+              PPBF_MS_CLIENT_ID=secretref:ppbf-ms-client-id \
+              PPBF_MS_CLIENT_SECRET=secretref:ppbf-ms-client-secret \
+              PPBF_MS_REDIRECT_URI=secretref:ppbf-ms-redirect-uri \
+              PPBF_MS_POST_LOGIN_PATH=secretref:ppbf-ms-post-login-path \
+              PPBF_PILOT_BOOTSTRAP_KEY=secretref:ppbf-pilot-bootstrap-key \
+              PPBF_PILOT_DEFAULT_ORG_ID=secretref:ppbf-pilot-default-org-id \
+              PPBF_PILOT_SHADOW_CONTAINER=secretref:ppbf-pilot-shadow-container \
+              PPBF_PRIMARY_OWNER_EMAIL=secretref:ppbf-primary-owner-email \
+              AZURE_AI_ENDPOINT=secretref:azure-ai-endpoint \
+              AZURE_AI_DEPLOYMENT_NAME=secretref:azure-ai-deployment-name \
+              AZURE_AI_API_VERSION=secretref:azure-ai-api-version \
+              AZURE_AI_KEY=secretref:azure-ai-key \
+              PPBF_DURABLE_RATE_LIMIT=true
 
       - name: Resolve Production Base URL
         run: |
