@@ -51,7 +51,14 @@ beforeEach(() => {
 });
 
 describe('POST /api/pilot/board/chat adapter', () => {
-  test('drops client organization scope and forces the board-summary mode', async () => {
+  // The organization-scope drop is a real defense and is unchanged: a
+  // client-supplied organizationId must never reach the canonical route.
+  //
+  // The session-type expectation is corrected. This used to assert the adapter
+  // forced 'board_summary', which is a background mode the canonical route
+  // answers 503 to because no worker runs it -- so the endpoint failed for
+  // every input, and overriding last also discarded the caller's own choice.
+  test('drops client organization scope and keeps the caller session type', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal());
 
     const response = await POST(postRequest({
@@ -64,7 +71,7 @@ describe('POST /api/pilot/board/chat adapter', () => {
     const forwarded = mockPostShadowChat.mock.calls[0][0];
     await expect(forwarded.json()).resolves.toEqual({
       message: 'hello',
-      sessionType: 'board_summary',
+      sessionType: 'quick_round',
     });
   });
 

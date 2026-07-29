@@ -669,9 +669,13 @@ export default function AthleteWorkspace() {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
+        // 'individual_support' is not one of the session types the canonical
+        // chat validator accepts, and an unrecognized sessionType is rejected
+        // outright rather than ignored -- so this form answered 400 ("Enter a
+        // question for SHADOW.") on every submission and the success message
+        // below was unreachable. Omitting it lets the request classify normally.
         body: JSON.stringify({
           message: `Coach message for ${selectedCoach}: ${message}`,
-          sessionType: 'individual_support',
         }),
       });
 
@@ -681,7 +685,13 @@ export default function AthleteWorkspace() {
       }
 
       setCoachMessageBody('');
-      setCoachMessageStatus('Message sent. Coach response will appear in your SHADOW conversation log.');
+      // The old copy promised a coach reply. This posts to SHADOW, not to a
+      // person: it is recorded in the athlete's own conversation and answered
+      // by SHADOW. No coach is notified and none ever sees it, so saying so
+      // would be a promise the system does not keep.
+      setCoachMessageStatus(
+        `Saved to your SHADOW conversation for ${selectedCoach}. SHADOW will respond there -- open SHADOW Chat to read it. This does not notify ${selectedCoach} directly.`,
+      );
     } catch (error) {
       setCoachMessageStatus(error instanceof Error ? error.message : 'Message delivery failed.');
     } finally {

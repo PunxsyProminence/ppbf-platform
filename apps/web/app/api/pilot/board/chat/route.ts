@@ -16,10 +16,23 @@ export async function POST(request: NextRequest) {
     delete sanitizedBody.organizationId;
     const forwardedHeaders = new Headers(request.headers);
     forwardedHeaders.delete('content-length');
+    // The forced sessionType made this endpoint answer 503 to every request.
+    // 'board_summary' is one of the background modes the canonical route
+    // rejects outright ("not active until the secure job worker is
+    // configured"), and because it was spread last it overrode whatever the
+    // caller sent, so no input could reach a model. Nothing enqueues background
+    // SHADOW work today -- executeHeavyBagAsync and generateScoutReport have no
+    // production callers and no worker drains the queue -- so forcing a
+    // background mode could only ever fail.
+    //
+    // Board requests now classify like any other chat request, which is what
+    // the adapter's own comment describes: pass through the canonical trust
+    // boundary rather than run a second prompt path. If board_summary is
+    // revived later it belongs behind a working worker, not hardcoded here.
     const forwarded = new NextRequest(request.url, {
       method: 'POST',
       headers: forwardedHeaders,
-      body: JSON.stringify({ ...sanitizedBody, sessionType: 'board_summary' }),
+      body: JSON.stringify(sanitizedBody),
     });
     return postShadowChat(forwarded);
   } catch (error) {

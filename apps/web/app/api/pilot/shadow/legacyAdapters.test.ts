@@ -90,7 +90,13 @@ describe('legacy SHADOW chat compatibility adapters', () => {
     });
   });
 
-  it('forces the old board endpoint through board-summary mode', async () => {
+  // This previously asserted that the adapter forced sessionType
+  // 'board_summary'. That was the defect, not the contract: the canonical route
+  // answers 503 to every board_summary request because no worker exists to run
+  // background modes, and because the override was spread last it also
+  // discarded whatever the caller asked for. The endpoint could not succeed for
+  // any input, and this test locked that in.
+  it('does not force the old board endpoint into an unavailable background mode', async () => {
     mockedRequirePrincipal.mockResolvedValueOnce({
       accountId: 'admin-a',
       organizationId: 'org-a',
@@ -103,9 +109,25 @@ describe('legacy SHADOW chat compatibility adapters', () => {
     await boardPost(request({ message: 'governance summary', sessionType: 'heavy_bag' }));
 
     const forwarded = mockedCanonicalPost.mock.calls[0][0];
-    await expect(forwarded.json()).resolves.toMatchObject({
-      message: 'governance summary',
-      sessionType: 'board_summary',
+    const body = await forwarded.json() as Record<string, unknown>;
+    expect(body).toMatchObject({ message: 'governance summary' });
+    expect(body.sessionType).not.toBe('board_summary');
+  });
+
+  it('preserves the caller session type instead of overriding it', async () => {
+    mockedRequirePrincipal.mockResolvedValueOnce({
+      accountId: 'admin-a',
+      organizationId: 'org-a',
+      athleteId: null,
+      role: 'organization_admin',
+      sessionToken: 'session',
+      authProvider: 'ppbf_local',
+    });
+
+    await boardPost(request({ message: 'deep review', sessionType: 'heavy_bag' }));
+
+    await expect(mockedCanonicalPost.mock.calls[0][0].json()).resolves.toMatchObject({
+      sessionType: 'heavy_bag',
     });
   });
 });
