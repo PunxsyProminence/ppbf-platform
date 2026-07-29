@@ -30,6 +30,10 @@ export interface ShadowChatCapabilities {
    * its own scope without restating that list, and is derived from it rather
    * than recomputed, so the two cannot drift. Do not treat a true value here
    * as authorization: check the role set at the point of access.
+   *
+   * Deriving it also keeps it always false for Omega: PHI and clearance state
+   * are organization-private, and SHADOW_PHI_ROLES excludes platform_owner --
+   * an exclusion shadowRoleSets.test.ts asserts.
    */
   canAccessProtectedHealthInformation: boolean;
   allowedSessionTypes: ShadowConversationSessionType[];
