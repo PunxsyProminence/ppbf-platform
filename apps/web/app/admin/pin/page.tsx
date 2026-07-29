@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import { DEFAULT_PIN_LENGTH } from '@/src/server/pilot/pinPolicy';
 
 interface AthletePinItem {
   athlete_id: string;
@@ -205,7 +206,8 @@ function PinManagementPageContent() {
                   inputMode="numeric"
                   pattern="[0-9]*"
                   value={pin}
-                  onChange={(event) => setPin(event.target.value)}
+                  maxLength={DEFAULT_PIN_LENGTH}
+                  onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))}
                   className="mt-1 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] px-3"
                   placeholder="6 digits"
                   autoComplete="new-password"
@@ -222,7 +224,8 @@ function PinManagementPageContent() {
                   inputMode="numeric"
                   pattern="[0-9]*"
                   value={confirmPin}
-                  onChange={(event) => setConfirmPin(event.target.value)}
+                  maxLength={DEFAULT_PIN_LENGTH}
+                  onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))}
                   className="mt-1 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] px-3"
                   placeholder="Repeat 6 digits"
                   autoComplete="new-password"

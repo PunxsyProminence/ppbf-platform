@@ -5,8 +5,11 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 import { apiBase } from '@/lib/apiBase';
+import { DEFAULT_PIN_LENGTH } from '@/src/server/pilot/pinPolicy';
 
-const PIN_LENGTH = 6;
+// Single source of truth with the server policy: validatePinPolicy enforces
+// this exact length, so a local copy could silently disagree with it.
+const PIN_LENGTH = DEFAULT_PIN_LENGTH;
 const CODE_LENGTH = 12;
 const PIN_PATTERN = /^\d{6}$/;
 
