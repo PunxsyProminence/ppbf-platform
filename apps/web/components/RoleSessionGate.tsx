@@ -52,6 +52,15 @@ export default function RoleSessionGate({ allowedRoles, children }: RoleSessionG
             return;
           }
 
+          // Still on the gym-issued starting PIN. The session is valid, so
+          // this must not clear it or route to /login -- signing in again
+          // would only arrive back in the same state. Send them to the one
+          // page the server still allows.
+          if (resolution.reason === 'pin_change_required') {
+            router.replace('/change-pin');
+            return;
+          }
+
           clearRoleSession();
           const errorPath = resolution.reason === 'privileged_auth_required'
             ? '/login?error=privileged_auth_required'

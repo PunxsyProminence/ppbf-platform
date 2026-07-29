@@ -314,6 +314,13 @@ function LoginPageContent() {
         }
 
         if (!resolution.ok) {
+          // A valid session that simply has not chosen a PIN yet. Keep it and
+          // send them to finish, rather than clearing it and leaving them
+          // staring at a sign-in form they have already passed.
+          if (resolution.reason === 'pin_change_required') {
+            router.replace('/change-pin');
+            return;
+          }
           if (resolution.reason !== 'server_error') {
             clearRoleSession();
           }
@@ -418,6 +425,13 @@ function LoginPageContent() {
 
       const resolution = await loadAuthoritativeRoleSession(`${apiBase()}/api/pilot/auth/session`);
       if (!resolution.ok) {
+        // The sign-in itself succeeded; this account is just still on the
+        // starting PIN. Reporting "could not be verified" here would tell an
+        // athlete their correct PIN had failed.
+        if (resolution.reason === 'pin_change_required') {
+          router.replace('/change-pin');
+          return;
+        }
         if (resolution.reason !== 'server_error') {
           clearRoleSession();
         }
