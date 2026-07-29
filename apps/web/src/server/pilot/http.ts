@@ -82,8 +82,15 @@ export function jsonError(error: unknown, fallbackStatus = 500): NextResponse {
   // A caller retrying a partially-failed create (e.g. account created but
   // code issuance failed) hits this on the second attempt -- it must read
   // as "already done", not an opaque 500, or the UI has no way to tell the
-  // admin the account already exists and stop them retrying forever.
-  if (message.startsWith('Account already exists') || message.startsWith('Athlete is already linked')) {
+  // admin the account already exists and stop them retrying forever. The
+  // roster-create conflict belongs here for the same reason: the admin needs
+  // to see that the athlete_id is taken so they correct the id rather than
+  // resubmit and overwrite someone else's record.
+  if (
+    message.startsWith('Account already exists')
+    || message.startsWith('Athlete is already linked')
+    || message.startsWith('Athlete record already exists')
+  ) {
     return NextResponse.json({ error: message }, { status: 409 });
   }
 

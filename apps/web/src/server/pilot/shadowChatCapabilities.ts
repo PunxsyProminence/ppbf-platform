@@ -1,5 +1,6 @@
 import type { PilotRole } from './contracts';
 import type { ShadowConversationSessionType } from './shadowConversations';
+import { SHADOW_PHI_ROLES } from './shadowRoleSets';
 
 /**
  * Chat capability tiers.
@@ -21,9 +22,18 @@ export interface ShadowChatCapabilities {
    */
   crossOrganizationRead: boolean;
   /**
-   * Always false for Omega. PHI and clearance state are organization-private;
-   * see SHADOW_PHI_ROLES, which excludes platform_owner and is asserted by
-   * shadowRoleSets.test.ts.
+   * Mirrors SHADOW_PHI_ROLES; it does NOT enforce anything.
+   *
+   * Enforcement lives at the routes that touch clinical state -- see
+   * medical-status/route.ts, which calls requireRole(principal,
+   * [...SHADOW_PHI_ROLES]). This field exists so a chat surface can describe
+   * its own scope without restating that list, and is derived from it rather
+   * than recomputed, so the two cannot drift. Do not treat a true value here
+   * as authorization: check the role set at the point of access.
+   *
+   * Deriving it also keeps it always false for Omega: PHI and clearance state
+   * are organization-private, and SHADOW_PHI_ROLES excludes platform_owner --
+   * an exclusion shadowRoleSets.test.ts asserts.
    */
   canAccessProtectedHealthInformation: boolean;
   allowedSessionTypes: ShadowConversationSessionType[];
@@ -34,7 +44,24 @@ export interface ShadowChatCapabilities {
   canExportOwnData: boolean;
   canRequestDeletion: boolean;
   deletionFulfillment: 'manual_review_required';
-  canReviewSafetyEvents: boolean;
+  /**
+   * SHADOW's own chat-safety telemetry: filtered-response counts, refusal
+   * rates, job safety_status. Operational signal about how the assistant is
+   * behaving, carrying no clinical or youth-protection content.
+   *
+   * Renamed from canReviewSafetyEvents, which read as though it also covered
+   * SafeSport and incident reporting. It never did -- no incident,
+   * concussion, or return-to-play table exists in the schema -- but the name
+   * invited a future youth-protection surface to reuse a flag that is true
+   * for the cross-organization tier.
+   *
+   * WHEN INCIDENT OR SAFESPORT CONTENT IS BUILT (capability L26), IT MUST NOT
+   * REUSE THIS FLAG. shadowRoleSets.ts is explicit that Omega must never
+   * reach SafeSport content in any organization, so that surface needs its
+   * own capability, denied to platform_owner, in the way
+   * canAccessProtectedHealthInformation already denies clinical state.
+   */
+  canReviewChatSafetyTelemetry: boolean;
 }
 
 export function getShadowChatCapabilities(role: PilotRole): ShadowChatCapabilities {
@@ -48,7 +75,7 @@ export function getShadowChatCapabilities(role: PilotRole): ShadowChatCapabiliti
   return {
     mode: omega ? 'omega' : organizationAdmin ? 'master' : 'scoped',
     crossOrganizationRead: omega,
-    canAccessProtectedHealthInformation: organizationAdmin,
+    canAccessProtectedHealthInformation: SHADOW_PHI_ROLES.includes(role),
     allowedSessionTypes: canOverride
       ? ['quick_round', 'heavy_bag']
       : ['quick_round'],
@@ -60,7 +87,7 @@ export function getShadowChatCapabilities(role: PilotRole): ShadowChatCapabiliti
     canExportOwnData: false,
     canRequestDeletion: true,
     deletionFulfillment: 'manual_review_required',
-    canReviewSafetyEvents: master,
+    canReviewChatSafetyTelemetry: master,
   };
 }
 
