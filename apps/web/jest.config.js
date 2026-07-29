@@ -11,6 +11,13 @@ module.exports = {
   // already handled tsx, so only the pattern and the DOM environment were
   // missing.
   testMatch: ['**/*.test.ts', '**/*.test.tsx'],
+  // The default is [rootDir] (this directory), so packages/ -- a sibling of
+  // apps/, not a child of apps/web -- was invisible to every `npm test` run
+  // and to CI. featureFlags.ts sat there throwing on every call, unit-tested
+  // by nothing, because there was no way for a test next to it to ever run.
+  // The package sources are plain TypeScript with no Next/React/DOM
+  // dependency and no "@/" alias, so they need no additional mapping here.
+  roots: ['<rootDir>', '<rootDir>/../../packages'],
   moduleNameMapper: {
     // Must mirror tsconfig.json's "paths", which resolves "@/*" against
     // ./src/* before ./*. Mapping only to the root meant any module importing
