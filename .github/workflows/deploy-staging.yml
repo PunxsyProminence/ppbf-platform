@@ -95,20 +95,35 @@ jobs:
           AZURE_AI_API_VERSION: ${{ vars.AZURE_AI_API_VERSION }}
         run: |
           test -n "$AZURE_AI_ENDPOINT"
-          test "$AZURE_AI_DEPLOYMENT_NAME" = "gpt-5-mini-shadow"
+          # Quick Round resolves its deployment from this variable, not from the
+          # MODEL_REGISTRY in shadowRouter.ts. Both generations are accepted so the
+          # variable can be rolled back to the previous model without editing this
+          # workflow -- but an unrecognized value is still refused, because a typo
+          # here silently sends every SHADOW turn to a deployment that does not exist.
+          case "$AZURE_AI_DEPLOYMENT_NAME" in
+            gpt-5.6-luna-shadow|gpt-5-mini-shadow) ;;
+            *) echo "AZURE_AI_DEPLOYMENT_NAME '$AZURE_AI_DEPLOYMENT_NAME' is not a known SHADOW quick-tier deployment."; exit 1 ;;
+          esac
           test "$AZURE_AI_API_VERSION" = "2024-12-01-preview"
           case "$AZURE_AI_ENDPOINT" in
             https://shadow-ai.cognitiveservices.azure.com|https://shadow-ai.cognitiveservices.azure.com/) ;;
             *) exit 1 ;;
           esac
 
-      # PPBF_SHADOW_MAX_COMPLETION_TOKENS was 1024, which is below what the
-      # gpt-5-mini deployment spends on reasoning alone -- Azure counts reasoning
-      # against this budget, and at 1024 it returned finish_reason "length" with
-      # reasoning_tokens 1024 and NO content, so every SHADOW turn in staging
-      # degraded. 4096 matches DEFAULT_MAX_COMPLETION_TOKENS in the chat route.
-      # It stays set explicitly rather than deferring to the code default,
-      # because --set-env-vars cannot unset the stale value already on the app.
+      # PPBF_SHADOW_MAX_COMPLETION_TOKENS was 1024, which is below what a reasoning
+      # deployment spends on reasoning alone -- Azure counts reasoning against this
+      # budget, and at 1024 it returned finish_reason "length" with reasoning_tokens
+      # 1024 and NO content, so every SHADOW turn in staging degraded. It is now
+      # 8192, the ceiling in the chat route: the quick tier measured 4110 completion
+      # tokens on a representative prompt, so 4096 was close enough to truncate a
+      # long answer. Both this and the timeout stay set explicitly rather than
+      # deferring to the code default, because --set-env-vars cannot unset a stale
+      # value already on the app.
+      #
+      # PPBF_SHADOW_PROVIDER_TIMEOUT_MS replaces a hardcoded 15s that no deployment
+      # could meet -- the quick tier measured 33.3s (gpt-5.6-luna) and 58.0s
+      # (gpt-5-mini), so every turn hit the timeout and returned the degraded
+      # response. See shadowRouter.ts for the full latency table.
       - name: Deploy to Azure Container App
         env:
           AZURE_AI_ENDPOINT: ${{ vars.AZURE_AI_ENDPOINT }}
@@ -133,7 +148,8 @@ jobs:
               AZURE_AI_DEPLOYMENT_NAME="$AZURE_AI_DEPLOYMENT_NAME" \
               AZURE_AI_API_VERSION="$AZURE_AI_API_VERSION" \
               AZURE_AI_KEY=secretref:azure-ai-key \
-              PPBF_SHADOW_MAX_COMPLETION_TOKENS=4096 \
+              PPBF_SHADOW_MAX_COMPLETION_TOKENS=8192 \
+              PPBF_SHADOW_PROVIDER_TIMEOUT_MS=120000 \
               PPBF_PILOT_BOOTSTRAP_KEY=secretref:ppbf-pilot-bootstrap-key \
               PPBF_PILOT_DEFAULT_ORG_ID=secretref:ppbf-pilot-default-org-id \
               PPBF_PILOT_SHADOW_CONTAINER=secretref:ppbf-pilot-shadow-container \
