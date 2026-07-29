@@ -14,7 +14,12 @@ import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness
 import { createShadowResearchRequirement } from '@/src/server/pilot/shadowResearch';
 import { writeShadowTelemetryEvent } from '@/src/server/pilot/shadowTelemetry';
 import { buildUploadResearchFields, classifyShadowDocument, routeShadowClassification } from '@/src/server/pilot/shadow';
-import { enforceShadowRateLimit, ShadowRateLimitExceeded } from '@/src/server/pilot/shadowRateLimit';
+import {
+  enforceShadowRateLimit,
+  resolveShadowRateLimit,
+  shadowRateLimitMessage,
+  ShadowRateLimitExceeded,
+} from '@/src/server/pilot/shadowRateLimit';
 import {
   describeShadowUpload,
   SHADOW_INTAKE_DOCUMENT_TYPES,
@@ -44,9 +49,7 @@ export async function POST(request: NextRequest) {
     await enforceShadowRateLimit({
       organizationId: principal.organizationId,
       accountId: principal.accountId,
-      endpointKey: 'shadow_upload',
-      limit: 10,
-      windowSeconds: 3_600,
+      ...resolveShadowRateLimit('shadow_upload'),
     });
 
     const formData = await request.formData();
@@ -291,7 +294,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof ShadowRateLimitExceeded) {
       return NextResponse.json(
-        { ok: false, error: 'Too many upload requests. Please wait and try again.' },
+        { ok: false, error: shadowRateLimitMessage(error.retryAfterSeconds, 'upload') },
         { status: 429, headers: { 'Retry-After': String(error.retryAfterSeconds) } },
       );
     }

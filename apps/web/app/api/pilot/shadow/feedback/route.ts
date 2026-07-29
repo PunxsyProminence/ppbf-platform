@@ -21,6 +21,8 @@ import {
 import { processLearningSignal } from '@/src/server/pilot/shadowLearningLoop';
 import {
   enforceShadowRateLimit,
+  resolveShadowRateLimit,
+  shadowRateLimitMessage,
   ShadowRateLimitExceeded,
 } from '@/src/server/pilot/shadowRateLimit';
 
@@ -118,9 +120,7 @@ export async function POST(request: NextRequest) {
     await enforceShadowRateLimit({
       organizationId: principal.organizationId,
       accountId: principal.accountId,
-      endpointKey: 'feedback',
-      limit: 30,
-      windowSeconds: 60,
+      ...resolveShadowRateLimit('feedback'),
     });
 
     const correlation = await verifyShadowFeedbackCorrelation({
@@ -205,7 +205,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof ShadowRateLimitExceeded) {
       return NextResponse.json(
-        { ok: false, error: 'Too many feedback requests. Please wait briefly and try again.' },
+        { ok: false, error: shadowRateLimitMessage(error.retryAfterSeconds, 'feedback') },
         {
           status: 429,
           headers: { 'Retry-After': String(error.retryAfterSeconds) },

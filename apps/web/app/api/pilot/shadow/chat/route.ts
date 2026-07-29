@@ -41,6 +41,8 @@ import {
 } from '@/src/server/pilot/shadowConversations';
 import {
   enforceShadowRateLimit,
+  resolveShadowRateLimit,
+  shadowRateLimitMessage,
   ShadowRateLimitExceeded,
 } from '@/src/server/pilot/shadowRateLimit';
 import { getShadowChatCapabilities } from '@/src/server/pilot/shadowChatCapabilities';
@@ -472,16 +474,12 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     await enforceShadowRateLimit({
       organizationId,
       accountId: userId,
-      endpointKey: 'chat',
-      limit: 20,
-      windowSeconds: 60,
+      ...resolveShadowRateLimit('chat'),
     });
     await enforceShadowRateLimit({
       organizationId,
       accountId: userId,
-      endpointKey: 'chat_daily',
-      limit: 100,
-      windowSeconds: 86_400,
+      ...resolveShadowRateLimit('chat_daily'),
     });
 
     if (athleteId) {
@@ -847,7 +845,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
         {
           success: false,
           state: 'filtered',
-          response: 'SHADOW is receiving too many requests from this account. Please wait briefly and try again.',
+          response: shadowRateLimitMessage(error.retryAfterSeconds),
           messageId: `msg_${Date.now()}`,
           createdAt: new Date().toISOString(),
           filtered: true,

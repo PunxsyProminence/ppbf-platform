@@ -39,10 +39,12 @@ jest.mock('@/src/server/pilot/shadowLearningLoop', () => ({
   processLearningSignal: jest.fn(),
 }));
 
-jest.mock('@/src/server/pilot/shadowRateLimit', () => ({
-  enforceShadowRateLimit: jest.fn(),
-  ShadowRateLimitExceeded: class ShadowRateLimitExceeded extends Error {},
-}));
+// Only the enforcer is mocked; the pure resolver and message helper stay REAL so
+// the route applies the same limits it ships with.
+jest.mock('@/src/server/pilot/shadowRateLimit', () => {
+  const actual = jest.requireActual('@/src/server/pilot/shadowRateLimit');
+  return { ...actual, enforceShadowRateLimit: jest.fn().mockResolvedValue(undefined) };
+});
 
 const mockRequirePrincipal = jest.mocked(requirePrincipal);
 const mockReadiness = jest.mocked(assertShadowRuntimeReadiness);

@@ -117,10 +117,13 @@ jest.mock('@/src/server/pilot/shadowConversations', () => ({
   queueHumanReview: jest.fn(),
 }));
 
-jest.mock('@/src/server/pilot/shadowRateLimit', () => ({
-  enforceShadowRateLimit: jest.fn(),
-  ShadowRateLimitExceeded: class ShadowRateLimitExceeded extends Error {},
-}));
+// Only the enforcer is mocked. resolveShadowRateLimit and shadowRateLimitMessage
+// are pure and stay REAL, so the limits asserted below are the limits the route
+// actually applies -- a hand-written stub here would let the two drift apart.
+jest.mock('@/src/server/pilot/shadowRateLimit', () => {
+  const actual = jest.requireActual('@/src/server/pilot/shadowRateLimit');
+  return { ...actual, enforceShadowRateLimit: jest.fn() };
+});
 
 // The rollup's two leaf data sources. omegaPlatformContext itself is left REAL
 // so these tests exercise the actual wiring -- trigger, render, evidence
@@ -279,14 +282,14 @@ describe('POST /api/pilot/shadow/chat trust boundary', () => {
       organizationId: 'org-session',
       accountId: 'account-1',
       endpointKey: 'chat',
-      limit: 20,
+      limit: 30,
       windowSeconds: 60,
     });
     expect(mockEnforceRateLimit).toHaveBeenNthCalledWith(2, {
       organizationId: 'org-session',
       accountId: 'account-1',
       endpointKey: 'chat_daily',
-      limit: 100,
+      limit: 400,
       windowSeconds: 86_400,
     });
     expect(mockAppendConversationExchange).toHaveBeenCalledWith(expect.objectContaining({

@@ -27,12 +27,12 @@ jest.mock('@/src/server/pilot/shadowTelemetry', () => ({
   writeShadowTelemetryEvent: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock('@/src/server/pilot/shadowRateLimit', () => ({
-  enforceShadowRateLimit: jest.fn().mockResolvedValue(undefined),
-  ShadowRateLimitExceeded: class ShadowRateLimitExceeded extends Error {
-    retryAfterSeconds = 60;
-  },
-}));
+// Only the enforcer is mocked; the pure resolver and message helper stay REAL so
+// the route applies the same limits it ships with.
+jest.mock('@/src/server/pilot/shadowRateLimit', () => {
+  const actual = jest.requireActual('@/src/server/pilot/shadowRateLimit');
+  return { ...actual, enforceShadowRateLimit: jest.fn().mockResolvedValue(undefined) };
+});
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockQuery = query as jest.Mock;

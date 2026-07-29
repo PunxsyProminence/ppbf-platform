@@ -7,7 +7,12 @@ import { uploadPilotVideoFile } from '@/src/server/pilot/blob';
 import { query } from '@/src/server/pilot/db';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
-import { enforceShadowRateLimit, ShadowRateLimitExceeded } from '@/src/server/pilot/shadowRateLimit';
+import {
+  enforceShadowRateLimit,
+  resolveShadowRateLimit,
+  shadowRateLimitMessage,
+  ShadowRateLimitExceeded,
+} from '@/src/server/pilot/shadowRateLimit';
 import { writeShadowTelemetryEvent } from '@/src/server/pilot/shadowTelemetry';
 import {
   describeVideoUpload,
@@ -28,9 +33,7 @@ export async function POST(request: NextRequest) {
     await enforceShadowRateLimit({
       organizationId: principal.organizationId,
       accountId: principal.accountId,
-      endpointKey: 'video_upload',
-      limit: 5,
-      windowSeconds: 3_600,
+      ...resolveShadowRateLimit('video_upload'),
     });
 
     const formData = await request.formData();
@@ -133,7 +136,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof ShadowRateLimitExceeded) {
       return NextResponse.json(
-        { error: 'Too many video uploads. Please wait and try again.' },
+        { error: shadowRateLimitMessage(error.retryAfterSeconds, 'video upload') },
         { status: 429, headers: { 'Retry-After': String(error.retryAfterSeconds) } },
       );
     }
