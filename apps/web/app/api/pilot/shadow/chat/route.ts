@@ -738,9 +738,14 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     const persistedRequiresHumanReview = responseValidation.requiresHumanReview || state === 'filtered';
     const persistedHandoff = resolveHandoff({
       requiresHumanReview: persistedRequiresHumanReview,
-      topic: requestValidation.topic && requestValidation.topic !== 'none'
-        ? requestValidation.topic
-        : undefined,
+      // The response's own topic wins. A benign question can still draw an
+      // answer that volunteers weight-cut guidance, and resolving the handoff
+      // only from the request gave that answer the generic banner instead of
+      // the weight-cut one naming the medical team.
+      topic: responseValidation.topic
+        ?? (requestValidation.topic && requestValidation.topic !== 'none'
+          ? requestValidation.topic
+          : undefined),
     });
 
     if (state === 'ok' || state === 'filtered') {

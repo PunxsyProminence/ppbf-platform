@@ -71,6 +71,15 @@ export interface ShadowResponseValidation {
   reasons: string[];
   requiresHumanReview: boolean;
   citationIds: string[];
+  /**
+   * High-risk topic detected in the RESPONSE, independent of the request.
+   *
+   * The handoff banner was resolved solely from the request's topic, so a
+   * response that volunteered weight-cut guidance to a benign question got the
+   * generic handoff instead of "talk to your medical team ... before changing
+   * any weight-cut plan". The route prefers this when set.
+   */
+  topic?: string;
 }
 
 export const SHADOW_SAFE_FILTERED_RESPONSE =
@@ -420,6 +429,26 @@ export function validateShadowResponse(
     reasons.push('Attempts to override human authority');
   }
 
+  // Weight cutting was gated on the REQUEST only. A response that volunteered a
+  // weight-cut directive -- to a question that never mentioned weight -- passed
+  // with no filter, and because the handoff topic was taken from the request,
+  // no weight-cut handoff banner either. Rapid weight loss in a youth combat
+  // sport is exactly the guidance that must not reach an athlete unreviewed, so
+  // the response is now gated on the same topic as the request.
+  //
+  // Scoped to directives and dehydration methods rather than the words "weight
+  // loss", so educational answers about risks and safe management -- which the
+  // request validator explicitly allows -- are not swept up.
+  const makesWeightCutDirective = (
+    /\b(?:cut|cutting|drop|shed|lose)\b.{0,30}\b(?:water\s+weight|\d+(?:\.\d+)?\s*(?:pounds?|lbs?|kilograms?|kgs?))\b/i.test(response)
+    || /\b(?:sauna|sweat\s*suit|water\s+load(?:ing)?|dehydrat(?:e|ing)|restrict(?:ing)?\s+(?:fluids?|water))\b/i.test(response)
+    || /\b(?:you\s+(?:should|can|need\s+to|must)|i\s+recommend(?:\s+that)?\s+you|to\s+make\s+weight)\b.{0,60}\b(?:cut\s+weight|make\s+weight|drop\s+(?:a|to)\s+.{0,20}weight\s+class)\b/i.test(response)
+  );
+  if (makesWeightCutDirective) {
+    filtered = true;
+    reasons.push('Contains a rapid weight-loss or dehydration directive without medical authority');
+  }
+
   const allowedEvidenceIds = new Set(
     (options.allowedEvidenceIds ?? options.verifiedSourceIds ?? [])
       .filter((evidenceId) => (
@@ -445,8 +474,24 @@ export function validateShadowResponse(
     filtered = true;
     reasons.push('Contains an unknown, malformed, or unauthorized evidence citation');
   }
-  const makesEvidenceClaim = /\b(research|studies?|data|evidence|clinical guidance|literature)\s+(suggests?|shows?|indicates?|demonstrates?|proves?|supports?)\b/i.test(response);
-  const makesQuantifiedEvidenceClaim = /\b\d+(?:\.\d+)?%\b|\b\d+\s+(?:similar\s+)?(cases?|athletes?|participants?|studies?)\b/i.test(response);
+  const makesEvidenceClaim = (
+    /\b(research|studies?|data|evidence|clinical guidance|literature)\s+(suggests?|shows?|indicates?|demonstrates?|proves?|supports?)\b/i.test(response)
+    // "proven" asserts the platform's TOP evidence tier, and DOCTRINE item 4
+    // forbids using it without verified evidence ids for the exact claim. It
+    // was not a trigger at all, so "this drill is proven to increase punch
+    // power" passed while the same claim framed as "data shows" was filtered --
+    // the framing was policed, the assertion was not.
+    //
+    // \bproven\b does not match "unproven" (no boundary after "un"), so hedged
+    // language stays allowed.
+    || /\b(?:clinically|scientifically|medically)?\s*proven\b/i.test(response)
+  );
+  // The trailing \b after % could never match: '%' and whatever follows it are
+  // both non-word characters, so no boundary exists there. Every percentage in
+  // every response therefore slipped this check -- "94% of athletes improve"
+  // passed, and only the separate "data shows" framing above caught the variant
+  // that happened to carry it.
+  const makesQuantifiedEvidenceClaim = /\b\d+(?:\.\d+)?\s*%|\b\d+\s+(?:similar\s+)?(cases?|athletes?|participants?|studies?)\b/i.test(response);
   if ((makesEvidenceClaim || makesQuantifiedEvidenceClaim) && citationIds.length === 0) {
     filtered = true;
     reasons.push('Makes an evidence or quantitative claim without an exact retrieved evidence citation');
@@ -473,6 +518,7 @@ export function validateShadowResponse(
     reasons,
     requiresHumanReview: filtered || reasons.length > 0,
     citationIds: filtered ? [] : citationIds,
+    ...(makesWeightCutDirective ? { topic: 'weight_cutting' } : {}),
   };
 }
 
