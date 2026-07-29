@@ -40,7 +40,24 @@ export interface ShadowChatCapabilities {
   canExportOwnData: boolean;
   canRequestDeletion: boolean;
   deletionFulfillment: 'manual_review_required';
-  canReviewSafetyEvents: boolean;
+  /**
+   * SHADOW's own chat-safety telemetry: filtered-response counts, refusal
+   * rates, job safety_status. Operational signal about how the assistant is
+   * behaving, carrying no clinical or youth-protection content.
+   *
+   * Renamed from canReviewSafetyEvents, which read as though it also covered
+   * SafeSport and incident reporting. It never did -- no incident,
+   * concussion, or return-to-play table exists in the schema -- but the name
+   * invited a future youth-protection surface to reuse a flag that is true
+   * for the cross-organization tier.
+   *
+   * WHEN INCIDENT OR SAFESPORT CONTENT IS BUILT (capability L26), IT MUST NOT
+   * REUSE THIS FLAG. shadowRoleSets.ts is explicit that Omega must never
+   * reach SafeSport content in any organization, so that surface needs its
+   * own capability, denied to platform_owner, in the way
+   * canAccessProtectedHealthInformation already denies clinical state.
+   */
+  canReviewChatSafetyTelemetry: boolean;
 }
 
 export function getShadowChatCapabilities(role: PilotRole): ShadowChatCapabilities {
@@ -66,7 +83,7 @@ export function getShadowChatCapabilities(role: PilotRole): ShadowChatCapabiliti
     canExportOwnData: false,
     canRequestDeletion: true,
     deletionFulfillment: 'manual_review_required',
-    canReviewSafetyEvents: master,
+    canReviewChatSafetyTelemetry: master,
   };
 }
 
