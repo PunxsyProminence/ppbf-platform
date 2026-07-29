@@ -1,0 +1,184 @@
+# ─────────────────────────────────────────────────────────────────────────
+# Database migrations -- manual only.
+#
+# Until this existed, applying a migration meant running `npm run pilot:apply-*`
+# from someone's laptop with a production connection string in their shell. That
+# is the step the deploy workflows depend on and cannot verify: both of them ask
+# the operator to attest `migrations_complete`, and deploying code before its
+# schema fails every request that touches the new column.
+#
+# This runs the same runner scripts, using the same Azure OIDC identity the
+# deploy workflows already hold, and reads the connection string from the
+# Container App secret rather than a laptop. No new credential is introduced --
+# an operator who could dispatch a deploy could already reach these resources.
+#
+# SAFETY PROPERTIES
+#   * workflow_dispatch only. Nothing here runs on push, and there is no
+#     schedule -- a migration is never applied as a side effect of merging.
+#   * `confirm_target` must exactly equal the chosen target, so dispatching
+#     against production is a deliberate act rather than a wrong dropdown.
+#   * `environment:` is the target name, so if a GitHub environment protection
+#     rule (required reviewers) is configured for production, it gates this too.
+#     Note: as of writing, deploy-production.yml declares no environment, so
+#     configure one if you want approval on production schema changes.
+#   * Every runner is idempotent -- the SQL is `... if not exists` throughout,
+#     the first-login-pin runner wraps its statements in a single explicit
+#     transaction that rolls back as a unit, and the shadow-runtime runner takes
+#     a Postgres advisory lock so two concurrent dispatches cannot interleave.
+#     Re-running a migration that already applied is a no-op, which is why `all`
+#     is a safe default rather than a dangerous one.
+#
+# WHAT `all` DOES NOT INCLUDE
+#   The base schema (`pilot:apply-schema`) is deliberately its own option. It is
+#   idempotent too, but it is the whole schema rather than an increment, and
+#   applying it belongs to standing up a new environment -- not to a routine
+#   deploy. Choosing it should be a separate decision.
+# ─────────────────────────────────────────────────────────────────────────
+
+name: apply-migrations
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Which environment's database to migrate
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      confirm_target:
+        description: Retype the target exactly ("staging" or "production") to confirm
+        required: true
+        type: string
+      migration:
+        description: Which migration to apply ("all" runs every increment in dependency order)
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - multiorg
+          - session-expiry
+          - first-login-pin
+          - shadow-runtime
+          - public-interest
+          - scheduler-tables
+          - scheduler-race
+          - base-schema-new-environment-only
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  # Two migrations against one database at the same time is never intended.
+  # The shadow-runtime runner's advisory lock would serialize its own SQL, but
+  # nothing coordinates across different runners, so serialize per target here.
+  group: apply-migrations-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    environment: ${{ inputs.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RESOURCE_GROUP: rg-ppbf-enterprise-staging
+      CONTAINER_APP_NAME: ${{ inputs.target == 'production' && 'app-ppbf-production' || 'app-ppbf-staging' }}
+    steps:
+      - name: Confirm The Operator Named The Intended Target
+        env:
+          TARGET: ${{ inputs.target }}
+          CONFIRM: ${{ inputs.confirm_target }}
+        run: |
+          if [ "$TARGET" != "$CONFIRM" ]; then
+            echo "::error::confirm_target ('$CONFIRM') does not match target ('$TARGET'). Refusing to migrate."
+            exit 1
+          fi
+          echo "Migrating the **$TARGET** database ($CONTAINER_APP_NAME)." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Locked Dependencies
+        run: npm ci
+
+      - name: Authenticate via Azure OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Masked before it is written anywhere. It is scoped to this job, and the
+      # job does nothing after the migration step.
+      - name: Resolve Database Connection
+        run: |
+          CONN="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-postgres-connection-string \
+            --query value -o tsv)"
+          test -n "$CONN"
+          echo "::add-mask::$CONN"
+          echo "AZURE_POSTGRES_CONNECTION_STRING=$CONN" >> "$GITHUB_ENV"
+
+      - name: Apply Migration
+        env:
+          MIGRATION: ${{ inputs.migration }}
+        run: |
+          set -euo pipefail
+          cd apps/web
+
+          run_one() {
+            echo "::group::npm run pilot:apply-$1"
+            npm run "pilot:apply-$1"
+            echo "::endgroup::"
+          }
+
+          case "$MIGRATION" in
+            base-schema-new-environment-only)
+              run_one schema
+              ;;
+            all)
+              # Dependency order, matching the sequence these were introduced in.
+              # Each is idempotent, so re-running an already-applied migration is
+              # a no-op and the set can be applied wholesale without tracking
+              # which environment is at which revision.
+              for m in multiorg session-expiry first-login-pin shadow-runtime public-interest scheduler-tables scheduler-race; do
+                run_one "$m"
+              done
+              ;;
+            *)
+              run_one "$MIGRATION"
+              ;;
+          esac
+
+      - name: Record What Ran
+        if: always()
+        env:
+          MIGRATION: ${{ inputs.migration }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          {
+            echo ''
+            echo "### Migration result"
+            echo ''
+            echo "- target: \`$TARGET\`"
+            echo "- migration: \`$MIGRATION\`"
+            echo "- outcome: \`${{ job.status }}\`"
+            echo "- commit: \`${{ github.sha }}\`"
+            echo ''
+            if [ "${{ job.status }}" = "success" ]; then
+              echo "Safe to attest \`migrations_complete\` for **$TARGET** for the migrations listed above."
+            else
+              echo "**Do not** attest \`migrations_complete\` -- this run did not succeed."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
