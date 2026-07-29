@@ -3,6 +3,7 @@ import {
   DECISION_LOOP_ROLES,
   MANUAL_OVERRIDE_ROLES,
   ORGANIZATION_MEMBER_ROLES,
+  SHADOW_LIBRARY_CURATOR_ROLES,
   SHADOW_PHI_ROLES,
   SHADOW_PROJECTION_READ_ROLES,
 } from './shadowRoleSets';
@@ -30,6 +31,14 @@ describe('SHADOW role sets', () => {
       expect(() => requireRole(actor('platform_owner'), [...ORGANIZATION_MEMBER_ROLES])).toThrow('Forbidden');
     });
 
+    it('may curate an organization library, which holds doctrine rather than PHI', () => {
+      // The depth restriction is enforced per-document instead: a document
+      // carrying a subject_id is athlete-scoped, and the documents route runs
+      // assertActorCanAccessAthlete, which refuses platform_owner outright.
+      expect(SHADOW_LIBRARY_CURATOR_ROLES).toContain('platform_owner');
+      expect(() => requireRole(actor('platform_owner'), [...SHADOW_LIBRARY_CURATOR_ROLES])).not.toThrow();
+    });
+
     it('may force a SHADOW tier', () => {
       expect(MANUAL_OVERRIDE_ROLES).toContain('platform_owner');
     });
@@ -43,6 +52,15 @@ describe('SHADOW role sets', () => {
     it('must never reach protected health information', () => {
       expect(SHADOW_PHI_ROLES).not.toContain('platform_owner');
       expect(() => requireRole(actor('platform_owner'), [...SHADOW_PHI_ROLES])).toThrow('Forbidden');
+    });
+
+    it('keeps the library write path aligned with the review path that approves it', () => {
+      // Curating evidence and approving it are the same authority. If these
+      // ever diverge, either a curator can write what no reviewer can approve,
+      // or a reviewer can approve what no curator could have written.
+      expect([...SHADOW_LIBRARY_CURATOR_ROLES].sort()).toEqual(
+        ['admin', 'organization_admin', 'platform_owner'],
+      );
     });
 
     it('must not author decisions inside an organization', () => {
@@ -67,6 +85,7 @@ describe('SHADOW role sets', () => {
       ['SHADOW_PHI_ROLES', SHADOW_PHI_ROLES],
       ['DECISION_LOOP_ROLES', DECISION_LOOP_ROLES],
       ['MANUAL_OVERRIDE_ROLES', MANUAL_OVERRIDE_ROLES],
+      ['SHADOW_LIBRARY_CURATOR_ROLES', SHADOW_LIBRARY_CURATOR_ROLES],
     ])('is absent from %s', (_name, roles) => {
       expect(roles).not.toContain('board');
     });
@@ -82,6 +101,7 @@ describe('SHADOW role sets', () => {
       ['SHADOW_PHI_ROLES', SHADOW_PHI_ROLES],
       ['DECISION_LOOP_ROLES', DECISION_LOOP_ROLES],
       ['MANUAL_OVERRIDE_ROLES', MANUAL_OVERRIDE_ROLES],
+      ['SHADOW_LIBRARY_CURATOR_ROLES', SHADOW_LIBRARY_CURATOR_ROLES],
     ])('names both admin spellings in %s', (_name, roles) => {
       expect(roles.includes('admin')).toBe(roles.includes('organization_admin'));
     });

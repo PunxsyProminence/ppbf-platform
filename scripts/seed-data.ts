@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * PPBF Data Seed Script
- * Bulk upload workouts, research, and athlete data to PostgreSQL
+ * Bulk upload athletes, goals, and sessions data to PostgreSQL
  *
  * Usage:
  *   npx ts-node scripts/seed-data.ts --config scripts/seed-data.config.ts
@@ -20,8 +20,6 @@ interface SeedConfig {
     athletes?: string;
     goals?: string;
     sessions?: string;
-    researchSources?: string;
-    researchDocuments?: string;
   };
   options: {
     dryRun?: boolean;

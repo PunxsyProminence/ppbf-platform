@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide walks you through uploading your workout, athlete, and research data to the PPBF platform. The seed system supports **CSV and JSON** formats with automatic validation and error reporting.
+This guide walks you through uploading your athlete, goal, and session (workout) data to the PPBF platform. The seed system supports **CSV and JSON** formats with automatic validation and error reporting.
 
 ---
 

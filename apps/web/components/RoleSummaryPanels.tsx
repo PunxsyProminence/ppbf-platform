@@ -23,7 +23,7 @@ interface ParentSummaryPanelProps {
   childProgress: string;
   tasksDue: number;
   upcomingEvents: number;
-  attendancePercent: number;
+  attendancePercent: number | null;
   unreadMessages: number;
 }
 
@@ -167,7 +167,13 @@ export function ParentSummaryPanel({
   attendancePercent,
   unreadMessages
 }: Readonly<ParentSummaryPanelProps>) {
-  const attendanceColor = getAttendanceColor(attendancePercent);
+  // null means no attendance data has been tracked yet -- must render as a
+  // neutral "no data" state, not a colored/numeric band. Feeding null
+  // through as 0 would color-code an absence of data as the same red
+  // "bad attendance" band a genuinely low percentage gets.
+  const attendanceColor = attendancePercent === null
+    ? 'bg-[var(--canvas-tan-light)] border-[var(--black)]'
+    : getAttendanceColor(attendancePercent);
 
   return (
     <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-5">
@@ -192,7 +198,7 @@ export function ParentSummaryPanel({
       {/* Attendance */}
       <div className={`border-2 p-4 ${attendanceColor}`}>
         <p className="text-xs font-mono uppercase tracking-widest text-[var(--red-primary)]">Attendance</p>
-        <p className="mt-2 text-3xl font-black text-[var(--black)]">{attendancePercent}%</p>
+        <p className="mt-2 text-3xl font-black text-[var(--black)]">{attendancePercent === null ? 'Unavailable' : `${attendancePercent}%`}</p>
       </div>
 
       {/* Messages */}

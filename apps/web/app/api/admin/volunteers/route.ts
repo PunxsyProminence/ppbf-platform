@@ -9,7 +9,7 @@ export const runtime = 'nodejs';
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['organization_admin', 'admin']);
+    requireRole(principal, ['organization_admin', 'admin', 'platform_owner']);
 
     const items = await listVolunteers(principal.organizationId);
 

@@ -9,6 +9,28 @@ import { ORGANIZATION_MEMBER_ROLES, SHADOW_PROJECTION_READ_ROLES } from '@/src/s
 
 export const runtime = 'nodejs';
 
+// Shared by GET (list) and POST resolve -- a parent may only see or resolve
+// requirements tied to their own linked athletes, never any family in the
+// org. Returns [] (not undefined) when the parent has no linked athletes at
+// all, so callers can short-circuit instead of querying with an unbounded
+// filter.
+async function resolveParentAthleteScope(organizationId: string, accountId: string): Promise<string[]> {
+  const links = await query<{ athlete_id: string }>(
+    `select gl.athlete_id
+     from pilot.guardian_links gl
+     where gl.organization_id = $1
+       and gl.parent_id in (
+         select parent_id
+         from pilot.parents
+         where organization_id = $1
+           and account_id = $2
+       )`,
+    [organizationId, accountId],
+  );
+
+  return links.map((row) => row.athlete_id);
+}
+
 async function handleList(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -18,20 +40,7 @@ async function handleList(request: NextRequest) {
     let athleteScope: string[] | undefined;
 
     if (principal.role === 'parent') {
-      const links = await query<{ athlete_id: string }>(
-        `select gl.athlete_id
-         from pilot.guardian_links gl
-         where gl.organization_id = $1
-           and gl.parent_id in (
-             select parent_id
-             from pilot.parents
-             where organization_id = $1
-               and account_id = $2
-           )`,
-        [principal.organizationId, principal.accountId],
-      );
-
-      athleteScope = links.map((row) => row.athlete_id);
+      athleteScope = await resolveParentAthleteScope(principal.organizationId, principal.accountId);
       if (athleteScope.length === 0) {
         return NextResponse.json({ ok: true, organization_id: principal.organizationId, items: [] });
       }
@@ -80,13 +89,30 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ ok: false, error: 'missing research_requirement_id' }, { status: 400 });
       }
 
+      // A parent may only resolve requirements tied to their own linked
+      // athletes -- without this, any parent in the org could resolve any
+      // other family's open requirement (list scoping alone doesn't stop a
+      // direct POST with a guessed/enumerated id).
+      let athleteScope: string[] | undefined;
+      if (principal.role === 'parent') {
+        athleteScope = await resolveParentAthleteScope(principal.organizationId, principal.accountId);
+        if (athleteScope.length === 0) {
+          return NextResponse.json({ ok: false, error: 'Requirement not found' }, { status: 404 });
+        }
+      }
+
       const resolved = await resolveShadowResearchRequirement({
         organizationId: principal.organizationId,
         researchRequirementId: body.research_requirement_id,
         resolvedByAccountId: principal.accountId,
         resolvedByRole: principal.role,
         metadata: body.metadata ?? {},
+        athleteIds: athleteScope,
       });
+
+      if (!resolved) {
+        return NextResponse.json({ ok: false, error: 'Requirement not found' }, { status: 404 });
+      }
 
       return NextResponse.json({ ok: true, resolved });
     }

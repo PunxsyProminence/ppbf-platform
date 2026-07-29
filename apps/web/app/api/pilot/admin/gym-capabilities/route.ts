@@ -23,16 +23,37 @@ function toCapabilityAccess(value: unknown): Record<string, boolean> {
   return result;
 }
 
+// A platform_owner may act on any organization by supplying organization_id
+// explicitly (e.g. the new-org wizard setting capabilities for the gym it just
+// created, not the platform owner's own org). Every other role keeps resolving
+// strictly from their own session, exactly as before -- this only adds an
+// override, it never changes what an organization_admin/admin sees or saves.
+function resolveOrganizationId(
+  principal: { role: string; organizationId: string },
+  requestedOrganizationId: string | null | undefined,
+): string {
+  const requested = requestedOrganizationId?.trim();
+  if (principal.role === 'platform_owner' && requested) {
+    return requested;
+  }
+  return principal.organizationId;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['platform_owner', 'organization_admin', 'admin']);
 
+    const organizationId = resolveOrganizationId(
+      principal,
+      request.nextUrl.searchParams.get('organization_id'),
+    );
+
     const row = await queryOne<{ capability_access: unknown }>(
       `select capability_access
        from pilot.admin_gym_capability_access
        where organization_id = $1`,
-      [principal.organizationId],
+      [organizationId],
     );
 
     return NextResponse.json({
@@ -49,8 +70,9 @@ export async function POST(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['platform_owner', 'organization_admin', 'admin']);
 
-    const body = (await request.json()) as { capabilityAccess?: unknown };
+    const body = (await request.json()) as { capabilityAccess?: unknown; organization_id?: string };
     const capabilityAccess = toCapabilityAccess(body.capabilityAccess);
+    const organizationId = resolveOrganizationId(principal, body.organization_id);
 
     await query(
       `insert into pilot.admin_gym_capability_access (
@@ -63,7 +85,7 @@ export async function POST(request: NextRequest) {
        set capability_access = excluded.capability_access,
            updated_by_account_id = excluded.updated_by_account_id,
            updated_at = now()`,
-      [principal.organizationId, JSON.stringify(capabilityAccess), principal.accountId],
+      [organizationId, JSON.stringify(capabilityAccess), principal.accountId],
     );
 
     return NextResponse.json({ ok: true });

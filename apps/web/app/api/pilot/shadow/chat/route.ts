@@ -43,6 +43,13 @@ import {
   enforceShadowRateLimit,
   ShadowRateLimitExceeded,
 } from '@/src/server/pilot/shadowRateLimit';
+import { getShadowChatCapabilities } from '@/src/server/pilot/shadowChatCapabilities';
+import { MANUAL_OVERRIDE_ROLES as MANUAL_OVERRIDE_ROLE_LIST } from '@/src/server/pilot/shadowRoleSets';
+import {
+  formatPlatformRollup,
+  getPlatformRollup,
+  mentionsCrossOrganizationScope,
+} from '@/src/server/pilot/omegaPlatformContext';
 import { budgetConversationHistory } from '@/src/server/pilot/shadowConversationHistory';
 import {
   publicEvidenceCitations,
@@ -296,7 +303,11 @@ Use only this authorized role and scope. Do not infer or disclose data outside i
 
 export const runtime = 'nodejs';
 
-const MANUAL_OVERRIDE_ROLES = new Set<PilotRole>(['coach', 'admin', 'organization_admin', 'platform_owner']);
+// Sourced from shadowRoleSets.ts rather than restated here. This route
+// previously kept its own literal copy of the same four roles, which is exactly
+// the divergence hazard that file's header warns about: a copy that drifts is
+// invisible in review.
+const MANUAL_OVERRIDE_ROLES = new Set<PilotRole>(MANUAL_OVERRIDE_ROLE_LIST);
 const SESSION_TYPE_OVERRIDES = new Set<import('@/src/server/pilot/shadowRouter').ShadowSessionType>([
   'quick_round',
   'heavy_bag',
@@ -600,11 +611,34 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       console.error('SHADOW evidence retrieval unavailable');
       return unavailableShadowEvidenceBundle();
     });
+    // Omega breadth: the platform tier may draw on aggregate operational
+    // counters from every gym, but only when the question is actually about
+    // more than one gym. crossOrganizationRead is the switch -- it is false for
+    // every other role, so no other role's turn changes shape. The trigger is a
+    // fixed pattern match, so an unrecognized phrasing simply falls through to
+    // the single-organization behavior that shipped before this existed.
+    //
+    // Depth is unaffected: this adds aggregate counters only. Per-athlete access
+    // is still refused upstream by assertActorCanAccessAthlete, which throws
+    // unconditionally for platform_owner, and the evidence bundle below stays
+    // scoped to the caller's own organization.
+    const chatCapabilities = getShadowChatCapabilities(userRole as PilotRole);
+    const platformContext = chatCapabilities.crossOrganizationRead
+      && mentionsCrossOrganizationScope(message)
+      ? await getPlatformRollup()
+          .then(formatPlatformRollup)
+          .catch(() => {
+            console.error('SHADOW platform rollup unavailable');
+            return '';
+          })
+      : '';
+
     const authorizedContextOutput = {
       ...contextOutput,
       context: [
         roleBasedContext.context,
         contextOutput.context,
+        platformContext,
         evidenceBundle.context,
       ].filter(Boolean).join('\n\n'),
     };

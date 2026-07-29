@@ -92,6 +92,7 @@ export default function SchedulerPage() {
   const [loading, setLoading] = useState(true);
   const [actionMessage, setActionMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [actionInFlight, setActionInFlight] = useState(false);
 
   const [newClassTitle, setNewClassTitle] = useState('');
   const [newClassStartAt, setNewClassStartAt] = useState('');
@@ -170,6 +171,15 @@ export default function SchedulerPage() {
   }, [loadSchedulerState]);
 
   async function runAction(payload: Record<string, unknown>, successMessage: string) {
+    // Guards every scheduler action (register, cover, create, request,
+    // check-in, review) against double-submit -- a second click before the
+    // first request resolves used to be able to reach the server as two
+    // concurrent register_class calls.
+    if (actionInFlight) {
+      return;
+    }
+
+    setActionInFlight(true);
     setActionMessage('');
     setErrorMessage('');
 
@@ -190,6 +200,8 @@ export default function SchedulerPage() {
       await loadSchedulerState();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Action failed');
+    } finally {
+      setActionInFlight(false);
     }
   }
 
@@ -254,7 +266,8 @@ export default function SchedulerPage() {
                                 'Class registration submitted.',
                               );
                             }}
-                            className="min-h-[40px] border border-[#8b4444] bg-[#2a1414] px-3 text-xs font-bold uppercase tracking-[0.08em]"
+                            disabled={actionInFlight}
+                            className="min-h-[40px] border border-[#8b4444] bg-[#2a1414] px-3 text-xs font-bold uppercase tracking-[0.08em] disabled:opacity-50"
                           >
                             Register
                           </button>
@@ -262,7 +275,8 @@ export default function SchedulerPage() {
                             <button
                               type="button"
                               onClick={() => void runAction({ action: 'cover_class', class_id: item.class_id }, 'Coach cover assignment updated.')}
-                              className="min-h-[40px] border border-[#5a4a3a] bg-[#111] px-3 text-xs font-bold uppercase tracking-[0.08em]"
+                              disabled={actionInFlight}
+                              className="min-h-[40px] border border-[#5a4a3a] bg-[#111] px-3 text-xs font-bold uppercase tracking-[0.08em] disabled:opacity-50"
                             >
                               Cover Class
                             </button>
@@ -329,7 +343,8 @@ export default function SchedulerPage() {
                           'Class scheduled successfully.',
                         )
                       }
-                      className="min-h-[42px] border border-[#8b4444] bg-[#2a1414] px-4 text-xs font-bold uppercase tracking-[0.08em]"
+                      disabled={actionInFlight}
+                      className="min-h-[42px] border border-[#8b4444] bg-[#2a1414] px-4 text-xs font-bold uppercase tracking-[0.08em] disabled:opacity-50"
                     >
                       Schedule Class
                     </button>
@@ -383,7 +398,8 @@ export default function SchedulerPage() {
                         'Coaching request submitted.',
                       );
                     }}
-                    className="min-h-[42px] border border-[#8b4444] bg-[#2a1414] px-4 text-xs font-bold uppercase tracking-[0.08em]"
+                    disabled={actionInFlight}
+                    className="min-h-[42px] border border-[#8b4444] bg-[#2a1414] px-4 text-xs font-bold uppercase tracking-[0.08em] disabled:opacity-50"
                   >
                     Submit Request
                   </button>
@@ -456,7 +472,8 @@ export default function SchedulerPage() {
                         role === 'athlete' ? 'Self check-in submitted.' : 'Attendance updated with override.',
                       );
                     }}
-                    className="min-h-[42px] border border-[#8b4444] bg-[#2a1414] px-4 text-xs font-bold uppercase tracking-[0.08em]"
+                    disabled={actionInFlight}
+                    className="min-h-[42px] border border-[#8b4444] bg-[#2a1414] px-4 text-xs font-bold uppercase tracking-[0.08em] disabled:opacity-50"
                   >
                     {role === 'athlete' ? 'Check In' : 'Update Attendance'}
                   </button>
@@ -484,7 +501,8 @@ export default function SchedulerPage() {
                                 'Parent review completed.',
                               )
                             }
-                            className="mt-1 min-h-[34px] border border-[#8b4444] bg-[#2a1414] px-2 text-[11px] font-bold uppercase tracking-[0.08em]"
+                            disabled={actionInFlight}
+                            className="mt-1 min-h-[34px] border border-[#8b4444] bg-[#2a1414] px-2 text-[11px] font-bold uppercase tracking-[0.08em] disabled:opacity-50"
                           >
                             Mark Parent Reviewed
                           </button>
