@@ -3,7 +3,7 @@ jest.mock('./boardSummary', () => ({ getBoardSummary: jest.fn() }));
 jest.mock('./shadowMetrics', () => ({ getGrowthMetrics: jest.fn() }));
 
 import {
-  PLATFORM_ROLLUP_MAX_RENDERED_GYMS,
+  PLATFORM_ROLLUP_MAX_GYMS,
   clearPlatformRollupCache,
   formatPlatformRollup,
   getPlatformRollup,
@@ -60,8 +60,13 @@ function growth(totalInteractions: number) {
   } as PlatformRollup['gyms'][number]['growth'];
 }
 
-function rollup(gyms: PlatformRollup['gyms']): PlatformRollup {
-  return { generatedAt: '2026-07-28T00:00:00.000Z', gymCount: gyms.length, gyms };
+function rollup(gyms: PlatformRollup['gyms'], totalGymCount = gyms.length): PlatformRollup {
+  return {
+    generatedAt: '2026-07-28T00:00:00.000Z',
+    gymCount: gyms.length,
+    totalGymCount,
+    gyms,
+  };
 }
 
 describe('cross-organization trigger', () => {
@@ -161,7 +166,7 @@ describe('rollup figures survive response validation', () => {
   });
 
   test('authorizes exactly the gyms the block renders, and no unrendered gym', () => {
-    const many = Array.from({ length: PLATFORM_ROLLUP_MAX_RENDERED_GYMS + 2 }, (_, index) => ({
+    const many = Array.from({ length: PLATFORM_ROLLUP_MAX_GYMS + 2 }, (_, index) => ({
       organizationId: `gym-${index}`,
       organizationName: `Gym ${index}`,
       status: 'active',
@@ -170,8 +175,8 @@ describe('rollup figures survive response validation', () => {
     }));
     const ids = platformRollupEvidenceIds(rollup(many));
 
-    expect(ids).toHaveLength(PLATFORM_ROLLUP_MAX_RENDERED_GYMS);
-    expect(ids).not.toContain(platformGymEvidenceId(`gym-${PLATFORM_ROLLUP_MAX_RENDERED_GYMS + 1}`));
+    expect(ids).toHaveLength(PLATFORM_ROLLUP_MAX_GYMS);
+    expect(ids).not.toContain(platformGymEvidenceId(`gym-${PLATFORM_ROLLUP_MAX_GYMS + 1}`));
   });
 
   test('a gym with no summary carries no token, so none is authorized', () => {
@@ -204,6 +209,7 @@ describe('fan-out cost control', () => {
       organization_id: `gym-${index}`,
       organization_name: `Gym ${index}`,
       status: 'active',
+      total_count: String(count),
     }));
   }
 
@@ -304,12 +310,12 @@ describe('rendered platform context', () => {
     expect(text).toContain('Alpha Boxing');
     expect(text).toContain('active athletes: 12');
     expect(text).toContain('SHADOW interactions (30d): 17');
-    expect(text).toContain('across 3 gym(s)');
+    expect(text).toContain('Listing 3 of 3 organization(s) on record');
   });
 
   test('withheld metrics are never rendered as a number', () => {
     const text = formatPlatformRollup(sample);
-    expect(text).toMatch(/Beta Club[^\n]*active athletes: withheld \(fewer than 5 athletes\)/);
+    expect(text).toMatch(/Beta Club[^\n]*active athletes: withheld \(fewer than 5 active athletes\)/);
     expect(text).toMatch(/Gamma Gym[^\n]*active athletes: none recorded/);
     expect(text).not.toContain('active athletes: null');
     expect(text).not.toContain('undefined');
@@ -319,6 +325,43 @@ describe('rendered platform context', () => {
     const text = formatPlatformRollup(sample);
     expect(text).toContain('never merge them into a single gym');
     expect(text).toContain('must never be estimated');
+  });
+
+  // The rows are pilot.organizations unfiltered, so the line count is not an
+  // active-gym count. Claiming otherwise hands the platform owner an
+  // authoritative wrong number about their own platform.
+  // boardSummary suppresses each metric on the distinct athletes appearing in
+  // THAT metric, not on the gym's headcount. Labelling all three "fewer than 5
+  // athletes" told the platform owner a busy gym had almost no athletes whenever
+  // a slow month put its session cohort under the floor.
+  test('names the cohort each withheld metric actually gates on', () => {
+    const quietMonth = rollup([{
+      organizationId: 'gym-q',
+      organizationName: 'Quiet Month Gym',
+      status: 'active',
+      board: board({
+        activeAthletes: availableMetric(30),
+        trainingSessions30Days: { status: 'insufficient_data', count: null, completedCount: null, completionRate: null },
+        coachReviews30Days: { status: 'insufficient_data', count: null, approvedCount: null, approvalRate: null },
+      }),
+      growth: growth(11),
+    }]);
+
+    const text = formatPlatformRollup(quietMonth);
+    expect(text).toContain('active athletes: 30');
+    expect(text).toContain('training sessions (30d): withheld (fewer than 5 athletes trained in the period)');
+    expect(text).toContain('coach reviews (30d): withheld (fewer than 5 athletes reviewed in the period)');
+    // The old wording would have contradicted the headcount on the same line.
+    expect(text).not.toContain('withheld (fewer than 5 athletes)');
+  });
+
+  test('does not present the listing as a roster of active member gyms', () => {
+    const text = formatPlatformRollup(sample);
+    expect(text).not.toContain('EVERY member gym');
+    expect(text).toContain('not a roster of active member gyms');
+    expect(text).toContain('Do not report the number of lines as the number of gyms');
+    // Status is on the line itself, so a pending gym is never read as active.
+    expect(text).toMatch(/- Gamma Gym \(pending\)/);
   });
 
   // The payload is built only from aggregate counters. If a future change
@@ -358,7 +401,7 @@ describe('rendered platform context', () => {
   });
 
   test('reports the omitted count instead of silently truncating', () => {
-    const many = Array.from({ length: PLATFORM_ROLLUP_MAX_RENDERED_GYMS + 3 }, (_, index) => ({
+    const many = Array.from({ length: PLATFORM_ROLLUP_MAX_GYMS + 3 }, (_, index) => ({
       organizationId: `gym-${index}`,
       organizationName: `Gym ${index}`,
       status: 'active',
@@ -366,8 +409,8 @@ describe('rendered platform context', () => {
       growth: growth(1),
     }));
     const text = formatPlatformRollup(rollup(many));
-    expect(text).toContain('3 further gym(s) not listed here');
-    expect(text).not.toContain(`Gym ${PLATFORM_ROLLUP_MAX_RENDERED_GYMS + 2}:`);
+    expect(text).toContain('3 further organization(s) not listed here');
+    expect(text).not.toContain(`Gym ${PLATFORM_ROLLUP_MAX_GYMS + 2}:`);
   });
 });
 
@@ -383,11 +426,12 @@ describe('per-gym fan-out stays inside the connection pool', () => {
     clearPlatformRollupCache();
   });
 
-  function organizations(count: number) {
+  function organizations(count: number, totalCount = count) {
     return Array.from({ length: count }, (_, index) => ({
       organization_id: `org-${index}`,
       organization_name: `Gym ${index}`,
       status: 'active',
+      total_count: String(totalCount),
     }));
   }
 
@@ -448,6 +492,52 @@ describe('per-gym fan-out stays inside the connection pool', () => {
     expect(result.gyms[0].unavailableReason).toBeUndefined();
     expect(result.gyms[2].unavailableReason).toBeUndefined();
   });
+
+  // The cap has to bind in SQL, not only at render time. Slicing afterwards
+  // still runs two queries per organization past the cap and discards both.
+  it('bounds the organization listing itself rather than only the rendering', async () => {
+    mockQuery.mockResolvedValue(organizations(2) as never);
+    mockBoardSummary.mockResolvedValue(null as never);
+    mockGrowthMetrics.mockResolvedValue(null as never);
+
+    await getPlatformRollup(1000);
+
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql).toMatch(/limit \$1/i);
+    expect(params).toEqual([PLATFORM_ROLLUP_MAX_GYMS]);
+  });
+
+  it('reports the platform total even though it only summarizes up to the cap', async () => {
+    const beyondCap = PLATFORM_ROLLUP_MAX_GYMS + 12;
+    // What the database returns under the LIMIT, with the window count of all.
+    mockQuery.mockResolvedValue(organizations(PLATFORM_ROLLUP_MAX_GYMS, beyondCap) as never);
+    mockBoardSummary.mockResolvedValue(null as never);
+    mockGrowthMetrics.mockResolvedValue(null as never);
+
+    const result = await getPlatformRollup(1000);
+
+    expect(result.gymCount).toBe(PLATFORM_ROLLUP_MAX_GYMS);
+    expect(result.totalGymCount).toBe(beyondCap);
+    // Two per organization summarized -- not two per organization on record.
+    expect(mockBoardSummary).toHaveBeenCalledTimes(PLATFORM_ROLLUP_MAX_GYMS);
+    expect(formatPlatformRollup(result)).toContain('12 further organization(s) not listed here');
+  });
+
+  // A missing or nonsensical window count must not invent gyms that were never
+  // listed, which would render a "further organizations" note for nothing.
+  it('falls back to the rows in hand when the total is absent or too small', async () => {
+    mockQuery.mockResolvedValue([
+      { organization_id: 'org-0', organization_name: 'Gym 0', status: 'active', total_count: null },
+      { organization_id: 'org-1', organization_name: 'Gym 1', status: 'active', total_count: null },
+    ] as never);
+    mockBoardSummary.mockResolvedValue(null as never);
+    mockGrowthMetrics.mockResolvedValue(null as never);
+
+    const result = await getPlatformRollup(1000);
+
+    expect(result.totalGymCount).toBe(2);
+    expect(formatPlatformRollup(result)).not.toContain('further organization(s)');
+  });
 });
 
 // getGrowthMetrics applies no minimum-cohort suppression of its own, so the
@@ -465,7 +555,7 @@ describe('small-gym suppression covers growth figures, not just board figures', 
 
   test('withholds interaction volume when the gym is below the cohort floor', () => {
     const text = formatPlatformRollup(smallGym);
-    expect(text).toContain('SHADOW interactions (30d): withheld (fewer than 5 athletes)');
+    expect(text).toContain('SHADOW interactions (30d): withheld (fewer than 5 active athletes)');
     expect(text).not.toContain('SHADOW interactions (30d): 7');
   });
 

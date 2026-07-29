@@ -46,6 +46,7 @@ import {
 import { getShadowChatCapabilities } from '@/src/server/pilot/shadowChatCapabilities';
 import { MANUAL_OVERRIDE_ROLES as MANUAL_OVERRIDE_ROLE_LIST } from '@/src/server/pilot/shadowRoleSets';
 import {
+  PLATFORM_SCOPE_UNAVAILABLE_CONTEXT,
   formatPlatformRollup,
   getPlatformRollup,
   mentionsCrossOrganizationScope,
@@ -624,14 +625,22 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // unconditionally for platform_owner, and the evidence bundle below stays
     // scoped to the caller's own organization.
     const chatCapabilities = getShadowChatCapabilities(userRole as PilotRole);
-    const platformRollup = chatCapabilities.crossOrganizationRead
-      && mentionsCrossOrganizationScope(message)
-      ? await getPlatformRollup().catch(() => {
-          console.error('SHADOW platform rollup unavailable');
+    const wantsPlatformScope = chatCapabilities.crossOrganizationRead
+      && mentionsCrossOrganizationScope(message);
+    const platformRollup = wantsPlatformScope
+      ? await getPlatformRollup().catch((error) => {
+          console.error('SHADOW platform rollup unavailable', error);
           return null;
         })
       : null;
-    const platformContext = platformRollup ? formatPlatformRollup(platformRollup) : '';
+    // Falling back to '' here would drop the block and leave the model answering
+    // a cross-gym question from its single-gym persona with nothing to signal the
+    // gap -- which the platform owner reads as a real answer about the whole
+    // platform. Naming the gap keeps a failed rollup degraded instead of
+    // confidently wrong. Covers an empty render too, not only a thrown rollup.
+    const platformContext = wantsPlatformScope
+      ? (platformRollup ? formatPlatformRollup(platformRollup) : '') || PLATFORM_SCOPE_UNAVAILABLE_CONTEXT
+      : '';
     // Rollup figures are quantities, and validateShadowResponse discards a stated
     // quantity that carries no authorized citation. Rather than exempt this path
     // from that rule -- the same rule that stops an uncited clinical claim -- each
