@@ -195,10 +195,39 @@ jobs:
           echo "::add-mask::$CONN"
           echo "GATE_DB_CONNECTION=$CONN" >> "$GITHUB_ENV"
 
+      # The org id lives in the app's secret store (it is what the app itself
+      # runs with), so the gate tests against the same organization the app
+      # serves rather than a workflow-hardcoded guess.
+      - name: Resolve Staging Default Organization For Gate
+        if: inputs.enable_shadow_gate
+        run: |
+          ORG_ID="$(az containerapp secret show \
+            --name app-ppbf-staging \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name ppbf-pilot-default-org-id \
+            --query value -o tsv)"
+          test -n "$ORG_ID"
+          echo "::add-mask::$ORG_ID"
+          echo "GATE_DEFAULT_ORG_ID=$ORG_ID" >> "$GITHUB_ENV"
+
+      # The first enabled run of this gate (30485899526, 2026-07-29) showed the
+      # step was never fully wired: the script hard-requires the fixture
+      # identities below and exits before doing anything without them. Every
+      # earlier run had enable_shadow_gate=false, so the gap never surfaced.
+      # The identities are gate-owned fixtures -- the intake promotion step
+      # creates (or idempotently re-creates) them on each run; they are not
+      # pre-existing accounts. The PIN must satisfy the 6-digit policy and must
+      # not be DEFAULT_FIRST_LOGIN_PIN, which a chosen PIN is refused.
       - name: Run SHADOW E2E Gate
         if: inputs.enable_shadow_gate
         env:
           AZURE_POSTGRES_CONNECTION_STRING: ${{ env.GATE_DB_CONNECTION }}
           PILOT_ADMIN_ACCOUNT_ID: org_admin_shadow
+          PPBF_PILOT_DEFAULT_ORG_ID: ${{ env.GATE_DEFAULT_ORG_ID }}
+          PILOT_SHADOW_ATHLETE_ACCOUNT_ID: gate_shadow_athlete
+          PILOT_SHADOW_ATHLETE_PIN: "224466"
+          PILOT_SHADOW_ATHLETE_ID: GATE-SHADOW-ATH-1
+          PILOT_SHADOW_GUARDIAN_ACCOUNT_ID: gate_shadow_guardian
+          PILOT_SHADOW_GUARDIAN_PARENT_ID: gate_shadow_parent_1
         run: |
           npm --prefix apps/web run gate:pilot:shadow-e2e
