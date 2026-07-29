@@ -273,7 +273,7 @@ describe('POST /api/pilot/shadow/chat trust boundary', () => {
     expect(systemPrompt).toContain('EVIDENCE UNAVAILABLE');
     expect(systemPrompt).toContain('Never invent citations, case counts, confidence values, or outcomes');
     expect(systemPrompt).not.toContain('org-attacker');
-    expect(providerBody.max_completion_tokens).toBe(1024);
+    expect(providerBody.max_completion_tokens).toBe(4096);
     expect(requestInit.signal).toBeDefined();
     expect(mockEnforceRateLimit).toHaveBeenNthCalledWith(1, {
       organizationId: 'org-session',
@@ -597,14 +597,27 @@ describe('SHADOW chat readiness guard', () => {
 
 describe('SHADOW completion-token budget', () => {
   test.each([
-    [undefined, 1024],
-    ['', 1024],
-    ['not-a-number', 1024],
+    [undefined, 4096],
+    ['', 4096],
+    ['not-a-number', 4096],
     ['64', 256],
     ['1025.9', 1025],
-    ['99999', 2048],
+    ['99999', 8192],
   ])('bounds %p to %p tokens', (raw, expected) => {
     expect(resolveShadowMaxCompletionTokens(raw)).toBe(expected);
+  });
+
+  // Measured, not guessed. The configured gpt-5-mini deployment spent all 1024
+  // tokens of the old default on reasoning and returned no content at all, so
+  // every SHADOW turn came back degraded; at 2048 it truncated mid-sentence. The
+  // observed peak was 2054 completion tokens, so the default must clear it with
+  // room to spare or long answers get cut off.
+  test('the default clears the measured peak completion spend', () => {
+    expect(resolveShadowMaxCompletionTokens(undefined)).toBeGreaterThan(2054);
+  });
+
+  test('the ceiling can be raised past the default without a code change', () => {
+    expect(resolveShadowMaxCompletionTokens('6000')).toBe(6000);
   });
 });
 

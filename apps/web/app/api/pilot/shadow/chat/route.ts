@@ -130,13 +130,35 @@ const PROVIDER_TIMEOUT_MS = 15_000;
 const MAX_MESSAGE_LENGTH = 12_000;
 const DEGRADED_RESPONSE = 'SHADOW is temporarily unavailable. No generated guidance was returned. Please try again later or contact your organization for support.';
 
+/**
+ * A reasoning deployment spends completion budget on reasoning tokens before it
+ * emits a single visible character, and Azure counts both against
+ * max_completion_tokens. Measured against the configured gpt-5-mini deployment on
+ * real SHADOW prompts:
+ *
+ *   budget 1024 -- finish_reason "length", reasoning_tokens 1024, NO content, on
+ *                  three attempts out of three. Empty content is read as failure
+ *                  here, so every turn answered with DEGRADED_RESPONSE. That is
+ *                  every role, not one tier: SHADOW chat could not answer at all.
+ *   budget 2048 -- delivered sometimes, truncated mid-sentence at others.
+ *   budget 8192 -- delivered 3/3, spending 964 / 1682 / 2054 completion tokens.
+ *
+ * The default is therefore twice the observed peak, so an unusually long answer
+ * finishes rather than truncating, and the ceiling leaves room for a longer prompt
+ * or a heavier-reasoning deployment without a code change. Nothing is charged for
+ * headroom -- billing follows tokens actually produced, not the budget. The floor
+ * stays low for a non-reasoning deployment, where it is purely a cost control.
+ */
+const DEFAULT_MAX_COMPLETION_TOKENS = 4_096;
+const MAX_COMPLETION_TOKENS_CEILING = 8_192;
+
 export function resolveShadowMaxCompletionTokens(
   rawValue: string | undefined = process.env.PPBF_SHADOW_MAX_COMPLETION_TOKENS,
 ): number {
-  if (rawValue === undefined || rawValue.trim() === '') return 1_024;
+  if (rawValue === undefined || rawValue.trim() === '') return DEFAULT_MAX_COMPLETION_TOKENS;
   const parsed = Number(rawValue);
-  if (!Number.isFinite(parsed)) return 1_024;
-  return Math.max(256, Math.min(2_048, Math.trunc(parsed)));
+  if (!Number.isFinite(parsed)) return DEFAULT_MAX_COMPLETION_TOKENS;
+  return Math.max(256, Math.min(MAX_COMPLETION_TOKENS_CEILING, Math.trunc(parsed)));
 }
 
 async function withProviderTimeout<T>(operation: Promise<T>): Promise<T> {
@@ -193,11 +215,27 @@ async function callAzureOpenAI(
     }
 
     const data = await azureResponse.json() as {
-      choices?: Array<{ message?: { content?: unknown } }>;
+      choices?: Array<{ message?: { content?: unknown }; finish_reason?: string }>;
+      usage?: {
+        completion_tokens?: number;
+        completion_tokens_details?: { reasoning_tokens?: number };
+      };
     };
     const response = typeof data.choices?.[0]?.message?.content === 'string'
       ? data.choices[0].message.content.trim()
       : '';
+    // An HTTP 200 carrying no content is the failure mode a reasoning deployment
+    // produces when it exhausts max_completion_tokens on reasoning. Without this
+    // it logged nothing at all -- the turn simply came back degraded, which reads
+    // as a provider outage and took a live probe to identify.
+    if (!response) {
+      console.error('Azure AI returned no content', {
+        finishReason: data.choices?.[0]?.finish_reason,
+        completionTokens: data.usage?.completion_tokens,
+        reasoningTokens: data.usage?.completion_tokens_details?.reasoning_tokens,
+        budget: resolveShadowMaxCompletionTokens(),
+      });
+    }
     return { response, success: response.length > 0 };
   } catch (error) {
     const reason = error instanceof Error && (

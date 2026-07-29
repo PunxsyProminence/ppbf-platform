@@ -192,7 +192,7 @@ describe('rollup figures survive response validation', () => {
       { organizationId: 'gym-a', organizationName: 'Alpha Boxing', status: 'active', board: board(), growth: growth(4) },
     ]));
     expect(text).toContain(`[E:${gymEvidenceId}]`);
-    expect(text).toContain('cite that gym\'s token verbatim');
+    expect(text).toContain('copy its token character for character');
   });
 });
 
@@ -330,6 +330,22 @@ describe('rendered platform context', () => {
   // The rows are pilot.organizations unfiltered, so the line count is not an
   // active-gym count. Claiming otherwise hands the platform owner an
   // authoritative wrong number about their own platform.
+  // A live model copied the specimen UUID this block used to carry as an
+  // illustration, citing it for gyms it wanted to attribute. It is structurally
+  // valid but authorized for nothing, so validateShadowResponse discarded the
+  // entire answer. Every UUID in the block must be a real, authorized token.
+  test('carries no citable token beyond the authorized gym tokens', () => {
+    const text = formatPlatformRollup(sample);
+    const authorized = new Set(platformRollupEvidenceIds(sample));
+    const emitted = text.match(/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gi) ?? [];
+
+    expect(emitted.length).toBe(authorized.size);
+    for (const token of emitted) {
+      expect(authorized.has(token)).toBe(true);
+    }
+    expect(text).not.toContain('00000000-0000-5000-8000-000000000000');
+  });
+
   // boardSummary suppresses each metric on the distinct athletes appearing in
   // THAT metric, not on the gym's headcount. Labelling all three "fewer than 5
   // athletes" told the platform owner a busy gym had almost no athletes whenever

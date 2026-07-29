@@ -417,7 +417,14 @@ export function formatPlatformRollup(rollup: PlatformRollup): string {
     // Response validation discards any stated quantity that is not backed by an
     // authorized citation. These figures are server-owned and citable, so the
     // model is told how to cite them rather than the rule being relaxed.
-    'Each gym line below ends with that gym\'s evidence token. Whenever you state one of its figures, cite that gym\'s token verbatim, for example [E:00000000-0000-5000-8000-000000000000]. A figure stated without its token is discarded before it reaches the reader.',
+    //
+    // Deliberately no specimen UUID here. An earlier version illustrated the
+    // format with [E:00000000-0000-5000-8000-000000000000], which is structurally
+    // valid to validateShadowResponse but authorized for nothing -- and a live
+    // model copied it for gyms it wanted to cite, so the whole answer was
+    // discarded as an unauthorized citation. The only tokens in this block are
+    // now the real ones on the gym lines, leaving nothing to copy by mistake.
+    'Each gym line below ends with that gym\'s own evidence token, in the form [E:...]. Whenever you state one of that gym\'s figures, copy its token character for character from the line it appears on. Never write a token that does not appear below, and never reuse one gym\'s token for another gym\'s figure: an unrecognized token discards the entire answer, and a figure stated with no token is discarded as well.',
     `Generated ${rollup.generatedAt}. Listing ${rendered.length} of ${rollup.totalGymCount} organization(s) on record.`,
     '',
     ...lines,
