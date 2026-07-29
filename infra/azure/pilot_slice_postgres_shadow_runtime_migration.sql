@@ -33,9 +33,23 @@ create table if not exists pilot.shadow_chat_messages (
   created_at timestamptz not null default now()
 );
 
+-- evidence_tier and handoff are persisted per assistant message because the
+-- chat UI renders both, and without them a restored conversation was not a
+-- faithful replay of what the user was originally shown. A message stored
+-- without an evidence grade rendered at the EMERGING style -- the second
+-- darkest, meaning well-evidenced -- so an answer originally graded
+-- RESEARCH_NEEDED reopened looking more authoritative than it was. Worse, the
+-- dropped handoff meant the "Human Handoff Required" banner disappeared on
+-- reopen, taking instructions like "talk to your medical team before changing
+-- any weight-cut plan" with it. Both are nullable: rows written before this
+-- migration have no grade to recover, and the read path treats null as
+-- RESEARCH_NEEDED rather than inventing a better one.
 alter table pilot.shadow_chat_messages
   add column if not exists topic text not null default 'general',
-  add column if not exists session_type text not null default 'quick_round';
+  add column if not exists session_type text not null default 'quick_round',
+  add column if not exists evidence_tier text null
+    check (evidence_tier in ('PROVEN', 'EMERGING', 'EXPERIMENTAL', 'RESEARCH_NEEDED')),
+  add column if not exists handoff text null;
 
 create index if not exists idx_shadow_chat_messages_conversation
   on pilot.shadow_chat_messages(organization_id, account_id, conversation_id, created_at asc);
