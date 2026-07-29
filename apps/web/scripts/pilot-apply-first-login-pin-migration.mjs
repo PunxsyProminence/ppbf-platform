@@ -4,10 +4,56 @@ import { fileURLToPath } from 'node:url';
 
 import { Client } from 'pg';
 
+/**
+ * Load apps/web/.env.local into process.env, without adding a dotenv
+ * dependency for one file.
+ *
+ * The Next dev server already reads this file, so the connection string is
+ * sitting right there -- but a plain node script does not, which meant every
+ * run of this migration started with the operator exporting the variable by
+ * hand. That is a needless step, and getting the quoting wrong in a shell
+ * produces a mangled host rather than an obvious error.
+ *
+ * A real environment variable always wins, so CI and any deliberate one-off
+ * override still behave exactly as before.
+ */
+async function loadEnvLocal() {
+  const envPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../.env.local');
+
+  let contents;
+  try {
+    contents = await fs.readFile(envPath, 'utf8');
+  } catch {
+    return; // No .env.local (CI, or a container). The env var must be set.
+  }
+
+  for (const rawLine of contents.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+
+    const separator = line.indexOf('=');
+    if (separator <= 0) continue;
+
+    const key = line.slice(0, separator).trim();
+    if (process.env[key] !== undefined) continue;
+
+    let value = line.slice(separator + 1).trim();
+    // Strip one matched pair of surrounding quotes; a bare value keeps any
+    // quote characters it legitimately contains.
+    if (value.length >= 2 && ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))) {
+      value = value.slice(1, -1);
+    }
+    process.env[key] = value;
+  }
+}
+
 function required(name) {
   const value = process.env[name];
   if (!value?.trim()) {
-    throw new Error(`Missing required environment variable: ${name}`);
+    throw new Error(
+      `Missing required environment variable: ${name}. `
+      + 'Set it in apps/web/.env.local, or export it before running this script.',
+    );
   }
   return value;
 }
@@ -42,6 +88,7 @@ export async function applyMigrationTransaction(client, sql) {
 }
 
 export async function run() {
+  await loadEnvLocal();
   const connectionString = required('AZURE_POSTGRES_CONNECTION_STRING');
 
   const __filename = fileURLToPath(import.meta.url);
