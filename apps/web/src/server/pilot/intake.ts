@@ -73,9 +73,21 @@ export interface IntakePromotionPayload {
   guardian?: {
     parent_id: string;
     account_id?: string;
+    /**
+     * @deprecated Rejected at the boundary rather than ignored.
+     *
+     * A guardian account provisioned with a PIN cannot be used: PIN sign-in is
+     * athlete-only, and resolvePrincipal revokes any live session belonging to
+     * a local non-athlete account on sight. Supplying this used to produce an
+     * account nobody could log into, so a caller still sending it is asking for
+     * something that cannot work and is told so.
+     *
+     * Guardians authenticate with Microsoft; supply `email` instead.
+     */
     pin?: string;
     full_name: string;
     phone?: string;
+    /** Required when `account_id` is set -- it is the guardian's login identity. */
     email?: string;
     relationship_to_athlete?: string;
   };
