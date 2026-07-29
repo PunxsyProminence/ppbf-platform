@@ -87,6 +87,55 @@ interface OrganizationRow {
 const ROLLUP_TTL_MS = 60_000;
 let memo: { at: number; value: PlatformRollup } | null = null;
 
+/**
+ * Ceiling on how many organizations are summarized at once.
+ *
+ * Each organization costs two concurrent connections (board + growth), and the
+ * shared pool is max: 10 (see getPool in db.ts). An unbounded fan-out over N
+ * organizations therefore holds 2N connections, so five gyms alone consumes the
+ * entire pool and every other in-flight request -- athlete check-ins, coach
+ * reviews, session lookups -- queues behind a single Omega turn. pg queues
+ * rather than rejecting and the pool sets no connectionTimeoutMillis, so this
+ * degrades as unexplained latency instead of a visible error.
+ *
+ * Three gyms in flight is six connections, leaving headroom for the rest of the
+ * application while still overlapping most of the wait.
+ */
+const GYM_ROLLUP_CONCURRENCY = 3;
+
+/**
+ * Bounded-concurrency map that preserves input order.
+ *
+ * Deliberately not Promise.all with a chunked loop: chunking stalls on the
+ * slowest member of each batch, whereas a shared cursor starts the next
+ * organization the moment any worker frees a connection.
+ */
+async function mapWithConcurrency<TInput, TOutput>(
+  items: readonly TInput[],
+  limit: number,
+  mapper: (item: TInput) => Promise<TOutput>,
+): Promise<TOutput[]> {
+  if (items.length === 0) {
+    return [];
+  }
+
+  const results = new Array<TOutput>(items.length);
+  let cursor = 0;
+
+  const workerCount = Math.max(1, Math.min(limit, items.length));
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (cursor < items.length) {
+        const index = cursor;
+        cursor += 1;
+        results[index] = await mapper(items[index]);
+      }
+    }),
+  );
+
+  return results;
+}
+
 export function clearPlatformRollupCache(): void {
   memo = null;
 }
@@ -105,8 +154,10 @@ export async function getPlatformRollup(nowMs: number = Date.now()): Promise<Pla
   // Per-organization isolation, same as platform/overview: one gym whose
   // aggregate query fails degrades to a named gap in the rollup rather than
   // failing the whole SHADOW turn.
-  const gyms = await Promise.all(
-    organizations.map(async (org): Promise<PlatformGymRollup> => {
+  const gyms = await mapWithConcurrency(
+    organizations,
+    GYM_ROLLUP_CONCURRENCY,
+    async (org): Promise<PlatformGymRollup> => {
       try {
         const [board, growth] = await Promise.all([
           getBoardSummary(org.organization_id),
@@ -129,7 +180,7 @@ export async function getPlatformRollup(nowMs: number = Date.now()): Promise<Pla
           unavailableReason: error instanceof Error ? error.message : 'summary unavailable',
         };
       }
-    }),
+    },
   );
 
   const value: PlatformRollup = {

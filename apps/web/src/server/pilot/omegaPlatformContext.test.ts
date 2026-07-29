@@ -1,11 +1,24 @@
+jest.mock('./db', () => ({ query: jest.fn(), queryOne: jest.fn() }));
+jest.mock('./boardSummary', () => ({ getBoardSummary: jest.fn() }));
+jest.mock('./shadowMetrics', () => ({ getGrowthMetrics: jest.fn() }));
+
 import {
   PLATFORM_ROLLUP_MAX_RENDERED_GYMS,
+  clearPlatformRollupCache,
   formatPlatformRollup,
+  getPlatformRollup,
   mentionsCrossOrganizationScope,
   type PlatformRollup,
 } from './omegaPlatformContext';
 import { getShadowChatCapabilities } from './shadowChatCapabilities';
+import { getBoardSummary } from './boardSummary';
+import { query } from './db';
+import { getGrowthMetrics } from './shadowMetrics';
 import type { PilotRole } from './contracts';
+
+const mockQuery = query as jest.MockedFunction<typeof query>;
+const mockBoardSummary = getBoardSummary as jest.MockedFunction<typeof getBoardSummary>;
+const mockGrowthMetrics = getGrowthMetrics as jest.MockedFunction<typeof getGrowthMetrics>;
 
 function availableMetric(count: number) {
   return { status: 'available' as const, count };
@@ -188,5 +201,84 @@ describe('rendered platform context', () => {
     const text = formatPlatformRollup(rollup(many));
     expect(text).toContain('3 further gym(s) not listed here');
     expect(text).not.toContain(`Gym ${PLATFORM_ROLLUP_MAX_RENDERED_GYMS + 2}:`);
+  });
+});
+
+// The shared pg pool is max: 10 (getPool in db.ts) and every organization in
+// the rollup costs two connections. An unbounded fan-out would hold 2N, so a
+// handful of gyms would consume the whole pool and stall unrelated requests
+// behind one Omega turn. These assert the ceiling rather than trusting it by
+// inspection, because the failure mode is latency and would not show up as a
+// test failure anywhere else.
+describe('per-gym fan-out stays inside the connection pool', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    clearPlatformRollupCache();
+  });
+
+  function organizations(count: number) {
+    return Array.from({ length: count }, (_, index) => ({
+      organization_id: `org-${index}`,
+      organization_name: `Gym ${index}`,
+      status: 'active',
+    }));
+  }
+
+  /** Resolves after other already-queued microtasks, without real timers. */
+  function tick(): Promise<void> {
+    return new Promise((resolve) => setImmediate(resolve));
+  }
+
+  it('never exceeds six concurrent summary queries regardless of gym count', async () => {
+    mockQuery.mockResolvedValue(organizations(25) as never);
+
+    let inFlight = 0;
+    let peakInFlight = 0;
+    const track = async () => {
+      inFlight += 1;
+      peakInFlight = Math.max(peakInFlight, inFlight);
+      await tick();
+      inFlight -= 1;
+      return null as never;
+    };
+
+    mockBoardSummary.mockImplementation(track);
+    mockGrowthMetrics.mockImplementation(track);
+
+    await getPlatformRollup(1000);
+
+    // 3 organizations in flight, 2 queries each.
+    expect(peakInFlight).toBeLessThanOrEqual(6);
+    expect(mockBoardSummary).toHaveBeenCalledTimes(25);
+    expect(mockGrowthMetrics).toHaveBeenCalledTimes(25);
+  });
+
+  it('returns every gym, in input order, despite the bound', async () => {
+    mockQuery.mockResolvedValue(organizations(7) as never);
+    mockBoardSummary.mockResolvedValue(null as never);
+    mockGrowthMetrics.mockResolvedValue(null as never);
+
+    const result = await getPlatformRollup(2000);
+
+    expect(result.gymCount).toBe(7);
+    expect(result.gyms.map((gym) => gym.organizationId)).toEqual([
+      'org-0', 'org-1', 'org-2', 'org-3', 'org-4', 'org-5', 'org-6',
+    ]);
+  });
+
+  it('isolates a failing gym instead of losing the whole rollup', async () => {
+    mockQuery.mockResolvedValue(organizations(3) as never);
+    mockBoardSummary.mockImplementation(async (organizationId: string) => {
+      if (organizationId === 'org-1') throw new Error('boom');
+      return null as never;
+    });
+    mockGrowthMetrics.mockResolvedValue(null as never);
+
+    const result = await getPlatformRollup(3000);
+
+    expect(result.gyms).toHaveLength(3);
+    expect(result.gyms[1].unavailableReason).toBe('boom');
+    expect(result.gyms[0].unavailableReason).toBeUndefined();
+    expect(result.gyms[2].unavailableReason).toBeUndefined();
   });
 });
