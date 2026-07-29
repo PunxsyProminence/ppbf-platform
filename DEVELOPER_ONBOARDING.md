@@ -33,9 +33,10 @@ npm install
 npm run dev
 
 ## Step 6: Quick Reference
-Keep quick-reference.ps1 and COMPLETE_REFERENCE_GUIDE.md handy.
+Keep quick-reference.ps1 handy.
 Run final-master-status.ps1 for current status.
 Use backup-export.ps1 before changes.
+See [MASTER_INDEX.md](MASTER_INDEX.md) for the current documentation map.
 
 Welcome to the PPBF platform development team.
 
