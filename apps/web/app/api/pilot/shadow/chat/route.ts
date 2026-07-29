@@ -49,6 +49,7 @@ import {
   formatPlatformRollup,
   getPlatformRollup,
   mentionsCrossOrganizationScope,
+  platformRollupEvidenceIds,
 } from '@/src/server/pilot/omegaPlatformContext';
 import { budgetConversationHistory } from '@/src/server/pilot/shadowConversationHistory';
 import {
@@ -623,15 +624,19 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // unconditionally for platform_owner, and the evidence bundle below stays
     // scoped to the caller's own organization.
     const chatCapabilities = getShadowChatCapabilities(userRole as PilotRole);
-    const platformContext = chatCapabilities.crossOrganizationRead
+    const platformRollup = chatCapabilities.crossOrganizationRead
       && mentionsCrossOrganizationScope(message)
-      ? await getPlatformRollup()
-          .then(formatPlatformRollup)
-          .catch(() => {
-            console.error('SHADOW platform rollup unavailable');
-            return '';
-          })
-      : '';
+      ? await getPlatformRollup().catch(() => {
+          console.error('SHADOW platform rollup unavailable');
+          return null;
+        })
+      : null;
+    const platformContext = platformRollup ? formatPlatformRollup(platformRollup) : '';
+    // Rollup figures are quantities, and validateShadowResponse discards a stated
+    // quantity that carries no authorized citation. Rather than exempt this path
+    // from that rule -- the same rule that stops an uncited clinical claim -- each
+    // rendered gym carries a server-derived evidence id, authorized here.
+    const platformEvidenceIds = platformRollup ? platformRollupEvidenceIds(platformRollup) : [];
 
     const authorizedContextOutput = {
       ...contextOutput,
@@ -663,8 +668,14 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
 
     // Step 7: Validate response BEFORE displaying to user
     const responseValidation = validateShadowResponse(llmResponse, {
-      allowedEvidenceIds: evidenceBundle.allowedEvidenceIds,
+      allowedEvidenceIds: [...evidenceBundle.allowedEvidenceIds, ...platformEvidenceIds],
     });
+    // Platform-rollup ids are authorized for validation but are not library
+    // evidence, so they are kept out of the bundle's own citation record rather
+    // than persisted against a bundle they do not belong to.
+    const platformEvidenceIdSet = new Set(platformEvidenceIds);
+    const bundleCitationIds = responseValidation.citationIds
+      .filter((citationId) => !platformEvidenceIdSet.has(citationId));
     const finalResponse = responseValidation.message;
     const citations = publicEvidenceCitations(evidenceBundle, responseValidation.citationIds);
     const state: ShadowResponseState = responseValidation.filtered ? 'filtered' : providerState;
@@ -691,7 +702,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           ? {
               bundleId: evidenceBundle.bundleId,
               availability: evidenceBundle.availability,
-              citationIds: responseValidation.citationIds,
+              citationIds: bundleCitationIds,
             }
           : undefined,
       });

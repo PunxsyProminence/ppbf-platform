@@ -8,8 +8,11 @@ import {
   formatPlatformRollup,
   getPlatformRollup,
   mentionsCrossOrganizationScope,
+  platformGymEvidenceId,
+  platformRollupEvidenceIds,
   type PlatformRollup,
 } from './omegaPlatformContext';
+import { validateShadowResponse } from './shadowChat';
 import { getShadowChatCapabilities } from './shadowChatCapabilities';
 import { getBoardSummary } from './boardSummary';
 import { query } from './db';
@@ -110,6 +113,81 @@ describe('only the Omega tier can reach cross-organization breadth', () => {
 
   test('Omega is still denied protected health information', () => {
     expect(getShadowChatCapabilities('platform_owner').canAccessProtectedHealthInformation).toBe(false);
+  });
+});
+
+// The bug these cover: validateShadowResponse discards any response stating a
+// quantity ("12 athletes") unless it carries an authorized [E:<id>] citation.
+// A cross-gym answer is nothing but quantities, so without citable ids the whole
+// feature returned the safety placeholder. Module-level tests alone missed this;
+// it only appears when the renderer and the validator are exercised together.
+describe('rollup figures survive response validation', () => {
+  const gymEvidenceId = platformGymEvidenceId('gym-a');
+
+  test('derives a UUID the validator will accept', () => {
+    expect(gymEvidenceId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+  });
+
+  test('is stable for the same organization and distinct across organizations', () => {
+    expect(platformGymEvidenceId('gym-a')).toBe(gymEvidenceId);
+    expect(platformGymEvidenceId('gym-b')).not.toBe(gymEvidenceId);
+  });
+
+  test('an uncited figure is still discarded -- the rule is intact', () => {
+    const result = validateShadowResponse('Alpha Boxing has 12 athletes.', {
+      allowedEvidenceIds: [gymEvidenceId],
+    });
+    expect(result.filtered).toBe(true);
+    expect(result.reasons.join(' ')).toMatch(/quantitative claim/i);
+  });
+
+  test('the same figure passes once it cites the gym token', () => {
+    const result = validateShadowResponse(
+      `Alpha Boxing has 12 athletes [E:${gymEvidenceId}].`,
+      { allowedEvidenceIds: [gymEvidenceId] },
+    );
+    expect(result.filtered).toBe(false);
+    expect(result.citationIds).toContain(gymEvidenceId);
+  });
+
+  test('a token that was never authorized is rejected', () => {
+    const result = validateShadowResponse(
+      `Alpha Boxing has 12 athletes [E:${platformGymEvidenceId('gym-not-rendered')}].`,
+      { allowedEvidenceIds: [gymEvidenceId] },
+    );
+    expect(result.filtered).toBe(true);
+  });
+
+  test('authorizes exactly the gyms the block renders, and no unrendered gym', () => {
+    const many = Array.from({ length: PLATFORM_ROLLUP_MAX_RENDERED_GYMS + 2 }, (_, index) => ({
+      organizationId: `gym-${index}`,
+      organizationName: `Gym ${index}`,
+      status: 'active',
+      board: board(),
+      growth: growth(1),
+    }));
+    const ids = platformRollupEvidenceIds(rollup(many));
+
+    expect(ids).toHaveLength(PLATFORM_ROLLUP_MAX_RENDERED_GYMS);
+    expect(ids).not.toContain(platformGymEvidenceId(`gym-${PLATFORM_ROLLUP_MAX_RENDERED_GYMS + 1}`));
+  });
+
+  test('a gym with no summary carries no token, so none is authorized', () => {
+    const ids = platformRollupEvidenceIds(rollup([
+      { organizationId: 'gym-a', organizationName: 'Alpha Boxing', status: 'active', board: board(), growth: growth(2) },
+      { organizationId: 'gym-x', organizationName: 'Broken Gym', status: 'active', board: null, growth: null },
+    ]));
+    expect(ids).toEqual([gymEvidenceId]);
+  });
+
+  test('every rendered gym line carries its own token', () => {
+    const text = formatPlatformRollup(rollup([
+      { organizationId: 'gym-a', organizationName: 'Alpha Boxing', status: 'active', board: board(), growth: growth(4) },
+    ]));
+    expect(text).toContain(`[E:${gymEvidenceId}]`);
+    expect(text).toContain('cite that gym\'s token verbatim');
   });
 });
 

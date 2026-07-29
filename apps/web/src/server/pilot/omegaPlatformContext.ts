@@ -21,9 +21,48 @@
 // SHADOW library, coach notes, medical/clearance state, conversations, or
 // rosters -- only the aggregate counters below.
 
+import crypto from 'node:crypto';
+
 import { getBoardSummary, type BoardSummary } from './boardSummary';
 import { query } from './db';
 import { getGrowthMetrics, type GrowthMetrics } from './shadowMetrics';
+
+/**
+ * Namespace for deriving a gym's platform-evidence id.
+ *
+ * validateShadowResponse discards any response that states a quantity without
+ * an authorized [E:<id>] citation, and it accepts only v1-5 UUIDs carrying the
+ * RFC 4122 variant. Rollup figures are real server-owned data, so rather than
+ * exempting them from that rule -- which would weaken the same check that stops
+ * an uncited clinical claim -- each gym gets a citable id and the model is told
+ * to cite it. The figures become auditable instead of merely permitted.
+ *
+ * Derivation is deterministic from organization_id so a gym's id is stable
+ * across turns, processes, and replicas.
+ */
+const PLATFORM_EVIDENCE_NAMESPACE = '6f3d1c92-8a41-4b7e-9c05-2d8f1e4a7b63';
+
+export function platformGymEvidenceId(organizationId: string): string {
+  const namespaceBytes = Buffer.from(PLATFORM_EVIDENCE_NAMESPACE.replaceAll('-', ''), 'hex');
+  const digest = crypto
+    .createHash('sha1')
+    .update(namespaceBytes)
+    .update(Buffer.from(organizationId, 'utf8'))
+    .digest();
+
+  const bytes = Buffer.from(digest.subarray(0, 16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x50; // version 5
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // RFC 4122 variant
+
+  const hex = bytes.toString('hex');
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20, 32),
+  ].join('-');
+}
 
 // A platform owner asking "how is the platform doing" is answered from this
 // rollup; anything narrower stays on the single-organization path. The trigger
@@ -245,6 +284,21 @@ function renderInteractions(
   return `${label}: ${gym.growth.totalInteractions}`;
 }
 
+/**
+ * The evidence ids the rendered block actually carries, for the caller to add to
+ * validateShadowResponse's allowed set.
+ *
+ * Sliced identically to formatPlatformRollup: a gym that is not rendered has no
+ * token in the prompt, so authorizing its id would let the model cite a figure
+ * it was never shown.
+ */
+export function platformRollupEvidenceIds(rollup: PlatformRollup): string[] {
+  return rollup.gyms
+    .slice(0, PLATFORM_ROLLUP_MAX_RENDERED_GYMS)
+    .filter((gym) => gym.board)
+    .map((gym) => platformGymEvidenceId(gym.organizationId));
+}
+
 export function formatPlatformRollup(rollup: PlatformRollup): string {
   if (rollup.gymCount === 0) {
     return '';
@@ -264,7 +318,7 @@ export function formatPlatformRollup(rollup: PlatformRollup): string {
       renderMetric('coach reviews (30d)', gym.board.coachReviews30Days, cohort),
       renderInteractions(gym, cohort),
     ];
-    return `- ${gym.organizationName} (${gym.status}): ${parts.join('; ')}`;
+    return `- ${gym.organizationName} (${gym.status}): ${parts.join('; ')} [E:${platformGymEvidenceId(gym.organizationId)}]`;
   });
 
   return [
@@ -275,6 +329,10 @@ export function formatPlatformRollup(rollup: PlatformRollup): string {
     // role's turn.
     'These figures cover EVERY member gym on the platform, not only the gym named in the persona above. Attribute each number to the gym it is listed under and never merge them into a single gym.',
     'Aggregate operational counters only. Per-athlete records, medical or clearance status, coach notes, and any other organization-private content are NOT included and are not available at this scope. A withheld metric must never be estimated or filled in.',
+    // Response validation discards any stated quantity that is not backed by an
+    // authorized citation. These figures are server-owned and citable, so the
+    // model is told how to cite them rather than the rule being relaxed.
+    'Each gym line below ends with that gym\'s evidence token. Whenever you state one of its figures, cite that gym\'s token verbatim, for example [E:00000000-0000-5000-8000-000000000000]. A figure stated without its token is discarded before it reaches the reader.',
     `Generated ${rollup.generatedAt} across ${rollup.gymCount} gym(s).`,
     '',
     ...lines,
