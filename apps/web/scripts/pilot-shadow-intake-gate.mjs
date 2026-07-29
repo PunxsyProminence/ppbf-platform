@@ -22,7 +22,6 @@ const baseUrl = process.env.PILOT_GATE_BASE_URL || 'http://localhost:3000';
 const connectionString = process.env.AZURE_POSTGRES_CONNECTION_STRING || '';
 const adminAccountId = process.env.PILOT_ADMIN_ACCOUNT_ID || '';
 const organizationId = process.env.PILOT_ORG_A_ID || process.env.PPBF_PILOT_DEFAULT_ORG_ID || '';
-const organizationName = process.env.PILOT_ORG_A_NAME || '';
 
 const athleteAccountId = process.env.PILOT_SHADOW_ATHLETE_ACCOUNT_ID || '';
 const athletePin = process.env.PILOT_SHADOW_ATHLETE_PIN || '';
@@ -54,7 +53,8 @@ try {
   requireEnv('AZURE_POSTGRES_CONNECTION_STRING', connectionString);
   requireEnv('PILOT_ADMIN_ACCOUNT_ID', adminAccountId);
   requireEnv('PILOT_ORG_A_ID or PPBF_PILOT_DEFAULT_ORG_ID', organizationId);
-  requireEnv('PILOT_ORG_A_NAME', organizationName);
+  // PILOT_ORG_A_NAME was required here but never read by anything below --
+  // requiring it only made the gate harder to wire, so it is gone.
   requireEnv('PILOT_SHADOW_ATHLETE_ACCOUNT_ID', athleteAccountId);
   requireEnv('PILOT_SHADOW_ATHLETE_PIN', athletePin);
   requireEnv('PILOT_SHADOW_ATHLETE_ID', athleteId);
@@ -244,6 +244,23 @@ function assertShadowReadModels({ events, telemetry, observation, knowledge, res
 function assertAthleteSession(athleteSession) {
   if (!athleteSession.authenticated || athleteSession.athlete_id !== athleteId) {
     throw new Error('Athlete login/session verification failed');
+  }
+}
+
+function assertShadowChatAnswered(label, chat) {
+  // 'degraded' is the state the chat route reports when the model call fails
+  // or times out -- the exact failure mode that shipped to production when a
+  // 15s provider timeout sat under models that need 33-95s. A degraded reply
+  // still returns HTTP 200 with polite text, so checking success alone would
+  // pass a gate whose entire purpose is to catch this.
+  if (chat.success !== true || chat.state !== 'ok') {
+    throw new Error(
+      `SHADOW chat (${label}) did not produce a generated answer: `
+      + `success=${chat.success} state=${chat.state} error=${chat.error ?? 'none'}`,
+    );
+  }
+  if (typeof chat.response !== 'string' || chat.response.trim().length < 40) {
+    throw new Error(`SHADOW chat (${label}) returned an implausibly short answer: ${JSON.stringify(chat.response)}`);
   }
 }
 
@@ -444,6 +461,32 @@ async function run() {
     throw new Error('Guardian retrieval verification failed');
   }
 
+  // Steps 12-13 exercise the two SHADOW chat tiers end to end -- session,
+  // capability check, context build, live model call, and the provider
+  // timeout. Nothing else in CI proves the deployed app can actually get an
+  // answer out of Azure AI; the intake steps above never call the model.
+  console.log('12) Verify SHADOW chat Quick Round answers (athlete)');
+  const quickChat = await athlete.call('/api/pilot/shadow/chat', {
+    method: 'POST',
+    body: { message: 'What is one good warm-up before working the heavy bag, and why does it help?' },
+  });
+  assertShadowChatAnswered('quick round / athlete', quickChat);
+
+  console.log('13) Verify SHADOW chat Heavy Bag answers (administrator)');
+  // Heavy Bag runs synchronously against a reasoning deployment measured at
+  // ~95s on a representative prompt (see shadowRouter.ts), so this step is
+  // expected to take one to three minutes. fetch() has no default timeout in
+  // Node, so the wait is bounded by the app's own provider timeout.
+  const heavyChat = await admin.call('/api/pilot/shadow/chat', {
+    method: 'POST',
+    body: {
+      message: 'An athlete is strong on the bag but loses composure in the third round of sparring. '
+        + 'Give a focused two-week plan a volunteer coach could run, with one measurable checkpoint per week.',
+      tier: 'heavy_bag',
+    },
+  });
+  assertShadowChatAnswered('heavy bag / administrator', heavyChat);
+
   console.log('SHADOW INTAKE GATE PASS');
   console.log(
     JSON.stringify(
@@ -452,6 +495,7 @@ async function run() {
         athlete_id: athleteId,
         guardian_parent_id: guardianParentId,
         uploaded_documents: uploaded,
+        shadow_chat: { quick_round: quickChat.state, heavy_bag: heavyChat.state },
       },
       null,
       2,
