@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { validateAthletePayload } from '@/src/server/pilot/validation';
-import { upsertAthlete } from '@/src/server/pilot/entities';
+import { insertAthleteIfAbsent } from '@/src/server/pilot/entities';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
@@ -20,7 +20,17 @@ export async function POST(request: NextRequest) {
       throw new Error('Forbidden: coach can only create athletes assigned to self');
     }
 
-    await upsertAthlete(principal.organizationId, payload);
+    // Create-only, and enforced by the primary key rather than by a prior
+    // read: an "on conflict do update" here would silently overwrite an
+    // existing athlete's name, dob, weight class, gym status, emergency
+    // contact, active flag and coach assignment. That was tolerable while
+    // this route was only driven by the gate scripts with generated ids; it
+    // is a live data-loss hazard now that an admin hand-types the id in the
+    // roster UI, where a typo can land on a real teammate.
+    const created = await insertAthleteIfAbsent(principal.organizationId, payload);
+    if (!created) {
+      throw new Error(`Athlete record already exists: ${payload.athlete_id}`);
+    }
 
     await writePilotAuditEvent({
       event_type: 'create',

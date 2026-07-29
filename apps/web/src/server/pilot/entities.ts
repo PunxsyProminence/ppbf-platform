@@ -34,6 +34,41 @@ export async function upsertAthlete(organizationId: string, payload: PilotAthlet
   );
 }
 
+/**
+ * Create-only counterpart to upsertAthlete, for the roster-create path where
+ * landing on an existing athlete_id must fail rather than overwrite it.
+ *
+ * The check and the write have to be the same statement: a `select` first
+ * lets two concurrent creates for one athlete_id both find nothing and both
+ * proceed, and the second one silently replaces the first athlete's name,
+ * dob, weight class, gym status, emergency contact and coach assignment.
+ * `do nothing` makes the primary key the arbiter instead. Returns false when
+ * the row already existed, so the caller can report the conflict.
+ */
+export async function insertAthleteIfAbsent(organizationId: string, payload: PilotAthlete): Promise<boolean> {
+  const inserted = await query<{ athlete_id: string }>(
+    `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+     on conflict (organization_id, athlete_id) do nothing
+     returning athlete_id`,
+    [
+      organizationId,
+      payload.athlete_id,
+      payload.full_name,
+      payload.dob,
+      payload.weight_class,
+      payload.gym_status,
+      payload.emergency_contact,
+      payload.active_flag,
+      payload.coach_id,
+      payload.created_at,
+      payload.updated_at,
+    ],
+  );
+
+  return inserted.length > 0;
+}
+
 export async function getGoalById(organizationId: string, goalId: string): Promise<PilotGoal | null> {
   return queryOne<PilotGoal>('select * from pilot.goals where organization_id = $1 and goal_id = $2', [organizationId, goalId]);
 }
