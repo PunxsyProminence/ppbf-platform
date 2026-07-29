@@ -4,27 +4,53 @@ import path from 'node:path';
 import process from 'node:process';
 
 const baseUrl = process.env.PILOT_GATE_BASE_URL || 'http://localhost:3000';
-const adminAccountId = process.env.PILOT_ADMIN_ACCOUNT_ID || '';
-const adminPin = process.env.PILOT_ADMIN_PIN || '';
-const bootstrapKey = process.env.PPBF_PILOT_BOOTSTRAP_KEY || '';
-const organizationId = process.env.PILOT_ORG_A_ID || process.env.PPBF_PILOT_DEFAULT_ORG_ID || '';
+const sessionCookie = process.env.PILOT_SESSION_COOKIE || '';
 
-let cookieHeader = '';
+const SESSION_COOKIE_NAME = 'ppbf_pilot_session';
 
+// The session cookie is supplied by the operator rather than minted here.
+//
+// This script used to log in with an account id and PIN. That can no longer
+// work for seeding, and not because of a misconfiguration: PIN sessions are
+// athlete self-service only -- loginWithAccountIdAndPin returns null for any
+// role other than 'athlete', explicitly so that privileged local sessions are
+// never minted -- while writing to the Library requires organization_admin,
+// admin or platform_owner. So a PIN login can only ever produce a session that
+// is refused by every endpoint below.
+//
+// The bootstrap step that preceded it is gone for the same reason:
+// /api/pilot/admin/bootstrap now refuses every request ("privileged accounts
+// must be Microsoft-authenticated"), and the Microsoft bootstrap that replaced
+// it issues an account with no PIN at all.
+//
+// Privileged accounts are Microsoft-authenticated, which is interactive and
+// cannot be driven from a script. Rather than add a second privileged
+// non-interactive path -- new attack surface for a seeding convenience -- this
+// takes the session of an administrator who has already signed in normally.
 function printUsage() {
   console.log(`SHADOW Library seed
 
+Populates the SHADOW Library with the canonical doctrine source, its document
+and chunks, and the capability coverage rules.
+
+Authentication:
+  Sign in to the platform as an organization_admin, admin or platform_owner,
+  then copy the value of the '${SESSION_COOKIE_NAME}' cookie and pass it as
+  PILOT_SESSION_COOKIE. The session must be Microsoft-authenticated; a PIN
+  session is athlete-only and will be refused by every write below.
+
 Required environment variables:
-  PILOT_ADMIN_ACCOUNT_ID
-  PILOT_ADMIN_PIN
+  PILOT_SESSION_COOKIE
 Optional environment variables:
-  PILOT_GATE_BASE_URL
-  PPBF_PILOT_BOOTSTRAP_KEY
-  PILOT_ORG_A_ID
-  PPBF_PILOT_DEFAULT_ORG_ID
+  PILOT_GATE_BASE_URL   (default http://localhost:3000)
+
+Note:
+  Seeding does not make anything citable. Sources and documents are written
+  as 'pending_review' and stay invisible to SHADOW retrieval until they are
+  approved through the evidence review queue at /admin/shadow.
 
 Example:
-  PILOT_GATE_BASE_URL=https://www.punxsyprominence.org PILOT_ADMIN_ACCOUNT_ID=org_admin_shadow PILOT_ADMIN_PIN=<set> PPBF_PILOT_BOOTSTRAP_KEY=<set> npm --prefix apps/web run seed:shadow:library
+  PILOT_GATE_BASE_URL=https://www.punxsyprominence.org PILOT_SESSION_COOKIE=<cookie> npm --prefix apps/web run seed:shadow:library
 `);
 }
 
@@ -55,29 +81,11 @@ function chunkText(text, targetLength = 1000) {
   return chunks;
 }
 
-async function maybeBootstrapAdmin() {
-  if (!bootstrapKey) {
-    return;
-  }
-
-  console.log('0) Bootstrap admin account');
-  const response = await fetch(`${baseUrl}/api/pilot/admin/bootstrap`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-ppbf-bootstrap-key': bootstrapKey,
-    },
-    body: JSON.stringify({
-      account_id: adminAccountId,
-      pin: adminPin,
-      organization_id: organizationId || undefined,
-    }),
-  });
-
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok || payload?.ok === false) {
-    throw new Error(`Bootstrap failed (${response.status}): ${JSON.stringify(payload)}`);
-  }
+function cookieHeaderValue() {
+  // Accept either the bare token or a full 'name=value' pair, since copying a
+  // cookie out of devtools yields one or the other depending on where you copy
+  // it from.
+  return sessionCookie.includes('=') ? sessionCookie : `${SESSION_COOKIE_NAME}=${sessionCookie}`;
 }
 
 async function call(pathname, { method = 'GET', body } = {}) {
@@ -85,33 +93,32 @@ async function call(pathname, { method = 'GET', body } = {}) {
     method,
     headers: {
       'Content-Type': 'application/json',
-      ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+      Cookie: cookieHeaderValue(),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
 
-  const setCookie = response.headers.get('set-cookie');
-  if (setCookie) {
-    cookieHeader = setCookie.split(';')[0];
-  }
-
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      throw new Error(
+        `${method} ${pathname} failed (${response.status}): ${JSON.stringify(payload)}\n\n`
+        + `The session in PILOT_SESSION_COOKIE was rejected. A 401 means it is expired or not a\n`
+        + `session at all; a 403 means it belongs to an account that cannot curate the Library --\n`
+        + `that requires organization_admin, admin or platform_owner. Run with --help for details.`,
+      );
+    }
     throw new Error(`${method} ${pathname} failed (${response.status}): ${JSON.stringify(payload)}`);
   }
 
   return payload;
 }
 
-async function login() {
-  console.log('1) Admin login');
-  await call('/api/pilot/auth/login', {
-    method: 'POST',
-    body: {
-      account_id: adminAccountId,
-      pin: adminPin,
-    },
-  });
+async function verifySession() {
+  console.log('1) Verify administrator session');
+  // Fails fast against a cheap read rather than surfacing the first auth
+  // problem partway through, once some rows are already written.
+  await call('/api/pilot/shadow/library/sources?limit=1');
 }
 
 async function registerDoctrineSource() {
@@ -249,16 +256,15 @@ async function run() {
     return;
   }
 
-  if (!adminAccountId || !adminPin) {
+  if (!sessionCookie) {
     printUsage();
-    throw new Error('Missing PILOT_ADMIN_ACCOUNT_ID or PILOT_ADMIN_PIN.');
+    throw new Error('Missing PILOT_SESSION_COOKIE.');
   }
 
   const doctrinePath = path.resolve(process.cwd(), '..', '..', 'docs', 'SHADOW_AUTHORITY_MODEL.md');
   const doctrineContent = await fs.readFile(doctrinePath, 'utf8');
 
-  await maybeBootstrapAdmin();
-  await login();
+  await verifySession();
 
   const sourceResult = await registerDoctrineSource();
   let documentId = null;
