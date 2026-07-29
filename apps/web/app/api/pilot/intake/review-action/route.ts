@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
-import { createOrUpdateAthleteAccount, createParentAccount } from '@/src/server/pilot/auth';
+import { createOrUpdateAthleteAccount } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { upsertAthlete } from '@/src/server/pilot/entities';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
@@ -10,6 +10,7 @@ import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import { buildReviewResearchFields } from '@/src/server/pilot/shadow';
 import { createShadowResearchRequirement } from '@/src/server/pilot/shadowResearch';
+import { createOrUpdateMicrosoftStaffAccount } from '@/src/server/pilot/staffProvisioning';
 import { writeShadowTelemetryEvent } from '@/src/server/pilot/shadowTelemetry';
 import {
   bindIntakeDocumentsToOwner,
@@ -306,14 +307,35 @@ export async function POST(request: NextRequest) { // NOSONAR
     }
 
     if (promotion.guardian) {
-      if (promotion.guardian.account_id && promotion.guardian.pin) {
-        await createParentAccount(
-          promotion.guardian.account_id,
-          promotion.guardian.pin,
-          principal.organizationId,
+      // Guardians are provisioned as Microsoft-authenticated accounts, not PIN
+      // accounts. createParentAccount wrote a local PIN account, but a parent
+      // cannot sign in with a PIN -- loginWithAccountIdAndPin admits only
+      // athletes, and resolvePrincipal revokes any live local non-athlete
+      // session on sight -- so every guardian onboarded this way received an
+      // account that could never be used. 'parent' is an invitable staff role,
+      // which is the supported path for exactly this.
+      // These messages are prefixed to match jsonError's status mapping, so a
+      // caller gets an actionable 400 rather than a masked 500. The error this
+      // replaces ("guardian.pin is required ...") had no such prefix and so
+      // surfaced as "Internal server error".
+      if (promotion.guardian.pin) {
+        throw new Error(
+          'Unsupported guardian.pin: a PIN account cannot sign in as a guardian. '
+          + 'Provide guardian.email instead -- guardians authenticate with Microsoft.',
         );
-      } else if (promotion.guardian.account_id && !promotion.guardian.pin) {
-        throw new Error('guardian.pin is required when guardian.account_id is provided');
+      }
+
+      if (promotion.guardian.account_id) {
+        if (!promotion.guardian.email) {
+          throw new Error('Missing guardian.email: required when guardian.account_id is provided');
+        }
+
+        await createOrUpdateMicrosoftStaffAccount({
+          loginEmail: promotion.guardian.email,
+          organizationId: principal.organizationId,
+          role: 'parent',
+          accountIdHint: promotion.guardian.account_id,
+        });
       }
 
       await upsertGuardian({

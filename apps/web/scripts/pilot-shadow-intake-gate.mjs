@@ -28,9 +28,7 @@ const athleteAccountId = process.env.PILOT_SHADOW_ATHLETE_ACCOUNT_ID || '';
 const athletePin = process.env.PILOT_SHADOW_ATHLETE_PIN || '';
 const athleteId = process.env.PILOT_SHADOW_ATHLETE_ID || '';
 const guardianAccountId = process.env.PILOT_SHADOW_GUARDIAN_ACCOUNT_ID || '';
-// Still required: the promotion step provisions the guardian account and sets
-// this PIN on it, even though a parent can no longer sign in with one.
-const guardianPin = process.env.PILOT_SHADOW_GUARDIAN_PIN || '';
+const guardianEmail = process.env.PILOT_SHADOW_GUARDIAN_EMAIL || 'guardian@example.org';
 const guardianParentId = process.env.PILOT_SHADOW_GUARDIAN_PARENT_ID || '';
 
 function requireEnv(name, value) {
@@ -305,10 +303,12 @@ async function run() {
         guardian: {
           parent_id: guardianParentId,
           account_id: guardianAccountId,
-          pin: guardianPin,
           full_name: 'Gate Guardian',
           phone: '555-0102',
-          email: 'guardian@example.org',
+          // The guardian's login identity. Promotion provisions a
+          // Microsoft-authenticated 'parent' account from this; a PIN is
+          // rejected, because a PIN account cannot sign in as a guardian.
+          email: guardianEmail,
           relationship_to_athlete: 'parent',
         },
         emergency_contact: {
@@ -425,15 +425,9 @@ async function run() {
 
   console.log('11) Verify guardian retrieval permissions');
   // A parent cannot sign in with a PIN -- PIN sessions are athlete-only -- so
-  // the guardian is authenticated the same way the administrator is.
-  //
-  // This will refuse while the promotion step above still provisions guardians
-  // through createParentAccount, which writes a local PIN account. Such an
-  // account cannot hold a session at all: resolvePrincipal revokes any
-  // ppbf_local non-athlete session on sight. mintGateSession reports that
-  // precisely rather than letting it surface as an unexplained 401, and the
-  // gate will pass once guardians are provisioned through the Microsoft invite
-  // path that 'parent' is already listed for in INVITABLE_STAFF_ROLES.
+  // the guardian is authenticated the same way the administrator is. The
+  // promotion step above provisioned this account through the Microsoft staff
+  // path, so it can hold a session.
   const guardianSession = await mintGateSession({
     connectionString,
     accountId: guardianAccountId,
