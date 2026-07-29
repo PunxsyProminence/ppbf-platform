@@ -26,6 +26,12 @@ export async function POST(request: NextRequest) {
       organization_id: principal.organizationId,
       athlete_id: principal.athleteId,
       auth_provider: principal.authProvider,
+      // Reported so the client can route to /change-pin. This route
+      // deliberately uses resolvePrincipal rather than requirePrincipal: if it
+      // refused mid-bootstrap sessions the session gate would read the account
+      // as signed out and bounce it to /login, which is the one place that
+      // cannot resolve the situation.
+      must_change_pin: principal.mustChangePin,
     });
   } catch (error) {
     const response = jsonError(error);

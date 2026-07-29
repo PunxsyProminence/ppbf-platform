@@ -6,7 +6,33 @@ import { resolvePrincipal } from './auth';
 import { ShadowRuntimeUnavailableError } from './shadowRuntimeError';
 import { MedicalStatusBlockedError } from './shadowRecommendations';
 
+/**
+ * The default gate for every authenticated route.
+ *
+ * It deliberately refuses an account that is still on its bootstrap PIN. New
+ * athlete accounts are created live on a PIN that is public knowledge
+ * (DEFAULT_FIRST_LOGIN_PIN), so the starting PIN must not be able to read
+ * anything -- enforcing that here rather than in each route means a new route
+ * is covered by default, and cannot forget to check.
+ *
+ * The two routes that must still work mid-bootstrap -- reading the session and
+ * changing the PIN -- call resolvePrincipal or
+ * requirePrincipalAllowingPinChange instead.
+ */
 export async function requirePrincipal(request: NextRequest): Promise<PilotPrincipal> {
+  const principal = await requirePrincipalAllowingPinChange(request);
+  // Explicit === true: the field is optional on the interface, and a
+  // security stop should read as "block when this is set", not "block on
+  // anything truthy".
+  if (principal.mustChangePin === true) {
+    throw new Error('Forbidden: PIN change required before using this account');
+  }
+  return principal;
+}
+
+// Same authentication, without the bootstrap-PIN stop. Only for the PIN
+// change route itself; anything else must use requirePrincipal.
+export async function requirePrincipalAllowingPinChange(request: NextRequest): Promise<PilotPrincipal> {
   const principal = await resolvePrincipal(request);
   if (!principal) {
     throw new Error('Unauthorized');

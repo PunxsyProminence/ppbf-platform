@@ -31,6 +31,10 @@ create table if not exists pilot.accounts (
   is_platform_owner boolean not null default false,
   athlete_id text null,
   pin_hash text null,
+  -- True while the account still holds the admin-issued bootstrap PIN.
+  -- requirePrincipal refuses every route except the PIN change while this is
+  -- set, so the starting PIN can never be used to read athlete data.
+  must_change_pin boolean not null default false,
   active_flag boolean not null default true,
   has_master_shadow_access boolean not null default false,
   created_at timestamptz not null default now(),

@@ -6,6 +6,9 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
+// A plain constant with no server dependencies, so a client component can
+// import it and the admin copy can never drift from what the server sets.
+import { DEFAULT_FIRST_LOGIN_PIN } from '@/src/server/pilot/pinPolicy';
 
 interface Member {
   account_id: string;
@@ -16,14 +19,6 @@ interface Member {
   active_flag: boolean;
   has_pin: boolean;
   membership_active: boolean;
-}
-
-interface OutstandingCode {
-  account_id: string;
-  athlete_id: string | null;
-  created_at: string;
-  expires_at: string;
-  is_expired: boolean;
 }
 
 /** A row of pilot.athletes, with the login account joined on if it has one. */
@@ -149,7 +144,6 @@ function WrongRoleNotice() {
 function PeopleConsoleContent() {
   const [tab, setTab] = useState<Tab>('people');
   const [members, setMembers] = useState<Member[]>([]);
-  const [codes, setCodes] = useState<OutstandingCode[]>([]);
   const [roster, setRoster] = useState<RosterAthlete[]>([]);
   const [rosterAvailable, setRosterAvailable] = useState(false);
   const [organizationId, setOrganizationId] = useState('');
@@ -185,16 +179,16 @@ function PeopleConsoleContent() {
   // re-posting it and tripping the duplicate check.
   const [rosterCreatedFor, setRosterCreatedFor] = useState('');
 
-  // The one-time code, held only in component state. It is never refetchable.
-  const [issuedCode, setIssuedCode] = useState<{ accountId: string; code: string; expiresAt: string } | null>(null);
-  const [copied, setCopied] = useState(false);
+  // The just-created account, so the confirmation panel can tell the admin
+  // exactly what to say to the athlete. Nothing secret lives here -- the
+  // starting PIN is the same for everyone and is safe to re-display.
+  const [createdAthlete, setCreatedAthlete] = useState<{ accountId: string } | null>(null);
 
   const load = useCallback(async () => {
     setError('');
     try {
-      const [membersResponse, codesResponse, rosterResponse] = await Promise.all([
+      const [membersResponse, rosterResponse] = await Promise.all([
         fetch(`${apiBase()}/api/pilot/admin/staff`, { method: 'GET', credentials: 'include' }),
-        fetch(`${apiBase()}/api/pilot/admin/activation-codes`, { method: 'GET', credentials: 'include' }),
         fetch(`${apiBase()}/api/pilot/admin/athlete-pin-directory`, { method: 'GET', credentials: 'include' }),
       ]);
 
@@ -211,16 +205,6 @@ function PeopleConsoleContent() {
 
       setMembers(membersPayload.members || []);
       setOrganizationId(membersPayload.organization_id || '');
-
-      // Outstanding codes are supplementary; a failure here should not blank
-      // out the roster the admin came to see.
-      const codesPayload = (await codesResponse.json().catch(() => ({}))) as {
-        ok?: boolean;
-        codes?: OutstandingCode[];
-      };
-      if (codesResponse.ok && codesPayload.ok) {
-        setCodes(codesPayload.codes || []);
-      }
 
       // The roster directory is what lets an admin pick an existing athlete
       // instead of typing an id from memory, and it is also how this page
@@ -297,16 +281,6 @@ function PeopleConsoleContent() {
   const canSubmitAthlete =
     Boolean(athleteAccountId.trim() && trimmedAthleteId)
     && (athleteMode === 'new' ? newAthleteReady && !collidingAthlete : true);
-
-  const codesByAccount = useMemo(() => {
-    const map = new Map<string, OutstandingCode>();
-    for (const code of codes) {
-      if (!code.is_expired) {
-        map.set(code.account_id, code);
-      }
-    }
-    return map;
-  }, [codes]);
 
   async function inviteStaff(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -443,21 +417,11 @@ function PeopleConsoleContent() {
       const createdAccountId = accountId;
       resetAthleteForm();
 
-      try {
-        // Immediately mint the code so the admin leaves this form holding the
-        // thing they actually need to hand the athlete.
-        await issueCode(createdAccountId);
-      } catch (codeError) {
-        setError(
-          codeError instanceof Error
-            ? `Athlete account created, but activation code issuance failed: ${codeError.message}`
-            : 'Athlete account created, but activation code issuance failed.',
-        );
-      }
+      // No code to mint and nothing further to go wrong: the account is live
+      // on the shared starting PIN, and the athlete is forced to replace it
+      // the first time they sign in.
+      setCreatedAthlete({ accountId: createdAccountId });
 
-      // Refresh the roster either way -- the account was created even if
-      // code issuance above failed, and the admin needs to see it to retry
-      // issuing a code rather than retrying account creation.
       await load();
       setTab('people');
     } catch (addError) {
@@ -485,49 +449,37 @@ function PeopleConsoleContent() {
     }
   }
 
-  async function issueCode(accountId: string) {
-    setError('');
-    setCopied(false);
-
-    const response = await fetch(`${apiBase()}/api/pilot/admin/activation-codes`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ account_id: accountId }),
-    });
-
-    const payload = (await response.json().catch(() => ({}))) as {
-      ok?: boolean;
-      error?: string;
-      activation_code?: string;
-      expires_at?: string;
-    };
-
-    if (!response.ok || !payload.ok || !payload.activation_code) {
-      throw new Error(payload.error || 'Could not create an activation code');
-    }
-
-    setIssuedCode({
-      accountId,
-      code: payload.activation_code,
-      expiresAt: payload.expires_at || '',
-    });
-  }
-
-  async function handleIssueCode(accountId: string) {
+  /**
+   * Put an existing athlete back on the starting PIN. This is the recovery
+   * path for "I forgot my PIN" -- it replaces issuing a fresh activation
+   * code, and lands the account in exactly the state a new one starts in, so
+   * the athlete is forced to choose a new PIN on their next sign-in.
+   */
+  async function handleResetToStartingPin(accountId: string) {
     setBusy(true);
     setNotice('');
+    setError('');
     try {
-      await issueCode(accountId);
+      const response = await fetch(`${apiBase()}/api/pilot/admin/accounts/pin-reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ account_id: accountId, mode: 'reset', pin: DEFAULT_FIRST_LOGIN_PIN }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || 'Could not reset that PIN');
+      }
+      setNotice(
+        `${accountId} is back on the starting PIN ${DEFAULT_FIRST_LOGIN_PIN}. They will have to choose a new one when they sign in.`,
+      );
       await load();
-    } catch (issueError) {
-      setError(issueError instanceof Error ? issueError.message : 'Could not create an activation code');
+    } catch (resetError) {
+      setError(resetError instanceof Error ? resetError.message : 'Could not reset that PIN');
     } finally {
       setBusy(false);
     }
   }
-
-  const activationUrl = `${typeof window === 'undefined' ? '' : window.location.origin}/activate`;
 
   return (
     <main className="min-h-screen bg-[var(--canvas-tan)] px-4 py-8 text-[var(--black)] sm:px-6">
@@ -538,7 +490,7 @@ function PeopleConsoleContent() {
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">People</p>
               <h1 className="mt-2 font-display text-3xl font-black tracking-tight">Manage Your Gym</h1>
               <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
-                Add coaches and staff, create athlete accounts, and hand out activation codes.
+                Add coaches and staff, and create athlete sign-ins.
                 {organizationId && (
                   <>
                     {' '}Gym: <span className="font-mono font-semibold text-[var(--black)]">{organizationId}</span>
@@ -555,57 +507,44 @@ function PeopleConsoleContent() {
           </div>
         </header>
 
-        {/* The one-time code panel. Shown until dismissed, because closing it
-            loses the code permanently. */}
-        {issuedCode && (
+        {/* What to tell the athlete. Unlike the activation code this replaced,
+            nothing here is secret or one-shot -- the starting PIN is the same
+            for everyone and can be re-read at any time, so this panel is a
+            convenience rather than a last chance. */}
+        {createdAthlete && (
           <section className="rounded-2xl border-2 border-[var(--red-primary)] bg-white p-5 shadow-[var(--shadow-md)]">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h2 className="text-lg font-black">Activation code for {issuedCode.accountId}</h2>
+                <h2 className="text-lg font-black">{createdAthlete.accountId} can sign in now</h2>
                 <p className="mt-1 text-sm text-[var(--gray-dark)]">
-                  Give this to the athlete now. It is shown once and cannot be looked up again — if it is lost, issue a
-                  new one.
+                  Tell them these two things. They will have to choose their own PIN the first time they sign in, and
+                  you will never see what they pick.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => setIssuedCode(null)}
+                onClick={() => setCreatedAthlete(null)}
                 className="min-h-[40px] rounded-full border border-[rgba(0,0,0,0.14)] px-4 text-xs font-bold uppercase tracking-[0.1em]"
               >
                 Done
               </button>
             </div>
 
-            <p className="mt-4 rounded-xl border border-[rgba(0,0,0,0.12)] bg-[var(--canvas-tan-light)] px-4 py-4 text-center font-mono text-2xl font-black tracking-[0.2em]">
-              {issuedCode.code}
+            <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-[rgba(0,0,0,0.12)] bg-[var(--canvas-tan-light)] px-4 py-3">
+                <dt className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--gray-dark)]">Sign-in ID</dt>
+                <dd className="mt-1 font-mono text-xl font-black">{createdAthlete.accountId}</dd>
+              </div>
+              <div className="rounded-xl border border-[rgba(0,0,0,0.12)] bg-[var(--canvas-tan-light)] px-4 py-3">
+                <dt className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--gray-dark)]">Starting PIN</dt>
+                <dd className="mt-1 font-mono text-xl font-black tracking-[0.2em]">{DEFAULT_FIRST_LOGIN_PIN}</dd>
+              </div>
+            </dl>
+
+            <p className="mt-3 text-xs leading-5 text-[var(--gray-dark)]">
+              The starting PIN is the same for every new athlete, so it is not a secret. It cannot be used to see
+              anything — the only screen it opens is the one that asks them to replace it.
             </p>
-
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  void navigator.clipboard.writeText(issuedCode.code).then(() => setCopied(true));
-                }}
-                className="min-h-[44px] rounded-xl border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 text-xs font-black uppercase tracking-[0.12em] text-white"
-              >
-                {copied ? 'Copied' : 'Copy Code'}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  void navigator.clipboard.writeText(activationUrl).then(() => setCopied(true));
-                }}
-                className="min-h-[44px] rounded-xl border border-[rgba(0,0,0,0.14)] bg-white px-4 text-xs font-black uppercase tracking-[0.12em]"
-              >
-                Copy Activation Page Link
-              </button>
-            </div>
-
-            {issuedCode.expiresAt && (
-              <p className="mt-3 text-xs text-[var(--gray-dark)]">
-                Expires {new Date(issuedCode.expiresAt).toLocaleDateString()}.
-              </p>
-            )}
           </section>
         )}
 
@@ -649,7 +588,8 @@ function PeopleConsoleContent() {
                   {pendingAthletes.length} athlete{pendingAthletes.length === 1 ? '' : 's'} cannot sign in yet
                 </p>
                 <p className="mt-1 text-sm text-[var(--gray-dark)]">
-                  They need an activation code to set their own PIN. Use the “Give code” button on their row.
+                  Give them their sign-in ID and the starting PIN {DEFAULT_FIRST_LOGIN_PIN}. If they have forgotten
+                  where they are, “Reset to starting PIN” on their row puts them back to it.
                 </p>
               </div>
             )}
@@ -668,8 +608,7 @@ function PeopleConsoleContent() {
                 <ul className="divide-y divide-[rgba(0,0,0,0.08)]">
                   {members.map((member) => {
                     const status = signInStatus(member);
-                    const outstanding = codesByAccount.get(member.account_id);
-                    const isPendingAthlete = member.auth_provider === 'ppbf_local' && !member.has_pin;
+                    const isPinAthlete = member.auth_provider === 'ppbf_local' && member.role === 'athlete';
 
                     return (
                       <li key={member.account_id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
@@ -689,18 +628,17 @@ function PeopleConsoleContent() {
                             }`}
                           >
                             {status.label}
-                            {outstanding && isPendingAthlete && <> · code issued, unclaimed</>}
                           </p>
                         </div>
 
-                        {isPendingAthlete && (
+                        {isPinAthlete && (
                           <button
                             type="button"
                             disabled={busy}
-                            onClick={() => void handleIssueCode(member.account_id)}
+                            onClick={() => void handleResetToStartingPin(member.account_id)}
                             className="min-h-[44px] shrink-0 rounded-xl border-2 border-[var(--red-primary)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[var(--red-primary)] transition hover:bg-[rgba(184,59,52,0.06)] disabled:opacity-50"
                           >
-                            {outstanding ? 'New Code' : 'Give Code'}
+                            Reset To Starting PIN
                           </button>
                         )}
                       </li>

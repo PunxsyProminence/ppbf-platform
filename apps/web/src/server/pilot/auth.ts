@@ -6,7 +6,7 @@ import { getPilotDefaultOrganizationId, PILOT_SESSION_COOKIE } from './env';
 import { createOpaqueToken, hashPin, hashToken, verifyPin } from './security';
 import { computeSessionExpiry, parseRetentionDays } from './sessionPolicy';
 import { query, queryOne, withTransaction } from './db';
-import { validatePinPolicy } from './pinPolicy';
+import { DEFAULT_FIRST_LOGIN_PIN, validatePinPolicy } from './pinPolicy';
 
 export interface PilotPrincipal {
   accountId: string;
@@ -16,6 +16,16 @@ export interface PilotPrincipal {
   sessionToken: string;
   authProvider: 'ppbf_local' | 'microsoft';
   hasMasterShadowAccess?: boolean;
+  /**
+   * True while this account is still on the admin-issued bootstrap PIN.
+   * requirePrincipal treats it as a hard stop, so callers never have to
+   * remember to check it -- see http.ts.
+   *
+   * Optional only so the many test fixtures that build a principal by hand do
+   * not each have to restate it; resolvePrincipal and both login paths always
+   * populate it, and the underlying column is `not null default false`.
+   */
+  mustChangePin?: boolean;
 }
 
 interface AccountRow {
@@ -26,6 +36,7 @@ interface AccountRow {
   athlete_id: string | null;
   auth_provider: 'ppbf_local' | 'microsoft';
   pin_hash: string | null;
+  must_change_pin: boolean;
   active_flag: boolean;
   has_master_shadow_access: boolean;
   organization_status: string | null;
@@ -77,6 +88,7 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
        a.athlete_id,
        a.auth_provider,
        a.pin_hash,
+       a.must_change_pin,
        a.active_flag,
        a.has_master_shadow_access,
        o.status as organization_status
@@ -130,6 +142,7 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
       sessionToken: token,
       authProvider: data.auth_provider,
       hasMasterShadowAccess: data.has_master_shadow_access,
+      mustChangePin: data.must_change_pin,
     },
   };
 }
@@ -186,6 +199,8 @@ export async function loginWithMicrosoftEmail(emailOrUpn: string): Promise<{ pri
       sessionToken: token,
       authProvider: data.auth_provider,
       hasMasterShadowAccess: data.has_master_shadow_access,
+      // Microsoft accounts never hold a PIN, so they are never mid-bootstrap.
+      mustChangePin: false,
     },
   };
 }
@@ -207,6 +222,7 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
     auth_provider: 'ppbf_local' | 'microsoft';
     active_flag: boolean;
     has_master_shadow_access: boolean;
+    must_change_pin: boolean;
     organization_status: string | null;
   }>(
     `select
@@ -218,6 +234,7 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
        a.auth_provider,
        a.active_flag,
        a.has_master_shadow_access,
+       a.must_change_pin,
        o.status as organization_status
      from pilot.session_tokens st
      join pilot.accounts a on a.account_id = st.account_id
@@ -260,6 +277,7 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
     sessionToken: token,
     authProvider: row.auth_provider,
     hasMasterShadowAccess: row.has_master_shadow_access,
+    mustChangePin: row.must_change_pin,
   };
 }
 
@@ -443,19 +461,76 @@ export async function createAthleteAccount(
       throw new Error('Account already exists');
     }
 
+    // The account is created live, on the shared bootstrap PIN, rather than
+    // inert and awaiting an activation code. The admin can now tell the
+    // athlete their sign-in ID and the starting PIN in the same breath.
+    //
+    // Creating it active is only safe because must_change_pin is set:
+    // requirePrincipal refuses every route while that flag is true, so the
+    // one thing this account can do until the athlete picks their own PIN is
+    // pick their own PIN. See http.ts.
+    const bootstrapPinHash = await hashPin(DEFAULT_FIRST_LOGIN_PIN);
+
     await client.query(
-      'insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner) values ($1, $2, $3, $4, $5, $6, $7)',
-      [accountId, 'athlete', organizationId, athleteId, null, false, false],
+      `insert into pilot.accounts
+         (account_id, role, organization_id, athlete_id, pin_hash, must_change_pin, active_flag, is_platform_owner)
+       values ($1, 'athlete', $2, $3, $4, true, true, false)`,
+      [accountId, organizationId, athleteId, bootstrapPinHash],
     );
     await client.query(
       `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
-       values ($1, $2, 'athlete', false)
+       values ($1, $2, 'athlete', true)
        on conflict (account_id, organization_id) do update
          set role = 'athlete',
-             active_flag = false,
+             active_flag = true,
              updated_at = now()`,
       [accountId, organizationId],
     );
+  });
+}
+
+/**
+ * The athlete replacing their bootstrap PIN with one of their own. This is
+ * the only thing an account with must_change_pin set is allowed to do.
+ *
+ * Every other session for the account is revoked on success: if the starting
+ * PIN was guessed during the window before the athlete first signed in, this
+ * is the moment that intruder's session dies.
+ */
+export async function changeOwnPin(accountId: string, currentPin: string, newPin: string): Promise<void> {
+  validatePinPolicy(newPin);
+
+  if (currentPin.trim() === newPin.trim()) {
+    throw new Error('PIN must be different from the current PIN');
+  }
+
+  await withTransaction(async (client) => {
+    const account = await client.query<{ pin_hash: string | null; role: PilotRole; active_flag: boolean }>(
+      `select pin_hash, role, active_flag
+       from pilot.accounts
+       where account_id = $1 and auth_provider = 'ppbf_local'`,
+      [accountId],
+    );
+
+    const row = account.rows[0];
+    if (!row?.active_flag || !row.pin_hash || row.role !== 'athlete') {
+      throw new Error('Unauthorized');
+    }
+
+    if (!(await verifyPin(currentPin, row.pin_hash))) {
+      throw new Error('Unauthorized: current PIN is incorrect');
+    }
+
+    await client.query(
+      `update pilot.accounts
+       set pin_hash = $1,
+           must_change_pin = false,
+           updated_at = now()
+       where account_id = $2`,
+      [await hashPin(newPin), accountId],
+    );
+
+    await revokeAllSessionsForAccountTx(client, accountId);
   });
 }
 

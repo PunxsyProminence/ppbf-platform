@@ -12,6 +12,7 @@
     "pilot:apply-schema": "node scripts/pilot-apply-schema.mjs",
     "pilot:apply-multiorg": "node scripts/pilot-apply-multiorg-migration.mjs",
     "pilot:apply-session-expiry": "node scripts/pilot-apply-session-expiry-migration.mjs",
+    "pilot:apply-first-login-pin": "node scripts/pilot-apply-first-login-pin-migration.mjs",
     "pilot:apply-shadow-runtime": "node scripts/pilot-apply-shadow-runtime-migration.mjs",
     "pilot:apply-public-interest": "node scripts/pilot-apply-public-interest-migration.mjs",
     "pilot:apply-scheduler-tables": "node scripts/pilot-apply-scheduler-tables-migration.mjs",
