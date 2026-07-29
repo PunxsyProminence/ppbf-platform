@@ -55,7 +55,17 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['organization_admin', 'admin', 'coach', 'athlete', 'parent', 'volunteer', 'staff']);
+    // platform_owner is included because the chat route admits it, and a role
+    // that can hold a conversation has to be able to rate the answers in it.
+    // Its absence here meant Omega got a 403 on every thumbs-up, which the
+    // client read as session death and turned into a forced logout mid-chat.
+    //
+    // This does not widen Omega's depth. verifyShadowFeedbackCorrelation scopes
+    // the lookup by organization_id AND account_id, so the caller can only rate
+    // a message it authored; there is no path here to another account's
+    // conversation, and no PHI is involved. The PATCH review gate below stays
+    // organization-admin only.
+    requireRole(principal, ['organization_admin', 'admin', 'coach', 'athlete', 'parent', 'volunteer', 'staff', 'platform_owner']);
     await assertShadowRuntimeReadiness({
       requiredTables: [
         'shadow_feedback',

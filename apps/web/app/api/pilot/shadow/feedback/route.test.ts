@@ -95,6 +95,35 @@ const durableReview = {
   alreadyResolved: false,
 };
 
+// Regression guard for a role-parity gap. The chat route admits platform_owner,
+// so Omega can hold a conversation; this route did not, so every thumbs-up
+// answered 403. The chat client treated 401/403 alike as session death, which
+// turned a rating into a forced logout mid-conversation. Any role the chat
+// route admits must be able to rate the answers it receives.
+describe('feedback role parity with the chat route', () => {
+  const CHAT_ROLES: PilotPrincipal['role'][] = [
+    'organization_admin',
+    'admin',
+    'coach',
+    'athlete',
+    'parent',
+    'volunteer',
+    'staff',
+    'platform_owner',
+  ];
+
+  test.each(CHAT_ROLES)('accepts feedback from %s', async (role) => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role, accountId: `acct-${role}` }));
+
+    const response = await POST(postRequest({
+      helpful: true,
+      message_id: durableReview.messageId,
+    }));
+
+    expect(response.status).not.toBe(403);
+  });
+});
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockRequirePrincipal.mockResolvedValue(principal());
