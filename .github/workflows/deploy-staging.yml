@@ -210,6 +210,24 @@ jobs:
           echo "::add-mask::$ORG_ID"
           echo "GATE_DEFAULT_ORG_ID=$ORG_ID" >> "$GITHUB_ENV"
 
+      # The gate deliberately provisions nothing (see gate-session.mjs), so the
+      # administrator fixture it authenticates as must already exist. It did in
+      # the old shared database, but staging PostgreSQL was recreated on
+      # 2026-07-26 and the first wired gate run (30497491164) refused with
+      # "Gate fixture account org_admin_shadow does not exist". This is the
+      # explicit provisioning step: idempotent, visible in the run log, and
+      # scoped to the administrator only -- the athlete and guardian fixtures
+      # are created by the gate through the real intake-promotion API, which is
+      # part of what the gate is testing.
+      - name: Provision Gate Fixture Accounts
+        if: inputs.enable_shadow_gate
+        env:
+          AZURE_POSTGRES_CONNECTION_STRING: ${{ env.GATE_DB_CONNECTION }}
+          PPBF_PILOT_DEFAULT_ORG_ID: ${{ env.GATE_DEFAULT_ORG_ID }}
+          PILOT_ADMIN_ACCOUNT_ID: org_admin_shadow
+        run: |
+          npm --prefix apps/web run gate:pilot:fixtures
+
       # The first enabled run of this gate (30485899526, 2026-07-29) showed the
       # step was never fully wired: the script hard-requires the fixture
       # identities below and exits before doing anything without them. Every
