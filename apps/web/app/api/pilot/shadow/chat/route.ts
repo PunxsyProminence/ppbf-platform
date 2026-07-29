@@ -128,7 +128,40 @@ function resolveHandoff(input: { requiresHumanReview: boolean; topic: string | u
   return DEFAULT_HANDOFF_MESSAGE;
 }
 
-const PROVIDER_TIMEOUT_MS = 15_000;
+/**
+ * Provider timeout for the Quick Round path. This was a flat 15s, which no
+ * available deployment could meet: timed on 2026-07-29 against a representative
+ * SHADOW prompt, gpt-5-mini took 58.0s and gpt-5.6-luna 33.3s (full figures in
+ * shadowRouter.ts). Production logged the consequence as
+ * `Azure AI request failed { reason: 'timeout' }`.
+ *
+ * Reasoning-token spend varies per prompt, so this is deliberately generous
+ * rather than fitted to the measurement, and configurable so it can be retuned
+ * without a deploy. The ceiling sits below the Azure Container Apps ingress
+ * request limit (240s) -- past that the platform cuts the request off and a
+ * larger value here would be a lie.
+ */
+const DEFAULT_PROVIDER_TIMEOUT_MS = 120_000;
+const PROVIDER_TIMEOUT_FLOOR_MS = 5_000;
+const PROVIDER_TIMEOUT_CEILING_MS = 230_000;
+
+/**
+ * Backstop for the Heavy Bag path only. The real per-model limit is
+ * MODEL_REGISTRY[...].timeoutMs, applied as an AbortSignal inside
+ * executeHeavyBagSync; this outer race only catches a promise that never
+ * settles at all, so it sits at the ceiling rather than competing with it.
+ */
+const PROVIDER_TIMEOUT_BACKSTOP_MS = PROVIDER_TIMEOUT_CEILING_MS;
+
+export function resolveShadowProviderTimeoutMs(
+  rawValue: string | undefined = process.env.PPBF_SHADOW_PROVIDER_TIMEOUT_MS,
+): number {
+  if (rawValue === undefined || rawValue.trim() === '') return DEFAULT_PROVIDER_TIMEOUT_MS;
+  const parsed = Number(rawValue);
+  if (!Number.isFinite(parsed)) return DEFAULT_PROVIDER_TIMEOUT_MS;
+  return Math.max(PROVIDER_TIMEOUT_FLOOR_MS, Math.min(PROVIDER_TIMEOUT_CEILING_MS, Math.trunc(parsed)));
+}
+
 const MAX_MESSAGE_LENGTH = 12_000;
 const DEGRADED_RESPONSE = 'SHADOW is temporarily unavailable. No generated guidance was returned. Please try again later or contact your organization for support.';
 
@@ -163,13 +196,13 @@ export function resolveShadowMaxCompletionTokens(
   return Math.max(256, Math.min(MAX_COMPLETION_TOKENS_CEILING, Math.trunc(parsed)));
 }
 
-async function withProviderTimeout<T>(operation: Promise<T>): Promise<T> {
+async function withProviderTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       operation,
       new Promise<T>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error('provider_timeout')), PROVIDER_TIMEOUT_MS);
+        timer = setTimeout(() => reject(new Error('provider_timeout')), timeoutMs);
       }),
     ]);
   } finally {
@@ -208,7 +241,7 @@ async function callAzureOpenAI(
         ],
         max_completion_tokens: resolveShadowMaxCompletionTokens(),
       }),
-      signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
+      signal: AbortSignal.timeout(resolveShadowProviderTimeoutMs()),
     });
 
     if (!azureResponse.ok) {
@@ -325,7 +358,7 @@ Use only this authorized role and scope. Do not infer or disclose data outside i
           conversationHistory },
         runtime.config.endpoint,
         runtime.config.apiKey,
-      ));
+      ), PROVIDER_TIMEOUT_BACKSTOP_MS);
       if (!result.response?.trim()) {
         return { llmResponse: DEGRADED_RESPONSE, resolvedAsync: false, state: 'degraded' };
       }

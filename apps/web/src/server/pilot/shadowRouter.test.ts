@@ -1,8 +1,10 @@
 import { routeRequest, tierToSessionType, isAsyncSession, getModelStatus } from './shadowRouter';
 
 describe('getModelStatus', () => {
-  test('reports all three deployed models as available', () => {
+  test('reports every deployed model as available', () => {
     const status = getModelStatus();
+    expect(status['gpt-5.6-sol-shadow']).toEqual({ displayName: 'GPT-5.6 Sol (Heavy Bag)', available: true, tier: 'heavy' });
+    expect(status['gpt-5.6-luna-shadow']).toEqual({ displayName: 'GPT-5.6 Luna (Quick Round)', available: true, tier: 'quick' });
     expect(status['gpt-5-mini-shadow']).toEqual({ displayName: 'GPT-5 Mini (Quick Round)', available: true, tier: 'quick' });
     expect(status['gpt-5-shadow']).toEqual({ displayName: 'GPT-5 (Heavy Bag)', available: true, tier: 'heavy' });
     expect(status['gpt-5-vision-shadow']).toEqual({ displayName: 'GPT-5 Vision (Film Study)', available: true, tier: 'vision' });
@@ -10,21 +12,21 @@ describe('getModelStatus', () => {
 });
 
 describe('routeRequest', () => {
-  test('quick_round always routes to the mini model', () => {
+  test('quick_round routes to the current-generation quick model', () => {
     const decision = routeRequest('quick_round', 'athlete', 0.1);
-    expect(decision.model.deploymentName).toBe('gpt-5-mini-shadow');
+    expect(decision.model.deploymentName).toBe('gpt-5.6-luna-shadow');
   });
 
   test('heavy_bag routes to the deployed heavy model, not the fallback', () => {
     const decision = routeRequest('heavy_bag', 'coach', 0.9);
-    expect(decision.model.deploymentName).toBe('gpt-5-shadow');
+    expect(decision.model.deploymentName).toBe('gpt-5.6-sol-shadow');
     expect(decision.model.available).toBe(true);
     expect(decision.rationale).toContain('deep reasoning');
   });
 
   test('scout_report and board_summary route through the heavy model when available', () => {
-    expect(routeRequest('scout_report', 'admin', 0.5).model.deploymentName).toBe('gpt-5-shadow');
-    expect(routeRequest('board_summary', 'admin', 0.5).model.deploymentName).toBe('gpt-5-shadow');
+    expect(routeRequest('scout_report', 'admin', 0.5).model.deploymentName).toBe('gpt-5.6-sol-shadow');
+    expect(routeRequest('board_summary', 'admin', 0.5).model.deploymentName).toBe('gpt-5.6-sol-shadow');
   });
 
   test('film_study routes to the deployed vision model, not the text-only fallback', () => {
@@ -33,13 +35,33 @@ describe('routeRequest', () => {
     expect(decision.model.supportsVision).toBe(true);
   });
 
-  test('recovery_round always routes to the cost-optimized mini model', () => {
-    expect(routeRequest('recovery_round', 'admin', 0.9).model.deploymentName).toBe('gpt-5-mini-shadow');
+  test('recovery_round always routes to the cost-optimized quick model', () => {
+    expect(routeRequest('recovery_round', 'admin', 0.9).model.deploymentName).toBe('gpt-5.6-luna-shadow');
   });
 
   test('an unrecognized session type falls back to quick_round routing rather than throwing', () => {
     const decision = routeRequest('not_a_real_session_type' as never, 'athlete', 0.1);
-    expect(decision.model.deploymentName).toBe('gpt-5-mini-shadow');
+    expect(decision.model.deploymentName).toBe('gpt-5.6-luna-shadow');
+  });
+});
+
+/**
+ * Regression guard for the defect this routing table was rewritten to fix: a
+ * provider timeout shorter than the model's own response time, which turned
+ * every SHADOW answer into the degraded fallback. A timeout must always leave
+ * real headroom over the latency we expect from that deployment, and must stay
+ * inside the Container Apps ingress limit or the platform truncates it anyway.
+ */
+describe('provider timeouts are consistent with expected latency', () => {
+  const SESSION_TYPES = [
+    'quick_round', 'heavy_bag', 'film_study', 'scout_report', 'board_summary', 'recovery_round',
+  ] as const;
+  const INGRESS_LIMIT_MS = 240_000;
+
+  test.each(SESSION_TYPES)('%s allows the model enough time to answer', (sessionType) => {
+    const decision = routeRequest(sessionType, 'admin', 0.9);
+    expect(decision.model.timeoutMs).toBeGreaterThan(decision.expectedLatencyMs);
+    expect(decision.model.timeoutMs).toBeLessThan(INGRESS_LIMIT_MS);
   });
 });
 

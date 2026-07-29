@@ -11,7 +11,11 @@ import { enqueueJob } from './shadowJobQueue';
 import type { ProfileTierResult } from './shadowProfiling';
 import { budgetConversationHistory } from './shadowConversationHistory';
 
-const HEAVY_BAG_PROVIDER_TIMEOUT_MS = 15_000;
+// Provider timeout is per-model and lives on the routing decision
+// (MODEL_REGISTRY[...].timeoutMs in shadowRouter.ts), because the deployments
+// differ by more than 3x in measured latency. A single shared constant here was
+// previously 15s -- shorter than every available deployment's real response
+// time, so Heavy Bag could not return a generated answer at all.
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -75,7 +79,7 @@ export async function executeHeavyBagSync(
       temperature: routing.temperature,
       max_completion_tokens: routing.maxTokens,
     }),
-    signal: AbortSignal.timeout(HEAVY_BAG_PROVIDER_TIMEOUT_MS),
+    signal: AbortSignal.timeout(routing.model.timeoutMs),
   });
 
   if (!apiResponse.ok) {
