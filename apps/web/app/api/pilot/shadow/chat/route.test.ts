@@ -407,6 +407,8 @@ describe('POST /api/pilot/shadow/chat trust boundary', () => {
         role: 'user',
         content: 'Explain the first drill.',
         responseState: null,
+        evidenceTier: null,
+        handoff: null,
         createdAt: new Date().toISOString(),
       },
       {
@@ -414,6 +416,8 @@ describe('POST /api/pilot/shadow/chat trust boundary', () => {
         role: 'assistant',
         content: 'The first answer was safely stored.',
         responseState: 'ok',
+        evidenceTier: 'EMERGING',
+        handoff: null,
         createdAt: new Date().toISOString(),
       },
     ]);
