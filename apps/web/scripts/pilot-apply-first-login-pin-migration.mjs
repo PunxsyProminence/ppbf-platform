@@ -109,7 +109,7 @@ export async function run() {
     await client.end();
   }
 
-  console.log(`Applied session expiry migration: ${migrationPath}`);
+  console.log(`Applied first-login PIN migration: ${migrationPath}`);
   console.log('PILOT FIRST-LOGIN PIN MIGRATION PASS');
 }
 
