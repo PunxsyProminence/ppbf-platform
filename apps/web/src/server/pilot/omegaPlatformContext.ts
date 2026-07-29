@@ -127,6 +127,17 @@ const ROLLUP_TTL_MS = 60_000;
 let memo: { at: number; value: PlatformRollup } | null = null;
 
 /**
+ * Shared in-flight rollup, so concurrent misses cost one fan-out rather than N.
+ *
+ * The memo is only written once a fan-out resolves, so without this every
+ * request arriving during the first one starts its own. The chat rate limit
+ * allows 20 requests per minute per account, and a slow turn invites exactly the
+ * retries and duplicate tabs that would stack those fan-outs onto the same
+ * 10-connection pool.
+ */
+let inFlight: Promise<PlatformRollup> | null = null;
+
+/**
  * Ceiling on how many organizations are summarized at once.
  *
  * Each organization costs two concurrent connections (board + growth), and the
@@ -177,6 +188,7 @@ async function mapWithConcurrency<TInput, TOutput>(
 
 export function clearPlatformRollupCache(): void {
   memo = null;
+  inFlight = null;
 }
 
 export async function getPlatformRollup(nowMs: number = Date.now()): Promise<PlatformRollup> {
@@ -184,6 +196,18 @@ export async function getPlatformRollup(nowMs: number = Date.now()): Promise<Pla
     return memo.value;
   }
 
+  if (inFlight) {
+    return inFlight;
+  }
+
+  inFlight = buildPlatformRollup(nowMs).finally(() => {
+    inFlight = null;
+  });
+
+  return inFlight;
+}
+
+async function buildPlatformRollup(nowMs: number): Promise<PlatformRollup> {
   const organizations = await query<OrganizationRow>(
     `select organization_id, organization_name, status
      from pilot.organizations
@@ -227,7 +251,17 @@ export async function getPlatformRollup(nowMs: number = Date.now()): Promise<Pla
     gymCount: gyms.length,
     gyms,
   };
-  memo = { at: nowMs, value };
+
+  // A rollup in which nothing resolved is a symptom of a transient fault -- the
+  // database briefly unreachable, a missing table -- not a description of the
+  // platform. Caching it would hold that fault in place for the full TTL and
+  // answer a minute of questions with an all-degraded picture. Successes and
+  // partial successes cache normally.
+  const anyGymResolved = gyms.some((gym) => gym.board !== null);
+  if (gyms.length === 0 || anyGymResolved) {
+    memo = { at: nowMs, value };
+  }
+
   return value;
 }
 

@@ -191,6 +191,95 @@ describe('rollup figures survive response validation', () => {
   });
 });
 
+describe('fan-out cost control', () => {
+  beforeEach(() => {
+    clearPlatformRollupCache();
+    mockQuery.mockReset();
+    mockBoardSummary.mockReset();
+    mockGrowthMetrics.mockReset();
+  });
+
+  function orgRows(count: number) {
+    return Array.from({ length: count }, (_, index) => ({
+      organization_id: `gym-${index}`,
+      organization_name: `Gym ${index}`,
+      status: 'active',
+    }));
+  }
+
+  test('concurrent misses share a single fan-out instead of each running their own', async () => {
+    mockQuery.mockResolvedValue(orgRows(3) as never);
+    mockBoardSummary.mockResolvedValue(board() as never);
+    mockGrowthMetrics.mockResolvedValue(growth(1) as never);
+
+    const [a, b, c] = await Promise.all([
+      getPlatformRollup(1_000),
+      getPlatformRollup(1_000),
+      getPlatformRollup(1_000),
+    ]);
+
+    // One organization listing, and one board/growth pair per gym -- not three
+    // times over, which is what an unshared fan-out would have cost.
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+    expect(mockBoardSummary).toHaveBeenCalledTimes(3);
+    expect(a).toBe(b);
+    expect(b).toBe(c);
+  });
+
+  test('a resolved rollup is served from cache within the TTL', async () => {
+    mockQuery.mockResolvedValue(orgRows(2) as never);
+    mockBoardSummary.mockResolvedValue(board() as never);
+    mockGrowthMetrics.mockResolvedValue(growth(1) as never);
+
+    await getPlatformRollup(1_000);
+    await getPlatformRollup(30_000);
+
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+  });
+
+  // A rollup where nothing resolved describes a fault, not the platform.
+  test('an all-degraded rollup is not cached, so the next turn retries', async () => {
+    mockQuery.mockResolvedValue(orgRows(2) as never);
+    mockBoardSummary.mockRejectedValue(new Error('BOARD_SUMMARY_UNAVAILABLE'));
+    mockGrowthMetrics.mockRejectedValue(new Error('metrics down'));
+
+    const first = await getPlatformRollup(1_000);
+    expect(first.gyms.every((gym) => gym.board === null)).toBe(true);
+
+    mockBoardSummary.mockResolvedValue(board() as never);
+    mockGrowthMetrics.mockResolvedValue(growth(4) as never);
+
+    const second = await getPlatformRollup(5_000);
+    expect(second.gyms.every((gym) => gym.board !== null)).toBe(true);
+    expect(mockQuery).toHaveBeenCalledTimes(2);
+  });
+
+  test('a partially degraded rollup still caches', async () => {
+    mockQuery.mockResolvedValue(orgRows(2) as never);
+    mockBoardSummary
+      .mockResolvedValueOnce(board() as never)
+      .mockRejectedValueOnce(new Error('one gym down'));
+    mockGrowthMetrics.mockResolvedValue(growth(2) as never);
+
+    await getPlatformRollup(1_000);
+    await getPlatformRollup(20_000);
+
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+  });
+
+  test('a failed organization listing is not cached and does not wedge later turns', async () => {
+    mockQuery.mockRejectedValueOnce(new Error('db unreachable'));
+    await expect(getPlatformRollup(1_000)).rejects.toThrow('db unreachable');
+
+    mockQuery.mockResolvedValue(orgRows(1) as never);
+    mockBoardSummary.mockResolvedValue(board() as never);
+    mockGrowthMetrics.mockResolvedValue(growth(1) as never);
+
+    const recovered = await getPlatformRollup(2_000);
+    expect(recovered.gymCount).toBe(1);
+  });
+});
+
 describe('rendered platform context', () => {
   const sample = rollup([
     { organizationId: 'gym-a', organizationName: 'Alpha Boxing', status: 'active', board: board(), growth: growth(17) },
