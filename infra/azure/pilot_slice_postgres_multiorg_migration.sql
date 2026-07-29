@@ -191,37 +191,38 @@ alter table pilot.sessions alter column organization_id set not null;
 alter table pilot.coach_reviews alter column organization_id set not null;
 alter table pilot.shadow_intake alter column organization_id set not null;
 
-alter table pilot.accounts
-  add constraint if not exists pilot_accounts_org_fk
-  foreign key (organization_id) references pilot.organizations(organization_id);
-
-alter table pilot.session_tokens
-  add constraint if not exists pilot_session_tokens_org_fk
-  foreign key (organization_id) references pilot.organizations(organization_id);
-
-alter table pilot.athletes
-  add constraint if not exists pilot_athletes_org_fk
-  foreign key (organization_id) references pilot.organizations(organization_id);
-
-alter table pilot.goals
-  add constraint if not exists pilot_goals_org_fk
-  foreign key (organization_id) references pilot.organizations(organization_id);
-
-alter table pilot.sessions
-  add constraint if not exists pilot_sessions_org_fk
-  foreign key (organization_id) references pilot.organizations(organization_id);
-
-alter table pilot.coach_reviews
-  add constraint if not exists pilot_coach_reviews_org_fk
-  foreign key (organization_id) references pilot.organizations(organization_id);
-
-alter table pilot.shadow_intake
-  add constraint if not exists pilot_shadow_intake_org_fk
-  foreign key (organization_id) references pilot.organizations(organization_id);
-
-alter table pilot.audit_events
-  add constraint if not exists pilot_audit_events_org_fk
-  foreign key (organization_id) references pilot.organizations(organization_id);
+-- PostgreSQL has no ADD CONSTRAINT IF NOT EXISTS, and because this file is
+-- applied as a single multi-statement query, the server parses the whole file
+-- before executing any of it -- so the previous form did not just fail these
+-- eight statements, it made the entire migration unrunnable. Guard each FK
+-- with a catalog check instead, in the same DO-block style used further down.
+do $$
+declare
+  spec record;
+begin
+  for spec in
+    select * from (values
+      ('pilot.accounts',        'pilot_accounts_org_fk'),
+      ('pilot.session_tokens',  'pilot_session_tokens_org_fk'),
+      ('pilot.athletes',        'pilot_athletes_org_fk'),
+      ('pilot.goals',           'pilot_goals_org_fk'),
+      ('pilot.sessions',        'pilot_sessions_org_fk'),
+      ('pilot.coach_reviews',   'pilot_coach_reviews_org_fk'),
+      ('pilot.shadow_intake',   'pilot_shadow_intake_org_fk'),
+      ('pilot.audit_events',    'pilot_audit_events_org_fk')
+    ) as t(tbl, con)
+  loop
+    if not exists (
+      select 1 from pg_constraint
+      where conname = spec.con and conrelid = spec.tbl::regclass
+    ) then
+      execute format(
+        'alter table %s add constraint %I foreign key (organization_id) references pilot.organizations(organization_id)',
+        spec.tbl, spec.con
+      );
+    end if;
+  end loop;
+end $$;
 
 -- 6) Add organization-scoped uniqueness where required.
 do $$
