@@ -549,6 +549,11 @@ function ShadowChatPageContent() {
         return {
           ...mapped,
           tier: mapped.type === 'shadow' ? restoredTier : undefined,
+          // evidenceTier and handoff come from the stored row, so a reopened
+          // conversation shows the grade the answer was given and keeps its
+          // "Human Handoff Required" banner.
+          evidenceTier: mapped.type === 'shadow' ? mapped.evidenceTier : undefined,
+          handoff: mapped.type === 'shadow' ? mapped.handoff : undefined,
         };
       });
 
@@ -606,13 +611,24 @@ function ShadowChatPageContent() {
         m.id === messageId ? { ...m, feedbackSent: true } : m
       )));
     } catch (feedbackError) {
-      if (
-        feedbackError instanceof ShadowApiError
-        && (feedbackError.status === 401 || feedbackError.status === 403)
-      ) {
+      // Only 401 means the session is actually gone. Treating 403 the same way
+      // logged a user out mid-conversation over a rating -- any role the chat
+      // route admits but the feedback route did not would be ejected to /login
+      // by a thumbs-up. A 403 here means "not allowed to rate", not "not
+      // signed in", and it should never cost the user their conversation.
+      if (feedbackError instanceof ShadowApiError && feedbackError.status === 401) {
         clearRoleSession();
         router.replace('/login');
+        return;
       }
+      // Everything else was previously swallowed: the thumb stayed unset with
+      // no explanation, so the natural response was to click again and spend
+      // more of the 30/min feedback budget on a request that could not succeed.
+      setSessionNotice(
+        feedbackError instanceof ShadowApiError && feedbackError.status === 429
+          ? 'Too much feedback too quickly. Wait a moment and try again.'
+          : 'SHADOW could not record that feedback. Your conversation is unaffected.',
+      );
     }
   }
 
@@ -935,7 +951,7 @@ function ShadowChatPageContent() {
                   className={`max-w-md px-4 py-3 transition-colors ${
                     msg.type === 'user'
                       ? 'border-2 border-[#dc2626] bg-[#2a1a1a] text-[#ff6b6b]'
-                      : EVIDENCE_TIER_STYLES[msg.evidenceTier ?? 'EMERGING']
+                      : EVIDENCE_TIER_STYLES[msg.evidenceTier ?? NO_SERVER_EVIDENCE_TIER]
                   }`}
                 >
                   <p className="text-xs leading-6">{msg.text}</p>

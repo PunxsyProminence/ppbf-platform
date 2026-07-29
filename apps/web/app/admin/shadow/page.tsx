@@ -558,7 +558,9 @@ export default function AdminShadowConsolePage() {
     const loadMetrics = async () => {
       setMetricsLoading(true);
       try {
-        const response = await fetch(`${apiBase()}/api/pilot/shadow/metrics?days=30`);
+        const response = await fetch(`${apiBase()}/api/pilot/shadow/metrics?days=30`, {
+          credentials: 'include',
+        });
         if (!response.ok) return;
         const payload = (await response.json()) as { metrics?: typeof growthMetrics } | null;
         if (payload?.metrics) setGrowthMetrics(payload.metrics);
@@ -574,6 +576,7 @@ export default function AdminShadowConsolePage() {
 
   async function refreshBackendQueue() {
     const response = await fetch(`${apiBase()}/api/pilot/shadow/review-projection`, {
+      credentials: 'include',
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
@@ -615,7 +618,9 @@ export default function AdminShadowConsolePage() {
   async function refreshShadowFeedbackReviews() {
     setFeedbackLoading(true);
     try {
-      const response = await fetch(`${apiBase()}/api/pilot/shadow/feedback?limit=200`);
+      const response = await fetch(`${apiBase()}/api/pilot/shadow/feedback?limit=200`, {
+        credentials: 'include',
+      });
       const payload = (await response.json().catch(() => null)) as
         | (Partial<ShadowFeedbackApiResponse> & { error?: string })
         | null;
@@ -638,6 +643,7 @@ export default function AdminShadowConsolePage() {
 
     try {
       const response = await fetch(`${apiBase()}/api/pilot/shadow/feedback`, {
+        credentials: 'include',
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ feedbackId: item.feedback_id, decision }),
@@ -702,11 +708,13 @@ export default function AdminShadowConsolePage() {
   async function refreshShadowOperationalReads() {
     const [telemetryResponse, authorityResponse] = await Promise.all([
       fetch(`${apiBase()}/api/pilot/shadow/telemetry`, {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ limit: 40 }),
       }),
       fetch(`${apiBase()}/api/pilot/shadow/authority`, {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ limit: 40 }),
@@ -753,6 +761,7 @@ export default function AdminShadowConsolePage() {
     }
 
     const response = await fetch(`${apiBase()}/api/pilot/intake/review-action`, {
+      credentials: 'include',
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ intake_case_id: item.intakeCaseId, action: backendAction, notes: item.notes }),
@@ -785,6 +794,7 @@ export default function AdminShadowConsolePage() {
     }
 
     const promoteResponse = await fetch(`${apiBase()}/api/pilot/intake/review-action`, {
+      credentials: 'include',
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1028,6 +1038,7 @@ export default function AdminShadowConsolePage() {
       formData.append('document_type', 'general_intake');
 
       const response = await fetch(`${apiBase()}/api/pilot/shadow/upload`, {
+        credentials: 'include',
         method: 'POST',
         body: formData,
       });
