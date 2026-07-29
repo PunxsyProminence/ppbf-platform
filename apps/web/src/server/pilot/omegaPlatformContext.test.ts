@@ -282,3 +282,50 @@ describe('per-gym fan-out stays inside the connection pool', () => {
     expect(result.gyms[2].unavailableReason).toBeUndefined();
   });
 });
+
+// getGrowthMetrics applies no minimum-cohort suppression of its own, so the
+// rollup must hold its figures to the same floor boardSummary enforces.
+// Otherwise a withheld board metric and a published interaction count sit on
+// the same line, describing the exact cohort the withholding just protected.
+describe('small-gym suppression covers growth figures, not just board figures', () => {
+  const smallGym = rollup([{
+    organizationId: 'gym-tiny',
+    organizationName: 'Tiny Gym',
+    status: 'active',
+    board: board({ activeAthletes: { status: 'insufficient_data', count: null } }),
+    growth: growth(7),
+  }]);
+
+  test('withholds interaction volume when the gym is below the cohort floor', () => {
+    const text = formatPlatformRollup(smallGym);
+    expect(text).toContain('SHADOW interactions (30d): withheld (fewer than 5 athletes)');
+    expect(text).not.toContain('SHADOW interactions (30d): 7');
+  });
+
+  test('does not leak the count anywhere else in the rendered block', () => {
+    expect(formatPlatformRollup(smallGym)).not.toMatch(/\b7\b/);
+  });
+
+  test('still reports interaction volume for a gym at or above the floor', () => {
+    const text = formatPlatformRollup(rollup([{
+      organizationId: 'gym-ok',
+      organizationName: 'Normal Gym',
+      status: 'active',
+      board: board(),
+      growth: growth(41),
+    }]));
+    expect(text).toContain('SHADOW interactions (30d): 41');
+  });
+
+  test('a gym with no records at all still reports rather than withholding', () => {
+    const text = formatPlatformRollup(rollup([{
+      organizationId: 'gym-empty',
+      organizationName: 'Empty Gym',
+      status: 'active',
+      board: board({ activeAthletes: { status: 'unavailable', count: null } }),
+      growth: growth(0),
+    }]));
+    expect(text).toContain('SHADOW interactions (30d): 0');
+    expect(text).toContain('active athletes: none recorded');
+  });
+});

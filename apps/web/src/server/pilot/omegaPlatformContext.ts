@@ -216,6 +216,35 @@ function renderMetric(
   return `${label}: none recorded`;
 }
 
+/**
+ * SHADOW interaction volume, held to the same cohort floor as the board metrics.
+ *
+ * getGrowthMetrics applies no minimum-cohort suppression of its own -- that
+ * suppression lives entirely in boardSummary (BOARD_MINIMUM_COHORT_SIZE).
+ * Rendering its raw count next to a withheld board metric published exactly the
+ * cohort the line above it had just refused to describe: a two-athlete gym read
+ * as "active athletes: withheld (fewer than 5 athletes); SHADOW interactions
+ * (30d): 7". Omega is the tier where that matters most, because it sets small
+ * gyms side by side for comparison.
+ *
+ * activeAthletes is the right gate: it is the participant count the board
+ * summary itself suppresses on, so the two stay consistent by construction
+ * rather than by a second threshold that could drift.
+ */
+function renderInteractions(
+  gym: PlatformGymRollup,
+  minimumCohortSize: number,
+): string {
+  const label = 'SHADOW interactions (30d)';
+  if (!gym.growth) {
+    return `${label}: not reported`;
+  }
+  if (gym.board?.activeAthletes?.status === 'insufficient_data') {
+    return `${label}: withheld (fewer than ${minimumCohortSize} athletes)`;
+  }
+  return `${label}: ${gym.growth.totalInteractions}`;
+}
+
 export function formatPlatformRollup(rollup: PlatformRollup): string {
   if (rollup.gymCount === 0) {
     return '';
@@ -233,7 +262,7 @@ export function formatPlatformRollup(rollup: PlatformRollup): string {
       renderMetric('active athletes', gym.board.activeAthletes, cohort),
       renderMetric('training sessions (30d)', gym.board.trainingSessions30Days, cohort),
       renderMetric('coach reviews (30d)', gym.board.coachReviews30Days, cohort),
-      `SHADOW interactions (30d): ${gym.growth ? gym.growth.totalInteractions : 'not reported'}`,
+      renderInteractions(gym, cohort),
     ];
     return `- ${gym.organizationName} (${gym.status}): ${parts.join('; ')}`;
   });
