@@ -255,6 +255,83 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
       expect(result.message).not.toContain(unsafeResponse);
     });
 
+    // These three holes were measured against this validator and each let a
+    // claim through that the platform's own doctrine forbids. They are grouped
+    // so the reason each exists stays attached to the case.
+    describe('claims that reached athletes unfiltered', () => {
+      test.each([
+        // The rule policed the FRAMING, not the assertion: the same claim was
+        // filtered with "Data shows" in front of it and passed without.
+        ['a bare percentage', '94% of athletes improve with this method.'],
+        ['a percentage at end of sentence', 'This plan improves outcomes by 30%.'],
+        // A trailing \b after % can never match -- % and the next character are
+        // both non-word -- so the quantified-claim rule never fired at all.
+        ['a percentage mid-sentence', 'A 94% success rate is typical here.'],
+      ])('filters %s with no citation', (_label, response) => {
+        const result = validateShadowResponse(response);
+        expect(result.filtered).toBe(true);
+        expect(result.message).toBe(SHADOW_SAFE_FILTERED_RESPONSE);
+      });
+
+      test.each([
+        ['a proven claim', 'This drill is proven to increase punch power.'],
+        ['a clinically-proven claim', 'This protocol is clinically proven to reduce injury.'],
+      ])('filters %s', (_label, response) => {
+        // PROVEN is the platform's top evidence tier and DOCTRINE item 4
+        // forbids asserting it without verified evidence ids, yet "proven" was
+        // not a trigger anywhere in this validator.
+        const result = validateShadowResponse(response);
+        expect(result.filtered).toBe(true);
+      });
+
+      test('still allows hedged "unproven" language', () => {
+        const result = validateShadowResponse('That claim is unproven. RESEARCH NEEDED.');
+        expect(result.filtered).toBe(false);
+      });
+
+      test.each([
+        ['a water-weight directive', 'Cut water weight the night before weigh-in to make the class.'],
+        ['a pound-count directive', 'To make weight, cut 3 pounds in the sauna the day before.'],
+        ['a fluid-restriction directive', 'You should drop to a lower weight class by restricting fluids this week.'],
+      ])('filters %s', (_label, response) => {
+        // Weight cutting was gated on the request only, so a response that
+        // volunteered this to a question that never mentioned weight passed
+        // with no filter and no weight-cut handoff banner.
+        const result = validateShadowResponse(response);
+        expect(result.filtered).toBe(true);
+        expect(result.reasons.join(' ')).toMatch(/weight-loss or dehydration directive/);
+      });
+
+      test('reports the weight-cutting topic so the handoff names the medical team', () => {
+        // The route resolves the handoff banner from this. Without it a
+        // volunteered weight-cut answer drew the generic banner instead of
+        // "talk to your medical team ... before changing any weight-cut plan".
+        const result = validateShadowResponse('Cut water weight before the weigh-in.');
+        expect(result.topic).toBe('weight_cutting');
+      });
+
+      test.each([
+        ['risk education', 'Rapid weight loss carries significant health risks. Consult your medical team and a sports nutritionist.'],
+        ['safe-management education', 'Safe weight management is gradual and planned with a qualified medical professional over weeks.'],
+      ])('still allows %s, which the request validator explicitly permits', (_label, response) => {
+        // The gate is scoped to directives and dehydration methods, not the
+        // words "weight loss" -- educating an athlete about the risks is the
+        // behavior this is meant to protect, not suppress.
+        const result = validateShadowResponse(response);
+        expect(result.filtered).toBe(false);
+      });
+
+      test('still allows a cited quantity, so Omega rollups keep working', () => {
+        const evidenceId = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
+        const result = validateShadowResponse(
+          `Attendance is 94% across the gym [E:${evidenceId}]. Discuss with your coach.`,
+          { allowedEvidenceIds: [evidenceId] },
+        );
+        expect(result.filtered).toBe(false);
+        expect(result.citationIds).toEqual([evidenceId]);
+      });
+    });
+
     test('allows ordinary non-medical boxing coaching language', () => {
       const result = validateShadowResponse(
         'You should keep your guard up and pivot left. RESEARCH NEEDED for athlete-specific claims.',
