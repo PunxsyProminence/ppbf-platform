@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { apiBase } from '@/lib/apiBase';
+import { DEFAULT_PIN_LENGTH } from '@/src/server/pilot/pinPolicy';
 
 const PIN_PATTERN = /^\d{6}$/;
 
@@ -107,7 +108,8 @@ export default function ChangePinPage() {
               autoComplete="current-password"
               required
               value={currentPin}
-              onChange={(event) => setCurrentPin(event.target.value.trim())}
+              maxLength={DEFAULT_PIN_LENGTH}
+              onChange={(event) => setCurrentPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))}
               className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono tracking-[0.3em] focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
             />
           </div>
@@ -124,7 +126,8 @@ export default function ChangePinPage() {
               autoComplete="new-password"
               required
               value={newPin}
-              onChange={(event) => setNewPin(event.target.value.trim())}
+              maxLength={DEFAULT_PIN_LENGTH}
+              onChange={(event) => setNewPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))}
               className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono tracking-[0.3em] focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
             />
           </div>
@@ -140,7 +143,8 @@ export default function ChangePinPage() {
               autoComplete="new-password"
               required
               value={confirmPin}
-              onChange={(event) => setConfirmPin(event.target.value.trim())}
+              maxLength={DEFAULT_PIN_LENGTH}
+              onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))}
               className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono tracking-[0.3em] focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
             />
           </div>

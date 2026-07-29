@@ -1,36 +1,71 @@
 # PPBF Master Index
 
-## Documentation
-- README.md
-- BACKEND_SLICE_EXECUTION_SPEC.md
-- FINAL_DOCUMENTATION.md
-- COMPLETE_BUILD_SUMMARY.md
-- FINAL_RECOMMENDATIONS.md
-- COMPLETE_REFERENCE_GUIDE.md
-- ALL_SCRIPTS_SUMMARY.md
-- DEVELOPER_ONBOARDING.md
-- API_DOCS.md
-- QUALITY_CHECKLIST.md
-- PROJECT_COMPLETE.md
-- MASTER_EVERYTHING_REFERENCE.md
-- CLOSING_RECOMMENDATIONS.md
-- THANK_YOU_CLOSING.md
-- ULTIMATE_CLOSING_DOCUMENT.md
-- docs/SHADOW_V1_BUILD_PROMPT_FOR_VS.md
+Entry point for the repository. Anything not listed here is either archived or
+generated.
 
-## Key Scripts
-- scripts/init.ps1, master-runner.ps1, scripts/ultimate-summary.ps1
-- scripts/check-governance.ps1, scripts/go-live.ps1, scripts/run-tests.ps1
-- scripts/health-check.ps1, scripts/backup-export.ps1, scripts/project-wrap-up.ps1
-- scripts/final-master-status.ps1, scripts/final-platform-status.ps1, scripts/final-readiness-check.ps1
-- scripts/final-closing.ps1, scripts/final-completion.ps1, scripts/ultimate-platform-summary.ps1
-- ppbf-cli.ps1
+**Currency warning:** the documents below were written at various points and are
+not automatically kept in sync with the code. `origin/main` and the deployed
+container revision are the only authorities on current behaviour. Local
+branches in this repo have repeatedly been many commits behind — verify against
+`origin/main`, not a local checkout.
 
-## Core Code
-- packages/ (governance, routing, execution, intelligence, continuity)
-- apps/web
-- infra/supabase/schema.sql
-- infra/azure/pilot_slice_postgres.sql
-- PPBF_CAPABILITIES.json
+## Start here
 
-This index gives you quick access to everything built across 30 batches.
+- [README.md](README.md) — what the project is, verified quick start
+- [DEVELOPER_ONBOARDING.md](DEVELOPER_ONBOARDING.md) — getting a local environment running
+- [SEED_GUIDE.md](SEED_GUIDE.md) — seeding data
+
+## Contracts and interfaces
+
+- [AUTH_CONTRACT.md](AUTH_CONTRACT.md) — authentication and principal model
+- [docs/FRONTEND_STYLE_CONTRACT.md](docs/FRONTEND_STYLE_CONTRACT.md) — UI conventions
+
+Note: `API_DOCS.md` and `QUALITY_CHECKLIST.md` were archived — both described
+a planned/aspirational state (a placeholder endpoint list and a governance
+checklist) that never matched the real API surface or dev workflow. The real
+HTTP surface lives under `apps/web/app/api/**/route.ts`; the real quality
+gates are `npm run typecheck` / `lint` / `test`.
+
+## Architecture
+
+- [ORGANIZATION_ARCHITECTURE.md](ORGANIZATION_ARCHITECTURE.md) — multi-org isolation
+  model; Platform Owner boundary section reflects standing cross-org visibility
+  into de-identified data for pilot ops + SHADOW learning, not deny-by-default
+- [ORGANIZATION_ROLE_MODEL.md](ORGANIZATION_ROLE_MODEL.md) — role hierarchy and
+  permission matrix; cross-check role names against the live `PilotRole` enum
+  in [apps/web/src/server/pilot/contracts.ts](apps/web/src/server/pilot/contracts.ts)
+- [ORGANIZATION_ADMIN_WORKFLOW.md](ORGANIZATION_ADMIN_WORKFLOW.md) — org
+  lifecycle workflow, tracks closely to real functions in
+  [apps/web/src/server/pilot/auth.ts](apps/web/src/server/pilot/auth.ts)
+
+## SHADOW
+
+- [docs/SHADOW_SPECIFICATION.md](docs/SHADOW_SPECIFICATION.md)
+- [docs/SHADOW_AUTHORITY_MODEL.md](docs/SHADOW_AUTHORITY_MODEL.md)
+- [docs/SHADOW_EVENT_MODEL.md](docs/SHADOW_EVENT_MODEL.md)
+- [docs/SHADOW_PHASE1_HARDENING_CHECKLIST.md](docs/SHADOW_PHASE1_HARDENING_CHECKLIST.md)
+
+## Operations
+
+- [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md)
+- [docs/MULTI_ORG_MIGRATION_RUNBOOK.md](docs/MULTI_ORG_MIGRATION_RUNBOOK.md)
+- [docs/MULTI_ORG_ROLLBACK_RUNBOOK.md](docs/MULTI_ORG_ROLLBACK_RUNBOOK.md)
+- [docs/MULTI_ORG_SMOKE_TEST_PLAN.md](docs/MULTI_ORG_SMOKE_TEST_PLAN.md)
+- [docs/governance-rules.md](docs/governance-rules.md)
+- [scripts/README.md](scripts/README.md)
+
+Database migrations are applied by a controlled operator script under an
+advisory lock, never from an HTTP route and never from CI.
+
+## Code
+
+- `apps/web` — the Next.js application (App Router)
+- `packages/` — governance, routing, execution, intelligence, continuity
+- `infra/azure/` — Postgres schema and migrations for the `pilot.*` schema
+- `infra/supabase/schema.sql` — earlier Supabase schema
+
+## Archive
+
+[docs/archive/](docs/archive/) holds point-in-time audits, reports, and
+superseded plans. Read its README before trusting anything in it — several of
+those documents describe a version of the platform that no longer exists.

@@ -158,14 +158,31 @@ jobs:
         run: |
           npm ci
 
+      # The gate authenticates its administrator and guardian fixtures by
+      # writing a short-lived row to pilot.session_tokens, because a PIN login
+      # cannot produce a session for either role (PIN sessions are athlete-only)
+      # and the bootstrap endpoint that used to create those accounts now
+      # refuses every request. Reading this secret is not an escalation: this
+      # job already holds the Azure rights that deploy the application.
+      #
+      # Resolved into the step's own env rather than GITHUB_ENV so the value is
+      # scoped to the gate step instead of every step that follows it.
+      - name: Resolve Staging Database Connection For Gate
+        if: inputs.enable_shadow_gate
+        run: |
+          CONN="$(az containerapp secret show \
+            --name app-ppbf-staging \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-postgres-connection-string \
+            --query value -o tsv)"
+          test -n "$CONN"
+          echo "::add-mask::$CONN"
+          echo "GATE_DB_CONNECTION=$CONN" >> "$GITHUB_ENV"
+
       - name: Run SHADOW E2E Gate
         if: inputs.enable_shadow_gate
         env:
-          # Sourced from a repository/environment secret, never a manual
-          # workflow_dispatch text input -- dispatch inputs are visible in
-          # the Actions run's trigger metadata to anyone with read access to
-          # the repo, regardless of log masking.
-          PPBF_PILOT_BOOTSTRAP_KEY: ${{ secrets.PPBF_PILOT_BOOTSTRAP_KEY }}
+          AZURE_POSTGRES_CONNECTION_STRING: ${{ env.GATE_DB_CONNECTION }}
           PILOT_ADMIN_ACCOUNT_ID: org_admin_shadow
         run: |
           npm --prefix apps/web run gate:pilot:shadow-e2e

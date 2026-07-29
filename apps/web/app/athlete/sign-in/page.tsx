@@ -8,6 +8,7 @@ import {
   loadAuthoritativeRoleSession,
 } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
+import { DEFAULT_PIN_LENGTH } from '@/src/server/pilot/pinPolicy';
 
 interface LoginPayload {
   ok?: boolean;
@@ -99,11 +100,16 @@ export default function AthletePinSignInPage() {
               id="athlete-pin"
               type="password"
               inputMode="numeric"
+              // The PIN is exactly DEFAULT_PIN_LENGTH digits, and the field now
+              // says so instead of only the label above it: inputMode is a
+              // keyboard hint, not a constraint, so this box accepted letters
+              // and any length while the copy promised six digits.
+              maxLength={DEFAULT_PIN_LENGTH}
               value={pin}
-              onChange={(event) => setPin(event.target.value)}
+              onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))}
               autoComplete="current-password"
-              className="mt-1 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] px-3"
-              placeholder="6 digits"
+              className="mt-1 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] px-3 font-[family-name:var(--font-mono)] tracking-[0.4em]"
+              placeholder={`${DEFAULT_PIN_LENGTH} digits`}
             />
           </div>
 

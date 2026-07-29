@@ -612,6 +612,19 @@ export async function createOrUpdateAthleteAccount(
   }
 }
 
+// The three constructors below write local PIN accounts for privileged roles.
+// Every account they produce is unusable: loginWithAccountIdAndPin admits only
+// 'athlete', and resolvePrincipal revokes on sight any live session belonging
+// to a ppbf_local account whose role is not 'athlete'. So a coach, parent or
+// admin created here can never sign in.
+//
+// They are retained only because the session-revocation suites use them as
+// fixtures for rows that still exist in deployed databases. Do NOT wire them to
+// new callers -- createOrUpdateMicrosoftStaffAccount in staffProvisioning.ts is
+// the supported path for every non-athlete role. Intake promotion used
+// createParentAccount until it was moved to that path; nothing calls these in
+// production now.
+/** @deprecated Produces an account that cannot authenticate. See the note above. */
 export async function createCoachAccount(accountId: string, pin: string, organizationId: string): Promise<void> {
   const pinHash = await hashPin(pin);
 
@@ -655,6 +668,7 @@ export async function createCoachAccount(accountId: string, pin: string, organiz
   }
 }
 
+/** @deprecated Produces an account that cannot authenticate. See the note above createCoachAccount. */
 export async function createParentAccount(accountId: string, pin: string, organizationId: string): Promise<void> {
   const pinHash = await hashPin(pin);
 
@@ -698,6 +712,7 @@ export async function createParentAccount(accountId: string, pin: string, organi
   }
 }
 
+/** @deprecated Produces an account that cannot authenticate. See the note above createCoachAccount. */
 export async function createOrRotateAdminAccount(
   accountId: string,
   pin: string,
