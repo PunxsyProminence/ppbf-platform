@@ -1,0 +1,41 @@
+{
+  "comment": "Sources seed:shadow:library registers. Paths are relative to the repository root. Every entry lands as pending_review and stays invisible to SHADOW retrieval until approved at /admin/shadow -- adding a file here publishes nothing by itself. doctrine_kind is the stable dedupe key: re-running the seed skips any source whose doctrine_kind already exists in the organization, so edit the source file and re-approve rather than renaming the kind.",
+  "sources": [
+    {
+      "title": "SHADOW Canonical Authority Model",
+      "publisher": "Punxsy Prominence",
+      "source_type": "internal_policy",
+      "authority_tier": 1,
+      "publication_date": "2026-07-15",
+      "doctrine_kind": "shadow-authority-model",
+      "file": "docs/SHADOW_AUTHORITY_MODEL.md"
+    },
+    {
+      "title": "SHADOW Platform Specification",
+      "publisher": "Punxsy Prominence",
+      "source_type": "internal_policy",
+      "authority_tier": 1,
+      "publication_date": "2026-07-15",
+      "doctrine_kind": "shadow-specification",
+      "file": "docs/SHADOW_SPECIFICATION.md"
+    },
+    {
+      "title": "SHADOW Event Model",
+      "publisher": "Punxsy Prominence",
+      "source_type": "internal_policy",
+      "authority_tier": 1,
+      "publication_date": "2026-07-15",
+      "doctrine_kind": "shadow-event-model",
+      "file": "docs/SHADOW_EVENT_MODEL.md"
+    },
+    {
+      "title": "SHADOW AI Technical Companion",
+      "publisher": "Punxsy Prominence",
+      "source_type": "internal_policy",
+      "authority_tier": 2,
+      "publication_date": "2026-07-15",
+      "doctrine_kind": "shadow-ai-technical-companion",
+      "file": "docs/SHADOW_AI_TECHNICAL_COMPANION.md"
+    }
+  ]
+}

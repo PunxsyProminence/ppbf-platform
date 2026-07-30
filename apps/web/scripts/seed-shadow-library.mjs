@@ -121,55 +121,69 @@ async function verifySession() {
   await call('/api/pilot/shadow/library/sources?limit=1');
 }
 
-async function registerDoctrineSource() {
-  console.log('2) Register canonical doctrine source');
-  const existing = await findCanonicalSource();
-  if (existing) {
-    console.log('2) Canonical doctrine source already exists; reusing existing source');
-    return { source: existing, existing: true };
+// The seed used to register exactly one hardcoded source (the authority
+// model). Sources now come from shadow-library-seed-manifest.json, so growing
+// the Library is a manifest edit rather than a script change. Dedupe is by
+// doctrine_kind in source metadata: a source whose kind already exists in the
+// organization is skipped entirely, which keeps re-runs cheap and means an
+// edited file needs a new review pass, not a renamed kind.
+async function loadManifest() {
+  const manifestPath = process.env.PILOT_LIBRARY_MANIFEST
+    ? path.resolve(process.cwd(), process.env.PILOT_LIBRARY_MANIFEST)
+    : path.resolve(process.cwd(), 'scripts', 'shadow-library-seed-manifest.json');
+  const raw = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+  if (!Array.isArray(raw?.sources) || raw.sources.length === 0) {
+    throw new Error(`Manifest at ${manifestPath} has no sources.`);
   }
-
-  const payload = await call('/api/pilot/shadow/library/sources', {
-    method: 'POST',
-    body: {
-      title: 'SHADOW Canonical Authority Model',
-      publisher: 'Punxsy Prominence',
-      source_type: 'internal_policy',
-      authority_tier: 1,
-      status: 'active',
-      publication_date: '2026-07-15',
-      metadata: {
-        canonical: true,
-        source_file: 'docs/SHADOW_AUTHORITY_MODEL.md',
-        doctrine_kind: 'shadow-authority-model',
-      },
-    },
-  });
-
-  return { source: payload.source, existing: false };
+  for (const entry of raw.sources) {
+    for (const field of ['title', 'source_type', 'doctrine_kind', 'file']) {
+      if (typeof entry?.[field] !== 'string' || !entry[field].trim()) {
+        throw new Error(`Manifest entry ${JSON.stringify(entry?.title ?? entry)} is missing "${field}".`);
+      }
+    }
+  }
+  return raw.sources;
 }
 
-async function findCanonicalSource() {
-  const response = await call('/api/pilot/shadow/library/sources?source_type=internal_policy&status=active&limit=200');
-  const items = Array.isArray(response?.items) ? response.items : [];
-  return items.find((item) => {
+async function listExistingSources() {
+  const response = await call('/api/pilot/shadow/library/sources?status=active&limit=200');
+  return Array.isArray(response?.items) ? response.items : [];
+}
+
+function findExistingSource(existing, entry) {
+  return existing.find((item) => {
     const metadata = item?.metadata || {};
-    return (
-      item?.title === 'SHADOW Canonical Authority Model'
-      || metadata?.doctrine_kind === 'shadow-authority-model'
-      || metadata?.canonical === true
-    );
+    return metadata?.doctrine_kind === entry.doctrine_kind || item?.title === entry.title;
   }) || null;
 }
 
-async function registerDoctrineDocument(sourceId, content) {
-  console.log('3) Register doctrine document');
+async function registerSource(entry) {
+  const payload = await call('/api/pilot/shadow/library/sources', {
+    method: 'POST',
+    body: {
+      title: entry.title,
+      publisher: entry.publisher,
+      source_type: entry.source_type,
+      authority_tier: entry.authority_tier ?? 3,
+      status: 'active',
+      publication_date: entry.publication_date,
+      metadata: {
+        canonical: true,
+        source_file: entry.file,
+        doctrine_kind: entry.doctrine_kind,
+      },
+    },
+  });
+  return payload.source;
+}
+
+async function registerDocument(entry, sourceId, content) {
   const contentSha256 = createHash('sha256').update(content, 'utf8').digest('hex');
   const payload = await call('/api/pilot/shadow/library/documents', {
     method: 'POST',
     body: {
       source_id: sourceId,
-      document_name: 'SHADOW Canonical Authority Model',
+      document_name: entry.title,
       content_sha256: contentSha256,
       ingest_state: 'chunking',
       metadata: {
@@ -179,12 +193,10 @@ async function registerDoctrineDocument(sourceId, content) {
       },
     },
   });
-
   return payload.document;
 }
 
-async function registerDoctrineChunks(documentId, content) {
-  console.log('4) Register doctrine chunks');
+async function registerChunks(documentId, content) {
   const chunks = chunkText(content, 900);
   for (const [index, chunk] of chunks.entries()) {
     await call('/api/pilot/shadow/library/chunks', {
@@ -193,15 +205,38 @@ async function registerDoctrineChunks(documentId, content) {
         document_id: documentId,
         ordinal: index,
         text_content: chunk,
-        metadata: {
-          canonical: true,
-          chunk_type: 'doctrine',
-        },
+        metadata: { canonical: true, chunk_type: 'doctrine' },
       },
     });
   }
-
   return chunks.length;
+}
+
+async function seedManifestSources() {
+  const entries = await loadManifest();
+  const existing = await listExistingSources();
+  const results = [];
+
+  for (const [index, entry] of entries.entries()) {
+    const label = `${index + 1}/${entries.length} ${entry.doctrine_kind}`;
+    const already = findExistingSource(existing, entry);
+    if (already) {
+      console.log(`2) ${label}: source already exists; skipping`);
+      results.push({ doctrine_kind: entry.doctrine_kind, source_id: already.source_id, skipped: true, chunk_count: 0 });
+      continue;
+    }
+
+    const filePath = path.resolve(process.cwd(), '..', '..', entry.file);
+    const content = await fs.readFile(filePath, 'utf8');
+
+    console.log(`2) ${label}: registering source, document, and chunks`);
+    const source = await registerSource(entry);
+    const document = await registerDocument(entry, source.source_id, content);
+    const chunkCount = await registerChunks(document.document_id, content);
+    results.push({ doctrine_kind: entry.doctrine_kind, source_id: source.source_id, skipped: false, chunk_count: chunkCount });
+  }
+
+  return results;
 }
 
 async function seedCapabilityCoverageRules() {
@@ -261,33 +296,20 @@ async function run() {
     throw new Error('Missing PILOT_SESSION_COOKIE.');
   }
 
-  const doctrinePath = path.resolve(process.cwd(), '..', '..', 'docs', 'SHADOW_AUTHORITY_MODEL.md');
-  const doctrineContent = await fs.readFile(doctrinePath, 'utf8');
-
   await verifySession();
 
-  const sourceResult = await registerDoctrineSource();
-  let documentId = null;
-  let chunkCount = 0;
-
-  if (sourceResult.existing) {
-    console.log('3) Skipping doctrine document/chunk registration for existing canonical source');
-  } else {
-    const document = await registerDoctrineDocument(sourceResult.source.source_id, doctrineContent);
-    documentId = document.document_id;
-    chunkCount = await registerDoctrineChunks(document.document_id, doctrineContent);
-  }
-
+  const results = await seedManifestSources();
   const coverageItems = await seedCapabilityCoverageRules();
 
   console.log('SHADOW Library seed complete');
   console.log(JSON.stringify({
-    source_id: sourceResult.source.source_id,
-    document_id: documentId,
-    chunk_count: chunkCount,
-    source_preexisting: sourceResult.existing,
+    sources: results,
+    registered: results.filter((entry) => !entry.skipped).length,
+    skipped: results.filter((entry) => entry.skipped).length,
+    total_chunks: results.reduce((sum, entry) => sum + entry.chunk_count, 0),
     coverage_rules: coverageItems.length,
   }, null, 2));
+  console.log('Reminder: everything registered is pending_review. Approve it at /admin/shadow before SHADOW can cite it.');
 }
 
 try {
