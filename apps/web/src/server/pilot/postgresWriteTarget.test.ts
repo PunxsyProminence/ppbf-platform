@@ -15,8 +15,19 @@
 
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
-const MODULE_PATH = path.resolve(__dirname, '../../../scripts/lib/postgres-write-target.mjs');
+// A file:// URL, not a bare path. The subprocess below imports this as an ESM
+// specifier, and Node refuses a Windows absolute path there:
+//   ERR_UNSUPPORTED_ESM_URL_SCHEME: On Windows, absolute paths must be valid
+//   file:// URLs. Received protocol 'c:'
+// A POSIX absolute path happens to be a legal specifier, so this suite passed
+// in CI (ubuntu) and failed every run on a Windows machine -- which reads as
+// "main is broken" to anyone developing there. pathToFileURL is correct on
+// both.
+const MODULE_URL = pathToFileURL(
+  path.resolve(__dirname, '../../../scripts/lib/postgres-write-target.mjs'),
+).href;
 
 const STAGING = 'postgres://u:p@ppbf-pg-staging.postgres.database.azure.com:5432/postgres';
 const PRODUCTION = 'postgres://u:p@ppbf-pg-195892.postgres.database.azure.com:5432/postgres';
@@ -74,7 +85,7 @@ beforeAll(() => {
     .join('\n');
 
   const script = `
-    import * as g from ${JSON.stringify(MODULE_PATH)};
+    import * as g from ${JSON.stringify(MODULE_URL)};
     const C = ${constants};
     const out = {};
     ${body}
