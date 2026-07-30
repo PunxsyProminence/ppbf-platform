@@ -157,3 +157,54 @@ Your patches are applied and run by others, so:
   arbiters, not your reasoning.
 - Restate which guardrail sections your change touches so the human can
   route it (e.g. "touches §4 validator — extends both test lists").
+
+## 11. Division of labor: who builds, who audits
+
+Two roles, and an AI is in exactly one of them for a given piece of work.
+
+**Builders — Claude sessions with repository and shell execution.**
+All application, infrastructure, migration, and design code is written by
+these. A builder must *prove* its work: run the suite, run the affected
+tests, measure the behavior it claims, and say in the PR what it executed.
+"It should now work" is not a deliverable; §1 applies with full force.
+
+**Auditors — other model families (Grok, ChatGPT, and any future model),
+audit-only.** They read the repository and report findings. They do NOT
+open PRs, write fixes, change files, or dispatch workflows. Their findings
+go to the deploy coordinator, who verifies each one — by measurement where
+possible — before any of it becomes an execution brief for a builder.
+
+**Why this split, from measured experience (2026-07-30, seven audit
+reports across three model families):**
+
+- Outsider auditors without execution read code *as written* rather than
+  trusting a green suite. The single highest-value finding of that day —
+  four competing schema-ownership paths, and a volunteers feature that had
+  never once worked in production — came from a model that could not run
+  anything and therefore had nothing to be lulled by.
+- Model diversity in audit is real: each family found defects the others
+  missed. Run the same lens across several, and treat agreement between
+  them as a confidence signal, not as a vote.
+- Fabricated evidence is the observed failure mode of a confident auditor:
+  one report cited a test that does not exist and a role permission that
+  the code refuses. That is survivable in an auditor whose output is
+  verified before use, and *not* survivable in a builder whose output is
+  merged. Hence the asymmetry.
+
+**Rules that follow:**
+
+1. An audit finding is a **lead, not a fact**, until the coordinator
+   verifies it. Verify by execution or live query where the claim allows;
+   say plainly which findings could not be verified and why.
+2. Findings must carry file:line, evidence (or an explicit `UNVERIFIED`
+   plus the exact confirming check), and a suggested acceptance criterion.
+   Findings without a falsifiable claim are not actionable.
+3. Auditors are told what is already known, so they spend their pass on new
+   ground rather than re-reporting the KNOWN GAP and other tracked items.
+4. Builders work from briefs, not from raw audit reports. A brief states
+   verified facts, exclusive file territory, tasks, and acceptance criteria
+   — so parallel builders cannot collide (§3) and nobody re-derives what
+   was already measured.
+5. When an audit claim and the code disagree, the code wins and the brief
+   says so explicitly, including "do not fix X — X is not real", so a
+   builder does not go chasing a phantom.
