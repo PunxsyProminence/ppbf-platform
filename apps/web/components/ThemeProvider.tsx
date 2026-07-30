@@ -6,13 +6,14 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 
 export type PpbfTheme = "tactical" | "retro";
 
 const STORAGE_KEY = "ppbf-theme";
+const THEME_CHANGE_EVENT = "ppbf-theme-change";
 
 type ThemeContextValue = {
   theme: PpbfTheme;
@@ -43,25 +44,40 @@ function readStoredTheme(): PpbfTheme {
   }
 }
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<PpbfTheme>("tactical");
-  const [ready, setReady] = useState(false);
+function subscribe(onStoreChange: () => void) {
+  const handler = () => onStoreChange();
+  window.addEventListener("storage", handler);
+  window.addEventListener(THEME_CHANGE_EVENT, handler);
+  return () => {
+    window.removeEventListener("storage", handler);
+    window.removeEventListener(THEME_CHANGE_EVENT, handler);
+  };
+}
 
+function getSnapshot(): PpbfTheme {
+  return readStoredTheme();
+}
+
+function getServerSnapshot(): PpbfTheme {
+  return "tactical";
+}
+
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  const theme = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+
+  // DOM side-effect only — no setState (satisfies react-hooks/set-state-in-effect)
   useEffect(() => {
-    const stored = readStoredTheme();
-    setThemeState(stored);
-    applyThemeToDocument(stored);
-    setReady(true);
-  }, []);
+    applyThemeToDocument(theme);
+  }, [theme]);
 
   const setTheme = useCallback((next: PpbfTheme) => {
-    setThemeState(next);
-    applyThemeToDocument(next);
     try {
       window.localStorage.setItem(STORAGE_KEY, next);
     } catch {
       // ignore quota / private mode
     }
+    applyThemeToDocument(next);
+    window.dispatchEvent(new Event(THEME_CHANGE_EVENT));
   }, []);
 
   const toggleTheme = useCallback(() => {
@@ -80,8 +96,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   return (
     <ThemeContext.Provider value={value}>
-      {/* Avoid flash: still render children; theme applied on mount */}
-      <div data-theme-ready={ready ? "true" : "false"}>{children}</div>
+      <div data-theme-ready="true">{children}</div>
     </ThemeContext.Provider>
   );
 }
