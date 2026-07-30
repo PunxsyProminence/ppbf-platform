@@ -2,7 +2,6 @@ import type { ShadowUserProfileRow } from './shadowUserProfile';
 import {
   TIER_CONFIGS,
   buildPersonalizationPrompt,
-  checkScoutReportEligibility,
   classifyProfileTier,
 } from './shadowProfiling';
 
@@ -47,16 +46,54 @@ describe('SHADOW profile badges', () => {
     expect(buildPersonalizationPrompt(profile, bronze)).toContain('stance: orthodox');
   });
 
-  test('keeps Scout Reports unavailable until the secure worker exists', () => {
-    const eligibility = checkScoutReportEligibility(
-      { ...profile, interaction_count: 100 },
-      classifyProfileTier({ ...profile, interaction_count: 100 }),
-    );
+  test('organic chat use alone caps at Silver -- Gold requires human-reviewed facts, by design', () => {
+    // Every factor an ordinary chat turn can write, maxed: 50+ interactions
+    // (40 pts) and 8+ recent topics (15 pts) = 55, below the Gold line at 65.
+    // This ceiling is deliberate: the badge's top tier means a human reviewer
+    // approved learning about this user, not merely heavy usage. Pinned so a
+    // future factor change moves this line consciously.
+    const organicMax = classifyProfileTier({
+      ...profile,
+      interaction_count: 50,
+      recent_topics: ['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8'],
+      remembered_facts: [],
+    });
+    expect(organicMax.score).toBe(55);
+    expect(organicMax.tier).toBe('silver');
 
-    expect(eligibility).toEqual(expect.objectContaining({
-      eligible: false,
-      requiredInteractions: 0,
-    }));
-    expect(eligibility.reason).toContain('secure reviewed worker');
+    // Five high-confidence facts -- writable only through the learning
+    // loop's human-review approval -- cross the line.
+    const reviewed = classifyProfileTier({
+      ...profile,
+      interaction_count: 50,
+      recent_topics: ['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8'],
+      remembered_facts: Array.from({ length: 5 }, (_, i) => ({
+        key: `fact-${i}`,
+        value: 'v',
+        confidence: 0.8,
+        updatedAt: '2026-07-23T00:00:00.000Z',
+      })),
+    });
+    expect(reviewed.score).toBe(75);
+    expect(reviewed.tier).toBe('gold');
+  });
+
+  test('the removed factors stay removed: style and open questions do not score', () => {
+    // communication_style (+10) and open_questions (±15) were advertised
+    // factors nothing could ever write (no production caller for either
+    // setter -- behavioral audit BC-6). They were removed rather than left as
+    // dead weight in the advertised model; identical profiles differing only
+    // in those columns must score identically.
+    const withDeadFactors = classifyProfileTier({
+      ...profile,
+      communication_style: 'concise',
+      open_questions: ['q1', 'q2', 'q3'],
+    });
+    const withoutDeadFactors = classifyProfileTier({
+      ...profile,
+      communication_style: 'unknown',
+      open_questions: [],
+    });
+    expect(withDeadFactors.score).toBe(withoutDeadFactors.score);
   });
 });

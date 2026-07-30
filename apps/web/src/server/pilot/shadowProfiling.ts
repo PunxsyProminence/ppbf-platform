@@ -65,7 +65,7 @@ export const TIER_CONFIGS: Record<ProfileTier, ProfileTierConfig> = {
 export interface ProfileTierResult {
   tier: ProfileTier;
   config: ProfileTierConfig;
-  score: number;          // 0–100 composite score
+  score: number;          // 0–75 composite score (see classifyProfileTier)
   reasons: string[];      // Why this tier was assigned
   nextTierAt: number | null; // Interactions needed to level up (null = already Gold)
 }
@@ -73,12 +73,20 @@ export interface ProfileTierResult {
 /**
  * Score the user's profile and assign a Bronze/Silver/Gold tier.
  *
- * Scoring factors:
- *   - Interaction count     (0–40 pts)
- *   - Remembered facts      (0–20 pts)
- *   - Communication style   (0–10 pts) — style is known = +10
- *   - Recent topics count   (0–15 pts)
- *   - Open questions count  (0–15 pts) — engagement signal
+ * Scoring factors (max 75):
+ *   - Interaction count     (0–40 pts) — written on every chat turn
+ *   - Remembered facts      (0–20 pts) — written ONLY by human-reviewed
+ *     feedback approval (the learning loop's trust gate)
+ *   - Recent topics count   (0–15 pts) — written on every chat turn
+ *
+ * Two factors this docstring used to advertise are gone, because nothing
+ * could ever write them: communication_style (+10) had no caller for its
+ * setter, and open_questions (±15) had writers no production path invoked.
+ * Removing them changes no user's tier -- unwritten columns scored zero for
+ * everyone -- it makes the advertised model match the real one. Verified by
+ * measurement during the behavioral audit: organic chat use alone caps at 55
+ * (Silver, deliberately); Gold (>= 65) requires facts that a human reviewer
+ * approved, which is the trust story the badges are meant to tell.
  */
 function scoreInteractionCount(ic: number, reasons: string[]): number {
   if (ic >= 50) { reasons.push(`${ic} interactions (max score)`); return 40; }
@@ -104,26 +112,13 @@ function scoreTopics(topicCount: number, reasons: string[]): number {
   return 0;
 }
 
-function scoreOpenQuestions(qCount: number, reasons: string[]): number {
-  if (qCount >= 3) { reasons.push(`${qCount} open questions (deep engagement)`); return 15; }
-  if (qCount >= 1) { reasons.push(`${qCount} open question(s)`); return 8; }
-  return 0;
-}
-
 export function classifyProfileTier(profile: ShadowUserProfileRow): ProfileTierResult {
   const reasons: string[] = [];
   let score = 0;
 
   score += scoreInteractionCount(profile.interaction_count, reasons);
   score += scoreRememberedFacts(profile.remembered_facts ?? [], reasons);
-
-  if (profile.communication_style && profile.communication_style !== 'unknown') {
-    score += 10;
-    reasons.push(`communication style known: ${profile.communication_style}`);
-  }
-
   score += scoreTopics((profile.recent_topics ?? []).length, reasons);
-  score += scoreOpenQuestions((profile.open_questions ?? []).length, reasons);
 
   // ── Assign Tier ──────────────────────────────────────────────────────────
   let tier: ProfileTier;
@@ -209,22 +204,4 @@ export function buildPersonalizationPrompt(
 
 // ─── Scout Report Eligibility ─────────────────────────────────────────────────
 
-export interface ScoutReportEligibility {
-  eligible: boolean;
-  reason: string;
-  requiredInteractions: number;
-  currentInteractions: number;
-}
 
-export function checkScoutReportEligibility(
-  profile: ShadowUserProfileRow,
-  tierResult: ProfileTierResult,
-): ScoutReportEligibility {
-  void tierResult;
-  return {
-    eligible: false,
-    reason: 'Scout Reports are unavailable until the secure reviewed worker is enabled',
-    requiredInteractions: 0,
-    currentInteractions: profile.interaction_count,
-  };
-}

@@ -332,8 +332,26 @@ describe('SHADOW job processor fail-closed modes', () => {
   });
 
   test('allows an active platform owner without a membership while keeping the job organization scoped', async () => {
-    const job = claimedJob('library_update');
+    // Retargeted from 'library_update' when that producer-less arm was
+    // removed: board_summary is a real, enqueueable type whose executor
+    // admits platform_owner. With no AZURE_AI_* configured in the test
+    // environment the run stops at the provider guard -- which proves the
+    // authorization path (the subject of this test) was fully traversed.
+    const previousEnv = {
+      endpoint: process.env.AZURE_AI_ENDPOINT,
+      key: process.env.AZURE_AI_KEY,
+      deployment: process.env.AZURE_AI_DEPLOYMENT_NAME,
+    };
+    delete process.env.AZURE_AI_ENDPOINT;
+    delete process.env.AZURE_AI_KEY;
+    delete process.env.AZURE_AI_DEPLOYMENT_NAME;
+    const job = claimedJob('board_summary');
     job.role = 'platform_owner';
+    job.inputPayload = {
+      requestMode: 'chat',
+      message: 'Summarize governance items.',
+      authorizedContext: 'Server-authorized context.',
+    };
     mockClaimNextJob.mockResolvedValueOnce(job);
     mockQueryOne.mockResolvedValueOnce({
       role: 'platform_owner',
@@ -342,20 +360,23 @@ describe('SHADOW job processor fail-closed modes', () => {
       organization_status: 'active',
     });
 
-    const response = await POST(processorRequest('library_update'));
+    try {
+      const response = await POST(processorRequest('board_summary'));
 
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
-      processed: true,
-      jobId: job.jobId,
-      jobType: 'library_update',
-    });
-    expect(mockFailJob).not.toHaveBeenCalled();
-    expect(mockCompleteJob).toHaveBeenCalledWith(
-      job,
-      expect.objectContaining({ resultStatus: 'unavailable' }),
-      'not_applicable',
-    );
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        processed: true,
+        jobId: job.jobId,
+        jobType: 'board_summary',
+        error: 'SHADOW_AI_UNAVAILABLE',
+      });
+      expect(mockFailJob).toHaveBeenCalledWith(job, 'SHADOW_AI_UNAVAILABLE');
+      expect(mockCompleteJob).not.toHaveBeenCalled();
+    } finally {
+      if (previousEnv.endpoint !== undefined) process.env.AZURE_AI_ENDPOINT = previousEnv.endpoint;
+      if (previousEnv.key !== undefined) process.env.AZURE_AI_KEY = previousEnv.key;
+      if (previousEnv.deployment !== undefined) process.env.AZURE_AI_DEPLOYMENT_NAME = previousEnv.deployment;
+    }
 
     const [authorizationSql, authorizationParameters] = mockQueryOne.mock.calls[0];
     expect(authorizationSql).toMatch(/left join pilot\.organization_memberships om/i);
@@ -367,7 +388,7 @@ describe('SHADOW job processor fail-closed modes', () => {
   });
 
   test('fails closed when a queued job owner has changed to the Board role', async () => {
-    const job = claimedJob('library_update');
+    const job = claimedJob('board_summary');
     job.role = 'board';
     mockClaimNextJob.mockResolvedValueOnce(job);
     mockQueryOne.mockResolvedValueOnce({
@@ -377,7 +398,7 @@ describe('SHADOW job processor fail-closed modes', () => {
       organization_status: 'active',
     });
 
-    const response = await POST(processorRequest('library_update'));
+    const response = await POST(processorRequest('board_summary'));
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
