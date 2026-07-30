@@ -1,0 +1,167 @@
+<!-- @dsCard group="Screens" name="Coach Review Queue" subtitle="Layer 10 decision queue + Shadow refusal protocol (Layer 20)" -->
+<link rel="stylesheet" href="../ppbf.css">
+<style>
+  body.ppbf { min-height: 100vh; display: flex; }
+  .rail { width: 233px; flex-shrink: 0; background: var(--hide-950); border-right: 3px solid var(--brass-500);
+          padding: var(--s5) var(--s4); display: flex; flex-direction: column; gap: var(--s3); }
+  .rail .motto { font-size: var(--t-md); text-align: left; margin-bottom: var(--s5); }
+  main { flex: 1; padding: var(--s6); display: flex; flex-direction: column; gap: var(--s6); min-width: 0; }
+
+  h1 { font-family: var(--font-stencil); text-transform: uppercase; font-size: var(--t-xl);
+       letter-spacing: .06em; color: var(--bone-100); margin: 0; }
+  .head-row { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: var(--s4); }
+
+  .layout { display: grid; gap: var(--s6); grid-template-columns: var(--split-major) var(--split-minor); align-items: start; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+  .queue { display: flex; flex-direction: column; gap: var(--s4); }
+  .review-card { border-radius: var(--r-lg); padding: var(--s5); }
+  .rc-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--s4); margin-bottom: var(--s4); }
+  .rc-name { font-family: var(--font-stencil); text-transform: uppercase; font-size: var(--t-md);
+             letter-spacing: .04em; color: var(--bone-100); margin: 0 0 var(--s2); }
+  .rc-meta { font: 11.5px/1.5 var(--font-data); color: var(--bone-400); letter-spacing: .04em; }
+  .rc-body { font-size: 13.5px; line-height: 1.6; color: var(--bone-300); margin: var(--s4) 0; }
+  .rc-controls { display: flex; gap: var(--s3); flex-wrap: wrap; margin-top: var(--s4); }
+  .btn-sm { min-height: 38px; padding: 0 var(--s5); font-size: 13px; }
+
+  /* Shadow panel — Layer 20 refusal engine */
+  .shadow-panel { border-radius: var(--r-lg); padding: var(--s5); position: sticky; top: var(--s5); }
+  .shadow-head { display: flex; align-items: center; gap: var(--s3); margin-bottom: var(--s5); }
+  .shadow-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--brass-400);
+                box-shadow: 0 0 8px rgba(212,175,74,.7); }
+  .shadow-title { font-family: var(--font-stencil); text-transform: uppercase; font-size: var(--t-sm);
+                   letter-spacing: .07em; color: var(--brass-300); margin: 0; }
+  .shadow-thread { display: flex; flex-direction: column; gap: var(--s4); margin-bottom: var(--s5); }
+  .bubble-user { align-self: flex-end; max-width: 88%; background: rgba(212,175,74,.16);
+                 border: 1px solid rgba(212,175,74,.3); border-radius: var(--r-md) var(--r-md) var(--s2) var(--r-md);
+                 padding: var(--s3) var(--s4); font-size: 13px; line-height: 1.5; color: var(--bone-100); }
+  .bubble-shadow { max-width: 92%; background: rgba(0,0,0,.32); border: 1px solid rgba(168,30,34,.4);
+                   border-radius: var(--r-md) var(--r-md) var(--r-md) var(--s2);
+                   padding: var(--s4); }
+  .bubble-shadow .stamp { margin-bottom: var(--s3); }
+  .bubble-shadow p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--bone-200); }
+  .shadow-input { display: flex; gap: var(--s3); }
+  .shadow-input .input { flex: 1; }
+  .shadow-send { width: 46px; height: 46px; flex-shrink: 0; border-radius: 50%; padding: 0;
+                 display: inline-flex; align-items: center; justify-content: center; font-size: 16px; }
+
+  .badge-row { display: flex; gap: var(--s3); flex-wrap: wrap; }
+</style>
+
+<body class="ppbf">
+  <nav class="rail">
+    <div class="motto" style="font-size: 22px; margin-bottom: var(--s6)">PPBF</div>
+    <a class="tag" href="#" aria-current="page">Review Queue</a>
+    <a class="tag" href="#">Athlete Records</a>
+    <a class="tag" href="#">Ledger</a>
+    <a class="tag" href="#">Reports</a>
+    <div style="margin-top: auto;">
+      <div class="gov-banner" style="margin-left: 14px; margin-top: var(--s6);">
+        <div class="gov-banner-lbl">Layer 0</div>
+        <div class="gov-banner-msg" style="font-size: 11.5px;">All decisions logged &amp; attributable.</div>
+      </div>
+    </div>
+  </nav>
+
+  <main>
+    <div class="head-row">
+      <h1>Coach Review Queue</h1>
+      <div class="badge-row">
+        <span class="badge badge--restricted"><i>▲</i>3 Pending</span>
+        <span class="badge badge--cleared"><i>✓</i>12 Cleared Today</span>
+      </div>
+    </div>
+
+    <div class="layout">
+      <!-- QUEUE -->
+      <div class="queue">
+        <div class="review-card mat-leather--raised">
+          <div class="rc-head">
+            <div>
+              <div class="rc-name">Marcus D.</div>
+              <div class="rc-meta">SESSION 2026-07-30 · RPE 8 · RING 1</div>
+            </div>
+            <span class="badge badge--monitor"><i>◉</i>Monitor</span>
+          </div>
+          <p class="rc-body">
+            Self-reported soreness in left shoulder, RPE 8. Coach note: favor right lead during
+            drills this week. No contact restriction warranted, flagged for observation only.
+          </p>
+          <div class="rc-controls">
+            <button class="btn btn-sm">Approve</button>
+            <button class="btn btn-sm btn--ghost">Escalate</button>
+            <button class="btn btn-sm btn--ghost">Request Info</button>
+          </div>
+        </div>
+
+        <div class="review-card mat-leather--raised">
+          <div class="rc-head">
+            <div>
+              <div class="rc-name">Priya S.</div>
+              <div class="rc-meta">SESSION 2026-07-29 · RPE 5 · RING 2</div>
+            </div>
+            <span class="badge badge--restricted"><i>▲</i>Restricted</span>
+          </div>
+          <p class="rc-body">
+            Return from ankle sprain, week 2 of graduated protocol. Cleared for pad work and
+            footwork drills only — no sparring, no live contact until week 4 checkpoint.
+          </p>
+          <div class="rc-controls">
+            <button class="btn btn-sm">Approve</button>
+            <button class="btn btn-sm btn--ghost">Escalate</button>
+            <button class="btn btn-sm btn--ghost">Request Info</button>
+          </div>
+        </div>
+
+        <div class="review-card mat-leather--raised">
+          <div class="rc-head">
+            <div>
+              <div class="rc-name">Jordan T.</div>
+              <div class="rc-meta">SESSION 2026-07-30 · RPE 10 · RING 3</div>
+            </div>
+            <span class="badge badge--locked"><i>✕</i>Escalated</span>
+          </div>
+          <p class="rc-body">
+            Reported head contact during sparring, brief dizziness noted post-session.
+            Auto-escalated by Layer 11 safety gate — concussion protocol candidate.
+            Requires head-coach review before any further clearance action.
+          </p>
+          <div class="rc-controls">
+            <button class="btn btn-sm btn--danger">Engage Medical Lock</button>
+            <button class="btn btn-sm btn--ghost">View Full Record</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SHADOW PANEL -->
+      <div class="shadow-panel mat-leather--raised">
+        <div class="shadow-head">
+          <span class="shadow-dot"></span>
+          <h3 class="shadow-title">Shadow · Layer 20</h3>
+        </div>
+        <div class="shadow-thread">
+          <div class="bubble-user">Did we lose any strong fighters to injury this quarter?</div>
+          <div class="bubble-shadow">
+            <span class="stamp">Research Needed</span>
+            <p>I will not fabricate numbers. That question needs a query against the continuity
+              ledger — ask Reports, or narrow this to a named athlete I have clearance to discuss.</p>
+          </div>
+          <div class="bubble-user">Rank the athletes by toughness.</div>
+          <div class="bubble-shadow">
+            <span class="stamp stamp--brass">Out of Scope</span>
+            <p>I don't rank people. I can tell you attendance, RPE trends, or safety-gate status
+              for any athlete you name — that's a fair comparison. A toughness ranking isn't.</p>
+          </div>
+        </div>
+        <div class="shadow-input">
+          <input class="input" placeholder="Ask Shadow…">
+          <button class="btn shadow-send">➤</button>
+        </div>
+        <p style="font-size: 11.5px; line-height: 1.5; color: var(--bone-400); margin: var(--s4) 0 0;">
+          Shadow refuses fabrication, ranking, and medical advice by design (Layer 20). Refusals
+          are stamped, not phrased as apologies — Law 7.
+        </p>
+      </div>
+    </div>
+  </main>
+</body>
