@@ -124,6 +124,12 @@ jobs:
       # could meet -- the quick tier measured 33.3s (gpt-5.6-luna) and 58.0s
       # (gpt-5-mini), so every turn hit the timeout and returned the degraded
       # response. See shadowRouter.ts for the full latency table.
+      # PPBF_SHADOW_WORKER_ENABLED starts the in-process SHADOW job worker
+      # (instrumentation.ts): scout reports, board summaries, and opt-in
+      # background Heavy Bag. Default OFF in code; enabled HERE FIRST so the
+      # E2E gate and manual staging use exercise the drain loop before
+      # production ever runs it. Production states it explicitly false until
+      # staging has proven a full enqueue -> drain -> render cycle.
       - name: Deploy to Azure Container App
         env:
           AZURE_AI_ENDPOINT: ${{ vars.AZURE_AI_ENDPOINT }}
@@ -150,6 +156,7 @@ jobs:
               AZURE_AI_KEY=secretref:azure-ai-key \
               PPBF_SHADOW_MAX_COMPLETION_TOKENS=8192 \
               PPBF_SHADOW_PROVIDER_TIMEOUT_MS=120000 \
+              PPBF_SHADOW_WORKER_ENABLED=true \
               PPBF_PILOT_BOOTSTRAP_KEY=secretref:ppbf-pilot-bootstrap-key \
               PPBF_PILOT_DEFAULT_ORG_ID=secretref:ppbf-pilot-default-org-id \
               PPBF_PILOT_SHADOW_CONTAINER=secretref:ppbf-pilot-shadow-container \
