@@ -4,13 +4,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
+import type { OrgMetrics } from '@/app/api/pilot/shadow/metrics/route';
 import {
   interpretShadowFeedbackReviewResponse,
   isShadowFeedbackResolvable,
   selectShadowFeedbackReviewQueue,
 } from '@/lib/shadowFeedbackReview';
 
-type IntakeStatus = 'Pending' | 'Classified' | 'Staged' | 'Approved' | 'Rejected' | 'Imported';
+// 'Classified' and 'Staged' were client-side theater with no backend state
+// (audit AS-2): the real workflow is document review -> approve/reject ->
+// import, so only statuses the backend can actually produce remain.
+type IntakeStatus = 'Pending' | 'Approved' | 'Rejected' | 'Imported';
 type ConfidenceLevel = 'Low' | 'Medium' | 'High';
 type DataType =
   | 'System'
@@ -72,8 +76,6 @@ interface TelemetryEvent {
     | 'file upload clicked'
     | 'quick add created'
     | 'command submitted'
-    | 'item classified'
-    | 'item staged'
     | 'item approved'
     | 'item rejected'
     | 'item imported'
@@ -167,7 +169,6 @@ interface ShadowFeedbackReviewApiResponse {
 }
 
 type QueueSort = 'newest' | 'oldest' | 'status';
-type HistorySort = 'newest' | 'oldest';
 
 const DESTINATION_OPTIONS: IntakeDestination[] = [
   'Athlete Workspace',
@@ -411,8 +412,6 @@ function parsePromotionPayloadFromNotes(notes: string): Record<string, unknown> 
 
 function statusChipClasses(status: IntakeStatus): string {
   if (status === 'Pending') return 'border-[#8b4444] bg-[#341515] text-[#f0c4c4]';
-  if (status === 'Classified') return 'border-[#a66424] bg-[#2d2214] text-[#f7d9b0]';
-  if (status === 'Staged') return 'border-[#b38a3c] bg-[#2f2817] text-[#f5e3b5]';
   if (status === 'Approved') return 'border-[#3f8b5b] bg-[#162a1d] text-[#c9f0d7]';
   if (status === 'Rejected') return 'border-[#a13f3f] bg-[#2c1414] text-[#f2c3c3]';
   return 'border-[#46809b] bg-[#15242e] text-[#c8e6f2]';
@@ -451,17 +450,7 @@ function fromBackendStatus(status: 'pending_review' | 'approved' | 'rejected' | 
 }
 
 function renderMetricsPanel(
-  growthMetrics: {
-    period: string;
-    totalInteractions: number;
-    filterRate: number;
-    avgSatisfaction: number | null;
-    avgEffectiveness: number | null;
-    recommendationsMade: number;
-    researchRequirementsCreated: number;
-    researchRequirementsClosed: number;
-    newLibraryPatterns: number;
-  } | null,
+  growthMetrics: OrgMetrics | null,
   metricsLoading: boolean,
 ) {
   return (
@@ -473,14 +462,14 @@ function renderMetricsPanel(
       {growthMetrics ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
           {([
-            ['Interactions', growthMetrics.totalInteractions],
-            ['Filter Rate', `${(growthMetrics.filterRate * 100).toFixed(1)}%`],
-            ['Avg Satisfaction', growthMetrics.avgSatisfaction != null ? growthMetrics.avgSatisfaction.toFixed(2) : '—'],
-            ['Avg Effectiveness', growthMetrics.avgEffectiveness != null ? growthMetrics.avgEffectiveness.toFixed(2) : '—'],
-            ['Recommendations', growthMetrics.recommendationsMade],
-            ['Research Created', growthMetrics.researchRequirementsCreated],
-            ['Research Closed', growthMetrics.researchRequirementsClosed],
-            ['New Patterns', growthMetrics.newLibraryPatterns],
+            ['Interactions', growthMetrics.growth.totalInteractions],
+            ['Filter Rate', growthMetrics.growth.filterRate != null ? `${(growthMetrics.growth.filterRate * 100).toFixed(1)}%` : '—'],
+            ['Avg Satisfaction', growthMetrics.growth.avgSatisfaction != null ? growthMetrics.growth.avgSatisfaction.toFixed(2) : '—'],
+            ['Effectiveness %', growthMetrics.effectiveness.avgRecommendationScore != null ? String(growthMetrics.effectiveness.avgRecommendationScore) : '—'],
+            ['Recommendations', growthMetrics.growth.recommendationsMade],
+            ['Research Created', growthMetrics.growth.researchRequirementsCreated],
+            ['Research Closed', growthMetrics.growth.researchRequirementsClosed],
+            ['New Patterns', growthMetrics.growth.newLibraryPatterns],
           ] as [string, string | number][]).map(([label, value]) => (
             <div key={label} className="border border-[#3f8b5b]/30 bg-[#0f1f14] p-3 text-center">
               <p className="text-[11px] font-mono uppercase tracking-[0.12em] text-[#c9f0d7]/60">{label}</p>
@@ -793,14 +782,10 @@ export default function AdminShadowConsolePage() {
   const [commandInput, setCommandInput] = useState('');
   const [pendingQueue, setPendingQueue] = useState<IntakeItem[]>([]);
   const [backendQueueReady, setBackendQueueReady] = useState(false);
-  const [importHistory, setImportHistory] = useState<IntakeItem[]>([]);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [uploadedFileName, setUploadedFileName] = useState('');
-  const [showHistory, setShowHistory] = useState(false);
   const [queueFilterStatus, setQueueFilterStatus] = useState<'ALL' | IntakeStatus>('ALL');
   const [queueSort, setQueueSort] = useState<QueueSort>('newest');
-  const [historyFilterStatus, setHistoryFilterStatus] = useState<'ALL' | IntakeStatus>('ALL');
-  const [historySort, setHistorySort] = useState<HistorySort>('newest');
   const [telemetryEvents, setTelemetryEvents] = useState<TelemetryEvent[]>([]);
   const [showTelemetry, setShowTelemetry] = useState(false);
   const [shadowTelemetry, setShadowTelemetry] = useState<ShadowTelemetryApiResponse['telemetry']>([]);
@@ -809,17 +794,11 @@ export default function AdminShadowConsolePage() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [lastIngestSummary, setLastIngestSummary] = useState<ShadowUploadResponse | null>(null);
-  const [growthMetrics, setGrowthMetrics] = useState<{
-    period: string;
-    totalInteractions: number;
-    filterRate: number;
-    avgSatisfaction: number | null;
-    avgEffectiveness: number | null;
-    recommendationsMade: number;
-    researchRequirementsCreated: number;
-    researchRequirementsClosed: number;
-    newLibraryPatterns: number;
-  } | null>(null);
+  // Typed against the route's exported OrgMetrics on purpose: this panel
+  // once read a flat shape the API had stopped returning, and a blind cast
+  // let every tile render NaN/blank for weeks (audit AS-1). Binding to the
+  // imported contract makes the next shape change a compile error here.
+  const [growthMetrics, setGrowthMetrics] = useState<OrgMetrics | null>(null);
   const [metricsLoading, setMetricsLoading] = useState(false);
   const [feedbackSummary, setFeedbackSummary] = useState<ShadowFeedbackApiResponse['summary']>(null);
   const [feedbackReviewQueue, setFeedbackReviewQueue] = useState<ShadowFeedbackItem[]>([]);
@@ -874,8 +853,8 @@ export default function AdminShadowConsolePage() {
           credentials: 'include',
         });
         if (!response.ok) return;
-        const payload = (await response.json()) as { metrics?: typeof growthMetrics } | null;
-        if (payload?.metrics) setGrowthMetrics(payload.metrics);
+        const payload = (await response.json()) as { metrics?: OrgMetrics } | null;
+        if (payload?.metrics?.growth) setGrowthMetrics(payload.metrics);
       } finally {
         setMetricsLoading(false);
       }
@@ -1063,10 +1042,6 @@ export default function AdminShadowConsolePage() {
     setPendingQueue((current) => current.map((item) => (item.id === itemId ? updater(item) : item)));
   }
 
-  function saveHistorySnapshot(item: IntakeItem) {
-    setImportHistory((prev) => [{ ...item }, ...prev].slice(0, 80));
-  }
-
   async function processReviewAction(item: IntakeItem, backendAction: 'approve' | 'reject') {
     if (!backendQueueReady) {
       throw new Error('Review action blocked: backend review queue is unavailable.');
@@ -1138,34 +1113,6 @@ export default function AdminShadowConsolePage() {
     });
   }
 
-  function handleClassifyAction(item: IntakeItem, itemId: string) {
-    const updated = { ...item, status: 'Classified' as const, lastUpdatedAt: nowIso() };
-    applyQueueUpdate(itemId, () => updated);
-    saveHistorySnapshot(updated);
-    appendTelemetry('item classified', { itemId: item.id, itemName: item.itemName, dataType: item.dataType });
-    appendConsoleLog({
-      source: 'SHADOW',
-      dataType: item.dataType,
-      status: 'Classified',
-      message: `Item ${item.itemName} classified as ${updated.detectedType}.`,
-      destination: updated.suggestedDestination,
-    });
-  }
-
-  function handleStageAction(item: IntakeItem, itemId: string) {
-    const updated = { ...item, status: 'Staged' as const, reviewNeeded: true, requiresJasonReview: true, lastUpdatedAt: nowIso() };
-    applyQueueUpdate(itemId, () => updated);
-    saveHistorySnapshot(updated);
-    appendTelemetry('item staged', { itemId: item.id, itemName: item.itemName });
-    appendConsoleLog({
-      source: 'SHADOW',
-      dataType: item.dataType,
-      status: 'Staged',
-      message: `Item ${item.itemName} staged and awaiting Jason/Admin review.`,
-      destination: updated.suggestedDestination,
-    });
-  }
-
   async function handleReviewAction(item: IntakeItem, action: 'APPROVE' | 'REJECT') {
     const isApprove = action === 'APPROVE';
     const backendAction = isApprove ? 'approve' : 'reject';
@@ -1210,7 +1157,7 @@ export default function AdminShadowConsolePage() {
     });
   }
 
-  async function handleItemAction(itemId: string, action: 'VIEW' | 'CLASSIFY' | 'STAGE' | 'APPROVE' | 'REJECT' | 'IMPORT') {
+  async function handleItemAction(itemId: string, action: 'VIEW' | 'APPROVE' | 'REJECT' | 'IMPORT') {
     const item = pendingQueue.find((entry) => entry.id === itemId);
     if (!item) {
       return;
@@ -1218,16 +1165,6 @@ export default function AdminShadowConsolePage() {
 
     if (action === 'VIEW') {
       handleViewAction(item, itemId);
-      return;
-    }
-
-    if (action === 'CLASSIFY') {
-      handleClassifyAction(item, itemId);
-      return;
-    }
-
-    if (action === 'STAGE') {
-      handleStageAction(item, itemId);
       return;
     }
 
@@ -1260,7 +1197,7 @@ export default function AdminShadowConsolePage() {
         source: 'SHADOW',
         dataType: 'System',
         status: 'Status',
-        message: `Queue=${pendingQueue.length} | History=${importHistory.length} | Selected=${selectedItem ? selectedItem.itemName : 'None'}`,
+        message: `Queue=${pendingQueue.length} | Selected=${selectedItem ? selectedItem.itemName : 'None'}`,
         destination: 'SHADOW Local State',
       });
     } else if (submitted === 'list') {
@@ -1291,10 +1228,10 @@ export default function AdminShadowConsolePage() {
         source: 'SHADOW',
         dataType: 'System',
         status: 'Summary',
-        message: `Intake summary generated. Pending=${pendingQueue.length}; awaiting staged approvals before import.`,
+        message: `Queue status: ${pendingQueue.length} pending item(s). Review documents, then APPROVE and IMPORT.`,
         destination: 'Admin Hub',
       });
-    } else if (submitted === 'classify' || submitted === 'stage' || submitted === 'approve' || submitted === 'reject') {
+    } else if (submitted === 'approve' || submitted === 'reject') {
       if (!selectedItem) {
         appendConsoleLog({
           source: 'SHADOW',
@@ -1304,7 +1241,7 @@ export default function AdminShadowConsolePage() {
           destination: 'SHADOW Local State',
         });
       } else {
-        const action = submitted.toUpperCase() as 'CLASSIFY' | 'STAGE' | 'APPROVE' | 'REJECT';
+        const action = submitted.toUpperCase() as 'APPROVE' | 'REJECT';
         void handleItemAction(selectedItem.id, action);
       }
     } else {
@@ -1312,7 +1249,7 @@ export default function AdminShadowConsolePage() {
         source: 'SHADOW',
         dataType: 'Command',
         status: 'Placeholder',
-        message: `Unknown command: ${submitted}. Use merge | status | list | clear | summarize | classify | stage | approve | reject`,
+        message: `Unknown command: ${submitted}. Use merge | status | list | clear | summarize | approve | reject`,
         destination: 'SHADOW Local State',
       });
     }
@@ -1471,20 +1408,14 @@ export default function AdminShadowConsolePage() {
       }
 
       const key = event.key.toLowerCase();
-      const runAction = (action: 'CLASSIFY' | 'STAGE' | 'APPROVE' | 'REJECT' | 'IMPORT') => {
+      const runAction = (action: 'APPROVE' | 'REJECT' | 'IMPORT') => {
         if (!selectedItemId) {
           return;
         }
         void handleItemActionRef.current(selectedItemId, action);
       };
 
-      if (key === 'c') {
-        event.preventDefault();
-        runAction('CLASSIFY');
-      } else if (key === 's') {
-        event.preventDefault();
-        runAction('STAGE');
-      } else if (key === 'a') {
+      if (key === 'a') {
         event.preventDefault();
         runAction('APPROVE');
       } else if (key === 'r') {
@@ -1517,27 +1448,14 @@ export default function AdminShadowConsolePage() {
     });
   }, [pendingQueue, queueFilterStatus, queueSort]);
 
-  const filteredSortedHistory = useMemo(() => {
-    const filtered = importHistory.filter((item) => historyFilterStatus === 'ALL' || item.status === historyFilterStatus);
-
-    return [...filtered].sort((a, b) => {
-      if (historySort === 'oldest') {
-        return new Date(a.lastUpdatedAt).getTime() - new Date(b.lastUpdatedAt).getTime();
-      }
-      return new Date(b.lastUpdatedAt).getTime() - new Date(a.lastUpdatedAt).getTime();
-    });
-  }, [importHistory, historyFilterStatus, historySort]);
-
   const queueCounts = useMemo(() => {
     return {
       pending: pendingQueue.filter((item) => item.status === 'Pending').length,
-      classified: pendingQueue.filter((item) => item.status === 'Classified').length,
-      staged: pendingQueue.filter((item) => item.status === 'Staged').length,
       approved: pendingQueue.filter((item) => item.status === 'Approved').length,
     };
   }, [pendingQueue]);
 
-  const commandHints = ['merge', 'status', 'list', 'clear', 'summarize', 'classify', 'stage', 'approve', 'reject'];
+  const commandHints = ['merge', 'status', 'list', 'clear', 'summarize', 'approve', 'reject'];
 
   return (
     <RoleStandaloneView roleLabel="SHADOW Admin Console" routeLabel="/admin/shadow" allowedRoles={['admin']} showShellHeader={false}>
@@ -1577,8 +1495,6 @@ export default function AdminShadowConsolePage() {
           <section className="border-4 border-[#8b4444] bg-[#0f0f0f] p-4">
             <div className="mb-3 flex flex-wrap gap-2 text-xs font-mono uppercase tracking-[0.14em] text-[#d4a574]/85">
               <span>Pending: {queueCounts.pending}</span>
-              <span>Classified: {queueCounts.classified}</span>
-              <span>Staged: {queueCounts.staged}</span>
               <span>Approved: {queueCounts.approved}</span>
             </div>
             <div className="max-h-[500px] space-y-3 overflow-y-auto pr-1">
@@ -1655,8 +1571,6 @@ export default function AdminShadowConsolePage() {
                 >
                   <option value="ALL">ALL</option>
                   <option value="Pending">Pending</option>
-                  <option value="Classified">Classified</option>
-                  <option value="Staged">Staged</option>
                   <option value="Approved">Approved</option>
                   <option value="Rejected">Rejected</option>
                   <option value="Imported">Imported</option>
@@ -1699,7 +1613,7 @@ export default function AdminShadowConsolePage() {
                     </div>
 
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {(['VIEW', 'CLASSIFY', 'STAGE', 'APPROVE', 'REJECT', 'IMPORT'] as const).map((action) => (
+                      {(['VIEW', 'APPROVE', 'REJECT', 'IMPORT'] as const).map((action) => (
                         <button
                           key={action}
                           type="button"
@@ -1871,63 +1785,6 @@ export default function AdminShadowConsolePage() {
                     className="h-11 w-full border-2 border-[#8b4444] bg-[#141414] px-3 text-[14px]"
                   />
                 </label>
-              </div>
-            )}
-          </section>
-
-          <section className="border-4 border-[#8b4444] bg-[#0a0a0a]/70 p-4">
-            <button
-              type="button"
-              onClick={() => setShowHistory((current) => !current)}
-              className="h-11 w-full border-2 border-[#8b4444] bg-[#2a1414] text-[14px] font-bold text-[#e8d7c6] transition hover:border-[#d4a574]"
-            >
-              {showHistory ? 'Hide' : 'Show'} IMPORT HISTORY
-            </button>
-            {showHistory && (
-              <div className="mt-3 space-y-2">
-                <div className="grid gap-2 md:grid-cols-2">
-                  <label className="text-[13px] text-[#d4a574]">
-                    <span className="mb-1 block font-mono uppercase">Filter Status</span>
-                    <select
-                      value={historyFilterStatus}
-                      onChange={(event) => setHistoryFilterStatus(event.target.value as 'ALL' | IntakeStatus)}
-                      className="h-11 w-full border-2 border-[#8b4444] bg-[#141414] px-3 text-[14px] text-[#e8d7c6]"
-                    >
-                      <option value="ALL">ALL</option>
-                      <option value="Pending">Pending</option>
-                      <option value="Classified">Classified</option>
-                      <option value="Staged">Staged</option>
-                      <option value="Approved">Approved</option>
-                      <option value="Rejected">Rejected</option>
-                      <option value="Imported">Imported</option>
-                    </select>
-                  </label>
-                  <label className="text-[13px] text-[#d4a574]">
-                    <span className="mb-1 block font-mono uppercase">Sort</span>
-                    <select
-                      value={historySort}
-                      onChange={(event) => setHistorySort(event.target.value as HistorySort)}
-                      className="h-11 w-full border-2 border-[#8b4444] bg-[#141414] px-3 text-[14px] text-[#e8d7c6]"
-                    >
-                      <option value="newest">Newest First</option>
-                      <option value="oldest">Oldest First</option>
-                    </select>
-                  </label>
-                </div>
-                {filteredSortedHistory.length === 0 ? (
-                  <p className="text-[14px] text-[#d4a574]/80">No history entries yet.</p>
-                ) : (
-                  filteredSortedHistory.map((item) => (
-                    <div key={`${item.id}-${item.lastUpdatedAt}`} className="border border-[#8b4444]/60 bg-[#151515] p-3 text-[13px] text-[#e8d7c6]">
-                      <p className="font-semibold text-[#d4a574]">{item.itemName}</p>
-                      <p>
-                        <span className={`inline-flex border px-2 py-0.5 font-mono text-[12px] ${statusChipClasses(item.status)}`}>{item.status}</span>
-                        <span className="ml-2">- {item.dataType}</span>
-                      </p>
-                      <p className="font-mono text-[12px] text-[#d4a574]/80">{item.lastUpdatedAt}</p>
-                    </div>
-                  ))
-                )}
               </div>
             )}
           </section>

@@ -1,3 +1,20 @@
+> **ARCHIVED — HISTORICAL VISION DOCUMENT. DO NOT BUILD FROM THIS.**
+>
+> This document describes the pre-pilot, client-side prototype (v21.1 local
+> state machine) as if it were current, and most of its BUILT claims are
+> false against the running platform (spec-conformance audit, 2026-07-30):
+> the role schema has 8 roles + board, not the 12 listed; the "mathematical
+> gates" (readiness formula, GRIND STATE, delta-RPE lockout, CAPABILITY 194)
+> exist only as descriptive text on a static page; L30 video annotation is
+> honestly UNAVAILABLE (see issue #103 for the real plan); the
+> `/system_control/pending/` route does not exist; the platform runs on
+> Azure PostgreSQL, not Supabase. Building or auditing from this file is how
+> merged-but-never-worked features happen.
+>
+> Current truth lives in `docs/AI_CONTRIBUTOR_GUARDRAILS.md` (rules and known
+> landmines) and the code itself; product vision items graduate out of here
+> only by being built and gate-proven.
+
 # 🖤 SHADOW: Systemic Holistic Analytics & Diagnostic Oversight Wing
 **Ecosystem Node Status: ONLINE**  
 **Enforcement Context: Production Build v21.1 - SHADOW Specifications**  
