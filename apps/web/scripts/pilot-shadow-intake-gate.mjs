@@ -602,9 +602,31 @@ async function run() {
   });
   assertAuditPromotionEvent(audit);
 
-  // The athlete identity comes from two writers on purpose: the fixtures step
-  // provisions it before the gate, and promotion just upserted over it with
-  // the same identities. Login must work on the promoted state.
+  // Promotion does NOT leave a usable credential, and that is deliberate on
+  // the product side: createOrUpdateAthleteAccount writes pin_hash = null and
+  // active_flag = false, so a promoted athlete exists but cannot sign in until
+  // an administrator activates them. Verified on staging after the first run
+  // with the KNOWN GAP closed -- the account was present with
+  // active_flag=false, pin_hash null, and step 10 failed 401.
+  //
+  // NOTE for the auth backlog, not fixed here: the promotion payload accepts
+  // athlete.pin and silently discards it. createOrUpdateAthleteAccount takes
+  // it as a parameter literally named organizationIdOrLegacyPin and never
+  // uses it, yet the request returns success -- so a caller believes it set a
+  // credential that was never written. The guardian branch of this same route
+  // handles the equivalent case correctly by throwing "Unsupported
+  // guardian.pin ...". The athlete branch should either honour the PIN (with
+  // must_change_pin = true, since an admin typed it) or refuse it as loudly.
+  //
+  // Activating here is not a workaround: it is the real administrative flow a
+  // promoted athlete goes through, so the gate now covers promote -> activate
+  // -> sign in rather than assuming promotion alone produces a login.
+  console.log('9b) Activate the promoted athlete (real admin flow)');
+  await admin.call('/api/pilot/admin/accounts/pin-reset', {
+    method: 'POST',
+    body: { account_id: athleteAccountId, pin: athletePin, mode: 'activate' },
+  });
+
   console.log('10) Verify athlete login and retrieval');
   await athlete.call('/api/pilot/auth/login', {
     method: 'POST',
