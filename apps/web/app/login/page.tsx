@@ -263,25 +263,47 @@ function LoginPageContent() {
 
   const microsoftSignIn = createMicrosoftSignInHandler(apiBase());
 
-  // ========== RETRO: photoreal desk mockup as full scene ==========
+  // ========== RETRO: gym desk scene (CSS wood + cork + lamp + paper ticket) ==========
   if (isRetro) {
     return (
       <main className="relative min-h-screen overflow-hidden text-[var(--black)]">
-        {/* Full-bleed desk background — the mockup itself */}
+        {/* Desk scene layers — photoreal mockup path ready; CSS fallback always works */}
         <div
-          className="pointer-events-none absolute inset-0 bg-cover bg-center bg-no-repeat"
+          className="pointer-events-none absolute inset-0"
           style={{
-            backgroundImage: "url('/retro/login-desk-bg.jpg')",
-            filter: 'brightness(0.92) contrast(1.05)',
+            backgroundColor: '#2c1810',
+            backgroundImage: [
+              // optional real photo when binary is in public/retro/
+              "url('/retro/login-desk-bg.jpg')",
+              // wood desk + corkboard + lamp CSS fallback (shows if photo 404s)
+              'radial-gradient(ellipse 90% 70% at 20% 10%, rgba(212,175,119,0.35) 0%, transparent 50%)',
+              'linear-gradient(180deg, #5c3a24 0%, #3b2415 18%, #2c1810 45%, #1a0f0a 100%)',
+              'repeating-linear-gradient(90deg, transparent, transparent 3px, rgba(0,0,0,0.04) 3px, rgba(0,0,0,0.04) 6px)',
+            ].join(', '),
+            backgroundSize: 'cover, cover, cover, auto',
+            backgroundPosition: 'center, center, center, 0 0',
+            backgroundRepeat: 'no-repeat, no-repeat, no-repeat, repeat',
+            filter: 'brightness(0.95) contrast(1.08)',
           }}
           aria-hidden
         />
-        {/* Soft vignette so the paper ticket reads cleanly */}
+        {/* Corkboard band at top */}
+        <div
+          className="pointer-events-none absolute left-0 right-0 top-0 h-[22%] sm:h-[26%]"
+          style={{
+            background:
+              'linear-gradient(180deg, #c4a574 0%, #a68b5b 40%, #8a6f45 100%)',
+            boxShadow: 'inset 0 -8px 20px rgba(0,0,0,0.35)',
+            opacity: 0.55,
+          }}
+          aria-hidden
+        />
+        {/* Vignette for form readability */}
         <div
           className="pointer-events-none absolute inset-0"
           style={{
             background:
-              'radial-gradient(ellipse 70% 65% at 50% 48%, transparent 0%, rgba(26,18,11,0.25) 55%, rgba(26,18,11,0.55) 100%)',
+              'radial-gradient(ellipse 68% 62% at 50% 48%, transparent 0%, rgba(26,18,11,0.2) 50%, rgba(26,18,11,0.62) 100%)',
           }}
           aria-hidden
         />
@@ -313,7 +335,6 @@ function LoginPageContent() {
             </div>
 
             <div className="grid gap-0 lg:grid-cols-[1.15fr_0.85fr]">
-              {/* Left: login form */}
               <div className="space-y-0 border-b-[3px] border-[var(--black)] lg:border-b-0 lg:border-r-[3px]">
                 <div className="flex border-b-[2px] border-[var(--black)]">
                   <button
@@ -428,7 +449,6 @@ function LoginPageContent() {
                 </div>
               </div>
 
-              {/* Right: gym notices ledger */}
               <aside className="bg-[var(--canvas-tan-dark)] p-4 sm:p-5">
                 <div className="mb-3 flex items-center justify-between gap-2">
                   <p className="font-display text-sm uppercase tracking-wide text-[var(--paper)]">
@@ -470,7 +490,6 @@ function LoginPageContent() {
             </div>
           </section>
 
-          {/* Small footer credit on the desk */}
           <p className="mt-4 font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--paper)] opacity-70 drop-shadow-sm">
             PPBF · Poor Mans Sport · Desk of the Trainer
           </p>
@@ -479,7 +498,7 @@ function LoginPageContent() {
     );
   }
 
-  // ========== TACTICAL fallback (explicit localStorage choice) ==========
+  // ========== TACTICAL fallback ==========
   return (
     <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       <div className="mx-auto grid min-h-screen w-full max-w-5xl place-items-center px-6 py-10 lg:px-10">
