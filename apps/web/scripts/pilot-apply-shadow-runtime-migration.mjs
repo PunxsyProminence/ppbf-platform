@@ -12,6 +12,7 @@ const MIGRATION_FILES = [
   'pilot_slice_postgres_shadow_job_lease_migration.sql',
   'pilot_slice_postgres_board_role_migration.sql',
   'pilot_slice_postgres_shadow_decision_loop_migration.sql',
+  'pilot_slice_postgres_shadow_chunk_embedding_migration.sql',
 ];
 
 const READINESS_QUERY = `
@@ -138,7 +139,14 @@ const COMPLETION_READINESS_QUERY = `
     to_regclass('pilot.shadow_decisions') is not null as decisions_ready,
     to_regclass('pilot.shadow_near_misses') is not null as near_misses_ready,
     to_regclass('pilot.shadow_decision_outcomes') is not null as decision_outcomes_ready,
-    to_regclass('pilot.shadow_audit_entries') is not null as audit_entries_ready
+    to_regclass('pilot.shadow_audit_entries') is not null as audit_entries_ready,
+    exists (
+      select 1
+      from information_schema.columns
+      where table_schema = 'pilot'
+        and table_name = 'shadow_library_chunks'
+        and column_name = 'embedding'
+    ) as chunk_embedding_ready
 `;
 
 function required(name) {

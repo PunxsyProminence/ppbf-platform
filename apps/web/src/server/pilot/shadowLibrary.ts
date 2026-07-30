@@ -3,9 +3,17 @@ import { randomUUID } from 'node:crypto';
 import { assertActorCanAccessAthlete } from './access';
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
+import { cosineSimilarity, embedText, getEmbeddingDeploymentName, isSemanticLibrarySearchEnabled } from './shadowEmbeddings';
 import { emitShadowEvent } from './shadowEvents';
 import { createShadowResearchRequirement, listShadowResearchRequirements } from './shadowResearch';
 import { writeShadowTelemetryEvent } from './shadowTelemetry';
+
+// Below this cosine similarity, the best semantic match is noise rather than
+// relevance, and the search falls back to keywords instead of citing the
+// chunk that merely lost least badly. Deliberately permissive: embeddings
+// separate related from unrelated text well above this line, and the
+// downstream evidence review gates still apply to whatever is returned.
+const SEMANTIC_SCORE_FLOOR = 0.15;
 
 export type ShadowLibrarySourceType =
   | 'peer_reviewed'
@@ -706,6 +714,28 @@ export async function createShadowLibraryChunk(input: {
     throw new Error('Unable to create SHADOW Library chunk.');
   }
 
+  // Best-effort embedding at write time: when the embedding deployment is
+  // configured, the chunk becomes semantically searchable immediately. A
+  // failed or disabled embedding leaves the column NULL and the chunk still
+  // fully usable through keyword search; the backfill script picks up NULLs
+  // later. Never lets an embedding problem fail the registration the curator
+  // just performed.
+  try {
+    const embedding = await embedText(row.text_content);
+    if (embedding) {
+      await query(
+        `update pilot.shadow_library_chunks
+         set embedding = $3::jsonb, embedding_model = $4
+         where chunk_id = $1 and organization_id = $2`,
+        [row.chunk_id, input.organizationId, JSON.stringify(embedding), getEmbeddingDeploymentName()],
+      );
+    }
+  } catch (error) {
+    console.error('SHADOW chunk embedding skipped', {
+      errorClass: error instanceof Error ? error.name : typeof error,
+    });
+  }
+
   await query(
     `update pilot.shadow_library_documents
      set ingest_state = 'chunking',
@@ -858,6 +888,83 @@ export async function searchShadowLibrary(input: {
       role: input.actorRole,
       athleteId: input.athleteId ?? null,
     }, normalized.effectiveSubjectId);
+  }
+
+  // Semantic path, when the embedding deployment is live: rank a bounded
+  // candidate set (same approval/verification/scope filters as the keyword
+  // query, restricted to chunks that HAVE an embedding) by cosine similarity
+  // computed in-process. No pgvector, no index: at this library's scale the
+  // candidate set is small, and keeping ranking in the application means the
+  // keyword path below remains byte-for-byte the shipped behavior whenever
+  // semantics is disabled, errors, or finds nothing relevant -- an embedding
+  // outage degrades search, never breaks it.
+  if (isSemanticLibrarySearchEnabled()) {
+    const queryEmbedding = await embedText(normalizedQuery);
+    if (queryEmbedding) {
+      const candidates = await query<ShadowLibrarySearchResult & { embedding: number[] }>(
+        `select
+           c.chunk_id, c.document_id, c.source_id, c.subject_id, c.ordinal,
+           d.document_name,
+           s.title as source_title, s.publisher as source_publisher,
+           s.source_type, s.authority_tier, s.status as source_status,
+           s.publication_date::text as publication_date,
+           c.text_content, c.embedding,
+           0::float as score
+         from pilot.shadow_library_chunks c
+         join pilot.shadow_library_documents d on d.document_id = c.document_id and d.organization_id = c.organization_id
+         join pilot.shadow_library_sources s on s.source_id = c.source_id and s.organization_id = c.organization_id
+         where c.organization_id = $1
+           and s.status = 'active'
+           and s.approval_state = 'approved'
+           and s.verification_state = 'verified'
+           and d.ingest_state = 'indexed'
+           and d.index_completed_at is not null
+           and d.approval_state = 'approved'
+           and d.verification_state = 'verified'
+           and c.embedding is not null
+           and (
+             ($2::text = 'scoped' and c.subject_id is null)
+             or ($2::text = 'subject' and (c.subject_id is null or c.subject_id = $3))
+           )
+         order by s.authority_tier asc, c.created_at asc
+         limit 200`,
+        [input.organizationId, normalized.scope, normalized.effectiveSubjectId],
+      );
+
+      const ranked = candidates
+        .map((candidate) => ({
+          ...candidate,
+          score: Array.isArray(candidate.embedding)
+            ? cosineSimilarity(queryEmbedding, candidate.embedding)
+            : 0,
+        }))
+        // Below the floor, "closest" is noise, not relevance: fall back to
+        // keywords rather than cite a chunk that merely lost least badly.
+        .filter((candidate) => candidate.score >= SEMANTIC_SCORE_FLOOR)
+        .sort((a, b) => b.score - a.score || a.authority_tier - b.authority_tier || a.ordinal - b.ordinal)
+        .slice(0, limit)
+        .map((candidate) => {
+          const { embedding, ...result } = candidate;
+          void embedding;
+          return result;
+        });
+
+      if (ranked.length > 0) {
+        await writeShadowTelemetryEvent({
+          organizationId: input.organizationId,
+          metricName: 'shadow.library.search',
+          actorAccountId: input.actorAccountId,
+          actorRole: input.actorRole,
+          dimensions: {
+            scope: normalized.scope,
+            result_count: ranked.length,
+            term_count: terms.length,
+            search_mode: 'semantic',
+          },
+        });
+        return ranked;
+      }
+    }
   }
 
   const rows = await query<ShadowLibrarySearchResult>(
