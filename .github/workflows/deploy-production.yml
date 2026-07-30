@@ -81,6 +81,22 @@ jobs:
   build-and-deploy:
     needs: guard
     runs-on: ubuntu-latest
+    # Binds this job to the GitHub `production` environment, so its protection
+    # rules apply. apply-migrations.yml has always declared one (its target
+    # name); this workflow did not, which meant a required-reviewer rule on
+    # `production` gated schema changes while leaving the code deploy itself
+    # ungated -- the asymmetry every audit pass flagged.
+    #
+    # OIDC note, learned the hard way: declaring an environment CHANGES the
+    # token subject from `repo:<org>/<repo>:ref:refs/heads/main` to
+    # `repo:<org>/<repo>:environment:production`. A federated credential for
+    # that exact subject must exist on the app behind AZURE_CLIENT_ID or
+    # login fails with AADSTS700213 (which is how the first production
+    # apply-migrations run died on 2026-07-30). Verified present before this
+    # change: the identity carries BOTH `github-main` (ref) and
+    # `github-production-env` (environment) credentials, and both workflows
+    # use the same AZURE_CLIENT_ID secret.
+    environment: production
     env:
       ACR_NAME: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
       ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io
