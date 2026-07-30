@@ -29,6 +29,10 @@ function PinManagementPageContent() {
   const [confirmPin, setConfirmPin] = useState('');
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState('');
+  const [createAccountId, setCreateAccountId] = useState('');
+  const [createError, setCreateError] = useState('');
+  const [createSuccess, setCreateSuccess] = useState('');
+  const [createBusy, setCreateBusy] = useState(false);
 
   const selectedItem = useMemo(
     () => items.find((item) => item.athlete_id === selectedAthleteId) ?? null,
@@ -40,6 +44,7 @@ function PinManagementPageContent() {
     try {
       const response = await fetch(`${apiBase()}/api/pilot/admin/athlete-pin-directory`, {
         method: 'GET',
+        credentials: 'include',
       });
       const payload = (await response.json().catch(() => ({}))) as {
         ok?: boolean;
@@ -90,6 +95,7 @@ function PinManagementPageContent() {
     try {
       const response = await fetch(`${apiBase()}/api/pilot/admin/accounts/pin-reset`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           account_id: selectedItem.account_id,
@@ -115,6 +121,62 @@ function PinManagementPageContent() {
       setError(submitError instanceof Error ? submitError.message : 'PIN operation failed');
     } finally {
       setSaving(false);
+    }
+  }
+
+  // The missing first step of the workflow this page always implied: an
+  // athlete with no account row cannot have a PIN activated, and until now
+  // creating that row had no UI at all (re-landed from PR #20).
+  async function submitCreateAccount(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setCreateError('');
+    setCreateSuccess('');
+
+    const athleteId = selectedAthleteId.trim();
+    const accountId = createAccountId.trim();
+
+    if (!athleteId) {
+      setCreateError('Select an athlete first.');
+      return;
+    }
+    if (!accountId) {
+      setCreateError('Account ID is required.');
+      return;
+    }
+    if (selectedItem?.account_id) {
+      setCreateError('This athlete already has a linked account. Use Activate or Reset PIN instead.');
+      return;
+    }
+
+    setCreateBusy(true);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/admin/athlete-accounts`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          account_id: accountId,
+          athlete_id: athleteId,
+        }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || 'Unable to create athlete account');
+      }
+
+      setCreateAccountId('');
+      setCreateSuccess('Athlete account created. Next step: activate PIN.');
+      setLoading(true);
+      await loadDirectory();
+    } catch (createAccountError) {
+      setCreateError(createAccountError instanceof Error ? createAccountError.message : 'Unable to create athlete account');
+    } finally {
+      setCreateBusy(false);
     }
   }
 
@@ -171,6 +233,35 @@ function PinManagementPageContent() {
 
           <section className="rounded-2xl border border-[rgba(0,0,0,0.14)] bg-white p-4 shadow-[var(--shadow-sm)]">
             <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--gray-dark)]">PIN Action</h2>
+            <form className="mt-3 space-y-3 border-b border-[rgba(0,0,0,0.1)] pb-4" onSubmit={submitCreateAccount}>
+              <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--gray-dark)]">Create Athlete Account</h3>
+              <p className="text-xs text-[var(--gray-dark)]">Creates a pending account for the selected athlete. Then run Activate PIN.</p>
+              <div>
+                <label htmlFor="create-account-id" className="block text-xs font-semibold uppercase tracking-[0.15em] text-[var(--gray-dark)]">
+                  New Account ID
+                </label>
+                <input
+                  id="create-account-id"
+                  type="text"
+                  value={createAccountId}
+                  onChange={(event) => setCreateAccountId(event.target.value)}
+                  className="mt-1 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] px-3"
+                  placeholder="athlete-account-id"
+                />
+              </div>
+
+              {createError && <p className="rounded-lg border border-[var(--red-primary)] bg-[rgba(184,59,52,0.06)] px-3 py-2 text-sm" role="alert">{createError}</p>}
+              {createSuccess && <p className="rounded-lg border border-[rgba(16,120,40,0.5)] bg-[rgba(16,120,40,0.1)] px-3 py-2 text-sm">{createSuccess}</p>}
+
+              <button
+                type="submit"
+                disabled={createBusy || !selectedAthleteId || !!selectedItem?.account_id}
+                className="min-h-[48px] w-full rounded-xl border border-[var(--black)] bg-[var(--black)] px-4 text-sm font-black uppercase tracking-[0.12em] text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {createBusy ? 'Creating...' : 'Create Athlete Account'}
+              </button>
+            </form>
+
             <form className="mt-3 space-y-3" onSubmit={submitPinAction}>
               <fieldset className="space-y-2">
                 <legend className="text-xs font-semibold uppercase tracking-[0.15em] text-[var(--gray-dark)]">Action</legend>
