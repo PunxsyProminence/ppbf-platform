@@ -142,6 +142,7 @@ async function fetchShadowAI(
   apiBaseUrl: string,
   conversationId?: string,
   athleteId?: string,
+  preferAsync = false,
 ): Promise<ShadowAIResult> {
   const res = await fetch(`${apiBaseUrl}/api/pilot/shadow/chat`, {
     method: 'POST',
@@ -152,6 +153,7 @@ async function fetchShadowAI(
       heavyBagMode,
       conversationId,
       athleteId,
+      preferAsync,
     })),
   });
   const payload = await res.json().catch(() => null) as ShadowAIResult | null;
@@ -295,6 +297,7 @@ function ShadowChatPageContent() {
   const [userInput, setUserInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [heavyBagMode, setHeavyBagMode] = useState(false);
+  const [backgroundHeavyBag, setBackgroundHeavyBag] = useState(false);
   const [allowedSessionTypes, setAllowedSessionTypes] = useState<string[]>(['quick_round']);
   const [conversationId, setConversationId] = useState<string>();
   const [conversationAthleteId, setConversationAthleteId] = useState<string>();
@@ -745,6 +748,7 @@ function ShadowChatPageContent() {
       apiBase(),
       conversationId,
       conversationAthleteId,
+      heavyBagMode && backgroundHeavyBag,
     );
     if (data.conversationId) {
       setConversationId(data.conversationId);
@@ -835,18 +839,45 @@ function ShadowChatPageContent() {
           ? status.output.resultStatus
           : 'unavailable';
         const safeCompletion = status.safetyStatus === 'passed' && resultStatus === 'ok';
+        // A conversation-bound Heavy Bag completion carries the validated
+        // answer, its grade, and the citations the server persisted; showing
+        // anything else here would diverge from what restore will replay.
+        const output = (status.output ?? {}) as Record<string, unknown>;
+        const outputResponse = typeof output.response === 'string' && output.response.trim()
+          ? output.response
+          : null;
+        const outputTier = output.evidenceTier;
+        const gradedTier = outputTier === 'PROVEN' || outputTier === 'EMERGING'
+          || outputTier === 'EXPERIMENTAL' || outputTier === 'RESEARCH_NEEDED'
+          ? outputTier
+          : NO_SERVER_EVIDENCE_TIER;
+        const outputCitations = Array.isArray(output.citations)
+          ? (output.citations as Array<Record<string, unknown>>)
+              .filter((entry) => typeof entry.evidenceId === 'string'
+                && typeof entry.token === 'string'
+                && typeof entry.sourceTitle === 'string'
+                && typeof entry.documentName === 'string')
+              .map((entry) => ({
+                evidenceId: entry.evidenceId as string,
+                token: entry.token as string,
+                sourceTitle: entry.sourceTitle as string,
+                documentName: entry.documentName as string,
+              }))
+          : [];
         setMessages((prev) => prev.map((msg) => (
           msg.id === messageId
             ? {
                 ...msg,
                 text: safeCompletion
-                  ? 'Heavy Bag Session completed. Open Scout Reports to review the server-validated result.'
+                  ? (outputResponse
+                    ?? 'Heavy Bag Session completed. Open Scout Reports to review the server-validated result.')
                   : 'SHADOW withheld or could not produce this queued result. No generated guidance was displayed.',
                 isAsync: false,
                 state: safeCompletion ? 'ok' : 'degraded',
-                // The job-status poll doesn't carry evidenceTier -- the real
-                // graded result lives in Scout Reports, not this chat bubble.
-                evidenceTier: NO_SERVER_EVIDENCE_TIER,
+                evidenceTier: safeCompletion && outputResponse ? gradedTier : NO_SERVER_EVIDENCE_TIER,
+                citations: safeCompletion && outputCitations.length > 0 ? outputCitations : undefined,
+                // Feedback keys on the server's message id; this bubble holds
+                // a client-local id, so rating happens after a restore.
                 feedbackEligible: false,
               }
             : msg
@@ -1284,6 +1315,25 @@ function ShadowChatPageContent() {
               >
                 {heavyBagMode ? '🥊' : '⚡'}
               </button>
+            ) : null}
+            {heavyBagMode ? (
+              <label
+                title="Queue this Heavy Bag question for background processing -- the answer is added to this conversation when ready, instead of holding the page for the full generation."
+                className={`flex cursor-pointer items-center gap-1 border-2 px-2 text-[9px] font-mono font-bold uppercase tracking-[0.1em] transition ${
+                  backgroundHeavyBag
+                    ? 'border-[#d4a574] bg-[#2a2418] text-[#d4a574]'
+                    : 'border-[#5a4a3a] bg-[#1a1a1a] text-[#6a5a4a] hover:border-[#8b4444]'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={backgroundHeavyBag}
+                  onChange={(event) => setBackgroundHeavyBag(event.target.checked)}
+                  disabled={Boolean(restoringSessionId)}
+                  className="sr-only"
+                />
+                BG
+              </label>
             ) : null}
             <input
               type="text"

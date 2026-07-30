@@ -32,6 +32,15 @@ describe('SHADOW session client', () => {
     });
   });
 
+  test('preferAsync rides the wire only as an explicit true', () => {
+    const base = { message: 'q', heavyBagMode: true };
+    expect(buildShadowChatRequest({ ...base, preferAsync: true }).preferAsync).toBe(true);
+    // Omitted or false stays off the wire entirely (undefined is dropped by
+    // JSON.stringify), so older servers that reject unknown values never see it.
+    expect(buildShadowChatRequest(base).preferAsync).toBeUndefined();
+    expect(buildShadowChatRequest({ ...base, preferAsync: false }).preferAsync).toBeUndefined();
+  });
+
   test('lists only typed server sessions using credentialed requests', async () => {
     const fetchImpl = jest.fn().mockResolvedValue(jsonResponse({
       success: true,

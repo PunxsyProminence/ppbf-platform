@@ -9,6 +9,7 @@ import { getAzureAiRuntimeConfig, buildAzureAiChatCompletionsUrl } from '@/src/s
 import { evaluateShadowUnlockState } from '@/src/server/pilot/shadowUnlocks';
 import {
   appendConversationExchange,
+  appendUserMessage,
   loadConversationMessages,
   queueHumanReview,
   resolveConversation,
@@ -119,6 +120,7 @@ jest.mock('@/src/server/pilot/azureAiRuntime', () => ({
 jest.mock('@/src/server/pilot/shadowConversations', () => ({
   resolveConversation: jest.fn(),
   appendConversationExchange: jest.fn(),
+  appendUserMessage: jest.fn(),
   assertConversationAccess: jest.fn(),
   loadConversationMessages: jest.fn(),
   queueHumanReview: jest.fn(),
@@ -180,6 +182,7 @@ const mockBuildUrl = jest.mocked(buildAzureAiChatCompletionsUrl);
 const mockEvaluateUnlocks = jest.mocked(evaluateShadowUnlockState);
 const mockResolveConversation = jest.mocked(resolveConversation);
 const mockAppendConversationExchange = jest.mocked(appendConversationExchange);
+const mockAppendUserMessage = jest.mocked(appendUserMessage);
 const mockLoadConversationMessages = jest.mocked(loadConversationMessages);
 const mockQueueHumanReview = jest.mocked(queueHumanReview);
 const mockEnforceRateLimit = jest.mocked(enforceShadowRateLimit);
@@ -861,6 +864,74 @@ describe('background session types via the job worker', () => {
     // Queue-only modes produce documents read from job output, never
     // conversation turns: nothing may be persisted to a conversation.
     expect(mockAppendConversationExchange).not.toHaveBeenCalled();
+  });
+
+  test('background Heavy Bag: preferAsync + worker enabled persists the question, snapshots evidence, and queues', async () => {
+    mockIsShadowWorkerEnabled.mockReturnValue(true);
+    mockAppendUserMessage.mockResolvedValue('user-msg-1');
+    mockExecuteHeavyBagAsync.mockResolvedValue({
+      mode: 'async',
+      jobId: 'job-hb-1',
+      routing: {} as never,
+      sessionType: 'heavy_bag',
+    });
+
+    const response = await POST(postRequest({
+      message: 'Build a six-week plan from what you know.',
+      sessionType: 'heavy_bag',
+      preferAsync: true,
+    }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.state).toBe('queued');
+    expect(payload.async).toBe(true);
+    expect(payload.jobId).toBe('job-hb-1');
+    // The conversation exists from the moment of asking: the question is
+    // durable even if the job fails hours later.
+    expect(payload.conversationId).toBe('conversation-1');
+    expect(mockAppendUserMessage).toHaveBeenCalledWith(expect.objectContaining({
+      conversationId: 'conversation-1',
+      content: 'Build a six-week plan from what you know.',
+      sessionType: 'heavy_bag',
+    }));
+    // The job carries the evidence snapshot -- completion may cite only what
+    // this user was allowed to see at ask time.
+    expect(mockExecuteHeavyBagAsync).toHaveBeenCalledWith(expect.objectContaining({
+      conversationId: 'conversation-1',
+      sessionType: 'heavy_bag',
+      evidenceSnapshot: expect.objectContaining({
+        bundleId: '00000000-0000-4000-8000-000000000200',
+        availability: 'unavailable',
+        allowedEvidenceIds: [],
+      }),
+    }));
+    // The assistant turn is written by the processor at completion, never here.
+    expect(mockAppendConversationExchange).not.toHaveBeenCalled();
+  });
+
+  test('background Heavy Bag: preferAsync without the worker stays synchronous', async () => {
+    // clearAllMocks resets calls, not return values -- the previous test's
+    // enabled=true would otherwise leak into this one.
+    mockIsShadowWorkerEnabled.mockReturnValue(false);
+    mockExecuteHeavyBagSync.mockResolvedValue({
+      mode: 'sync',
+      response: 'RESEARCH NEEDED — synchronous plan outline.',
+      routing: { model: { displayName: 'GPT-5.6 Sol (Heavy Bag)' } } as never,
+      sessionType: 'heavy_bag',
+    });
+
+    const response = await POST(postRequest({
+      message: 'Build a six-week plan from what you know.',
+      sessionType: 'heavy_bag',
+      preferAsync: true,
+    }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.state).toBe('ok');
+    expect(payload.async).toBe(false);
+    expect(mockExecuteHeavyBagAsync).not.toHaveBeenCalled();
   });
 
   test('an athlete cannot reach the queue through a requested session type', async () => {

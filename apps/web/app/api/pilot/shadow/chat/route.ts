@@ -35,6 +35,7 @@ import {
 import { deriveEvidenceTier, type ShadowEvidenceTier } from '@/src/server/pilot/shadowEvidenceTier';
 import {
   appendConversationExchange,
+  appendUserMessage,
   assertConversationAccess,
   loadConversationMessages,
   queueHumanReview,
@@ -792,6 +793,73 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           content: historyMessage.content,
         }))
       : [];
+
+    // Background Heavy Bag: an explicit opt-in (preferAsync), only when the
+    // worker is live. The question is persisted NOW -- a queued job can fail
+    // hours later and the conversation must still show what was asked -- and
+    // the job carries the evidence snapshot so the completion can cite only
+    // what this user was allowed to see at ask time. The answer is appended
+    // by the processor under this same actor's re-validated identity.
+    if (sessionType === 'heavy_bag' && preferAsync && isShadowWorkerEnabled()) {
+      await assertShadowRuntimeReadiness({ requiredTables: ['shadow_jobs'] });
+      const queuedConversationId = await resolveConversation({
+        actor: principal,
+        conversationId: requestedConversationId,
+        athleteId,
+        sessionType,
+        firstMessage: message,
+      });
+      await appendUserMessage({
+        actor: principal,
+        conversationId: queuedConversationId,
+        content: message,
+        topic: interactionTopic,
+        sessionType,
+      });
+      const heavyBagResult = await executeHeavyBagAsync({
+        message,
+        userId,
+        organizationId,
+        role: userRole as PilotRole,
+        userProfile,
+        tierResult,
+        contextOutput: authorizedContextOutput,
+        classification,
+        sessionType,
+        athleteId,
+        // The background prompt is recomposed at execution time from the
+        // job's re-validated role, so no prompt text needs to ride along.
+        systemPromptBase: '',
+        conversationHistory,
+        conversationId: queuedConversationId,
+        evidenceSnapshot: {
+          bundleId: evidenceBundle.bundleId,
+          availability: evidenceBundle.availability,
+          allowedEvidenceIds: evidenceBundle.allowedEvidenceIds,
+          citationCatalog: publicEvidenceCitations(evidenceBundle, evidenceBundle.allowedEvidenceIds),
+        },
+      });
+      return NextResponse.json({
+        success: true,
+        state: 'queued',
+        response: 'Queued for background processing. The answer will be added to this conversation when SHADOW completes it.',
+        messageId: transientMessageId,
+        conversationId: queuedConversationId,
+        createdAt: createdAt.toISOString(),
+        filtered: false,
+        requiresHumanReview: false,
+        evidenceTier: 'RESEARCH_NEEDED',
+        handoff: resolveHandoff({ requiresHumanReview: false, topic: undefined }),
+        unlockHints: buildShadowUnlockHints(unlockState),
+        tier: effectiveTier,
+        complexity: classification.complexity,
+        sessionType,
+        profileTier: tierResult.tier,
+        async: true,
+        jobId: heavyBagResult.jobId,
+        citations: [],
+      });
+    }
 
     // Step 6: Route to correct model via The Corner
     const { llmResponse, resolvedAsync, asyncJobId, state: providerState, modelUsed } = await routeLlmCall({
