@@ -317,6 +317,25 @@ export async function claimNextJob(jobType?: JobType): Promise<ShadowJob | null>
          lease_expires_at = NOW() + ($2 * INTERVAL '1 second')
      FROM next_job
      WHERE jobs.job_id = next_job.job_id
+     -- Every column is qualified with the jobs alias, and must stay that way.
+     -- Unqualified job_id is ambiguous here -- next_job has one too -- and
+     -- Postgres rejects the whole statement with
+     --   42702: column reference "job_id" is ambiguous
+     -- That made claimNextJob throw on every call, so the worker logged
+     -- "tick failed { errorClass: 'error' }" once per interval and never
+     -- claimed a job; the background queue had never processed anything.
+     -- Reproduced against the staging database in a rolled-back transaction:
+     -- unqualified raises 42702, qualified claims a real pending job.
+     --
+     -- Two things hid it. The worker logs error.name only, and
+     -- node-postgres sets DatabaseError.name to the lowercase string 'error',
+     -- so a SQL fault renders identically to a generic catch-all. And the
+     -- handler's own comment assumes it means "the database being
+     -- unreachable", which sent diagnosis the wrong way.
+     --
+     -- The non-key columns are qualified too: they are unambiguous only
+     -- because next_job selects a single column, and widening that CTE later
+     -- must not silently break the claim again.
      RETURNING jobs.job_id, jobs.job_type, jobs.organization_id, jobs.account_id,
                jobs.subject_id, jobs.role, jobs.status, jobs.input_payload,
                jobs.output_payload, jobs.error_message, jobs.safety_status,
