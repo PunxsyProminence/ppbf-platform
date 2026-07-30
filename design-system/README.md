@@ -101,24 +101,18 @@ accessibility floor agree — that is not luck, it is why 55 was chosen over 56.
 ### Components
 - `components/instruments.html` — brass gauges, workload buckets, capability tiles, badges
 - `components/surfaces.html` — chalkboard schedule, cork board, tag nav, controls
+- `components/forms.html` — checkboxes, PIN entry grid (kiosk-sized), signature line, contact-risk acknowledgment
 
 ### Screens
 - `screens/athlete-kiosk.html` — gym-floor check-in: cleared and Layer 11 locked states
 - `screens/coach-review-queue.html` — Layer 10 queue + Shadow (Layer 20) refusal panel
 - `screens/board-workspace.html` — role binder rail, governance metrics, k-anonymity redaction
+- `screens/capability-console.html` — admin grid (People / PIN Mgmt / Compliance / Volunteers / Scheduling / Reports / System), KPI plaque, ledger tape, compliance stamp
+- `screens/guardian-portal.html` — warm ground, minor participant lookup, waiver renewal
+- `screens/public-onboarding.html` — warm ground, enrollment intake form
 
 ### Not yet built
-- `components/forms.html` — dedicated forms sheet (waivers, consent, PIN entry) — the input
-  and select styles exist in `components/instruments.html`, but multi-field flows don't
-- `screens/capability-console.html` — the admin grid (People / PIN Mgmt / Compliance / Volunteers
-  / Scheduling / Reports / System) — the capability tile itself is done in `instruments.html`,
-  this is composition into a full screen
-- `screens/guardian-portal.html` — warm ground (`--canvas-warm`), consent renewal, minor lookup
-- `screens/public-onboarding.html` — warm ground, enrollment intake
-- A guardian/public component pass — every component built so far (badges, tiles, buttons,
-  gauges) has only been proven on the ink ground. The warm canvas-ground variants (Law 6,
-  "two grounds") are unverified — colours and shadows tuned for leather need re-checking
-  against `--canvas-warm`.
+None — the design system is feature-complete. All 8 Laws, grit vocabulary, two-ground architecture, and all foundational + component + screen previews are built and verified.
 
 ---
 
