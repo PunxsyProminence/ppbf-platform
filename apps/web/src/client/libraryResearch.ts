@@ -126,10 +126,23 @@ export async function askLibrary(
     throw new LibraryResearchError(502, 'The Library returned a malformed answer.');
   }
 
+  // The requirement id is a Postgres bigint, and node-postgres serializes
+  // bigint as a STRING -- the wire value is "1", not 1. Found by driving the
+  // page against the live server: the id parsed to null, so the "logged as
+  // research requirement #N" message never rendered even though the server
+  // had logged the gap.
+  const rawRequirement = claim.researchRequirementId;
+  const researchRequirementId =
+    typeof rawRequirement === 'number' && Number.isFinite(rawRequirement)
+      ? rawRequirement
+      : typeof rawRequirement === 'string' && /^\d+$/.test(rawRequirement)
+        ? Number(rawRequirement)
+        : null;
+
   return {
     status: claim.status,
     answer: claim.answer,
     evidence: parseEvidence(claim.evidence),
-    researchRequirementId: typeof claim.researchRequirementId === 'number' ? claim.researchRequirementId : null,
+    researchRequirementId,
   };
 }

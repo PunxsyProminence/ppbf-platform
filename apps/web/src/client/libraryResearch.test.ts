@@ -102,3 +102,37 @@ describe('claimStatusLabel', () => {
     expect(claimStatusLabel('supported')).toMatch(/approved Library evidence/);
   });
 });
+
+describe('research requirement id wire format', () => {
+  test('a bigint id arriving as a string is parsed, not dropped', async () => {
+    // node-postgres serializes Postgres bigint as a string, so the real wire
+    // value is "1". The first version of this parser required a number and
+    // silently swallowed the id -- the gap message never rendered even though
+    // the server had logged the requirement. Caught by driving the live page.
+    const gapClaim = {
+      answer: 'SHADOW Library does not currently have qualifying evidence for this question.',
+      status: 'unsupported',
+      confidence: 0,
+      evidence: [],
+      researchRequirementId: '17',
+    };
+    const fetchImpl = jest.fn(async () => ({
+      ok: true, status: 200, json: async () => ({ ok: true, claim: gapClaim }),
+    }) as unknown as Response);
+
+    const result = await askLibrary('', 'q', fetchImpl as unknown as typeof fetch);
+    expect(result.researchRequirementId).toBe(17);
+  });
+
+  test('a non-numeric string stays null rather than becoming NaN', async () => {
+    const gapClaim = {
+      answer: 'x', status: 'unsupported', confidence: 0, evidence: [], researchRequirementId: 'abc',
+    };
+    const fetchImpl = jest.fn(async () => ({
+      ok: true, status: 200, json: async () => ({ ok: true, claim: gapClaim }),
+    }) as unknown as Response);
+
+    const result = await askLibrary('', 'q', fetchImpl as unknown as typeof fetch);
+    expect(result.researchRequirementId).toBeNull();
+  });
+});
