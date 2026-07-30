@@ -2,7 +2,7 @@
 // Connects recommendation outcomes → Growth Metrics → SHADOW Library → Scout Reports.
 // This is how SHADOW improves over time: each interaction informs future advice.
 
-import { query, queryOne } from './db';
+import { query } from './db';
 import type { PilotRole } from './contracts';
 import { recordRecommendationEffectiveness } from './shadowMetrics';
 import { upsertRememberedFact } from './shadowUserProfile';
@@ -205,17 +205,28 @@ async function handleNegativeOutcome(
     return false;
   }
 
+  // Two separate failure domains, attributed separately: a single catch here
+  // used to report a research-requirement failure as "Library review flag
+  // failed" -- a failure that had not occurred -- in the durable learning
+  // audit. The flag can succeed while the requirement fails, and the audit
+  // trail must say which one actually broke.
+  let flagged = false;
   try {
     await flagLibraryEntryForReview(signal);
     actions.push(`Library entry flagged for review (topic: ${signal.topic})`);
-
-    const researchRequirementId = await createResearchRequirementFromNegativeSignal(signal);
-    actions.push(`Research requirement created (#${researchRequirementId})`);
-    return true;
+    flagged = true;
   } catch {
     actions.push('Library review flag failed');
-    return false;
   }
+
+  try {
+    const researchRequirementId = await createResearchRequirementFromNegativeSignal(signal);
+    actions.push(`Research requirement created (#${researchRequirementId})`);
+  } catch {
+    actions.push('Research requirement creation failed');
+  }
+
+  return flagged;
 }
 
 async function queueLibraryChangeForReview(
@@ -536,94 +547,7 @@ async function logLearningEvent(
 
 // ─── Scorecard (Growth Metrics Summary) ──────────────────────────────────────
 
-export interface ShadowScorecard {
-  organizationId: string;
-  period: string;
-  totalInteractions: number;
-  positiveOutcomes: number;
-  negativeOutcomes: number;
-  positiveRate: number | null;        // 0–1
-  factsExtracted: number | null;
-  libraryFlagsRaised: number;
-  topEngagedTopics: string[];
-  profilesAtGold: number;
-  profilesAtSilver: number;
-  profilesAtBronze: number;
-  unavailableReasons: Record<string, string>;
-}
 
-export async function getScorecard(
-  organizationId: string,
-  days = 30,
-): Promise<ShadowScorecard> {
-  const safeDays = Math.max(1, Math.min(365, Math.floor(days)));
-  const [events, topTopics, profiles] = await Promise.all([
-    queryOne<{
-      total: string;
-      positive: string;
-      negative: string;
-    }>(
-      `SELECT
-         COUNT(*) AS total,
-         COUNT(*) FILTER (WHERE outcome_signal IN ('thumbs_up', 'followed_advice', 'asked_followup')) AS positive,
-         COUNT(*) FILTER (WHERE outcome_signal IN ('thumbs_down', 'escalated_to_human')) AS negative
-       FROM pilot.shadow_learning_events
-       WHERE organization_id = $1
-         AND verification_state = 'human_reviewed'
-         AND created_at > NOW() - ($2 * INTERVAL '1 day')`,
-      [organizationId, safeDays],
-    ),
-    query<{ topic: string; count: string }>(
-      `SELECT topic, COUNT(*) AS count
-       FROM pilot.shadow_learning_events
-       WHERE organization_id = $1
-         AND verification_state = 'human_reviewed'
-         AND created_at > NOW() - ($2 * INTERVAL '1 day')
-       GROUP BY topic
-       ORDER BY count DESC
-       LIMIT 5`,
-      [organizationId, safeDays],
-    ),
-    queryOne<{ gold: string; silver: string; bronze: string }>(
-      `SELECT
-         COUNT(*) FILTER (WHERE interaction_count >= 50) AS gold,
-         COUNT(*) FILTER (WHERE interaction_count >= 20 AND interaction_count < 50) AS silver,
-         COUNT(*) FILTER (WHERE interaction_count < 20) AS bronze
-       FROM pilot.shadow_user_profiles
-       WHERE organization_id = $1`,
-      [organizationId],
-    ),
-  ]);
-
-  const total = Number.parseInt(events?.total ?? '0', 10);
-  const positive = Number.parseInt(events?.positive ?? '0', 10);
-  const negative = Number.parseInt(events?.negative ?? '0', 10);
-  const flagCount = await queryOne<{ count: string }>(
-    `SELECT COUNT(*) AS count
-     FROM pilot.shadow_library_review_flags
-     WHERE organization_id = $1 AND review_state = 'pending'`,
-    [organizationId],
-  );
-
-  return {
-    organizationId,
-    period: `Last ${safeDays} days`,
-    totalInteractions: total,
-    positiveOutcomes: positive,
-    negativeOutcomes: negative,
-    positiveRate: total > 0 ? positive / total : null,
-    factsExtracted: null,
-    libraryFlagsRaised: Number.parseInt(flagCount?.count ?? '0', 10),
-    topEngagedTopics: topTopics.map((r) => r.topic),
-    profilesAtGold: Number.parseInt(profiles?.gold ?? '0', 10),
-    profilesAtSilver: Number.parseInt(profiles?.silver ?? '0', 10),
-    profilesAtBronze: Number.parseInt(profiles?.bronze ?? '0', 10),
-    unavailableReasons: {
-      ...(total === 0 ? { positiveRate: 'NO_HUMAN_REVIEWED_OUTCOMES_IN_PERIOD' } : {}),
-      factsExtracted: 'FACT_EXTRACTION_COUNT_NOT_STORED_AS_A_DURABLE_METRIC',
-    },
-  };
-}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

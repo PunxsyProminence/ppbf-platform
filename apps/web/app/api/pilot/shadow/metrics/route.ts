@@ -4,6 +4,7 @@ import { requireRole } from '@/src/server/pilot/access';
 import { query, queryOne } from '@/src/server/pilot/db';
 import { jsonError, parseSafeLimit, requirePrincipal } from '@/src/server/pilot/http';
 import { getGrowthMetrics } from '@/src/server/pilot/shadowMetrics';
+import { classifyProfileTier } from '@/src/server/pilot/shadowProfiling';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import type { ShadowUserProfileRow } from '@/src/server/pilot/shadowUserProfile';
 import { evaluateShadowUnlockState } from '@/src/server/pilot/shadowUnlocks';
@@ -359,20 +360,22 @@ async function getUserMetrics(organizationId: string, userId: string): Promise<U
 async function getTierCounts(
   organizationId: string,
 ): Promise<{ bronze: number; silver: number; gold: number }> {
-  const result = await queryOne<{ bronze: string; silver: string; gold: string }>(
-    `SELECT
-       COUNT(*) FILTER (WHERE interaction_count < 20) AS bronze,
-       COUNT(*) FILTER (WHERE interaction_count >= 20 AND interaction_count < 50) AS silver,
-       COUNT(*) FILTER (WHERE interaction_count >= 50) AS gold
-     FROM pilot.shadow_user_profiles
-     WHERE organization_id = $1`,
+  // Classified with the SAME function the chat route uses per turn
+  // (classifyProfileTier: multi-factor score, thresholds 30/65). This used to
+  // be a second, contradictory definition -- interaction_count alone at 20/50
+  // -- so the dashboard could call a user Gold while their chat badge said
+  // Silver. The audit found a third copy in getScorecard, now deleted. One
+  // authority remains, and this query deliberately fetches rows and runs it
+  // rather than re-encoding it in SQL where it could drift again.
+  const profiles = await query<ShadowUserProfileRow>(
+    `SELECT * FROM pilot.shadow_user_profiles WHERE organization_id = $1`,
     [organizationId],
   );
-  return {
-    bronze: Number.parseInt(result?.bronze ?? '0', 10),
-    silver: Number.parseInt(result?.silver ?? '0', 10),
-    gold: Number.parseInt(result?.gold ?? '0', 10),
-  };
+  const counts = { bronze: 0, silver: 0, gold: 0 };
+  for (const profile of profiles) {
+    counts[classifyProfileTier(profile).tier] += 1;
+  }
+  return counts;
 }
 
 function calculateCompleteness(profile: ShadowUserProfileRow): number {

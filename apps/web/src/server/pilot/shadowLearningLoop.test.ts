@@ -118,4 +118,40 @@ describe('SHADOW learning-loop trust gates', () => {
       && sql.includes('IS DISTINCT FROM EXCLUDED.feedback_id')
     )).toBe(true);
   });
+
+  test('locked features stay in observation mode -- the path production actually runs', async () => {
+    // The audit flagged that every test here forced isFeatureEnabled to true,
+    // leaving the locked-feature behavior -- the default state of every real
+    // deployment -- with zero coverage. This pins it: no auto library change,
+    // and the audit trail says observation mode explicitly.
+    mockFeatureEnabled.mockReturnValue(false);
+
+    const result = await processLearningSignal({
+      ...baseSignal,
+      verificationState: 'human_reviewed',
+    });
+
+    expect(result.actions.join(' ')).toContain('observation mode');
+    expect(result.actions.join(' ')).not.toContain('entry promoted');
+  });
+
+  test('a research-requirement failure is attributed to itself, not to the library flag', async () => {
+    // The two writes live in separate failure domains. A single catch used to
+    // log "Library review flag failed" when the flag had succeeded and only
+    // the research requirement had failed -- a false statement in the durable
+    // learning audit.
+    mockFeatureEnabled.mockReturnValue(false);
+    mockResearch.mockRejectedValue(new Error('research write failed'));
+
+    const result = await processLearningSignal({
+      ...baseSignal,
+      outcome: 'thumbs_down' as const,
+      verificationState: 'human_reviewed',
+    });
+
+    const trail = result.actions.join(' | ');
+    expect(trail).toContain('Library entry flagged for review');
+    expect(trail).toContain('Research requirement creation failed');
+    expect(trail).not.toContain('Library review flag failed');
+  });
 });
