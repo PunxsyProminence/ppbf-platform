@@ -789,6 +789,26 @@ function ShadowChatPageContent() {
         clearRoleSession();
         router.replace('/login');
       }
+      if (error.status === 404 && conversationId) {
+        // The server no longer has this conversation, so the id is dead --
+        // kept, it re-404s every later send and the chat is wedged for good.
+        // The restore path already recovers from exactly this state; this is
+        // the same recovery on the send path. The transcript stays: what is
+        // on screen really was said, only the server-side continuation is
+        // gone, and the next message starts a fresh conversation.
+        const deadConversationId = conversationId;
+        setSavedSessions((current) => current.filter(
+          (item) => item.conversationId !== deadConversationId,
+        ));
+        setConversationId(undefined);
+        setConversationAthleteId(undefined);
+        addMessage(
+          'shadow',
+          'This conversation no longer exists on the server, so it cannot be continued. Your next message starts a new conversation.',
+          { state: 'filtered', evidenceTier: NO_SERVER_EVIDENCE_TIER },
+        );
+        return;
+      }
       addMessage(
         'shadow',
         error.safeMessage,
