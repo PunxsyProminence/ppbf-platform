@@ -229,24 +229,46 @@ describe('SHADOW runtime migration contract', () => {
     expect(runner).toContain('rejectUnauthorized: true');
   });
 
-  test('accepts the approved leading comments before the transaction boundary', () => {
+  test('every migration the runner applies is transactional, leading comments and all', () => {
     const moduleUrl = pathToFileURL(runnerPath).href;
-    for (const transactionalPath of [migrationPath, formulaFoundationMigrationPath, decisionLoopMigrationPath]) {
-      const migrationUrl = pathToFileURL(transactionalPath).href;
-      execFileSync(
-        process.execPath,
+    // Trailing separator matters: `new URL('x.sql', 'file:///a/b')` resolves
+    // to /a/x.sql, dropping the directory.
+    const migrationsDir = pathToFileURL(
+      path.join(repositoryRoot, 'infra/azure') + path.sep,
+    ).href;
+
+    // Derived from the runner's own MIGRATION_FILES, not a list maintained
+    // here. The previous version of this test named three files by hand, so
+    // when the chunk-embedding migration was added to the runner it was never
+    // checked -- it shipped without `begin;`/`commit;`, and because the runner
+    // asserts the boundary before applying anything, it took EVERY
+    // shadow-runtime migration down with it on any environment.
+    const applied = execFileSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '--eval',
         [
-          '--input-type=module',
-          '--eval',
-          [
-            `import fs from 'node:fs';`,
-            `import { assertTransactionalMigration } from ${JSON.stringify(moduleUrl)};`,
-            `assertTransactionalMigration(fs.readFileSync(new URL(${JSON.stringify(migrationUrl)}), 'utf8'));`,
-          ].join('\n'),
-        ],
-        { stdio: 'pipe' },
-      );
-    }
+          `import fs from 'node:fs';`,
+          `import { assertTransactionalMigration, MIGRATION_FILES } from ${JSON.stringify(moduleUrl)};`,
+          `for (const file of MIGRATION_FILES) {`,
+          `  const url = new URL(file, ${JSON.stringify(migrationsDir)});`,
+          `  try {`,
+          `    assertTransactionalMigration(fs.readFileSync(url, 'utf8'));`,
+          `  } catch (error) {`,
+          `    throw new Error(file + ': ' + error.message);`,
+          `  }`,
+          `}`,
+          `process.stdout.write(JSON.stringify(MIGRATION_FILES));`,
+        ].join('\n'),
+      ],
+      { stdio: 'pipe' },
+    ).toString();
+
+    // A list that resolved empty would make the loop above pass vacuously.
+    const files: string[] = JSON.parse(applied);
+    expect(files.length).toBeGreaterThanOrEqual(7);
+    expect(files).toContain('pilot_slice_postgres_shadow_chunk_embedding_migration.sql');
   });
 
   test('verifies readiness without printing raw errors or secret material', () => {

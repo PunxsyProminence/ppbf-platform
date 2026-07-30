@@ -5,7 +5,12 @@ import { fileURLToPath } from 'node:url';
 import { Client } from 'pg';
 
 const MIGRATION_LOCK = 'ppbf_shadow_runtime_migration_v1';
-const MIGRATION_FILES = [
+// Exported so the contract test can assert against the runner's own list
+// rather than a hand-maintained copy of it. A file added here but not there
+// used to be invisible until an apply-migrations run failed -- which is
+// exactly how the chunk-embedding migration shipped without transaction
+// boundaries and took every shadow-runtime migration down with it.
+export const MIGRATION_FILES = [
   'pilot_slice_postgres_shadow_runtime_migration.sql',
   'pilot_slice_postgres_shadow_formula_foundation_migration.sql',
   'pilot_slice_postgres_shadow_evidence_migration.sql',
