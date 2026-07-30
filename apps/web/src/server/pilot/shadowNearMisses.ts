@@ -87,3 +87,36 @@ export async function listNearMisses(organizationId: string, athleteId: string):
     [organizationId, athleteId],
   );
 }
+
+/**
+ * The generation path's read: recent near misses for the athlete a chat turn
+ * is about, severity-first so a critical event cannot be pushed out of a
+ * capped list by newer low-severity ones. Bounded window and count because
+ * this feeds a model prompt, not a report -- the full history stays on the
+ * near-misses API.
+ */
+export async function listRecentNearMisses(
+  organizationId: string,
+  athleteId: string,
+  options: { windowDays?: number; limit?: number } = {},
+): Promise<ShadowNearMissRow[]> {
+  const windowDays = Math.min(365, Math.max(1, Math.trunc(options.windowDays ?? 90)));
+  const limit = Math.min(10, Math.max(1, Math.trunc(options.limit ?? 5)));
+  return query<ShadowNearMissRow>(
+    `select near_miss_id, organization_id, athlete_id, decision_id, description, severity, detected_by, detected_by_account_id, metadata, created_at
+     from pilot.shadow_near_misses
+     where organization_id = $1
+       and athlete_id = $2
+       and created_at > now() - ($3 * interval '1 day')
+     order by
+       case severity
+         when 'critical' then 0
+         when 'high' then 1
+         when 'moderate' then 2
+         else 3
+       end asc,
+       created_at desc
+     limit $4`,
+    [organizationId, athleteId, windowDays, limit],
+  );
+}

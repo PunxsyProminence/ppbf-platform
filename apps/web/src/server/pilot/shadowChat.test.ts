@@ -11,17 +11,45 @@ import {
   HighRiskTopic,
 } from './shadowChat';
 import { assertActorCanAccessAthlete } from './access';
+import { listRecentNearMisses } from './shadowNearMisses';
 
 jest.mock('./access', () => ({
   assertActorCanAccessAthlete: jest.fn(),
 }));
+jest.mock('./shadowNearMisses', () => ({
+  listRecentNearMisses: jest.fn(),
+}));
 
 const mockAssertActorCanAccessAthlete = jest.mocked(assertActorCanAccessAthlete);
+const mockListRecentNearMisses = jest.mocked(listRecentNearMisses);
+
+function nearMissRow(overrides: Partial<{
+  near_miss_id: string;
+  severity: 'low' | 'moderate' | 'high' | 'critical';
+  description: string;
+  created_at: string;
+}> = {}) {
+  return {
+    near_miss_id: '11111111-2222-4333-8444-555555555555',
+    organization_id: 'org-456',
+    athlete_id: 'athlete-789',
+    decision_id: null,
+    description: 'Contact logged during sparring without current clearance on file.',
+    severity: 'moderate' as const,
+    detected_by: 'human' as const,
+    detected_by_account_id: 'coach-1',
+    metadata: {},
+    created_at: '2026-07-28T12:00:00.000Z',
+    ...overrides,
+  };
+}
 
 describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
   beforeEach(() => {
     mockAssertActorCanAccessAthlete.mockReset();
     mockAssertActorCanAccessAthlete.mockResolvedValue(undefined);
+    mockListRecentNearMisses.mockReset();
+    mockListRecentNearMisses.mockResolvedValue([]);
   });
 
   describe('Request Validation', () => {
@@ -204,6 +232,78 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
         expect.objectContaining({ accountId: 'account-123', athleteId: 'athlete-self' }),
         'athlete-self',
       );
+    });
+  });
+
+  describe('Near-Miss Safety Context (generation-path reader)', () => {
+    // Before this existed, retrieveShadowContext returned only an
+    // authorization string: SHADOW answered athlete-scoped questions blind to
+    // recorded near misses -- the exact repeat-incident the table exists to
+    // prevent.
+    const athleteScoped = {
+      userRole: 'coach' as const,
+      userId: 'coach-123',
+      organizationId: 'org-456',
+      athleteId: 'athlete-789',
+    };
+
+    test('recorded events are injected with citable ids, severe events add the review directive', async () => {
+      mockListRecentNearMisses.mockResolvedValue([
+        nearMissRow({ near_miss_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', severity: 'critical' }),
+        nearMissRow(),
+      ]);
+
+      const result = await retrieveShadowContext(athleteScoped);
+      expect(result.authorized).toBe(true);
+      expect(result.context).toContain('RECORDED NEAR-MISS EVENTS');
+      expect(result.context).toContain('[E:aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee] 2026-07-28 CRITICAL:');
+      expect(result.context).toContain('HIGH or CRITICAL event is on record');
+      expect(result.evidenceIds).toEqual([
+        'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+        '11111111-2222-4333-8444-555555555555',
+      ]);
+    });
+
+    test('no severe directive when only low/moderate events are on record', async () => {
+      mockListRecentNearMisses.mockResolvedValue([nearMissRow({ severity: 'low' })]);
+      const result = await retrieveShadowContext(athleteScoped);
+      expect(result.context).toContain('RECORDED NEAR-MISS EVENTS');
+      expect(result.context).not.toContain('HIGH or CRITICAL event is on record');
+    });
+
+    test('absence is stated honestly rather than silently omitted', async () => {
+      const result = await retrieveShadowContext(athleteScoped);
+      expect(result.context).toContain('No near-miss events recorded for this athlete in the last 90 days.');
+      expect(result.evidenceIds).toEqual([]);
+    });
+
+    test('a failed fetch degrades honestly: history unknown, conservative guidance', async () => {
+      mockListRecentNearMisses.mockRejectedValue(new Error('db down'));
+      const result = await retrieveShadowContext(athleteScoped);
+      expect(result.authorized).toBe(true);
+      expect(result.context).toContain('Near-miss records could not be retrieved');
+      expect(result.context).toContain('advise conservative progression');
+    });
+
+    test('athlete-scoped context is fetched fresh on every call, never cached', async () => {
+      mockListRecentNearMisses.mockResolvedValue([nearMissRow({ severity: 'high' })]);
+      await retrieveShadowContext(athleteScoped);
+      mockListRecentNearMisses.mockResolvedValue([]);
+      const second = await retrieveShadowContext(athleteScoped);
+      // A near miss resolved (or newly flagged) between turns must show in the
+      // very next answer: two calls, two fetches, second reflects new state.
+      expect(mockListRecentNearMisses).toHaveBeenCalledTimes(2);
+      expect(second.context).toContain('No near-miss events recorded');
+    });
+
+    test('organization-scoped context never touches near-miss records', async () => {
+      const result = await retrieveShadowContext({
+        userRole: 'coach',
+        userId: 'coach-123',
+        organizationId: 'org-456',
+      });
+      expect(result.authorized).toBe(true);
+      expect(mockListRecentNearMisses).not.toHaveBeenCalled();
     });
   });
 
