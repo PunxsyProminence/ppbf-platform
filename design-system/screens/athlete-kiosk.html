@@ -1,0 +1,149 @@
+<!-- @dsCard group="Screens" name="Athlete Kiosk" subtitle="Gym-floor check-in: cleared and locked states, 19.1px type, 55px targets" -->
+<link rel="stylesheet" href="../ppbf.css">
+<style>
+  body.ppbf { min-height: 100vh; display: flex; flex-direction: column; }
+  .kiosk-bar { background: var(--hide-950); border-bottom: 3px solid var(--brass-500);
+               padding: var(--s4) var(--s5); display: flex; justify-content: space-between; align-items: center; }
+  .kiosk-bar .motto { margin: 0; font-size: var(--t-lg); }
+  .kiosk-bar .plaque { margin: 0; }
+  main { flex: 1; padding: var(--s6); display: flex; flex-direction: column; gap: var(--s7); }
+  .view { display: none; }
+  .view.active { display: block; }
+
+  .card { border-radius: var(--r-lg); padding: var(--s6); }
+  h1 { font-family: var(--font-stencil); text-transform: uppercase; font-size: var(--t-xl);
+       letter-spacing: .06em; color: var(--bone-100); margin: 0 0 var(--s5); }
+
+  /* Cleared state */
+  .safety-pill { display: inline-flex; align-items: center; gap: var(--s3);
+                 padding: var(--s3) var(--s4); border-radius: var(--r-pill);
+                 background: color-mix(in srgb, var(--cleared) 20%, #120E0B);
+                 border: 1px solid rgba(79, 157, 94, .5);
+                 margin-bottom: var(--s6); }
+  .safety-pill i { font-style: normal; font-size: var(--t-sm); color: var(--cleared); }
+  .safety-pill span { font: 650 var(--t-sm)/1 var(--font-ui); letter-spacing: .08em;
+                      text-transform: uppercase; color: var(--cleared); }
+
+  .form-group { margin-bottom: var(--s5); }
+  .form-group .t-label { display: block; margin-bottom: var(--s3); }
+  .input-row { display: grid; gap: var(--s5); grid-template-columns: repeat(auto-fit, minmax(233px, 1fr)); }
+
+  .flow-buttons { display: grid; gap: var(--s4); grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+                  margin-top: var(--s6); }
+
+  /* Locked state */
+  .lock-alert { background: color-mix(in srgb, var(--stop) 20%, #120E0B);
+                border-left: 4px solid var(--stop); padding: var(--s5);
+                border-radius: 0 var(--r-lg) var(--r-lg) 0; margin-bottom: var(--s6); }
+  .lock-alert .badge { margin-bottom: var(--s4); }
+  .lock-alert p { margin: 0; font-size: var(--t-sm); line-height: 1.65; color: var(--bone-200); }
+
+  .redacted-name { background: #0C0906; color: transparent; padding: var(--s2) var(--s4);
+                   border-radius: var(--r-md); display: inline-block; min-width: 144px;
+                   box-shadow: inset 0 0 0 1px rgba(0,0,0,.8); font-family: var(--font-stencil); }
+
+  .controls { display: flex; gap: var(--s4); flex-wrap: wrap; margin-top: var(--s6); }
+
+  .note { font-size: 12.8px; line-height: 1.6; color: var(--bone-400); margin-top: var(--s5); max-width: 70ch; }
+</style>
+
+<body class="ppbf">
+  <div class="kiosk-bar">
+    <div class="motto">Punxsutawney Prominence</div>
+    <div class="plaque">
+      <div style="font: 650 10px/1 var(--font-data); letter-spacing: .08em; text-transform: uppercase; color: var(--brass-200); margin-bottom: 2px">v2.0 kiosk</div>
+      <div style="font: 11px/1.2 var(--font-data); color: var(--bone-400)">204 PENNSYLVANIA AVE<br>BIG RUN, PA 15715</div>
+    </div>
+  </div>
+
+  <main>
+    <!-- CLEARED STATE -->
+    <div class="view active" id="cleared-state">
+      <div class="card mat-leather--raised">
+        <h1>Athlete Floor Kiosk</h1>
+
+        <div class="safety-pill">
+          <i>✓</i><span>Cleared to Train</span>
+        </div>
+
+        <div class="form-group">
+          <label class="t-label" for="name-clear">Athlete name</label>
+          <input type="text" id="name-clear" class="input input--kiosk" placeholder="Tap to verify…" value="Marcus D.">
+        </div>
+
+        <div class="form-group">
+          <label class="t-label" for="rpe-clear">How hard was that session?</label>
+          <select id="rpe-clear" class="select input--kiosk">
+            <option>2 — Light warm-up drills</option>
+            <option>5 — Moderate session pace</option>
+            <option selected>8 — Heavy conditioning threshold</option>
+            <option>10 — Absolute peak output</option>
+          </select>
+        </div>
+
+        <p class="note">
+          Your session is logged. Coach will review your output and recovery over the next 48 hours.
+          Consistent effort builds durability.
+        </p>
+
+        <div class="flow-buttons">
+          <button class="btn btn--kiosk">Submit Check-In</button>
+          <button class="btn btn--kiosk btn--ghost">Clear &amp; Next</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- LOCKED STATE -->
+    <div class="view" id="locked-state">
+      <div class="card mat-leather--raised">
+        <h1>Athlete Floor Kiosk</h1>
+
+        <div class="lock-alert">
+          <span class="badge badge--locked"><i>✕</i>Locked</span>
+          <p>
+            <b>Training suspended.</b> Layer 11 safety gate has engaged an immutable lock on this athlete's account.
+            This is a medical or welfare decision. Return-to-training clearance requires manual head-coach review
+            and sign-off.
+          </p>
+        </div>
+
+        <div class="form-group">
+          <label class="t-label">Athlete record</label>
+          <div style="font: 750 var(--t-md)/1.3 var(--font-stencil); letter-spacing: .04em; color: var(--bone-200); margin-bottom: var(--s4)">
+            <span class="redacted-name"></span>
+          </div>
+          <p style="font-size: var(--t-sm); line-height: 1.65; color: var(--bone-400); margin: 0;">
+            <b>Lock engaged:</b> <span style="font-family: var(--font-data)">2026-07-28 14:22 EDT</span><br>
+            <b>Reason:</b> Concussion protocol · medical recommendation
+          </p>
+        </div>
+
+        <div class="lock-alert">
+          <span class="stamp stamp--lg" style="display: block; margin-bottom: var(--s4)">Locked · Layer 11</span>
+          <p style="font-size: 12.8px;">
+            This is not a soft restriction. Clearing this lock requires direct intervention from the head coach,
+            documented in the continuity ledger, and logged to the compliance record.
+          </p>
+        </div>
+
+        <div class="controls">
+          <button class="btn btn--ghost" disabled style="opacity: .5; cursor: not-allowed">Submit Check-In</button>
+          <a href="#cleared-state" class="btn btn--ghost" onclick="switchView('cleared-state')" style="text-decoration: none; text-align: center; padding: 0 20px;">
+            Unlock (admin)
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <button onclick="switchView('locked-state')" style="margin-top: auto; align-self: flex-start; padding: 8px 16px; background: rgba(0,0,0,.3); border: 1px solid rgba(212,175,74,.3); border-radius: 6px; color: var(--bone-300); font: 650 12px/1 var(--font-data); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; margin-bottom: var(--s4);">
+      Show locked state
+    </button>
+  </main>
+
+  <script>
+    function switchView(viewId) {
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      document.getElementById(viewId).classList.add('active');
+    }
+  </script>
+</body>

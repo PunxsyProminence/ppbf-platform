@@ -1,0 +1,205 @@
+<!-- @dsCard group="Components" name="Surfaces" subtitle="Chalkboard schedule, cork board, leather tag navigation, governance banner" -->
+<link rel="stylesheet" href="../ppbf.css">
+<style>
+  body { margin: 0; }
+  .sheet { padding: var(--s6); max-width: 1120px; margin: 0 auto; }
+  h1 { font-family: var(--font-stencil); text-transform: uppercase; font-size: var(--t-2xl);
+       letter-spacing: .05em; color: var(--bone-100); margin: var(--s3) 0 var(--s3);
+       text-shadow: 0 2px 0 rgba(0,0,0,.6), 0 0 22px rgba(232,206,122,.14); }
+  .lede { font-size: var(--t-sm); line-height: 1.62; color: var(--bone-300); max-width: 66ch; margin: 0 0 var(--s6); }
+  h2 { font-family: var(--font-stencil); text-transform: uppercase; font-size: var(--t-md);
+       letter-spacing: .08em; color: var(--brass-300); margin: var(--s7) 0 var(--s5);
+       padding-bottom: var(--s3); border-bottom: 1px solid rgba(212,175,74,.28); }
+  .cap { font-size: 12.8px; line-height: 1.6; color: var(--bone-400); margin: var(--s5) 0 0; max-width: 74ch; }
+  .cap b { color: var(--bone-200); }
+  .cap code { font: 12px var(--font-data); color: var(--brass-300); }
+
+  .panel { border-radius: var(--r-lg); padding: var(--s5); }
+  .two { display: grid; gap: var(--s6); grid-template-columns: repeat(auto-fit, minmax(377px, 1fr)); align-items: start; }
+
+  /* ---- Chalkboard schedule ---- */
+  .board { border-radius: var(--r-lg); overflow: hidden; }
+  .board-head { padding: var(--s5); border-bottom: 1px solid rgba(230,227,214,.24); }
+  .board-head .t-command { margin: 0 0 var(--s3); }
+  .board-head hr { border: 0; border-top: 2px solid var(--brass-500); margin: 0; width: 144px; }
+  .board-body { padding: var(--s5); display: grid; gap: var(--s4); }
+  .slot { display: grid; grid-template-columns: 48px 1fr 89px 34px; gap: var(--s4); align-items: center;
+           padding: var(--s3) 0; border-bottom: 1px solid rgba(230,227,214,.16); }
+  .slot:last-child { border-bottom: 0; }
+  .time { font: 650 13px/1 var(--font-data); color: var(--chalk); letter-spacing: .06em; }
+  .session { font-family: var(--font-stencil); text-transform: uppercase; font-size: 14px;
+             letter-spacing: .04em; color: var(--chalk); }
+  .coach { font: 12.5px/1.4 var(--font-ui); color: var(--chalk-dim); }
+  .ring { font: 650 var(--t-sm)/1 var(--font-data); color: var(--brass-300); }
+
+  /* ---- Cork board with pinned notes ---- */
+  .cork-board { position: relative; display: flex; flex-direction: column; gap: var(--s5); }
+  .announcement { position: relative; width: 100%; max-width: 220px; padding: var(--s5) var(--s4) var(--s6);
+                  rotate: -1.6deg; }
+  .announcement:nth-child(3) { rotate: 2.2deg; margin-left: var(--s6); }
+  .announcement:nth-child(4) { rotate: -0.8deg; margin-left: -var(--s4); }
+
+  /* ---- Tag navigation ---- */
+  .nav-tags { display: flex; flex-direction: column; gap: var(--s3); }
+  .nav-tags .tag { margin-left: 0; }
+  .nav-tags .tag:nth-child(2) { margin-left: var(--s6); }
+  .nav-tags .tag:nth-child(3) { margin-left: var(--s4); }
+  .nav-tags .tag:nth-child(4) { margin-left: var(--s7); }
+  .nav-tags .tag:nth-child(5) { margin-left: var(--s3); }
+
+  /* ---- Governance banner ---- */
+  .gov-banner { background: linear-gradient(90deg, rgba(212,175,74,.24) 0%, transparent 100%);
+                border-left: 4px solid var(--brass-500); padding: var(--s4) var(--s5);
+                border-radius: 0 var(--r-lg) var(--r-lg) 0; }
+  .gov-banner-lbl { font: 650 11px/1 var(--font-data); letter-spacing: .12em; text-transform: uppercase;
+                    color: var(--brass-300); margin-bottom: var(--s2); }
+  .gov-banner-msg { font-size: var(--t-sm); line-height: 1.55; color: var(--bone-300); }
+
+  .demo-row { display: grid; gap: var(--s6); grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+</style>
+
+<body class="ppbf">
+<div class="sheet">
+  <div class="t-eyebrow">PPBF Design System · Components</div>
+  <h1>Surfaces</h1>
+  <p class="lede">
+    The objects coaches read. A chalkboard for today (erasable), cork for announcements
+    (permanent), leather tabs for navigation (objects you pick), and a brass-ruled governance
+    banner (a standing condition, never a warning).
+  </p>
+
+  <h2>Chalkboard schedule</h2>
+  <div class="panel mat-leather--raised">
+    <div class="board mat-slate">
+      <div class="board-head">
+        <div class="t-command chalk" style="font-size: var(--t-lg)">Today's Sessions</div>
+        <hr>
+      </div>
+      <div class="board-body">
+        <div class="slot">
+          <span class="time">08:00</span>
+          <span class="session">Fundamentals</span>
+          <span class="coach">Kustin</span>
+          <span class="ring">Ring 1</span>
+        </div>
+        <div class="slot">
+          <span class="time">09:30</span>
+          <span class="session">Conditioning</span>
+          <span class="coach">Team B</span>
+          <span class="ring">Ring 1</span>
+        </div>
+        <div class="slot">
+          <span class="time">11:30</span>
+          <span class="session">Advanced</span>
+          <span class="coach">Jack C.</span>
+          <span class="ring">Ring 2</span>
+        </div>
+        <div class="slot">
+          <span class="time">13:00</span>
+          <span class="session">Recovery</span>
+          <span class="coach">Evey</span>
+          <span class="ring">Ring 3</span>
+        </div>
+      </div>
+    </div>
+    <p class="cap">
+      Everything on the board is <code>.chalk</code> or <code>.chalk-dim</code>. The divider
+      under the heading is a brass rule. Erase the board at end of day — it belongs to today
+      only. When a session ends, the chalk can go with it, which is the whole point of a
+      chalkboard.
+    </p>
+  </div>
+
+  <h2>Cork board &amp; announcements</h2>
+  <div class="demo-row">
+    <div class="panel mat-leather--raised">
+      <div class="mat-cork cork-board" style="padding: var(--s6)">
+        <div class="mat-paper note-torn announcement">
+          <span class="pin"></span>
+          <p class="t-hand">Tournament prep starts Monday</p>
+        </div>
+        <div class="mat-paper note-torn announcement">
+          <span class="pin"></span>
+          <p class="t-hand">New equipment arriving Thursday</p>
+        </div>
+        <div class="mat-paper note-torn announcement">
+          <span class="pin"></span>
+          <p class="t-hand">Board meeting postponed to next week</p>
+        </div>
+        <div class="mat-paper note-torn announcement">
+          <span class="pin"></span>
+          <p class="t-hand">Gym closed Sunday for maintenance</p>
+        </div>
+      </div>
+    </div>
+    <div>
+      <p class="cap">
+        Cork is woven and multi-tonal, generated from layered radial gradients and a finer
+        grain. Paper notes are torn at the bottom via <code>clip-path</code> (22 points, no
+        image asset). Pins are brass at 34° light with a red head for visual pop. Notes
+        rotate ±2° so the board never looks gridded. Announcements are permanent, filed
+        paper — unlike the chalkboard, they accumulate.
+      </p>
+      <p class="cap" style="margin-top: var(--s6)">
+        <b>The pin is optional.</b> Use <code>.pin--brass</code> for neutral announcements
+        (a routine schedule change) and the red default for urgent ones (closure, incident,
+        redirect).
+      </p>
+    </div>
+  </div>
+
+  <h2>Leather tag navigation</h2>
+  <div class="panel mat-leather--raised">
+    <nav class="nav-tags">
+      <a class="tag" href="#" aria-current="page">Athlete Floor</a>
+      <a class="tag" href="#">Coach Desk</a>
+      <a class="tag" href="#">Grant Reports</a>
+      <a class="tag" href="#">Ledger</a>
+      <a class="tag" href="#">Settings</a>
+    </nav>
+    <p class="cap">
+      Luggage-tag style with a brass grommet and ring at the left. Each tag is
+      <code>--tap</code> tall (55px) — touchable on the floor. The dashed inset border is
+      stitching. On hover or current page, the tag lightens and gets a ring of brass around
+      it. The staggered left margin (done per-item with <code>:nth-child</code> in the demo)
+      suggests they're hung from a rail, not sitting in a grid. No two tags need the same
+      margin — randomness within a range looks natural.
+    </p>
+  </div>
+
+  <h2>Governance banner</h2>
+  <div class="panel mat-leather--raised">
+    <div class="gov-banner">
+      <div class="gov-banner-lbl">Layer 0 Governance</div>
+      <div class="gov-banner-msg">
+        All actions are logged and attributable. Coach decisions are reversible only by the head coach.
+        Jason final approval required for production changes.
+      </div>
+    </div>
+    <p class="cap">
+      The governance banner is a standing condition on every staff screen (Law 7). It is a
+      neutral brass strip with a transparent background — it is permanent, not an alert, so it
+      wears neither warning nor success colour. The message is always the same: Layer 0 is
+      watching, decisions are recorded, and approval gates exist. If this banner ever turns
+      red or orange, it stops meaning "governance" and starts meaning "error", which breaks
+      the promise. So it stays brass and bone forever.
+    </p>
+  </div>
+
+  <h2>How surfaces compose</h2>
+  <div class="panel mat-leather--raised">
+    <p style="font-size: var(--t-sm); line-height: 1.6; color: var(--bone-200); margin: 0 0 var(--s5);">
+      <b style="color: var(--bone-100)">Chalkboard</b> is data that changes every day — erase
+      it at the end of shift. <b style="color: var(--bone-100)">Cork</b> is data that
+      accumulates — file it, pin it, keep it until someone takes it down. <b style="color: var(--bone-100)">Tags</b> are structure — the permanent topology of the app. <b style="color: var(--bone-100)">Governance banner</b> is the standing promise — it does not
+      move, it does not change colour, and a coach can read it without looking up.
+    </p>
+    <p class="cap">
+      This is why they are not the same material. A participant running on the floor should see
+      a chalkboard and know: "this is today". A guardian in the office should see cork and
+      announcements and know: "this is official notice". A coach should see tags and banner
+      and know: "I am inside governance".
+    </p>
+  </div>
+</div>
+</body>
