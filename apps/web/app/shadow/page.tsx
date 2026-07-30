@@ -13,9 +13,12 @@ import { apiBase } from '@/lib/apiBase';
 import { revokeShadowSession } from '@/client/shadowLogout';
 import {
   buildShadowChatRequest,
+  deleteOwnedShadowSession,
   listOwnedShadowSessions,
   loadOwnedShadowSessionMessages,
   mapStoredShadowMessage,
+  normalizeShadowSessionTitle,
+  renameOwnedShadowSession,
   ShadowSessionsRequestError,
   type OwnedShadowConversation,
 } from '@/client/shadowSessions';
@@ -301,6 +304,10 @@ function ShadowChatPageContent() {
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const [restoringSessionId, setRestoringSessionId] = useState<string>();
   const [sessionNotice, setSessionNotice] = useState<string>();
+  const [renamingSessionId, setRenamingSessionId] = useState<string>();
+  const [renameDraft, setRenameDraft] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string>();
+  const [sessionActionBusyId, setSessionActionBusyId] = useState<string>();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const restoreAbortRef = useRef<AbortController | null>(null);
   const restoreRequestIdRef = useRef(0);
@@ -600,6 +607,97 @@ function ShadowChatPageContent() {
         setRestoringSessionId(undefined);
         restoreAbortRef.current = null;
       }
+    }
+  }
+
+  // Shared failure handling for rename and delete. A 404 means the session is
+  // already gone server-side, and the honest reaction is the same one the
+  // restore path takes: drop it from the list (and detach the live chat if it
+  // was the active conversation) rather than leave a card that can only fail.
+  function handleSessionActionError(error: unknown, session: OwnedShadowConversation, fallback: string) {
+    if (error instanceof ShadowSessionsRequestError) {
+      if (error.status === 401) {
+        clearRoleSession();
+        router.replace('/login');
+        return;
+      }
+      if (error.status === 404) {
+        setSavedSessions((current) => current.filter(
+          (item) => item.conversationId !== session.conversationId,
+        ));
+        if (conversationId === session.conversationId) {
+          setConversationId(undefined);
+          setConversationAthleteId(undefined);
+          setMessages([welcomeMessage()]);
+          setHeavyBagMode(false);
+        }
+        setSessionNotice('That saved session is no longer available.');
+        return;
+      }
+      setSessionNotice(error.message);
+      return;
+    }
+    setSessionNotice(fallback);
+  }
+
+  function beginRenameSession(session: OwnedShadowConversation) {
+    setConfirmDeleteId(undefined);
+    setRenamingSessionId(session.conversationId);
+    setRenameDraft(session.title);
+  }
+
+  async function commitRenameSession(session: OwnedShadowConversation) {
+    const normalizedTitle = normalizeShadowSessionTitle(renameDraft);
+    if (!normalizedTitle || sessionActionBusyId) return;
+    if (normalizedTitle === session.title) {
+      setRenamingSessionId(undefined);
+      return;
+    }
+    setSessionActionBusyId(session.conversationId);
+    try {
+      await renameOwnedShadowSession(apiBase(), session.conversationId, normalizedTitle);
+      setSavedSessions((current) => current.map((item) => (
+        item.conversationId === session.conversationId
+          ? { ...item, title: normalizedTitle, updatedAt: new Date().toISOString() }
+          : item
+      )));
+      setRenamingSessionId(undefined);
+      setSessionNotice(undefined);
+    } catch (error) {
+      handleSessionActionError(error, session, 'SHADOW could not rename that session.');
+    } finally {
+      setSessionActionBusyId(undefined);
+    }
+  }
+
+  async function handleDeleteSession(session: OwnedShadowConversation) {
+    // First click arms the confirmation; only the second click deletes.
+    if (confirmDeleteId !== session.conversationId) {
+      setConfirmDeleteId(session.conversationId);
+      setRenamingSessionId(undefined);
+      return;
+    }
+    if (sessionActionBusyId) return;
+    setSessionActionBusyId(session.conversationId);
+    try {
+      await deleteOwnedShadowSession(apiBase(), session.conversationId);
+      setSavedSessions((current) => current.filter(
+        (item) => item.conversationId !== session.conversationId,
+      ));
+      if (conversationId === session.conversationId) {
+        // The active conversation was just deleted; without this, the next
+        // send would 404 against the id we deleted ourselves.
+        setConversationId(undefined);
+        setConversationAthleteId(undefined);
+        setMessages([welcomeMessage()]);
+        setHeavyBagMode(false);
+      }
+      setSessionNotice(`Deleted "${session.title}".`);
+    } catch (error) {
+      handleSessionActionError(error, session, 'SHADOW could not delete that session.');
+    } finally {
+      setConfirmDeleteId(undefined);
+      setSessionActionBusyId(undefined);
     }
   }
 
@@ -939,30 +1037,110 @@ function ShadowChatPageContent() {
           ) : savedSessions.length === 0 ? (
             <p className="mt-3 font-mono text-[10px] text-[#6a5a4a]">No saved sessions yet.</p>
           ) : (
-            <div className="mt-3 grid max-h-40 gap-2 overflow-y-auto md:grid-cols-2">
+            <div className="mt-3 grid max-h-48 gap-2 overflow-y-auto md:grid-cols-2">
               {savedSessions.map((session) => {
                 const selected = conversationId === session.conversationId;
                 const restoring = restoringSessionId === session.conversationId;
+                const renaming = renamingSessionId === session.conversationId;
+                const armedDelete = confirmDeleteId === session.conversationId;
+                const busy = sessionActionBusyId === session.conversationId;
                 return (
-                  <button
+                  <div
                     key={session.conversationId}
-                    type="button"
-                    aria-pressed={selected}
-                    onClick={() => void handleRestoreSession(session)}
-                    disabled={isLoading}
-                    className={`border px-3 py-2 text-left transition disabled:opacity-50 ${
+                    className={`border transition ${
                       selected
                         ? 'border-[#dc2626] bg-[#2a1a1a]'
                         : 'border-[#3a3a3a] bg-[#171717] hover:border-[#8b4444]'
                     }`}
                   >
-                    <span className="block truncate text-xs font-semibold text-[#cfbfae]">
-                      {restoring ? 'Restoring…' : session.title}
-                    </span>
-                    <span className="mt-1 block font-mono text-[9px] uppercase tracking-[0.08em] text-[#6a5a4a]">
-                      {session.sessionType.replaceAll('_', ' ')} · {new Date(session.updatedAt).toLocaleDateString()}
-                    </span>
-                  </button>
+                    {renaming ? (
+                      <form
+                        className="px-3 py-2"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void commitRenameSession(session);
+                        }}
+                      >
+                        <label className="sr-only" htmlFor={`rename-${session.conversationId}`}>
+                          New name for {session.title}
+                        </label>
+                        <input
+                          id={`rename-${session.conversationId}`}
+                          value={renameDraft}
+                          onChange={(event) => setRenameDraft(event.target.value)}
+                          maxLength={120}
+                          autoFocus
+                          disabled={busy}
+                          className="w-full border border-[#5a4a3a] bg-[#0f0f0f] px-2 py-1 text-xs text-[#cfbfae] outline-none focus:border-[#d4a574]"
+                        />
+                        <div className="mt-1.5 flex gap-3">
+                          <button
+                            type="submit"
+                            disabled={busy || !renameDraft.trim()}
+                            className="font-mono text-[9px] font-bold uppercase tracking-[0.1em] text-[#d4a574] disabled:opacity-50"
+                          >
+                            {busy ? 'Saving…' : 'Save'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setRenamingSessionId(undefined)}
+                            disabled={busy}
+                            className="font-mono text-[9px] uppercase tracking-[0.1em] text-[#8a8a8a] disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={() => void handleRestoreSession(session)}
+                          disabled={isLoading || busy}
+                          className="w-full px-3 py-2 text-left disabled:opacity-50"
+                        >
+                          <span className="block truncate text-xs font-semibold text-[#cfbfae]">
+                            {restoring ? 'Restoring…' : session.title}
+                          </span>
+                          <span className="mt-1 block font-mono text-[9px] uppercase tracking-[0.08em] text-[#6a5a4a]">
+                            {session.sessionType.replaceAll('_', ' ')} · {new Date(session.updatedAt).toLocaleDateString()}
+                          </span>
+                        </button>
+                        <div className="flex items-center gap-3 border-t border-[#2a2a2a] px-3 py-1.5">
+                          <button
+                            type="button"
+                            onClick={() => beginRenameSession(session)}
+                            disabled={busy || isLoading}
+                            className="font-mono text-[9px] uppercase tracking-[0.1em] text-[#8a8a8a] transition hover:text-[#d4a574] disabled:opacity-50"
+                          >
+                            Rename
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteSession(session)}
+                            disabled={busy || isLoading}
+                            className={`font-mono text-[9px] uppercase tracking-[0.1em] transition disabled:opacity-50 ${
+                              armedDelete
+                                ? 'font-bold text-[#dc2626]'
+                                : 'text-[#8a8a8a] hover:text-[#dc2626]'
+                            }`}
+                          >
+                            {busy && armedDelete ? 'Deleting…' : armedDelete ? 'Confirm delete' : 'Delete'}
+                          </button>
+                          {armedDelete && !busy ? (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteId(undefined)}
+                              className="font-mono text-[9px] uppercase tracking-[0.1em] text-[#8a8a8a]"
+                            >
+                              Keep
+                            </button>
+                          ) : null}
+                        </div>
+                      </>
+                    )}
+                  </div>
                 );
               })}
             </div>

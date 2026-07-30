@@ -258,6 +258,61 @@ export async function loadOwnedShadowSessionMessages(
   return payload.messages.map(parseMessage);
 }
 
+// Mirrors renameConversation's server-side normalization (collapse whitespace,
+// trim, cap at 120) so the optimistic title the list shows is byte-identical
+// to what the server stored -- otherwise the card would briefly display a
+// title the next refresh silently corrects.
+export function normalizeShadowSessionTitle(title: string): string {
+  return title.replace(/\s+/g, ' ').trim().slice(0, 120);
+}
+
+export async function renameOwnedShadowSession(
+  apiBaseUrl: string,
+  conversationId: string,
+  title: string,
+  fetchImpl: ShadowSessionsFetch = fetch,
+): Promise<string> {
+  const normalizedTitle = normalizeShadowSessionTitle(title);
+  if (!normalizedTitle) {
+    throw new ShadowSessionsRequestError(400, 'Enter a name for the session.');
+  }
+  const response = await fetchImpl(
+    `${normalizedBaseUrl(apiBaseUrl)}/api/pilot/shadow/sessions/${encodeURIComponent(conversationId)}`,
+    {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: normalizedTitle }),
+    },
+  );
+  const payload = await parseJsonResponse(
+    response,
+    'SHADOW could not rename that session.',
+  );
+  if (payload.success !== true) {
+    throw new ShadowSessionsRequestError(502, 'SHADOW could not rename that session.');
+  }
+  return normalizedTitle;
+}
+
+export async function deleteOwnedShadowSession(
+  apiBaseUrl: string,
+  conversationId: string,
+  fetchImpl: ShadowSessionsFetch = fetch,
+): Promise<void> {
+  const response = await fetchImpl(
+    `${normalizedBaseUrl(apiBaseUrl)}/api/pilot/shadow/sessions/${encodeURIComponent(conversationId)}`,
+    { method: 'DELETE', credentials: 'include' },
+  );
+  const payload = await parseJsonResponse(
+    response,
+    'SHADOW could not delete that session.',
+  );
+  if (payload.success !== true) {
+    throw new ShadowSessionsRequestError(502, 'SHADOW could not delete that session.');
+  }
+}
+
 export function mapStoredShadowMessage(
   message: StoredShadowConversationMessage,
 ): RestoredShadowMessage {

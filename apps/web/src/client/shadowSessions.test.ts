@@ -1,8 +1,11 @@
 import {
   buildShadowChatRequest,
+  deleteOwnedShadowSession,
   listOwnedShadowSessions,
   loadOwnedShadowSessionMessages,
   mapStoredShadowMessage,
+  normalizeShadowSessionTitle,
+  renameOwnedShadowSession,
   RESTORED_MESSAGE_FALLBACK_TIER,
   ShadowSessionsRequestError,
 } from './shadowSessions';
@@ -209,5 +212,69 @@ describe('restored citations', () => {
       citations: [citation],
     });
     expect(restored.citations).toBeUndefined();
+  });
+});
+
+describe('session rename and delete', () => {
+  const CONVERSATION_ID = '8d697e85-dde4-47ac-b03f-e6c74595a3bc';
+
+  test('rename PATCHes the normalized title with credentials and returns it', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(jsonResponse({ success: true }));
+
+    // The client normalizes exactly like the server (collapse whitespace,
+    // trim, cap 120) so the optimistic title matches what was stored.
+    await expect(renameOwnedShadowSession(
+      'https://example.test/',
+      CONVERSATION_ID,
+      '  Corner   notes \n week 3  ',
+      fetchImpl,
+    )).resolves.toBe('Corner notes week 3');
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      `https://example.test/api/pilot/shadow/sessions/${CONVERSATION_ID}`,
+      expect.objectContaining({
+        method: 'PATCH',
+        credentials: 'include',
+        body: JSON.stringify({ title: 'Corner notes week 3' }),
+      }),
+    );
+  });
+
+  test('a whitespace-only title is refused before any request is sent', async () => {
+    const fetchImpl = jest.fn();
+
+    await expect(renameOwnedShadowSession('', CONVERSATION_ID, '   ', fetchImpl))
+      .rejects.toMatchObject({ status: 400 });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  test('normalizeShadowSessionTitle caps at the server limit of 120', () => {
+    expect(normalizeShadowSessionTitle(`${'x'.repeat(200)}`)).toHaveLength(120);
+  });
+
+  test('delete sends a credentialed DELETE for the session', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(jsonResponse({ success: true }));
+
+    await expect(deleteOwnedShadowSession('https://example.test/', CONVERSATION_ID, fetchImpl))
+      .resolves.toBeUndefined();
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      `https://example.test/api/pilot/shadow/sessions/${CONVERSATION_ID}`,
+      expect.objectContaining({ method: 'DELETE', credentials: 'include' }),
+    );
+  });
+
+  test.each([
+    ['rename', () => renameOwnedShadowSession('', CONVERSATION_ID, 'New name', jest.fn().mockResolvedValue(jsonResponse({ error: 'Not found' }, 404)))],
+    ['delete', () => deleteOwnedShadowSession('', CONVERSATION_ID, jest.fn().mockResolvedValue(jsonResponse({ error: 'Not found' }, 404)))],
+  ])('%s surfaces a 404 so the page can drop the dead session', async (_label, run) => {
+    await expect(run()).rejects.toMatchObject({ status: 404 });
+  });
+
+  test.each([
+    ['rename', () => renameOwnedShadowSession('', CONVERSATION_ID, 'New name', jest.fn().mockResolvedValue(jsonResponse({ ok: 1 })))],
+    ['delete', () => deleteOwnedShadowSession('', CONVERSATION_ID, jest.fn().mockResolvedValue(jsonResponse({ ok: 1 })))],
+  ])('a malformed %s response is an error, not a silent success', async (_label, run) => {
+    await expect(run()).rejects.toBeInstanceOf(ShadowSessionsRequestError);
   });
 });
