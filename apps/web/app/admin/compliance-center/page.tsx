@@ -42,7 +42,7 @@ export default function AdminComplianceCenterPage() {
     void (async () => {
       setIsLoading(true);
       try {
-        const res = await fetch(`${apiBase()}/api/pilot/compliance/violations`);
+        const res = await fetch(`${apiBase()}/api/pilot/compliance/violations`, { credentials: 'include' });
         if (!res.ok) {
           throw new Error('Unable to load compliance violations');
         }
@@ -115,6 +115,7 @@ export default function AdminComplianceCenterPage() {
 
     try {
       const res = await fetch(`${apiBase()}/api/pilot/compliance/escalate`, {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -129,7 +130,7 @@ export default function AdminComplianceCenterPage() {
       setEscalateToRole('organization_admin');
 
       // Reload violations
-      const reloadRes = await fetch(`${apiBase()}/api/pilot/compliance/violations`);
+      const reloadRes = await fetch(`${apiBase()}/api/pilot/compliance/violations`, { credentials: 'include' });
       if (reloadRes.ok) {
         const data = (await reloadRes.json()) as { items?: ComplianceViolation[] };
         const allViolations = data.items ?? [];

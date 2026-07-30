@@ -42,8 +42,8 @@ export default function CoachVideoPublicationsPage() {
     void (async () => {
       try {
         const [pubRes, vidRes] = await Promise.all([
-          fetch(`${apiBase()}/api/pilot/publications/create`),
-          fetch(`${apiBase()}/api/pilot/video/list`),
+          fetch(`${apiBase()}/api/pilot/publications/create`, { credentials: 'include' }),
+          fetch(`${apiBase()}/api/pilot/video/list`, { credentials: 'include' }),
         ]);
 
         if (pubRes.ok) {
@@ -71,6 +71,7 @@ export default function CoachVideoPublicationsPage() {
 
     try {
       const res = await fetch(`${apiBase()}/api/pilot/publications/create`, {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -90,7 +91,7 @@ export default function CoachVideoPublicationsPage() {
       setSelectedVideo('');
 
       // Reload publications
-      const reloadRes = await fetch(`${apiBase()}/api/pilot/publications/create`);
+      const reloadRes = await fetch(`${apiBase()}/api/pilot/publications/create`, { credentials: 'include' });
       if (reloadRes.ok) {
         const data = (await reloadRes.json()) as { items?: VideoPublication[] };
         setPublications(data.items ?? []);
@@ -103,6 +104,7 @@ export default function CoachVideoPublicationsPage() {
   const handlePublish = async (publicationId: string, videoSessionId: string) => {
     try {
       const res = await fetch(`${apiBase()}/api/pilot/publications/publish`, {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -114,7 +116,7 @@ export default function CoachVideoPublicationsPage() {
       if (!res.ok) throw new Error('Failed to publish');
 
       // Reload publications
-      const reloadRes = await fetch(`${apiBase()}/api/pilot/publications/create`);
+      const reloadRes = await fetch(`${apiBase()}/api/pilot/publications/create`, { credentials: 'include' });
       if (reloadRes.ok) {
         const data = (await reloadRes.json()) as { items?: VideoPublication[] };
         setPublications(data.items ?? []);

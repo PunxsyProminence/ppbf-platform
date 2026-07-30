@@ -22,6 +22,7 @@ export default function SportsMedicinePage() {
     void (async () => {
       try {
         const response = await fetch(`${apiBase()}/api/pilot/shadow/observation-projection`, {
+        credentials: 'include',
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ limit: 30 }),

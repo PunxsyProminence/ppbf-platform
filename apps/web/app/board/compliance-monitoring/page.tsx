@@ -39,7 +39,7 @@ export default function BoardComplianceMonitoringPage() {
     void (async () => {
       setIsLoading(true);
       try {
-        const violRes = await fetch(`${apiBase()}/api/pilot/board/compliance-summary?status=${selectedStatus || ''}`);
+        const violRes = await fetch(`${apiBase()}/api/pilot/board/compliance-summary?status=${selectedStatus || ''}`, { credentials: 'include' });
         if (!violRes.ok) {
           throw new Error('Unable to load compliance violations.');
         }

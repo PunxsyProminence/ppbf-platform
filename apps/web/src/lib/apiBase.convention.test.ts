@@ -67,3 +67,49 @@ test('every client /api fetch goes through apiBase()', () => {
     );
   }
 });
+
+// Prefixing with apiBase() is necessary but not sufficient: cross-origin, a
+// fetch without credentials never sends the session cookie (and never stores
+// one from a response), so the call 401s no matter how correct the URL is.
+// This is how /admin/shadow failed in production (#39) and how the PIN page
+// failed (#79), and a behavioral audit then found 31 more sites. Every
+// apiBase() fetch must state credentials; deliberately public endpoints are
+// allowlisted here BY FILE with the reason recorded.
+const PUBLIC_FETCH_ALLOWLIST = new Set([
+  // The public-interest form is submitted by signed-out visitors by design.
+  'app/public/page.tsx',
+]);
+
+test('every apiBase() fetch states credentials (public endpoints allowlisted)', () => {
+  const offenders: string[] = [];
+  const API_BASE_FETCH = /fetch\(\s*`\$\{apiBase\(\)\}[^`]*`/g;
+
+  for (const scanRoot of SCAN_ROOTS) {
+    const absoluteRoot = path.join(WEB_ROOT, scanRoot);
+    if (!fs.existsSync(absoluteRoot)) continue;
+
+    for (const filePath of collectSourceFiles(absoluteRoot)) {
+      const relative = path.relative(WEB_ROOT, filePath);
+      if (PUBLIC_FETCH_ALLOWLIST.has(relative)) continue;
+      const source = fs.readFileSync(filePath, 'utf8');
+      for (const match of source.matchAll(API_BASE_FETCH)) {
+        const matchIndex = match.index ?? 0;
+        const optionsEnd = matchIndex + match[0].length;
+        const optionsWindow = source.slice(optionsEnd, optionsEnd + 240).split(');')[0];
+        if (!optionsWindow.includes('credentials')) {
+          const lineNumber = source.slice(0, matchIndex).split('\n').length;
+          offenders.push(`${relative}:${lineNumber}`);
+        }
+      }
+    }
+  }
+
+  if (offenders.length > 0) {
+    throw new Error(
+      "apiBase() fetches without credentials: 'include' found. Cross-origin these "
+      + 'never carry the session cookie and always 401 (#39, #79). Add credentials, '
+      + 'or allowlist the file here with a reason if the endpoint is deliberately public:\n'
+      + offenders.join('\n'),
+    );
+  }
+});

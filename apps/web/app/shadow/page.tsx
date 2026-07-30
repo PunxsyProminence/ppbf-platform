@@ -819,10 +819,20 @@ function ShadowChatPageContent() {
   }
 
   async function pollQueuedShadowJob(jobId: string, messageId: string): Promise<void> {
-    const maxAttempts = 30;
-    const intervalMs = 2000;
+    // The old window was 30 x 2s = 60 seconds -- shorter than the operation
+    // it bounded: the worker's first claim can take up to its full tick
+    // interval (default 30s), and generation itself measures 33-95s. Most
+    // real jobs finished AFTER the poll had already told the user "no
+    // generated guidance was displayed", which was false. Fast phase for the
+    // quick outcomes, then a slow phase that comfortably covers tick + P95
+    // generation (~8.5 minutes total).
+    const phases = [
+      { attempts: 30, intervalMs: 2_000 },
+      { attempts: 45, intervalMs: 10_000 },
+    ];
+    const schedule = phases.flatMap((phase) => Array<number>(phase.attempts).fill(phase.intervalMs));
 
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    for (const delayMs of schedule) {
       let status: ShadowJobStatusResult | null;
       try {
         status = await fetchShadowJobStatus(jobId, apiBase());
@@ -909,7 +919,7 @@ function ShadowChatPageContent() {
       }
 
       await new Promise<void>((resolve) => {
-        window.setTimeout(resolve, intervalMs);
+        window.setTimeout(resolve, delayMs);
       });
     }
 
@@ -917,9 +927,14 @@ function ShadowChatPageContent() {
       msg.id === messageId
         ? {
             ...msg,
-            text: 'SHADOW could not confirm the queued result in time. No generated guidance was displayed.',
+            // Truthful timeout: the JOB is not known to have failed -- this
+            // page just stopped watching. For Heavy Bag the completed answer
+            // is appended to this conversation server-side regardless, so
+            // the message says where it will appear instead of implying the
+            // work was lost.
+            text: 'Still processing. This page stopped checking, but the job continues -- a Heavy Bag answer will be added to this conversation when it completes (reopen the session to see it), and reports appear under Scout Reports.',
             isAsync: false,
-            state: 'degraded',
+            state: 'queued',
             evidenceTier: NO_SERVER_EVIDENCE_TIER,
           }
         : msg
