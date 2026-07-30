@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
 import type { ClubRole } from '@/components/roleRoutes';
+import { apiBase } from '@/lib/apiBase';
 
 type SchedulerRole = 'athlete' | 'coach' | 'parent' | 'organization_admin' | 'admin';
 
@@ -120,7 +121,7 @@ export default function SchedulerPage() {
     setErrorMessage('');
 
     try {
-      const authRes = await fetch('/api/pilot/auth/session', { method: 'POST', credentials: 'include' });
+      const authRes = await fetch(`${apiBase()}/api/pilot/auth/session`, { method: 'POST', credentials: 'include' });
       const auth = (await authRes.json()) as { authenticated?: boolean; role?: SchedulerRole; athlete_id?: string | null };
       if (!authRes.ok || !auth.authenticated || !auth.role) {
         throw new Error('Authentication required');
@@ -129,7 +130,7 @@ export default function SchedulerPage() {
       setRole(auth.role);
       setAthleteId(auth.athlete_id ?? '');
 
-      const schedulerRes = await fetch('/api/pilot/scheduler', { method: 'GET', credentials: 'include' });
+      const schedulerRes = await fetch(`${apiBase()}/api/pilot/scheduler`, { method: 'GET', credentials: 'include' });
       const scheduler = (await schedulerRes.json()) as SchedulerResponse & { error?: string };
       if (!schedulerRes.ok || !scheduler.ok) {
         throw new Error(scheduler.error || 'Failed to load scheduler state');
@@ -145,7 +146,7 @@ export default function SchedulerPage() {
       }
 
       if (auth.role === 'parent' || auth.role === 'coach' || auth.role === 'admin' || auth.role === 'organization_admin') {
-        const athletesRes = await fetch('/api/pilot/athletes/list', { method: 'GET', credentials: 'include' });
+        const athletesRes = await fetch(`${apiBase()}/api/pilot/athletes/list`, { method: 'GET', credentials: 'include' });
         const athletesPayload = (await athletesRes.json()) as { items?: AthleteRow[]; error?: string };
         if (!athletesRes.ok) {
           throw new Error(athletesPayload.error || 'Failed to load athletes');
@@ -184,7 +185,7 @@ export default function SchedulerPage() {
     setErrorMessage('');
 
     try {
-      const response = await fetch('/api/pilot/scheduler', {
+      const response = await fetch(`${apiBase()}/api/pilot/scheduler`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },

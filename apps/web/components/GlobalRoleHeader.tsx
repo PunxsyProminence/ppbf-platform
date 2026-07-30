@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useSyncExternalStore } from "react";
 import { clearRoleSession, getRoleSessionSnapshot, subscribeRoleSession } from "./roleSession";
+import { apiBase } from '@/lib/apiBase';
 
 export default function GlobalRoleHeader() {
   const router = useRouter();
@@ -15,7 +16,10 @@ export default function GlobalRoleHeader() {
   }
 
   function signOut() {
-    void fetch('/api/pilot/auth/logout', { method: 'POST' });
+    // credentials matters here: cross-origin (SWA static + Container App API)
+    // a fetch without it does not carry the session cookie, so the server had
+    // nothing to revoke and "logout" silently left the session alive.
+    void fetch(`${apiBase()}/api/pilot/auth/logout`, { method: 'POST', credentials: 'include' });
     clearRoleSession();
     router.replace("/login");
   }

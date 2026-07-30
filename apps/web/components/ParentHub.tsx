@@ -5,6 +5,7 @@ import React, { useState, useEffect } from 'react';
 import { ParentSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
 import { cx, ui } from './uiStyles';
+import { apiBase } from '@/lib/apiBase';
 
 type TabID = 'overview' | 'parent-floor' | 'home-assignments' | 'observations' | 'family-goals' | 'messages' | 'attendance' | 'progress' | 'resources' | 'shadow';
 
@@ -128,7 +129,7 @@ export default function ParentHub() {
       try {
         setChildrenLoading(true);
         setChildrenError(null);
-        const response = await fetch('/api/pilot/athletes/list', {
+        const response = await fetch(`${apiBase()}/api/pilot/athletes/list`, {
           method: 'GET',
           credentials: 'include',
         });

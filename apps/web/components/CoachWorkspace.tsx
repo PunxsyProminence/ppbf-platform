@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { CoachSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
 import { cx, ui } from './uiStyles';
+import { apiBase } from '@/lib/apiBase';
 
 type TabID = 'dashboard' | 'floor' | 'athlete-floor-plans' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
 type SessionMode = 'Group' | 'One-on-One';
@@ -303,7 +304,7 @@ export default function CoachWorkspace() {
   useEffect(() => {
     const loadPlans = async () => {
       try {
-        const response = await fetch('/api/pilot/floor-plans?limit=50', {
+        const response = await fetch(`${apiBase()}/api/pilot/floor-plans?limit=50`, {
           method: 'GET',
           credentials: 'include',
         });
@@ -324,7 +325,7 @@ export default function CoachWorkspace() {
   useEffect(() => {
     void (async () => {
       try {
-        const response = await fetch('/api/pilot/auth/session', { method: 'POST', credentials: 'include' });
+        const response = await fetch(`${apiBase()}/api/pilot/auth/session`, { method: 'POST', credentials: 'include' });
         const payload = (await response.json()) as { authenticated?: boolean; account_id?: string };
         if (response.ok && payload.authenticated && payload.account_id) {
           setCoachAccountId(payload.account_id);
@@ -340,7 +341,7 @@ export default function CoachWorkspace() {
     try {
       setAthletesLoading(true);
       setAthletesError(null);
-      const response = await fetch('/api/pilot/athletes/list', {
+      const response = await fetch(`${apiBase()}/api/pilot/athletes/list`, {
         method: 'GET',
         credentials: 'include',
       });
@@ -402,13 +403,13 @@ export default function CoachWorkspace() {
   const loadShadowData = useCallback(async () => {
       try {
         const [queueResult, observationResult] = await Promise.allSettled([
-          fetch('/api/pilot/shadow/review-projection', {
+          fetch(`${apiBase()}/api/pilot/shadow/review-projection`, {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ limit: 20 }),
           }),
-          fetch('/api/pilot/shadow/observation-projection', {
+          fetch(`${apiBase()}/api/pilot/shadow/observation-projection`, {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
@@ -479,7 +480,7 @@ export default function CoachWorkspace() {
 
     let response: Response;
     try {
-      response = await fetch('/api/pilot/coach-reviews', {
+      response = await fetch(`${apiBase()}/api/pilot/coach-reviews`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },

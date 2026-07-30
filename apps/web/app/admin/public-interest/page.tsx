@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import RoleStandaloneView from '@/components/RoleStandaloneView';
+import { apiBase } from '@/lib/apiBase';
 
 type ReviewState = 'new' | 'contacted' | 'archived';
 
@@ -34,7 +35,8 @@ export default function PublicInterestReviewPage() {
 
   const fetchItems = useCallback(async (): Promise<Submission[]> => {
     const params = filter === 'ALL' ? '' : `&review_state=${filter}`;
-    const response = await fetch(`/api/pilot/public-interest/review?limit=100${params}`, {
+    const response = await fetch(`${apiBase()}/api/pilot/public-interest/review?limit=100${params}`, {
+      credentials: 'include',
       cache: 'no-store',
     });
     if (!response.ok) throw new Error('Unable to load public interest submissions.');
@@ -60,8 +62,9 @@ export default function PublicInterestReviewPage() {
     setBusyId(submissionId);
     setError('');
     try {
-      const response = await fetch('/api/pilot/public-interest/review', {
+      const response = await fetch(`${apiBase()}/api/pilot/public-interest/review`, {
         method: 'PATCH',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ submission_id: submissionId, review_state: reviewState }),
       });

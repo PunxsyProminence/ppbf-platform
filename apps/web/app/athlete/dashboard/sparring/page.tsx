@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
+import { apiBase } from '@/lib/apiBase';
 
 type OpponentStance = 'Orthodox' | 'Southpaw' | 'Switch';
 type PunchType = 'Jab' | 'Cross' | 'Hook' | 'Uppercut' | 'Body' | 'Other';
@@ -66,8 +67,9 @@ async function submitDeepTrackObservations(input: {
   }
 
   const results = await Promise.allSettled(observations.map(async (observation) => {
-    const response = await fetch('/api/pilot/shadow/formulas/observations', {
+    const response = await fetch(`${apiBase()}/api/pilot/shadow/formulas/observations`, {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       athleteId: input.athleteId,
@@ -116,7 +118,7 @@ export default function SparringTelemetryPage() {
   useEffect(() => {
     void (async () => {
       try {
-        const response = await fetch('/api/pilot/auth/session', { method: 'POST' });
+        const response = await fetch(`${apiBase()}/api/pilot/auth/session`, { method: 'POST', credentials: 'include' });
         const payload = (await response.json()) as { authenticated?: boolean; athlete_id?: string };
         if (response.ok && payload.authenticated && payload.athlete_id) {
           setAthleteId(payload.athlete_id);

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
 import { usePilotSession } from '@/components/usePilotSession';
+import { apiBase } from '@/lib/apiBase';
 
 
 type FeedbackKind = 'success' | 'error' | 'info';
@@ -56,7 +57,7 @@ export default function SetupWizard() {
   useEffect(() => {
     void (async () => {
       try {
-        const response = await fetch('/api/pilot/admin/gym-capabilities', {
+        const response = await fetch(`${apiBase()}/api/pilot/admin/gym-capabilities`, {
           method: 'GET',
           credentials: 'include',
         });

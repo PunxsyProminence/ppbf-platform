@@ -5,6 +5,7 @@ import React, { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { AthleteSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
 import { cx, ui } from './uiStyles';
+import { apiBase } from '@/lib/apiBase';
 
 type TabID = 'my-dashboard' | 'athlete-floor' | 'smart-goals' | 'tracks' | 'assessments' | 'bio-checkin' | 'drill-library' | 'rabbit-holes' | 'message-coach' | 'schedule-session' | 'shadow';
 type ReadinessLevel = 'GREEN' | 'YELLOW' | 'RED';
@@ -195,8 +196,9 @@ async function submitFastTrackObservations(input: {
     },
   ];
 
-  await Promise.allSettled(observations.map((observation) => fetch('/api/pilot/shadow/formulas/observations', {
+  await Promise.allSettled(observations.map((observation) => fetch(`${apiBase()}/api/pilot/shadow/formulas/observations`, {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       athleteId: input.athleteId,
@@ -284,7 +286,7 @@ export default function AthleteWorkspace() {
   useEffect(() => {
     void (async () => {
       try {
-        const response = await fetch('/api/pilot/auth/session', { method: 'POST' });
+        const response = await fetch(`${apiBase()}/api/pilot/auth/session`, { method: 'POST', credentials: 'include' });
         const payload = (await response.json()) as { authenticated?: boolean; athlete_id?: string };
         if (response.ok && payload.authenticated && payload.athlete_id) {
           setBackendAthleteId(payload.athlete_id);
@@ -356,7 +358,7 @@ export default function AthleteWorkspace() {
     try {
       setTasksLoading(true);
       setTasksError(null);
-      const response = await fetch('/api/pilot/floor-plans?limit=1', {
+      const response = await fetch(`${apiBase()}/api/pilot/floor-plans?limit=1`, {
         method: 'GET',
         credentials: 'include',
       });
@@ -409,8 +411,9 @@ export default function AthleteWorkspace() {
 
   const loadShadowObservations = useCallback(async () => {
     try {
-      const response = await fetch('/api/pilot/shadow/observation-projection', {
+      const response = await fetch(`${apiBase()}/api/pilot/shadow/observation-projection`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ limit: 20 }),
       });
@@ -442,8 +445,9 @@ export default function AthleteWorkspace() {
     const now = new Date().toISOString();
     const goalId = `goal_${Date.now()}`;
 
-    const response = await fetch('/api/pilot/goals', {
+    const response = await fetch(`${apiBase()}/api/pilot/goals`, {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         goal_id: goalId,
@@ -526,8 +530,9 @@ export default function AthleteWorkspace() {
     }
 
     try {
-      const floorPlanResponse = await fetch('/api/pilot/floor-plans', {
+      const floorPlanResponse = await fetch(`${apiBase()}/api/pilot/floor-plans`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           athlete_id: backendAthleteId,
@@ -545,8 +550,9 @@ export default function AthleteWorkspace() {
     }
 
     const sessionId = `session_${Date.now()}`;
-    const sessionResponse = await fetch('/api/pilot/sessions', {
+    const sessionResponse = await fetch(`${apiBase()}/api/pilot/sessions`, {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         session_id: sessionId,
@@ -616,8 +622,9 @@ export default function AthleteWorkspace() {
       setSoreness((current) => Math.max(current, currentPainSeverity));
 
       if (backendAthleteId) {
-        const response = await fetch('/api/pilot/shadow/formulas/observations', {
+        const response = await fetch(`${apiBase()}/api/pilot/shadow/formulas/observations`, {
           method: 'POST',
+          credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             athleteId: backendAthleteId,
@@ -665,7 +672,7 @@ export default function AthleteWorkspace() {
     setCoachMessageStatus('');
 
     try {
-      const response = await fetch('/api/pilot/athlete/chat', {
+      const response = await fetch(`${apiBase()}/api/pilot/athlete/chat`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },

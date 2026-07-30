@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState, type SyntheticEvent } from 'react';
 import ShadowChatButton from '@/components/ShadowChatButton';
 import { readRoleSession, subscribeRoleSession } from '@/components/roleSession';
+import { apiBase } from '@/lib/apiBase';
 
 type VisitorType =
   | 'Athlete / Participant'
@@ -227,7 +228,7 @@ export default function PublicPortalPage() {
     setSubmitting(true);
     setConfirmation('');
     try {
-      const response = await fetch('/api/pilot/public-interest', {
+      const response = await fetch(`${apiBase()}/api/pilot/public-interest`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
