@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
@@ -504,6 +504,139 @@ function renderMetricsPanel(
  * `processLearningSignal` (profile facts, communication style, effectiveness
  * metrics, research requirements). Without this panel the queue has no exit.
  */
+interface LibraryReviewFlag {
+  flag_id: string;
+  topic: string;
+  latest_outcome_signal: string | null;
+  outcome_signal: string | null;
+  user_note: string | null;
+  flag_count: number;
+  last_flagged_at: string;
+}
+
+// The other half of the learning loop's library flags: negative outcomes on
+// cited answers upsert a pending flag per topic, and until this panel existed
+// no surface showed them and nothing could settle one -- the "concerned
+// topics" metric could only grow. A verdict here is terminal for the current
+// flag; new negative feedback on the same topic reopens it as pending.
+function LibraryReviewFlagsPanel() {
+  const [flags, setFlags] = useState<LibraryReviewFlag[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyFlagId, setBusyFlagId] = useState('');
+  const [error, setError] = useState('');
+
+  const loadFlags = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/shadow/library/review-flags?state=pending`, {
+        credentials: 'include',
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.error || 'Failed to load library review flags');
+      }
+      setFlags((payload.flags ?? []) as LibraryReviewFlag[]);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Failed to load library review flags');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadFlags();
+  }, [loadFlags]);
+
+  async function handleVerdict(flagId: string, reviewState: 'resolved' | 'rejected') {
+    setBusyFlagId(flagId);
+    setError('');
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/shadow/library/review-flags`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ flag_id: flagId, review_state: reviewState }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.error || 'Failed to record verdict');
+      }
+      await loadFlags();
+    } catch (verdictError) {
+      setError(verdictError instanceof Error ? verdictError.message : 'Failed to record verdict');
+    } finally {
+      setBusyFlagId('');
+    }
+  }
+
+  return (
+    <section className="border-4 border-[#d4a574] bg-[#0a0a0a]/70 p-4">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">Library Quality</p>
+          <h3 className="mt-1 text-xl font-black text-[#e8d7c6]">Review Flags ({flags.length})</h3>
+        </div>
+        <button
+          type="button"
+          onClick={() => void loadFlags()}
+          className="h-9 border-2 border-[#8b4444] bg-[#141414] px-3 text-[12px] font-bold text-[#d4a574] transition hover:border-[#d4a574]"
+        >
+          Refresh
+        </button>
+      </div>
+      <p className="mt-1 text-[12px] text-[#d4a574]/70">
+        Topics flagged by negative feedback on cited answers. Resolve after checking the underlying Library evidence; reject if the flag is noise. New negative feedback reopens a settled topic.
+      </p>
+      <div className="mt-3 space-y-2">
+        {loading ? <p className="text-[13px] text-[#d4a574]/80">Loading flags…</p> : null}
+        {error ? <p className="text-[13px] text-[#f0c9c9]">{error}</p> : null}
+        {!loading && !error && flags.length === 0 ? (
+          <p className="text-[13px] text-[#d4a574]/80">No pending flags. The Library has no unreviewed negative-outcome reports.</p>
+        ) : null}
+        {flags.map((flag) => {
+          const busy = busyFlagId === flag.flag_id;
+          return (
+            <div key={flag.flag_id} className="border border-[#8b4444]/60 bg-[#141414] p-3 text-[13px] text-[#e8d7c6]">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-bold">{flag.topic}</span>
+                <span className="border border-[#8b4444] px-2 py-0.5 font-mono text-[11px] uppercase text-[#f0c9c9]">
+                  {flag.latest_outcome_signal ?? flag.outcome_signal ?? 'negative outcome'}
+                </span>
+                <span className="font-mono text-[11px] text-[#d4a574]/70">
+                  ×{flag.flag_count} · last {flag.last_flagged_at.slice(0, 10)}
+                </span>
+                <span className="ml-auto flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleVerdict(flag.flag_id, 'resolved')}
+                    disabled={busy}
+                    className="h-9 border-2 border-[#3f8b5b] bg-[#162a1d] px-2 text-[12px] font-bold text-[#c9f0d7] transition hover:border-[#d4a574] disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Resolve
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleVerdict(flag.flag_id, 'rejected')}
+                    disabled={busy}
+                    className="h-9 border-2 border-[#8b4444] bg-[#2a1414] px-2 text-[12px] font-bold text-[#f0c9c9] transition hover:border-[#d4a574] disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Reject
+                  </button>
+                </span>
+              </div>
+              {flag.user_note ? (
+                <p className="mt-2 text-[12px] text-[#b0a095]">&ldquo;{flag.user_note}&rdquo;</p>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function renderFeedbackReviewPanel(props: {
   summary: ShadowFeedbackApiResponse['summary'];
   reviewQueue: ShadowFeedbackItem[];
@@ -1430,6 +1563,8 @@ export default function AdminShadowConsolePage() {
             });
           },
         })}
+        {/* ── Library Review Flags (negative-outcome verdicts) ─────── */}
+        <LibraryReviewFlagsPanel />
         <section className="space-y-6 border-4 border-[#8b4444] bg-[#0a0a0a]/70 p-6">
           <div className="mb-6 border-b border-[#8b4444]/20 pb-4">
             <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">AI/ML Telemetry Scout</p>
