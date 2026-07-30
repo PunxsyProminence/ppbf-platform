@@ -164,11 +164,24 @@ jobs:
       # environments rather than inventing a third number. Headroom is not
       # billed: charges follow tokens produced, not the budget.
       # PPBF_SHADOW_WORKER_ENABLED is stated explicitly (set-env-vars cannot
-      # unset, so every variable is declared) and deliberately FALSE: the
-      # background worker turns on in staging first, and this line flips to
-      # true only after staging demonstrates a full enqueue -> drain -> render
-      # cycle through the E2E gate. Until then queued modes keep their honest
-      # 503 in production.
+      # unset, so every variable is declared). It was deliberately false until
+      # staging demonstrated a full enqueue -> drain -> render cycle through
+      # the E2E gate; that condition was met by run 30567888858 (2026-07-30,
+      # SHA 7cfde83): gate step 14 enqueued a background Heavy Bag, the
+      # instrumentation worker drained job 324e7a76, and the answer read back
+      # through the sessions API as message 1497ba24 with matching citations
+      # and evidence tier. (The first attempt, run 30563595088, is why the
+      # staging-first rule exists: the claim statement had an ambiguous
+      # RETURNING column that killed every drain tick, fixed in #89 and pinned
+      # by test:migrations:job-queue.) The worker carries no super-identity --
+      # per-job authority is re-validated against the enqueuing actor at
+      # execution time -- so enabling it grants no new access.
+      #
+      # PPBF_INTAKE_PROMOTION_ENABLED stays FALSE here: the intake
+      # review -> approve -> promote path (#95) turns on in staging first,
+      # same rollout as the worker flag, and this line flips only after the
+      # staging gate has run the full intake path green. Until then promotion
+      # keeps its honest 403 in production.
       - name: Deploy Tested Digest to Azure Container App (Production)
         run: |
           az containerapp update \
@@ -194,7 +207,8 @@ jobs:
               AZURE_AI_API_VERSION=secretref:azure-ai-api-version \
               AZURE_AI_KEY=secretref:azure-ai-key \
               PPBF_SHADOW_MAX_COMPLETION_TOKENS=8192 \
-              PPBF_SHADOW_WORKER_ENABLED=false \
+              PPBF_SHADOW_WORKER_ENABLED=true \
+              PPBF_INTAKE_PROMOTION_ENABLED=false \
               PPBF_DURABLE_RATE_LIMIT=true
 
       - name: Resolve Production Base URL
