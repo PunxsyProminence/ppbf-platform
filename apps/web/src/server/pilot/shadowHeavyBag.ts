@@ -19,6 +19,23 @@ import { budgetConversationHistory } from './shadowConversationHistory';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+export interface HeavyBagEvidenceSnapshot {
+  bundleId: string | null;
+  availability: 'available' | 'unavailable';
+  allowedEvidenceIds: string[];
+  // Public citation metadata for every allowed evidence id, captured at
+  // enqueue time. At completion the processor intersects the ids the model
+  // actually cited with allowedEvidenceIds and renders receipts from this
+  // catalog -- the background path must never re-query evidence under an
+  // identity the user did not have when they asked.
+  citationCatalog: Array<{
+    evidenceId: string;
+    token: string;
+    sourceTitle: string;
+    documentName: string;
+  }>;
+}
+
 export interface HeavyBagInput {
   message: string;
   userId: string;
@@ -32,6 +49,11 @@ export interface HeavyBagInput {
   athleteId?: string;
   systemPromptBase: string;
   conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  // Set by the chat route when a background Heavy Bag answer must persist
+  // into a conversation at completion. Absent for queue-only modes (scout
+  // reports, board summaries), whose results live in job output.
+  conversationId?: string;
+  evidenceSnapshot?: HeavyBagEvidenceSnapshot;
 }
 
 export interface HeavyBagResult {
@@ -133,6 +155,17 @@ export async function executeHeavyBagAsync(input: HeavyBagInput): Promise<HeavyB
       authenticatedRole: input.role,
       authorizedContext: input.contextOutput.context.slice(0, 12_000),
       profileTier: input.tierResult.tier,
+      ...(input.conversationId ? { conversationId: input.conversationId } : {}),
+      ...(input.evidenceSnapshot
+        ? {
+            evidenceSnapshot: {
+              bundleId: input.evidenceSnapshot.bundleId,
+              availability: input.evidenceSnapshot.availability,
+              allowedEvidenceIds: input.evidenceSnapshot.allowedEvidenceIds.slice(0, 24),
+              citationCatalog: input.evidenceSnapshot.citationCatalog.slice(0, 24),
+            },
+          }
+        : {}),
     },
     priority: priorityForSessionType(input.sessionType),
   });

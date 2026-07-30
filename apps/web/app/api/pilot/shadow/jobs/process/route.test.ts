@@ -9,6 +9,7 @@ import {
   type ShadowJob,
 } from '@/src/server/pilot/shadowJobQueue';
 import { queryOne } from '@/src/server/pilot/db';
+import { appendAssistantMessage, queueHumanReview } from '@/src/server/pilot/shadowConversations';
 
 jest.mock('@/src/server/pilot/shadowJobQueue', () => ({
   claimNextJob: jest.fn(),
@@ -18,11 +19,17 @@ jest.mock('@/src/server/pilot/shadowJobQueue', () => ({
 jest.mock('@/src/server/pilot/db', () => ({
   queryOne: jest.fn(),
 }));
+jest.mock('@/src/server/pilot/shadowConversations', () => ({
+  appendAssistantMessage: jest.fn(),
+  queueHumanReview: jest.fn(),
+}));
 
 const mockClaimNextJob = jest.mocked(claimNextJob);
 const mockCompleteJob = jest.mocked(completeJob);
 const mockFailJob = jest.mocked(failJob);
 const mockQueryOne = jest.mocked(queryOne);
+const mockAppendAssistantMessage = jest.mocked(appendAssistantMessage);
+const mockQueueHumanReview = jest.mocked(queueHumanReview);
 const originalBootstrapKey = process.env.PPBF_PILOT_BOOTSTRAP_KEY;
 
 function claimedJob(jobType: JobType): ShadowJob {
@@ -172,6 +179,156 @@ describe('SHADOW job processor fail-closed modes', () => {
     });
     expect(mockFailJob).toHaveBeenCalledWith(job, 'SHADOW_JOB_SCOPE_FORBIDDEN');
     expect(mockCompleteJob).not.toHaveBeenCalled();
+  });
+
+  describe('conversation-bound Heavy Bag completion', () => {
+    const AZURE_ENV = ['AZURE_AI_ENDPOINT', 'AZURE_AI_KEY', 'AZURE_AI_DEPLOYMENT_NAME'] as const;
+    const savedEnv: Record<string, string | undefined> = {};
+    const originalFetch = global.fetch;
+
+    beforeEach(() => {
+      for (const key of AZURE_ENV) savedEnv[key] = process.env[key];
+      process.env.AZURE_AI_ENDPOINT = 'https://example.invalid';
+      process.env.AZURE_AI_KEY = 'test-key';
+      process.env.AZURE_AI_DEPLOYMENT_NAME = 'test-deployment';
+      mockAppendAssistantMessage.mockResolvedValue('assistant-msg-9');
+      mockQueueHumanReview.mockResolvedValue('review-9');
+      mockQueryOne.mockResolvedValue({
+        role: 'coach',
+        athlete_id: null,
+        is_platform_owner: false,
+        organization_status: 'active',
+      });
+    });
+
+    afterEach(() => {
+      global.fetch = originalFetch;
+      for (const key of AZURE_ENV) {
+        if (savedEnv[key] === undefined) delete process.env[key];
+        else process.env[key] = savedEnv[key];
+      }
+    });
+
+    function boundHeavyJob(): ShadowJob {
+      const job = claimedJob('heavy_bag_session');
+      job.inputPayload = {
+        requestMode: 'chat',
+        message: 'Plan the next training block.',
+        topic: 'training',
+        authorizedContext: 'Use [E:e5a7c9d2-4b3f-4a21-8c6d-1f2e3a4b5c6d] for the approved excerpt.',
+        conversationId: 'c0a80121-0000-4000-8000-000000000001',
+        evidenceSnapshot: {
+          bundleId: 'bundle-1',
+          availability: 'available',
+          allowedEvidenceIds: ['e5a7c9d2-4b3f-4a21-8c6d-1f2e3a4b5c6d'],
+          citationCatalog: [{
+            evidenceId: 'e5a7c9d2-4b3f-4a21-8c6d-1f2e3a4b5c6d',
+            token: '[E:e5a7c9d2-4b3f-4a21-8c6d-1f2e3a4b5c6d]',
+            sourceTitle: 'Approved source',
+            documentName: 'Approved document',
+          }],
+        },
+      };
+      return job;
+    }
+
+    test('persists the validated answer with its snapshot-checked citation', async () => {
+      const job = boundHeavyJob();
+      mockClaimNextJob.mockResolvedValueOnce(job);
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: 'Base the block on the approved drill [E:e5a7c9d2-4b3f-4a21-8c6d-1f2e3a4b5c6d].' } }],
+        }),
+      }) as unknown as typeof fetch;
+
+      const response = await POST(processorRequest('heavy_bag_session'));
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({ processed: true, jobId: job.jobId });
+
+      // The answer landed in the conversation under the re-validated actor,
+      // graded from the snapshot: one authorized citation -> EMERGING.
+      expect(mockAppendAssistantMessage).toHaveBeenCalledWith(expect.objectContaining({
+        actor: expect.objectContaining({ accountId: 'account-1', organizationId: 'org-1', role: 'coach' }),
+        conversationId: 'c0a80121-0000-4000-8000-000000000001',
+        content: 'Base the block on the approved drill [E:e5a7c9d2-4b3f-4a21-8c6d-1f2e3a4b5c6d].',
+        responseState: 'ok',
+        evidenceTier: 'EMERGING',
+        evidence: {
+          bundleId: 'bundle-1',
+          availability: 'available',
+          citationIds: ['e5a7c9d2-4b3f-4a21-8c6d-1f2e3a4b5c6d'],
+        },
+      }));
+
+      // Job output mirrors what was persisted, receipts included, so the
+      // polling client shows exactly what restore will replay.
+      expect(mockCompleteJob).toHaveBeenCalledWith(
+        job,
+        expect.objectContaining({
+          response: 'Base the block on the approved drill [E:e5a7c9d2-4b3f-4a21-8c6d-1f2e3a4b5c6d].',
+          conversationId: 'c0a80121-0000-4000-8000-000000000001',
+          assistantMessageId: 'assistant-msg-9',
+          citations: [expect.objectContaining({ evidenceId: 'e5a7c9d2-4b3f-4a21-8c6d-1f2e3a4b5c6d', sourceTitle: 'Approved source' })],
+        }),
+        'passed',
+      );
+      expect(mockQueueHumanReview).not.toHaveBeenCalled();
+    });
+
+    test('a fabricated citation is filtered: safe message persisted, no receipts, human review queued', async () => {
+      const job = boundHeavyJob();
+      mockClaimNextJob.mockResolvedValueOnce(job);
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: 'Proven results [E:ev-FAKE] guarantee improvement.' } }],
+        }),
+      }) as unknown as typeof fetch;
+
+      const response = await POST(processorRequest('heavy_bag_session'));
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({ processed: true, jobId: job.jobId });
+
+      expect(mockAppendAssistantMessage).toHaveBeenCalledWith(expect.objectContaining({
+        responseState: 'filtered',
+        evidenceTier: 'RESEARCH_NEEDED',
+        evidence: expect.objectContaining({ citationIds: [] }),
+      }));
+      const persistedContent = mockAppendAssistantMessage.mock.calls[0][0].content;
+      expect(persistedContent).not.toContain('ev-FAKE');
+
+      expect(mockCompleteJob).toHaveBeenCalledWith(
+        job,
+        expect.objectContaining({ citations: [] }),
+        'filtered',
+      );
+      expect(mockQueueHumanReview).toHaveBeenCalledWith(expect.objectContaining({
+        category: 'async_response_safety',
+      }));
+    });
+
+    test('a malformed conversation binding fails the job closed instead of dropping persistence', async () => {
+      const job = boundHeavyJob();
+      job.inputPayload = { ...job.inputPayload, evidenceSnapshot: { availability: 'sometimes' } };
+      mockClaimNextJob.mockResolvedValueOnce(job);
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: 'An answer.' } }] }),
+      }) as unknown as typeof fetch;
+
+      const response = await POST(processorRequest('heavy_bag_session'));
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        processed: true,
+        error: 'SHADOW_JOB_CONTEXT_INVALID',
+      });
+      expect(mockAppendAssistantMessage).not.toHaveBeenCalled();
+      expect(mockCompleteJob).not.toHaveBeenCalled();
+    });
   });
 
   test('allows an active platform owner without a membership while keeping the job organization scoped', async () => {

@@ -233,62 +233,224 @@ export async function appendConversationExchange(input: {
     );
 
     if (input.evidence) {
-      const citationIds = [...new Set(input.evidence.citationIds)].slice(0, 8);
-      const claimStatus: ShadowEvidenceClaimStatus = input.responseState === 'filtered'
-        ? 'filtered'
-        : citationIds.length > 0
-          ? 'supported'
-          : input.evidence.availability === 'unavailable'
-            ? 'unavailable'
-            : 'research_needed';
-      const claimId = randomUUID();
-      const claim = await client.query<{ claim_id: string }>(
-        `insert into pilot.shadow_evidence_claims
-           (claim_id, organization_id, account_id, conversation_id, assistant_message_id, bundle_id, claim_status)
-         select $1, $2, $3, $4, $5, b.bundle_id, $7
-         from pilot.shadow_evidence_bundles b
-         where b.bundle_id = $6
-           and b.organization_id = $2
-           and b.account_id = $3
-         returning claim_id`,
-        [
-          claimId,
-          input.actor.organizationId,
-          input.actor.accountId,
-          input.conversationId,
-          assistantMessageId,
-          input.evidence.bundleId,
-          claimStatus,
-        ],
-      );
-      if (!claim.rows[0]) {
-        throw new Error('SHADOW_EVIDENCE_BUNDLE_NOT_FOUND');
-      }
+      await writeAssistantEvidenceRecords(client, {
+        actor: input.actor,
+        conversationId: input.conversationId,
+        assistantMessageId,
+        responseState: input.responseState,
+        evidence: input.evidence,
+      });
+    }
+    return assistantMessageId;
+  });
+}
 
-      for (const [index, evidenceId] of citationIds.entries()) {
-        const citation = await client.query<{ evidence_id: string }>(
-          `insert into pilot.shadow_message_citations
-             (assistant_message_id, evidence_id, bundle_id, organization_id, account_id, ordinal)
-           select $1, e.evidence_id, e.bundle_id, e.organization_id, e.account_id, $6
-           from pilot.shadow_evidence_items e
-           where e.evidence_id = $2
-             and e.bundle_id = $3
-             and e.organization_id = $4
-             and e.account_id = $5
-           returning evidence_id`,
-          [
-            assistantMessageId,
-            evidenceId,
-            input.evidence.bundleId,
-            input.actor.organizationId,
-            input.actor.accountId,
-            index + 1,
-          ],
-        );
-        if (!citation.rows[0]) {
-          throw new Error('SHADOW_EVIDENCE_CITATION_NOT_FOUND');
-        }
-      }
+// Shared by the synchronous exchange write above and the background
+// completion write below -- the evidence claim and citation rows for an
+// assistant message must be byte-identical no matter which path produced the
+// answer, or restored conversations would grade the same answer two ways.
+async function writeAssistantEvidenceRecords(
+  client: { query: <T extends object>(text: string, params?: unknown[]) => Promise<{ rows: T[] }> },
+  input: {
+    actor: ActorIdentity;
+    conversationId: string;
+    assistantMessageId: string;
+    responseState: ShadowStoredResponseState;
+    evidence: {
+      bundleId: string;
+      availability: 'available' | 'unavailable';
+      citationIds: string[];
+    };
+  },
+): Promise<void> {
+  const citationIds = [...new Set(input.evidence.citationIds)].slice(0, 8);
+  const claimStatus: ShadowEvidenceClaimStatus = input.responseState === 'filtered'
+    ? 'filtered'
+    : citationIds.length > 0
+      ? 'supported'
+      : input.evidence.availability === 'unavailable'
+        ? 'unavailable'
+        : 'research_needed';
+  const claimId = randomUUID();
+  const claim = await client.query<{ claim_id: string }>(
+    `insert into pilot.shadow_evidence_claims
+       (claim_id, organization_id, account_id, conversation_id, assistant_message_id, bundle_id, claim_status)
+     select $1, $2, $3, $4, $5, b.bundle_id, $7
+     from pilot.shadow_evidence_bundles b
+     where b.bundle_id = $6
+       and b.organization_id = $2
+       and b.account_id = $3
+     returning claim_id`,
+    [
+      claimId,
+      input.actor.organizationId,
+      input.actor.accountId,
+      input.conversationId,
+      input.assistantMessageId,
+      input.evidence.bundleId,
+      claimStatus,
+    ],
+  );
+  if (!claim.rows[0]) {
+    throw new Error('SHADOW_EVIDENCE_BUNDLE_NOT_FOUND');
+  }
+
+  for (const [index, evidenceId] of citationIds.entries()) {
+    const citation = await client.query<{ evidence_id: string }>(
+      `insert into pilot.shadow_message_citations
+         (assistant_message_id, evidence_id, bundle_id, organization_id, account_id, ordinal)
+       select $1, e.evidence_id, e.bundle_id, e.organization_id, e.account_id, $6
+       from pilot.shadow_evidence_items e
+       where e.evidence_id = $2
+         and e.bundle_id = $3
+         and e.organization_id = $4
+         and e.account_id = $5
+       returning evidence_id`,
+      [
+        input.assistantMessageId,
+        evidenceId,
+        input.evidence.bundleId,
+        input.actor.organizationId,
+        input.actor.accountId,
+        index + 1,
+      ],
+    );
+    if (!citation.rows[0]) {
+      throw new Error('SHADOW_EVIDENCE_CITATION_NOT_FOUND');
+    }
+  }
+}
+
+/**
+ * Persist the user's question at enqueue time, before the background job
+ * exists. The question must be durable the moment the user sends it -- a
+ * queued job can fail hours later, and the conversation still has to show
+ * what was asked.
+ */
+export async function appendUserMessage(input: {
+  actor: ActorIdentity;
+  conversationId: string;
+  content: string;
+  topic: string;
+  sessionType: ShadowConversationSessionType;
+}): Promise<string> {
+  requireTenantOwner(input.actor);
+
+  return withTransaction(async (client) => {
+    const owned = await client.query<{ conversation_id: string }>(
+      `select conversation_id
+       from pilot.shadow_chat_sessions
+       where conversation_id = $1
+         and organization_id = $2
+         and account_id = $3
+         and deleted_at is null
+       for update`,
+      [input.conversationId, input.actor.organizationId, input.actor.accountId],
+    );
+    if (!owned.rows[0]) {
+      throw new Error('SHADOW_CONVERSATION_NOT_FOUND');
+    }
+
+    const userMessageId = randomUUID();
+    await client.query(
+      `insert into pilot.shadow_chat_messages
+         (message_id, conversation_id, organization_id, account_id, role, content, response_state, topic, session_type, evidence_tier, handoff, created_at)
+       values ($1, $2, $3, $4, 'user', $5, null, $6, $7, null, null, statement_timestamp())`,
+      [
+        userMessageId,
+        input.conversationId,
+        input.actor.organizationId,
+        input.actor.accountId,
+        input.content.slice(0, 12_000),
+        input.topic.replace(/\s+/g, ' ').trim().slice(0, 100) || 'general',
+        input.sessionType,
+      ],
+    );
+    await client.query(
+      `update pilot.shadow_chat_sessions
+       set session_type = $1, updated_at = now()
+       where conversation_id = $2
+         and organization_id = $3
+         and account_id = $4`,
+      [input.sessionType, input.conversationId, input.actor.organizationId, input.actor.accountId],
+    );
+    return userMessageId;
+  });
+}
+
+/**
+ * Persist a background completion as an assistant message, with the same
+ * evidence claim and citation records the synchronous path writes. Called by
+ * the job processor under the enqueuing actor's re-validated identity -- the
+ * ownership predicate here is therefore the same one the live chat satisfies.
+ */
+export async function appendAssistantMessage(input: {
+  actor: ActorIdentity;
+  conversationId: string;
+  content: string;
+  topic: string;
+  sessionType: ShadowConversationSessionType;
+  responseState: ShadowStoredResponseState;
+  evidenceTier?: ShadowStoredEvidenceTier;
+  handoff?: string;
+  evidence?: {
+    bundleId: string;
+    availability: 'available' | 'unavailable';
+    citationIds: string[];
+  };
+}): Promise<string> {
+  requireTenantOwner(input.actor);
+
+  return withTransaction(async (client) => {
+    const owned = await client.query<{ conversation_id: string }>(
+      `select conversation_id
+       from pilot.shadow_chat_sessions
+       where conversation_id = $1
+         and organization_id = $2
+         and account_id = $3
+         and deleted_at is null
+       for update`,
+      [input.conversationId, input.actor.organizationId, input.actor.accountId],
+    );
+    if (!owned.rows[0]) {
+      throw new Error('SHADOW_CONVERSATION_NOT_FOUND');
+    }
+
+    const assistantMessageId = randomUUID();
+    await client.query(
+      `insert into pilot.shadow_chat_messages
+         (message_id, conversation_id, organization_id, account_id, role, content, response_state, topic, session_type, evidence_tier, handoff, created_at)
+       values ($1, $2, $3, $4, 'assistant', $5, $6, $7, $8, $9, $10, statement_timestamp())`,
+      [
+        assistantMessageId,
+        input.conversationId,
+        input.actor.organizationId,
+        input.actor.accountId,
+        input.content.slice(0, 12_000),
+        input.responseState,
+        input.topic.replace(/\s+/g, ' ').trim().slice(0, 100) || 'general',
+        input.sessionType,
+        input.evidenceTier ?? null,
+        input.handoff?.slice(0, 500) ?? null,
+      ],
+    );
+    await client.query(
+      `update pilot.shadow_chat_sessions
+       set session_type = $1, updated_at = now()
+       where conversation_id = $2
+         and organization_id = $3
+         and account_id = $4`,
+      [input.sessionType, input.conversationId, input.actor.organizationId, input.actor.accountId],
+    );
+
+    if (input.evidence) {
+      await writeAssistantEvidenceRecords(client, {
+        actor: input.actor,
+        conversationId: input.conversationId,
+        assistantMessageId,
+        responseState: input.responseState,
+        evidence: input.evidence,
+      });
     }
     return assistantMessageId;
   });

@@ -63,6 +63,10 @@ export interface ShadowChatRequestInput {
   heavyBagMode: boolean;
   conversationId?: string;
   athleteId?: string;
+  // Explicit opt-in to background processing for Heavy Bag. Omitted from the
+  // wire unless true -- the server defaults to synchronous, and older servers
+  // reject unknown non-boolean values.
+  preferAsync?: boolean;
 }
 
 type ShadowSessionsFetch = (
@@ -90,12 +94,14 @@ export function buildShadowChatRequest(input: ShadowChatRequestInput): {
   tier: 'heavy_bag' | undefined;
   conversationId: string | undefined;
   athleteId: string | undefined;
+  preferAsync: true | undefined;
 } {
   return {
     message: input.message,
     tier: input.heavyBagMode ? 'heavy_bag' : undefined,
     conversationId: input.conversationId,
     athleteId: input.athleteId,
+    preferAsync: input.preferAsync === true ? true : undefined,
   };
 }
 

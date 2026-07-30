@@ -22,8 +22,9 @@ import { assertActorCanAccessAthlete, type ActorIdentity } from './access';
 import type { PilotRole } from './contracts';
 import { queryOne } from './db';
 import { claimNextJob, completeJob, failJob, type JobType } from './shadowJobQueue';
-import { SHADOW_SYSTEM_PROMPT, validateShadowResponse } from './shadowChat';
-import { queueHumanReview } from './shadowConversations';
+import { composeShadowSystemPrompt, SHADOW_SYSTEM_PROMPT, validateShadowResponse } from './shadowChat';
+import { appendAssistantMessage, queueHumanReview } from './shadowConversations';
+import { deriveEvidenceTier } from './shadowEvidenceTier';
 import { buildAzureAiChatCompletionsUrl, getAzureAiRuntimeConfig } from './azureAiRuntime';
 
 export interface JobProcessorResult {
@@ -153,9 +154,63 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
       ...job.inputPayload,
       authenticatedRole: currentActor.role,
     });
-    const checkedOutput = validateJobOutput(rawOutput);
-    await completeJob(job, checkedOutput.output, checkedOutput.safetyStatus);
-    if (checkedOutput.safetyStatus === 'filtered') {
+
+    // A Heavy Bag job bound to a conversation persists its answer the same
+    // way the live chat does: validated against the evidence allowlist
+    // captured at enqueue time, graded, and appended under the enqueuing
+    // actor's re-validated identity -- with the exact citation records the
+    // synchronous path would have written.
+    const binding = job.jobType === 'heavy_bag_session'
+      ? parseConversationBinding(job.inputPayload)
+      : null;
+    let outputForCompletion: Record<string, unknown> = rawOutput;
+    let bindingFiltered = false;
+    if (binding) {
+      const decision = validateShadowResponse(
+        typeof rawOutput.response === 'string' ? rawOutput.response : '',
+        { allowedEvidenceIds: binding.allowedEvidenceIds },
+      );
+      bindingFiltered = !decision.valid || decision.filtered;
+      const allowedIdSet = new Set(binding.allowedEvidenceIds);
+      const citationIds = decision.citationIds.filter((id) => allowedIdSet.has(id));
+      const evidenceTier = deriveEvidenceTier({
+        isAnsweredState: !bindingFiltered,
+        evidenceAvailability: binding.availability,
+        citationCount: citationIds.length,
+      });
+      const assistantMessageId = await appendAssistantMessage({
+        actor: currentActor,
+        conversationId: binding.conversationId,
+        content: decision.message,
+        topic: payloadToText(job.inputPayload.topic, 'general'),
+        sessionType: 'heavy_bag',
+        responseState: bindingFiltered ? 'filtered' : 'ok',
+        evidenceTier,
+        evidence: binding.bundleId
+          ? {
+              bundleId: binding.bundleId,
+              availability: binding.availability,
+              citationIds,
+            }
+          : undefined,
+      });
+      outputForCompletion = {
+        ...rawOutput,
+        response: decision.message,
+        conversationId: binding.conversationId,
+        assistantMessageId,
+        evidenceTier,
+        responseState: bindingFiltered ? 'filtered' : 'ok',
+        citations: binding.citationCatalog.filter((item) => citationIds.includes(item.evidenceId)),
+      };
+    }
+
+    const checkedOutput = validateJobOutput(outputForCompletion, {
+      allowedEvidenceIds: binding?.allowedEvidenceIds,
+    });
+    const finalSafetyStatus = bindingFiltered ? 'filtered' as const : checkedOutput.safetyStatus;
+    await completeJob(job, checkedOutput.output, finalSafetyStatus);
+    if (finalSafetyStatus === 'filtered') {
       await queueHumanReview({
         organizationId: job.organizationId,
         accountId: job.accountId,
@@ -285,7 +340,85 @@ function collectOutputStrings(value: unknown, strings: string[], depth = 0): voi
   }
 }
 
-function validateJobOutput(output: Record<string, unknown>): {
+interface HeavyBagConversationBinding {
+  conversationId: string;
+  bundleId: string | null;
+  availability: 'available' | 'unavailable';
+  allowedEvidenceIds: string[];
+  citationCatalog: Array<{
+    evidenceId: string;
+    token: string;
+    sourceTitle: string;
+    documentName: string;
+  }>;
+}
+
+// Strict parse of the conversation binding a background Heavy Bag job may
+// carry. Absent binding means a queue-only job (nothing to persist). A
+// present-but-malformed binding is a context error, never a silent downgrade
+// to unpersisted output -- the user was told the answer would land in their
+// conversation.
+function parseConversationBinding(payload: Record<string, unknown>): HeavyBagConversationBinding | null {
+  if (payload.conversationId === undefined) {
+    return null;
+  }
+  const conversationId = payload.conversationId;
+  const snapshot = payload.evidenceSnapshot;
+  if (
+    typeof conversationId !== 'string'
+    || !conversationId.trim()
+    || typeof snapshot !== 'object'
+    || snapshot === null
+    || Array.isArray(snapshot)
+  ) {
+    throw new Error('SHADOW_JOB_CONTEXT_INVALID');
+  }
+  const record = snapshot as Record<string, unknown>;
+  const bundleId = record.bundleId;
+  const availability = record.availability;
+  const allowedEvidenceIds = record.allowedEvidenceIds;
+  const citationCatalog = record.citationCatalog;
+  if (
+    (bundleId !== null && typeof bundleId !== 'string')
+    || (availability !== 'available' && availability !== 'unavailable')
+    || !Array.isArray(allowedEvidenceIds)
+    || !allowedEvidenceIds.every((id) => typeof id === 'string')
+    || !Array.isArray(citationCatalog)
+  ) {
+    throw new Error('SHADOW_JOB_CONTEXT_INVALID');
+  }
+  const catalog: HeavyBagConversationBinding['citationCatalog'] = [];
+  for (const entry of citationCatalog) {
+    if (
+      typeof entry !== 'object' || entry === null
+      || typeof (entry as Record<string, unknown>).evidenceId !== 'string'
+      || typeof (entry as Record<string, unknown>).token !== 'string'
+      || typeof (entry as Record<string, unknown>).sourceTitle !== 'string'
+      || typeof (entry as Record<string, unknown>).documentName !== 'string'
+    ) {
+      throw new Error('SHADOW_JOB_CONTEXT_INVALID');
+    }
+    const item = entry as Record<string, string>;
+    catalog.push({
+      evidenceId: item.evidenceId,
+      token: item.token,
+      sourceTitle: item.sourceTitle,
+      documentName: item.documentName,
+    });
+  }
+  return {
+    conversationId,
+    bundleId: bundleId as string | null,
+    availability,
+    allowedEvidenceIds: allowedEvidenceIds as string[],
+    citationCatalog: catalog,
+  };
+}
+
+function validateJobOutput(
+  output: Record<string, unknown>,
+  options: { allowedEvidenceIds?: string[] } = {},
+): {
   output: Record<string, unknown>;
   safetyStatus: 'passed' | 'filtered' | 'not_applicable';
 } {
@@ -298,7 +431,12 @@ function validateJobOutput(output: Record<string, unknown>): {
 
   const strings: string[] = [];
   collectOutputStrings(output, strings);
-  const decisions = strings.map((value) => validateShadowResponse(value));
+  // The allowlist rides through so a legitimately cited answer -- one whose
+  // [E:...] tokens the binding-level validation already authorized -- is not
+  // re-filtered by this sweep seeing the same tokens with no allowlist.
+  const decisions = strings.map((value) => validateShadowResponse(value, {
+    allowedEvidenceIds: options.allowedEvidenceIds,
+  }));
   const rejected = decisions.filter((decision) => !decision.valid || decision.filtered);
   if (rejected.length > 0) {
     return {
@@ -396,7 +534,15 @@ async function executeHeavyBagJob(payload: Record<string, unknown>): Promise<Rec
   const profileTier = payloadToText(payload.profileTier, 'bronze');
   const trust = requireAsyncTrustContext(payload);
 
-  const systemPrompt = `${SHADOW_SYSTEM_PROMPT}
+  // Recomposed from the job's re-validated role rather than carried in the
+  // payload: a background answer to an athlete must hold the same audience
+  // register -- assumed minor, plain language -- and the same evidence
+  // boundary the live chat enforces. Trusting stored prompt text would let a
+  // stale snapshot outlive a role change; recomposing cannot.
+  const systemPrompt = `${composeShadowSystemPrompt({ role: trust.role, sessionType })}
+
+## EVIDENCE BOUNDARY
+Only describe a claim as supported, proven, or evidence-based when verified evidence for that claim is present in the authorized request context. Never invent citations, case counts, confidence values, or outcomes. When verified evidence is absent, label the claim RESEARCH NEEDED.
 
 ## Heavy Bag Session (Background Processing)
 You are in a **Heavy Bag Session** — full reasoning mode.
