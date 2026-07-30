@@ -4,6 +4,11 @@ import { Suspense, useEffect, useRef, useState, type SyntheticEvent } from 'reac
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { readRoleSession, clearRoleSession } from '@/components/roleSession';
+import {
+  EVIDENCE_TIER_MEANINGS,
+  EVIDENCE_TIER_ORDER,
+  type ShadowDisplayCitation,
+} from '@/components/shadowEvidenceDisplay';
 import { apiBase } from '@/lib/apiBase';
 import { revokeShadowSession } from '@/client/shadowLogout';
 import {
@@ -45,6 +50,7 @@ interface ShadowMessage {
   state?: ShadowResponseState;
   evidenceTier?: ShadowEvidenceTier;
   handoff?: string;
+  citations?: ShadowDisplayCitation[];
 }
 
 interface ExplainabilityChain {
@@ -72,6 +78,7 @@ interface ShadowAIResult {
   explainability?: ExplainabilityChain;
   evidenceTier?: ShadowEvidenceTier;
   handoff?: string;
+  citations?: ShadowDisplayCitation[];
   unlockHints?: ShadowUnlockHint[];
 }
 
@@ -488,7 +495,7 @@ function ShadowChatPageContent() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  function addMessage(type: 'user' | 'shadow', text: string, meta?: Partial<Pick<ShadowMessage, 'id' | 'tier' | 'profileTier' | 'modelUsed' | 'isAsync' | 'jobId' | 'state' | 'feedbackEligible' | 'evidenceTier' | 'handoff'>>) {
+  function addMessage(type: 'user' | 'shadow', text: string, meta?: Partial<Pick<ShadowMessage, 'id' | 'tier' | 'profileTier' | 'modelUsed' | 'isAsync' | 'jobId' | 'state' | 'feedbackEligible' | 'evidenceTier' | 'handoff' | 'citations'>>) {
     const newMessage: ShadowMessage = {
       id: createMessageId(),
       type,
@@ -682,6 +689,9 @@ function ShadowChatPageContent() {
       state: data.state,
       evidenceTier: data.evidenceTier ?? NO_SERVER_EVIDENCE_TIER,
       handoff: data.handoff,
+      // The server has always computed and returned these; the client dropped
+      // them on the floor, so evidence-backed answers showed no receipts.
+      citations: data.citations,
       feedbackEligible: (
         data.state === 'ok' || data.state === 'filtered'
       ) && Boolean(data.conversationId) && Boolean(data.messageId),
@@ -940,6 +950,22 @@ function ShadowChatPageContent() {
 
         {/* CHAT BOX */}
         <section className="border-4 border-[#8b4444] bg-[#0f0f0f] p-6 shadow-2xl shadow-black/60">
+          {/* Evidence legend: the tier names are jargon to anyone outside the
+              staff register, so every badge's meaning is stated once here and
+              repeated as a tooltip on the badge itself. */}
+          <details className="mb-3 border border-[#5a4a3a] bg-[#141414] px-3 py-2">
+            <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-[0.12em] text-[#a89478]">
+              What the evidence labels mean
+            </summary>
+            <ul className="mt-2 space-y-1">
+              {EVIDENCE_TIER_ORDER.map((tier) => (
+                <li key={tier} className="text-[10px] leading-4 text-[#c9b8a3]">
+                  <span className="font-bold uppercase">{getEvidenceTierLabel(tier)}:</span>{' '}
+                  {EVIDENCE_TIER_MEANINGS[tier]}
+                </li>
+              ))}
+            </ul>
+          </details>
           {/* Messages */}
           <div className="mb-6 max-h-[550px] space-y-4 overflow-y-auto bg-[#050505] p-4 font-mono text-sm">
             {messages.map((msg) => (
@@ -956,9 +982,24 @@ function ShadowChatPageContent() {
                 >
                   <p className="text-xs leading-6">{msg.text}</p>
                   {msg.type === 'shadow' && msg.evidenceTier ? (
-                    <p className="mt-2 text-[9px] font-bold uppercase tracking-[0.12em] opacity-70">
+                    <p
+                      className="mt-2 text-[9px] font-bold uppercase tracking-[0.12em] opacity-70"
+                      title={EVIDENCE_TIER_MEANINGS[msg.evidenceTier]}
+                    >
                       Evidence: {getEvidenceTierLabel(msg.evidenceTier)}
                     </p>
+                  ) : null}
+                  {msg.type === 'shadow' && msg.citations?.length ? (
+                    <div className="mt-2 border-t border-[#5a4a3a] pt-2">
+                      <p className="text-[9px] font-bold uppercase tracking-[0.12em] opacity-70">Sources</p>
+                      <ul className="mt-1 space-y-0.5">
+                        {msg.citations.map((citation) => (
+                          <li key={citation.evidenceId} className="text-[9px] leading-4 opacity-80">
+                            [{citation.token}] {citation.sourceTitle} — {citation.documentName}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   ) : null}
                   {msg.type === 'shadow' && msg.state && msg.state !== 'ok' ? (
                     <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.12em] opacity-70">

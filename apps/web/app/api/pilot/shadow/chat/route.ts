@@ -11,7 +11,7 @@ import {
   validateShadowRequest,
   validateShadowResponse,
   retrieveShadowContext,
-  SHADOW_SYSTEM_PROMPT,
+  composeShadowSystemPrompt,
 } from '@/src/server/pilot/shadowChat';
 import { buildAzureAiChatCompletionsUrl, getAzureAiRuntimeConfig } from '@/src/server/pilot/azureAiRuntime';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
@@ -314,7 +314,12 @@ async function routeLlmCall(ctx: LlmRouteContext): Promise<LlmRouteResult> {
     userProfile, tierResult, contextOutput, classification,
     message, userId, organizationId, userRole, athleteId, unlockState,
     conversationHistory } = ctx;
-  const trustBoundaryPrompt = `${SHADOW_SYSTEM_PROMPT}
+  // Length budget and audience register are composed per request: the quick
+  // tiers get a ~150-word budget (the base prompt has none, and every
+  // deployment measured 14-17k characters per answer without one), and the
+  // register follows the authenticated role -- athletes are assumed minors, so
+  // their register drops the dark humor and holds an ~8th-grade reading level.
+  const trustBoundaryPrompt = `${composeShadowSystemPrompt({ role: userRole, sessionType })}
 
 ## EVIDENCE BOUNDARY
 Only describe a claim as supported, proven, or evidence-based when verified evidence for that claim is present in the authorized request context. Never invent citations, case counts, confidence values, or outcomes. When verified evidence is absent, label the claim RESEARCH NEEDED.`;
