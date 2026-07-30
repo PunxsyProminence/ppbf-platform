@@ -11,9 +11,18 @@ jest.mock('./shadowResearch', () => ({
   createShadowResearchRequirement: jest.fn(),
   listShadowResearchRequirements: jest.fn(),
 }));
+jest.mock('./shadowEmbeddings', () => ({
+  ...jest.requireActual('./shadowEmbeddings'),
+  // Enablement and the network call are mocked; cosineSimilarity stays REAL
+  // so the ranking under test is the real math.
+  isSemanticLibrarySearchEnabled: jest.fn(() => false),
+  embedText: jest.fn(),
+  getEmbeddingDeploymentName: jest.fn(() => 'test-embedding'),
+}));
 
 import { assertActorCanAccessAthlete } from './access';
 import { query, queryOne } from './db';
+import { embedText, isSemanticLibrarySearchEnabled } from './shadowEmbeddings';
 import {
   createShadowLibraryChunk,
   normalizeSearchScope,
@@ -23,6 +32,8 @@ import {
 const mockQuery = query as jest.MockedFunction<typeof query>;
 const mockQueryOne = queryOne as jest.MockedFunction<typeof queryOne>;
 const mockAssertActorCanAccessAthlete = jest.mocked(assertActorCanAccessAthlete);
+const mockIsSemanticEnabled = jest.mocked(isSemanticLibrarySearchEnabled);
+const mockEmbedText = jest.mocked(embedText);
 
 describe('SHADOW library search scope', () => {
   beforeEach(() => {
@@ -200,5 +211,92 @@ describe('SHADOW library search scope', () => {
     expect(String(stateUpdate?.[0])).toContain("ingest_state = 'chunking'");
     expect(String(stateUpdate?.[0])).toContain('index_completed_at = null');
     expect(String(stateUpdate?.[0])).not.toContain("ingest_state = 'indexed'");
+  });
+});
+
+describe('SHADOW library semantic search', () => {
+  const searchInput = {
+    organizationId: 'org-1',
+    actorAccountId: 'acct-1',
+    actorRole: 'organization_admin' as const,
+    queryText: 'jab timing drills',
+    limit: 2,
+  };
+
+  function candidate(chunkId: string, embedding: number[], authorityTier = 3) {
+    return {
+      chunk_id: chunkId,
+      document_id: 'doc-1',
+      source_id: 'src-1',
+      subject_id: null,
+      ordinal: 0,
+      document_name: 'Coaching Manual',
+      source_title: 'Manual',
+      source_publisher: null,
+      source_type: 'textbook',
+      authority_tier: authorityTier,
+      source_status: 'active',
+      publication_date: null,
+      text_content: 'chunk text',
+      score: 0,
+      embedding,
+    };
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAssertActorCanAccessAthlete.mockResolvedValue(undefined);
+    // clearAllMocks does not restore factory implementations, but explicit
+    // mockReturnValue state is cleared -- each test block re-states enablement
+    // so no test depends on a neighbor's setting.
+    mockIsSemanticEnabled.mockReturnValue(true);
+  });
+
+  it('ranks candidates by real cosine similarity and never runs the keyword SQL', async () => {
+    mockEmbedText.mockResolvedValue([1, 0]);
+    mockQuery.mockResolvedValueOnce([
+      candidate('chunk_far', [0.1, 0.99]),
+      candidate('chunk_near', [0.98, 0.05]),
+      candidate('chunk_mid', [0.7, 0.7]),
+    ] as never);
+
+    const results = await searchShadowLibrary(searchInput);
+    expect(results.map((r) => r.chunk_id)).toEqual(['chunk_near', 'chunk_mid']);
+    expect(results[0].score).toBeGreaterThan(results[1].score);
+    expect(results[0]).not.toHaveProperty('embedding');
+    // One db call: the candidate load. The keyword statement never ran.
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+    expect(String(mockQuery.mock.calls[0][0])).toContain('c.embedding is not null');
+  });
+
+  it('falls back to keyword search when every candidate is below the relevance floor', async () => {
+    mockEmbedText.mockResolvedValue([1, 0]);
+    mockQuery
+      .mockResolvedValueOnce([candidate('chunk_noise', [0.01, 0.999])] as never)
+      .mockResolvedValueOnce([] as never);
+
+    const results = await searchShadowLibrary(searchInput);
+    expect(results).toEqual([]);
+    expect(mockQuery).toHaveBeenCalledTimes(2);
+    expect(String(mockQuery.mock.calls[1][0])).toContain("like '%' || $4 || '%'");
+  });
+
+  it('falls back to keyword search when the embedding call degrades to null', async () => {
+    mockEmbedText.mockResolvedValue(null);
+    mockQuery.mockResolvedValueOnce([] as never);
+
+    await searchShadowLibrary(searchInput);
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+    expect(String(mockQuery.mock.calls[0][0])).toContain("like '%' || $4 || '%'");
+  });
+
+  it('stays fully on the keyword path when the feature is disabled', async () => {
+    mockIsSemanticEnabled.mockReturnValue(false);
+    mockQuery.mockResolvedValueOnce([] as never);
+
+    await searchShadowLibrary(searchInput);
+    expect(mockEmbedText).not.toHaveBeenCalled();
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+    expect(String(mockQuery.mock.calls[0][0])).toContain("like '%' || $4 || '%'");
   });
 });

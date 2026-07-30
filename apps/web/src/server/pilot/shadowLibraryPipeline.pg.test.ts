@@ -62,6 +62,7 @@ const SCHEMA_FILES = [
   'pilot_slice_postgres.sql',
   'pilot_slice_postgres_shadow_runtime_migration.sql',
   'pilot_slice_postgres_shadow_evidence_migration.sql',
+  'pilot_slice_postgres_shadow_chunk_embedding_migration.sql',
 ];
 
 let PG_PORT: number;

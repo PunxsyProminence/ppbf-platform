@@ -48,6 +48,7 @@ const SHADOW_RUNTIME_MIGRATION_FILES = [
   'pilot_slice_postgres_shadow_job_lease_migration.sql',
   'pilot_slice_postgres_board_role_migration.sql',
   'pilot_slice_postgres_shadow_decision_loop_migration.sql',
+  'pilot_slice_postgres_shadow_chunk_embedding_migration.sql',
 ];
 
 const ORG_ID = 'org-job-queue-test';
