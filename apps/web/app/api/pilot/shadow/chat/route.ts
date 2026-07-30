@@ -835,7 +835,16 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
         evidenceSnapshot: {
           bundleId: evidenceBundle.bundleId,
           availability: evidenceBundle.availability,
-          allowedEvidenceIds: evidenceBundle.allowedEvidenceIds,
+          // Context-record ids (near-miss events) ride along: the queued
+          // prompt carries the near-miss context, so the completion validator
+          // must accept those citations or a background answer referencing a
+          // recorded event gets filtered. They are absent from the citation
+          // catalog on purpose -- they persist as prose references, not
+          // library citations, same as the synchronous path.
+          allowedEvidenceIds: [
+            ...evidenceBundle.allowedEvidenceIds,
+            ...(roleBasedContext.evidenceIds ?? []),
+          ],
           citationCatalog: publicEvidenceCitations(evidenceBundle, evidenceBundle.allowedEvidenceIds),
         },
       });
@@ -870,15 +879,21 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     });
 
     // Step 7: Validate response BEFORE displaying to user
+    const contextEvidenceIds = roleBasedContext.evidenceIds ?? [];
     const responseValidation = validateShadowResponse(llmResponse, {
-      allowedEvidenceIds: [...evidenceBundle.allowedEvidenceIds, ...platformEvidenceIds],
+      allowedEvidenceIds: [
+        ...evidenceBundle.allowedEvidenceIds,
+        ...platformEvidenceIds,
+        ...contextEvidenceIds,
+      ],
     });
-    // Platform-rollup ids are authorized for validation but are not library
-    // evidence, so they are kept out of the bundle's own citation record rather
-    // than persisted against a bundle they do not belong to.
-    const platformEvidenceIdSet = new Set(platformEvidenceIds);
+    // Platform-rollup and context-record ids (near-miss events) are authorized
+    // for validation but are not library evidence, so they are kept out of the
+    // bundle's own citation record rather than persisted against a bundle they
+    // do not belong to.
+    const nonBundleEvidenceIdSet = new Set([...platformEvidenceIds, ...contextEvidenceIds]);
     const bundleCitationIds = responseValidation.citationIds
-      .filter((citationId) => !platformEvidenceIdSet.has(citationId));
+      .filter((citationId) => !nonBundleEvidenceIdSet.has(citationId));
     const finalResponse = responseValidation.message;
     const citations = publicEvidenceCitations(evidenceBundle, responseValidation.citationIds);
     const state: ShadowResponseState = responseValidation.filtered ? 'filtered' : providerState;

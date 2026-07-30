@@ -3,6 +3,7 @@
 
 import { assertActorCanAccessAthlete } from './access';
 import type { PilotRole } from './contracts';
+import { listRecentNearMisses } from './shadowNearMisses';
 
 // 5-minute org-level context cache — avoids 3 DB queries per request
 const contextCache = new Map<string, { value: string; expiresAt: number }>();
@@ -62,6 +63,14 @@ export interface ShadowContextResult {
   context: string;
   authorized: boolean;
   reason?: string;
+  /**
+   * Server-derived ids for records injected into the context (currently
+   * near-miss events). Authorized for citation validation the same way
+   * platform-rollup ids are, and like them kept out of the library bundle's
+   * citation persistence -- they are organization records, not library
+   * evidence.
+   */
+  evidenceIds?: string[];
 }
 
 export interface ShadowResponseValidation {
@@ -357,16 +366,71 @@ export async function retrieveShadowContext(params: {
     }
   }
 
-  // Use cache for org-level context (athlete-specific queries are not cached)
-  const cacheKey = `${organizationId}:${userRole}:${athleteId ?? 'org'}`;
-  const cached = getCachedContext(cacheKey);
-  if (cached) return { context: cached, authorized: true };
+  if (!athleteId) {
+    // Org-scoped context is a static authorization statement; safe to cache.
+    const cacheKey = `${organizationId}:${userRole}:org`;
+    const cached = getCachedContext(cacheKey);
+    if (cached) return { context: cached, authorized: true };
+    const context = `Authorized role: ${userRole}. Authorized organization scope: ${organizationId}. Athlete-specific data is not authorized for this request.`;
+    setCachedContext(cacheKey, context);
+    return { context, authorized: true };
+  }
 
-  const context = athleteId
-    ? `Authorized role: ${userRole}. Authorized organization: ${organizationId}. Authorized athlete scope: ${athleteId}.`
-    : `Authorized role: ${userRole}. Authorized organization scope: ${organizationId}. Athlete-specific data is not authorized for this request.`;
-  setCachedContext(cacheKey, context);
-  return { context, authorized: true };
+  // Athlete-scoped context is NOT cached (a comment used to claim this while
+  // the code cached it anyway; with only a static string inside, the lie was
+  // harmless -- with safety records inside, it is not): a near miss flagged a
+  // minute ago must be in the very next answer about that athlete.
+  //
+  // Near misses are the one athlete record where silence is dangerous: an
+  // intensity question answered blind to yesterday's critical event is the
+  // repeat incident the table exists to prevent. Each event carries its
+  // near_miss_id as a citable evidence id, mirroring the platform-rollup
+  // pattern, so the model can reference recorded events without the response
+  // validator discarding them as uncited claims.
+  const header = `Authorized role: ${userRole}. Authorized organization: ${organizationId}. Authorized athlete scope: ${athleteId}.`;
+  try {
+    const nearMisses = await listRecentNearMisses(organizationId, athleteId);
+    if (nearMisses.length === 0) {
+      return {
+        context: `${header}\nNo near-miss events recorded for this athlete in the last 90 days.`,
+        authorized: true,
+        evidenceIds: [],
+      };
+    }
+    const lines = nearMisses.map((nearMiss) => {
+      const date = String(nearMiss.created_at).slice(0, 10);
+      const description = nearMiss.description.replace(/\s+/g, ' ').slice(0, 240);
+      return `- [E:${nearMiss.near_miss_id}] ${date} ${nearMiss.severity.toUpperCase()}: ${description}`;
+    });
+    const hasSevere = nearMisses.some(
+      (nearMiss) => nearMiss.severity === 'high' || nearMiss.severity === 'critical',
+    );
+    return {
+      context: [
+        header,
+        `RECORDED NEAR-MISS EVENTS for this athlete (organization records, last 90 days, most severe first):`,
+        ...lines,
+        'Safety directive: factor these recorded events into any intensity, contact, or progression guidance, and cite the event id when referencing one.'
+          + (hasSevere
+            ? ' A HIGH or CRITICAL event is on record: recommend the coach reviews it before any increase in load or contact.'
+            : ''),
+      ].join('\n'),
+      authorized: true,
+      evidenceIds: nearMisses.map((nearMiss) => nearMiss.near_miss_id),
+    };
+  } catch (error) {
+    // Fail honest, not silent: answering as if the record had been checked
+    // when it could not be read is the unsafe outcome. The model is told the
+    // history is unknown so its guidance stays conservative.
+    console.error('SHADOW near-miss retrieval unavailable', {
+      errorClass: error instanceof Error ? error.name : typeof error,
+    });
+    return {
+      context: `${header}\nNear-miss records could not be retrieved for this request. Treat this athlete's recorded-incident history as unknown and advise conservative progression.`,
+      authorized: true,
+      evidenceIds: [],
+    };
+  }
 }
 
 // Validate and filter LLM response before display
