@@ -73,6 +73,10 @@ export default function ScoutReportPage() {
   const [selectedJob, setSelectedJob] = useState<JobStatusResult | null>(null);
   const [loadingJobs, setLoadingJobs] = useState(true);
   const [error, setError] = useState('');
+  const [generateFocus, setGenerateFocus] = useState('');
+  const [generateBusy, setGenerateBusy] = useState(false);
+  const [generateNotice, setGenerateNotice] = useState('');
+  const [generateError, setGenerateError] = useState('');
 
   const canAccessAdmin = ['admin', 'organization_admin', 'platform_owner', 'coach'].includes(userRole);
   const canViewOrgMetrics = ['admin', 'organization_admin', 'platform_owner'].includes(userRole);
@@ -124,8 +128,51 @@ export default function ScoutReportPage() {
     return () => window.clearTimeout(timer);
   }, [loadData, userRole]);
 
+  // The whole background pipeline existed -- executors, worker, this listing
+  // page, even an unlock metric counting completed reports -- while nothing
+  // in any UI could enqueue one (behavioral audit BC-3). This is the missing
+  // producer: it calls the same chat endpoint any API client would, so every
+  // server gate (role check on the session-type override, worker-enabled
+  // check, rate limits, request validation) applies unchanged. A 503 here
+  // means the worker is off, and the button says so instead of pretending.
+  async function requestGeneration(kind: 'scout_report' | 'board_summary') {
+    if (generateBusy) return;
+    setGenerateBusy(true);
+    setGenerateNotice('');
+    setGenerateError('');
+    const focus = generateFocus.trim();
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/shadow/chat`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: focus || (kind === 'scout_report'
+            ? 'Generate a scout report from my current SHADOW context.'
+            : 'Generate a board summary of current governance signals.'),
+          sessionType: kind,
+        }),
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | { state?: string; jobId?: string; response?: string; error?: string }
+        | null;
+      if (response.ok && payload?.state === 'queued' && payload.jobId) {
+        setGenerateFocus('');
+        setGenerateNotice(`Queued as job ${payload.jobId.slice(0, 8)}… — it appears below once the worker completes it.`);
+        await loadData();
+      } else {
+        setGenerateError(payload?.response || payload?.error || 'The request was not queued.');
+      }
+    } catch {
+      setGenerateError('The generation request could not be sent. Check your connection and try again.');
+    } finally {
+      setGenerateBusy(false);
+    }
+  }
+
   const scoutJobs = jobs.filter((j) => j.sessionType === 'scout_report');
   const heavyBagJobs = jobs.filter((j) => j.sessionType === 'heavy_bag');
+  const boardJobs = jobs.filter((j) => j.sessionType === 'board_summary');
   const safeCompleted = (job: JobStatusResult) => (
     job.status === 'completed'
     && job.safetyStatus === 'passed'
@@ -292,10 +339,48 @@ export default function ScoutReportPage() {
             </p>
           </div>
 
+          <div className="mt-3 border border-[#5a4a3a] bg-[#0f0f0f] p-3">
+            <label htmlFor="generate-focus" className="block text-[10px] font-mono uppercase tracking-[0.14em] text-[#a89478]">
+              Generate (optional focus)
+            </label>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <input
+                id="generate-focus"
+                type="text"
+                value={generateFocus}
+                onChange={(event) => setGenerateFocus(event.target.value)}
+                maxLength={500}
+                placeholder="e.g. progress since the last competition cycle"
+                className="min-w-[220px] flex-1 border border-[#5a4a3a] bg-[#151515] px-3 py-2 text-xs text-[#cfbfae] outline-none focus:border-[#d4a574]"
+                disabled={generateBusy}
+              />
+              <button
+                type="button"
+                onClick={() => void requestGeneration('scout_report')}
+                disabled={generateBusy}
+                className="border-2 border-[#8b4444] bg-[#2a1a1a] px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-[0.12em] text-[#dc2626] transition hover:border-[#dc2626] disabled:opacity-50"
+              >
+                {generateBusy ? 'Queuing…' : 'Generate scout report'}
+              </button>
+              {canViewOrgMetrics ? (
+                <button
+                  type="button"
+                  onClick={() => void requestGeneration('board_summary')}
+                  disabled={generateBusy}
+                  className="border-2 border-[#5a4a3a] bg-[#1a1a1a] px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-[0.12em] text-[#d4a574] transition hover:border-[#d4a574] disabled:opacity-50"
+                >
+                  Generate board summary
+                </button>
+              ) : null}
+            </div>
+            {generateNotice ? <p role="status" className="mt-2 text-xs text-[#d4a574]">{generateNotice}</p> : null}
+            {generateError ? <p role="alert" className="mt-2 text-xs text-[#dc2626]">{generateError}</p> : null}
+          </div>
+
           {loadingJobs ? (
             <p className="mt-4 text-xs text-[#6a5a4a] font-mono">Loading...</p>
           ) : scoutJobs.length === 0 ? (
-            <p className="mt-4 text-xs text-[#6a5a4a] font-mono">No verified Scout Reports are available. Generation remains disabled until the secure scheduled worker is configured.</p>
+            <p className="mt-4 text-xs text-[#6a5a4a] font-mono">No Scout Reports yet. Generate one above — it is processed by the background worker and listed here when complete.</p>
           ) : (
             <div className="mt-4 space-y-3">
               {scoutJobs.map((job) => (
@@ -382,6 +467,30 @@ export default function ScoutReportPage() {
             </div>
           )}
         </section>
+
+        {/* BOARD SUMMARIES */}
+        {canViewOrgMetrics && boardJobs.length > 0 ? (
+          <section className="border-2 border-[#5a4a3a] bg-[#151515] p-5">
+            <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[#d4a574]">
+              Board Summaries ({boardJobs.length})
+            </p>
+            <div className="mt-4 space-y-3">
+              {boardJobs.slice(0, 10).map((job) => (
+                <div key={job.jobId} className="border border-[#5a4a3a] bg-[#0f0f0f] p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <StatusBadge status={job.status} />
+                    <p className="text-[10px] text-[#8a8a8a] font-mono">{job.jobId.slice(0, 8)}… · {new Date(job.createdAt).toLocaleDateString()}</p>
+                  </div>
+                  {safeCompleted(job) && typeof job.output?.summary === 'string' ? (
+                    <p className="mt-3 whitespace-pre-wrap text-xs leading-6 text-[#cfbfae]">{job.output.summary}</p>
+                  ) : job.status === 'completed' ? (
+                    <p className="mt-3 text-xs text-[#8a8a8a] font-mono">Result withheld or unavailable — no validated summary to display.</p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         {/* HEAVY BAG HISTORY */}
         {heavyBagJobs.length > 0 ? (

@@ -35,13 +35,18 @@ export interface JobProcessorResult {
   error?: string;
 }
 
+// Only job types the product can actually enqueue (the chat route's
+// scout/board and background-Heavy-Bag branches), plus film_study which is
+// kept solely so a stray row fails terminally with its honest unavailable
+// code. learning_loop and library_update had executor arms here but no
+// producer anywhere -- learning signals are processed synchronously by the
+// feedback review path, and library updates go through the admin upload
+// pipeline -- so their arms are gone rather than pretending to be a queue.
 const JOB_TYPES = new Set<JobType>([
   'heavy_bag_session',
   'scout_report',
   'board_summary',
-  'library_update',
   'film_study',
-  'learning_loop',
 ]);
 
 // Only Film Study remains gated: it hard-requires multimodal input and the
@@ -259,10 +264,6 @@ async function executeJob(
       return executeScoutReportJob(payload);
     case 'board_summary':
       return executeBoardSummaryJob(payload);
-    case 'learning_loop':
-      return executeLearningLoopJob(payload);
-    case 'library_update':
-      return { skipped: true, reason: 'Library updates handled via admin upload pipeline' };
     case 'film_study':
       throw new Error('SHADOW_JOB_TYPE_UNAVAILABLE');
     default:
@@ -689,9 +690,3 @@ ${trust.authorizedContext}`;
   return { summary, generatedAt: new Date().toISOString() };
 }
 
-async function executeLearningLoopJob(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
-  // Learning loop jobs are already handled synchronously via the feedback endpoint
-  // Do not echo or persist the original potentially sensitive payload.
-  void payload;
-  return { processed: true, note: 'Learning signals are processed from durably correlated feedback.' };
-}
