@@ -1,0 +1,131 @@
+<!-- @dsCard group="Screens" name="Guardian Portal" subtitle="Warm canvas -- minor lookup, waiver renewal, on-canvas proof" -->
+<link rel="stylesheet" href="../ppbf.css">
+<style>
+  body.ppbf { min-height: 100vh; }
+  .sheet { padding: var(--s6); max-width: 1080px; margin: 0 auto; }
+
+  .head-row { display: flex; justify-content: space-between; align-items: flex-start;
+              gap: var(--s6); flex-wrap: wrap; margin-bottom: var(--s6); }
+  .head-copy { max-width: 56ch; }
+  .head-copy h1 { margin: var(--s2) 0 var(--s3); }
+  .head-copy p { margin: 0; }
+
+  /* Governance banner -- structure only; .t-label/.t-body carry the colour so it
+     recolours automatically for the warm ground, same as everywhere else on-canvas. */
+  .gov-banner { background: linear-gradient(90deg, rgba(212,175,74,.22) 0%, transparent 100%);
+                border-left: 4px solid var(--brass-700); padding: var(--s4) var(--s5);
+                border-radius: 0 var(--r-lg) var(--r-lg) 0; margin-bottom: var(--s6); }
+  .gov-banner-lbl { margin-bottom: var(--s2); }
+
+  /* Photo corner mount -- the one aged decorative touch permitted on this screen.
+     Patina brass frame (oxidised hardware, Grit section) around an empty paper
+     slot where a participant photo would sit. Purely decorative, never overlaps
+     a control, badge, or stamp. */
+  .photo-mount { width: 89px; flex-shrink: 0; }
+  .photo-mount-in { min-height: 144px; display: flex; flex-direction: column;
+                     align-items: center; justify-content: center; gap: var(--s3);
+                     text-align: center; padding: var(--s3); }
+  .photo-mount-glyph { font-size: 26px; opacity: .48; }
+  .photo-mount-in .t-label { font-size: 9.5px; line-height: 1.4; }
+
+  .layout { display: grid; gap: var(--s6);
+            grid-template-columns: var(--split-major) var(--split-minor); align-items: start; }
+  @media (max-width: 800px) { .layout { grid-template-columns: 1fr; } }
+
+  .panel { border-radius: var(--r-lg); padding: var(--s5); }
+  .panel h2 { margin: 0 0 var(--s2); }
+  .panel-sub { margin: 0 0 var(--s5); }
+
+  .lookup-grid { display: grid; gap: var(--s5);
+                 grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+
+  .consent-row { display: flex; align-items: flex-start; gap: var(--s3);
+                 margin: var(--s5) 0; cursor: pointer; }
+  .consent-check { width: 22px; height: 22px; flex-shrink: 0; margin-top: 2px;
+                    accent-color: var(--brass-600); border: 2px solid var(--brass-600);
+                    border-radius: var(--r-sm); cursor: pointer; }
+
+  .status-row { display: flex; align-items: center; justify-content: space-between;
+                gap: var(--s4); padding: var(--s4) 0; margin-bottom: var(--s5);
+                border-top: 1px solid rgba(0,0,0,.14); }
+</style>
+
+<body class="ppbf on-canvas">
+<div class="sheet">
+
+  <div class="head-row">
+    <div class="head-copy">
+      <div class="t-eyebrow">PPBF Platform &middot; Family Access</div>
+      <h1 class="t-command" style="font-size: var(--t-2xl);">Guardian Portal</h1>
+      <p class="t-body">Minor participant records and consent, kept current for the person responsible for them.</p>
+    </div>
+
+    <div class="photo-mount frame frame--patina">
+      <span class="rivet rivet--patina rivet--tl"></span><span class="rivet rivet--patina rivet--tr"></span>
+      <span class="rivet rivet--patina rivet--bl"></span><span class="rivet rivet--patina rivet--br"></span>
+      <div class="frame-in mat-paper photo-mount-in">
+        <span class="photo-mount-glyph" aria-hidden="true">&#128100;</span>
+        <span class="t-label">Photo On File</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="gov-banner">
+    <div class="gov-banner-lbl t-label">Layer 0 Governance</div>
+    <div class="gov-banner-msg t-body">All guardian actions are logged and attributable. Only records you are authorized to view will appear below.</div>
+  </div>
+
+  <div class="layout">
+    <!-- MINOR-PARTICIPANT LOOKUP -->
+    <div class="panel mat-paper">
+      <h2 class="t-command" style="font-size: var(--t-md);">Minor Participant Lookup</h2>
+      <p class="panel-sub t-muted">Find a record to review consent, contact information, or safety status.</p>
+
+      <div class="lookup-grid">
+        <div class="field">
+          <label class="t-label" for="gp-name">Full Name</label>
+          <input class="input" id="gp-name" type="text" placeholder="e.g. Marcus D.">
+        </div>
+        <div class="field">
+          <label class="t-label" for="gp-dob">Date of Birth</label>
+          <input class="input" id="gp-dob" type="date">
+        </div>
+        <div class="field">
+          <label class="t-label" for="gp-rel">Guardian Relationship</label>
+          <select class="select" id="gp-rel">
+            <option>Parent</option>
+            <option>Legal Guardian</option>
+            <option>Other</option>
+          </select>
+        </div>
+      </div>
+
+      <button class="btn" style="margin-top: var(--s5);">Look Up Record</button>
+    </div>
+
+    <!-- WAIVER RENEWAL -->
+    <div class="panel mat-paper">
+      <h2 class="t-command" style="font-size: var(--t-md);">Waiver Renewal</h2>
+      <p class="t-body">
+        I confirm the participant information above is accurate and, as parent or legal
+        guardian, I consent to continued participation in PPBF programming under the
+        waiver terms currently on file. This renewal replaces any prior consent record
+        for this participant.
+      </p>
+
+      <label class="consent-row">
+        <input type="checkbox" class="consent-check">
+        <span class="t-body">I have read and agree to the renewal terms above.</span>
+      </label>
+
+      <div class="status-row">
+        <span class="t-label">Current Safety Status</span>
+        <span class="badge badge--cleared"><i>&#10003;</i>Cleared</span>
+      </div>
+
+      <button class="btn" style="width: 100%;">Renew Consent</button>
+    </div>
+  </div>
+
+</div>
+</body>

@@ -548,6 +548,18 @@ body.ppbf {
   background-image: var(--grain-fine), radial-gradient(120% 90% at 50% -10%, rgba(120,90,50,.08), transparent 62%);
   background-blend-mode: overlay, normal;
 }
+/* body.ppbf is an element+class selector (specificity 0,1,1); .on-canvas
+   alone is class-only (0,1,0) and can never outrank it, so
+   <body class="ppbf on-canvas"> silently kept the ink ground no matter
+   what order the rules were written in. This restates the same ground at
+   (0,2,1) so the combination wins unconditionally rather than by accident
+   of source order. Found live while building Guardian Portal — the first
+   real screen to combine the two classes on <body>. */
+body.ppbf.on-canvas {
+  background-color: var(--canvas-warm);
+  background-image: var(--grain-fine), radial-gradient(120% 90% at 50% -10%, rgba(120,90,50,.08), transparent 62%);
+  background-blend-mode: overlay, normal;
+}
 .on-canvas .t-command   { color: #241B12; text-shadow: 0 1px 0 rgba(255,255,255,.4), 0 0 0 transparent; }
 .on-canvas .t-painted   { color: #241B12; text-shadow: 1.5px 1px 0 var(--rust-500), 0 1px 0 rgba(255,255,255,.35); }
 .on-canvas .t-body      { color: #3A2E1D; }

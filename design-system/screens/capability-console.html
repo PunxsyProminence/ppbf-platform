@@ -1,0 +1,149 @@
+<!-- @dsCard group="Screens" name="Capability Console" subtitle="Admin grid -- worn leather, patina brass, ledger tape" -->
+<link rel="stylesheet" href="../ppbf.css">
+<style>
+  body.ppbf { margin: 0; }
+  .console { max-width: 1280px; margin: 0 auto; padding: var(--s6); position: relative;
+             display: flex; flex-direction: column; gap: var(--s6); }
+
+  /* Fixed decorative stain -- pure atmosphere, at most once per page (Law 2 amendment).
+     Sits inside the page padding gutter, ahead of the title and well clear of the
+     Compliance stamp on the opposite side of the header row. */
+  .console > .stain { position: absolute; top: var(--s2); left: 0; }
+
+  /* ---- Header ---- */
+  .head-row { display: flex; justify-content: space-between; align-items: flex-end;
+              flex-wrap: wrap; gap: var(--s4); }
+  .console-title { font-size: var(--t-2xl); margin: var(--s2) 0 0; }
+
+  /* ---- KPI plaque bar: patina frame, not bright brass ---- */
+  .kpi-inner { display: flex; align-items: center; justify-content: center;
+               padding: var(--s5) var(--s6); }
+  .kpi-plaque { display: block; width: 100%; text-align: center;
+                font-size: var(--t-sm); letter-spacing: .14em; }
+
+  /* ---- Golden-section layout: tile grid (major) vs ledger tape (minor) ---- */
+  .layout { display: grid; grid-template-columns: var(--split-major) var(--split-minor);
+            gap: var(--s6); align-items: start; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+  /* ---- Tile grid ---- */
+  .tile-panel { border-radius: var(--r-lg); padding: var(--s5); }
+  .tile-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s5); }
+  @media (max-width: 600px) { .tile-grid { grid-template-columns: repeat(2, 1fr); } }
+  .badge-corner { position: absolute; top: var(--s3); right: var(--s3);
+                  padding: 4px 10px 4px 8px; font-size: 9.5px; }
+
+  /* ---- Ledger tape: Layer 23-25 Continuity Ledger ---- */
+  .ledger-col { display: flex; flex-direction: column; gap: var(--s3); }
+  .ledger-tape {
+    display: flex; flex-direction: column; gap: var(--s4);
+    padding: var(--s5); border-radius: 0;
+    border-top: 3px dashed rgba(0,0,0,.28);
+    border-bottom: 3px dashed rgba(0,0,0,.28);
+  }
+  .ledger-row { display: flex; gap: var(--s4); align-items: baseline;
+                padding-bottom: var(--s3); border-bottom: 1px dashed rgba(0,0,0,.14); }
+  .ledger-row:last-child { border-bottom: 0; padding-bottom: 0; }
+  .ledger-time { flex-shrink: 0; width: 50px; font: 700 12px/1.5 var(--font-data); letter-spacing: .03em; }
+  .ledger-entry { font: 13px/1.5 var(--font-ui); }
+
+  /* ---- Governance banner (Layer 0, standard wording) ---- */
+  .gov-banner { background: linear-gradient(90deg, rgba(212,175,74,.24) 0%, transparent 100%);
+                border-left: 4px solid var(--brass-500); padding: var(--s4) var(--s5);
+                border-radius: 0 var(--r-lg) var(--r-lg) 0; }
+  .gov-banner-lbl { font: 650 11px/1 var(--font-data); letter-spacing: .12em; text-transform: uppercase;
+                    color: var(--brass-300); margin-bottom: var(--s2); }
+  .gov-banner-msg { font-size: var(--t-sm); line-height: 1.55; color: var(--bone-300); }
+</style>
+
+<body class="ppbf">
+<div class="console">
+  <span class="stain stain--sm"></span>
+
+  <header class="head-row">
+    <div>
+      <div class="t-eyebrow">PPBF Admin Authority</div>
+      <h1 class="t-painted console-title">Capability Management Console</h1>
+    </div>
+    <span class="stamp stamp--green stamp--flat">Compliance Green</span>
+  </header>
+
+  <!-- KPI plaque bar -->
+  <div class="frame frame--patina">
+    <span class="rivet rivet--patina rivet--tl"></span>
+    <span class="rivet rivet--patina rivet--tr"></span>
+    <span class="rivet rivet--patina rivet--bl"></span>
+    <span class="rivet rivet--patina rivet--br"></span>
+    <div class="frame-in mat-leather--worn kpi-inner">
+      <div class="plaque kpi-plaque">STAFF: 12&nbsp;&nbsp;|&nbsp;&nbsp;ATHLETES: 47&nbsp;&nbsp;|&nbsp;&nbsp;PENDING: 3</div>
+    </div>
+  </div>
+
+  <div class="layout">
+    <!-- 3x3 CAPABILITY TILE GRID -->
+    <div class="panel tile-panel mat-leather--worn">
+      <div class="tile-grid">
+        <div class="tile">
+          <span class="tile-glyph">👥</span><span class="tile-name">People</span><span class="tile-meta">59 ACTIVE</span>
+        </div>
+        <div class="tile">
+          <span class="badge badge--restricted badge-corner"><i>▲</i>Expiring</span>
+          <span class="tile-glyph">🔑</span><span class="tile-name">PIN Mgmt</span><span class="tile-meta">104 KEYS</span>
+        </div>
+        <div class="tile">
+          <span class="tile-glyph">🛡</span><span class="tile-name">Compliance</span><span class="tile-meta">98% PASS</span>
+        </div>
+        <div class="tile">
+          <span class="tile-glyph">🤝</span><span class="tile-name">Volunteers</span><span class="tile-meta">21 ACTIVE</span>
+        </div>
+        <div class="tile">
+          <span class="tile-glyph">📰</span><span class="tile-name">Public Interest</span><span class="tile-meta">14 EVENTS</span>
+        </div>
+        <div class="tile">
+          <span class="tile-glyph">👁</span><span class="tile-name">Shadow Intel</span><span class="tile-meta">7 REPORTS</span>
+        </div>
+        <div class="tile">
+          <span class="tile-glyph">🗓</span><span class="tile-name">Scheduling</span><span class="tile-meta">15 CLASSES</span>
+        </div>
+        <div class="tile">
+          <span class="tile-glyph">📊</span><span class="tile-name">Reports</span><span class="tile-meta">3 NEW</span>
+        </div>
+        <div class="tile">
+          <span class="tile-glyph">⚙</span><span class="tile-name">System</span><span class="tile-meta">ALL SYSTEMS GREEN</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- LEDGER TAPE -->
+    <div class="ledger-col">
+      <div class="t-eyebrow">Continuity Ledger · Layer 23–25</div>
+      <div class="mat-paper ledger-tape">
+        <div class="ledger-row">
+          <span class="ledger-time">08:45</span>
+          <span class="ledger-entry">New Athlete 'Sarah J.' registered</span>
+        </div>
+        <div class="ledger-row">
+          <span class="ledger-time">10:15</span>
+          <span class="ledger-entry">Coach M. updated schedule</span>
+        </div>
+        <div class="ledger-row">
+          <span class="ledger-time">11:30</span>
+          <span class="ledger-entry">PIN Management alert: PIN 105 expired</span>
+        </div>
+        <div class="ledger-row">
+          <span class="ledger-time">12:01</span>
+          <span class="ledger-entry">System backup completed</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="gov-banner">
+    <div class="gov-banner-lbl">Layer 0 Governance</div>
+    <div class="gov-banner-msg">
+      All actions are logged and attributable. Coach decisions are reversible only by the head coach.
+      Jason final approval required for production changes.
+    </div>
+  </footer>
+</div>
+</body>

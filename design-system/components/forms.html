@@ -1,0 +1,151 @@
+<!-- @dsCard group="Components" name="Forms" subtitle="Checkboxes, PIN entry grid, signature line, and a contact-risk acknowledgment" -->
+<link rel="stylesheet" href="../ppbf.css">
+<style>
+  body { margin: 0; }
+  .sheet { padding: var(--s6); max-width: 1120px; margin: 0 auto; }
+  h1 { font-family: var(--font-stencil); text-transform: uppercase; font-size: var(--t-2xl);
+       letter-spacing: .05em; color: var(--bone-100); margin: var(--s3) 0 var(--s3);
+       text-shadow: 0 2px 0 rgba(0,0,0,.6), 0 0 22px rgba(232,206,122,.14); }
+  .lede { font-size: var(--t-sm); line-height: 1.62; color: var(--bone-300); max-width: 66ch; margin: 0 0 var(--s6); }
+  h2 { font-family: var(--font-stencil); text-transform: uppercase; font-size: var(--t-md);
+       letter-spacing: .08em; color: var(--brass-300); margin: var(--s7) 0 var(--s5);
+       padding-bottom: var(--s3); border-bottom: 1px solid rgba(212,175,74,.28); }
+  .cap { font-size: 12.8px; line-height: 1.6; color: var(--bone-400); margin: var(--s5) 0 0; max-width: 74ch; }
+  .cap b { color: var(--bone-200); }
+  .cap code { font: 12px var(--font-data); color: var(--brass-300); }
+
+  .panel { border-radius: var(--r-lg); padding: var(--s5); }
+
+  /* ---- Checkbox — a new primitive, plain by design ---- */
+  .check-group { display: flex; flex-direction: column; gap: var(--s4); max-width: 480px; }
+  .check { display: flex; align-items: flex-start; gap: var(--s4); cursor: pointer; }
+  .checkbox {
+    width: 22px; height: 22px; margin: 2px 0 0; flex-shrink: 0;
+    accent-color: var(--brass-600);
+    cursor: pointer;
+  }
+  .checkbox:focus-visible { outline: 0; box-shadow: var(--focus); border-radius: var(--r-sm); }
+
+  /* ---- PIN entry grid — kiosk-sized, gym-floor context (Law 5) ---- */
+  .pin-entry { display: flex; gap: var(--s4); flex-wrap: wrap; }
+  .pin-box {
+    width: var(--tap); height: var(--tap); flex: 0 0 auto;
+    padding: 0; text-align: center;
+    font: 700 var(--t-md)/1 var(--font-data);
+  }
+
+  /* ---- Signature line — an old paper form's X, nothing fancier ---- */
+  .sig-block { max-width: 420px; }
+  .sig-row { display: flex; align-items: flex-end; gap: var(--s4); }
+  .sig-x { font-family: var(--font-stencil); font-size: var(--t-lg); line-height: 1; color: var(--bone-400); }
+  .sig-rule { flex: 1; height: 44px; border-bottom: 1.5px solid rgba(212,175,74,.35); }
+  .sig-block .t-label { display: block; margin-top: var(--s3); }
+
+  /* ---- Waiver copy ---- */
+  .waiver-copy { font-size: var(--t-sm); line-height: 1.65; color: var(--bone-200); margin: var(--s4) 0 0; max-width: 58ch; }
+</style>
+
+<body class="ppbf">
+<div class="sheet">
+  <div class="t-eyebrow">PPBF Design System · Components</div>
+  <h1>Forms</h1>
+  <p class="lede">
+    Every input and select already live in <code style="display:inline">components/instruments.html</code>,
+    but a single field only carries a coach through one line of one form. Waivers, consent,
+    and PIN check-in are multi-field flows with their own small vocabulary on top of that —
+    a checkbox that carries a real acknowledgment, a grid of digit wells sized for the gym
+    floor, and a signature line that has to hold up as well on paper as it does on glass.
+    This sheet is that vocabulary.
+  </p>
+
+  <h2>Checkbox</h2>
+  <div class="panel mat-leather--raised">
+    <div class="check-group">
+      <label class="check">
+        <input type="checkbox" class="checkbox" checked>
+        <span class="t-body">I have read and understood the gym floor rules.</span>
+      </label>
+      <label class="check">
+        <input type="checkbox" class="checkbox">
+        <span class="t-body">Send a copy of this form to my email on file.</span>
+      </label>
+    </div>
+    <p class="cap">
+      A new primitive — none exists yet in <code>ppbf.css</code>. Kept deliberately plain:
+      a native square input with <code>accent-color: var(--brass-600)</code> for the check
+      fill, 22px square with a 13px gap to its label so the whole row is one click target,
+      not just the box. Focus uses the same <code>var(--focus)</code> brass ring as every
+      other control in the system — no bespoke focus treatment, because Law 6 doesn't leave
+      room for one.
+    </p>
+  </div>
+
+  <h2>PIN Entry Grid</h2>
+  <div class="panel mat-leather--raised">
+    <div class="field" style="max-width: 480px">
+      <span class="t-label">6-Digit Floor PIN</span>
+      <div class="pin-entry">
+        <input class="input pin-box" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" value="4" aria-label="PIN digit 1">
+        <input class="input pin-box" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" value="7" aria-label="PIN digit 2">
+        <input class="input pin-box" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="PIN digit 3">
+        <input class="input pin-box" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="PIN digit 4">
+        <input class="input pin-box" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="PIN digit 5">
+        <input class="input pin-box" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="PIN digit 6">
+      </div>
+    </div>
+    <p class="cap">
+      Six individual wells rather than one text field, so an athlete can see how many digits
+      are left at a glance under gym-floor lighting. Each box is a full <code>--tap</code>
+      (55px) square set in <code>--t-md</code> (19.1px) mono type — Law 5's kiosk minimums —
+      and reuses <code>.input</code> for the recessed leather well and the brass
+      <code>var(--focus)</code> ring on focus, so nothing about the focus state had to be
+      invented twice.
+    </p>
+  </div>
+
+  <h2>Signature Line</h2>
+  <div class="panel mat-leather--raised">
+    <div class="sig-block">
+      <div class="sig-row">
+        <span class="sig-x">X</span>
+        <span class="sig-rule"></span>
+      </div>
+      <span class="t-label">Signature</span>
+    </div>
+    <p class="cap">
+      An "X" mark and a bare rule — the whole block is two elements and a mono caption,
+      nothing more. No signature-pad canvas, no drawn-ink flourish: the system already
+      spends its one hand-lettered voice on <code>.t-hand</code> for cork notes, and a
+      signature line doesn't need a second. The rule sits at 35% brass so it reads as a
+      line pressed into the leather rather than a form-builder's blue underline.
+    </p>
+  </div>
+
+  <h2>Contact-Risk Acknowledgment</h2>
+  <div class="panel mat-leather--raised" style="position: relative">
+    <span class="stain" style="top: var(--s4); right: var(--s5)"></span>
+    <div class="t-command" style="font-size: var(--t-md)">Sparring &amp; Contact Waiver</div>
+    <p class="waiver-copy">
+      Boxing is a contact sport. Training and sparring carry real risk of injury, including
+      cuts, bruising, and — rarely — more serious injury. Headgear and gloves are required
+      for all sparring, and every session is stopped at the first sign of an athlete in
+      distress, but no protective equipment removes the risk entirely.
+    </p>
+    <label class="check" style="margin-top: var(--s5); max-width: 58ch">
+      <input type="checkbox" class="checkbox">
+      <span class="t-body">I have read the risks described above and accept them for the athlete named on this form.</span>
+    </label>
+    <p class="cap">
+      The one place in the system where <code>.stain</code> is allowed near real content
+      instead of staying purely atmospheric (see the README's Grit section and Law 2's
+      <code>--rust-*</code> amendment). Everywhere else it sits in an empty decorative
+      corner, away from anything a person reads or presses. Here the copy is naming an
+      actual, literal risk of blood, so one stain is sanctioned closer to the words that
+      describe it — while still parked in the top-right corner, away from the copy below it,
+      still <code>pointer-events: none</code>, and never touching the checkbox or its label
+      further down — the one input this panel contains. It appears exactly once on this
+      page, which is the limit everywhere else too.
+    </p>
+  </div>
+</div>
+</body>
