@@ -56,15 +56,6 @@ interface ShadowMessage {
   citations?: ShadowDisplayCitation[];
 }
 
-interface ExplainabilityChain {
-  confidence: number; // 0-100, capped at 95%
-  confidenceLevel: '🟢 High' | '🟡 Moderate' | '🟠 Low' | '🔴 Speculative';
-  reasoning: string;
-  evidenceCount: number;
-  disclaimers: string[];
-  alternatives?: string[];
-}
-
 interface ShadowAIResult {
   success: boolean;
   state: ShadowResponseState;
@@ -78,7 +69,6 @@ interface ShadowAIResult {
   async?: boolean;
   jobId?: string;
   error?: string;
-  explainability?: ExplainabilityChain;
   evidenceTier?: ShadowEvidenceTier;
   handoff?: string;
   citations?: ShadowDisplayCitation[];
