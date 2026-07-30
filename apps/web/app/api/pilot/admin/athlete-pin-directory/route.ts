@@ -18,8 +18,8 @@ interface AthletePinDirectoryRow {
 export async function GET(request: NextRequest) {
   try {
     const principal = await requireMicrosoftAuthenticatedPrincipal(request);
-    requireRole(principal, ['organization_admin']);
-    if (!isOrganizationAdminRole(principal.role)) {
+    requireRole(principal, ['organization_admin', 'platform_owner']);
+    if (!isOrganizationAdminRole(principal.role) && principal.role !== 'platform_owner') {
       throw new Error('Forbidden: role not allowed');
     }
 
