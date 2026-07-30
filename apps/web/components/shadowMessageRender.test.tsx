@@ -55,6 +55,7 @@ const BASE: StoredShadowConversationMessage = {
   evidenceTier: null,
   handoff: null,
   createdAt: '2026-07-24T12:00:00.000Z',
+  citations: [],
 };
 
 describe('restored SHADOW message rendering', () => {

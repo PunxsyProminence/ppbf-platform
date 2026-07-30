@@ -113,6 +113,7 @@ describe('SHADOW session client', () => {
       evidenceTier: 'RESEARCH_NEEDED',
       handoff: 'Talk to your medical team before changing any weight-cut plan.',
       createdAt: '2026-07-24T12:00:00.000Z',
+      citations: [],
     })).toMatchObject({
       evidenceTier: 'RESEARCH_NEEDED',
       handoff: 'Talk to your medical team before changing any weight-cut plan.',
@@ -131,6 +132,7 @@ describe('SHADOW session client', () => {
       evidenceTier: null,
       handoff: null,
       createdAt: '2026-07-24T12:00:00.000Z',
+      citations: [],
     });
     expect(restored.evidenceTier).toBe(RESTORED_MESSAGE_FALLBACK_TIER);
     expect(restored.evidenceTier).toBe('RESEARCH_NEEDED');
@@ -147,6 +149,7 @@ describe('SHADOW session client', () => {
       evidenceTier: 'EXPERIMENTAL',
       handoff: null,
       createdAt: '2026-07-24T12:00:00.000Z',
+      citations: [],
     })).toMatchObject({
       id: 'assistant-message',
       type: 'shadow',
@@ -162,9 +165,49 @@ describe('SHADOW session client', () => {
       evidenceTier: null,
       handoff: null,
       createdAt: '2026-07-24T12:00:00.000Z',
+      citations: [],
     })).toMatchObject({
       type: 'user',
       feedbackEligible: false,
     });
+  });
+});
+
+describe('restored citations', () => {
+  const base = {
+    messageId: 'cited-message',
+    role: 'assistant' as const,
+    content: 'Answer with receipts',
+    responseState: 'ok' as const,
+    evidenceTier: 'EMERGING' as const,
+    handoff: null,
+    createdAt: '2026-07-24T12:00:00.000Z',
+  };
+  const citation = {
+    evidenceId: 'ev-1',
+    token: '[E:ev-1]',
+    sourceTitle: 'SHADOW Canonical Authority Model',
+    documentName: 'Authority Model',
+  };
+
+  test('replays stored citations so a reopened answer keeps its receipts', () => {
+    const restored = mapStoredShadowMessage({ ...base, citations: [citation] });
+    expect(restored.citations).toEqual([citation]);
+  });
+
+  test('an answer stored without citations restores with none, not an empty block', () => {
+    const restored = mapStoredShadowMessage({ ...base, citations: [] });
+    expect(restored.citations).toBeUndefined();
+  });
+
+  test('a user turn never carries citations, even if a malformed row had them', () => {
+    const restored = mapStoredShadowMessage({
+      ...base,
+      role: 'user',
+      responseState: null,
+      evidenceTier: null,
+      citations: [citation],
+    });
+    expect(restored.citations).toBeUndefined();
   });
 });

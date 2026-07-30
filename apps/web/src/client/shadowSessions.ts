@@ -28,6 +28,13 @@ export interface OwnedShadowConversation {
   updatedAt: string;
 }
 
+export interface StoredShadowCitation {
+  evidenceId: string;
+  token: string;
+  sourceTitle: string;
+  documentName: string;
+}
+
 export interface StoredShadowConversationMessage {
   messageId: string;
   role: 'user' | 'assistant';
@@ -36,6 +43,7 @@ export interface StoredShadowConversationMessage {
   evidenceTier: StoredShadowEvidenceTier | null;
   handoff: string | null;
   createdAt: string;
+  citations: StoredShadowCitation[];
 }
 
 export interface RestoredShadowMessage {
@@ -46,6 +54,7 @@ export interface RestoredShadowMessage {
   state?: StoredShadowResponseState;
   evidenceTier: StoredShadowEvidenceTier;
   handoff?: string;
+  citations?: StoredShadowCitation[];
   feedbackEligible: boolean;
 }
 
@@ -162,7 +171,38 @@ function parseMessage(value: unknown): StoredShadowConversationMessage {
     evidenceTier: isStoredEvidenceTier(evidenceTier) ? evidenceTier : null,
     handoff: typeof handoff === 'string' && handoff.trim() ? handoff : null,
     createdAt: requiredIsoTimestamp(value, 'createdAt'),
+    citations: parseCitations(value.citations),
   };
+}
+
+// An absent field is not malformed -- rows written before citations were
+// persisted, and servers older than this client, both send nothing. A present
+// field with the wrong shape is malformed, and follows this parser's existing
+// convention of failing loudly rather than rendering wrong receipts.
+function parseCitations(value: unknown): StoredShadowCitation[] {
+  if (value === undefined || value === null) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    throw new ShadowSessionsRequestError(502, 'SHADOW session messages were malformed.');
+  }
+  return value.map((entry) => {
+    if (
+      !isRecord(entry)
+      || typeof entry.evidenceId !== 'string'
+      || typeof entry.token !== 'string'
+      || typeof entry.sourceTitle !== 'string'
+      || typeof entry.documentName !== 'string'
+    ) {
+      throw new ShadowSessionsRequestError(502, 'SHADOW session messages were malformed.');
+    }
+    return {
+      evidenceId: entry.evidenceId,
+      token: entry.token,
+      sourceTitle: entry.sourceTitle,
+      documentName: entry.documentName,
+    };
+  });
 }
 
 async function parseJsonResponse(
@@ -243,6 +283,11 @@ export function mapStoredShadowMessage(
       ? (message.evidenceTier ?? RESTORED_MESSAGE_FALLBACK_TIER)
       : RESTORED_MESSAGE_FALLBACK_TIER,
     handoff: message.role === 'assistant' ? (message.handoff ?? undefined) : undefined,
+    // Receipts belong to SHADOW's answers only, and an empty list stays
+    // undefined so the renderer draws no empty Sources block.
+    citations: message.role === 'assistant' && message.citations.length > 0
+      ? message.citations
+      : undefined,
     feedbackEligible: message.role === 'assistant' && Boolean(state),
   };
 }
