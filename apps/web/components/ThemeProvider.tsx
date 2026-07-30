@@ -14,6 +14,7 @@ export type PpbfTheme = "tactical" | "retro";
 
 const STORAGE_KEY = "ppbf-theme";
 const THEME_CHANGE_EVENT = "ppbf-theme-change";
+const DEFAULT_THEME: PpbfTheme = "retro";
 
 type ThemeContextValue = {
   theme: PpbfTheme;
@@ -35,12 +36,14 @@ function applyThemeToDocument(theme: PpbfTheme) {
 }
 
 function readStoredTheme(): PpbfTheme {
-  if (typeof window === "undefined") return "tactical";
+  if (typeof window === "undefined") return DEFAULT_THEME;
   try {
     const value = window.localStorage.getItem(STORAGE_KEY);
-    return value === "retro" ? "retro" : "tactical";
+    if (value === "tactical") return "tactical";
+    if (value === "retro") return "retro";
+    return DEFAULT_THEME;
   } catch {
-    return "tactical";
+    return DEFAULT_THEME;
   }
 }
 
@@ -59,7 +62,7 @@ function getSnapshot(): PpbfTheme {
 }
 
 function getServerSnapshot(): PpbfTheme {
-  return "tactical";
+  return DEFAULT_THEME;
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
@@ -109,15 +112,15 @@ export function useTheme(): ThemeContextValue {
   return ctx;
 }
 
-/** Safe for places that may render outside provider (returns tactical defaults). */
+/** Safe for places that may render outside provider (returns default theme). */
 export function useThemeOptional(): ThemeContextValue {
   const ctx = useContext(ThemeContext);
   return (
     ctx ?? {
-      theme: "tactical",
+      theme: DEFAULT_THEME,
       setTheme: () => undefined,
       toggleTheme: () => undefined,
-      isRetro: false,
+      isRetro: DEFAULT_THEME === "retro",
     }
   );
 }
