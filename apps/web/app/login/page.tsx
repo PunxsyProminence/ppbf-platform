@@ -16,7 +16,7 @@ interface LoginAnnouncement {
   id: string;
   message: string;
   authorName: string;
-  authorRole: ClubRole | 'system';
+  authorRole: ClubRole | 'system' | string;
   createdAt: string;
 }
 
@@ -27,6 +27,23 @@ const DEFAULT_ANNOUNCEMENT: LoginAnnouncement = {
   authorRole: 'system',
   createdAt: 'Operational Baseline',
 };
+
+function formatAnnouncementTime(value: string): string {
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) {
+    return value;
+  }
+  try {
+    return new Date(parsed).toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return value;
+  }
+}
 
 function AnnouncementCard({ item }: Readonly<{ item: LoginAnnouncement }>) {
   return (
@@ -53,6 +70,8 @@ interface LoginTabProps {
   authErrorMessage: string;
   selectedMethod: LoginMethod;
   setSelectedMethod: (method: LoginMethod) => void;
+  gymNotices: LoginAnnouncement[];
+  noticesLoading: boolean;
 }
 
 function SignInMethodButton({
@@ -95,7 +114,6 @@ function SignInMethodButton({
 function LoginTabContent(props: Readonly<LoginTabProps>) {
   return (
     <div className="space-y-6">
-      {/* IMPROVED: Sign-In Method Selector */}
       <div className="grid gap-3 rounded-[24px] border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-md)]">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--black)] mb-2">Choose Sign-In Method</p>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -116,7 +134,6 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
         </div>
       </div>
 
-      {/* Microsoft Sign-In Method */}
       {props.selectedMethod === 'microsoft' && (
         <div className="grid gap-4 rounded-[24px] border-2 border-[var(--gray-dark)] bg-white p-6 shadow-[var(--shadow-lg)]">
           <div>
@@ -143,7 +160,6 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
         </div>
       )}
 
-      {/* PIN Sign-In Method */}
       {props.selectedMethod === 'pin' && (
         <form
           onSubmit={(e) => {
@@ -155,7 +171,7 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">Account PIN Sign In</p>
             <p className="mt-2 text-sm text-[var(--gray-dark)] leading-relaxed">
-              Enter your Account ID and PIN. Ask your coach or admin if you don&apos;t have one.
+              Enter your Account ID and PIN. Ask your coach or admin if you don't have one.
             </p>
             <p className="mt-3 rounded-lg border border-[rgba(0,0,0,0.12)] bg-[var(--canvas-tan-light)] px-3 py-2 text-sm text-[var(--gray-dark)]">
               First time here with an activation code?{' '}
@@ -224,13 +240,12 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
         </form>
       )}
 
-      {/* Help & Recovery */}
       <div className="rounded-[24px] border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-sm)]">
         <div className="space-y-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">💡 Need Help?</p>
             <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
-              If you don&apos;t have an Account ID or PIN, or if you&apos;ve forgotten your PIN, contact your gym admin or coach. They can create a new account or reset your PIN.
+              If you don't have an Account ID or PIN, or if you've forgotten your PIN, contact your gym admin or coach. They can create a new account or reset your PIN.
             </p>
             <Link
               href="/athlete/sign-in"
@@ -239,15 +254,19 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
               Open Simple Athlete PIN Sign-In
             </Link>
           </div>
-          {/* Static gym notice. This block used to present itself as "Latest
-              Updates" backed by a fetch that could never succeed: the
-              announcements endpoint requires an authenticated session, and
-              everyone on the login page is signed out by definition. The
-              fetch failed silently on every load and the panel only ever
-              showed the hardcoded default -- so now it says it is static. */}
+
+          {/* Live gym notices — public endpoint scopes to default org only */}
           <div className="rounded-lg border border-[rgba(0,0,0,0.12)] bg-white p-3">
             <p className="text-xs font-semibold text-[var(--black)] mb-2">📢 Gym Notice</p>
-            <AnnouncementCard item={DEFAULT_ANNOUNCEMENT} />
+            {props.noticesLoading ? (
+              <p className="text-sm text-[var(--gray-medium)]">Loading notices…</p>
+            ) : (
+              <div className="space-y-2">
+                {props.gymNotices.map((item) => (
+                  <AnnouncementCard key={item.id} item={item} />
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -263,6 +282,8 @@ function LoginPageContent() {
   const [loginPin, setLoginPin] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState('');
+  const [gymNotices, setGymNotices] = useState<LoginAnnouncement[]>([DEFAULT_ANNOUNCEMENT]);
+  const [noticesLoading, setNoticesLoading] = useState(true);
 
   const authErrorMessage = (() => {
     const error = searchParams.get('error');
@@ -284,6 +305,63 @@ function LoginPageContent() {
 
     return 'Microsoft sign-in failed. Please try again.';
   })();
+
+  // Live gym notices (public, default org)
+  useEffect(() => {
+    const controller = new AbortController();
+
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/announcements/public?limit=3`, {
+          method: 'GET',
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          setGymNotices([DEFAULT_ANNOUNCEMENT]);
+          return;
+        }
+
+        const payload = (await response.json()) as {
+          ok?: boolean;
+          announcements?: Array<{
+            announcement_id: string;
+            message: string;
+            author_name: string;
+            author_role: string;
+            created_at: string;
+          }>;
+        };
+
+        const rows = payload.announcements ?? [];
+        if (!payload.ok || rows.length === 0) {
+          setGymNotices([DEFAULT_ANNOUNCEMENT]);
+          return;
+        }
+
+        setGymNotices(
+          rows.map((row) => ({
+            id: row.announcement_id,
+            message: row.message,
+            authorName: row.author_name,
+            authorRole: row.author_role,
+            createdAt: formatAnnouncementTime(row.created_at),
+          })),
+        );
+      } catch (error) {
+        if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
+          return;
+        }
+        setGymNotices([DEFAULT_ANNOUNCEMENT]);
+      } finally {
+        if (!controller.signal.aborted) {
+          setNoticesLoading(false);
+        }
+      }
+    })();
+
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
@@ -311,9 +389,6 @@ function LoginPageContent() {
         }
 
         if (!resolution.ok) {
-          // A valid session that simply has not chosen a PIN yet. Keep it and
-          // send them to finish, rather than clearing it and leaving them
-          // staring at a sign-in form they have already passed.
           if (resolution.reason === 'pin_change_required') {
             router.replace('/change-pin');
             return;
@@ -336,7 +411,6 @@ function LoginPageContent() {
     return () => controller.abort();
   }, [router]);
 
-
   async function loginWithPin() {
     const acctId = loginAccountId.trim();
     const pinCode = loginPin.trim();
@@ -351,14 +425,14 @@ function LoginPageContent() {
 
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      const timeout = setTimeout(() => controller.abort(), 10000);
 
       const response = await fetch(`${apiBase()}/api/pilot/auth/login`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          account_id: acctId, 
+        body: JSON.stringify({
+          account_id: acctId,
           pin: pinCode,
         }),
         signal: controller.signal,
@@ -384,9 +458,6 @@ function LoginPageContent() {
 
       const resolution = await loadAuthoritativeRoleSession(`${apiBase()}/api/pilot/auth/session`);
       if (!resolution.ok) {
-        // The sign-in itself succeeded; this account is just still on the
-        // starting PIN. Reporting "could not be verified" here would tell an
-        // athlete their correct PIN had failed.
         if (resolution.reason === 'pin_change_required') {
           router.replace('/change-pin');
           return;
@@ -433,7 +504,7 @@ function LoginPageContent() {
             </div>
             <h1 className="mt-4 text-4xl font-black tracking-[0.1em] text-[var(--black)] md:text-5xl">The Bell</h1>
             <p className="mt-3 text-sm leading-relaxed text-[var(--gray-dark)]">
-              Sign in with your Account ID and PIN, or continue with Microsoft. You&apos;ll land on the right dashboard for your role.
+              Sign in with your Account ID and PIN, or continue with Microsoft. You'll land on the right dashboard for your role.
             </p>
           </div>
 
@@ -450,6 +521,8 @@ function LoginPageContent() {
               authErrorMessage={authErrorMessage}
               selectedMethod={selectedMethod}
               setSelectedMethod={setSelectedMethod}
+              gymNotices={gymNotices}
+              noticesLoading={noticesLoading}
             />
           </div>
         </section>
