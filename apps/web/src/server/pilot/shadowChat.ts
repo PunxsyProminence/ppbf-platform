@@ -379,11 +379,54 @@ export function validateShadowResponse(
   let message = response;
   const normalized = response.toLowerCase().replace(/\s+/g, ' ');
 
-  // Check for diagnosis claims
-  if (
-    /\b(you|your symptoms|the athlete|this)\b.{0,40}\b(have|has|definitely|confirm|confirms|proves|means)\b.{0,60}\b(concussion|fracture|injury|disease|syndrome|disorder|condition)\b/.test(normalized)
-    || /you (have|have a|got|get|experience|develop).*(?:concussion|fracture|injury|pain|sprain|strain|trauma|condition|disease|syndrome|disorder)/i.test(response)
-  ) {
+  // Check for diagnosis claims.
+  //
+  // The second pattern's gap was an unbounded `.*`, so prevention advice --
+  // "warm up so you don't get a shoulder strain", the opposite of a diagnosis
+  // -- matched "you ... get ... strain" across the whole line and withheld the
+  // answer. Measured live on 2026-07-30, this was the largest source of
+  // filtered benign answers (a warm-up answer that never mentions injury
+  // prevention is a bad warm-up answer). The gap is now bounded, and a match
+  // immediately preceded by prevention or negation language is not treated as
+  // a diagnosis. Real diagnoses still filter -- "you have a concussion" is
+  // also caught by the first pattern, which is untouched.
+  // The first pattern also fired on conditional deferral -- "If you have
+  // shoulder pain or a recent injury, get cleared by a medical professional"
+  // is DOCTRINE-mandated language, and it was withheld as a diagnostic claim
+  // (measured live 2026-07-30: half of all filtered warm-up answers were the
+  // model saying exactly this). A match whose subject is introduced by a
+  // conditional is hypothetical, not an assertion about this athlete.
+  let makesDiagnosisClaim = false;
+  const assertedDiagnosisPattern = /\b(you|your symptoms|the athlete|this)\b.{0,40}\b(have|has|definitely|confirm|confirms|proves|means)\b.{0,60}\b(concussion|fracture|injury|disease|syndrome|disorder|condition)\b/g;
+  // Clause-scoped: a conditional anywhere earlier in the same clause makes the
+  // subject hypothetical ("if at any point you have sharp pain, stop"). The
+  // window stops at sentence punctuation so a conditional in a PREVIOUS
+  // sentence cannot excuse an assertion in this one. "should" is deliberately
+  // not a cue: "you should see a doctor because you have a concussion" is an
+  // asserted diagnosis and must keep filtering.
+  const conditionalCue = (preceding: string) => {
+    const clause = preceding.split(/[.!?;\n]/).pop() ?? '';
+    return /\b(if|when|whenever|unless|in case)\b/.test(clause);
+  };
+  for (const match of normalized.matchAll(assertedDiagnosisPattern)) {
+    const preceding = normalized.slice(Math.max(0, (match.index ?? 0) - 60), match.index ?? 0);
+    if (!conditionalCue(preceding)) {
+      makesDiagnosisClaim = true;
+      break;
+    }
+  }
+  if (!makesDiagnosisClaim) {
+    const diagnosisPattern = /you (have|have a|got|get|experience|develop)\b.{0,30}?\b(?:concussion|fracture|injury|pain|sprain|strain|trauma|condition|disease|syndrome|disorder)/gi;
+    const preventionCue = /(reduc|lower|prevent|avoid|risk|chance|less\s+likely|protect|keep\w*\s+you\s+from|don.?t|do\s+not|won.?t|shouldn.?t|without)/i;
+    for (const match of response.matchAll(diagnosisPattern)) {
+      const preceding = response.slice(Math.max(0, (match.index ?? 0) - 60), match.index ?? 0);
+      if (!preventionCue.test(preceding) && !conditionalCue(preceding.toLowerCase())) {
+        makesDiagnosisClaim = true;
+        break;
+      }
+    }
+  }
+  if (makesDiagnosisClaim) {
     filtered = true;
     reasons.push('Contains diagnostic claim without evidence or human deference');
   }
@@ -491,7 +534,23 @@ export function validateShadowResponse(
   // every response therefore slipped this check -- "94% of athletes improve"
   // passed, and only the separate "data shows" framing above caught the variant
   // that happened to carry it.
-  const makesQuantifiedEvidenceClaim = /\b\d+(?:\.\d+)?\s*%|\b\d+\s+(?:similar\s+)?(cases?|athletes?|participants?|studies?)\b/i.test(response);
+  //
+  // Not every percentage is an evidence claim, though. Two forms of coaching
+  // speech were measured live (2026-07-30) tripping this rule and withholding
+  // benign answers:
+  //   * intensity instruction -- "round 1 at 50% effort", "build to 80%"
+  //   * the platform's own KEY PHRASE, "10% coach, 90% athlete", which the
+  //     system prompt tells the model to use naturally
+  // Those are stripped before the test. The strip is deliberately narrow:
+  // "at/to N%" (optionally followed by an effort word) and "N% effort/
+  // intensity/power/speed/pace/max/capacity". Quantified assertions -- "94% of
+  // athletes", "raises heart rate by 20%" -- do not match either form and
+  // still filter without a citation.
+  const quantSource = response
+    .replace(/\b10\s*%\s*coach\b[^.\n]{0,10}\b90\s*%\s*athlete\b/gi, '')
+    .replace(/\b(?:at|to)\s+\d+(?:\.\d+)?\s*%(?:\s*(?:of\s+max(?:imum)?|effort|intensity|power|speed|pace|capacity))?(?!\s*of\b)/gi, '')
+    .replace(/\b\d+(?:\.\d+)?\s*%\s*(?:effort|intensity|power|speed|pace|max(?:imum)?|capacity)\b/gi, '');
+  const makesQuantifiedEvidenceClaim = /\b\d+(?:\.\d+)?\s*%|\b\d+\s+(?:similar\s+)?(cases?|athletes?|participants?|studies?)\b/i.test(quantSource);
   if ((makesEvidenceClaim || makesQuantifiedEvidenceClaim) && citationIds.length === 0) {
     filtered = true;
     reasons.push('Makes an evidence or quantitative claim without an exact retrieved evidence citation');

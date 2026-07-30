@@ -321,6 +321,40 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
         expect(result.filtered).toBe(false);
       });
 
+      describe('coaching speech that was withheld as a false positive', () => {
+        // Measured live 2026-07-30 against the staging deployment: only 2 of 6
+        // benign warm-up answers were deliverable. The three offenders below
+        // are ordinary coaching speech, not evidence claims or diagnoses.
+        test.each([
+          ['an intensity instruction', 'Round 1 at 50% effort focusing on footwork, round 2 at 70%.'],
+          ['an intensity word form', 'Shadowbox at 60% intensity to groove your technique.'],
+          ['a build-up instruction', 'Build to 80% power on the final round.'],
+          ['the platform key phrase', 'Lead from the front — 10% coach, 90% athlete. That is the sport.'],
+          ['injury-prevention framing', 'A good warm-up lowers the chance you get a shoulder strain.'],
+          ["negated-injury framing", "Warm up first so you don't get injured when you throw hard."],
+          // DOCTRINE-mandated deferral was withheld as a diagnostic claim: the
+          // conditional subject is hypothetical, not an assertion.
+          ['conditional deferral', 'If you have shoulder or neck pain, or a recent injury, get cleared by a qualified medical professional before training.'],
+          ['when-conditional deferral', 'When you have pain during a session, stop and tell your coach.'],
+        ])('allows %s', (_label, response) => {
+          const result = validateShadowResponse(response);
+          expect(result.filtered).toBe(false);
+        });
+
+        // Loosening those must not reopen what #51 closed.
+        test.each([
+          ['a physiological quantity', 'This raises your heart rate by about 20% before the bag.'],
+          ['a percentage-of-population claim', '94% of athletes improve with this warm-up.'],
+          ['a quantified risk claim', 'There is a 90% chance you get injured fighting like that.'],
+          ['a bare diagnosis', 'You got a concussion in that sparring session.'],
+          ['an asserted diagnosis', 'Your symptoms confirm a concussion.'],
+          ['a definite diagnosis', 'You definitely have a stress fracture.'],
+        ])('still filters %s', (_label, response) => {
+          const result = validateShadowResponse(response);
+          expect(result.filtered).toBe(true);
+        });
+      });
+
       test('still allows a cited quantity, so Omega rollups keep working', () => {
         const evidenceId = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
         const result = validateShadowResponse(
