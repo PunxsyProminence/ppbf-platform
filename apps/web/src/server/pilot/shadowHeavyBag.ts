@@ -76,7 +76,15 @@ export async function executeHeavyBagSync(
         })),
         { role: 'user', content: input.message },
       ],
-      temperature: routing.temperature,
+      // Reasoning deployments reject any non-default temperature outright:
+      //   HTTP 400 "Unsupported value: 'temperature' does not support 0.5 with
+      //   this model. Only the default (1) value is supported." (measured
+      //   0.5s, gpt-5.6-sol, 2026-07-30)
+      // The catch in the chat route turns that into DEGRADED_RESPONSE, so
+      // Heavy Bag failed instantly on every request -- independent of the
+      // provider-timeout defect that used to mask it. The quick-round path
+      // never sent temperature, which is why it worked and this didn't.
+      ...(routing.model.isReasoningModel ? {} : { temperature: routing.temperature }),
       max_completion_tokens: routing.maxTokens,
     }),
     signal: AbortSignal.timeout(routing.model.timeoutMs),
