@@ -117,9 +117,9 @@ async function run() {
     await client.query(
       `insert into pilot.athletes
          (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
-          emergency_contact, active_flag, coach_id)
+          emergency_contact, active_flag, coach_id, created_at, updated_at)
        values ($1, $2, 'Gate Athlete', '2011-02-10', '119', 'active',
-               'Gate Guardian 555-0102', true, $3)
+               'Gate Guardian 555-0102', true, $3, now(), now())
        on conflict (organization_id, athlete_id) do update set
          active_flag = true,
          updated_at = now()`,
