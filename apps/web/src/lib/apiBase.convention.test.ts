@@ -89,7 +89,11 @@ test('every apiBase() fetch states credentials (public endpoints allowlisted)', 
     if (!fs.existsSync(absoluteRoot)) continue;
 
     for (const filePath of collectSourceFiles(absoluteRoot)) {
-      const relative = path.relative(WEB_ROOT, filePath);
+      // Normalized to forward slashes before the allowlist check. path.relative
+      // returns backslashes on Windows, so 'app/public/page.tsx' never matched
+      // there and the deliberately-public form was reported as an offender --
+      // green in CI (ubuntu), failing on every Windows run.
+      const relative = path.relative(WEB_ROOT, filePath).split(path.sep).join('/');
       if (PUBLIC_FETCH_ALLOWLIST.has(relative)) continue;
       const source = fs.readFileSync(filePath, 'utf8');
       for (const match of source.matchAll(API_BASE_FETCH)) {
