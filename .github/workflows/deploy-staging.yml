@@ -220,6 +220,26 @@ jobs:
           echo "::add-mask::$CONN"
           echo "GATE_DB_CONNECTION=$CONN" >> "$GITHUB_ENV"
 
+          # The fixture provisioner refuses to write to a database nobody named
+          # (see apps/web/scripts/lib/postgres-write-target.mjs). Derive the
+          # expected target from the string we just fetched from the
+          # staging-NAMED app, so the assertion is a consistency check on a
+          # target that is already pinned to staging by the lookup above --
+          # this workflow reads app-ppbf-staging literally, never inputs.target.
+          DERIVED="$(CONN="$CONN" node -e '
+            const u = new URL(process.env.CONN);
+            const host = u.hostname.toLowerCase();
+            const db = decodeURIComponent(u.pathname.replace(/^\/+/, ""));
+            if (!host || !db) { process.exit(2); }
+            process.stdout.write(host + "\n" + db);
+          ')"
+          GATE_HOST="$(printf '%s' "$DERIVED" | sed -n 1p)"
+          GATE_DB="$(printf '%s' "$DERIVED" | sed -n 2p)"
+          test -n "$GATE_HOST"
+          test -n "$GATE_DB"
+          echo "GATE_EXPECTED_POSTGRES_HOSTNAME=$GATE_HOST" >> "$GITHUB_ENV"
+          echo "GATE_EXPECTED_POSTGRES_DATABASE=$GATE_DB" >> "$GITHUB_ENV"
+
       # The org id lives in the app's secret store (it is what the app itself
       # runs with), so the gate tests against the same organization the app
       # serves rather than a workflow-hardcoded guess.
@@ -248,6 +268,10 @@ jobs:
         if: inputs.enable_shadow_gate
         env:
           AZURE_POSTGRES_CONNECTION_STRING: ${{ env.GATE_DB_CONNECTION }}
+          # Required by the provisioner's write-target guard; derived above from
+          # the staging app's own connection string.
+          PPBF_EXPECTED_POSTGRES_HOSTNAME: ${{ env.GATE_EXPECTED_POSTGRES_HOSTNAME }}
+          PPBF_EXPECTED_POSTGRES_DATABASE: ${{ env.GATE_EXPECTED_POSTGRES_DATABASE }}
           PPBF_PILOT_DEFAULT_ORG_ID: ${{ env.GATE_DEFAULT_ORG_ID }}
           PILOT_ADMIN_ACCOUNT_ID: org_admin_shadow
           # Same identities the gate step passes below: the provisioner creates

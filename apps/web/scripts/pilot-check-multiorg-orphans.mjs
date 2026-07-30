@@ -80,6 +80,11 @@ const TABLES = [
   'audit_events',
 ];
 
+// High enough to be the complete set for any realistic accumulation of stray
+// ids, low enough that a pathological database cannot make this diagnostic
+// print unboundedly. Exceeding it is reported, never silent.
+const DISTINCT_ID_LIMIT = 500;
+
 export async function checkOrphans(client) {
   const results = [];
 
@@ -97,7 +102,21 @@ export async function checkOrphans(client) {
       const orphanCount = countResult.rows[0].orphan_count;
 
       let sample = [];
+      let truncated = false;
       if (orphanCount > 0) {
+        // Enumerates EVERY distinct orphaned organization_id, not a top-N
+        // sample. The original `limit 10` made this check answer "are there
+        // orphans" but not "which ones", and resolving them needs the complete
+        // set: the first production run reported 43 orphaned rows in
+        // pilot.accounts while naming ten ids covering only 23 of them, so 20
+        // rows belonged to ids the output never mentioned. A cleanup built from
+        // that list would silently miss them and the migration would still
+        // fail.
+        //
+        // Bounded anyway, because an unbounded group-by against an unknown
+        // database is not something a diagnostic should promise -- but when the
+        // bound is hit it is REPORTED rather than quietly applied, so the
+        // output can never read as complete when it is not.
         const sampleResult = await client.query(
           `select t.organization_id, count(*)::int as row_count
            from pilot.${table} t
@@ -106,13 +125,14 @@ export async function checkOrphans(client) {
                select 1 from pilot.organizations o where o.organization_id = t.organization_id
              )
            group by t.organization_id
-           order by row_count desc
-           limit 10`,
+           order by row_count desc, t.organization_id
+           limit ${DISTINCT_ID_LIMIT + 1}`,
         );
-        sample = sampleResult.rows;
+        truncated = sampleResult.rows.length > DISTINCT_ID_LIMIT;
+        sample = truncated ? sampleResult.rows.slice(0, DISTINCT_ID_LIMIT) : sampleResult.rows;
       }
 
-      results.push({ table, orphanCount, sample });
+      results.push({ table, orphanCount, sample, truncated });
     }
     await client.query('COMMIT');
   } catch (error) {
@@ -144,10 +164,27 @@ export async function run() {
 
   console.log('Multi-org organization_id orphan check');
   console.log('======================================');
-  for (const { table, orphanCount, sample } of results) {
-    console.log(`pilot.${table}: ${orphanCount} orphaned row(s)`);
+  for (const { table, orphanCount, sample, truncated } of results) {
+    const named = sample.reduce((sum, row) => sum + row.row_count, 0);
+    console.log(
+      `pilot.${table}: ${orphanCount} orphaned row(s)`
+      + (orphanCount > 0 ? ` across ${sample.length} distinct organization_id(s)` : ''),
+    );
     for (const { organization_id: orgId, row_count: rowCount } of sample) {
       console.log(`    organization_id=${JSON.stringify(orgId)} -> ${rowCount} row(s)`);
+    }
+    if (truncated) {
+      console.log(
+        `    !! more than ${DISTINCT_ID_LIMIT} distinct ids -- list above is TRUNCATED and incomplete`,
+      );
+    } else if (orphanCount > 0 && named !== orphanCount) {
+      // Should be unreachable now the enumeration is complete. If it ever
+      // fires, the ids above do not account for every orphaned row and any
+      // cleanup derived from them would leave the migration still failing --
+      // so say so rather than let the numbers quietly disagree.
+      console.log(
+        `    !! ids above account for ${named} of ${orphanCount} row(s) -- output is inconsistent`,
+      );
     }
   }
   console.log('======================================');
