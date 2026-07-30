@@ -232,13 +232,19 @@ async function callAI(systemPrompt: string, userMessage: string, maxTokens = 409
     response = await fetch(buildAzureAiChatCompletionsUrl(runtime.config), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'api-key': runtime.config.apiKey },
-      signal: AbortSignal.timeout(45_000),
+      // Was 45s, under the 58s a real answer measured on the configured
+      // gpt-5-mini deployment (see shadowRouter.ts). Matches the chat route's
+      // default provider timeout.
+      signal: AbortSignal.timeout(120_000),
       body: JSON.stringify({
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userMessage },
         ],
-        temperature: 0.5,
+        // No temperature: the configured deployments are gpt-5-family
+        // reasoning models, which reject any non-default value outright
+        // (HTTP 400 "Only the default (1) value is supported") -- so every
+        // background job failed instantly. Same defect as shadowHeavyBag.ts.
         max_completion_tokens: maxTokens,
       }),
     });
