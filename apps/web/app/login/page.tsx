@@ -171,7 +171,7 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">Account PIN Sign In</p>
             <p className="mt-2 text-sm text-[var(--gray-dark)] leading-relaxed">
-              Enter your Account ID and PIN. Ask your coach or admin if you don't have one.
+              Enter your Account ID and PIN. Ask your coach or admin if you do not have one.
             </p>
             <p className="mt-3 rounded-lg border border-[rgba(0,0,0,0.12)] bg-[var(--canvas-tan-light)] px-3 py-2 text-sm text-[var(--gray-dark)]">
               First time here with an activation code?{' '}
@@ -245,7 +245,7 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">💡 Need Help?</p>
             <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
-              If you don't have an Account ID or PIN, or if you've forgotten your PIN, contact your gym admin or coach. They can create a new account or reset your PIN.
+              If you do not have an Account ID or PIN, or if you have forgotten your PIN, contact your gym admin or coach. They can create a new account or reset your PIN.
             </p>
             <Link
               href="/athlete/sign-in"
@@ -505,7 +505,7 @@ function LoginPageContent() {
             </div>
             <h1 className="mt-4 text-4xl font-black tracking-[0.1em] text-[var(--black)] md:text-5xl">The Bell</h1>
             <p className="mt-3 text-sm leading-relaxed text-[var(--gray-dark)]">
-              Sign in with your Account ID and PIN, or continue with Microsoft. You'll land on the right dashboard for your role.
+              Sign in with your Account ID and PIN, or continue with Microsoft. You will land on the right dashboard for your role.
             </p>
           </div>
 
