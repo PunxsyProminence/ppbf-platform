@@ -143,6 +143,25 @@ export function classifyRequest(
   const topic = detectTopic(message, role);
   const complexity = calculateComplexityScore(message, role);
 
+  // The mirror of the heavy_bag escalation above, deliberately without a role
+  // gate: an explicit Quick Round request is a downgrade -- cheaper, faster,
+  // shallower context -- so anyone may make one. Only the escalation needs
+  // authorization. Before this branch existed, an explicit quick_round fell
+  // through to organic classification and the session-type mapper escalated on
+  // the mere presence of a manual tier, so asking for the quick answer routed
+  // to the slowest path in the system.
+  if (userManualTier === 'quick_round') {
+    return {
+      tier: 'quick_round',
+      complexity,
+      topic,
+      confidence: 1.0,
+      reasoning: 'User explicitly requested Quick Round session',
+      requiresManualOverride: false,
+      suggestedContextDepth: 'lightweight',
+    };
+  }
+
   // Decision thresholds
   const quickThreshold = 0.4;
   const heavyThreshold = 0.6;

@@ -79,7 +79,7 @@ jest.mock('@/src/server/pilot/shadowContextBuilder', () => ({
 }));
 
 jest.mock('@/src/server/pilot/shadowRouter', () => ({
-  routeRequest: jest.fn(() => ({ model: { displayName: 'Test Model' } })),
+  describeDeployment: jest.fn((name: string) => name),
   tierToSessionType: jest.fn(() => 'quick_round'),
   isAsyncSession: jest.fn(() => false),
 }));

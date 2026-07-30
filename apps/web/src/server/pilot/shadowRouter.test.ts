@@ -1,4 +1,4 @@
-import { routeRequest, tierToSessionType, isAsyncSession, getModelStatus } from './shadowRouter';
+import { routeRequest, tierToSessionType, isAsyncSession, getModelStatus, describeDeployment } from './shadowRouter';
 
 describe('getModelStatus', () => {
   test('reports every deployed model as available', () => {
@@ -66,24 +66,31 @@ describe('provider timeouts are consistent with expected latency', () => {
 });
 
 describe('tierToSessionType', () => {
-  test('quick tier without an override stays quick_round', () => {
-    expect(tierToSessionType('quick_round', 'athlete', false)).toBe('quick_round');
+  // A pure mapping by design. The old signature took (role, isManualOverride)
+  // and escalated quick_round to heavy_bag whenever the flag was set for an
+  // authorized role -- but the flag recorded only that a tier was requested,
+  // not which one, so a coach's explicit "quick_round" came out as heavy_bag.
+  // Manual tiers are honored in classifyRequest, before a tier reaches this.
+  test('quick tier maps to quick_round', () => {
+    expect(tierToSessionType('quick_round')).toBe('quick_round');
   });
 
-  test('heavy tier always maps to heavy_bag regardless of role', () => {
-    expect(tierToSessionType('heavy_bag', 'athlete', false)).toBe('heavy_bag');
+  test('heavy tier maps to heavy_bag', () => {
+    expect(tierToSessionType('heavy_bag')).toBe('heavy_bag');
+  });
+});
+
+describe('describeDeployment', () => {
+  test('a registry deployment is reported by its display name', () => {
+    expect(describeDeployment('gpt-5.6-luna-shadow')).toBe('GPT-5.6 Luna (Quick Round)');
+    expect(describeDeployment('gpt-5.6-sol-shadow')).toBe('GPT-5.6 Sol (Heavy Bag)');
   });
 
-  test('a manual override only escalates to heavy_bag for roles allowed to override', () => {
-    expect(tierToSessionType('quick_round', 'coach', true)).toBe('heavy_bag');
-    expect(tierToSessionType('quick_round', 'admin', true)).toBe('heavy_bag');
-    expect(tierToSessionType('quick_round', 'organization_admin', true)).toBe('heavy_bag');
-    expect(tierToSessionType('quick_round', 'platform_owner', true)).toBe('heavy_bag');
-  });
-
-  test('a manual override request from an ineligible role does not escalate', () => {
-    expect(tierToSessionType('quick_round', 'athlete', true)).toBe('quick_round');
-    expect(tierToSessionType('quick_round', 'parent', true)).toBe('quick_round');
+  test('an env-configured deployment outside the registry is reported by its raw name', () => {
+    // The quick path calls whatever AZURE_AI_DEPLOYMENT_NAME points at. When
+    // ops points it somewhere the registry does not know, the honest label is
+    // the deployment name itself -- not the router's theoretical pick.
+    expect(describeDeployment('ops-canary-deployment')).toBe('ops-canary-deployment');
   });
 });
 
