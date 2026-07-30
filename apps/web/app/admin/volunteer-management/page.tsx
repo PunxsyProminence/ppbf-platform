@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { apiBase } from '@/lib/apiBase';
 
 interface VolunteerRecord {
   volunteer_id: number;
@@ -65,7 +66,7 @@ export default function VolunteerManagementPage() {
   useEffect(() => {
     void (async () => {
       try {
-        const response = await fetch('/api/admin/volunteers');
+        const response = await fetch(`${apiBase()}/api/admin/volunteers`, { credentials: 'include' });
         if (!response.ok) {
           throw new Error('Unable to load volunteer roster.');
         }
@@ -90,8 +91,9 @@ export default function VolunteerManagementPage() {
   );
 
   async function handleCreateVolunteer() {
-    const response = await fetch('/api/admin/volunteers', {
+    const response = await fetch(`${apiBase()}/api/admin/volunteers`, {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(draft),
     });
@@ -128,8 +130,9 @@ export default function VolunteerManagementPage() {
 
   async function handleStatusUpdate(volunteerId: number, status: VolunteerStatus) {
     try {
-      const response = await fetch('/api/admin/volunteers', {
+      const response = await fetch(`${apiBase()}/api/admin/volunteers`, {
         method: 'PATCH',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ volunteer_id: volunteerId, status }),
       });

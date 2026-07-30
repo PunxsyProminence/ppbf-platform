@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import RoleStandaloneView from '@/components/RoleStandaloneView';
+import { apiBase } from '@/lib/apiBase';
 
 type ReviewState = 'pending_review' | 'approved' | 'rejected';
 
@@ -39,7 +40,8 @@ export default function EvidenceReviewPage() {
   const [busyKey, setBusyKey] = useState('');
 
   const fetchQueue = useCallback(async (): Promise<ReviewQueue> => {
-    const response = await fetch('/api/pilot/shadow/evidence/review?limit=200', {
+    const response = await fetch(`${apiBase()}/api/pilot/shadow/evidence/review?limit=200`, {
+      credentials: 'include',
       cache: 'no-store',
     });
     if (!response.ok) throw new Error('Unable to load the evidence review queue.');
@@ -60,8 +62,9 @@ export default function EvidenceReviewPage() {
     setBusyKey(key);
     setError('');
     try {
-      const response = await fetch('/api/pilot/shadow/evidence/review', {
+      const response = await fetch(`${apiBase()}/api/pilot/shadow/evidence/review`, {
         method: 'PATCH',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });

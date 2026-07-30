@@ -6,6 +6,7 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import RevenueFundingCenter from '@/components/RevenueFundingCenter';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import ShadowChatButton from '@/components/ShadowChatButton';
+import { apiBase } from '@/lib/apiBase';
 import {
   allTrackIds,
   athleteProfiles,
@@ -454,7 +455,7 @@ export default function AdminCapabilitiesPage() {
   useEffect(() => {
     void (async () => {
       try {
-        const response = await fetch('/api/pilot/admin/track-assignments', {
+        const response = await fetch(`${apiBase()}/api/pilot/admin/track-assignments`, {
           method: 'GET',
           credentials: 'include',
         });
@@ -479,7 +480,7 @@ export default function AdminCapabilitiesPage() {
       return;
     }
 
-    void fetch('/api/pilot/admin/track-assignments', {
+    void fetch(`${apiBase()}/api/pilot/admin/track-assignments`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
@@ -490,7 +491,7 @@ export default function AdminCapabilitiesPage() {
   useEffect(() => {
     void (async () => {
       try {
-        const response = await fetch('/api/pilot/admin/capabilities', {
+        const response = await fetch(`${apiBase()}/api/pilot/admin/capabilities`, {
           method: 'GET',
           credentials: 'include',
         });
@@ -518,7 +519,7 @@ export default function AdminCapabilitiesPage() {
       return;
     }
 
-    void fetch('/api/pilot/admin/capabilities', {
+    void fetch(`${apiBase()}/api/pilot/admin/capabilities`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
@@ -529,7 +530,7 @@ export default function AdminCapabilitiesPage() {
   useEffect(() => {
     void (async () => {
       try {
-        const response = await fetch('/api/pilot/admin/gym-capabilities', {
+        const response = await fetch(`${apiBase()}/api/pilot/admin/gym-capabilities`, {
           method: 'GET',
           credentials: 'include',
         });
@@ -554,7 +555,7 @@ export default function AdminCapabilitiesPage() {
       return;
     }
 
-    void fetch('/api/pilot/admin/gym-capabilities', {
+    void fetch(`${apiBase()}/api/pilot/admin/gym-capabilities`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',

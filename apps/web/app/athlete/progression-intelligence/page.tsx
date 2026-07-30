@@ -94,7 +94,7 @@ export default function AthleteProgressionIntelligencePage() {
   useEffect(() => {
     void (async () => {
       try {
-        const response = await fetch('/api/pilot/auth/session', { method: 'POST' });
+        const response = await fetch(`${apiBase()}/api/pilot/auth/session`, { method: 'POST', credentials: 'include' });
         const payload = (await response.json()) as { authenticated?: boolean; athlete_id?: string };
         if (!response.ok || !payload.authenticated || !payload.athlete_id) {
           throw new Error('Unable to resolve athlete session. Sign in again.');
