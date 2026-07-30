@@ -54,7 +54,10 @@ interface WorkoutBlock {
 interface CoachTask {
   id: string;
   title: string;
-  dueDate: string;
+  // Full sentence, worded by the producer ("In review queue since 2026-07-30"):
+  // derived tasks have no real due date, and rendering a fabricated one is the
+  // exact defect this list used to have.
+  when: string;
   priority: 'High' | 'Normal' | 'Low';
   status: 'Open' | 'In Progress' | 'Completed';
   relatedAthlete?: string;
@@ -141,8 +144,6 @@ export default function CoachWorkspace() {
   const [athletesError, setAthletesError] = useState<string | null>(null);
 
   const [selectedAthleteId, setSelectedAthleteId] = useState<string | null>(null);
-
-  const [coachTasks, setCoachTasks] = useState<CoachTask[]>([]);
 
   const workoutBlocks = useMemo<WorkoutBlock[]>(() => {
     if (sessionMode === 'One-on-One') {
@@ -298,6 +299,24 @@ export default function CoachWorkspace() {
   const redReadinessCount = athletes.filter((athlete) => athlete.readiness === 'RED').length;
   const yellowReadinessCount = athletes.filter((athlete) => athlete.readiness === 'YELLOW').length;
   const readinessTrackingAvailable = athletes.some((athlete) => athlete.readiness !== 'UNKNOWN');
+  // The task list is DERIVED from real pending work, not stored: the platform
+  // has no coach-task store, and the fabricated five-item list this replaced
+  // showed every coach the same stale to-dos with due dates that had already
+  // passed (behavioral-audit backlog item). The SHADOW review queue is loaded
+  // on mount by loadShadowData; when a real task store exists, this memo is
+  // the seam to swap it in.
+  const coachTasks = useMemo<CoachTask[]>(
+    () => shadowQueue
+      .filter((item) => item.status === 'pending_review')
+      .map((item) => ({
+        id: item.intake_case_id,
+        title: `Review intake case: ${item.summary}`,
+        when: `In review queue since ${item.updated_at.slice(0, 10)}`,
+        priority: 'High' as const,
+        status: 'Open' as const,
+      })),
+    [shadowQueue],
+  );
   const reviewsNeeded = coachTasks.filter(t => t.status === 'Open' && t.title.includes('Review')).length;
   const assignmentsDue = coachTasks.filter(t => t.status === 'Open').length;
 
@@ -379,26 +398,6 @@ export default function CoachWorkspace() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadAthletes();
   }, [loadAthletes]);
-
-  // Fetch coach tasks (hardcoded for now since backend doesn't have coach-tasks endpoint yet)
-  useEffect(() => {
-    void (async () => {
-      try {
-        // SHADOW endpoint integrated: POST /api/pilot/shadow/chat
-        // For now, generate default tasks pending backend coach-tasks API
-        const defaultTasks: CoachTask[] = [
-          { id: 't_1', title: 'Review athlete goals', dueDate: '2026-07-13', priority: 'High', status: 'Open' },
-          { id: 't_2', title: 'Approve track applications', dueDate: '2026-07-14', priority: 'High', status: 'Open' },
-          { id: 't_3', title: 'Conduct athlete evaluations', dueDate: '2026-07-15', priority: 'Normal', status: 'In Progress' },
-          { id: 't_4', title: 'Film review - last session', dueDate: '2026-07-16', priority: 'Normal', status: 'Open' },
-          { id: 't_5', title: 'Submit monthly report', dueDate: '2026-07-20', priority: 'Normal', status: 'Open' }
-        ];
-        setCoachTasks(defaultTasks);
-      } catch {
-        // Task loading error - UI will show empty state
-      }
-    })();
-  }, []);
 
   const loadShadowData = useCallback(async () => {
       try {
@@ -799,7 +798,7 @@ export default function CoachWorkspace() {
 
                 {/* Open Tasks */}
                 <div className="md:col-span-2 border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4">
-                  <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Tasks Due</h3>
+                  <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Open Tasks</h3>
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {coachTasks.filter(t => t.status !== 'Completed').map(task => (
                       <div key={task.id} className="border-2 border-[#8b4444] bg-[#0f0f0f] p-3">
@@ -809,9 +808,12 @@ export default function CoachWorkspace() {
                             {task.priority}
                           </span>
                         </div>
-                        <p className="text-xs text-[#b0a095]">Due: {task.dueDate}</p>
+                        <p className="text-xs text-[#b0a095]">{task.when}</p>
                       </div>
                     ))}
+                    {coachTasks.length === 0 && (
+                      <p className="text-xs text-[#b0a095]">No open tasks. Items appear here from the SHADOW review queue.</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1054,21 +1056,22 @@ export default function CoachWorkspace() {
             <div className="space-y-6 animate-fadeIn">
               <HelpPanel
                 title="Coach Tasks"
-                description="Mission board with athlete evaluations, reviews, and administrative tasks."
+                description="Live work items derived from the SHADOW review queue — nothing here is invented, and an empty board means the queue is clear."
                 usage={[
-                  'Complete task reviews before deadlines',
-                  'Related athlete tasks link to athlete profiles',
-                  'Update status as you work through tasks',
-                  'Prioritize HIGH tasks first'
+                  'Work HIGH priority items first',
+                  'Items clear automatically when the underlying review is resolved',
+                  'Use the SHADOW tab to act on review-queue items'
                 ]}
                 mistakes={[
-                  'Missing task deadlines',
-                  'Not updating task status',
+                  'Letting review-queue items sit unresolved',
                   'Ignoring related athlete information'
                 ]}
               />
 
               <div className="space-y-3">
+                {coachTasks.length === 0 && (
+                  <p className="text-sm text-[#b0a095]">No open tasks. Items appear here from the SHADOW review queue.</p>
+                )}
                 {coachTasks.map(task => (
                   <div key={task.id} className={`border-2 p-4 rounded ${
                     task.status === 'Completed' ? 'bg-[#2a5a2a]/30 border-green-700' : 'bg-[#1a1a1a] border-[#8b4444]'
@@ -1076,7 +1079,7 @@ export default function CoachWorkspace() {
                     <div className="flex justify-between items-start mb-2">
                       <div>
                         <h4 className="font-semibold">{task.title}</h4>
-                        <p className="text-xs text-[#b0a095] mt-1">Due: {task.dueDate}</p>
+                        <p className="text-xs text-[#b0a095] mt-1">{task.when}</p>
                       </div>
                       <div className="flex gap-2">
                         <span className={`text-xs px-2 py-1 rounded font-semibold ${priorityTone(task.priority)}`}>
