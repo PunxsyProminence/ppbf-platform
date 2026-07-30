@@ -46,7 +46,7 @@ let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 // uses for the same reason.
 const nativeDynamicImport = new Function('specifier', 'return import(specifier)') as (
   specifier: string,
-) => Promise<{ checkOrphans: (client: Client) => Promise<Array<{ table: string; orphanCount: number; sample: Array<{ organization_id: string; row_count: number }> }>> }>;
+) => Promise<{ checkOrphans: (client: Client) => Promise<Array<{ table: string; orphanCount: number; truncated: boolean; sample: Array<{ organization_id: string; row_count: number }> }>> }>;
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -222,6 +222,59 @@ describe('checkOrphans', () => {
 
     const secondPass = await checkOrphans(client);
     expect(secondPass.find((r) => r.table === 'audit_events')?.orphanCount).toBe(0);
+  });
+
+  test('enumerates every distinct orphaned organization_id, not a top-N sample', async () => {
+    // The original implementation capped the per-table breakdown at `limit 10`.
+    // The first production run showed why that is not good enough: it reported
+    // 43 orphaned rows in pilot.accounts while naming ten ids covering only 23
+    // of them, so 20 rows belonged to ids the output never mentioned, and a
+    // cleanup built from that list would have left the migration still failing.
+    //
+    // 12 distinct ids -- more than the old cap -- and the row counts are
+    // deliberately shaped so the ten largest do NOT account for the total.
+    await dropOrganizationIdForeignKey(client, 'shadow_intake');
+
+    const distinctIds = Array.from({ length: 12 }, (_, index) => `stray-org-${index + 1}`);
+    for (const [index, orgId] of distinctIds.entries()) {
+      // Descending row counts, so the two smallest would have been the ones
+      // dropped by a top-10 ordering.
+      const rowsForThisOrg = 12 - index;
+      for (let row = 0; row < rowsForThisOrg; row += 1) {
+        // uploaded_by_account_id is NOT NULL and references pilot.accounts, so
+        // it points at the account the first test created. Only the
+        // organization_id FK is dropped here; every other constraint on this
+        // table still applies, which is what makes the row realistic.
+        await client.query(
+          `insert into pilot.shadow_intake
+             (organization_id, intake_id, file_name, file_path, classification,
+              routed_queue, review_status, uploaded_by_account_id)
+           values ($1, gen_random_uuid(), $2, $3, 'medical', 'sports_medicine',
+                   'pending_security_review', 'acct-clean')`,
+          [orgId, `${orgId}-${row}.pdf`, `intake/${orgId}/${row}.pdf`],
+        );
+      }
+    }
+
+    const expectedTotal = distinctIds.reduce((sum, _id, index) => sum + (12 - index), 0); // 78
+
+    const { checkOrphans } = await nativeDynamicImport(CHECKER_SCRIPT_PATH);
+    const result = (await checkOrphans(client)).find((r) => r.table === 'shadow_intake');
+
+    expect(result?.orphanCount).toBe(expectedTotal);
+
+    // Every id is named -- including the two that a top-10 cap would have cut.
+    expect(result?.sample).toHaveLength(12);
+    expect(new Set(result?.sample.map((row) => row.organization_id))).toEqual(new Set(distinctIds));
+
+    // And the named counts reconcile exactly with the total, which is the
+    // property that makes the output safe to build a cleanup from.
+    const named = result?.sample.reduce((sum, row) => sum + row.row_count, 0);
+    expect(named).toBe(expectedTotal);
+    expect(result?.truncated).toBe(false);
+
+    // Leave the table clean for the remaining tests.
+    await client.query(`delete from pilot.shadow_intake where organization_id like 'stray-org-%'`);
   });
 
   test('a null organization_id is not reported as an orphan', async () => {

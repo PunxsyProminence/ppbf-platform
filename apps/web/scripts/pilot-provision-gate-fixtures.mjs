@@ -37,6 +37,8 @@ import { promisify } from 'node:util';
 
 import { Client } from 'pg';
 
+import { assertDeclaredWriteTargetFromEnv } from './lib/postgres-write-target.mjs';
+
 const scrypt = promisify(nodeScrypt);
 
 // Mirrors hashPin in src/server/pilot/security.ts exactly -- same derivation,
@@ -57,6 +59,16 @@ function required(name) {
 
 async function run() {
   const connectionString = required('AZURE_POSTGRES_CONNECTION_STRING');
+
+  // Refuse to write fixtures into a database the caller did not name. This
+  // script creates accounts, an athlete, memberships and an organization; run
+  // with a production connection string in the environment it will happily
+  // create them there. That is not hypothetical -- it is how production came to
+  // hold 361 rows pointing at organizations that do not exist (see the module
+  // comment in lib/postgres-write-target.mjs). Asserted before connect() so a
+  // wrong target costs no connection at all.
+  assertDeclaredWriteTargetFromEnv(connectionString);
+
   const organizationId = required('PPBF_PILOT_DEFAULT_ORG_ID');
   const adminAccountId = required('PILOT_ADMIN_ACCOUNT_ID');
   const athleteAccountId = required('PILOT_SHADOW_ATHLETE_ACCOUNT_ID');
