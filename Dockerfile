@@ -20,7 +20,13 @@ RUN npm run --prefix apps/web build
 # Stage 3: Runner Production Image
 FROM alpine:3.19 AS runner
 WORKDIR /app
-RUN apk add --no-cache nodejs
+# ffmpeg is Film Study's frame-extraction prerequisite (#103, prereq 2). It is
+# added AHEAD of the feature on purpose: the plan's measured-facts list needs
+# extraction time inside this container and the image-size/cold-start cost of
+# carrying the binary, and neither can be measured until it ships. Nothing
+# calls it yet -- the film_study job type remains SHADOW_JOB_TYPE_UNAVAILABLE
+# and the vision executor lands only after the vision deployment exists.
+RUN apk add --no-cache nodejs ffmpeg
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
