@@ -38,6 +38,12 @@ Green, blue, orange and red appear only to communicate a participant's safety st
 queue outcome. Against leather and brass, a saturated pixel is unmissable — that is the
 budget, and it is spent entirely on the Layer 11 Gate Matrix.
 
+This is the easiest law to break by accident. The gauge component (`.gauge-arc`) ships a
+red danger band, and it is tempting to add it to every metric because it looks sharper —
+but a plain headcount or percentage has no "too high," so the arc has nothing to say.
+Include it only where a real threshold exists (near-capacity, open alerts); leave it off
+everything else, even if the empty dial looks plainer. Plainer is correct.
+
 **3. Colour is never the only channel.**
 Every state carries a distinct glyph (`✓ ◉ ▲ ✕`) and an uppercase label. The ladder
 survives greyscale printing for board packets and every form of colour blindness.

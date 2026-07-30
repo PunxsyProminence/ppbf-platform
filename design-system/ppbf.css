@@ -430,6 +430,11 @@ body.ppbf {
   background-image: radial-gradient(120% 160% at 50% 100%, #2B241C 0%, #0D0A08 70%);
   box-shadow: inset 0 3px 9px rgba(0,0,0,.85);
 }
+/* Law 2 — include .gauge-arc only when the reading has a genuine danger
+   threshold (open alerts, near-capacity, over-limit). A plain headcount or
+   percentage with no defined "too high" is a neutral gauge: ticks + needle,
+   no arc div at all. Adding the red band decoratively is exactly the
+   violation Law 2 exists to prevent. */
 .gauge-arc {
   position: absolute; inset: 5px 5px -68px; border-radius: 50%;
   background-image: conic-gradient(from -90deg,

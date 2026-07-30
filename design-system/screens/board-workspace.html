@@ -1,0 +1,152 @@
+<!-- @dsCard group="Screens" name="Board Workspace" subtitle="Role binder rail, governance metrics, k-anonymity redaction in context" -->
+<link rel="stylesheet" href="../ppbf.css">
+<style>
+  body.ppbf { min-height: 100vh; display: flex; }
+  .rail { width: 200px; flex-shrink: 0; background: var(--hide-950); border-right: 3px solid var(--brass-500);
+          padding: var(--s6) var(--s4); display: flex; flex-direction: column; gap: var(--s3); }
+  .rail-title { font-family: var(--font-stencil); text-transform: uppercase; font-size: 13px;
+                letter-spacing: .1em; color: var(--brass-400); margin: 0 0 var(--s5); text-align: center; }
+
+  /* Binder-ring role tags */
+  .role-tag { position: relative; display: flex; align-items: center; justify-content: center;
+              min-height: 46px; padding: 0 var(--s4) 0 var(--s5); border-radius: var(--r-md);
+              font-family: var(--font-stencil); text-transform: uppercase; font-size: 13px;
+              letter-spacing: .06em; color: var(--bone-300); cursor: pointer;
+              background-color: var(--hide-700);
+              background-image: var(--grain), linear-gradient(168deg, #43301F, #2A1F18);
+              background-blend-mode: overlay, normal;
+              box-shadow: inset 0 1px 0 rgba(232,206,122,.14), 0 3px 7px rgba(0,0,0,.5); }
+  .role-tag::before { content: ""; position: absolute; left: -3px; top: 50%; translate: 0 -50%;
+                       width: 16px; height: 16px; border-radius: 50%; border: 3px solid var(--brass-500);
+                       background: var(--hide-950); box-shadow: 0 1px 2px rgba(0,0,0,.6); }
+  .role-tag[aria-current="page"] { color: var(--brass-200); background-image: var(--grain), linear-gradient(168deg, #5C4127, #3A2A1D);
+                                    box-shadow: inset 0 1px 0 rgba(232,206,122,.3), 0 0 0 1px var(--brass-700); }
+
+  main { flex: 1; padding: var(--s6); min-width: 0; display: flex; flex-direction: column; gap: var(--s6); }
+  .head-row { display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: var(--s4); }
+  h1 { font-family: var(--font-stencil); text-transform: uppercase; font-size: var(--t-xl);
+       letter-spacing: .05em; color: var(--bone-100); margin: 0 0 var(--s2); }
+  .subhead { font: 650 12px/1 var(--font-data); letter-spacing: .1em; text-transform: uppercase; color: var(--brass-400); }
+
+  .metrics-row { display: grid; gap: var(--s5); grid-template-columns: repeat(auto-fit, minmax(144px, 1fr)); }
+  .panel { border-radius: var(--r-lg); padding: var(--s5); }
+
+  .layout { display: grid; gap: var(--s6); grid-template-columns: var(--split-major) var(--split-minor); align-items: start; }
+  @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
+
+  .gov-list { display: flex; flex-direction: column; gap: var(--s4); }
+  .gov-item { display: flex; align-items: center; gap: var(--s4); padding: var(--s3) 0;
+              border-bottom: 1px solid rgba(212,175,74,.14); }
+  .gov-item:last-child { border-bottom: 0; }
+  .gov-icon { width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+              display: flex; align-items: center; justify-content: center; font-size: 15px; }
+  .gov-text b { display: block; font-size: 13.5px; color: var(--bone-100); font-weight: 650; }
+  .gov-text span { font-size: 12px; color: var(--bone-400); }
+
+  .cohort-note { font-size: var(--t-sm); line-height: 1.72; margin: var(--s4) 0 0; max-width: 62ch; }
+  .redacted-inline { background-color: #0C0906; background-image: var(--grain-fine); background-blend-mode: overlay;
+                      color: transparent; border-radius: 2px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.8); padding: 0 4px; }
+</style>
+
+<body class="ppbf">
+  <nav class="rail">
+    <div class="rail-title">Board Roles</div>
+    <a class="role-tag" href="#" aria-current="page">Chair</a>
+    <a class="role-tag" href="#">Vice-Chair</a>
+    <a class="role-tag" href="#">President</a>
+    <a class="role-tag" href="#">Secretary</a>
+    <a class="role-tag" href="#">Treasurer</a>
+  </nav>
+
+  <main>
+    <div class="head-row">
+      <div>
+        <h1>Board Workspace</h1>
+        <div class="subhead">Governance &amp; Mission Oversight · Chair</div>
+      </div>
+      <span class="stamp stamp--green stamp--flat">Compliance Green</span>
+    </div>
+
+    <div class="metrics-row">
+      <div class="panel mat-leather--raised" style="text-align:center">
+        <div class="gauge" style="margin: 0 auto;">
+          <div class="gauge-bezel"><div class="gauge-face">
+            <div class="gauge-ticks"></div>
+            <div class="gauge-needle" style="--deg:-40deg"></div>
+            <div class="gauge-hub"></div>
+          </div></div>
+          <div class="gauge-cap">Athletes</div>
+          <div class="gauge-val">47</div>
+        </div>
+      </div>
+      <div class="panel mat-leather--raised" style="text-align:center">
+        <div class="gauge" style="margin: 0 auto;">
+          <div class="gauge-bezel"><div class="gauge-face">
+            <div class="gauge-ticks"></div>
+            <div class="gauge-needle" style="--deg:8deg"></div>
+            <div class="gauge-hub"></div>
+          </div></div>
+          <div class="gauge-cap">Sessions</div>
+          <div class="gauge-val">156</div>
+        </div>
+      </div>
+      <div class="panel mat-leather--raised" style="text-align:center">
+        <div class="gauge" style="margin: 0 auto;">
+          <div class="gauge-bezel"><div class="gauge-face">
+            <div class="gauge-ticks"></div>
+            <div class="gauge-needle" style="--deg:-52deg"></div>
+            <div class="gauge-hub"></div>
+          </div></div>
+          <div class="gauge-cap">Retention</div>
+          <div class="gauge-val">82%</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="layout">
+      <!-- COHORT DETAIL WITH REDACTION -->
+      <div class="panel mat-paper" style="color:#33291B">
+        <h2 style="font-family: var(--font-stencil); text-transform: uppercase; font-size: var(--t-md); letter-spacing:.05em; margin:0 0 var(--s3); color:#241B12">
+          Cohort Detail — Adaptive Program
+        </h2>
+        <p class="cohort-note" style="color:#4A3B26">
+          Four participants enrolled this quarter. Individual outcomes for
+          <span class="redacted-inline">Marcus D.</span>, <span class="redacted-inline">Priya S.</span> and
+          <span class="redacted-inline">two further participants</span> are withheld from this board report.
+        </p>
+        <div style="margin-top: var(--s5); display:flex; align-items:center; gap: var(--s5); flex-wrap:wrap">
+          <span class="stamp stamp--lg">Redacted — k&nbsp;&lt;&nbsp;5</span>
+          <span style="font: var(--t-xs)/1.6 var(--font-data); color:#6E5B3E; letter-spacing:.05em">
+            LAYER 17 · GRANT REPORTING<br>COHORT BELOW ANONYMITY THRESHOLD
+          </span>
+        </div>
+        <p class="cohort-note" style="color:#6E5B3E; font-size: 12.5px; margin-top: var(--s5)">
+          Aggregate figures above remain reportable. Named outcomes unlock automatically once
+          cohort size reaches five.
+        </p>
+      </div>
+
+      <!-- GOVERNANCE ACTIONS -->
+      <div class="panel mat-leather--raised">
+        <h2 style="font-family: var(--font-stencil); text-transform: uppercase; font-size: var(--t-sm); letter-spacing:.07em; color: var(--brass-300); margin:0 0 var(--s5)">
+          Governance Actions
+        </h2>
+        <div class="gov-list">
+          <div class="gov-item">
+            <div class="gov-icon" style="background: color-mix(in srgb, var(--cleared) 24%, #120E0B); color: var(--cleared-ink)">✓</div>
+            <div class="gov-text"><b>Compliance Review</b><span>Passed · 2026-07-28</span></div>
+          </div>
+          <div class="gov-item">
+            <div class="gov-icon" style="background: rgba(212,175,74,.2); color: var(--brass-300)">📖</div>
+            <div class="gov-text"><b>Audit Trail</b><span>Ledger entries 31/2026 · 03/2026</span></div>
+          </div>
+          <div class="gov-item">
+            <div class="gov-icon" style="background: color-mix(in srgb, var(--restricted) 22%, #120E0B); color: var(--restricted-ink)">📋</div>
+            <div class="gov-text"><b>Policy Review</b><span>Due · pending Chair sign-off</span></div>
+          </div>
+        </div>
+        <button class="btn btn--ghost" style="width:100%; margin-top: var(--s5)">View Full Ledger</button>
+      </div>
+    </div>
+  </main>
+</body>
