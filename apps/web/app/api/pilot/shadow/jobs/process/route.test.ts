@@ -72,7 +72,10 @@ describe('SHADOW job processor fail-closed modes', () => {
     }
   });
 
-  test.each<JobType>(['scout_report', 'board_summary', 'film_study'])(
+  // Only Film Study remains gated -- it hard-requires the vision pipeline
+  // that does not exist. Scout reports and board summaries left this set the
+  // day the worker became real; their execution paths are covered below.
+  test.each<JobType>(['film_study'])(
     'terminally fails unavailable %s jobs without executing or completing them',
     async (jobType) => {
       const job = claimedJob(jobType);
@@ -95,6 +98,81 @@ describe('SHADOW job processor fail-closed modes', () => {
       expect(mockCompleteJob).not.toHaveBeenCalled();
     },
   );
+
+  test('scout reports now execute -- and fail closed when the AI runtime is unconfigured', async () => {
+    // The job passes authorization and reaches its executor; with no
+    // AZURE_AI_* configuration in the test environment, the provider call is
+    // refused before any network attempt. Retryable by default, because the
+    // runtime being unconfigured is an environment condition, not a bad job.
+    const previousEnv = {
+      endpoint: process.env.AZURE_AI_ENDPOINT,
+      key: process.env.AZURE_AI_KEY,
+      deployment: process.env.AZURE_AI_DEPLOYMENT_NAME,
+    };
+    delete process.env.AZURE_AI_ENDPOINT;
+    delete process.env.AZURE_AI_KEY;
+    delete process.env.AZURE_AI_DEPLOYMENT_NAME;
+    try {
+      const job = claimedJob('scout_report');
+      job.inputPayload = {
+        requestMode: 'chat',
+        message: 'Summarize this athlete cycle.',
+        authorizedContext: 'Server-authorized context.',
+      };
+      mockClaimNextJob.mockResolvedValueOnce(job);
+      mockQueryOne.mockResolvedValueOnce({
+        role: 'coach',
+        athlete_id: null,
+        is_platform_owner: false,
+        organization_status: 'active',
+      });
+
+      const response = await POST(processorRequest('scout_report'));
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        processed: true,
+        jobId: job.jobId,
+        jobType: 'scout_report',
+        error: 'SHADOW_AI_UNAVAILABLE',
+      });
+      expect(mockFailJob).toHaveBeenCalledWith(job, 'SHADOW_AI_UNAVAILABLE');
+      expect(mockCompleteJob).not.toHaveBeenCalled();
+    } finally {
+      if (previousEnv.endpoint !== undefined) process.env.AZURE_AI_ENDPOINT = previousEnv.endpoint;
+      if (previousEnv.key !== undefined) process.env.AZURE_AI_KEY = previousEnv.key;
+      if (previousEnv.deployment !== undefined) process.env.AZURE_AI_DEPLOYMENT_NAME = previousEnv.deployment;
+    }
+  });
+
+  test('a board summary enqueued by a coach is refused by the executor scope gate', async () => {
+    // Board summaries carry their own role requirement at EXECUTION time --
+    // enablement did not loosen it. A coach-owned job dies with a terminal
+    // scope error before any provider call could happen.
+    const job = claimedJob('board_summary');
+    job.inputPayload = {
+      requestMode: 'chat',
+      message: 'Summarize governance items.',
+      authorizedContext: 'Server-authorized context.',
+    };
+    mockClaimNextJob.mockResolvedValueOnce(job);
+    mockQueryOne.mockResolvedValueOnce({
+      role: 'coach',
+      athlete_id: null,
+      is_platform_owner: false,
+      organization_status: 'active',
+    });
+
+    const response = await POST(processorRequest('board_summary'));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      processed: true,
+      error: 'SHADOW_JOB_SCOPE_FORBIDDEN',
+    });
+    expect(mockFailJob).toHaveBeenCalledWith(job, 'SHADOW_JOB_SCOPE_FORBIDDEN');
+    expect(mockCompleteJob).not.toHaveBeenCalled();
+  });
 
   test('allows an active platform owner without a membership while keeping the job organization scoped', async () => {
     const job = claimedJob('library_update');
