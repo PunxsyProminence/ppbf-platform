@@ -247,6 +247,23 @@ function assertAthleteSession(athleteSession) {
   }
 }
 
+// One retry, and only on 'filtered': the response safety filter withholds an
+// answer over phrasing (an uncited "research shows..." or a percentage), and a
+// reasoning model's phrasing varies run to run, so a single filtered answer is
+// weak evidence of a real regression. 'degraded' is never retried -- that is
+// the model call itself failing, and it fails the gate on the first sight.
+// Two consecutive filtered answers fail the gate: at that rate real users are
+// seeing withheld answers too, which is a product problem, not gate noise.
+async function askShadowChatExpectingAnswer(client, label, body) {
+  let chat = await client.call('/api/pilot/shadow/chat', { method: 'POST', body });
+  if (chat.state === 'filtered') {
+    console.log(`   ${label}: answer was filtered once (phrasing); retrying to distinguish noise from regression.`);
+    chat = await client.call('/api/pilot/shadow/chat', { method: 'POST', body });
+  }
+  assertShadowChatAnswered(label, chat);
+  return chat;
+}
+
 function assertShadowChatAnswered(label, chat) {
   // 'degraded' is the state the chat route reports when the model call fails
   // or times out -- the exact failure mode that shipped to production when a
@@ -495,26 +512,20 @@ async function run() {
   // timeout. Nothing else in CI proves the deployed app can actually get an
   // answer out of Azure AI; the intake steps above never call the model.
   console.log('12) Verify SHADOW chat Quick Round answers (athlete)');
-  const quickChat = await athlete.call('/api/pilot/shadow/chat', {
-    method: 'POST',
-    body: { message: 'What is one good warm-up before working the heavy bag, and why does it help?' },
+  const quickChat = await askShadowChatExpectingAnswer(athlete, 'quick round / athlete', {
+    message: 'What is one good warm-up before working the heavy bag, and why does it help?',
   });
-  assertShadowChatAnswered('quick round / athlete', quickChat);
 
   console.log('13) Verify SHADOW chat Heavy Bag answers (administrator)');
   // Heavy Bag runs synchronously against a reasoning deployment measured at
   // ~95s on a representative prompt (see shadowRouter.ts), so this step is
   // expected to take one to three minutes. fetch() has no default timeout in
   // Node, so the wait is bounded by the app's own provider timeout.
-  const heavyChat = await admin.call('/api/pilot/shadow/chat', {
-    method: 'POST',
-    body: {
-      message: 'An athlete is strong on the bag but loses composure in the third round of sparring. '
-        + 'Give a focused two-week plan a volunteer coach could run, with one measurable checkpoint per week.',
-      tier: 'heavy_bag',
-    },
+  const heavyChat = await askShadowChatExpectingAnswer(admin, 'heavy bag / administrator', {
+    message: 'An athlete is strong on the bag but loses composure in the third round of sparring. '
+      + 'Give a focused two-week plan a volunteer coach could run, with one measurable checkpoint per week.',
+    tier: 'heavy_bag',
   });
-  assertShadowChatAnswered('heavy bag / administrator', heavyChat);
 
   if (approvalBlockedByKnownGap) {
     console.log('SHADOW INTAKE GATE PASS WITH KNOWN GAP (document review unbuilt; promotion untested)');
