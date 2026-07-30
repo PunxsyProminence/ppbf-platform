@@ -11,7 +11,13 @@
 -- Rows with a NULL embedding are simply not semantically searchable and fall
 -- back to keyword search; nothing in the read path requires this migration to
 -- have run, which is what makes it safe to apply ahead of the feature flag.
+--
+-- Apply through the controlled migration runner, never from an HTTP request.
+begin;
 
 alter table pilot.shadow_library_chunks
   add column if not exists embedding jsonb null,
   add column if not exists embedding_model text null;
+
+commit;
+
