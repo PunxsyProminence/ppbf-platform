@@ -5,14 +5,33 @@ import { usePathname, useRouter } from "next/navigation";
 import { useSyncExternalStore } from "react";
 import { clearRoleSession, getRoleSessionSnapshot, subscribeRoleSession } from "./roleSession";
 import { apiBase } from '@/lib/apiBase';
+import { ThemeToggle } from "./ThemeProvider";
 
 export default function GlobalRoleHeader() {
   const router = useRouter();
   const pathname = usePathname();
   const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
 
+  // Always show a minimal bar on login so theme can be tested pre-auth
   if (!session || pathname === "/login") {
-    return null;
+    return (
+      <header className="sticky top-0 z-50 border-b-[3px] border-[var(--black)] bg-[var(--canvas-tan-dark)] shadow-[var(--shadow-sm)]">
+        <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-4 px-6 py-3">
+          <span className="text-[10px] font-mono uppercase tracking-[0.35em] text-[var(--black)]">
+            PPBF
+          </span>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/retro-lab"
+              className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-1 text-[11px] font-mono text-[var(--black)] transition hover:bg-[var(--olive-dark)] hover:text-[var(--white)]"
+            >
+              Retro Lab
+            </Link>
+            <ThemeToggle />
+          </div>
+        </div>
+      </header>
+    );
   }
 
   function signOut() {
@@ -35,6 +54,13 @@ export default function GlobalRoleHeader() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Link
+            href="/retro-lab"
+            className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-1 text-[11px] font-mono text-[var(--black)] transition hover:bg-[var(--olive-dark)] hover:text-[var(--white)]"
+          >
+            Retro Lab
+          </Link>
+          <ThemeToggle />
           <Link
             href="/operations"
             className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-1 text-[11px] font-mono text-[var(--black)] transition hover:bg-[var(--olive-dark)] hover:text-[var(--white)]"
