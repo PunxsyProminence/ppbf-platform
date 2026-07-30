@@ -245,11 +245,18 @@ async function getOperationalMetrics(organizationId: string, days: number): Prom
         WHERE organization_id = $1
           AND severity IN ('high', 'critical')
           AND created_at > NOW() - ($2 * INTERVAL '1 day')) AS high_risk_reviews,
+       -- Escalations count the human-review queue: every row there is a real
+       -- "a human needs to look at this" event, written by queueHumanReview
+       -- on filtered requests, filtered responses, and safety handoffs. The
+       -- previous source was structurally zero twice over: it counted
+       -- learning events with outcome_signal 'escalated_to_human', which no
+       -- code path emits, additionally filtered to verification states that
+       -- client signals never reach (behavioral audit BC follow-up). The
+       -- high_risk_reviews tile above remains the high/critical subset of
+       -- this same queue, so the two numbers stay distinct and both true.
        (SELECT COUNT(*)
-        FROM pilot.shadow_learning_events
+        FROM pilot.shadow_human_review_queue
         WHERE organization_id = $1
-          AND outcome_signal = 'escalated_to_human'
-          AND verification_state <> 'unverified'
           AND created_at > NOW() - ($2 * INTERVAL '1 day')) AS escalations,
        (SELECT AVG((
           (CASE WHEN cardinality(recent_topics) > 0 THEN 1 ELSE 0 END) +
