@@ -263,37 +263,57 @@ function LoginPageContent() {
 
   const microsoftSignIn = createMicrosoftSignInHandler(apiBase());
 
+  // ========== RETRO: photoreal desk mockup as full scene ==========
   if (isRetro) {
     return (
-      <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
-        <div className="mx-auto grid min-h-[calc(100vh-3.5rem)] w-full max-w-5xl place-items-center px-4 py-8 lg:px-8">
-          <section className="w-full max-w-3xl overflow-hidden border-[3px] border-[var(--black)] bg-[var(--paper)] shadow-[var(--shadow-lg)]">
-            <div className="relative border-b-[3px] border-[var(--black)] bg-[linear-gradient(180deg,var(--brass-light),var(--brass),var(--brass-dark))] px-6 py-5">
+      <main className="relative min-h-screen overflow-hidden text-[var(--black)]">
+        {/* Full-bleed desk background — the mockup itself */}
+        <div
+          className="pointer-events-none absolute inset-0 bg-cover bg-center bg-no-repeat"
+          style={{
+            backgroundImage: "url('/retro/login-desk-bg.jpg')",
+            filter: 'brightness(0.92) contrast(1.05)',
+          }}
+          aria-hidden
+        />
+        {/* Soft vignette so the paper ticket reads cleanly */}
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background:
+              'radial-gradient(ellipse 70% 65% at 50% 48%, transparent 0%, rgba(26,18,11,0.25) 55%, rgba(26,18,11,0.55) 100%)',
+          }}
+          aria-hidden
+        />
+
+        <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl flex-col items-center justify-center px-3 py-6 sm:px-6 lg:px-8">
+          {/* Floating paper ticket form — sits on the desk */}
+          <section className="w-full max-w-2xl overflow-hidden border-[3px] border-[var(--black)] bg-[var(--paper)] shadow-[8px_10px_0_#1a120b]">
+            {/* Brass header plate */}
+            <div className="relative border-b-[3px] border-[var(--black)] bg-[linear-gradient(180deg,var(--brass-light),var(--brass),var(--brass-dark))] px-5 py-4 sm:px-6">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="font-mono text-[10px] uppercase tracking-[0.4em] text-[var(--black)]">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-[var(--black)]">
                     Poor Mans Sport · Est. 1932
                   </p>
-                  <h1 className="mt-1 font-display text-4xl uppercase tracking-[0.08em] text-[var(--black)] md:text-5xl">
+                  <h1 className="mt-1 font-display text-3xl uppercase tracking-[0.08em] text-[var(--black)] sm:text-4xl md:text-5xl">
                     The Bell
                   </h1>
-                  <p className="mt-2 max-w-md font-mono text-xs uppercase leading-relaxed text-[var(--black)] opacity-80">
+                  <p className="mt-1 max-w-sm font-mono text-[10px] uppercase leading-relaxed text-[var(--black)] opacity-80 sm:text-xs">
                     Member access · Evidence-based · Safety first
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-2">
                   <span className="stamp stamp--static stamp--cleared text-[10px]">CLEARED FOR ENTRY</span>
-                  <Link
-                    href="/public"
-                    className="leather-tag no-underline text-[10px]"
-                  >
+                  <Link href="/public" className="leather-tag no-underline text-[10px]">
                     Public Page
                   </Link>
                 </div>
               </div>
             </div>
 
-            <div className="grid gap-0 lg:grid-cols-[1.1fr_0.9fr]">
+            <div className="grid gap-0 lg:grid-cols-[1.15fr_0.85fr]">
+              {/* Left: login form */}
               <div className="space-y-0 border-b-[3px] border-[var(--black)] lg:border-b-0 lg:border-r-[3px]">
                 <div className="flex border-b-[2px] border-[var(--black)]">
                   <button
@@ -320,7 +340,7 @@ function LoginPageContent() {
                   </button>
                 </div>
 
-                <div className="p-5 sm:p-6">
+                <div className="p-4 sm:p-5">
                   {selectedMethod === 'microsoft' ? (
                     <div className="space-y-4">
                       <p className="font-mono text-xs uppercase tracking-wide text-[var(--gray-dark)]">
@@ -408,7 +428,8 @@ function LoginPageContent() {
                 </div>
               </div>
 
-              <aside className="bg-[var(--canvas-tan-dark)] p-5 sm:p-6">
+              {/* Right: gym notices ledger */}
+              <aside className="bg-[var(--canvas-tan-dark)] p-4 sm:p-5">
                 <div className="mb-3 flex items-center justify-between gap-2">
                   <p className="font-display text-sm uppercase tracking-wide text-[var(--paper)]">
                     Gym Notices
@@ -448,12 +469,17 @@ function LoginPageContent() {
               </aside>
             </div>
           </section>
+
+          {/* Small footer credit on the desk */}
+          <p className="mt-4 font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--paper)] opacity-70 drop-shadow-sm">
+            PPBF · Poor Mans Sport · Desk of the Trainer
+          </p>
         </div>
       </main>
     );
   }
 
-  // Tactical fallback (explicit localStorage choice)
+  // ========== TACTICAL fallback (explicit localStorage choice) ==========
   return (
     <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       <div className="mx-auto grid min-h-screen w-full max-w-5xl place-items-center px-6 py-10 lg:px-10">
