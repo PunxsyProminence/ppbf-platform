@@ -36,40 +36,24 @@ export interface PilotAnnouncement {
   created_at: string;
 }
 
-let ensured = false;
-
-async function ensureAnnouncementTable(): Promise<void> {
-  if (ensured) {
-    return;
-  }
-
-  await query(
-    `create table if not exists pilot.announcements (
-      organization_id text not null references pilot.organizations(organization_id),
-      announcement_id uuid not null,
-      message text not null,
-      author_name text not null,
-      author_role text not null,
-      created_at timestamptz not null default now(),
-      updated_at timestamptz not null default now(),
-      constraint pilot_announcements_pk primary key (organization_id, announcement_id)
-    )`,
-  );
-
-  await query(
-    `create index if not exists idx_pilot_announcements_org_created on pilot.announcements(organization_id, created_at desc)`,
-  );
-
-  ensured = true;
-}
+// pilot.announcements is owned by
+// infra/azure/pilot_slice_postgres_announcements_migration.sql, applied through
+// the apply-migrations workflow like every other table.
+//
+// It previously had no migration at all: an `ensureAnnouncementTable()` helper
+// issued CREATE TABLE from inside these functions, so the schema was created by
+// whichever request happened to arrive first. That was already the wrong owner,
+// and it stopped being merely untidy when GET /api/pilot/announcements/public
+// shipped unauthenticated -- an anonymous internet request could then execute
+// DDL against production Postgres. Do not reintroduce it; if the table is
+// missing, the migration has not been run and the query should say so loudly
+// rather than silently creating schema in a request handler.
 
 export function isAllowedAnnouncementRole(role: string): role is AnnouncementAuthorRole {
   return ALLOWED_AUTHOR_ROLES.includes(role as AnnouncementAuthorRole);
 }
 
 export async function listAnnouncements(organizationId: string, limit = 8): Promise<PilotAnnouncement[]> {
-  await ensureAnnouncementTable();
-
   const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(limit, 25)) : 8;
   return query<PilotAnnouncement>(
     `select announcement_id, organization_id, message, author_name, author_role, created_at
@@ -87,8 +71,6 @@ export async function createAnnouncement(params: {
   authorName: string;
   authorRole: AnnouncementAuthorRole;
 }): Promise<PilotAnnouncement> {
-  await ensureAnnouncementTable();
-
   const announcementId = randomUUID();
   await query(
     `insert into pilot.announcements
