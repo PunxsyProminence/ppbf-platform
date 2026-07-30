@@ -585,3 +585,83 @@ EXAMPLE — diagnosis request:
 Get evaluated by a medical professional. Full stop.
 What I can do: share what research says about concussion recognition and what to watch for. Want that?"`;
 
+
+/**
+ * Per-tier response budget, appended to the system prompt at call time.
+ *
+ * The base prompt carries no length guidance at all, and the measured result
+ * was 14,000-17,000 characters per answer on every deployment (see the latency
+ * table in shadowRouter.ts) -- an essay per chat turn, delivered after 33-95
+ * seconds. Completion length is the one knob that improves readability,
+ * latency, and token cost together, so the quick tiers get a hard word budget
+ * while the deep-dive tiers keep long-form.
+ *
+ * The budget must never outrank doctrine: the prompt says so explicitly,
+ * because a model told to be brief will otherwise trim the deferral first.
+ */
+export function buildResponseLengthPrompt(sessionType: string): string {
+  if (sessionType === 'quick_round' || sessionType === 'recovery_round') {
+    return `## RESPONSE LENGTH
+- Keep the entire reply under about 150 words.
+- Lead with the answer: one direct observation, one practical next step, then stop.
+- Safety text always wins over the budget. Never shorten or drop a required medical deferral, handoff, or RESEARCH NEEDED label to save words.
+- If the topic genuinely needs depth, give the short answer and offer a Heavy Bag Session for the deep dive.`;
+  }
+
+  return `## RESPONSE LENGTH
+- Long-form is appropriate for this session type. Structure it with clear sections.
+- Depth is not padding: every paragraph must add information. No restating the question, no filler summaries.`;
+}
+
+/**
+ * Audience register, appended to the system prompt at call time.
+ *
+ * The base persona is written for one audience and protects younger readers
+ * with a single line ("use cleaner language automatically"). The server knows
+ * exactly who is asking -- the authenticated role arrives with every request --
+ * so the register is selected here rather than left to the model's judgment.
+ *
+ * The athlete register assumes a minor. Athlete accounts in this organization
+ * are predominantly youth boxers, the server does not know the requester's
+ * age, and the cost of talking to an adult slightly plainly is zero while the
+ * cost of dark humor aimed at a twelve-year-old is not.
+ */
+export function buildRegisterPrompt(role: string): string {
+  if (role === 'athlete') {
+    return `## AUDIENCE REGISTER
+You are speaking with an athlete. Assume they may be a minor.
+- No dark or sarcastic humor. Keep the tough-but-caring directness, without the edge.
+- Short sentences. Plain words -- about an 8th-grade reading level.
+- Define any training or medical term in a few words the first time you use it.
+- Point them toward their coach for decisions rather than toward long theory.`;
+  }
+
+  if (role === 'parent') {
+    return `## AUDIENCE REGISTER
+You are speaking with a parent or guardian. Assume no boxing or sports-science background.
+- Plain language. Explain any technical or platform term the first time it appears, including evidence labels like RESEARCH NEEDED.
+- Measured and respectful. No gym slang or insider humor without a plain-language explanation beside it.
+- Be clear about what needs a coach or medical professional, and how to reach one.`;
+  }
+
+  // Coaches, organization admins, staff, volunteers, board, platform owner:
+  // the full technical register the base persona defines.
+  return `## AUDIENCE REGISTER
+You are speaking with staff. Use the full technical register: precise terminology, direct analysis, and the complete persona defined above.`;
+}
+
+/**
+ * The system prompt as it should actually be sent: base doctrine and persona,
+ * then the per-tier length budget, then the per-audience register.
+ *
+ * Callers pass the resolved session type and the authenticated role. The base
+ * SHADOW_SYSTEM_PROMPT export stays untouched -- tests pin its contents, and
+ * the doctrine must never vary by audience; only length and register do.
+ */
+export function composeShadowSystemPrompt(input: { role: string; sessionType: string }): string {
+  return `${SHADOW_SYSTEM_PROMPT}
+
+${buildResponseLengthPrompt(input.sessionType)}
+
+${buildRegisterPrompt(input.role)}`;
+}
