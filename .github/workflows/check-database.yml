@@ -25,6 +25,14 @@
 #   unknown for any environment that predates the base schema inlining these
 #   FKs, and finding out is a precondition for running the corrected migration
 #   without it failing partway through.
+#
+#   stranded-guardians: which non-athlete accounts sit on auth_provider
+#   'ppbf_local' and therefore have no working login path (PIN login is
+#   athlete-only, Microsoft login only matches provider 'microsoft', and any
+#   session is revoked on first use). The pre-#46 intake path provisioned
+#   every guardian this way; #46 fixed provisioning going forward but changed
+#   no existing rows, so this reports the accounts still affected. Emails are
+#   masked in the output; account_ids print verbatim as the remediation key.
 # ─────────────────────────────────────────────────────────────────────────
 
 name: check-database
@@ -46,6 +54,7 @@ on:
         type: choice
         options:
           - multiorg-orphans
+          - stranded-guardians
 
 permissions:
   id-token: write
@@ -104,6 +113,9 @@ jobs:
           case "$CHECK" in
             multiorg-orphans)
               npm run pilot:check-multiorg-orphans | tee /tmp/check-output.txt
+              ;;
+            stranded-guardians)
+              npm run pilot:check-stranded-guardians | tee /tmp/check-output.txt
               ;;
             *)
               echo "::error::Unknown check '$CHECK'"
