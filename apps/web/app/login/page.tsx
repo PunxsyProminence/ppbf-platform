@@ -272,7 +272,7 @@ function LoginPageContent() {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="font-mono text-[10px] uppercase tracking-[0.4em] text-[var(--black)]">
-                    Poor Man's Sport · Est. 1932
+                    Poor Mans Sport · Est. 1932
                   </p>
                   <h1 className="mt-1 font-display text-4xl uppercase tracking-[0.08em] text-[var(--black)] md:text-5xl">
                     The Bell
