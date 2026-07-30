@@ -40,7 +40,7 @@ gates are `npm run typecheck` / `lint` / `test`.
 
 ## SHADOW
 
-- [docs/SHADOW_SPECIFICATION.md](docs/SHADOW_SPECIFICATION.md)
+- [docs/archive/SHADOW_SPECIFICATION.md](docs/archive/SHADOW_SPECIFICATION.md) — archived vision doc; do not build from it
 - [docs/SHADOW_AUTHORITY_MODEL.md](docs/SHADOW_AUTHORITY_MODEL.md)
 - [docs/SHADOW_EVENT_MODEL.md](docs/SHADOW_EVENT_MODEL.md)
 - [docs/SHADOW_PHASE1_HARDENING_CHECKLIST.md](docs/SHADOW_PHASE1_HARDENING_CHECKLIST.md)

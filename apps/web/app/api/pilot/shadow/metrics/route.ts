@@ -41,6 +41,17 @@ export interface OrgMetrics {
     tierAdvancementCount: number | null;
     totalInteractions: number;
     positiveOutcomeRate: number | null;
+    // Rendered by the admin console's SHADOW Intelligence panel. These lived
+    // in getGrowthMetrics all along, but the OrgMetrics restructure stopped
+    // exposing them and the panel silently blanked (audit AS-1) -- the panel
+    // now binds to this interface by import, so a future shape change is a
+    // compile error there instead of a NaN tile.
+    filterRate: number | null;
+    avgSatisfaction: number | null;
+    recommendationsMade: number;
+    researchRequirementsCreated: number;
+    researchRequirementsClosed: number;
+    newLibraryPatterns: number;
   };
   unlocks: {
     strongPersonalization: boolean;
@@ -175,6 +186,12 @@ async function getOrgMetrics(
       tierAdvancementCount: null,
       totalInteractions: growthMetrics.totalInteractions,
       positiveOutcomeRate: growthMetrics.positiveOutcomeRate,
+      filterRate: growthMetrics.filterRate,
+      avgSatisfaction: growthMetrics.avgSatisfaction,
+      recommendationsMade: growthMetrics.recommendationsMade,
+      researchRequirementsCreated: growthMetrics.researchRequirementsCreated,
+      researchRequirementsClosed: growthMetrics.researchRequirementsClosed,
+      newLibraryPatterns: growthMetrics.newLibraryPatterns,
       unavailableReasons: {
         avgComplexityProgression: 'COMPLEXITY_HISTORY_NOT_STORED',
         tierAdvancementCount: 'TIER_TRANSITION_HISTORY_NOT_STORED',
