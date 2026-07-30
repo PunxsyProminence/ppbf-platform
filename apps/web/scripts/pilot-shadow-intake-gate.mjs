@@ -4,6 +4,8 @@
   - Persist to Blob + shadow_intake + intake case/doc tables
   - Approve + promote to domain records
   - Verify retrieval and audit trail
+  - Verify SHADOW chat answers live (both sync tiers, then the background
+    worker's full enqueue -> drain -> render cycle)
 */
 
 import fs from 'node:fs/promises';
@@ -281,6 +283,110 @@ function assertShadowChatAnswered(label, chat) {
   }
 }
 
+// Step 14's poll budget. Worst case for one clean pass: the worker's default
+// 30s tick to claim the job, the 120s staging provider timeout for the model
+// call, then validation and persistence. 300s covers that with margin; a job
+// still pending at the deadline means the flag is set but the worker loop is
+// not draining, which is exactly the regression this step exists to catch.
+const BACKGROUND_JOB_TIMEOUT_MS = 300_000;
+const BACKGROUND_POLL_INTERVAL_MS = 5_000;
+
+const BACKGROUND_HEAVY_BAG_QUESTION = 'Plan a four-station heavy bag circuit for a 60-minute youth class, '
+  + 'with a coaching cue and a common fault to watch for at each station.';
+
+async function runBackgroundHeavyBagOnce(admin) {
+  const queued = await admin.call('/api/pilot/shadow/chat', {
+    method: 'POST',
+    body: {
+      message: BACKGROUND_HEAVY_BAG_QUESTION,
+      tier: 'heavy_bag',
+      preferAsync: true,
+    },
+  });
+
+  // A state of 'ok' here means the route answered synchronously: preferAsync
+  // only queues when PPBF_SHADOW_WORKER_ENABLED is 'true' on the deployed
+  // revision, so a sync answer is an env-var regression, not a chat failure.
+  if (queued.state !== 'queued' || queued.async !== true || !queued.jobId || !queued.conversationId) {
+    throw new Error(
+      'Background Heavy Bag did not queue: '
+      + `state=${queued.state} async=${queued.async} jobId=${queued.jobId ?? 'none'} `
+      + `conversationId=${queued.conversationId ?? 'none'}. `
+      + 'A synchronous answer here means PPBF_SHADOW_WORKER_ENABLED is not set on the app.',
+    );
+  }
+
+  const deadline = Date.now() + BACKGROUND_JOB_TIMEOUT_MS;
+  let job = await admin.call(`/api/pilot/shadow/jobs/${queued.jobId}`);
+  while (job.status === 'pending' || job.status === 'running') {
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `Background Heavy Bag job ${queued.jobId} was still '${job.status}' after `
+        + `${BACKGROUND_JOB_TIMEOUT_MS / 1000}s. The queue accepted the job but the worker `
+        + 'never finished it -- check the container logs for the instrumentation worker loop.',
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, BACKGROUND_POLL_INTERVAL_MS));
+    job = await admin.call(`/api/pilot/shadow/jobs/${queued.jobId}`);
+  }
+
+  // 'failed' and 'cancelled' fail on first sight, like 'degraded' does on the
+  // sync path: both mean the execution itself broke, not that phrasing tripped
+  // the safety filter.
+  if (job.status !== 'completed') {
+    throw new Error(
+      `Background Heavy Bag job ${queued.jobId} ended '${job.status}': ${job.error ?? 'no error code'}`,
+    );
+  }
+
+  return { queued, job };
+}
+
+async function assertBackgroundHeavyBagRendered(admin, queued, job) {
+  const output = job.output ?? {};
+  if (output.responseState !== 'ok') {
+    throw new Error(
+      `Background Heavy Bag completed but its answer was '${output.responseState}': `
+      + 'two consecutive filtered answers mean real users are seeing withheld answers too.',
+    );
+  }
+  if (typeof output.response !== 'string' || output.response.trim().length < 40) {
+    throw new Error(`Background Heavy Bag returned an implausibly short answer: ${JSON.stringify(output.response)}`);
+  }
+  if (!output.assistantMessageId || output.conversationId !== queued.conversationId) {
+    throw new Error(
+      'Background Heavy Bag output is missing its conversation binding: '
+      + `assistantMessageId=${output.assistantMessageId ?? 'none'} `
+      + `conversationId=${output.conversationId ?? 'none'} expected=${queued.conversationId}`,
+    );
+  }
+
+  // The poll payload alone proves the processor ran. The answer must ALSO read
+  // back through the sessions API, because that is what the chat page renders
+  // when the user returns to the conversation -- an answer that completes but
+  // never renders is the 'merged but never worked' failure mode.
+  const history = await admin.call(`/api/pilot/shadow/sessions/${queued.conversationId}?limit=50`);
+  const messages = Array.isArray(history.messages) ? history.messages : [];
+  const rendered = messages.find((m) => m.messageId === output.assistantMessageId);
+  if (!rendered || rendered.role !== 'assistant' || rendered.content !== output.response) {
+    throw new Error('Background Heavy Bag answer is not readable back through the sessions API.');
+  }
+  const question = messages.find((m) => m.role === 'user' && m.content === BACKGROUND_HEAVY_BAG_QUESTION);
+  if (!question) {
+    throw new Error('Background Heavy Bag conversation is missing the user question persisted at enqueue.');
+  }
+  const outputCitations = Array.isArray(output.citations) ? output.citations : [];
+  const renderedCitations = Array.isArray(rendered.citations) ? rendered.citations : [];
+  if (renderedCitations.length !== outputCitations.length || rendered.evidenceTier !== output.evidenceTier) {
+    throw new Error(
+      'Background Heavy Bag citations diverge between job output and rendered message: '
+      + `output ${outputCitations.length} (${output.evidenceTier}), `
+      + `rendered ${renderedCitations.length} (${rendered.evidenceTier}).`,
+    );
+  }
+  return { citationCount: renderedCitations.length };
+}
+
 async function run() {
   console.log('1) Mint administrator session');
   const adminSession = await mintGateSession({
@@ -527,6 +633,22 @@ async function run() {
     tier: 'heavy_bag',
   });
 
+  console.log('14) Verify background Heavy Bag completes through the job worker (administrator)');
+  // Step 13 proves the model can answer; this step proves the deployment's
+  // async spine: enqueue (question persisted immediately, job queued with the
+  // evidence snapshot), drain (the instrumentation-started worker claims and
+  // executes under the actor's re-validated authority), render (answer and
+  // citations readable back through the sessions API). Nothing else in CI runs
+  // this cycle against a deployed revision, and the production worker flag
+  // only flips once this step has passed on staging. Filtered answers get the
+  // same one-retry policy as the sync steps above.
+  let background = await runBackgroundHeavyBagOnce(admin);
+  if (background.job.output?.responseState === 'filtered') {
+    console.log('   background heavy bag: answer was filtered once (phrasing); retrying to distinguish noise from regression.');
+    background = await runBackgroundHeavyBagOnce(admin);
+  }
+  const backgroundRender = await assertBackgroundHeavyBagRendered(admin, background.queued, background.job);
+
   if (approvalBlockedByKnownGap) {
     console.log('SHADOW INTAKE GATE PASS WITH KNOWN GAP (document review unbuilt; promotion untested)');
   } else {
@@ -540,7 +662,18 @@ async function run() {
         guardian_parent_id: guardianParentId,
         uploaded_documents: uploaded,
         promotion_tested: !approvalBlockedByKnownGap,
-        shadow_chat: { quick_round: quickChat.state, heavy_bag: heavyChat.state },
+        shadow_chat: {
+          quick_round: quickChat.state,
+          heavy_bag: heavyChat.state,
+          background_heavy_bag: background.job.output?.responseState ?? 'unknown',
+        },
+        background_heavy_bag: {
+          job_id: background.queued.jobId,
+          conversation_id: background.queued.conversationId,
+          assistant_message_id: background.job.output?.assistantMessageId ?? null,
+          citations: backgroundRender.citationCount,
+          evidence_tier: background.job.output?.evidenceTier ?? null,
+        },
       },
       null,
       2,
