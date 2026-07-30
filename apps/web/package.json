@@ -19,6 +19,7 @@
     "pilot:apply-shadow-runtime": "node scripts/pilot-apply-shadow-runtime-migration.mjs",
     "pilot:apply-public-interest": "node scripts/pilot-apply-public-interest-migration.mjs",
     "pilot:apply-announcements": "node scripts/pilot-apply-announcements-migration.mjs",
+    "pilot:apply-volunteer-program": "node scripts/pilot-apply-volunteer-program-migration.mjs",
     "pilot:apply-scheduler-tables": "node scripts/pilot-apply-scheduler-tables-migration.mjs",
     "pilot:backfill-chunk-embeddings": "node scripts/pilot-backfill-chunk-embeddings.mjs",
     "pilot:apply-scheduler-race": "node scripts/pilot-apply-scheduler-race-migration.mjs",

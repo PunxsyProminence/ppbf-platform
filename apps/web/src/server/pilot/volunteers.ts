@@ -1,14 +1,26 @@
+import { randomUUID } from 'node:crypto';
+
 import { query, queryOne } from './db';
 
+export const VOLUNTEER_STATUSES = ['active', 'pending', 'inactive'] as const;
+export type VolunteerStatus = (typeof VOLUNTEER_STATUSES)[number];
+
+export function isVolunteerStatus(value: string): value is VolunteerStatus {
+  return (VOLUNTEER_STATUSES as readonly string[]).includes(value);
+}
+
 export interface VolunteerRecord {
-  volunteer_id: number;
+  // text, not a sequence. The canonical key is
+  // (organization_id, volunteer_id) -- see the shape note below.
+  volunteer_id: string;
   organization_id: string;
+  account_id: string | null;
   full_name: string;
-  role_focus: string;
-  availability: string;
-  certification_status: string;
-  background_check_status: string;
-  status: 'active' | 'pending' | 'inactive';
+  role_focus: string | null;
+  availability: string | null;
+  certification_status: string | null;
+  background_check_status: string | null;
+  status: VolunteerStatus;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -22,53 +34,45 @@ export interface VolunteerCreateInput {
   certificationStatus: string;
   backgroundCheckStatus: string;
   notes?: string | null;
+  // Set when the volunteer is also a platform account. Most volunteers are
+  // not, so this is null far more often than not, and the column is nullable
+  // in the base schema for that reason.
+  accountId?: string | null;
 }
 
-let ensured = false;
+// pilot.volunteers is owned by the base schema plus
+// infra/azure/pilot_slice_postgres_volunteer_program_migration.sql, applied
+// through the apply-migrations workflow.
+//
+// There used to be an `ensureVolunteerTable()` here issuing CREATE TABLE from
+// inside these functions. It was worse than merely being the wrong owner: it
+// declared a DIFFERENT shape from the live table (a `bigserial` single-column
+// key), and because `create table if not exists` is a no-op against an
+// existing table, it silently agreed with a schema it did not match. Every
+// insert then failed on five columns that did not exist. Do not reintroduce
+// it -- guardrails §7, and the base schema says so in its own comment.
+//
+// Shape: `volunteer_id` is text and minted here, because the canonical key is
+// the composite (organization_id, volunteer_id) that every other entity uses.
+// A sequence-backed integer key would break the multi-org model.
 
-async function ensureVolunteerTable(): Promise<void> {
-  if (ensured) return;
-
-  await query(
-    `create table if not exists pilot.volunteers (
-      volunteer_id bigserial primary key,
-      organization_id text not null,
-      full_name text not null,
-      role_focus text not null,
-      availability text not null,
-      certification_status text not null,
-      background_check_status text not null,
-      status text not null default 'pending',
-      notes text null,
-      created_at timestamptz not null default now(),
-      updated_at timestamptz not null default now()
-    )`,
-  );
-
-  await query(
-    `create index if not exists idx_volunteers_org_status_created
-     on pilot.volunteers(organization_id, status, created_at desc)`,
-  );
-
-  ensured = true;
-}
+const SELECT_COLUMNS = `
+  volunteer_id,
+  organization_id,
+  account_id,
+  full_name,
+  role_focus,
+  availability,
+  certification_status,
+  background_check_status,
+  status,
+  notes,
+  created_at,
+  updated_at`;
 
 export async function listVolunteers(organizationId: string): Promise<VolunteerRecord[]> {
-  await ensureVolunteerTable();
-
   return query<VolunteerRecord>(
-    `select
-       volunteer_id,
-       organization_id,
-       full_name,
-       role_focus,
-       availability,
-       certification_status,
-       background_check_status,
-       status,
-       notes,
-       created_at,
-       updated_at
+    `select ${SELECT_COLUMNS}
      from pilot.volunteers
      where organization_id = $1
      order by created_at desc`,
@@ -76,38 +80,60 @@ export async function listVolunteers(organizationId: string): Promise<VolunteerR
   );
 }
 
-export async function createVolunteer(input: VolunteerCreateInput): Promise<number> {
-  await ensureVolunteerTable();
+export async function getVolunteer(
+  organizationId: string,
+  volunteerId: string,
+): Promise<VolunteerRecord | null> {
+  return queryOne<VolunteerRecord>(
+    `select ${SELECT_COLUMNS}
+     from pilot.volunteers
+     where organization_id = $1
+       and volunteer_id = $2`,
+    [organizationId, volunteerId],
+  );
+}
 
-  const row = await queryOne<{ volunteer_id: number }>(
+export async function createVolunteer(input: VolunteerCreateInput): Promise<string> {
+  const volunteerId = randomUUID();
+
+  // `role` and `active_flag` are the base schema's own columns and are NOT
+  // NULL / defaulted there. They are written from the program fields rather
+  // than left to defaults so the canonical columns stay truthful instead of
+  // quietly disagreeing with role_focus and status.
+  await query(
     `insert into pilot.volunteers
-     (organization_id, full_name, role_focus, availability, certification_status, background_check_status, notes)
-     values ($1,$2,$3,$4,$5,$6,$7)
-     returning volunteer_id`,
+       (organization_id, volunteer_id, account_id, full_name, role, active_flag,
+        role_focus, availability, certification_status, background_check_status,
+        status, notes, created_at, updated_at)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now(), now())`,
     [
       input.organizationId,
+      volunteerId,
+      input.accountId ?? null,
       input.fullName,
+      input.roleFocus,
+      false,
       input.roleFocus,
       input.availability,
       input.certificationStatus,
       input.backgroundCheckStatus,
+      'pending',
       input.notes ?? null,
     ],
   );
 
-  return row?.volunteer_id ?? 0;
+  return volunteerId;
 }
 
 export async function updateVolunteerStatus(input: {
   organizationId: string;
-  volunteerId: number;
-  status: VolunteerRecord['status'];
+  volunteerId: string;
+  status: VolunteerStatus;
 }): Promise<boolean> {
-  await ensureVolunteerTable();
-
-  const rows = await query<{ volunteer_id: number }>(
+  const rows = await query<{ volunteer_id: string }>(
     `update pilot.volunteers
      set status = $3,
+         active_flag = ($3 = 'active'),
          updated_at = now()
      where organization_id = $1
        and volunteer_id = $2
