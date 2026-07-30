@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { apiBase } from '@/lib/apiBase';
 
 interface VolunteerRecord {
-  volunteer_id: number;
+  volunteer_id: string;
   full_name: string;
   role_focus: string;
   availability: string;
@@ -20,7 +20,7 @@ type VolunteerStatus = (typeof volunteerStatuses)[number];
 
 interface VolunteerCardProps {
   item: VolunteerRecord;
-  onStatusChange: (volunteerId: number, status: VolunteerStatus) => void;
+  onStatusChange: (volunteerId: string, status: VolunteerStatus) => void;
 }
 
 function VolunteerCard(props: Readonly<VolunteerCardProps>) {
@@ -103,10 +103,10 @@ export default function VolunteerManagementPage() {
       throw new Error(payload.error || 'Unable to create volunteer.');
     }
 
-    const payload = (await response.json()) as { volunteer_id?: number };
+    const payload = (await response.json()) as { volunteer_id?: string };
     setItems((current) => [
       {
-        volunteer_id: payload.volunteer_id ?? Date.now(),
+        volunteer_id: payload.volunteer_id ?? crypto.randomUUID(),
         full_name: draft.full_name,
         role_focus: draft.role_focus,
         availability: draft.availability,
@@ -128,7 +128,7 @@ export default function VolunteerManagementPage() {
     setMessage('Volunteer created.');
   }
 
-  async function handleStatusUpdate(volunteerId: number, status: VolunteerStatus) {
+  async function handleStatusUpdate(volunteerId: string, status: VolunteerStatus) {
     try {
       const response = await fetch(`${apiBase()}/api/admin/volunteers`, {
         method: 'PATCH',

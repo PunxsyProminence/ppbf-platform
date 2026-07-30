@@ -2,7 +2,13 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
-import { createVolunteer, listVolunteers, updateVolunteerStatus } from '@/src/server/pilot/volunteers';
+import {
+  VOLUNTEER_STATUSES,
+  createVolunteer,
+  isVolunteerStatus,
+  listVolunteers,
+  updateVolunteerStatus,
+} from '@/src/server/pilot/volunteers';
 
 export const runtime = 'nodejs';
 
@@ -59,12 +65,22 @@ export async function PATCH(request: NextRequest) {
     requireRole(principal, ['organization_admin', 'admin']);
 
     const body = (await request.json().catch(() => ({}))) as {
-      volunteer_id?: number;
-      status?: 'active' | 'pending' | 'inactive';
+      volunteer_id?: string;
+      status?: string;
     };
 
     if (!body.volunteer_id || !body.status) {
       return NextResponse.json({ ok: false, error: 'missing volunteer_id or status' }, { status: 400 });
+    }
+
+    // Checked here rather than left to the database: the column now carries a
+    // CHECK constraint, and a rejected write should be a 400 naming the
+    // allowed values, not a 500 from SQLSTATE 23514.
+    if (!isVolunteerStatus(body.status)) {
+      return NextResponse.json(
+        { ok: false, error: `status must be one of: ${VOLUNTEER_STATUSES.join(', ')}` },
+        { status: 400 },
+      );
     }
 
     const updated = await updateVolunteerStatus({

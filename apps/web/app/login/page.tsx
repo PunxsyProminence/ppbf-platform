@@ -263,78 +263,37 @@ function LoginPageContent() {
 
   const microsoftSignIn = createMicrosoftSignInHandler(apiBase());
 
-  // ========== RETRO: gym desk scene (CSS wood + cork + lamp + paper ticket) ==========
   if (isRetro) {
     return (
-      <main className="relative min-h-screen overflow-hidden text-[var(--black)]">
-        {/* Desk scene layers — photoreal mockup path ready; CSS fallback always works */}
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            backgroundColor: '#2c1810',
-            backgroundImage: [
-              // optional real photo when binary is in public/retro/
-              "url('/retro/login-desk-bg.jpg')",
-              // wood desk + corkboard + lamp CSS fallback (shows if photo 404s)
-              'radial-gradient(ellipse 90% 70% at 20% 10%, rgba(212,175,119,0.35) 0%, transparent 50%)',
-              'linear-gradient(180deg, #5c3a24 0%, #3b2415 18%, #2c1810 45%, #1a0f0a 100%)',
-              'repeating-linear-gradient(90deg, transparent, transparent 3px, rgba(0,0,0,0.04) 3px, rgba(0,0,0,0.04) 6px)',
-            ].join(', '),
-            backgroundSize: 'cover, cover, cover, auto',
-            backgroundPosition: 'center, center, center, 0 0',
-            backgroundRepeat: 'no-repeat, no-repeat, no-repeat, repeat',
-            filter: 'brightness(0.95) contrast(1.08)',
-          }}
-          aria-hidden
-        />
-        {/* Corkboard band at top */}
-        <div
-          className="pointer-events-none absolute left-0 right-0 top-0 h-[22%] sm:h-[26%]"
-          style={{
-            background:
-              'linear-gradient(180deg, #c4a574 0%, #a68b5b 40%, #8a6f45 100%)',
-            boxShadow: 'inset 0 -8px 20px rgba(0,0,0,0.35)',
-            opacity: 0.55,
-          }}
-          aria-hidden
-        />
-        {/* Vignette for form readability */}
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background:
-              'radial-gradient(ellipse 68% 62% at 50% 48%, transparent 0%, rgba(26,18,11,0.2) 50%, rgba(26,18,11,0.62) 100%)',
-          }}
-          aria-hidden
-        />
-
-        <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl flex-col items-center justify-center px-3 py-6 sm:px-6 lg:px-8">
-          {/* Floating paper ticket form — sits on the desk */}
-          <section className="w-full max-w-2xl overflow-hidden border-[3px] border-[var(--black)] bg-[var(--paper)] shadow-[8px_10px_0_#1a120b]">
-            {/* Brass header plate */}
-            <div className="relative border-b-[3px] border-[var(--black)] bg-[linear-gradient(180deg,var(--brass-light),var(--brass),var(--brass-dark))] px-5 py-4 sm:px-6">
+      <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
+        <div className="mx-auto grid min-h-[calc(100vh-3.5rem)] w-full max-w-5xl place-items-center px-4 py-8 lg:px-8">
+          <section className="w-full max-w-3xl overflow-hidden border-[3px] border-[var(--black)] bg-[var(--paper)] shadow-[var(--shadow-lg)]">
+            <div className="relative border-b-[3px] border-[var(--black)] bg-[linear-gradient(180deg,var(--brass-light),var(--brass),var(--brass-dark))] px-6 py-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-[var(--black)]">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.4em] text-[var(--black)]">
                     Poor Mans Sport · Est. 1932
                   </p>
-                  <h1 className="mt-1 font-display text-3xl uppercase tracking-[0.08em] text-[var(--black)] sm:text-4xl md:text-5xl">
+                  <h1 className="mt-1 font-display text-4xl uppercase tracking-[0.08em] text-[var(--black)] md:text-5xl">
                     The Bell
                   </h1>
-                  <p className="mt-1 max-w-sm font-mono text-[10px] uppercase leading-relaxed text-[var(--black)] opacity-80 sm:text-xs">
+                  <p className="mt-2 max-w-md font-mono text-xs uppercase leading-relaxed text-[var(--black)] opacity-80">
                     Member access · Evidence-based · Safety first
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-2">
                   <span className="stamp stamp--static stamp--cleared text-[10px]">CLEARED FOR ENTRY</span>
-                  <Link href="/public" className="leather-tag no-underline text-[10px]">
+                  <Link
+                    href="/public"
+                    className="leather-tag no-underline text-[10px]"
+                  >
                     Public Page
                   </Link>
                 </div>
               </div>
             </div>
 
-            <div className="grid gap-0 lg:grid-cols-[1.15fr_0.85fr]">
+            <div className="grid gap-0 lg:grid-cols-[1.1fr_0.9fr]">
               <div className="space-y-0 border-b-[3px] border-[var(--black)] lg:border-b-0 lg:border-r-[3px]">
                 <div className="flex border-b-[2px] border-[var(--black)]">
                   <button
@@ -361,7 +320,7 @@ function LoginPageContent() {
                   </button>
                 </div>
 
-                <div className="p-4 sm:p-5">
+                <div className="p-5 sm:p-6">
                   {selectedMethod === 'microsoft' ? (
                     <div className="space-y-4">
                       <p className="font-mono text-xs uppercase tracking-wide text-[var(--gray-dark)]">
@@ -449,7 +408,7 @@ function LoginPageContent() {
                 </div>
               </div>
 
-              <aside className="bg-[var(--canvas-tan-dark)] p-4 sm:p-5">
+              <aside className="bg-[var(--canvas-tan-dark)] p-5 sm:p-6">
                 <div className="mb-3 flex items-center justify-between gap-2">
                   <p className="font-display text-sm uppercase tracking-wide text-[var(--paper)]">
                     Gym Notices
@@ -489,16 +448,12 @@ function LoginPageContent() {
               </aside>
             </div>
           </section>
-
-          <p className="mt-4 font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--paper)] opacity-70 drop-shadow-sm">
-            PPBF · Poor Mans Sport · Desk of the Trainer
-          </p>
         </div>
       </main>
     );
   }
 
-  // ========== TACTICAL fallback ==========
+  // Tactical fallback (explicit localStorage choice)
   return (
     <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       <div className="mx-auto grid min-h-screen w-full max-w-5xl place-items-center px-6 py-10 lg:px-10">
