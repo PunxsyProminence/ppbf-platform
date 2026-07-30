@@ -1,0 +1,180 @@
+<!-- @dsCard group="Foundations" name="Palette" subtitle="Hide, brass and bone ramps + the four-rung status ladder" -->
+<link rel="stylesheet" href="../ppbf.css">
+<style>
+  body { margin: 0; }
+  .sheet { padding: var(--s6); max-width: 1120px; margin: 0 auto; }
+  h1 { font-family: var(--font-stencil); text-transform: uppercase; font-size: var(--t-2xl);
+       letter-spacing: .05em; color: var(--bone-100); margin: var(--s3) 0 var(--s3);
+       text-shadow: 0 2px 0 rgba(0,0,0,.6), 0 0 22px rgba(232,206,122,.14); }
+  .lede { font-size: var(--t-sm); line-height: 1.62; color: var(--bone-300); max-width: 64ch; margin: 0 0 var(--s6); }
+  h2 { font-family: var(--font-stencil); text-transform: uppercase; font-size: var(--t-md);
+       letter-spacing: .08em; color: var(--brass-300); margin: var(--s7) 0 var(--s5);
+       padding-bottom: var(--s3); border-bottom: 1px solid rgba(212,175,74,.28); }
+  .law { border-left: 3px solid var(--brass-500); background: rgba(184,145,47,.13);
+         padding: var(--s4) var(--s5); border-radius: 0 var(--r-md) var(--r-md) 0;
+         font-size: var(--t-sm); line-height: 1.6; color: var(--brass-200); margin-bottom: var(--s5); }
+  .law b { color: var(--brass-300); }
+
+  .ramp { display: grid; gap: var(--s3); grid-template-columns: repeat(auto-fit, minmax(89px, 1fr)); }
+  /* Each chip is a golden rectangle: 89 × 55 */
+  .chip { height: 55px; border-radius: var(--r-md); padding: var(--s3);
+          display: flex; flex-direction: column; justify-content: flex-end;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.09), 0 2px 5px rgba(0,0,0,.45); }
+  .chip b    { font: 650 11px/1.3 var(--font-data); }
+  .chip span { font: 10.5px/1.3 var(--font-data); opacity: .66; text-transform: uppercase; }
+  .on-dark  { color: var(--bone-100); }
+  .on-light { color: #241B12; }
+
+  .ladder { display: grid; gap: var(--s5); grid-template-columns: repeat(auto-fit, minmax(244px, 1fr)); }
+  .rung { border-radius: var(--r-lg); overflow: hidden; position: relative; }
+  .rung .bar { height: var(--s2); background: var(--c); }
+  .rung .in  { padding: var(--s5) var(--s5) var(--s5); }
+  .rung dl { margin: var(--s4) 0 0; }
+  .rung dt { font: 650 10.5px/1 var(--font-data); letter-spacing: .12em; text-transform: uppercase;
+             color: var(--bone-400); margin-bottom: var(--s1); }
+  .rung dd { margin: 0 0 var(--s4); font-size: 13px; line-height: 1.55; color: var(--bone-200); }
+  .rung code { font: 650 12.5px var(--font-data); color: var(--c-ink); }
+
+  .grey { filter: grayscale(1); }
+  .pair { display: grid; gap: var(--s5); grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+  .demo { border-radius: var(--r-lg); padding: var(--s5); }
+  .demo h4 { font-family: var(--font-stencil); text-transform: uppercase; font-size: var(--t-sm);
+             letter-spacing: .07em; color: var(--bone-100); margin: 0 0 var(--s4); }
+  .row { display: flex; gap: var(--s4); flex-wrap: wrap; }
+  .cap { font-size: 12.8px; line-height: 1.58; color: var(--bone-400); margin: var(--s4) 0 0; }
+</style>
+
+<body class="ppbf">
+<div class="sheet">
+  <div class="t-eyebrow">PPBF Design System · Foundations</div>
+  <h1>Palette</h1>
+  <p class="lede">
+    Three ramps build the platform: hide for ground, brass for chassis, bone for type.
+    None of them is allowed to mean anything. Meaning is carried entirely by a
+    four-rung status ladder, which is the only saturated colour in the system.
+  </p>
+
+  <h2>Hide — the ground</h2>
+  <div class="ramp">
+    <div class="chip on-dark" style="background:var(--hide-950)"><b>hide-950</b><span>#14100D</span></div>
+    <div class="chip on-dark" style="background:var(--hide-900)"><b>hide-900</b><span>#1E1712</span></div>
+    <div class="chip on-dark" style="background:var(--hide-800)"><b>hide-800</b><span>#2A1F18</span></div>
+    <div class="chip on-dark" style="background:var(--hide-700)"><b>hide-700</b><span>#3B2C21</span></div>
+    <div class="chip on-dark" style="background:var(--hide-600)"><b>hide-600</b><span>#4A3728</span></div>
+    <div class="chip on-dark" style="background:var(--hide-500)"><b>hide-500</b><span>#5C4632</span></div>
+  </div>
+
+  <h2>Brass — the chassis</h2>
+  <div class="ramp">
+    <div class="chip on-dark"  style="background:var(--brass-900)"><b>brass-900</b><span>#4A340B</span></div>
+    <div class="chip on-dark"  style="background:var(--brass-800)"><b>brass-800</b><span>#6B4E12</span></div>
+    <div class="chip on-dark"  style="background:var(--brass-700)"><b>brass-700</b><span>#8C6B1F</span></div>
+    <div class="chip on-light" style="background:var(--brass-600)"><b>brass-600</b><span>#A98126</span></div>
+    <div class="chip on-light" style="background:var(--brass-500)"><b>brass-500</b><span>#B8912F</span></div>
+    <div class="chip on-light" style="background:var(--brass-400)"><b>brass-400</b><span>#D4AF4A</span></div>
+    <div class="chip on-light" style="background:var(--brass-300)"><b>brass-300</b><span>#E8CE7A</span></div>
+    <div class="chip on-light" style="background:var(--brass-200)"><b>brass-200</b><span>#F2E2A8</span></div>
+  </div>
+  <div class="law" style="margin-top: var(--s5)">
+    <b>Law 1 — Brass is the chassis, never the message.</b>
+    Frames, rivets, rope, bezels, tile edges, button faces. Brass is what the platform is
+    built <i>from</i>. The moment gold starts meaning something, every frame on the page
+    begins lying — so it never carries state, and no rung of the ladder sits near it.
+  </div>
+
+  <h2>Bone — type and paper</h2>
+  <div class="ramp">
+    <div class="chip on-light" style="background:var(--bone-100)"><b>bone-100</b><span>#F7F1E1</span></div>
+    <div class="chip on-light" style="background:var(--bone-200)"><b>bone-200</b><span>#EFE6D0</span></div>
+    <div class="chip on-light" style="background:var(--bone-300)"><b>bone-300</b><span>#DCCFB2</span></div>
+    <div class="chip on-light" style="background:var(--bone-400)"><b>bone-400</b><span>#B5A688</span></div>
+    <div class="chip on-light" style="background:var(--paper)"><b>paper</b><span>#F4EBD4</span></div>
+    <div class="chip on-light" style="background:var(--chalk)"><b>chalk</b><span>#E6E3D6</span></div>
+    <div class="chip on-light" style="background:var(--cork)"><b>cork</b><span>#C08E4E</span></div>
+  </div>
+  <p class="cap">
+    <b style="color:var(--bone-200)">bone-100</b> is stencil display, <b style="color:var(--bone-200)">bone-200</b>
+    body copy on leather, <b style="color:var(--bone-200)">bone-300</b> secondary, and
+    <b style="color:var(--bone-200)">bone-400</b> captions — the lightest value still safe
+    for small text on hide.
+  </p>
+
+  <h2>The status ladder — Layer 11 Gate Matrix</h2>
+  <div class="ladder">
+    <div class="rung mat-leather--raised" style="--c:var(--cleared); --c-ink:var(--cleared-ink)">
+      <div class="bar"></div>
+      <div class="in">
+        <span class="badge badge--cleared"><i>✓</i>Cleared</span>
+        <dl>
+          <dt>Token</dt><dd><code>--cleared</code> · #3F7D4E</dd>
+          <dt>Meaning</dt><dd>Full participation. No restrictions on file.</dd>
+        </dl>
+      </div>
+    </div>
+    <div class="rung mat-leather--raised" style="--c:var(--monitor); --c-ink:var(--monitor-ink)">
+      <div class="bar"></div>
+      <div class="in">
+        <span class="badge badge--monitor"><i>◉</i>Monitor</span>
+        <dl>
+          <dt>Token</dt><dd><code>--monitor</code> · #2E6E96</dd>
+          <dt>Meaning</dt><dd>Cleared to train, flagged for coach observation.</dd>
+        </dl>
+      </div>
+    </div>
+    <div class="rung mat-leather--raised" style="--c:var(--restricted); --c-ink:var(--restricted-ink)">
+      <div class="bar"></div>
+      <div class="in">
+        <span class="badge badge--restricted"><i>▲</i>Restricted</span>
+        <dl>
+          <dt>Token</dt><dd><code>--restricted</code> · #C05A1E</dd>
+          <dt>Meaning</dt><dd>Partial. Named activities withheld — contact, sparring.</dd>
+        </dl>
+      </div>
+    </div>
+    <div class="rung mat-leather--raised" style="--c:var(--locked); --c-ink:var(--locked-ink)">
+      <div class="bar"></div>
+      <div class="in">
+        <span class="badge badge--locked"><i>✕</i>Locked</span>
+        <dl>
+          <dt>Token</dt><dd><code>--locked</code> · #A81E22</dd>
+          <dt>Meaning</dt><dd>Immutable lock. Head-coach clearance only.</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+
+  <div class="law" style="margin-top: var(--s5)">
+    <b>Law 2 — Saturated colour means safety or status. Nothing else may use it.</b>
+    Against leather and brass, a saturated pixel is unmissable. That is the entire budget,
+    and it is spent on the Gate Matrix. No saturated links, no green success toasts, no red
+    for emphasis.
+  </div>
+
+  <h2>Law 3 — the greyscale test</h2>
+  <div class="pair">
+    <div class="demo mat-leather--raised">
+      <h4>As designed</h4>
+      <div class="row">
+        <span class="badge badge--cleared"><i>✓</i>Cleared</span>
+        <span class="badge badge--monitor"><i>◉</i>Monitor</span>
+        <span class="badge badge--restricted"><i>▲</i>Restricted</span>
+        <span class="badge badge--locked"><i>✕</i>Locked</span>
+      </div>
+      <p class="cap">Four hues, four glyphs, four words.</p>
+    </div>
+    <div class="demo mat-leather--raised">
+      <h4>Colour removed</h4>
+      <div class="row grey">
+        <span class="badge badge--cleared"><i>✓</i>Cleared</span>
+        <span class="badge badge--monitor"><i>◉</i>Monitor</span>
+        <span class="badge badge--restricted"><i>▲</i>Restricted</span>
+        <span class="badge badge--locked"><i>✕</i>Locked</span>
+      </div>
+      <p class="cap">
+        Still fully readable. This is the state a board packet prints in, and the state a
+        colour-blind coach reads on the floor — so it is the state the ladder is designed for.
+      </p>
+    </div>
+  </div>
+</div>
+</body>

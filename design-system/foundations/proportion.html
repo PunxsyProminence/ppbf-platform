@@ -1,0 +1,214 @@
+<!-- @dsCard group="Foundations" name="Proportion — φ" subtitle="√φ type ladder, Fibonacci space, the golden section" -->
+<link rel="stylesheet" href="../ppbf.css">
+<style>
+  body { margin: 0; }
+  .sheet { padding: var(--s6); max-width: 1120px; margin: 0 auto; }
+  h1 { font-family: var(--font-stencil); text-transform: uppercase; font-size: var(--t-2xl);
+       letter-spacing: .05em; color: var(--bone-100); margin: var(--s3) 0 var(--s3);
+       text-shadow: 0 2px 0 rgba(0,0,0,.6), 0 0 22px rgba(232,206,122,.14); }
+  .lede { font-size: var(--t-sm); line-height: 1.62; color: var(--bone-300); max-width: 66ch; margin: 0 0 var(--s6); }
+  h2 { font-family: var(--font-stencil); text-transform: uppercase; font-size: var(--t-md);
+       letter-spacing: .08em; color: var(--brass-300); margin: var(--s7) 0 var(--s5);
+       padding-bottom: var(--s3); border-bottom: 1px solid rgba(212,175,74,.28); }
+  .law { border-left: 3px solid var(--brass-500); background: rgba(184,145,47,.13);
+         padding: var(--s4) var(--s5); border-radius: 0 var(--r-md) var(--r-md) 0;
+         font-size: var(--t-sm); line-height: 1.6; color: var(--brass-200); }
+  .law b { color: var(--brass-300); }
+  .cap { font-size: 12.8px; line-height: 1.6; color: var(--bone-400); margin: var(--s4) 0 0; max-width: 72ch; }
+  .cap b { color: var(--bone-200); }
+
+  /* The golden section, stated once at the top */
+  .phi-hero { display: grid; grid-template-columns: var(--split-major) var(--split-minor);
+              gap: var(--s3); align-items: stretch; margin-bottom: var(--s5); }
+  .phi-hero > div { border-radius: var(--r-md); padding: var(--s4) var(--s5); min-height: 89px;
+                    display: flex; flex-direction: column; justify-content: center; }
+  .phi-hero .maj { background: linear-gradient(120deg, var(--brass-700), var(--brass-500)); color: #241B12; }
+  .phi-hero .min { background: rgba(0,0,0,.35); border: 1px solid rgba(212,175,74,.3); color: var(--bone-200); }
+  .phi-hero b { font: 700 var(--t-lg)/1 var(--font-data); display: block; }
+  .phi-hero span { font: 650 11px/1.6 var(--font-data); letter-spacing: .1em; text-transform: uppercase; opacity: .78; }
+
+  /* Type ladder */
+  .ladder-row { display: grid; grid-template-columns: 178px 1fr; gap: var(--s5);
+                align-items: baseline; padding: var(--s4) 0; border-bottom: 1px solid rgba(212,175,74,.14); }
+  .ladder-row:last-child { border-bottom: 0; }
+  .meta { font: 11px/1.65 var(--font-data); color: var(--bone-400); letter-spacing: .04em; }
+  .meta b { display: block; color: var(--brass-300); font-weight: 650; letter-spacing: .1em;
+            text-transform: uppercase; font-size: 11px; }
+  .sample { color: var(--bone-100); font-family: var(--font-stencil); text-transform: uppercase;
+            letter-spacing: .04em; line-height: 1.1; }
+  .sample.body { font-family: var(--font-ui); text-transform: none; letter-spacing: 0;
+                 line-height: 1.6; color: var(--bone-200); font-weight: 400; }
+
+  /* Fibonacci space bars */
+  .bars { display: flex; flex-direction: column; gap: var(--s3); }
+  .bar-row { display: grid; grid-template-columns: 118px 1fr; gap: var(--s4); align-items: center; }
+  .bar { height: 21px; border-radius: 3px;
+         background: linear-gradient(90deg, var(--brass-600), var(--brass-300));
+         box-shadow: inset 0 1px 0 rgba(255,248,224,.4); }
+  .bar-lbl { font: 650 11.5px/1 var(--font-data); color: var(--bone-300); letter-spacing: .06em; }
+
+  .two { display: grid; gap: var(--s6); grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); align-items: start; }
+  .panel { border-radius: var(--r-lg); padding: var(--s5); }
+  .panel h4 { font-family: var(--font-stencil); text-transform: uppercase; font-size: var(--t-sm);
+              letter-spacing: .07em; color: var(--bone-100); margin: 0 0 var(--s4); }
+  svg { display: block; width: 100%; height: auto; }
+  .gr-demo { display: flex; align-items: flex-end; gap: var(--s5); flex-wrap: wrap; }
+  .gr-box { width: 144px; height: 89px; border-radius: var(--r-md); position: relative; }
+  .gr-box span { position: absolute; inset: auto 0 -21px 0; text-align: center;
+                 font: 650 11px/1 var(--font-data); color: var(--bone-400); letter-spacing: .07em; }
+</style>
+
+<body class="ppbf">
+<div class="sheet">
+  <div class="t-eyebrow">PPBF Design System · Foundations</div>
+  <h1>Proportion</h1>
+  <p class="lede">
+    Every measurement in the platform descends from the golden ratio. Type climbs by √φ,
+    space and radius follow Fibonacci, layouts split at the golden section, and the gauge
+    bezel is a true golden rectangle. Nothing is sized by eye — which means no argument
+    about padding ever has to be settled by taste.
+  </p>
+
+  <div class="phi-hero">
+    <div class="maj"><b>61.8%</b><span>Golden major · --split-major</span></div>
+    <div class="min"><b>38.2%</b><span>Minor · --split-minor</span></div>
+  </div>
+
+  <div class="law">
+    <b>Law 8 — Proportion descends from φ. Nothing is sized by eye.</b>
+    φ = 1.618. Its inverse is 0.618, and its square is 2.618 — the only ratio where
+    <i>a/b = (a+b)/a</i>. That self-similarity is why a φ system stays coherent as it
+    scales: a card built from these numbers has the same internal proportions as the page
+    that holds it.
+  </div>
+
+  <h2>Type — √φ steps from a 15px base</h2>
+  <div class="ladder-row">
+    <div class="meta"><b>--t-4xl</b>63.6px · 15×φ³<br>display</div>
+    <div class="sample" style="font-size: var(--t-4xl)">Prominence</div>
+  </div>
+  <div class="ladder-row">
+    <div class="meta"><b>--t-3xl</b>50px · 15×φ²√φ<br>mottos</div>
+    <div class="sample" style="font-size: var(--t-3xl)">Adapt and Overcome</div>
+  </div>
+  <div class="ladder-row">
+    <div class="meta"><b>--t-2xl</b>39.3px · 15×φ²<br>command headers</div>
+    <div class="sample" style="font-size: var(--t-2xl)">PPBF Command Center</div>
+  </div>
+  <div class="ladder-row">
+    <div class="meta"><b>--t-xl</b>30.9px · 15×φ√φ<br>screen titles</div>
+    <div class="sample" style="font-size: var(--t-xl)">Board Workspace</div>
+  </div>
+  <div class="ladder-row">
+    <div class="meta"><b>--t-lg</b>24.3px · 15×φ<br>panel headings</div>
+    <div class="sample" style="font-size: var(--t-lg)">Today's Sessions</div>
+  </div>
+  <div class="ladder-row">
+    <div class="meta"><b>--t-md</b>19.1px · 15×√φ<br><span style="color:var(--brass-300)">KIOSK MINIMUM</span></div>
+    <div class="sample body" style="font-size: var(--t-md)">How hard was that session?</div>
+  </div>
+  <div class="ladder-row">
+    <div class="meta"><b>--t-sm</b>15px · base<br>body copy</div>
+    <div class="sample body" style="font-size: var(--t-sm)">Every action is written to the continuity ledger. Coach decisions are attributable and reversible only by the head coach.</div>
+  </div>
+  <div class="ladder-row">
+    <div class="meta"><b>--t-xs</b>11.8px · 15÷√φ<br>captions, mono labels</div>
+    <div class="sample body" style="font-size: var(--t-xs)">Renews annually · guardian signature required under 18</div>
+  </div>
+
+  <p class="cap">
+    <b>Why √φ and not φ.</b> A full 1.618 jump between adjacent steps is too coarse for
+    interface text — it skips straight past the sizes you actually need, so you end up
+    inventing one and the system is broken. Two √φ steps make one φ step, so every major
+    interval still lands exactly on the ratio while the intermediate sizes stay available.
+  </p>
+
+  <h2>Space and radius — Fibonacci</h2>
+  <div class="two">
+    <div>
+      <div class="bars">
+        <div class="bar-row"><span class="bar-lbl">--s1 · 3px</span>  <div class="bar" style="width:3px"></div></div>
+        <div class="bar-row"><span class="bar-lbl">--s2 · 5px</span>  <div class="bar" style="width:5px"></div></div>
+        <div class="bar-row"><span class="bar-lbl">--s3 · 8px</span>  <div class="bar" style="width:8px"></div></div>
+        <div class="bar-row"><span class="bar-lbl">--s4 · 13px</span> <div class="bar" style="width:13px"></div></div>
+        <div class="bar-row"><span class="bar-lbl">--s5 · 21px</span> <div class="bar" style="width:21px"></div></div>
+        <div class="bar-row"><span class="bar-lbl">--s6 · 34px</span> <div class="bar" style="width:34px"></div></div>
+        <div class="bar-row"><span class="bar-lbl">--s7 · 55px</span> <div class="bar" style="width:55px"></div></div>
+        <div class="bar-row"><span class="bar-lbl">--s8 · 89px</span> <div class="bar" style="width:89px"></div></div>
+      </div>
+      <p class="cap">
+        Each term is the sum of the two before it, and consecutive ratios converge on φ —
+        21/13 = 1.615, 89/55 = 1.618. Radius uses the same sequence: 5 · 8 · 13 · 21.
+      </p>
+      <p class="cap">
+        <b>--tap is 55px.</b> Fibonacci, and comfortably clear of the 44px WCAG floor. The
+        kiosk minimum type size, <b>--t-md</b> at 19.1px, is the √φ step. The proportion
+        system and the accessibility floor agree — which is precisely why 55 was chosen
+        over a rounder 56.
+      </p>
+    </div>
+    <div class="panel mat-leather--raised">
+      <h4>The golden spiral</h4>
+      <svg viewBox="-6 -6 622 389" role="img" aria-label="Golden spiral constructed from nested Fibonacci squares">
+        <g fill="none" stroke="rgba(232,206,122,.34)" stroke-width="1.5">
+          <rect x="0"   y="0"   width="377" height="377"/>
+          <rect x="377" y="144" width="233" height="233"/>
+          <rect x="466" y="0"   width="144" height="144"/>
+          <rect x="377" y="0"   width="89"  height="89"/>
+          <rect x="377" y="89"  width="55"  height="55"/>
+          <rect x="432" y="110" width="34"  height="34"/>
+          <rect x="445" y="89"  width="21"  height="21"/>
+        </g>
+        <path d="M 0 0
+                 A 377 377 0 0 1 377 377
+                 A 233 233 0 0 1 610 144
+                 A 144 144 0 0 1 466 0
+                 A 89 89 0 0 1 377 89
+                 A 55 55 0 0 1 432 144
+                 A 34 34 0 0 1 466 110
+                 A 21 21 0 0 1 445 89"
+              fill="none" stroke="#E8CE7A" stroke-width="3" stroke-linecap="round"/>
+        <g font-family="ui-monospace, monospace" font-size="19" fill="rgba(220,207,178,.62)">
+          <text x="188" y="196" text-anchor="middle">377</text>
+          <text x="493" y="268" text-anchor="middle">233</text>
+          <text x="538" y="79"  text-anchor="middle">144</text>
+        </g>
+      </svg>
+      <p class="cap">
+        Drawn from 377 · 233 · 144 · 89 · 55 · 34 · 21 — the same values as the space scale.
+        A 610 × 377 rectangle, subdivided into squares, spirals inward forever at the same
+        ratio.
+      </p>
+    </div>
+  </div>
+
+  <h2>Golden rectangles in the hardware</h2>
+  <div class="panel mat-leather--raised">
+    <div class="gr-demo">
+      <div>
+        <div class="gauge">
+          <div class="gauge-bezel">
+            <div class="gauge-face">
+              <div class="gauge-arc" style="--danger-from:62deg"></div>
+              <div class="gauge-ticks"></div>
+              <div class="gauge-needle" style="--deg:-34deg"></div>
+              <div class="gauge-hub"></div>
+            </div>
+          </div>
+          <div class="gauge-cap">Active Fighters</div>
+          <div class="gauge-val">47</div>
+        </div>
+      </div>
+      <div class="gr-box mat-brass" style="margin-bottom:21px"><span>144 × 89</span></div>
+      <div class="gr-box" style="width:89px;height:55px;background:rgba(0,0,0,.35);border:1px solid rgba(212,175,74,.3);margin-bottom:21px"><span>89 × 55</span></div>
+      <div class="gr-box" style="width:55px;height:34px;background:rgba(0,0,0,.35);border:1px solid rgba(212,175,74,.3);margin-bottom:21px"><span>55 × 34</span></div>
+    </div>
+    <p class="cap" style="margin-top: var(--s6)">
+      The gauge bezel is 144 × 89 — consecutive Fibonacci numbers, so it is a true golden
+      rectangle, and its needle is 55px. Colour chips are 89 × 55. The three sizes nest,
+      which is why a metrics bar of gauges and a ramp of swatches sit on the same page
+      without either looking borrowed.
+    </p>
+  </div>
+</div>
+</body>

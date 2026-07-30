@@ -1,0 +1,550 @@
+/* ===========================================================================
+   PPBF Design System — "Leather & Brass"
+   Punxsutawney Prominence Boxing Foundation
+   ---------------------------------------------------------------------------
+   A skeuomorphic system: every surface in the platform is a real object found
+   in a boxing gym's back office — oiled leather, cast brass, slate chalkboard,
+   cork, and stamped paper.
+
+   Zero external assets. Textures are generated from SVG feTurbulence data URIs
+   and layered gradients, so the kiosk renders on a cold tablet with no network.
+
+   THE EIGHT LAWS (see README.md)
+     1. Brass is the chassis, never the message.
+     2. Saturated colour means safety or status. Nothing else may use it.
+     3. Colour is never the only channel — glyph + uppercase label, always.
+     4. Four voices: stencil commands, bone informs, chalk schedules, mono records.
+     5. Kiosk-first sizing — 55px targets, 19.1px type on the gym floor.
+     6. Every panel is a real object. If it isn't one of the materials, it doesn't ship.
+     7. Refusal is a stamp, not an error toast.
+     8. Proportion descends from φ. Nothing is sized by eye.
+   ========================================================================= */
+
+/* ---------------------------------------------------------------- TOKENS -- */
+:root {
+  /* --- Leather — the ground ---------------------------------------------- */
+  --hide-950: #14100D;  /* deepest shadow, page ground */
+  --hide-900: #1E1712;  /* panel interior */
+  --hide-800: #2A1F18;  /* standard leather face */
+  --hide-700: #3B2C21;  /* raised leather, tiles */
+  --hide-600: #4A3728;  /* tag face, hover */
+  --hide-500: #5C4632;  /* stitched edge highlight */
+
+  /* --- Brass — the chassis ----------------------------------------------- */
+  --brass-900: #4A340B;
+  --brass-800: #6B4E12;
+  --brass-700: #8C6B1F;
+  --brass-600: #A98126;
+  --brass-500: #B8912F;  /* nominal brass */
+  --brass-400: #D4AF4A;
+  --brass-300: #E8CE7A;  /* specular highlight */
+  --brass-200: #F2E2A8;
+
+  /* --- Bone — type and paper -------------------------------------------- */
+  --bone-100: #F7F1E1;  /* stencil display */
+  --bone-200: #EFE6D0;  /* body on leather */
+  --bone-300: #DCCFB2;  /* secondary on leather */
+  --bone-400: #B5A688;  /* tertiary, captions */
+  --paper:    #F4EBD4;  /* torn notes, board packets */
+  --paper-2:  #E6DABE;  /* paper shadow side */
+
+  /* --- Chalk + slate ---------------------------------------------------- */
+  --slate-board: #1C2420;
+  --chalk:       #E6E3D6;
+  --chalk-dim:   #9FA79C;
+
+  /* --- Cork ------------------------------------------------------------- */
+  --cork:      #C08E4E;
+  --cork-dark: #96682F;
+
+  /* --- Status ladder ----------------------------------------------------
+     Layer 11 Safety Gate + Layer 10 queue states. Chosen to sit correctly on
+     leather while staying clearly separate from brass — a gold bezel must
+     never be mistaken for a caution state. */
+  --cleared:    #3F7D4E;  --cleared-ink:   #C8E6CE;
+  --monitor:    #2E6E96;  --monitor-ink:   #C2E0F0;
+  --restricted: #C05A1E;  --restricted-ink:#F6D6B8;
+  --locked:     #A81E22;  --locked-ink:    #F3C9C6;
+
+  --stamp-red:  #A81E22;  /* refusal, redaction, destructive */
+  --stamp-green:#2F7A3E;  /* approved, compliant */
+
+  /* --- Type -------------------------------------------------------------
+     Swap --font-stencil for a licensed face (Big Shoulders Stencil or
+     Stardos Stencil, self-hosted for offline kiosk use) — the fallbacks are
+     the closest condensed poster faces already on Windows and macOS. */
+  --font-stencil: "Big Shoulders Stencil", "Stardos Stencil", Impact,
+                  Haettenschweiler, "Franklin Gothic Bold", "Arial Narrow Bold",
+                  "Arial Narrow", sans-serif;
+  --font-ui:      "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+                  Roboto, Helvetica, Arial, sans-serif;
+  --font-hand:    "Segoe Print", "Bradley Hand", "Chalkboard SE", cursive;
+  --font-data:    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  /* --- Proportion — φ ---------------------------------------------------
+     Law 8. Every measurement in the system descends from the golden ratio.
+     Type climbs by √φ (1.272) so adjacent steps stay usable; space and radius
+     follow the Fibonacci sequence, which converges on φ; layout splits at
+     38.2 / 61.8. Nothing is sized by eye. */
+  --phi: 1.618;
+  --phi-inv: 0.618;
+  --phi-2: 2.618;     /* φ²  */
+  --root-phi: 1.272;  /* √φ  */
+
+  /* Type ladder — √φ steps from a 15px base */
+  --t-xs:  11.8px;   /* 15 ÷ √φ    · captions, mono labels        */
+  --t-sm:  15px;     /* base       · body copy                   */
+  --t-md:  19.1px;   /* 15 × √φ    · KIOSK MINIMUM (Law 5)        */
+  --t-lg:  24.3px;   /* 15 × φ     · panel headings               */
+  --t-xl:  30.9px;   /* 15 × φ√φ   · screen titles                */
+  --t-2xl: 39.3px;   /* 15 × φ²    · command headers              */
+  --t-3xl: 50px;     /* 15 × φ²√φ  · mottos                       */
+  --t-4xl: 63.6px;   /* 15 × φ³    · display                      */
+
+  /* Space + radius — Fibonacci */
+  --s1: 3px;  --s2: 5px;  --s3: 8px;  --s4: 13px;
+  --s5: 21px; --s6: 34px; --s7: 55px; --s8: 89px;
+  --r-sm: 5px; --r-md: 8px; --r-lg: 13px; --r-xl: 21px; --r-pill: 999px;
+
+  /* Layout — the golden section */
+  --split-minor: 38.2%;
+  --split-major: 61.8%;
+
+  /* --- Ergonomics ------------------------------------------------------- */
+  --tap: 55px;        /* Fibonacci, and comfortably above the 44px WCAG floor */
+  --focus: 0 0 0 3px rgba(212, 175, 74, .55);
+
+  /* --- Generated grain -------------------------------------------------- */
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.78' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+  --grain-fine: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.6' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ================================================================ RESET == */
+*, *::before, *::after { box-sizing: border-box; }
+
+body.ppbf {
+  margin: 0;
+  font-family: var(--font-ui);
+  color: var(--bone-200);
+  background-color: var(--hide-950);
+  background-image:
+    var(--grain),
+    radial-gradient(120% 90% at 50% -10%, rgba(150,112,66,.18), transparent 62%),
+    linear-gradient(180deg, #1B1410, #0F0C0A);
+  background-blend-mode: overlay, screen, normal;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ============================================================= MATERIALS == */
+
+/* --- Leather ------------------------------------------------------------- */
+.mat-leather {
+  background-color: var(--hide-800);
+  background-image:
+    var(--grain),
+    radial-gradient(130% 100% at 28% 8%,  rgba(163,124,74,.26), transparent 58%),
+    radial-gradient(110% 90%  at 82% 96%, rgba(0,0,0,.52),      transparent 64%),
+    linear-gradient(170deg, #3E2E22 0%, #2A1F18 46%, #1D1611 100%);
+  background-blend-mode: overlay, screen, multiply, normal;
+}
+.mat-leather--raised {
+  background-color: var(--hide-700);
+  background-image:
+    var(--grain),
+    radial-gradient(120% 100% at 30% 4%, rgba(186,143,86,.30), transparent 56%),
+    linear-gradient(168deg, #4B382A 0%, #34271D 55%, #241B14 100%);
+  background-blend-mode: overlay, screen, normal;
+  box-shadow:
+    inset 0 1px 0 rgba(232,206,122,.16),
+    inset 0 -2px 6px rgba(0,0,0,.55),
+    0 3px 8px rgba(0,0,0,.5);
+}
+/* Saddle stitching — a dashed bone rule inset from the edge */
+.mat-stitch { position: relative; }
+.mat-stitch::after {
+  content: ""; position: absolute; inset: 6px; pointer-events: none;
+  border: 1.5px dashed rgba(226,205,156,.30);
+  border-radius: inherit;
+}
+
+/* --- Brass -------------------------------------------------------------- */
+.mat-brass {
+  background-image: linear-gradient(158deg,
+    var(--brass-900) 0%,  var(--brass-600) 14%, var(--brass-200) 30%,
+    var(--brass-500) 46%, var(--brass-800) 62%, var(--brass-400) 80%,
+    var(--brass-900) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,244,214,.55),
+    inset 0 -1px 0 rgba(0,0,0,.55),
+    0 2px 6px rgba(0,0,0,.5);
+}
+.mat-brass--dark {
+  background-image: linear-gradient(158deg,
+    #3A2807 0%, var(--brass-800) 22%, var(--brass-500) 40%,
+    var(--brass-800) 58%, #3A2807 100%);
+}
+
+/* Riveted brass frame around any panel */
+.frame {
+  position: relative;
+  padding: 14px;
+  border-radius: var(--r-lg);
+  background-image: linear-gradient(158deg,
+    var(--brass-900) 0%,  var(--brass-600) 14%, var(--brass-200) 30%,
+    var(--brass-500) 46%, var(--brass-800) 62%, var(--brass-400) 80%,
+    var(--brass-900) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,244,214,.5),
+    inset 0 -2px 3px rgba(0,0,0,.5),
+    0 10px 28px rgba(0,0,0,.55);
+}
+.frame > .frame-in {
+  border-radius: calc(var(--r-lg) - 5px);
+  box-shadow: inset 0 2px 10px rgba(0,0,0,.7), inset 0 0 0 1px rgba(0,0,0,.5);
+  overflow: hidden;
+}
+.rivet {
+  position: absolute; width: 11px; height: 11px; border-radius: 50%;
+  background-image: radial-gradient(circle at 34% 28%,
+    var(--brass-200) 0%, var(--brass-400) 38%, var(--brass-700) 68%, var(--brass-900) 100%);
+  box-shadow: inset 0 -1px 1px rgba(0,0,0,.65), 0 1px 2px rgba(0,0,0,.7);
+}
+.rivet--tl { top: 8px;    left: 8px; }
+.rivet--tr { top: 8px;    right: 8px; }
+.rivet--bl { bottom: 8px; left: 8px; }
+.rivet--br { bottom: 8px; right: 8px; }
+
+/* Twisted brass rope trim */
+.rope {
+  height: 13px; border-radius: 7px;
+  background-image: repeating-linear-gradient(112deg,
+    var(--brass-800) 0 6px, var(--brass-300) 6px 11px,
+    var(--brass-500) 11px 16px, var(--brass-900) 16px 21px);
+  box-shadow:
+    inset 0 2px 3px rgba(255,238,190,.28),
+    inset 0 -3px 4px rgba(0,0,0,.55),
+    0 2px 5px rgba(0,0,0,.5);
+}
+.rope--v { width: 13px; height: auto; }
+
+/* --- Chalkboard --------------------------------------------------------- */
+.mat-slate {
+  background-color: var(--slate-board);
+  background-image:
+    var(--grain-fine),
+    radial-gradient(80% 60% at 46% 34%, rgba(255,255,255,.075), transparent 72%),
+    linear-gradient(180deg, #222B26, #161D19);
+  background-blend-mode: overlay, screen, normal;
+  box-shadow: inset 0 0 70px rgba(0,0,0,.62), inset 0 0 0 1px rgba(0,0,0,.6);
+}
+.chalk      { color: var(--chalk); text-shadow: 0 0 1.5px rgba(230,227,214,.55); }
+.chalk-dim  { color: var(--chalk-dim); text-shadow: 0 0 1.5px rgba(159,167,156,.4); }
+.chalk-rule { border: 0; border-top: 1px solid rgba(230,227,214,.24); }
+
+/* --- Cork --------------------------------------------------------------- */
+.mat-cork {
+  background-color: var(--cork);
+  background-image:
+    var(--grain),
+    radial-gradient(circle at 22% 28%, rgba(120,78,34,.55) 0 2px, transparent 3px),
+    radial-gradient(circle at 68% 72%, rgba(150,105,55,.5)  0 3px, transparent 4px),
+    radial-gradient(circle at 84% 20%, rgba(110,70,30,.45)  0 1.5px, transparent 2.5px),
+    linear-gradient(180deg, #CB9A5A, #A9793C);
+  background-size: 180px 180px, 17px 17px, 27px 27px, 11px 11px, 100% 100%;
+  background-blend-mode: overlay, normal, normal, normal, normal;
+  box-shadow: inset 0 0 40px rgba(90,56,20,.5);
+}
+
+/* --- Paper + torn notes ------------------------------------------------- */
+.mat-paper {
+  background-color: var(--paper);
+  background-image: var(--grain-fine),
+    linear-gradient(178deg, #F8F0DC, #E7DBBD);
+  background-blend-mode: overlay, normal;
+  color: #33291B;
+  box-shadow: 0 4px 12px rgba(0,0,0,.5);
+}
+/* Ragged lower edge, no image asset */
+.note-torn {
+  clip-path: polygon(0 0, 100% 0, 100% 94%,
+    96% 100%, 91% 95%, 86% 100%, 81% 96%, 76% 100%, 70% 95%, 65% 100%,
+    59% 96%, 54% 100%, 48% 95%, 43% 100%, 37% 96%, 32% 100%, 26% 95%,
+    21% 100%, 15% 96%, 10% 100%, 5% 95%, 0 100%);
+}
+.pin {
+  position: absolute; top: -6px; left: 50%; translate: -50% 0;
+  width: 14px; height: 14px; border-radius: 50%;
+  background-image: radial-gradient(circle at 34% 28%, #FF8A80, #C62828 55%, #7F1416 100%);
+  box-shadow: 0 2px 4px rgba(0,0,0,.6), inset 0 -1px 1px rgba(0,0,0,.4);
+}
+.pin--brass {
+  background-image: radial-gradient(circle at 34% 28%,
+    var(--brass-200), var(--brass-400) 45%, var(--brass-800) 100%);
+}
+
+/* ============================================================== TYPE ===== */
+.t-command {                        /* Stencil — headers, mottos, tile labels */
+  font-family: var(--font-stencil);
+  text-transform: uppercase;
+  letter-spacing: .045em;
+  color: var(--bone-100);
+  font-weight: 700;
+  text-shadow: 0 2px 0 rgba(0,0,0,.55), 0 0 18px rgba(232,206,122,.14);
+}
+.t-command--brass {
+  color: var(--brass-300);
+  text-shadow: 0 1px 0 rgba(0,0,0,.7), 0 0 14px rgba(212,175,74,.28);
+}
+.t-eyebrow {
+  font: 650 11px/1 var(--font-data);
+  letter-spacing: .16em; text-transform: uppercase;
+  color: var(--brass-400);
+}
+.t-body  { font-size: 14px; line-height: 1.62; color: var(--bone-200); }
+.t-muted { font-size: 12.5px; line-height: 1.55; color: var(--bone-400); }
+.t-label {
+  font: 650 11px/1 var(--font-data);
+  letter-spacing: .13em; text-transform: uppercase; color: var(--bone-400);
+}
+.t-data  { font: 650 13px/1.5 var(--font-data); color: var(--bone-200); }
+.t-hand  { font-family: var(--font-hand); font-size: 14px; line-height: 1.5; color: #33291B; }
+
+/* ============================================================ STAMPS ===== */
+/* Law 7 — governance speaks in ink.
+   The worn-ink texture is a screen-blended grain overlay rather than a mask:
+   masking the element cost ~50% of the ink's contrast, and Law 3 does not let
+   distress buy itself legibility. This degrades to solid ink if mix-blend-mode
+   is unavailable, which is the correct failure. */
+.stamp {
+  position: relative;
+  display: inline-block;
+  font-family: var(--font-stencil);
+  text-transform: uppercase; letter-spacing: .09em;
+  font-size: var(--t-sm); line-height: 1.1; font-weight: 700;
+  padding: var(--s2) var(--s4);
+  border: 3px solid currentColor; border-radius: var(--r-sm);
+  color: var(--stamp-red);
+  rotate: -6deg;
+}
+.stamp::after {
+  content: ""; position: absolute; inset: -3px; border-radius: inherit;
+  background-image: var(--grain); background-size: 110px;
+  mix-blend-mode: screen; opacity: .34; pointer-events: none;
+}
+.stamp--green   { color: var(--stamp-green); }
+.stamp--brass   { color: var(--brass-600); }
+.stamp--flat    { rotate: 0deg; }
+.stamp--lg      { font-size: 17px; padding: 9px 15px; border-width: 4px; }
+
+/* Redaction bar — Layer 17 grant privacy */
+.redacted {
+  background-color: #0C0906;
+  background-image: var(--grain);
+  background-blend-mode: overlay;
+  color: transparent; border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.8);
+}
+
+/* ============================================================ STATUS ===== */
+.badge {
+  display: inline-flex; align-items: center; gap: 7px;
+  font: 700 11px/1 var(--font-ui); letter-spacing: .1em; text-transform: uppercase;
+  padding: 6px 12px 6px 10px; border-radius: var(--r-pill);
+  color: var(--badge-ink); background-color: color-mix(in srgb, var(--badge) 26%, #120E0B);
+  border: 1px solid color-mix(in srgb, var(--badge) 62%, #120E0B);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.10);
+}
+.badge i { font-style: normal; font-size: 12px; line-height: 1; color: var(--badge-ink); }
+.badge--cleared    { --badge: var(--cleared);    --badge-ink: var(--cleared-ink); }
+.badge--monitor    { --badge: var(--monitor);    --badge-ink: var(--monitor-ink); }
+.badge--restricted { --badge: var(--restricted); --badge-ink: var(--restricted-ink); }
+.badge--locked     { --badge: var(--locked);     --badge-ink: var(--locked-ink); }
+
+/* ============================================================ CONTROLS === */
+.btn {
+  min-height: 44px; padding: 0 20px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  font-family: var(--font-stencil); text-transform: uppercase;
+  font-size: 15px; letter-spacing: .07em; font-weight: 700;
+  border: 0; border-radius: var(--r-md); cursor: pointer;
+  color: #2A1B04;
+  background-image: linear-gradient(180deg,
+    var(--brass-200) 0%, var(--brass-400) 38%, var(--brass-600) 78%, var(--brass-800) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,248,224,.75),
+    inset 0 -2px 0 rgba(0,0,0,.30),
+    0 3px 7px rgba(0,0,0,.55);
+  text-shadow: 0 1px 0 rgba(255,240,200,.45);
+}
+.btn:hover  { background-image: linear-gradient(180deg, var(--brass-300), var(--brass-500) 45%, var(--brass-800)); }
+.btn:active { box-shadow: inset 0 2px 5px rgba(0,0,0,.55); translate: 0 1px; }
+.btn:focus-visible { outline: 0; box-shadow: var(--focus), inset 0 1px 0 rgba(255,248,224,.7); }
+
+.btn--ghost {
+  background-image: none; background-color: rgba(0,0,0,.28);
+  color: var(--bone-200);
+  border: 1.5px solid rgba(212,175,74,.42);
+  box-shadow: inset 0 1px 0 rgba(255,244,214,.10);
+  text-shadow: none;
+}
+.btn--ghost:hover { border-color: var(--brass-400); color: var(--bone-100); background-color: rgba(0,0,0,.14); }
+
+.btn--danger {
+  color: var(--paper);
+  background-image: linear-gradient(180deg, #D2453F 0%, #A81E22 55%, #6E1214 100%);
+  text-shadow: 0 1px 0 rgba(0,0,0,.45);
+}
+
+.btn--kiosk { min-height: var(--tap); font-size: 19px; padding: 0 28px; width: 100%; }
+
+/* Leather-recessed inputs */
+.field { display: block; }
+.field > .t-label { display: block; margin-bottom: 7px; }
+.input, .select, .textarea {
+  width: 100%; min-height: 46px; padding: 11px 13px;
+  font-family: var(--font-ui); font-size: 15px; color: var(--bone-100);
+  background-color: #17110D;
+  background-image: var(--grain-fine); background-blend-mode: overlay;
+  border: 1px solid rgba(212,175,74,.28); border-radius: var(--r-md);
+  box-shadow: inset 0 2px 6px rgba(0,0,0,.7);
+}
+.input::placeholder { color: #6E6152; }
+.input:focus, .select:focus, .textarea:focus { outline: 0; border-color: var(--brass-400); box-shadow: inset 0 2px 6px rgba(0,0,0,.7), var(--focus); }
+.input--kiosk { min-height: var(--tap); font-size: 19px; }
+
+/* ============================================================== GAUGE ==== */
+/* 144 × 89 — consecutive Fibonacci numbers, so the bezel is a golden rectangle. */
+.gauge { width: 144px; text-align: center; }
+.gauge-bezel {
+  position: relative; width: 144px; height: 89px;
+  border-radius: 72px 72px 13px 13px; padding: 8px;
+  background-image: linear-gradient(158deg,
+    var(--brass-900) 0%, var(--brass-600) 16%, var(--brass-200) 32%,
+    var(--brass-500) 50%, var(--brass-800) 68%, var(--brass-400) 84%, var(--brass-900) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,244,214,.55), 0 3px 8px rgba(0,0,0,.6);
+}
+.gauge-face {
+  position: relative; height: 100%; overflow: hidden;
+  border-radius: 64px 64px 8px 8px;
+  background-color: #100D0A;
+  background-image: radial-gradient(120% 160% at 50% 100%, #2B241C 0%, #0D0A08 70%);
+  box-shadow: inset 0 3px 9px rgba(0,0,0,.85);
+}
+.gauge-arc {
+  position: absolute; inset: 5px 5px -68px; border-radius: 50%;
+  background-image: conic-gradient(from -90deg,
+    transparent 0deg, transparent var(--danger-from, 60deg),
+    rgba(168,30,34,.85) var(--danger-from, 60deg), rgba(168,30,34,.85) 90deg,
+    transparent 90deg);
+  -webkit-mask-image: radial-gradient(circle at 50% 100%, transparent 58%, #000 60%, #000 78%, transparent 80%);
+  mask-image: radial-gradient(circle at 50% 100%, transparent 58%, #000 60%, #000 78%, transparent 80%);
+}
+.gauge-ticks {
+  position: absolute; inset: 8px 8px -65px; border-radius: 50%;
+  background-image: repeating-conic-gradient(from -90deg,
+    rgba(232,206,122,.75) 0deg 1deg, transparent 1deg 15deg);
+  -webkit-mask-image: radial-gradient(circle at 50% 100%, transparent 62%, #000 64%, #000 76%, transparent 78%);
+  mask-image: radial-gradient(circle at 50% 100%, transparent 62%, #000 64%, #000 76%, transparent 78%);
+}
+.gauge-needle {
+  position: absolute; bottom: 8px; left: 50%; width: 3px; height: 55px;
+  transform-origin: 50% 100%; rotate: var(--deg, 0deg);
+  background-image: linear-gradient(180deg, var(--brass-200), var(--brass-600));
+  border-radius: 2px;
+  box-shadow: 0 0 5px rgba(232,206,122,.55), 1px 0 2px rgba(0,0,0,.7);
+}
+.gauge-hub {
+  position: absolute; bottom: 1px; left: 50%; translate: -50% 0;
+  width: 13px; height: 13px; border-radius: 50%;
+  background-image: radial-gradient(circle at 34% 28%,
+    var(--brass-200), var(--brass-500) 50%, var(--brass-900) 100%);
+  box-shadow: 0 1px 3px rgba(0,0,0,.8);
+}
+.gauge-cap {
+  margin-top: var(--s3);
+  font-family: var(--font-stencil); text-transform: uppercase;
+  font-size: var(--t-xs); letter-spacing: .09em; color: var(--bone-300);
+}
+.gauge-val { font: 700 var(--t-lg)/1.1 var(--font-data); color: var(--bone-100); margin-top: var(--s1); }
+.gauge-val--alert { color: #E8776F; }
+
+/* ============================================================== TILES ==== */
+.tile {
+  position: relative;
+  min-height: 132px; padding: 16px 14px 14px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 9px; text-align: center;
+  border-radius: var(--r-lg); cursor: pointer;
+  background-color: var(--hide-700);
+  background-image:
+    var(--grain),
+    radial-gradient(120% 100% at 30% 4%, rgba(186,143,86,.28), transparent 56%),
+    linear-gradient(168deg, #4B382A, #34271D 55%, #241B14);
+  background-blend-mode: overlay, screen, normal;
+  box-shadow:
+    inset 0 1px 0 rgba(232,206,122,.18),
+    inset 0 -2px 6px rgba(0,0,0,.55),
+    0 4px 10px rgba(0,0,0,.5);
+  transition: translate .12s ease, box-shadow .12s ease;
+}
+.tile::after {
+  content: ""; position: absolute; inset: 6px; pointer-events: none;
+  border: 1.5px dashed rgba(226,205,156,.26); border-radius: 9px;
+}
+.tile:hover { translate: 0 -2px; box-shadow: inset 0 1px 0 rgba(232,206,122,.28), 0 8px 18px rgba(0,0,0,.6); }
+.tile-glyph { font-size: 30px; line-height: 1; color: var(--brass-300); text-shadow: 0 2px 3px rgba(0,0,0,.7); }
+.tile-name  { font-family: var(--font-stencil); text-transform: uppercase; font-size: 14px; letter-spacing: .07em; color: var(--bone-100); }
+.tile-meta  { font: 650 12px/1 var(--font-data); color: var(--brass-300); }
+
+/* Leather luggage-tag navigation */
+.tag {
+  position: relative;
+  display: flex; align-items: center; min-height: var(--tap);
+  padding: 0 18px 0 26px; margin-left: 14px;
+  border-radius: var(--r-md); cursor: pointer;
+  font-family: var(--font-stencil); text-transform: uppercase;
+  font-size: 15px; letter-spacing: .07em; color: var(--bone-300);
+  background-color: var(--hide-700);
+  background-image: var(--grain), linear-gradient(168deg, #43301F, #2A1F18);
+  background-blend-mode: overlay, normal;
+  box-shadow: inset 0 1px 0 rgba(232,206,122,.14), 0 3px 7px rgba(0,0,0,.5);
+}
+.tag::before {                      /* brass grommet + ring */
+  content: ""; position: absolute; left: -13px; top: 50%; translate: 0 -50%;
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 3px solid var(--brass-500);
+  background: radial-gradient(circle at 34% 28%, var(--brass-200), var(--brass-700));
+  box-shadow: 0 1px 3px rgba(0,0,0,.7), inset 0 -1px 1px rgba(0,0,0,.5);
+}
+.tag::after {
+  content: ""; position: absolute; inset: 5px 5px 5px 12px; pointer-events: none;
+  border: 1.5px dashed rgba(226,205,156,.22); border-radius: 6px;
+}
+.tag[aria-current="page"], .tag:hover {
+  color: var(--brass-200);
+  background-image: var(--grain), linear-gradient(168deg, #5C4127, #3A2A1D);
+  box-shadow: inset 0 1px 0 rgba(232,206,122,.3), 0 0 0 1px var(--brass-700), 0 4px 10px rgba(0,0,0,.6);
+}
+
+/* ============================================================= LAYOUT ==== */
+.motto {
+  font-family: var(--font-stencil); text-transform: uppercase;
+  font-size: clamp(24px, 4vw, 40px); letter-spacing: .06em;
+  color: var(--bone-100); text-align: center;
+  text-shadow: 0 3px 0 rgba(0,0,0,.6), 0 0 26px rgba(232,206,122,.16);
+}
+.plaque {
+  display: inline-block; padding: 7px 16px; border-radius: var(--r-sm);
+  background-color: rgba(0,0,0,.4);
+  border: 1px solid var(--brass-700);
+  box-shadow: inset 0 1px 0 rgba(232,206,122,.16);
+  font: 650 13px/1 var(--font-data); letter-spacing: .09em; color: var(--brass-200);
+}
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}

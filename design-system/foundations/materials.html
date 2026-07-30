@@ -1,0 +1,227 @@
+<!-- @dsCard group="Foundations" name="Materials" subtitle="Leather, brass, slate, cork, paper — and the stamp pad" -->
+<link rel="stylesheet" href="../ppbf.css">
+<style>
+  body { margin: 0; }
+  .sheet { padding: var(--s6); max-width: 1120px; margin: 0 auto; }
+  .head { margin-bottom: var(--s6); }
+  h1 { font-family: var(--font-stencil); text-transform: uppercase; font-size: var(--t-2xl);
+       letter-spacing: .05em; color: var(--bone-100); margin: var(--s3) 0 var(--s3);
+       text-shadow: 0 2px 0 rgba(0,0,0,.6), 0 0 22px rgba(232,206,122,.14); }
+  .lede { font-size: var(--t-sm); line-height: 1.62; color: var(--bone-300); max-width: 64ch; margin: 0; }
+
+  h2 { font-family: var(--font-stencil); text-transform: uppercase; font-size: var(--t-md);
+       letter-spacing: .08em; color: var(--brass-300); margin: var(--s7) 0 var(--s5);
+       padding-bottom: var(--s3); border-bottom: 1px solid rgba(212,175,74,.28); }
+
+  .law { border-left: 3px solid var(--brass-500); background: rgba(184,145,47,.13);
+         padding: var(--s4) var(--s5); border-radius: 0 var(--r-md) var(--r-md) 0;
+         font-size: var(--t-sm); line-height: 1.6; color: var(--brass-200); }
+  .law b { color: var(--brass-300); }
+
+  .grid  { display: grid; gap: var(--s5); grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .grid3 { display: grid; gap: var(--s5); grid-template-columns: repeat(auto-fit, minmax(212px, 1fr)); }
+
+  /* A material specimen: 1 : φ⁻¹ — the swatch is the golden major, caption the minor */
+  .spec .swatch { height: 144px; border-radius: var(--r-lg); position: relative; overflow: hidden; }
+  .spec .cap { margin-top: var(--s4); }
+  .spec .cap b { display: block; font-family: var(--font-stencil); text-transform: uppercase;
+                 font-size: var(--t-sm); letter-spacing: .07em; color: var(--bone-100); }
+  .spec .cap code { display: block; font: var(--t-xs)/1.6 var(--font-data); color: var(--brass-400);
+                    letter-spacing: .06em; margin-top: 2px; }
+  .spec .cap p { margin: var(--s3) 0 0; font-size: 12.8px; line-height: 1.58; color: var(--bone-400); }
+
+  .stamps { display: flex; flex-wrap: wrap; gap: var(--s6) var(--s7); align-items: center;
+            padding: var(--s6) var(--s5); }
+  .pad { border-radius: var(--r-lg); }
+
+  .note-demo { position: relative; width: 100%; max-width: 220px; padding: var(--s5) var(--s4) var(--s6);
+               rotate: -1.6deg; }
+  .note-demo p { margin: 0; }
+
+  .hw { display: flex; align-items: center; gap: var(--s6); flex-wrap: wrap; }
+  .hw-item { text-align: center; }
+  .hw-item .t-label { display: block; margin-top: var(--s4); }
+  .rivet-demo { position: relative; width: 46px; height: 46px; border-radius: var(--r-md); }
+  .rivet-demo .rivet { position: absolute; }
+</style>
+
+<body class="ppbf">
+<div class="sheet">
+  <div class="head">
+    <div class="t-eyebrow">PPBF Design System · Foundations</div>
+    <h1>Materials</h1>
+    <p class="lede">
+      Five materials and one set of hardware. Everything in the platform is made of these
+      and nothing else — that fixed vocabulary is what separates a skeuomorphic system
+      from pastiche. All of it is generated in CSS: no image assets, so the floor kiosk
+      renders offline.
+    </p>
+  </div>
+
+  <div class="law">
+    <b>Law 6 — Every panel is a real object.</b> Leather, brass, slate, cork, paper.
+    If a surface isn't one of those five, it doesn't ship. Nothing gets invented per-screen.
+  </div>
+
+  <h2>Leather — the ground</h2>
+  <div class="grid">
+    <div class="spec">
+      <div class="swatch mat-leather"></div>
+      <div class="cap">
+        <b>Hide</b><code>.mat-leather</code>
+        <p>The page ground and standard panel face. Oiled espresso with a warm top-light
+           and a heavy bottom-right falloff, so panels sit in a room rather than on a plane.</p>
+      </div>
+    </div>
+    <div class="spec">
+      <div class="swatch mat-leather--raised"></div>
+      <div class="cap">
+        <b>Raised hide</b><code>.mat-leather--raised</code>
+        <p>Anything that lifts off the ground — tiles, tags, cards. Lighter grain, an
+           inset bone highlight along the top edge, and a real cast shadow.</p>
+      </div>
+    </div>
+    <div class="spec">
+      <div class="swatch mat-leather--raised mat-stitch"></div>
+      <div class="cap">
+        <b>Saddle stitched</b><code>.mat-stitch</code>
+        <p>A dashed bone rule inset 6px. Reserved for objects a person would physically
+           handle: capability tiles, role tags, the buckets.</p>
+      </div>
+    </div>
+  </div>
+
+  <h2>Brass — the chassis</h2>
+  <div class="grid">
+    <div class="spec">
+      <div class="swatch mat-brass"></div>
+      <div class="cap">
+        <b>Cast brass</b><code>.mat-brass</code>
+        <p>A seven-stop gradient at 158°, not a flat gold. The specular band at 30% is what
+           reads as metal; without it this is just a yellow rectangle.</p>
+      </div>
+    </div>
+    <div class="spec">
+      <div class="swatch frame" style="padding: var(--s4)">
+        <span class="rivet rivet--tl"></span><span class="rivet rivet--tr"></span>
+        <span class="rivet rivet--bl"></span><span class="rivet rivet--br"></span>
+        <div class="frame-in mat-leather" style="height: 100%"></div>
+      </div>
+      <div class="cap">
+        <b>Riveted frame</b><code>.frame + .rivet</code>
+        <p>Wraps any panel. The inner well carries its own inset shadow so the contents
+           read as sunk beneath the metal.</p>
+      </div>
+    </div>
+    <div class="spec">
+      <div class="swatch mat-leather" style="display:flex; align-items:center; justify-content:center; padding: var(--s5)">
+        <div class="hw">
+          <div class="hw-item">
+            <div class="rope" style="width: 118px"></div>
+            <span class="t-label">.rope</span>
+          </div>
+          <div class="hw-item">
+            <div class="rivet-demo mat-brass--dark">
+              <span class="rivet rivet--tl" style="top:6px;left:6px"></span>
+              <span class="rivet rivet--br" style="bottom:6px;right:6px"></span>
+            </div>
+            <span class="t-label">.rivet</span>
+          </div>
+        </div>
+      </div>
+      <div class="cap">
+        <b>Hardware</b><code>.rope · .rivet</code>
+        <p>Rope is a repeating 112° gradient with a lit top and shadowed underside. Rivets
+           are a single off-centre radial — the highlight at 34%/28% sets the light source
+           for the whole system.</p>
+      </div>
+    </div>
+  </div>
+
+  <h2>Slate, cork, paper</h2>
+  <div class="grid">
+    <div class="spec">
+      <div class="swatch mat-slate" style="padding: var(--s5)">
+        <div class="chalk" style="font-family: var(--font-stencil); text-transform: uppercase; font-size: var(--t-md); letter-spacing: .06em">Today's Sessions</div>
+        <hr class="chalk-rule" style="margin: var(--s4) 0">
+        <div class="chalk-dim" style="font-size: 12.8px; line-height: 1.9">
+          08:00 &nbsp; Fundamentals &nbsp; Ring 1<br>
+          09:30 &nbsp; Conditioning &nbsp; Ring 2
+        </div>
+      </div>
+      <div class="cap">
+        <b>Slate</b><code>.mat-slate · .chalk</code>
+        <p>Today, and only today. Chalk carries a faint glow rather than pure white —
+           real chalk scatters. If it belongs on the board, it gets erased tomorrow.</p>
+      </div>
+    </div>
+    <div class="spec">
+      <div class="swatch mat-cork" style="display:flex; align-items:center; justify-content:center">
+        <div class="mat-paper note-torn note-demo">
+          <span class="pin"></span>
+          <p class="t-hand">Tournament prep starts Monday</p>
+        </div>
+      </div>
+      <div class="cap">
+        <b>Cork + pinned paper</b><code>.mat-cork · .note-torn · .pin</code>
+        <p>Announcements. The ragged edge is a 22-point <code style="display:inline">clip-path</code>,
+           not an image; notes rotate a degree or two so the wall never looks like a grid.</p>
+      </div>
+    </div>
+    <div class="spec">
+      <div class="swatch mat-paper" style="padding: var(--s5); color:#33291B">
+        <div style="font-family: var(--font-stencil); text-transform: uppercase; font-size: var(--t-sm); letter-spacing:.07em">Impact Report · Q3</div>
+        <div style="font: 650 12px/1.7 var(--font-data); margin-top: var(--s4); color:#5A4A31">
+          ATHLETES SERVED &nbsp; 47<br>SESSIONS LOGGED &nbsp; 156<br>RETENTION &nbsp; 82%
+        </div>
+      </div>
+      <div class="cap">
+        <b>Paper</b><code>.mat-paper</code>
+        <p>Decisions and records — board packets, grant reports, filed consent. Paper is
+           permanent, which is exactly why the stamps live here.</p>
+      </div>
+    </div>
+  </div>
+
+  <h2>The stamp pad</h2>
+  <div class="frame">
+    <span class="rivet rivet--tl"></span><span class="rivet rivet--tr"></span>
+    <span class="rivet rivet--bl"></span><span class="rivet rivet--br"></span>
+    <div class="frame-in mat-paper pad">
+      <div class="stamps">
+        <span class="stamp stamp--lg">Research&nbsp;Needed</span>
+        <span class="stamp" style="rotate: 4deg">Redacted</span>
+        <span class="stamp stamp--green" style="rotate: -3deg">Approved</span>
+        <span class="stamp stamp--green stamp--flat">Compliance&nbsp;Green</span>
+        <span class="stamp" style="rotate: 7deg">Locked&nbsp;·&nbsp;Layer&nbsp;11</span>
+        <span class="stamp stamp--brass" style="rotate: -5deg">Pending&nbsp;Review</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="law" style="margin-top: var(--s5)">
+    <b>Law 7 — Refusal is a stamp, not an error toast.</b>
+    When Layer 20 declines, or Layer 17 withholds a cohort below the k-anonymity threshold,
+    it says so in ink. The worn texture is a screen-blended grain overlay — masking the
+    element cost half the ink's contrast, and Law 3 does not let distress buy itself
+    legibility. Unlike a toast, a stamp cannot be swiped away by accident: a governance
+    platform cannot have its governance dismissed.
+  </div>
+
+  <h2>Redaction</h2>
+  <div class="mat-paper" style="border-radius: var(--r-lg); padding: var(--s6); color:#33291B">
+    <div style="font-family: var(--font-stencil); text-transform: uppercase; font-size: var(--t-md); letter-spacing:.06em">Cohort Detail — Adaptive Program</div>
+    <p style="font-size: var(--t-sm); line-height: 1.72; margin: var(--s4) 0 0; max-width: 62ch; color:#4A3B26">
+      Four participants enrolled. Individual outcomes for
+      <span class="redacted">Marcus D.</span>, <span class="redacted">Priya S.</span> and
+      <span class="redacted">two further participants</span> are withheld from this report.
+    </p>
+    <div style="margin-top: var(--s5); display:flex; align-items:center; gap: var(--s6); flex-wrap:wrap">
+      <span class="stamp stamp--lg">Redacted — k&nbsp;&lt;&nbsp;5</span>
+      <span style="font: var(--t-xs)/1.6 var(--font-data); color:#6E5B3E; letter-spacing:.05em">
+        LAYER 17 · GRANT REPORTING<br>COHORT BELOW ANONYMITY THRESHOLD
+      </span>
+    </div>
+  </div>
+</div>
+</body>

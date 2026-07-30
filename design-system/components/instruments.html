@@ -1,0 +1,228 @@
+<!-- @dsCard group="Components" name="Instruments" subtitle="Brass gauges, workload satchels, capability tiles, badges, controls" -->
+<link rel="stylesheet" href="../ppbf.css">
+<style>
+  body { margin: 0; }
+  .sheet { padding: var(--s6); max-width: 1120px; margin: 0 auto; }
+  h1 { font-family: var(--font-stencil); text-transform: uppercase; font-size: var(--t-2xl);
+       letter-spacing: .05em; color: var(--bone-100); margin: var(--s3) 0 var(--s3);
+       text-shadow: 0 2px 0 rgba(0,0,0,.6), 0 0 22px rgba(232,206,122,.14); }
+  .lede { font-size: var(--t-sm); line-height: 1.62; color: var(--bone-300); max-width: 66ch; margin: 0 0 var(--s6); }
+  h2 { font-family: var(--font-stencil); text-transform: uppercase; font-size: var(--t-md);
+       letter-spacing: .08em; color: var(--brass-300); margin: var(--s7) 0 var(--s5);
+       padding-bottom: var(--s3); border-bottom: 1px solid rgba(212,175,74,.28); }
+  .cap { font-size: 12.8px; line-height: 1.6; color: var(--bone-400); margin: var(--s5) 0 0; max-width: 74ch; }
+  .cap b { color: var(--bone-200); }
+  .cap code { font: 12px var(--font-data); color: var(--brass-300); }
+
+  .strip { display: flex; gap: var(--s6); flex-wrap: wrap; align-items: flex-start; }
+  .panel { border-radius: var(--r-lg); padding: var(--s5); }
+  .grid4 { display: grid; gap: var(--s5); grid-template-columns: repeat(auto-fit, minmax(144px, 1fr)); }
+
+  /* ---- Workload satchel: 89 × 89 leather pouch, status-washed ---- */
+  .bucket { width: 89px; text-align: center; }
+  .satchel {
+    position: relative; width: 89px; height: 89px; border-radius: var(--r-md);
+    background-color: var(--hide-700);
+    background-image:
+      var(--grain),
+      linear-gradient(180deg, rgba(0,0,0,0) 34%, color-mix(in srgb, var(--wash) 42%, transparent) 100%),
+      linear-gradient(168deg, #4B382A, #2C2118);
+    background-blend-mode: overlay, normal, normal;
+    box-shadow: inset 0 1px 0 rgba(232,206,122,.16), inset 0 -3px 8px rgba(0,0,0,.6),
+                0 4px 9px rgba(0,0,0,.55);
+    display: flex; align-items: flex-end; justify-content: center; padding-bottom: var(--s3);
+  }
+  .satchel .flap {
+    position: absolute; inset: 0 0 auto 0; height: 36px;
+    border-radius: var(--r-md) var(--r-md) var(--s2) var(--s2);
+    background-image: var(--grain), linear-gradient(172deg, #56402E, #3A2B20);
+    background-blend-mode: overlay, normal;
+    box-shadow: 0 2px 5px rgba(0,0,0,.55), inset 0 1px 0 rgba(232,206,122,.2);
+  }
+  .satchel .buckle {
+    position: absolute; top: 28px; left: 50%; translate: -50% 0;
+    width: 21px; height: 13px; border-radius: 3px;
+    background-image: linear-gradient(180deg, var(--brass-200), var(--brass-500) 55%, var(--brass-800));
+    box-shadow: inset 0 1px 0 rgba(255,248,224,.6), 0 1px 3px rgba(0,0,0,.7);
+  }
+  .satchel .count {
+    position: relative; font: 700 var(--t-lg)/1 var(--font-data); color: var(--bone-100);
+    text-shadow: 0 2px 3px rgba(0,0,0,.8);
+  }
+  .bucket-lbl {
+    margin-top: var(--s4); font-family: var(--font-stencil); text-transform: uppercase;
+    font-size: 13px; letter-spacing: .09em; color: var(--wash);
+  }
+  .b-urgent   { --wash: var(--locked); }
+  .b-progress { --wash: var(--restricted); }
+  .b-done     { --wash: var(--cleared); }
+
+  .rowset { display: flex; gap: var(--s4); flex-wrap: wrap; align-items: center; }
+  .fields { display: grid; gap: var(--s5); grid-template-columns: repeat(auto-fit, minmax(233px, 1fr)); }
+</style>
+
+<body class="ppbf">
+<div class="sheet">
+  <div class="t-eyebrow">PPBF Design System · Components</div>
+  <h1>Instruments</h1>
+  <p class="lede">
+    The things a coach reads and touches. Metrics are brass instruments rather than number
+    cards, because a needle communicates <i>where in the range</i> a value sits before you
+    have read the digits — which is the whole job of a metrics bar.
+  </p>
+
+  <h2>Gauges</h2>
+  <div class="panel mat-leather--raised">
+    <div class="grid4">
+      <div class="gauge">
+        <div class="gauge-bezel"><div class="gauge-face">
+          <div class="gauge-arc" style="--danger-from:66deg"></div>
+          <div class="gauge-ticks"></div>
+          <div class="gauge-needle" style="--deg:-28deg"></div>
+          <div class="gauge-hub"></div>
+        </div></div>
+        <div class="gauge-cap">Active Fighters</div>
+        <div class="gauge-val">47</div>
+      </div>
+      <div class="gauge">
+        <div class="gauge-bezel"><div class="gauge-face">
+          <div class="gauge-arc" style="--danger-from:66deg"></div>
+          <div class="gauge-ticks"></div>
+          <div class="gauge-needle" style="--deg:-54deg"></div>
+          <div class="gauge-hub"></div>
+        </div></div>
+        <div class="gauge-cap">Sessions Today</div>
+        <div class="gauge-val">8</div>
+      </div>
+      <div class="gauge">
+        <div class="gauge-bezel"><div class="gauge-face">
+          <div class="gauge-arc" style="--danger-from:66deg"></div>
+          <div class="gauge-ticks"></div>
+          <div class="gauge-needle" style="--deg:22deg"></div>
+          <div class="gauge-hub"></div>
+        </div></div>
+        <div class="gauge-cap">Gym Capacity</div>
+        <div class="gauge-val">62%</div>
+      </div>
+      <div class="gauge">
+        <div class="gauge-bezel"><div class="gauge-face">
+          <div class="gauge-arc" style="--danger-from:48deg"></div>
+          <div class="gauge-ticks"></div>
+          <div class="gauge-needle" style="--deg:74deg"></div>
+          <div class="gauge-hub"></div>
+        </div></div>
+        <div class="gauge-cap">Open Alerts</div>
+        <div class="gauge-val gauge-val--alert">3</div>
+      </div>
+    </div>
+    <p class="cap">
+      144 × 89 bezel — a golden rectangle — with a 55px needle. The red arc is a
+      <code>conic-gradient</code> clipped to the dial band by a radial mask; move its start
+      with <code>--danger-from</code>, and the needle with <code>--deg</code> (−90° to +90°).
+      <b>Note the fourth gauge:</b> the needle is inside the red arc <i>and</i> the value turns
+      red <i>and</i> the caption says "open alerts". Three channels, per Law 3 — the arc alone
+      would be colour doing the work by itself.
+    </p>
+  </div>
+
+  <h2>Workload satchels</h2>
+  <div class="panel mat-leather--raised">
+    <div class="strip">
+      <div class="bucket b-urgent">
+        <div class="satchel"><span class="flap"></span><span class="buckle"></span><span class="count">47</span></div>
+        <div class="bucket-lbl">Urgent</div>
+      </div>
+      <div class="bucket b-progress">
+        <div class="satchel"><span class="flap"></span><span class="buckle"></span><span class="count">6</span></div>
+        <div class="bucket-lbl">In Progress</div>
+      </div>
+      <div class="bucket b-done">
+        <div class="satchel"><span class="flap"></span><span class="buckle"></span><span class="count">3</span></div>
+        <div class="bucket-lbl">Completed</div>
+      </div>
+    </div>
+    <p class="cap">
+      A leather pouch with a flap and a brass buckle, washed with its status colour from the
+      seam down. Queue depth reads as physical weight — an urgent bag with 47 in it looks
+      heavy, which is the point. The wash never touches the flap, so brass and hide stay
+      uncoloured (Law 1).
+    </p>
+  </div>
+
+  <h2>Capability tiles</h2>
+  <div class="panel mat-leather--raised">
+    <div class="grid4">
+      <div class="tile"><span class="tile-glyph">👥</span><span class="tile-name">People</span><span class="tile-meta">59 ACTIVE</span></div>
+      <div class="tile"><span class="tile-glyph">🔑</span><span class="tile-name">PIN Mgmt</span><span class="tile-meta">104 KEYS</span></div>
+      <div class="tile"><span class="tile-glyph">🛡</span><span class="tile-name">Compliance</span><span class="tile-meta">98% PASS</span></div>
+      <div class="tile"><span class="tile-glyph">🗓</span><span class="tile-name">Scheduling</span><span class="tile-meta">15 CLASSES</span></div>
+    </div>
+    <p class="cap">
+      Embossed, saddle-stitched leather with a brass glyph. Tiles lift 2px on hover — they
+      are objects you pick up, not links you click. <b>The glyphs are placeholders:</b> ship
+      these as a single brass-filled SVG sprite so they inherit the chassis lighting instead
+      of the platform's emoji font.
+    </p>
+  </div>
+
+  <h2>Status badges</h2>
+  <div class="panel mat-leather--raised">
+    <div class="rowset">
+      <span class="badge badge--cleared"><i>✓</i>Cleared</span>
+      <span class="badge badge--monitor"><i>◉</i>Monitor</span>
+      <span class="badge badge--restricted"><i>▲</i>Restricted</span>
+      <span class="badge badge--locked"><i>✕</i>Locked</span>
+    </div>
+    <p class="cap">
+      The Layer 11 ladder. Each badge mixes its hue 26% into the hide for the fill and 62%
+      for the border, so it sits <i>in</i> the leather rather than on top of it, and stays
+      legible against every panel in the system.
+    </p>
+  </div>
+
+  <h2>Controls</h2>
+  <div class="panel mat-leather--raised">
+    <div class="rowset" style="margin-bottom: var(--s6)">
+      <button class="btn">Submit Check-In</button>
+      <button class="btn btn--ghost">Cancel</button>
+      <button class="btn btn--danger">Engage Safety Lock</button>
+    </div>
+    <button class="btn btn--kiosk" style="max-width: 377px">Submit Floor Check-In</button>
+    <p class="cap">
+      One brass button per view (Law 2) — everything secondary is a ghost outline. Brass
+      buttons carry a lit top edge and a dark lower lip so they read as cast metal you press.
+      <code>.btn--kiosk</code> is 55px tall with 19.1px type for the gym floor (Law 5).
+      Destructive actions use <code>--locked</code>, the same red as the safety lock: both
+      mean halt.
+    </p>
+  </div>
+
+  <h2>Fields</h2>
+  <div class="panel mat-leather--raised">
+    <div class="fields">
+      <label class="field">
+        <span class="t-label">Athlete name</span>
+        <input class="input" placeholder="Type name to verify safety metrics…">
+      </label>
+      <label class="field">
+        <span class="t-label">Session RPE · 1–10</span>
+        <select class="select">
+          <option>2 — Light warm-up volume</option>
+          <option>5 — Moderate session pace</option>
+          <option selected>8 — Heavy conditioning threshold</option>
+          <option>10 — Absolute threshold output</option>
+        </select>
+      </label>
+    </div>
+    <label class="field" style="margin-top: var(--s5); max-width: 377px">
+      <span class="t-label">Kiosk variant · 55px</span>
+      <input class="input input--kiosk" placeholder="Tap to enter name">
+    </label>
+    <p class="cap">
+      Inputs are recessed into the leather — a dark well with an inset shadow and a thin
+      brass rim. They read as cut into the panel, which is why they never need a label
+      floating inside them to look like inputs.
+    </p>
+  </div>
+</div>
+</body>
