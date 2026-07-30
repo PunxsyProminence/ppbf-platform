@@ -57,6 +57,15 @@ function required(name) {
   return value.trim();
 }
 
+// --deactivate-athlete: clear the gate athlete's PIN hash and deactivate the
+// account. The gate's athlete PIN is minted fresh per run and must not remain
+// usable afterwards -- a literal PIN previously sat in deploy-staging.yml, in a
+// PUBLIC repository, against a publicly reachable staging login, on an account
+// written active with must_change_pin=false (audit PPBF-SEC-002). The workflow
+// runs this in an always() step so a gate that fails partway through -- exactly
+// when a live credential is most likely to be forgotten -- still cleans up.
+const DEACTIVATE_ONLY = process.argv.includes('--deactivate-athlete');
+
 async function run() {
   const connectionString = required('AZURE_POSTGRES_CONNECTION_STRING');
 
@@ -82,6 +91,29 @@ async function run() {
 
   const client = new Client({ connectionString, ssl: { rejectUnauthorized: true } });
   await client.connect();
+
+  if (DEACTIVATE_ONLY) {
+    try {
+      const result = await client.query(
+        `update pilot.accounts
+         set pin_hash = null, active_flag = false, updated_at = now()
+         where account_id = $1 and organization_id = $2 and role = 'athlete'
+         returning account_id`,
+        [athleteAccountId, organizationId],
+      );
+      await client.query(
+        'delete from pilot.session_tokens where account_id = $1',
+        [athleteAccountId],
+      );
+      console.log(result.rowCount > 0
+        ? `Deactivated gate fixture athlete "${athleteAccountId}"; PIN cleared and sessions revoked.`
+        : `Gate fixture athlete "${athleteAccountId}" not found — nothing to deactivate.`);
+      console.log('GATE FIXTURE DEACTIVATE PASS');
+    } finally {
+      await client.end();
+    }
+    return;
+  }
 
   try {
     await client.query('begin');

@@ -264,6 +264,25 @@ jobs:
       # scoped to the administrator only -- the athlete and guardian fixtures
       # are created by the gate through the real intake-promotion API, which is
       # part of what the gate is testing.
+      # The gate athlete's PIN is generated fresh for each run and never
+      # committed. It previously sat in this file as a literal -- in a PUBLIC
+      # repository, against a publicly reachable staging login, on an account
+      # the provisioner writes as active with must_change_pin=false. That is a
+      # working credential published in source (audit PPBF-SEC-002).
+      #
+      # A per-run random value beats a stored secret here: nothing to leak
+      # between runs, nothing to rotate, and the account is deactivated in the
+      # always() cleanup step after the gate regardless of outcome. The value
+      # must satisfy the 6-digit PIN policy and must not be
+      # DEFAULT_FIRST_LOGIN_PIN (123456), which a chosen PIN is refused.
+      - name: Mint Ephemeral Gate Athlete PIN
+        if: inputs.enable_shadow_gate
+        run: |
+          PIN="$(python3 -c 'import secrets; print(f"{secrets.randbelow(900000)+100000:06d}")')"
+          if [ "$PIN" = "123456" ]; then PIN="224467"; fi
+          echo "::add-mask::$PIN"
+          echo "GATE_ATHLETE_PIN=$PIN" >> "$GITHUB_ENV"
+
       - name: Provision Gate Fixture Accounts
         if: inputs.enable_shadow_gate
         env:
@@ -280,7 +299,7 @@ jobs:
           # known-gap branch), and when promotion works again both paths upsert
           # the same rows.
           PILOT_SHADOW_ATHLETE_ACCOUNT_ID: gate_shadow_athlete
-          PILOT_SHADOW_ATHLETE_PIN: "224466"
+          PILOT_SHADOW_ATHLETE_PIN: ${{ env.GATE_ATHLETE_PIN }}
           PILOT_SHADOW_ATHLETE_ID: GATE-SHADOW-ATH-1
         run: |
           npm --prefix apps/web run gate:pilot:fixtures
@@ -300,9 +319,30 @@ jobs:
           PILOT_ADMIN_ACCOUNT_ID: org_admin_shadow
           PPBF_PILOT_DEFAULT_ORG_ID: ${{ env.GATE_DEFAULT_ORG_ID }}
           PILOT_SHADOW_ATHLETE_ACCOUNT_ID: gate_shadow_athlete
-          PILOT_SHADOW_ATHLETE_PIN: "224466"
+          PILOT_SHADOW_ATHLETE_PIN: ${{ env.GATE_ATHLETE_PIN }}
           PILOT_SHADOW_ATHLETE_ID: GATE-SHADOW-ATH-1
           PILOT_SHADOW_GUARDIAN_ACCOUNT_ID: gate_shadow_guardian
           PILOT_SHADOW_GUARDIAN_PARENT_ID: gate_shadow_parent_1
         run: |
           npm --prefix apps/web run gate:pilot:shadow-e2e
+
+      # always(): a gate that fails partway through is exactly the case where a
+      # live athlete credential must not be left behind on a publicly reachable
+      # staging login. Deactivating clears the PIN hash and sets active_flag
+      # false, so the ephemeral PIN cannot authenticate after the run whatever
+      # the outcome. Cleanup failure is reported, never fatal -- it must not
+      # mask the gate's own result.
+      - name: Deactivate Gate Athlete Fixture
+        if: always() && inputs.enable_shadow_gate
+        continue-on-error: true
+        env:
+          AZURE_POSTGRES_CONNECTION_STRING: ${{ env.GATE_DB_CONNECTION }}
+          PPBF_EXPECTED_POSTGRES_HOSTNAME: ${{ env.GATE_EXPECTED_POSTGRES_HOSTNAME }}
+          PPBF_EXPECTED_POSTGRES_DATABASE: ${{ env.GATE_EXPECTED_POSTGRES_DATABASE }}
+          PPBF_PILOT_DEFAULT_ORG_ID: ${{ env.GATE_DEFAULT_ORG_ID }}
+          PILOT_ADMIN_ACCOUNT_ID: org_admin_shadow
+          PILOT_SHADOW_ATHLETE_ACCOUNT_ID: gate_shadow_athlete
+          PILOT_SHADOW_ATHLETE_ID: GATE-SHADOW-ATH-1
+          PILOT_SHADOW_ATHLETE_PIN: ${{ env.GATE_ATHLETE_PIN }}
+        run: |
+          npm --prefix apps/web run gate:pilot:fixtures -- --deactivate-athlete
