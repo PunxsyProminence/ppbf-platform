@@ -128,6 +128,13 @@ own PR:
 - **AIs never dispatch production workflows.** Staging dispatches are the
   deploy coordinator's job; production dispatches are the human's. The
   production deploy takes only a digest that already passed the gate.
+- **The deploy coordinator is the workspace (VS Code) Claude instance.**
+  Handed off 2026-07-30 by the remote session that held the role before it.
+  Every other AI session — the remote work-and-merge session included — does
+  not dispatch deploy or migration workflows at all, staging included. It
+  builds, tests, and merges, then hands the coordinator the exact dispatch
+  inputs: expected SHA, a truthful `schema_migrations_complete` attestation,
+  and the gate flag, in the PR body or a handoff issue.
 - `--set-env-vars` cannot UNSET a variable already on an app — state every
   variable explicitly in the workflow.
 - New features needing env vars must default OFF and be enabled per
