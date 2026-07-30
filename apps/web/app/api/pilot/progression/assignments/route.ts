@@ -1,0 +1,79 @@
+import { NextResponse, type NextRequest } from 'next/server';
+
+import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
+import { assignDrill, getAthleteAssignments, getProgressionGapById } from '@/src/server/pilot/progression';
+import { hiddenNotFound, requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
+
+export const runtime = 'nodejs';
+
+export async function GET(request: NextRequest) {
+  try {
+    const principal = await requirePrincipal(request);
+    requireRole(principal, ['coach', 'admin', 'organization_admin', 'athlete', 'parent']);
+
+    const athleteId = request.nextUrl.searchParams.get('athlete_id');
+    const status = request.nextUrl.searchParams.get('status');
+
+    if (!athleteId) {
+      throw new Error('Missing athlete_id');
+    }
+
+    await assertActorCanAccessAthlete(principal, athleteId);
+
+    const assignments = await getAthleteAssignments(principal.organizationId, athleteId, status || undefined);
+
+    return NextResponse.json({ items: assignments });
+  } catch (error) {
+    return jsonError(error);
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const principal = await requirePrincipal(request);
+    requireRole(principal, ['coach', 'admin', 'organization_admin']);
+
+    const body = (await request.json()) as {
+      gap_id?: string;
+      athlete_id?: string;
+      drill_name?: string;
+      drill_description?: string;
+      drill_difficulty?: string;
+      rep_count?: number;
+      duration_minutes?: number;
+      frequency_per_week?: number;
+      due_date?: string;
+    };
+
+    if (!body.gap_id || !body.athlete_id || !body.drill_name || !body.drill_description) {
+      throw new Error('Missing required fields');
+    }
+
+    await assertActorCanAccessAthlete(principal, body.athlete_id);
+
+    // Reject a gap_id that belongs to another organization or to a
+    // different athlete without revealing whether it exists at all.
+    const gap = await getProgressionGapById(principal.organizationId, body.gap_id);
+    if (!gap || gap.athlete_id !== body.athlete_id) {
+      return hiddenNotFound();
+    }
+
+    const assignment = await assignDrill({
+      organizationId: principal.organizationId,
+      gapId: body.gap_id,
+      athleteId: body.athlete_id,
+      assignedByAccountId: principal.accountId,
+      drillName: body.drill_name,
+      drillDescription: body.drill_description,
+      drillDifficulty: body.drill_difficulty || 'intermediate',
+      repCount: body.rep_count,
+      durationMinutes: body.duration_minutes,
+      frequencyPerWeek: body.frequency_per_week,
+      dueDate: body.due_date,
+    });
+
+    return NextResponse.json(assignment, { status: 201 });
+  } catch (error) {
+    return jsonError(error);
+  }
+}

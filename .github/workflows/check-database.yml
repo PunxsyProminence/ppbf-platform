@@ -1,0 +1,146 @@
+# ─────────────────────────────────────────────────────────────────────────
+# Read-only database diagnostics -- manual only.
+#
+# This is deliberately a SEPARATE workflow from apply-migrations.yml rather
+# than another entry in that workflow's `migration:` dropdown. That workflow's
+# whole design is about a schema mutation an operator then attests as
+# `migrations_complete` -- its confirm-retype step, its job-summary language
+# ("Safe to attest migrations_complete"), and its concurrency group all assume
+# the run changes the database. A read-only check sharing that dropdown would
+# either inherit warnings that do not apply to it or need every one of those
+# steps special-cased to not lie about what just happened. Keeping this
+# separate means anything added here is legible by construction: nothing in
+# this file can mutate a row, so nothing here needs the ceremony that exists
+# to make a mutation safe.
+#
+# Uses the same Azure OIDC identity and Container App secret lookup as
+# apply-migrations.yml -- no new credential is introduced.
+#
+# CURRENT CHECKS
+#   multiorg-orphans: whether any of the eight tables the multi-org
+#   migration's foreign keys target hold an organization_id that does not
+#   resolve to a real pilot.organizations row. Added because that migration's
+#   FK-adding statements were never valid PostgreSQL (see #52/#53) and so have
+#   never actually run against a real database -- meaning this is genuinely
+#   unknown for any environment that predates the base schema inlining these
+#   FKs, and finding out is a precondition for running the corrected migration
+#   without it failing partway through.
+#
+#   stranded-guardians: which non-athlete accounts sit on auth_provider
+#   'ppbf_local' and therefore have no working login path (PIN login is
+#   athlete-only, Microsoft login only matches provider 'microsoft', and any
+#   session is revoked on first use). The pre-#46 intake path provisioned
+#   every guardian this way; #46 fixed provisioning going forward but changed
+#   no existing rows, so this reports the accounts still affected. Emails are
+#   masked in the output; account_ids print verbatim as the remediation key.
+# ─────────────────────────────────────────────────────────────────────────
+
+name: check-database
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Which environment's database to check
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      check:
+        description: Which read-only check to run
+        required: true
+        default: multiorg-orphans
+        type: choice
+        options:
+          - multiorg-orphans
+          - stranded-guardians
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  check:
+    environment: ${{ inputs.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RESOURCE_GROUP: rg-ppbf-enterprise-staging
+      CONTAINER_APP_NAME: ${{ inputs.target == 'production' && 'app-ppbf-production' || 'app-ppbf-staging' }}
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Locked Dependencies
+        run: npm ci
+
+      - name: Authenticate via Azure OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Masked before it is written anywhere. It is scoped to this job, and the
+      # job does nothing after the check step.
+      - name: Resolve Database Connection
+        run: |
+          CONN="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-postgres-connection-string \
+            --query value -o tsv)"
+          test -n "$CONN"
+          echo "::add-mask::$CONN"
+          echo "AZURE_POSTGRES_CONNECTION_STRING=$CONN" >> "$GITHUB_ENV"
+
+      - name: Run Check
+        id: run_check
+        env:
+          CHECK: ${{ inputs.check }}
+        run: |
+          set -euo pipefail
+          cd apps/web
+
+          case "$CHECK" in
+            multiorg-orphans)
+              npm run pilot:check-multiorg-orphans | tee /tmp/check-output.txt
+              ;;
+            stranded-guardians)
+              npm run pilot:check-stranded-guardians | tee /tmp/check-output.txt
+              ;;
+            *)
+              echo "::error::Unknown check '$CHECK'"
+              exit 1
+              ;;
+          esac
+
+      - name: Record Result
+        if: always()
+        env:
+          CHECK: ${{ inputs.check }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          {
+            echo ''
+            echo "### Read-only check result"
+            echo ''
+            echo "- target: \`$TARGET\`"
+            echo "- check: \`$CHECK\`"
+            echo "- outcome: \`${{ job.status }}\`"
+            echo "- commit: \`${{ github.sha }}\`"
+            echo ''
+            echo '```'
+            cat /tmp/check-output.txt 2>/dev/null || echo '(no output captured)'
+            echo '```'
+            echo ''
+            echo 'This workflow only ran SELECT statements. Nothing in the target database was changed.'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,643 +1,89 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PPBF Unified Management Platform - Build v21.0</title>
-    <style>
-        :root {
-            --slate-900: #1a202c;
-            --slate-800: #2d3748;
-            --slate-700: #4a5568;
-            --gold-500: #d69e2e;
-            --gold-600: #b7791f;
-            --crimson: #e53e3e;
-            --emerald: #38a169;
-            --cream: #fffaf0;
-            --gray-100: #f7fafc;
-            --border-color: #cbd5e0;
-        }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: var(--gray-100); color: var(--slate-900); margin: 0; padding: 0; line-height: 1.5; }
-        .app-wrapper { display: flex; min-height: 100vh; flex-direction: column; }
-        @media(min-width: 768px) { .app-wrapper { flex-direction: row; } }
-        
-        /* NAVIGATION BAR INTERFACE */
-        nav { background-color: var(--slate-900); color: white; width: 100%; padding: 20px; box-sizing: border-box; border-bottom: 4px solid var(--gold-500); }
-        @media(min-width: 768px) { nav { width: 320px; border-bottom: none; border-right: 4px solid var(--gold-500); } }
-        nav h1 { font-size: 1.2rem; margin: 0 0 5px 0; letter-spacing: 0.5px; }
-        .stencil { font-size: 0.75rem; color: #a0aec0; font-family: monospace; margin-bottom: 20px; line-height: 1.4; }
-        .nav-links { display: flex; flex-direction: column; gap: 8px; }
-        .nav-btn { background: none; border: 1px solid #4a5568; color: #cbd5e0; padding: 12px; text-align: left; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 0.9rem; transition: all 0.2s; display: block; width: 100%; box-sizing: border-box; }
-        .nav-btn:hover, .nav-btn.active { background-color: var(--gold-500); color: white; border-color: var(--gold-500); }
-        
-        /* ADMIN COMMAND TABS (border style only; visibility controlled by auth JS via class removal) */
-        .admin-nav-item { border-left: 3px solid var(--gold-500); }
-        
-        /* CLEAN PORTAL CONTAINER VIEWS - class-driven active state (no display style overlap) */
-        main { flex: 1; padding: 24px; box-sizing: border-box; }
-        .view-panel { display: none; }
-        .view-panel.active { display: block; }
-        
-        /* NON-BLOCKING PIN ENTRY (isolated, scoped, does not affect content) */
-        .pin-entry { display: flex; gap: 4px; margin: 8px 0; }
-        .pin-entry input { flex: 1; padding: 6px; font-size: 0.85rem; border: 1px solid #4a5568; background: #1a202c; color: #fff; border-radius: 3px; }
-        .pin-entry button { padding: 6px 8px; font-size: 0.7rem; border: 1px solid #4a5568; background: #2d3748; color: #cbd5e0; cursor: pointer; border-radius: 3px; }
-        
-        .card { background: #ffffff; border-radius: 8px; padding: 24px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; margin-bottom: 24px; }
-        h2 { font-size: 1.3rem; margin-top: 0; margin-bottom: 18px; border-bottom: 2px solid var(--gold-500); padding-bottom: 8px; color: var(--slate-800); }
-        .form-group { margin-bottom: 18px; }
-        label { display: block; font-weight: 600; margin-bottom: 6px; font-size: 0.9rem; }
-        input[type="text"], select, textarea { width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 4px; box-sizing: border-box; font-size: 0.95rem; }
-        .action-btn { background-color: var(--gold-500); color: white; border: none; padding: 12px 18px; font-weight: 700; border-radius: 4px; cursor: pointer; width: 100%; text-transform: uppercase; font-size: 0.95rem; letter-spacing: 0.5px; }
-        .action-btn:hover { background-color: var(--gold-600); }
-        .gate-alert-zone { background-color: var(--cream); border-left: 4px solid var(--gold-500); padding: 16px; margin: 18px 0; border-radius: 4px; }
-        .checkbox-container { display: flex; align-items: flex-start; gap: 10px; font-size: 0.9rem; cursor: pointer; font-weight: 600; }
-        
-        /* TABLES TYPOGRAPHY */
-        .data-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9rem; }
-        .data-table th, .data-table td { border: 1px solid #e2e8f0; padding: 10px; text-align: left; }
-        .data-table th { background-color: #f7fafc; font-weight: bold; }
-        .status-pill { padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; text-transform: uppercase; display: inline-block; }
-        .status-ready { background-color: #c6f6d5; color: #22543d; }
-        .status-verification { background-color: #feebc8; color: #744210; }
-        .status-locked { background-color: #fed7d7; color: #742a2a; }
-        .terminal-stream { background: var(--slate-900); color: #48bb78; font-family: monospace; padding: 18px; border-radius: 6px; overflow-x: auto; max-height: 250px; font-size: 0.85rem; white-space: pre-wrap; border: 1px solid #2d3748; }
-        
-        .metric-grid { display: grid; grid-template-columns: 1fr; gap: 15px; margin-bottom: 20px; }
-        @media(min-width: 600px) { .metric-grid { grid-template-columns: repeat(3, 1fr); } }
-        .metric-box { background: #f7fafc; padding: 15px; border-radius: 6px; border: 1px solid #e2e8f0; text-align: center; }
-        .metric-num { font-size: 1.8rem; font-weight: bold; color: var(--gold-500); font-family: monospace; }
-        .metric-lbl { font-size: 0.8rem; text-transform: uppercase; font-weight: 600; margin-top: 3px; }
-        .blocker-alert { background-color: #fff5f5; border-left: 4px solid var(--crimson); padding: 15px; border-radius: 4px; margin-bottom: 15px; display: none; color: var(--crimson); font-weight: bold; }
-        .tutorial-steps { padding-left: 20px; margin: 10px 0; }
-        .tutorial-steps li { margin-bottom: 12px; font-size: 0.95rem; color: var(--slate-800); }
-    </style>
+    <title>PPBF Platform - Coach Review</title>
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
-
-    <div class="app-wrapper">
-        <!-- UNIFIED NAVIGATION TREE -->
-        <nav>
-            <h1>PPBF Unified Node</h1>
-            <div class="stencil">PRODUCTION BUILD v21.0<br>204 PENNSYLVANIA AVE,<br>BIG RUN(PA), PA 15715</div>
-            <div class="nav-links">
-                <!-- ATHLETE ACCESSIBLE MAIN PORTS -->
-                <button id="btn-athleteTerminal" class="nav-btn active" data-panel="sect-athleteTerminal">1. Athlete Floor Kiosk</button>
-                <button id="btn-guardianPortal" class="nav-btn" data-panel="sect-guardianPortal">2. Guardian Verification</button>
-                <button id="btn-publicOnboarding" class="nav-btn" data-panel="sect-publicOnboarding">3. Public Onboarding</button>
-                
-                <!-- PROTECTED STAFF DESKS (UNLOCKED VIA PASSCODE GATES ONLY) -->
-                <button id="link-coachDesk" class="nav-btn admin-nav-item" data-panel="sect-coachDesk">🛠️ Coach Command Desk</button>
-                <button id="link-grantAnalytics" class="nav-btn admin-nav-item" data-panel="sect-grantAnalytics">📊 Grant & Board Analytics</button>
-                <button id="link-systemTutorial" class="nav-btn admin-nav-item" style="border-color: var(--gold-500); color: var(--gold-500);" data-panel="sect-systemTutorial">📖 Operational Tutorial</button>
-                
-                <!-- UNLOCK EXECUTIVE SECURITY GATEWAY TOOL -->
-                <button id="gatekeeperToggleBtn" class="nav-btn" style="margin-top: 30px; border: 1px dashed #4a5568; color: #a0aec0; text-align: center;">🔐 Unlock Admin Command</button>
-            </div>
-        </nav>
-
-        <!-- MAIN VIEWPORTS LAYER TERMINAL -->
-        <main>
-            <!-- PORT 1: LIVE ATHLETE ENTRYtablet KIÓSK (LOADS ACTIVE FIRST) -->
-            <div id="sect-athleteTerminal" class="view-panel">
-                <div class="blocker-alert" id="concussionBlockerFrame">
-                    🚨 IMMUTABLE MEDICAL LOCK ENGAGED (Layer 11 Safety Gate). Automated training logs frozen. Return-to-training clearance requires manual checklist validation from Head Coach Jason.
-                </div>
-                <div class="card">
-                    <h2>Athlete Floor Kiosk Terminal (Layer 14 Entry Interface)</h2>
-                    <div class="form-group">
-                        <label for="kioskAthleteName">Athlete Name</label>
-                        <input type="text" id="kioskAthleteName" placeholder="Type name to verify safety metrics..." onchange="window.executeSafetyCheckLogic()">
-                    </div>
-                    <div class="form-group">
-                        <label for="kioskRpe">Daily Session Rate of Perceived Exertion (RPE Scale 1-10)</label>
-                        <select id="kioskRpe">
-                            <option value="2">2 - Light Warmup Drill Volume</option>
-                            <option value="5">5 - Moderate Session Pace</option>
-                            <option value="8">8 - Heavy Conditioning Threshold</option>
-                            <option value="10">10 - Absolute Threshold Peak Output</option>
-                        </select>
-                    </div>
-                    <button class="action-btn" onclick="window.executeKioskSubmission()">Submit Floor Check-In</button>
-                </div>
-            </div>
-
-            <!-- PORT 2: GUARDIAN WAIVER SUBMISSION -->
-            <div id="sect-guardianPortal" class="view-panel">
-                <div class="card">
-                    <h2>Minor Participant Progress Retrieval Desk (Layer 15 Portal)</h2>
-                    <div class="form-group">
-                        <label for="guardianStudentLookup">Student Full Legal Name</label>
-                        <input type="text" id="guardianStudentLookup" placeholder="Retrieve minor tracking records...">
-                    </div>
-                    <div class="form-group">
-                        <label class="checkbox-container">
-                            <input type="checkbox" id="guardianWaiverConsent"> 
-                            <span>Renew Annual Safety, Liability, & Consent Waivers On File</span>
-                        </label>
-                    </div>
-                    <button class="action-btn" onclick="window.executeGuardianFiling()">Seal Guardian Consent</button>
-                </div>
-            </div>
-
-            <!-- PORT 3: PUBLIC ONBOARDING INTAKE -->
-            <div id="sect-publicOnboarding" class="view-panel">
-                <div class="card">
-                    <h2>Ecosystem Public Enrollment Intake Portal (Layer 16 Onboarding)</h2>
-                    <div class="form-group">
-                        <label for="publicName">Applicant Full Legal Name</label>
-                        <input type="text" id="publicName" placeholder="Enter first and last legal name...">
-                    </div>
-                    <button class="action-btn" onclick="window.executePublicIngress()">Submit Application</button>
-                </div>
-            </div>
-
-            <!-- PORT 4: PROTECTED COACH PRIVILEGE DECK COMMAND HUB -->
-            <div id="sect-coachDesk" class="view-panel">
-                <div class="card">
-                    <h2>Live Spreadsheet Tracker Row Registry ('SPECOPS_PROJECT_CONTROL_TRACKER_updated(1).xlsx')</h2>
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Candidate ID</th>
-                                <th>Operational Track</th>
-                                <th>Primary Task Dimension</th>
-                                <th>Lifecycle Status</th>
-                                <th>Performance Indicator Matrix</th>
-                            </tr>
-                        </thead>
-                        <tbody id="workbookRowTarget">
-                            <!-- Injected natively on load loops -->
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="card">
-                    <h2>7-Seat Board Position Desk (Layer 23 Nonprofit Operations)</h2>
-                    <div class="form-group">
-                        <label for="governingSeat">Active Oversight Authority Seat</label>
-                        <select id="governingSeat">
-                            <option value="Seat 1 - Executive Director (Coach Jason)">Seat 1 - Executive Director (Head Coach Jason)</option>
-                            <option value="Seat 3 - Regulatory Compliance Officer">Seat 3 - Regulatory Compliance Officer</option>
-                            <option value="Seat 4 - Safety Director & Head of Safeguarding">Seat 4 - Safety Director & Head of Safeguarding</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="governanceActionLog">Oversight Action Text Entry</label>
-                        <textarea id="governanceActionLog" rows="3" placeholder="Input corporate minutes, scholarship tracks, or non-profit logs..."></textarea>
-                    </div>
-                    <button class="action-btn" onclick="window.executeBoardLogTransaction()">Execute Board Minute</button>
-                </div>
-
-                <div class="card">
-                    <h2>Dual-Workspace Staging Desk (Directive 4 Separation Guard)</h2>
-                    <div class="form-group">
-                        <label for="athleteIdentityName">Participant Legal Name Identifier</label>
-                        <input type="text" id="athleteIdentityName" placeholder="Enter full name to stage...">
-                    </div>
-                    <div class="form-group">
-                        <label for="workspaceTrackSelector">Isolated Track Channel</label>
-                        <select id="workspaceTrackSelector" onchange="window.shiftWorkspaceTrackSuiteFields()">
-                            <option value="nonprofit">Community Non-Profit Gym Track</option>
-                            <option value="specops">Air Force SpecOps Specialized Track</option>
-                        </select>
-                    </div>
-
-                    <div id="communityInterfaceSuite">
-                        <div class="form-group">
-                            <label for="latinRankLevel">Assigned Latin Rank Level</label>
-                            <select id="latinRankLevel">
-                                <option value="TIRO">TIRO (Rank 1 - Novice Baseline)</option>
-                                <option value="DISCIPULUS">DISCIPULUS (Rank 2 - Technical Intermediate)</option>
-                                <option value="PUGIL NOVUS">PUGIL NOVUS (Rank 3 - Active Competitor)</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label class="checkbox-container">
-                                <input type="checkbox" id="academicReportsPassingCheck">
-                                <span>Participant Academic Status Cleared (School Report Cards Compliant)</span>
-                            </label>
-                        </div>
-                    </div>
-
-                    <div id="specopsInterfaceSuite" style="display:none;">
-                        <div class="form-group">
-                            <label for="specopsTaskDimensionIndex">Active Operational Dimension</label>
-                            <select id="specopsTaskDimensionIndex">
-                                <option value="Water Confidence Drill Matrix">Water Confidence Drill Matrix</option>
-                                <option value="Testing Battery V1">Elite Tactical Performance Battery V1</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label class="checkbox-container">
-                                <input type="checkbox" id="manuallifecycleClearanceApprovedCheck">
-                                <span>Lifecycle Metrics Staging Ready Check Frame</span>
-                            </label>
-                        </div>
-                    </div>
-
-                    <div class="gate-alert-zone">
-                        <label class="checkbox-container">
-                            <input type="checkbox" id="jasonManualSignOffSignature">
-                            <span>⚠️ ENFORCE DIRECTIVE 5: Execute Physical Manual Sign-Off Signature</span>
-                        </label>
-                    </div>
-                    <button class="action-btn" onclick="window.executeCoreStagingTransmission()">Route To Staging Target</button>
-                </div>
-            </div>
-
-            <!-- PORT 5: PROTECTED AUDIT LEDGER ROOMS AND SYSTEM METRICS SUMMARY -->
-            <div id="sect-grantAnalytics" class="view-panel">
-                <div class="card">
-                    <h2>Live Ingested Drive User Register ('PPBF Platform Master Ledger')</h2>
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>User ID</th>
-                                <th>Email Address</th>
-                                <th>System Role Flag</th>
-                                <th>Created Timestamp</th>
-                            </tr>
-                        </thead>
-                        <tbody id="userLedgerTarget">
-                            <!-- Safe initialization row generation inside script -->
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="card" style="margin-top: 24px;">
-                    <h2>Capability Atlas Dynamic Verification Matrix ('PPBF_Build_Continuity_Ledger_v21.0')</h2>
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Layer</th>
-                                <th>Capability Layer Name</th>
-                                <th>Staging Status</th>
-                                <th>Target Workspace Track</th>
-                                <th>Staging Directory Namespace</th>
-                            </tr>
-                        </thead>
-                        <tbody id="continuityLedgerTarget">
-                            <!-- Safe initialization row generation inside script -->
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="metric-grid" style="margin-top: 24px;">
-                    <div class="metric-box">
-                        <div class="metric-num" id="totalMinutesCounter">14,250</div>
-                        <div class="metric-lbl">Total Floor Minutes Accumulated</div>
-                    </div>
-                    <div class="metric-box">
-                        <div class="metric-num">100%</div>
-                        <div class="metric-lbl">PA Statutory Compliance (Title 15)</div>
-                    </div>
-                    <div class="metric-box">
-                        <div class="metric-num">$0</div>
-                        <div class="metric-lbl">Premium Software Costs</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- PORT 6: EMBEDDED DOCK SYSTEM INTERACTIVE MANUAL -->
-            <div id="sect-systemTutorial" class="view-panel">
-                <div class="card">
-                    <h2>Ecosystem Operations Training Manual & Tutorial</h2>
-                    <p>This tutorial provides the standard operating procedures for managing the unified terminal views. All operations conform strictly to the 25 capability layers of the Atlas map.</p>
-                    <h3>1. Command Authority & Roster Staging (Tab 1)</h3>
-                    <ul class="tutorial-steps">
-                        <li><strong>Board Oversight Log Execution:</strong> Select your governing seat role from the dropdown menu, write out administrative modifications or funding notices, and click *Execute Board Minute*. This appends a permanent compliance record to the data buffer.</li>
-                        <li><strong>Ecosystem Progression Overrides:</strong> To update an athlete rank or lifecycle flag, input their identifier and select their track channel. You **must** manually clear the *Directive 5 Override Signature Checkbox*. If left unchecked, the runtime engine intercepts and blocks the transaction.</li>
-                    </ul>
-                </div>
-            </div>
-
-            <!-- TELEMENTRY MASTER BROADCAST DATA VALUE LOG STREAM MONITOR -->
-            <div class="card" style="margin-top: 24px;">
-                <h2>Telemetry Transaction Output Monitor (Namespace: <span style="color:var(--gold-500);">/system_control/pending/</span>)</h2>
-                <div id="masterTerminalTelemetryDataStreamOutputBox" class="terminal-stream">SYSTEM MONITOR: Codespace online [v21.0-Live]. Layout cascade property blockages completely engineered out.</div>
-            </div>
-        </main>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold mb-8">Coach Review Queue</h1>
+        
+        <div id="reviews" class="space-y-4"></div>
     </div>
 
     <script>
-        // CORE CONFIGURATIONS CONFIG STENCILS
-        const LEGAL_STENCIL = { corporateEntity: "Punxsy Prominence Boxing and Fitness", registeredOfficeAddress: "204 PENNSYLVANIA AVE, BIG RUN(PA), PA 15715" };
-        const STAGING_PREFIX = "/system_control/pending/";
-        const RECONCILED_PIN_KEY = "15715";
-        const CONCUSSION_HOLD_LIST = ["injury_hold", "test_blocked", "concussion"];
-
-        // GOOGLE SHEET SOURCE DATA POINTER INGESTION ARRAYS
-        const driveUserProfilesMatrix = [
-            { id: "U-2218", email: "Neeko@ppbf.org", role: "Athlete Participant", date: "2026-06-12T17:43:54.208Z" },
-            { id: "U-6821", email: "test-athlete@ppbf.org", role: "Athlete Participant", date: "2026-06-13T11:25:28.336Z" },
-            { id: "U-5445", email: "admin@punxsyprominence.or", role: "Lead Coach", date: "2026-06-13T11:52:25.622Z" },
-            { id: "U-8605", email: "name@punxsyprominence.org", role: "Athlete Participant", date: "2026-06-13T12:53:01.801Z" }
+        let reviews = [
+            {
+                id: 1,
+                athlete: "Marcus Thompson",
+                date: "2026-06-24",
+                intensity: 8,
+                reflections: "Strong session on hooks and footwork today.",
+                status: "pending",
+                redFlags: []
+            },
+            {
+                id: 2,
+                athlete: "Jordan Lee",
+                date: "2026-06-23",
+                intensity: 9,
+                reflections: "Heavy session. Left shoulder felt tight at the end.",
+                status: "pending",
+                redFlags: ["Shoulder discomfort"]
+            }
         ];
 
-        const driveContinuityLayersMatrix = [
-            { num: 1,  name: "Core Platform", status: "ACTIVE_BASE", track: "GLOBAL", path: "/system_control/" },
-            { num: 4,  name: "Goal-Routing", status: "PENDING_INJECTION", track: "DUAL_TRACK", path: "/system_control/pending/" },
-            { num: 5,  name: "Development Routes", status: "PENDING_INJECTION", track: "DUAL_TRACK", path: "/system_control/pending/" },
-            { num: 11, name: "Safety Gates", status: "PENDING_INJECTION", track: "NON_PROFIT", path: "/system_control/pending/" },
-            { num: 20, name: "AI/ML Augmentation", status: "ACTIVE_BASE", track: "AF_SPECOPS", path: "/system_control/" },
-            { num: 22, name: "Grant / Impact Reporting", status: "PENDING_INJECTION", track: "NON_PROFIT", path: "/system_control/pending/" },
-            { num: 23, name: "Nonprofit Operations", status: "PENDING_INJECTION", track: "NON_PROFIT", path: "/system_control/pending/" }
-        ];
+        function render() {
+            const container = document.getElementById('reviews');
+            container.innerHTML = '';
 
-        const specopsWorkbookRowMatrix = [
-            { id: "AF-PREP-01", track: "Neeko Lane (Aquatic)", dimension: "Water Confidence Drill Matrix", status: "Ready", indicator: "Static Hypoxic Hold: 2m 15s" },
-            { id: "AF-PREP-02", track: "Neeko Lane (Aquatic)", dimension: "Hypoxic Recovery Baseline", status: "Needs verification", indicator: "Respiration recovery window: 45s delta" },
-            { id: "AF-MFG-01",  track: "Deegan Lane (Mfg)", dimension: "3D Print Lab Optimization", status: "Created", indicator: "TPU Material model: 4.5mm scaling" }
-        ];
-
-        // ERROR-PROOF INITIALIZATION ENGINE: Safely wraps target assignments in absolute conditional checks
-        function initializeEcosystemDataTables() {
-            const userTarget = document.getElementById("userLedgerTarget");
-            if (userTarget) {
-                userTarget.innerHTML = driveUserProfilesMatrix.map(function(u) {
-                    return `<tr><td><strong>${u.id}</strong></td><td>${u.email}</td><td>${u.role}</td><td><span style="font-family:monospace; font-size:0.8rem;">${u.date}</span></td></tr>`;
-                }).join('');
-            }
-
-            const layerTarget = document.getElementById("continuityLedgerTarget");
-            if (layerTarget) {
-                layerTarget.innerHTML = driveContinuityLayersMatrix.map(function(l) {
-                    let pill = l.status === "ACTIVE_BASE" ? "status-ready" : "status-verification";
-                    return `<tr><td>${l.num}</td><td><strong>${l.name}</strong></td><td><span class="status-pill ${pill}">${l.status}</span></td><td>${l.track}</td><td><span style="font-family:monospace;">${l.path}</span></td></tr>`;
-                }).join('');
-            }
-
-            const workbookTarget = document.getElementById("workbookRowTarget");
-            if (workbookTarget) {
-                workbookTarget.innerHTML = specopsWorkbookRowMatrix.map(function(row) {
-                    let pill = row.status === "Ready" ? "status-ready" : "status-verification";
-                    return `<tr><td>export <strong>${row.id}</strong></td><td>${row.track}</td><td>${row.dimension}</td><td><span class="status-pill ${pill}">${row.status}</span></td><td><span style="font-family:monospace; font-size:0.85rem;">${row.indicator}</span></td></tr>`;
-                }).join('');
-            }
-            console.log("[DATA ENGINE ACTIVE] Ledger tables initialized with zero layout null blockages.");
-        }
-
-        // Force initialization when document completes structural loading (now also sets up decoupled listeners)
-        window.addEventListener('DOMContentLoaded', function() {
-            initializeEcosystemDataTables();
-
-            // Pure tab system (no auth coupling)
-            setupTabListeners();
-
-            // Isolated non-blocking admin gate
-            const gateBtn = document.getElementById('gatekeeperToggleBtn');
-            if (gateBtn) {
-                gateBtn.addEventListener('click', showAdminPinEntry);
-            }
-
-            // Initial active state via class (decoupled from inline styles)
-            const initPanel = document.getElementById('sect-athleteTerminal');
-            if (initPanel) initPanel.classList.add('active');
-            const initBtn = document.getElementById('btn-athleteTerminal');
-            if (initBtn) initBtn.classList.add('active');
-
-            // Safety: ensure first panel is visible via active class (defense in depth)
-            const ap = document.getElementById('sect-athleteTerminal');
-            if (ap && !ap.classList.contains('active')) ap.classList.add('active');
-        });
-
-        // PURE TAB SWITCHING (completely decoupled from auth / PIN / conditionals)
-        function switchTab(panelId) {
-            document.querySelectorAll('.view-panel').forEach(function(p) {
-                p.classList.remove('active');
-            });
-            document.querySelectorAll('.nav-btn').forEach(function(b) {
-                b.classList.remove('active');
-            });
-
-            const panel = document.getElementById(panelId);
-            if (panel) {
-                panel.classList.add('active');
-            }
-
-            const btn = document.querySelector('.nav-btn[data-panel="' + panelId + '"]');
-            if (btn) {
-                btn.classList.add('active');
-            }
-            console.log("[DOM NAVIGATION ROUTE SUCCESS] Workspace view snapped to target node: " + panelId);
-        }
-
-        // Backward compat wrapper (original name) - delegates to pure switchTab
-        window.executeExplicitTabRouting = function(panelTargetId) {
-            if (panelTargetId) switchTab(panelTargetId);
-        };
-
-        function setupTabListeners() {
-            const navContainer = document.querySelector('.nav-links');
-            if (!navContainer) return;
-
-            // Single isolated delegation listener for all tabs (clean + future-proof)
-            navContainer.addEventListener('click', function(e) {
-                const btn = e.target.closest('.nav-btn');
-                if (!btn) return;
-                const panelId = btn.getAttribute('data-panel');
-                if (panelId) {
-                    switchTab(panelId);
+            reviews.forEach(r => {
+                const card = document.createElement('div');
+                card.className = 'bg-white p-6 rounded-2xl border';
+                
+                let flagHTML = '';
+                if (r.redFlags.length > 0) {
+                    flagHTML = <div class="mt-3 text-sm text-red-600 font-medium">⚠️ Red Flags: </div>;
                 }
+
+                card.innerHTML = 
+                    <div class="flex justify-between">
+                        <div>
+                            <div class="font-semibold text-xl"></div>
+                            <div class="text-sm text-gray-500"> • Intensity: /10</div>
+                        </div>
+                        <div class="text-sm px-3 py-1 rounded-full ">
+                            
+                        </div>
+                    </div>
+
+                    <div class="mt-4">""</div>
+                    
+
+                    <div class="mt-6 flex gap-3">
+                        <button onclick="decide(, 'approved')" class="flex-1 bg-emerald-600 text-white py-3 rounded-xl font-semibold">Approve</button>
+                        <button onclick="decide(, 'paused')" class="flex-1 bg-red-600 text-white py-3 rounded-xl font-semibold">Pause / Escalate</button>
+                    </div>
+                ;
+                container.appendChild(card);
             });
         }
 
-        // NON-BLOCKING ADMIN PIN ENTRY + UNLOCK (rebuilt, isolated listeners only, zero tab logic)
-        function showAdminPinEntry() {
-            // If already present, focus it
-            let zone = document.getElementById('pinEntryZone');
-            if (zone) {
-                const inp = document.getElementById('pinInput');
-                if (inp) inp.focus();
-                return;
+        function decide(id, action) {
+            const review = reviews.find(x => x.id === id);
+            if (!review) return;
+
+            if (review.redFlags.length > 0 && action === 'approved') {
+                if (!confirm("This review has red flags. Approve anyway?")) return;
             }
 
-            const navLinks = document.querySelector('.nav-links');
-            if (!navLinks) return;
-
-            zone = document.createElement('div');
-            zone.id = 'pinEntryZone';
-            zone.className = 'pin-entry';
-            zone.innerHTML =
-                '<input id="pinInput" type="password" maxlength="5" placeholder="5-digit PIN" />' +
-                '<button id="pinSubmitBtn">Unlock</button>' +
-                '<button id="pinCancelBtn">Cancel</button>';
-
-            navLinks.appendChild(zone);
-
-            const input = document.getElementById('pinInput');
-            const submit = document.getElementById('pinSubmitBtn');
-            const cancel = document.getElementById('pinCancelBtn');
-
-            function cleanup() {
-                if (zone && zone.parentNode) zone.parentNode.removeChild(zone);
-            }
-
-            function tryUnlock() {
-                const val = (input ? input.value : '').trim();
-                if (val === RECONCILED_PIN_KEY) {
-                    performAdminUnlock();
-                    cleanup();
-                } else {
-                    if (input) {
-                        input.style.borderColor = '#e53e3e';
-                        input.value = '';
-                        setTimeout(function() { if (input) input.style.borderColor = '#4a5568'; }, 800);
-                    }
-                }
-            }
-
-            if (submit) submit.addEventListener('click', tryUnlock);
-            if (cancel) cancel.addEventListener('click', cleanup);
-            if (input) {
-                input.addEventListener('keydown', function(ev) {
-                    if (ev.key === 'Enter') tryUnlock();
-                });
-                input.focus();
-                input.select();
-            }
+            review.status = action;
+            render();
         }
 
-        function performAdminUnlock() {
-            // ONLY responsibility: reveal admin nav items by stripping hiding class. No tab switching.
-            document.querySelectorAll('.admin-nav-item').forEach(function(el) {
-                el.classList.remove('admin-nav-item');
-                el.style.display = '';
-            });
-            const gate = document.getElementById('gatekeeperToggleBtn');
-            if (gate) gate.style.display = 'none';
-
-            // Non-blocking success signal
-            const term = document.getElementById('masterTerminalTelemetryDataStreamOutputBox');
-            if (term) term.textContent = '[ADMIN UNLOCKED] Coach Command Desk + Grant Analytics now enabled. PIN 15715 validated.';
-
-            if (typeof initializeEcosystemDataTables === 'function') {
-                initializeEcosystemDataTables();
-            }
-        }
-
-        // WORKSPACE DUAL TRACK PORT SHIFTER
-        window.shiftWorkspaceTrackSuiteFields = function() {
-            const chosenTrack = document.getElementById("workspaceTrackSelector").value;
-            document.getElementById("communityInterfaceSuite").style.display = chosenTrack === "specops" ? "none" : "block";
-            document.getElementById("specopsInterfaceSuite").style.display = chosenTrack === "specops" ? "block" : "none";
-        };
-
-        // SECURITY PROTECTION ZONE: AI DIAGNOSTIC THERAPY FILTERS
-        function scanAndFilterTherapyLexiconDrift(textPayloadString) {
-            const blockedWords = ["therapy", "counseling", "depression", "clinical", "psychologist", "mental health", "therapist"];
-            return blockedWords.some(function(word) { return textPayloadString.toLowerCase().includes(word); });
-        }
-
-        function triggerMentalTherapyRefusalInterceptionAlert() {
-            const warningMessage = "PPBF MODULE INTERCEPT LAYER 20: This integrated architectural terminal node strictly blocks automated AI diagnostic behavioral modification and mental health therapy counseling loops. Seek official licensed external clinical providers for professional mental health counseling medical services.";
-            document.getElementById("masterTerminalTelemetryDataStreamOutputBox").innerHTML = `<span style='color:var(--crimson); font-weight:bold;'>!!! CRITICAL SECURITY INTERCEPT LAYER 20 !!!</span>\n` + warningMessage;
-            alert(warningMessage);
-        }
-
-        function printStructuredSystemTelemetryPacket(dataPayloadObject) {
-            document.getElementById("masterTerminalTelemetryDataStreamOutputBox").innerText = `[STAGING BLOCK TRANSACTION ROW RECORDED] =>\n` + JSON.stringify(dataPayloadObject, null, 2);
-        }
-
-        // TRANSACTION CONTROL privilege EXECUTIONS
-        window.executeBoardLogTransaction = function() {
-            const entryText = document.getElementById("governanceActionLog").value;
-            if (scanAndFilterTherapyLexiconDrift(entryText)) { triggerMentalTherapyRefusalInterceptionAlert(); return; }
-            if (!entryText.trim()) return alert("Filing Blocked: Logging text field entries cannot compile blank.");
-
-            const packet = {
-                systemTelemetryTimestamp: new Date().toISOString(),
-                enforcedStagingNamespacePath: STAGING_PREFIX + "board_review/",
-                certifiedCorporateFilingStencil: LEGAL_STENCIL,
-                payloadData: { activeOversightSeat: document.getElementById("governingSeat").value, certifiedDirectiveNotes: entryText }
-            };
-            printStructuredSystemTelemetryPacket(packet);
-            document.getElementById("governanceActionLog").value = "";
-        };
-
-        window.executeCoreStagingTransmission = function() {
-            const name = document.getElementById("athleteIdentityName").value.trim();
-            if (!name) return alert("Validation Guard: Participant legal identity string field required.");
-            if (CONCUSSION_HOLD_LIST.includes(name.toLowerCase())) return alert("Layer 11 Safety Block: Identity profile currently locked under active concussion hold restrictions.");
-            if (!document.getElementById("jasonManualSignOffSignature").checked) return alert("IMMUTABILITY GATE BLOCK: Requires manual confirmation signature checkbox check from Head Coach Jason.");
-
-            const trackSelection = document.getElementById("workspaceTrackSelector").value;
-            const isSpecops = trackSelection === "specops";
-            const payloadDataFields = isSpecops ? { track: "Air Force SpecOps Specialized Track", dimension: document.getElementById("specopsTaskDimensionIndex").value, validationCleared: document.getElementById("manuallifecycleClearanceApprovedCheck").checked }
-                                                : { track: "Community Gym Non-Profit Track", rank: document.getElementById("latinRankLevel").value, academicPassingStatus: document.getElementById("academicReportsPassingCheck").checked ? "COMPLIANT_CLEAR" : "SUSPENDED_ACADEMIC_HOLD" };
-
-            const packet = {
-                systemTelemetryTimestamp: new Date().toISOString(),
-                enforcedStagingNamespacePath: STAGING_PREFIX + (isSpecops ? "specops_roster/" : "community_gym/"),
-                certifiedCorporateFilingStencil: LEGAL_STENCIL,
-                participantVerifiedIdentity: name,
-                payloadData: payloadDataFields,
-                manualOverrideAuthorizationMarker: "MANUALLY_SIGNED_OFF_BY_HEAD_COACH_JASON"
-            };
-            printStructuredSystemTelemetryPacket(packet);
-            
-            document.getElementById("athleteIdentityName").value = "";
-            document.getElementById("academicReportsPassingCheck").checked = false;
-            document.getElementById("jasonManualSignOffSignature").checked = false;
-        };
-
-        window.executeSafetyCheckLogic = function() {
-            const lookupName = document.getElementById("kioskAthleteName").value.trim().toLowerCase();
-            document.getElementById("concussionBlockerFrame").style.display = CONCUSSION_HOLD_LIST.includes(lookupName) ? "block" : "none";
-        };
-
-        window.executeKioskSubmission = function() {
-            const name = document.getElementById("kioskAthleteName").value.trim();
-            if (!name) return alert("Kiosk Input Required: Identity verification entry field cannot be blank.");
-            if (CONCUSSION_HOLD_LIST.includes(name.toLowerCase())) return alert("Safety Gate Intercept: Attendance staging entry blocked due to active head-trauma flag records.");
-
-            const currentMinutesElement = document.getElementById("totalMinutesCounter");
-            let calculatedTotalMinutes = parseInt(currentMinutesElement.innerText.replace(/,/g, '')) + 60;
-            currentMinutesElement.innerText = calculatedTotalMinutes.toLocaleString();
-
-            const packet = {
-                systemTelemetryTimestamp: new Date().toISOString(),
-                enforcedStagingNamespacePath: STAGING_PREFIX + "athlete_ingress/",
-                certifiedCorporateFilingStencil: LEGAL_STENCIL,
-                participantVerifiedIdentity: name,
-                payloadData: { reportedRpeValue: document.getElementById("kioskRpe").value },
-                updatedAggregateFloorMetrics: { totalAccumulatedGymMinutes: calculatedTotalMinutes }
-            };
-            printStructuredSystemTelemetryPacket(packet);
-            document.getElementById("kioskAthleteName").value = "";
-        };
-
-        window.executeGuardianFiling = function() {
-            const lookupName = document.getElementById("guardianStudentLookup").value.trim();
-            if (!lookupName || !document.getElementById("guardianWaiverConsent").checked) return alert("Safeguarding Notice: Complete child lookup name entry fields and confirm waiver signature check.");
-
-            const packet = {
-                systemTelemetryTimestamp: new Date().toISOString(),
-                enforcedStagingNamespacePath: STAGING_PREFIX + "guardian_ingress/",
-                certifiedCorporateFilingStencil: LEGAL_STENCIL,
-                participantVerifiedIdentity: lookupName,
-                payloadData: { annualWaiverStatus: "RENEWED_ANNUAL_COMPLIANT", protectiveBoundary: "USA Boxing SafeSport Ingress Cleared" }
-            };
-            printStructuredSystemTelemetryPacket(packet);
-            document.getElementById("guardianStudentLookup").value = "";
-            document.getElementById("guardianWaiverConsent").checked = false;
-        };
-
-        window.executePublicIngress = function() {
-            const legalName = document.getElementById("publicName").value.trim();
-            if (!legalName) return alert("Public Entry Block: Intake field first and last name value strings are required.");
-
-            const packet = {
-                systemTelemetryTimestamp: new Date().toISOString(),
-                enforcedStagingNamespacePath: STAGING_PREFIX + "public_onboarding/",
-                certifiedCorporateFilingStencil: LEGAL_STENCIL,
-                participantVerifiedIdentity: legalName,
-                payloadData: { applicationStatus: "INGRESS_STAGING_QUEUE" }
-            };
-            printStructuredSystemTelemetryPacket(packet);
-            document.getElementById("publicName").value = "";
-        };
+        render();
     </script>
 </body>
 </html>

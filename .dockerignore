@@ -1,0 +1,14 @@
+.git
+.gitignore
+**/.gitignore
+**/node_modules
+**/.next
+**/out
+**/.turbo
+**/.cache
+**/dist
+**/build
+**/.DS_Store
+**/npm-debug.log*
+**/yarn-error.log*
+**/.env*

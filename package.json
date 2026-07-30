@@ -1,10 +1,21 @@
-﻿{
+{
   "name": "ppbf-platform",
   "version": "2.0.0",
   "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start"
+    "dev": "npm --workspace web run dev --",
+    "build": "npm --workspace web run build",
+    "start": "npm --workspace web run start --",
+    "lint": "npm --workspace web run lint",
+    "typecheck": "npm --workspace web run typecheck",
+    "test": "npm --workspace web run test --",
+    "test:migrations": "npm --workspace web run test:migrations --",
+    "deep:audit": "powershell -ExecutionPolicy Bypass -File ./scripts/deep-audit.ps1",
+    "seed:data": "npx ts-node scripts/seed-data.ts",
+    "seed:data:dry": "npx ts-node scripts/seed-data.ts --dry-run"
   }
 }

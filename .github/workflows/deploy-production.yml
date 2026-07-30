@@ -1,0 +1,242 @@
+# ─────────────────────────────────────────────────────────────────────────
+# Production deployment -- manual only, schema-before-code gated.
+#
+# This workflow deploys application code to the production Container App.
+# It does NOT apply database migrations -- migrations are always a separate,
+# manual step run against production before this workflow is ever dispatched.
+#
+# Safe rollout order (see PR #13 for the concrete session-expiry example):
+#   1. Apply any pending schema migration(s) directly against production
+#      PostgreSQL (e.g. `npm run pilot:apply-multiorg`, then
+#      `npm run pilot:apply-session-expiry`), and confirm each one committed.
+#   2. Only once every migration the target commit depends on has been
+#      applied and confirmed: dispatch this workflow, supplying the exact
+#      commit SHA you intend to deploy and confirming migrations are done.
+#   3. Deploying application code before its required migration is applied
+#      is unsafe -- e.g. code that selects/filters on a column the schema
+#      doesn't have yet will fail every request. This workflow cannot verify
+#      your migration was actually applied; the `migrations_complete` input
+#      is an attestation from the operator dispatching it, not a check
+#      against the database. Do not type CONFIRMED unless it's true.
+# ─────────────────────────────────────────────────────────────────────────
+
+name: deploy-production
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_sha:
+        description: "Full commit SHA on main you intend to deploy (must exactly match the checked-out commit)"
+        required: true
+        type: string
+      release_digest:
+        description: "Immutable image digest captured from staging (sha256:...)"
+        required: true
+        type: string
+      migrations_complete:
+        description: "Type CONFIRMED to attest all database migrations this commit depends on are already applied to production"
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-production-main
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify running from main
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "::error::This workflow may only be dispatched from refs/heads/main (got '${{ github.ref }}')."
+            exit 1
+          fi
+
+      - name: Verify supplied SHA matches the checked-out commit
+        run: |
+          if [ "${{ inputs.confirm_sha }}" != "${{ github.sha }}" ]; then
+            echo "::error::confirm_sha ('${{ inputs.confirm_sha }}') does not match the checked-out commit ('${{ github.sha }}'). Refusing to deploy."
+            exit 1
+          fi
+
+      - name: Verify migration confirmation
+        run: |
+          if [ "${{ inputs.migrations_complete }}" != "CONFIRMED" ]; then
+            echo "::error::migrations_complete must be exactly 'CONFIRMED'. Refusing to deploy."
+            exit 1
+          fi
+
+      - name: Verify supplied release digest format
+        run: |
+          if ! printf '%s' "${{ inputs.release_digest }}" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+            echo "::error::release_digest must be a sha256 digest captured from staging."
+            exit 1
+          fi
+
+  build-and-deploy:
+    needs: guard
+    runs-on: ubuntu-latest
+    # Binds this job to the GitHub `production` environment, so its protection
+    # rules apply. apply-migrations.yml has always declared one (its target
+    # name); this workflow did not, which meant a required-reviewer rule on
+    # `production` gated schema changes while leaving the code deploy itself
+    # ungated -- the asymmetry every audit pass flagged.
+    #
+    # OIDC note, learned the hard way: declaring an environment CHANGES the
+    # token subject from `repo:<org>/<repo>:ref:refs/heads/main` to
+    # `repo:<org>/<repo>:environment:production`. A federated credential for
+    # that exact subject must exist on the app behind AZURE_CLIENT_ID or
+    # login fails with AADSTS700213 (which is how the first production
+    # apply-migrations run died on 2026-07-30). Verified present before this
+    # change: the identity carries BOTH `github-main` (ref) and
+    # `github-production-env` (environment) credentials, and both workflows
+    # use the same AZURE_CLIENT_ID secret.
+    environment: production
+    env:
+      ACR_NAME: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+      ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io
+      RESOURCE_GROUP: rg-ppbf-enterprise-staging
+      CONTAINER_APP_NAME: app-ppbf-production
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Authenticate via Azure OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Verify release digest exists in ACR
+        run: |
+          RELEASE_DIGEST='${{ inputs.release_digest }}'
+          MANIFEST_DIGEST="$(az acr repository show-manifests --name "$ACR_NAME" --repository ppbf-frontend --query "[?digest=='${{ inputs.release_digest }}'] | [0].digest" -o tsv)"
+          if [ "$MANIFEST_DIGEST" != "$RELEASE_DIGEST" ]; then
+            echo "::error::release digest '$RELEASE_DIGEST' was not found in ACR for ppbf-frontend."
+            exit 1
+          fi
+
+      # This deploy is digest-only: deploy-staging builds and pushes the image,
+      # and this workflow just repoints the production Container App at an
+      # already-tested digest. So it needs the ACR *control* plane only.
+      #
+      # It previously ran `az acr login` and azure/container-apps-deploy-action@v1,
+      # and that action performs its own nested `docker login` against
+      # <acr>.azurecr.io. For a digest-only deploy that data-plane login buys
+      # nothing, and it is a real failure surface -- on 2026-07-29 it failed a
+      # production deploy outright with:
+      #   Error response from daemon: Get "https://<acr>.azurecr.io/v2/":
+      #   dial tcp 20.62.128.7:443: connect: connection refused
+      # while every `az` control-plane call in the very same run succeeded. The
+      # registry has publicNetworkAccess=Enabled on the Basic SKU, which cannot
+      # carry network rules at all, so that was tier throughput and not an
+      # access rule -- retrying the same dispatch went green minutes later.
+      #
+      # The Container App holds its own ACR pull credentials
+      # (properties.configuration.registries[].passwordSecretRef), so it pulls
+      # the digest itself and the runner never touches the registry data plane.
+      # deploy-staging.yml already updates its app this way.
+      #
+      # --set-env-vars updates the listed variables and leaves the rest in
+      # place; it cannot unset a stale value already on the app.
+      #
+      # PPBF_SHADOW_MAX_COMPLETION_TOKENS was 4096 here while staging ran 8192,
+      # and 4096 is below what a reasoning deployment actually spends on a
+      # demanding prompt. Completion tokens measured 2026-07-29
+      # (shadowRouter.ts:31-35): luna 4110, mini 5168, sol 5579, gpt-5 6352 --
+      # every one of them above 4096. Azure counts reasoning tokens against this
+      # budget and returns HTTP 200 with finish_reason "length" and NO content
+      # when it runs out, which this app reads as failure and answers with
+      # DEGRADED_RESPONSE ("temporarily unavailable ... try again later"). So a
+      # permanent misconfiguration was being shown to users as a transient
+      # outage, on exactly the long-form questions SHADOW exists to answer.
+      # Short prompts (measured 964-2054 tokens) fit in 4096 and were fine,
+      # which is why this read as intermittent rather than broken.
+      #
+      # 8192 is the value staging has been exercising, and is also
+      # MAX_COMPLETION_TOKENS_CEILING in the chat route -- so this aligns the two
+      # environments rather than inventing a third number. Headroom is not
+      # billed: charges follow tokens produced, not the budget.
+      # PPBF_SHADOW_WORKER_ENABLED is stated explicitly (set-env-vars cannot
+      # unset, so every variable is declared). It was deliberately false until
+      # staging demonstrated a full enqueue -> drain -> render cycle through
+      # the E2E gate; that condition was met by run 30567888858 (2026-07-30,
+      # SHA 7cfde83): gate step 14 enqueued a background Heavy Bag, the
+      # instrumentation worker drained job 324e7a76, and the answer read back
+      # through the sessions API as message 1497ba24 with matching citations
+      # and evidence tier. (The first attempt, run 30563595088, is why the
+      # staging-first rule exists: the claim statement had an ambiguous
+      # RETURNING column that killed every drain tick, fixed in #89 and pinned
+      # by test:migrations:job-queue.) The worker carries no super-identity --
+      # per-job authority is re-validated against the enqueuing actor at
+      # execution time -- so enabling it grants no new access.
+      #
+      # PPBF_INTAKE_PROMOTION_ENABLED stays FALSE here: the intake
+      # review -> approve -> promote path (#95) turns on in staging first,
+      # same rollout as the worker flag, and this line flips only after the
+      # staging gate has run the full intake path green. Until then promotion
+      # keeps its honest 403 in production.
+      - name: Deploy Tested Digest to Azure Container App (Production)
+        run: |
+          az containerapp update \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "${ACR_LOGIN_SERVER}/ppbf-frontend@${{ inputs.release_digest }}" \
+            --set-env-vars \
+              PPBF_ONBOARDING_LIVE_SAVE=false \
+              PPBF_AUTH_PROVIDER_WIRED=false \
+              AZURE_POSTGRES_CONNECTION_STRING=secretref:azure-postgres-connection-string \
+              AZURE_STORAGE_CONNECTION_STRING=secretref:azure-storage-connection-string \
+              PPBF_MS_TENANT_ID=secretref:ppbf-ms-tenant-id \
+              PPBF_MS_CLIENT_ID=secretref:ppbf-ms-client-id \
+              PPBF_MS_CLIENT_SECRET=secretref:ppbf-ms-client-secret \
+              PPBF_MS_REDIRECT_URI=secretref:ppbf-ms-redirect-uri \
+              PPBF_MS_POST_LOGIN_PATH=secretref:ppbf-ms-post-login-path \
+              PPBF_PILOT_BOOTSTRAP_KEY=secretref:ppbf-pilot-bootstrap-key \
+              PPBF_PILOT_DEFAULT_ORG_ID=secretref:ppbf-pilot-default-org-id \
+              PPBF_PILOT_SHADOW_CONTAINER=secretref:ppbf-pilot-shadow-container \
+              PPBF_PRIMARY_OWNER_EMAIL=secretref:ppbf-primary-owner-email \
+              AZURE_AI_ENDPOINT=secretref:azure-ai-endpoint \
+              AZURE_AI_DEPLOYMENT_NAME=secretref:azure-ai-deployment-name \
+              AZURE_AI_API_VERSION=secretref:azure-ai-api-version \
+              AZURE_AI_KEY=secretref:azure-ai-key \
+              PPBF_SHADOW_MAX_COMPLETION_TOKENS=8192 \
+              PPBF_SHADOW_WORKER_ENABLED=true \
+              PPBF_INTAKE_PROMOTION_ENABLED=false \
+              PPBF_DURABLE_RATE_LIMIT=true
+
+      - name: Resolve Production Base URL
+        run: |
+          FQDN="$(az containerapp show --name "$CONTAINER_APP_NAME" --resource-group "$RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)"
+          test -n "$FQDN"
+          echo "PROD_BASE_URL=https://$FQDN" >> "$GITHUB_ENV"
+
+      - name: Pilot API Smoke Checks
+        run: |
+          set -euo pipefail
+
+          LOGIN_STATUS="$(curl -sS -o /dev/null -w "%{http_code}" -X POST "$PROD_BASE_URL/api/pilot/auth/login" -H "Content-Type: application/json" -d '{}')"
+          if [ "$LOGIN_STATUS" != "400" ]; then
+            echo "Expected /api/pilot/auth/login to return 400 for empty payload, got $LOGIN_STATUS"
+            exit 1
+          fi
+
+          SESSION_STATUS="$(curl -sS -o /dev/null -w "%{http_code}" -X POST "$PROD_BASE_URL/api/pilot/auth/session" -H "Content-Type: application/json" -d '{}')"
+          if [ "$SESSION_STATUS" != "200" ]; then
+            echo "Expected /api/pilot/auth/session to return 200, got $SESSION_STATUS"
+            exit 1
+          fi
+
+          SHADOW_STATUS="$(curl -sS -o /dev/null -w "%{http_code}" -X POST "$PROD_BASE_URL/api/pilot/shadow/events" -H "Content-Type: application/json" -d '{}')"
+          if [ "$SHADOW_STATUS" != "401" ]; then
+            echo "Expected /api/pilot/shadow/events to return 401 without auth, got $SHADOW_STATUS"
+            exit 1
+          fi
+
+          echo "Production smoke checks passed."

@@ -18,7 +18,7 @@ foreach ($script in $scripts) {
 Write-Host "`n[Note] test-helper.ps1 not yet created in this build." -ForegroundColor DarkYellow
 Write-Host ""
 Write-Host "After running the above:" -ForegroundColor Yellow
-Write-Host "- Install dependencies in apps/web and apps/coach-review"
+Write-Host "- Install dependencies in apps/web"
 Write-Host "- Connect Supabase"
 Write-Host "- Get Jason final approval"
 Write-Host ""

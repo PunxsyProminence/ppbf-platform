@@ -34,3 +34,27 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## PDF Ingest Backend Pipeline
+
+This workspace now includes a backend ingestion route at `/api/document-ingest` that:
+
+1. Accepts PDF uploads.
+2. Extracts text and classifies destination context.
+3. Writes a Dataverse record.
+4. Uploads the PDF to SharePoint and Google Drive.
+5. Appends an audit entry to `.audit/document-ingest.jsonl`.
+
+### Environment Setup
+
+Copy `.env.example` and fill required values for Dataverse, Graph, and Google Drive.
+
+### Local Mock Audit Run
+
+Set `PPBF_MOCK_INGEST_SESSION_TOKEN` to an active organization-admin session token, then run the end-to-end mock ingest:
+
+```bash
+npm run audit:mock-ingest
+```
+
+This command sets `PPBF_INGEST_MOCK_MODE=true`, generates a mock PDF, posts it through the authenticated API route, and validates the response contract without writing to Dataverse, SharePoint, or Google Drive. It still requires the configured PostgreSQL database to validate the session and append the ingest audit event.

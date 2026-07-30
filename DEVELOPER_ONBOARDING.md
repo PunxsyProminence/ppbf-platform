@@ -5,10 +5,24 @@ git clone https://github.com/PunxsyProminence/ppbf-platform.git
 cd ppbf-platform
 
 ## Step 2: Run Setup Batches
-Run the batch scripts in order (Batch 1 → Batch 12), or simply run .\master-runner.ps1 or .\ultimate-summary.ps1. Use run-tests.ps1 before commits, review QUALITY_CHECKLIST.md for every change, and run it as part of pre-deploy verification. See FINAL_SUMMARY.md, PROJECT_COMPLETE.md, COMPLETE_REFERENCE_GUIDE.md and FINAL_RECOMMENDATIONS.md. New reusable components: DashboardLayout and MainNavigation from packages/portals. Use backup-export.ps1 regularly for data protection. Use quick-reference.ps1 and final-master-status.ps1 for daily ops. Try ppbf-cli.ps1 health or ppbf-cli.ps1 status. See health-check.ps1 and version.ts. Use ppbf-cli.ps1 all for quick full check. Version: packages/governance/version.ts (use getVersionInfo()). health-check.ps1 does real checks. ppbf-cli.ps1 is the recommended entry point. health-check.ps1, ppbf-cli.ps1, and version.ts added for operations and metadata. ppbf-cli.ps1, health-check.ps1, and version.ts added for operations and metadata.
+Run scripts in order:
+- .\scripts\init.ps1
+- .\scripts\check-governance.ps1
+- .\scripts\run-tests.ps1
+
+For full status checks and wrap-up:
+- .\scripts\final-master-status.ps1
+- .\scripts\quick-reference.ps1
+- .\scripts\health-check.ps1
+
+Use .\master-runner.ps1 only when you want the top-level sequence runner.
+Use .\ppbf-cli.ps1 status or .\ppbf-cli.ps1 health for quick daily checks.
 
 ## Step 3: Environment
-Copy .env.example to .env.local and fill in Supabase credentials.
+Copy apps/web/.env.example to apps/web/.env.local and fill in Azure pilot credentials:
+- AZURE_POSTGRES_CONNECTION_STRING
+- AZURE_STORAGE_CONNECTION_STRING
+- PPBF_PILOT_BOOTSTRAP_KEY
 
 ## Step 4: Governance
 All development must follow Layer 0 rules. Get Jason approval before promoting anything to ACTIVE.
@@ -19,9 +33,10 @@ npm install
 npm run dev
 
 ## Step 6: Quick Reference
-Keep quick-reference.ps1 and COMPLETE_REFERENCE_GUIDE.md handy.
+Keep quick-reference.ps1 handy.
 Run final-master-status.ps1 for current status.
 Use backup-export.ps1 before changes.
+See [MASTER_INDEX.md](MASTER_INDEX.md) for the current documentation map.
 
 Welcome to the PPBF platform development team.
 

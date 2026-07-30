@@ -1,0 +1,44 @@
+name: legacy-static-web-apps-manual
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_legacy_swa_deploy:
+        description: Type LEGACY_SWA_ONLY to run this legacy path intentionally
+        required: true
+        type: string
+
+jobs:
+  build_and_deploy_job:
+    if: inputs.confirm_legacy_swa_deploy == 'LEGACY_SWA_ONLY'
+    runs-on: ubuntu-latest
+    name: Build and Deploy Job
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+          lfs: false
+      - name: Build And Deploy
+        id: builddeploy
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_PURPLE_BUSH_04C73E010 }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }} # Used for Github integrations (i.e. PR comments)
+          action: "upload"
+          ###### Repository/Build Configurations - These values can be configured to match your app requirements. ######
+          # For more information regarding Static Web App workflow configurations, please visit: https://aka.ms/swaworkflowconfig
+          app_location: "apps/web" # App source code path
+          api_location: "" # Api source code path - optional
+          output_location: ".next" # Next.js server-capable output for API routes
+          app_build_command: "npm install && npm run build"
+          ###### End of Repository/Build Configurations ######
+
+  blocked_without_confirmation:
+    if: inputs.confirm_legacy_swa_deploy != 'LEGACY_SWA_ONLY'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse accidental SWA deploy
+        run: |
+          echo "Legacy SWA path is disabled by default."
+          echo "Use deploy-staging.yml / deploy-production.yml for Container Apps releases."
+          exit 1

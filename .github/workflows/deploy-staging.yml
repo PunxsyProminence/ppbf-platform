@@ -1,0 +1,376 @@
+name: deploy-staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Exact tested commit SHA to deploy
+        required: true
+        type: string
+      schema_migrations_complete:
+        description: Confirm the required additive staging migrations succeeded
+        required: true
+        default: NOT_CONFIRMED
+        type: choice
+        options:
+          - NOT_CONFIRMED
+          - CONFIRMED
+      enable_shadow_gate:
+        description: Run the SHADOW E2E gate after deploy
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-and-deploy:
+    environment: staging
+    runs-on: ubuntu-latest
+    env:
+      ACR_NAME: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+      ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io
+      RESOURCE_GROUP: rg-ppbf-enterprise-staging
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Verify Exact Tested SHA And Schema Gate
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          SCHEMA_MIGRATIONS_COMPLETE: ${{ inputs.schema_migrations_complete }}
+        run: |
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          test "$ACTUAL_SHA" = "$EXPECTED_SHA"
+          test "$SCHEMA_MIGRATIONS_COMPLETE" = "CONFIRMED"
+
+      - name: Authenticate via Azure OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Azure Container Registry
+        run: |
+          az acr login --name "$ACR_NAME"
+
+      - name: Build and Push Container Image to ACR
+        id: build-image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ env.ACR_LOGIN_SERVER }}/ppbf-frontend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Capture Staging Image Digest
+        run: |
+          DIGEST='${{ steps.build-image.outputs.digest }}'
+          test -n "$DIGEST"
+          printf '%s\n' "$DIGEST" > staging-image-digest.txt
+          {
+            echo '### Staging image digest'
+            echo ''
+            echo "$DIGEST"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Staging Digest Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-image-digest
+          path: staging-image-digest.txt
+
+      - name: Validate Staging AI Configuration
+        env:
+          AZURE_AI_ENDPOINT: ${{ vars.AZURE_AI_ENDPOINT }}
+          AZURE_AI_DEPLOYMENT_NAME: ${{ vars.AZURE_AI_DEPLOYMENT_NAME }}
+          AZURE_AI_API_VERSION: ${{ vars.AZURE_AI_API_VERSION }}
+        run: |
+          test -n "$AZURE_AI_ENDPOINT"
+          # Quick Round resolves its deployment from this variable, not from the
+          # MODEL_REGISTRY in shadowRouter.ts. Both generations are accepted so the
+          # variable can be rolled back to the previous model without editing this
+          # workflow -- but an unrecognized value is still refused, because a typo
+          # here silently sends every SHADOW turn to a deployment that does not exist.
+          case "$AZURE_AI_DEPLOYMENT_NAME" in
+            gpt-5.6-luna-shadow|gpt-5-mini-shadow) ;;
+            *) echo "AZURE_AI_DEPLOYMENT_NAME '$AZURE_AI_DEPLOYMENT_NAME' is not a known SHADOW quick-tier deployment."; exit 1 ;;
+          esac
+          test "$AZURE_AI_API_VERSION" = "2024-12-01-preview"
+          case "$AZURE_AI_ENDPOINT" in
+            https://shadow-ai.cognitiveservices.azure.com|https://shadow-ai.cognitiveservices.azure.com/) ;;
+            *) exit 1 ;;
+          esac
+
+      # PPBF_SHADOW_MAX_COMPLETION_TOKENS was 1024, which is below what a reasoning
+      # deployment spends on reasoning alone -- Azure counts reasoning against this
+      # budget, and at 1024 it returned finish_reason "length" with reasoning_tokens
+      # 1024 and NO content, so every SHADOW turn in staging degraded. It is now
+      # 8192, the ceiling in the chat route: the quick tier measured 4110 completion
+      # tokens on a representative prompt, so 4096 was close enough to truncate a
+      # long answer. Both this and the timeout stay set explicitly rather than
+      # deferring to the code default, because --set-env-vars cannot unset a stale
+      # value already on the app.
+      #
+      # PPBF_SHADOW_PROVIDER_TIMEOUT_MS replaces a hardcoded 15s that no deployment
+      # could meet -- the quick tier measured 33.3s (gpt-5.6-luna) and 58.0s
+      # (gpt-5-mini), so every turn hit the timeout and returned the degraded
+      # response. See shadowRouter.ts for the full latency table.
+      # PPBF_SHADOW_WORKER_ENABLED starts the in-process SHADOW job worker
+      # (instrumentation.ts): scout reports, board summaries, and opt-in
+      # background Heavy Bag. Default OFF in code; enabled HERE FIRST so the
+      # E2E gate and manual staging use exercise the drain loop before
+      # production ever runs it. Production states it explicitly false until
+      # staging has proven a full enqueue -> drain -> render cycle.
+      #
+      # AZURE_AI_EMBEDDING_DEPLOYMENT_NAME names the embedding deployment for
+      # semantic Library search (#102). Staging first, like every flag. The
+      # value is a deployment NAME, not a secret (the hygiene test permits
+      # *_NAME literals), and the owner creates the deployment with exactly
+      # this name; until it exists, embedText fails closed and search stays
+      # on the keyword path by design, so this line is safe to ship ahead of
+      # the deployment. Production stays unset (= disabled) until staging has
+      # proven semantic results through real use.
+      #
+      # PPBF_INTAKE_PROMOTION_ENABLED lets an approved intake case be promoted
+      # to real athlete/guardian/domain records (review-action 'promote').
+      # Default OFF in code. Enabled HERE FIRST, same rollout as the worker:
+      # with the document security review built, the gate now drives
+      # review -> approve -> promote end to end and needs the promotion arm
+      # live in staging. Production does not set it, which is the same
+      # disabled state -- it gains an explicit false (and eventually true)
+      # only through its own workflow change once staging has proven the
+      # promotion path through this gate.
+      - name: Deploy to Azure Container App
+        env:
+          AZURE_AI_ENDPOINT: ${{ vars.AZURE_AI_ENDPOINT }}
+          AZURE_AI_DEPLOYMENT_NAME: ${{ vars.AZURE_AI_DEPLOYMENT_NAME }}
+          AZURE_AI_API_VERSION: ${{ vars.AZURE_AI_API_VERSION }}
+        run: |
+          az containerapp update \
+            --name app-ppbf-staging \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "${ACR_LOGIN_SERVER}/ppbf-frontend@${{ steps.build-image.outputs.digest }}" \
+            --set-env-vars \
+              PPBF_ONBOARDING_LIVE_SAVE=false \
+              PPBF_AUTH_PROVIDER_WIRED=false \
+              AZURE_POSTGRES_CONNECTION_STRING=secretref:azure-postgres-connection-string \
+              AZURE_STORAGE_CONNECTION_STRING=secretref:azure-storage-connection-string \
+              PPBF_MS_TENANT_ID=secretref:ppbf-ms-tenant-id \
+              PPBF_MS_CLIENT_ID=secretref:ppbf-ms-client-id \
+              PPBF_MS_CLIENT_SECRET=secretref:ppbf-ms-client-secret \
+              PPBF_MS_REDIRECT_URI=secretref:ppbf-ms-redirect-uri \
+              PPBF_MS_POST_LOGIN_PATH=secretref:ppbf-ms-post-login-path \
+              AZURE_AI_ENDPOINT="$AZURE_AI_ENDPOINT" \
+              AZURE_AI_DEPLOYMENT_NAME="$AZURE_AI_DEPLOYMENT_NAME" \
+              AZURE_AI_API_VERSION="$AZURE_AI_API_VERSION" \
+              AZURE_AI_KEY=secretref:azure-ai-key \
+              PPBF_SHADOW_MAX_COMPLETION_TOKENS=8192 \
+              PPBF_SHADOW_PROVIDER_TIMEOUT_MS=120000 \
+              PPBF_SHADOW_WORKER_ENABLED=true \
+              PPBF_INTAKE_PROMOTION_ENABLED=true \
+              AZURE_AI_EMBEDDING_DEPLOYMENT_NAME=text-embedding-3-small \
+              PPBF_PILOT_BOOTSTRAP_KEY=secretref:ppbf-pilot-bootstrap-key \
+              PPBF_PILOT_DEFAULT_ORG_ID=secretref:ppbf-pilot-default-org-id \
+              PPBF_PILOT_SHADOW_CONTAINER=secretref:ppbf-pilot-shadow-container \
+              PPBF_DURABLE_RATE_LIMIT=true
+
+      - name: Verify Staging AI Secret Reference
+        run: |
+          AI_KEY_REF="$(az containerapp show \
+            --name app-ppbf-staging \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "properties.template.containers[0].env[?name=='AZURE_AI_KEY'].secretRef | [0]" \
+            -o tsv)"
+          test "$AI_KEY_REF" = "azure-ai-key"
+
+      # `az containerapp update` returns when the new revision is CREATED, not
+      # when it is serving. Run 30503641552 chatted with the app ~60s after the
+      # update and reached the PREVIOUS revision -- the gate failed on behavior
+      # the new image had already fixed. Everything after this step assumes it
+      # is talking to the revision this run just deployed, so wait until the
+      # latest revision is Running and holds 100% of traffic.
+      - name: Wait For New Revision To Take Traffic
+        run: |
+          LATEST="$(az containerapp show --name app-ppbf-staging \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.latestRevisionName -o tsv)"
+          echo "Waiting on revision $LATEST"
+          for i in $(seq 1 60); do
+            READ="$(az containerapp revision show --name app-ppbf-staging \
+              --resource-group "$RESOURCE_GROUP" --revision "$LATEST" \
+              --query "[properties.runningState, properties.trafficWeight]" -o tsv | tr '\n' ' ')"
+            echo "  $i: $READ"
+            case "$READ" in
+              "Running 100"*) exit 0 ;;
+            esac
+            sleep 5
+          done
+          echo "::error::Revision $LATEST did not reach Running/100% traffic within 5 minutes."
+          exit 1
+
+      - name: Resolve Staging API Base URL
+        run: |
+          FQDN="$(az containerapp show --name app-ppbf-staging --resource-group "$RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)"
+          test -n "$FQDN"
+          echo "PILOT_GATE_BASE_URL=https://$FQDN" >> "$GITHUB_ENV"
+
+      - name: Install Web Dependencies For Gate
+        run: |
+          npm ci
+
+      # The gate authenticates its administrator and guardian fixtures by
+      # writing a short-lived row to pilot.session_tokens, because a PIN login
+      # cannot produce a session for either role (PIN sessions are athlete-only)
+      # and the bootstrap endpoint that used to create those accounts now
+      # refuses every request. Reading this secret is not an escalation: this
+      # job already holds the Azure rights that deploy the application.
+      #
+      # Resolved into the step's own env rather than GITHUB_ENV so the value is
+      # scoped to the gate step instead of every step that follows it.
+      - name: Resolve Staging Database Connection For Gate
+        if: inputs.enable_shadow_gate
+        run: |
+          CONN="$(az containerapp secret show \
+            --name app-ppbf-staging \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-postgres-connection-string \
+            --query value -o tsv)"
+          test -n "$CONN"
+          echo "::add-mask::$CONN"
+          echo "GATE_DB_CONNECTION=$CONN" >> "$GITHUB_ENV"
+
+          # The fixture provisioner refuses to write to a database nobody named
+          # (see apps/web/scripts/lib/postgres-write-target.mjs). Derive the
+          # expected target from the string we just fetched from the
+          # staging-NAMED app, so the assertion is a consistency check on a
+          # target that is already pinned to staging by the lookup above --
+          # this workflow reads app-ppbf-staging literally, never inputs.target.
+          DERIVED="$(CONN="$CONN" node -e '
+            const u = new URL(process.env.CONN);
+            const host = u.hostname.toLowerCase();
+            const db = decodeURIComponent(u.pathname.replace(/^\/+/, ""));
+            if (!host || !db) { process.exit(2); }
+            process.stdout.write(host + "\n" + db);
+          ')"
+          GATE_HOST="$(printf '%s' "$DERIVED" | sed -n 1p)"
+          GATE_DB="$(printf '%s' "$DERIVED" | sed -n 2p)"
+          test -n "$GATE_HOST"
+          test -n "$GATE_DB"
+          echo "GATE_EXPECTED_POSTGRES_HOSTNAME=$GATE_HOST" >> "$GITHUB_ENV"
+          echo "GATE_EXPECTED_POSTGRES_DATABASE=$GATE_DB" >> "$GITHUB_ENV"
+
+      # The org id lives in the app's secret store (it is what the app itself
+      # runs with), so the gate tests against the same organization the app
+      # serves rather than a workflow-hardcoded guess.
+      - name: Resolve Staging Default Organization For Gate
+        if: inputs.enable_shadow_gate
+        run: |
+          ORG_ID="$(az containerapp secret show \
+            --name app-ppbf-staging \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name ppbf-pilot-default-org-id \
+            --query value -o tsv)"
+          test -n "$ORG_ID"
+          echo "::add-mask::$ORG_ID"
+          echo "GATE_DEFAULT_ORG_ID=$ORG_ID" >> "$GITHUB_ENV"
+
+      # The gate deliberately provisions nothing (see gate-session.mjs), so the
+      # administrator fixture it authenticates as must already exist. It did in
+      # the old shared database, but staging PostgreSQL was recreated on
+      # 2026-07-26 and the first wired gate run (30497491164) refused with
+      # "Gate fixture account org_admin_shadow does not exist". This is the
+      # explicit provisioning step: idempotent, visible in the run log, and
+      # scoped to the administrator only -- the athlete and guardian fixtures
+      # are created by the gate through the real intake-promotion API, which is
+      # part of what the gate is testing.
+      # The gate athlete's PIN is generated fresh for each run and never
+      # committed. It previously sat in this file as a literal -- in a PUBLIC
+      # repository, against a publicly reachable staging login, on an account
+      # the provisioner writes as active with must_change_pin=false. That is a
+      # working credential published in source (audit PPBF-SEC-002).
+      #
+      # A per-run random value beats a stored secret here: nothing to leak
+      # between runs, nothing to rotate, and the account is deactivated in the
+      # always() cleanup step after the gate regardless of outcome. The value
+      # must satisfy the 6-digit PIN policy and must not be
+      # DEFAULT_FIRST_LOGIN_PIN (123456), which a chosen PIN is refused.
+      - name: Mint Ephemeral Gate Athlete PIN
+        if: inputs.enable_shadow_gate
+        run: |
+          PIN="$(python3 -c 'import secrets; print(f"{secrets.randbelow(900000)+100000:06d}")')"
+          if [ "$PIN" = "123456" ]; then PIN="224467"; fi
+          echo "::add-mask::$PIN"
+          echo "GATE_ATHLETE_PIN=$PIN" >> "$GITHUB_ENV"
+
+      - name: Provision Gate Fixture Accounts
+        if: inputs.enable_shadow_gate
+        env:
+          AZURE_POSTGRES_CONNECTION_STRING: ${{ env.GATE_DB_CONNECTION }}
+          # Required by the provisioner's write-target guard; derived above from
+          # the staging app's own connection string.
+          PPBF_EXPECTED_POSTGRES_HOSTNAME: ${{ env.GATE_EXPECTED_POSTGRES_HOSTNAME }}
+          PPBF_EXPECTED_POSTGRES_DATABASE: ${{ env.GATE_EXPECTED_POSTGRES_DATABASE }}
+          PPBF_PILOT_DEFAULT_ORG_ID: ${{ env.GATE_DEFAULT_ORG_ID }}
+          PILOT_ADMIN_ACCOUNT_ID: org_admin_shadow
+          # Same identities the gate step passes below: the provisioner creates
+          # the athlete directly (intake promotion cannot -- document approval
+          # is unreachable until the review feature is built, see the gate's
+          # known-gap branch), and when promotion works again both paths upsert
+          # the same rows.
+          PILOT_SHADOW_ATHLETE_ACCOUNT_ID: gate_shadow_athlete
+          PILOT_SHADOW_ATHLETE_PIN: ${{ env.GATE_ATHLETE_PIN }}
+          PILOT_SHADOW_ATHLETE_ID: GATE-SHADOW-ATH-1
+        run: |
+          npm --prefix apps/web run gate:pilot:fixtures
+
+      # The first enabled run of this gate (30485899526, 2026-07-29) showed the
+      # step was never fully wired: the script hard-requires the fixture
+      # identities below and exits before doing anything without them. Every
+      # earlier run had enable_shadow_gate=false, so the gap never surfaced.
+      # The identities are gate-owned fixtures -- the intake promotion step
+      # creates (or idempotently re-creates) them on each run; they are not
+      # pre-existing accounts. The PIN must satisfy the 6-digit policy and must
+      # not be DEFAULT_FIRST_LOGIN_PIN, which a chosen PIN is refused.
+      - name: Run SHADOW E2E Gate
+        if: inputs.enable_shadow_gate
+        env:
+          AZURE_POSTGRES_CONNECTION_STRING: ${{ env.GATE_DB_CONNECTION }}
+          PILOT_ADMIN_ACCOUNT_ID: org_admin_shadow
+          PPBF_PILOT_DEFAULT_ORG_ID: ${{ env.GATE_DEFAULT_ORG_ID }}
+          PILOT_SHADOW_ATHLETE_ACCOUNT_ID: gate_shadow_athlete
+          PILOT_SHADOW_ATHLETE_PIN: ${{ env.GATE_ATHLETE_PIN }}
+          PILOT_SHADOW_ATHLETE_ID: GATE-SHADOW-ATH-1
+          PILOT_SHADOW_GUARDIAN_ACCOUNT_ID: gate_shadow_guardian
+          PILOT_SHADOW_GUARDIAN_PARENT_ID: gate_shadow_parent_1
+        run: |
+          npm --prefix apps/web run gate:pilot:shadow-e2e
+
+      # always(): a gate that fails partway through is exactly the case where a
+      # live athlete credential must not be left behind on a publicly reachable
+      # staging login. Deactivating clears the PIN hash and sets active_flag
+      # false, so the ephemeral PIN cannot authenticate after the run whatever
+      # the outcome. Cleanup failure is reported, never fatal -- it must not
+      # mask the gate's own result.
+      - name: Deactivate Gate Athlete Fixture
+        if: always() && inputs.enable_shadow_gate
+        continue-on-error: true
+        env:
+          AZURE_POSTGRES_CONNECTION_STRING: ${{ env.GATE_DB_CONNECTION }}
+          PPBF_EXPECTED_POSTGRES_HOSTNAME: ${{ env.GATE_EXPECTED_POSTGRES_HOSTNAME }}
+          PPBF_EXPECTED_POSTGRES_DATABASE: ${{ env.GATE_EXPECTED_POSTGRES_DATABASE }}
+          PPBF_PILOT_DEFAULT_ORG_ID: ${{ env.GATE_DEFAULT_ORG_ID }}
+          PILOT_ADMIN_ACCOUNT_ID: org_admin_shadow
+          PILOT_SHADOW_ATHLETE_ACCOUNT_ID: gate_shadow_athlete
+          PILOT_SHADOW_ATHLETE_ID: GATE-SHADOW-ATH-1
+          PILOT_SHADOW_ATHLETE_PIN: ${{ env.GATE_ATHLETE_PIN }}
+        run: |
+          npm --prefix apps/web run gate:pilot:fixtures -- --deactivate-athlete

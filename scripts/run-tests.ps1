@@ -1,48 +1,29 @@
-# PPBF Comprehensive Test Runner
-Write-Host "=== Running PPBF Test Suite ===" -ForegroundColor Cyan
+$ErrorActionPreference = "Stop"
 
-Write-Host "`n[1] Testing Safety Gates..." -ForegroundColor Yellow
-if (Test-Path "packages/execution/safetyGate.ts") {
-    Write-Host "   → safetyGate.ts present — Youth + Sparring = Blocked (Expected)" -ForegroundColor Green
-} else {
-    Write-Host "   ❌ Safety Gate module missing!" -ForegroundColor Red
+$repositoryRoot = Split-Path -Parent $PSScriptRoot
+Push-Location $repositoryRoot
+
+try {
+    Write-Host "=== Running PPBF validation ===" -ForegroundColor Cyan
+
+    & npm test
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    & npm run test:migrations -- --runInBand --detectOpenHandles
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    & npm run typecheck
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    & npm run lint
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    & npm run build
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    Write-Host "All PPBF validation checks passed." -ForegroundColor Green
 }
-
-Write-Host "`n[2] Testing Routing Matrix..." -ForegroundColor Yellow
-if (Test-Path "packages/routing/routeFactory.ts") {
-    Write-Host "   → 16 dimensions × 11 tags = 1056 combinations supported" -ForegroundColor Green
-} else {
-    Write-Host "   ❌ Routing module missing!" -ForegroundColor Red
+finally {
+    Pop-Location
 }
-
-Write-Host "`n[3] Testing Continuity Ledger..." -ForegroundColor Yellow
-if (Test-Path "packages/continuity/ledger.ts") {
-    Write-Host "   → Decision logging functional" -ForegroundColor Green
-} else {
-    Write-Host "   ❌ Continuity Ledger missing!" -ForegroundColor Red
-}
-
-Write-Host "`n[4] Testing Bounded Contexts..." -ForegroundColor Yellow
-if (Test-Path "packages/governance/boundedContext.ts") {
-    Write-Host "   → Nonprofit vs Personal isolation enforced" -ForegroundColor Green
-} else {
-    Write-Host "   ❌ Bounded context module missing!" -ForegroundColor Red
-}
-
-Write-Host "`n[5] Testing Feature Flags..." -ForegroundColor Yellow
-if (Test-Path "PPBF_CAPABILITIES.json") {
-    Write-Host "   → Flags read from PPBF_CAPABILITIES.json" -ForegroundColor Green
-} else {
-    Write-Host "   ❌ Capabilities config missing!" -ForegroundColor Red
-}
-
-Write-Host "`n[6] Testing Quality Checklist..." -ForegroundColor Yellow
-if (Test-Path "QUALITY_CHECKLIST.md") {
-    Write-Host "   → Quality checklist present" -ForegroundColor Green
-} else {
-    Write-Host "   ❌ QUALITY_CHECKLIST.md missing!" -ForegroundColor Red
-}
-
-Write-Host "`n✅ All core tests passed (simulated + file checks). Expand with real tests later." -ForegroundColor Green
-Write-Host "Run this before every major deployment or PR." -ForegroundColor Cyan
 

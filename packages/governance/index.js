@@ -1,9 +1,12 @@
 // packages/governance/index.js
-// Admin Command Desk login validation with PIN '15715'
+// Admin Command Desk login validation with runtime-provided PIN
 // Non-blocking, isolated from tab logic
 // + Phase 2: Feature flags + routing matrix
 
-export const RECONCILED_PIN_KEY = "15715";
+export const RECONCILED_PIN_KEY =
+    (typeof globalThis !== 'undefined' && typeof globalThis.PPBF_ADMIN_UNLOCK_PIN === 'string')
+        ? globalThis.PPBF_ADMIN_UNLOCK_PIN.trim()
+        : '';
 
 export * from './featureFlags'; // isFeatureEnabled, getEnabledCapabilities, ROUTING_MATRIX
 export * from './boundedContext'; // boundedContexts, enforceBoundedContext
@@ -41,20 +44,29 @@ export function showAdminPinEntry() {
     const cancel = document.getElementById('pinCancelBtn');
 
     function cleanup() {
-        if (zone && zone.parentNode) zone.parentNode.removeChild(zone);
+        zone?.remove();
     }
 
     function tryUnlock() {
         const val = (input ? input.value : '').trim();
-        if (val === RECONCILED_PIN_KEY) {
-            performAdminUnlock();
-            cleanup();
-        } else {
+        if (!RECONCILED_PIN_KEY) {
             if (input) {
                 input.style.borderColor = '#e53e3e';
                 input.value = '';
-                setTimeout(function() { if (input) input.style.borderColor = '#4a5568'; }, 800);
+                input.placeholder = 'Admin unlock PIN not configured';
             }
+            return;
+        }
+        if (val === RECONCILED_PIN_KEY) {
+            performAdminUnlock();
+            cleanup();
+            return;
+        }
+
+        if (input) {
+            input.style.borderColor = '#e53e3e';
+            input.value = '';
+            setTimeout(function() { if (input) input.style.borderColor = '#4a5568'; }, 800);
         }
     }
 
@@ -80,7 +92,7 @@ export function performAdminUnlock() {
 
     // Non-blocking success signal
     const term = document.getElementById('masterTerminalTelemetryDataStreamOutputBox');
-    if (term) term.textContent = '[ADMIN UNLOCKED] Coach Command Desk + Grant Analytics now enabled. PIN 15715 validated.';
+    if (term) term.textContent = '[ADMIN UNLOCKED] Coach Command Desk + Grant Analytics now enabled.';
 
     // Optionally refresh data
     if (typeof window.initializeEcosystemDataTables === 'function') {

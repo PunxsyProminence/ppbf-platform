@@ -9,7 +9,6 @@ Write-Host "   → Run: psql or Supabase dashboard → infra/supabase/schema.sql
 
 Write-Host "`n[3/6] Installing dependencies..." -ForegroundColor Yellow
 Write-Host "   → cd apps/web && npm install"
-Write-Host "   → cd apps/coach-review && npm install"
 
 Write-Host "`n[4/6] Running governance checks..." -ForegroundColor Yellow
 Write-Host "   → All components must pass Layer 0 review"

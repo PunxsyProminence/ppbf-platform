@@ -1,0 +1,62 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CI: true
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Run all fast regression tests
+        run: npm test
+
+      # Each .pg suite runs in its own Jest process (see the test:migrations:*
+      # scripts). They spin up separate embedded Postgres instances and load
+      # ESM-only modules through a native dynamic import; sharing one process
+      # made a suite's import resolve after another suite's environment had been
+      # torn down. --runInBand is therefore implicit -- each invocation runs a
+      # single file -- so no extra flags are passed through here.
+      - name: Run PostgreSQL migration suite
+        run: npm run test:migrations
+
+      - name: Install Playwright browsers
+        run: npx --workspace web playwright install --with-deps chromium
+
+      - name: Run board governance E2E
+        run: npm --workspace web run test:e2e:board
+
+      - name: Build production application
+        run: npm run build

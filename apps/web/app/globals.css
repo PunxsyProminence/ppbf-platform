@@ -1,26 +1,669 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --canvas-tan: #d4c4a8;
+  --canvas-tan-light: #e5d9c3;
+  --canvas-tan-dark: #8b7355;
+
+  --olive-dark: #3d3d2e;
+  --black: #1a1a1a;
+  --gray-dark: #2a2a2a;
+  --gray-medium: #4a4a4a;
+  --white: #f5f5f5;
+  --white-off: #e8e8e8;
+
+  --red-primary: #8b0000;
+  --red-highlight: #a52a2a;
+  --red-blood: #660000;
+
+  --status-ready: #4a5d23;
+  --status-warning: #8b6914;
+  --status-critical: var(--red-primary);
+  --status-inactive: var(--gray-medium);
+
+  --font-stencil: var(--font-tactical-display), "Impact", "Arial Black", sans-serif;
+  --font-body: var(--font-tactical-body), "Segoe UI", "Arial Narrow", Arial, sans-serif;
+  --font-mono: var(--font-geist-mono), "Courier New", "Courier", monospace;
+
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 15px;
+  --text-lg: 16px;
+  --text-xl: 18px;
+  --text-2xl: 24px;
+  --text-3xl: 32px;
+  --text-4xl: 48px;
+
+  --leading-tight: 1.2;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.75;
+
+  --tracking-wide: 1px;
+  --tracking-wider: 2px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  --border-thin: 1px;
+  --border-medium: 2px;
+  --border-thick: 3px;
+
+  --shadow-sm: 2px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-md: 4px 4px 0 rgba(0, 0, 0, 0.4);
+  --shadow-lg: 6px 6px 0 rgba(0, 0, 0, 0.5);
+
+  --background: var(--canvas-tan);
+  --foreground: var(--black);
+
+  /* Retro stamp palette (available in both themes) */
+  --stamp-cleared: #4a5c2e;
+  --stamp-hold: #a67c2d;
+  --stamp-restricted: #8b0000;
+  --stamp-present: #2e4a3e;
+  --stamp-neutral: #4a3c2e;
+  --brass: #b08d57;
+  --brass-light: #d4af77;
+  --brass-dark: #8a6a3c;
+  --leather: #3b2415;
+  --paper: #e8d9c0;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* =========================================================
+   RETRO GOLDEN-ERA THEME ("Poor Man's Sport")
+   Toggle with data-theme="retro" on <html>
+   See docs/RETRO_DESIGN_SYSTEM.md
+   ========================================================= */
+[data-theme="retro"] {
+  --canvas-tan: #e8d9c0;
+  --canvas-tan-light: #f3e8d4;
+  --canvas-tan-dark: #5c3a24;
+
+  --olive-dark: #2c1810;
+  --black: #1a120b;
+  --gray-dark: #3d2e22;
+  --gray-medium: #5c4a3a;
+  --white: #f5e6c8;
+  --white-off: #ebe0c8;
+
+  --red-primary: #8b0000;
+  --red-highlight: #a52a2a;
+  --red-blood: #5c0000;
+
+  --status-ready: #4a5c2e;
+  --status-warning: #a67c2d;
+  --status-critical: #8b0000;
+  --status-inactive: #5c4a3a;
+
+  --shadow-sm: 3px 3px 0 #1a120b;
+  --shadow-md: 4px 4px 0 #1a120b;
+  --shadow-lg: 6px 6px 0 #1a120b;
+
+  --background: var(--canvas-tan);
+  --foreground: var(--black);
+
+  --paper: #e8d9c0;
+  --leather: #3b2415;
+  --brass: #b08d57;
+  --brass-light: #d4af77;
+  --brass-dark: #8a6a3c;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+[data-theme="retro"] body::before {
+  opacity: 0.9;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='noise'><feTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3'/></filter><rect width='180' height='180' filter='url(%23noise)' opacity='0.09'/></svg>");
+}
+
+.font-display {
+  font-family: var(--font-stencil);
+}
+
+.font-sans {
+  font-family: var(--font-body);
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='noise'><feTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='2'/></filter><rect width='180' height='180' filter='url(%23noise)' opacity='0.06'/></svg>");
+}
+
+body > * {
+  position: relative;
+  z-index: 2;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-stencil);
+  text-transform: none;
+  letter-spacing: var(--tracking-wide);
+  line-height: var(--leading-tight);
+}
+
+@layer base {
+  a {
+    color: var(--red-primary);
+    text-decoration: none;
+  }
+
+  a:hover {
+    color: var(--red-highlight);
+    text-decoration: underline;
+  }
+}
+
+:focus-visible {
+  outline: var(--border-medium) solid var(--red-primary);
+  outline-offset: 2px;
+}
+
+.tactical-panel {
+  background: var(--canvas-tan);
+  border: var(--border-medium) solid var(--black);
+  box-shadow: var(--shadow-sm);
+}
+
+.tactical-panel-dark {
+  background: var(--gray-dark);
+  color: var(--white-off);
+  border: var(--border-medium) solid var(--black);
+  box-shadow: var(--shadow-sm);
+}
+
+.tactical-chip {
+  display: inline-block;
+  padding: var(--space-1) var(--space-2);
+  border: var(--border-thin) solid var(--black);
+  background: var(--canvas-tan-light);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
+
+.tactical-chip-critical {
+  background: var(--red-primary);
+  color: var(--white);
+  border-color: var(--black);
+}
+
+.tactical-btn {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-2) var(--space-4);
+  border: var(--border-medium) solid var(--black);
+  background: var(--canvas-tan-dark);
+  color: var(--black);
+  font-family: var(--font-stencil);
+  font-size: var(--text-sm);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  box-shadow: var(--shadow-sm);
+}
+
+.tactical-btn:hover {
+  background: var(--olive-dark);
+  color: var(--white);
+}
+
+.tactical-btn-critical {
+  background: var(--red-primary);
+  color: var(--white);
+}
+
+.tactical-btn-critical:hover {
+  background: var(--red-highlight);
+}
+
+.tactical-input {
+  width: 100%;
+  min-height: 44px;
+  border: var(--border-medium) solid var(--black);
+  background: var(--canvas-tan-light);
+  color: var(--black);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-base);
+}
+
+.tactical-input:focus {
+  border-color: var(--red-primary);
+  box-shadow: 0 0 0 2px rgba(139, 0, 0, 0.15);
+}
+
+.tactical-alert-critical {
+  background: #f0d6d6;
+  color: var(--red-primary);
+  border: var(--border-medium) solid var(--red-primary);
+  padding: var(--space-3);
+}
+
+/* ---------- Retro components (work in both themes) ---------- */
+
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  min-width: 48px;
+  padding: 8px 14px;
+  border: 2px solid var(--black);
+  font-family: var(--font-stencil);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #f5e6c8;
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  user-select: none;
+  transition: transform 80ms ease, box-shadow 80ms ease;
+}
+
+.stamp:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--black);
+}
+
+.stamp:focus-visible {
+  outline: 2px solid var(--red-primary);
+  outline-offset: 3px;
+}
+
+.stamp--static {
+  cursor: default;
+  pointer-events: none;
+}
+
+.stamp--cleared {
+  background: var(--stamp-cleared);
+  border-color: #2a3518;
+}
+
+.stamp--hold {
+  background: var(--stamp-hold);
+  border-color: #6a4e1a;
+}
+
+.stamp--restricted,
+.stamp--escalate {
+  background: var(--stamp-restricted);
+  border-color: #4a0000;
+}
+
+.stamp--present {
+  background: var(--stamp-present);
+  border-color: #1a2e24;
+}
+
+.stamp--neutral {
+  background: var(--stamp-neutral);
+  border-color: #2a2018;
+}
+
+.brass-plate {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 2px solid var(--brass-dark);
+  background: linear-gradient(180deg, var(--brass-light) 0%, var(--brass) 55%, var(--brass-dark) 100%);
+  color: var(--black);
+  font-family: var(--font-stencil);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  user-select: none;
+}
+
+.brass-plate:active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 var(--black);
+}
+
+.brass-plate--label {
+  cursor: default;
+  pointer-events: none;
+}
+
+.leather-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 2px solid var(--black);
+  background: var(--leather);
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  box-shadow: var(--shadow-sm);
+  text-decoration: none;
+}
+
+.leather-tag:hover {
+  color: var(--paper);
+  text-decoration: none;
+  filter: brightness(1.1);
+}
+
+.leather-tag.is-active {
+  box-shadow: inset 0 -3px 0 var(--red-primary), var(--shadow-sm);
+}
+
+.paper-ticket {
+  background: var(--canvas-tan-light);
+  border: 3px solid var(--black);
+  box-shadow: var(--shadow-md);
+  padding: 12px 14px;
+}
+
+.paper-ticket__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.paper-ticket__id {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.paper-ticket__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.brass-scoreboard {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 3px solid var(--black);
+  background: linear-gradient(180deg, var(--brass-light), var(--brass));
+  color: var(--black);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow: var(--shadow-md);
+}
+
+.brass-scoreboard .sep {
+  opacity: 0.55;
+}
+
+.ledger-tape {
+  background: var(--canvas-tan-light);
+  border: 2px solid var(--black);
+  box-shadow: var(--shadow-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  overflow: hidden;
+}
+
+.ledger-tape__edge {
+  height: 10px;
+  background:
+    radial-gradient(circle at 6px 5px, transparent 4px, var(--black) 4.5px, var(--black) 5.5px, transparent 6px) 0 0 / 12px 10px repeat-x;
+  opacity: 0.35;
+}
+
+.ledger-tape__entries {
+  list-style: none;
+  margin: 0;
+  padding: 8px 12px 12px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.ledger-tape__entries li {
+  padding: 4px 0;
+  border-bottom: 1px dashed rgba(26, 18, 11, 0.25);
+  line-height: 1.4;
+}
+
+.ledger-tape__entries li:last-child {
+  border-bottom: none;
+}
+
+.ledger-tape__entries time {
+  font-weight: 700;
+  margin-right: 8px;
+}
+
+.mechanical-lock {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 280px;
+}
+
+.mechanical-lock__display {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3px solid var(--black);
+  background: var(--canvas-tan-light);
+  font-family: var(--font-mono);
+  font-size: 22px;
+  letter-spacing: 0.35em;
+  box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.15);
+}
+
+.mechanical-lock__keys {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.mechanical-lock__keys button {
+  min-height: 56px;
+  border: 2px solid var(--black);
+  background: var(--canvas-tan-dark);
+  color: var(--white);
+  font-family: var(--font-stencil);
+  font-size: 18px;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+
+.mechanical-lock__keys button:active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 var(--black);
+}
+
+.gym-locker-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 120px;
+  padding: 14px;
+  border: 3px solid var(--black);
+  background: var(--canvas-tan-light);
+  box-shadow: var(--shadow-md);
+  position: relative;
+}
+
+.gym-locker-tile__label {
+  font-family: var(--font-stencil);
+  font-size: var(--text-sm);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--brass-dark);
+}
+
+.gym-locker-tile__metric {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.gym-locker-tile .badge-restricted {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 10px;
+  padding: 2px 6px;
+  background: var(--stamp-restricted);
+  color: #f5e6c8;
+  border: 1px solid var(--black);
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+}
+
+/* Floor-use: larger stamps on small screens */
+@media (max-width: 768px) {
+  .stamp {
+    min-height: 56px;
+    min-width: 56px;
+    padding: 10px 16px;
+    font-size: var(--text-base);
+  }
+
+  .paper-ticket__actions {
+    position: sticky;
+    bottom: 0;
+    padding-top: 8px;
+    background: linear-gradient(transparent, var(--canvas-tan-light) 30%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stamp,
+  .brass-plate,
+  .mechanical-lock__keys button {
+    transition: none;
+  }
+
+  .stamp:active,
+  .brass-plate:active,
+  .mechanical-lock__keys button:active {
+    transform: none;
+  }
+}
+
+/* =========================================================
+   DEEP RETRO IMMERSION (closes gap to design mockups)
+   Applied only when data-theme="retro". Forces hard edges,
+   paper surfaces, and mechanical feel on modern Tailwind
+   utility classes so pages that still use rounded-* still
+   read as 1930s–50s gym desk.
+   ========================================================= */
+[data-theme="retro"] {
+  --radius-none: 0;
+}
+
+[data-theme="retro"] .rounded-\[28px\],
+[data-theme="retro"] .rounded-\[24px\],
+[data-theme="retro"] .rounded-2xl,
+[data-theme="retro"] .rounded-xl,
+[data-theme="retro"] .rounded-lg,
+[data-theme="retro"] .rounded-full,
+[data-theme="retro"] [class*="rounded-"] {
+  border-radius: 0 !important;
+}
+
+[data-theme="retro"] .shadow-sm,
+[data-theme="retro"] .shadow-md,
+[data-theme="retro"] .shadow-lg {
+  box-shadow: var(--shadow-md) !important;
+}
+
+/* Cards / panels → paper tickets */
+[data-theme="retro"] .bg-white {
+  background-color: var(--paper) !important;
+  border-color: var(--black) !important;
+}
+
+/* Stronger paper grain on retro body */
+[data-theme="retro"] body::before {
+  opacity: 1;
+  background-image:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='noise'><feTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3'/></filter><rect width='180' height='180' filter='url(%23noise)' opacity='0.12'/></svg>"),
+    linear-gradient(180deg, rgba(92,58,36,0.04), transparent 40%);
+  mix-blend-mode: multiply;
+}
+
+/* Buttons that aren't already .stamp / .brass-plate get hard desk feel */
+[data-theme="retro"] button:not(.stamp):not(.brass-plate):not(.leather-tag) {
+  border-radius: 0 !important;
+  box-shadow: var(--shadow-sm);
+  border-width: 2px;
+  border-style: solid;
+  border-color: var(--black);
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+[data-theme="retro"] input,
+[data-theme="retro"] select,
+[data-theme="retro"] textarea {
+  border-radius: 0 !important;
+  border: 3px solid var(--black) !important;
+  background: var(--canvas-tan-light) !important;
+  box-shadow: inset 2px 2px 0 rgba(0,0,0,0.08);
+  font-family: var(--font-mono);
+}
+
+[data-theme="retro"] input:focus,
+[data-theme="retro"] select:focus,
+[data-theme="retro"] textarea:focus {
+  outline: none;
+  border-color: var(--red-primary) !important;
+  box-shadow: inset 2px 2px 0 rgba(0,0,0,0.08), 0 0 0 2px rgba(139,0,0,0.2);
+}
+
+/* Header already good; ensure brass-ish feel */
+[data-theme="retro"] header.sticky {
+  background: linear-gradient(180deg, var(--brass-light), var(--brass), var(--brass-dark)) !important;
+  border-bottom: 3px solid var(--black) !important;
+  box-shadow: var(--shadow-md) !important;
 }
