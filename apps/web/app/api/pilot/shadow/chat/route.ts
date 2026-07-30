@@ -21,7 +21,7 @@ import {
 } from '@/src/server/pilot/shadowUserProfile';
 import { classifyRequest, type ShadowTier } from '@/src/server/pilot/shadowClassifier';
 import { buildShadowContext } from '@/src/server/pilot/shadowContextBuilder';
-import { routeRequest, tierToSessionType } from '@/src/server/pilot/shadowRouter';
+import { describeDeployment, tierToSessionType } from '@/src/server/pilot/shadowRouter';
 import { classifyProfileTier, buildPersonalizationPrompt } from '@/src/server/pilot/shadowProfiling';
 import { executeHeavyBagSync } from '@/src/server/pilot/shadowHeavyBag';
 import {
@@ -214,7 +214,7 @@ async function callAzureOpenAI(
   systemPrompt: string,
   userMessage: string,
   conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
-): Promise<{ response: string; success: boolean }> {
+): Promise<{ response: string; success: boolean; deploymentName?: string }> {
   try {
     const runtime = getAzureAiRuntimeConfig();
     if (!runtime.ok || !runtime.config) {
@@ -271,7 +271,7 @@ async function callAzureOpenAI(
         budget: resolveShadowMaxCompletionTokens(),
       });
     }
-    return { response, success: response.length > 0 };
+    return { response, success: response.length > 0, deploymentName: runtime.config.deploymentName };
   } catch (error) {
     const reason = error instanceof Error && (
       error.name === 'TimeoutError'
@@ -290,6 +290,12 @@ interface LlmRouteResult {
   resolvedAsync: boolean;
   asyncJobId?: string;
   state: ShadowResponseState;
+  // Display name of the deployment that actually produced llmResponse --
+  // reported from the call site, not re-derived from the router, because the
+  // quick path's deployment is env-configured (AZURE_AI_DEPLOYMENT_NAME) and
+  // can legitimately differ from the router's theoretical pick. Absent when
+  // no model answered (filtered fallbacks, degraded turns).
+  modelUsed?: string;
 }
 
 interface LlmRouteContext {
@@ -367,7 +373,14 @@ Use only this authorized role and scope. Do not infer or disclose data outside i
       if (!result.response?.trim()) {
         return { llmResponse: DEGRADED_RESPONSE, resolvedAsync: false, state: 'degraded' };
       }
-      return { llmResponse: result.response, resolvedAsync: false, state: 'ok' };
+      // executeHeavyBagSync routes internally and calls the deployment on its
+      // own RoutingDecision, so its routing is the truthful record of the call.
+      return {
+        llmResponse: result.response,
+        resolvedAsync: false,
+        state: 'ok',
+        modelUsed: result.routing.model.displayName,
+      };
     } catch {
       return { llmResponse: DEGRADED_RESPONSE, resolvedAsync: false, state: 'degraded' };
     }
@@ -378,6 +391,9 @@ Use only this authorized role and scope. Do not infer or disclose data outside i
     llmResponse: azureResult.success ? azureResult.response : DEGRADED_RESPONSE,
     resolvedAsync: false,
     state: azureResult.success ? 'ok' : 'degraded',
+    modelUsed: azureResult.success && azureResult.deploymentName
+      ? describeDeployment(azureResult.deploymentName)
+      : undefined,
   };
 }
 
@@ -398,7 +414,6 @@ const SESSION_TYPE_OVERRIDES = new Set<import('@/src/server/pilot/shadowRouter')
 ]);
 
 function resolveSessionType(input: {
-  userRequestedTier: ShadowTier | undefined;
   requestedSessionType: string | undefined;
   effectiveTier: ShadowTier;
   role: PilotRole;
@@ -411,7 +426,11 @@ function resolveSessionType(input: {
     }
   }
 
-  return tierToSessionType(input.effectiveTier, input.role, input.userRequestedTier !== undefined);
+  // effectiveTier already reflects any manual tier request -- classifyRequest
+  // honors heavy_bag behind its role gate and quick_round for anyone -- so the
+  // mapping takes no role and no override flag. (The flag's presence alone
+  // used to escalate here, inverting explicit quick_round requests.)
+  return tierToSessionType(input.effectiveTier);
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse<ShadowChatResponse>> {
@@ -539,7 +558,6 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     const classification = classifyRequest(message, userRole as PilotRole, sanitizedTier);
     const effectiveTier = classification.tier;
     const sessionType = resolveSessionType({
-      userRequestedTier: sanitizedTier,
       requestedSessionType,
       effectiveTier,
       role: userRole as PilotRole,
@@ -636,7 +654,6 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     const userProfile = await getOrCreateShadowUserProfile(userId, organizationId, userRole as PilotRole);
     const tierResult = classifyProfileTier(userProfile);
     const unlockState = await evaluateShadowUnlockState({ organizationId, accountId: userId }).catch(() => null);
-    const routing = routeRequest(sessionType, userRole as PilotRole, classification.complexity);
 
     // Step 4: Build tier-aware context (Quick Round = lightweight, Heavy Bag = full)
     const contextOutput = buildShadowContext({
@@ -742,7 +759,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       : [];
 
     // Step 6: Route to correct model via The Corner
-    const { llmResponse, resolvedAsync, asyncJobId, state: providerState } = await routeLlmCall({
+    const { llmResponse, resolvedAsync, asyncJobId, state: providerState, modelUsed } = await routeLlmCall({
       sessionType, effectiveTier,
       highRiskClassification: requestValidation.classification ?? undefined,
       userProfile, tierResult, contextOutput: authorizedContextOutput, classification,
@@ -891,7 +908,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       complexity: classification.complexity,
       sessionType,
       profileTier: tierResult.tier,
-      modelUsed: state === 'degraded' ? undefined : routing.model.displayName,
+      // What actually answered, reported by the call site itself. This used to
+      // echo the router's theoretical pick, which the quick path never calls --
+      // it calls the env-configured deployment (AZURE_AI_DEPLOYMENT_NAME).
+      modelUsed: state === 'degraded' ? undefined : modelUsed,
       async: resolvedAsync,
       jobId: asyncJobId,
       citations,

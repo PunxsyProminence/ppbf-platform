@@ -89,6 +89,33 @@ describe('SHADOW Classifier', () => {
       expect(result.tier).toBe('quick_round');
       expect(result.requiresManualOverride).toBe(false);
     });
+
+    test('honors an explicit Quick Round request from a coach', () => {
+      // The original defect: the session-type mapper escalated on the mere
+      // presence of a manual tier, so this exact request -- a coach asking for
+      // the quick answer -- was routed to Heavy Bag, the slowest path.
+      const result = classifyRequest('What is a warm-up?', 'coach', 'quick_round');
+      expect(result.tier).toBe('quick_round');
+      expect(result.confidence).toBe(1.0);
+      expect(result.reasoning).toContain('User explicitly requested Quick Round');
+    });
+
+    test('an explicit Quick Round request wins even when auto-detection says Heavy Bag', () => {
+      const result = classifyRequest(
+        `${'Detailed context '.repeat(110)}
+        Compare and contrast the multi-step trade-offs, edge cases, nuanced constraints,
+        conflicting goals, exceptions, and what happens if conditions change.`,
+        'coach',
+        'quick_round',
+      );
+      expect(result.tier).toBe('quick_round');
+      expect(result.suggestedContextDepth).toBe('lightweight');
+    });
+
+    test('a Quick Round request needs no role gate -- downgrades are safe for anyone', () => {
+      expect(classifyRequest('How do I warm up?', 'athlete', 'quick_round').tier).toBe('quick_round');
+      expect(classifyRequest('What is training?', 'parent', 'quick_round').tier).toBe('quick_round');
+    });
   });
 
   describe('Topic detection', () => {

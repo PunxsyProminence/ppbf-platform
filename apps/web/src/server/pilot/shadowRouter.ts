@@ -272,22 +272,30 @@ function recoveryRoundRoute(): RoutingDecision {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Map ShadowTier + role to the best session type.
- * Coaches/admins can escalate boundary cases to heavy_bag.
+ * Map a resolved tier to its session type. A pure mapping, on purpose.
+ *
+ * This used to take (role, isManualOverride) and escalate quick_round to
+ * heavy_bag whenever the override flag was set for an authorized role. The
+ * flag recorded only that a tier was requested -- not which one -- so an
+ * explicit "quick_round" from a coach was inverted into the slowest path in
+ * the system. Both manual directions are now honored where the tier is
+ * decided, in classifyRequest: heavy_bag behind its role gate, quick_round
+ * for anyone (a downgrade is always safe). A tier arriving here already
+ * embodies every override, so re-deciding from the role would be a second,
+ * disagreeing authority.
  */
-export function tierToSessionType(
-  tier: ShadowTier,
-  role: PilotRole,
-  isManualOverride: boolean,
-): ShadowSessionType {
-  if (tier === 'quick_round' && !isManualOverride) return 'quick_round';
-  if (tier === 'heavy_bag') return 'heavy_bag';
+export function tierToSessionType(tier: ShadowTier): ShadowSessionType {
+  return tier === 'heavy_bag' ? 'heavy_bag' : 'quick_round';
+}
 
-  // Manual override from coach/admin
-  const canOverride: PilotRole[] = ['coach', 'admin', 'organization_admin', 'platform_owner'];
-  if (isManualOverride && canOverride.includes(role)) return 'heavy_bag';
-
-  return 'quick_round';
+/**
+ * Human-readable label for the deployment that actually answered. Falls back
+ * to the raw deployment name so an env-configured deployment outside the
+ * registry is still reported truthfully rather than as the router's
+ * theoretical pick.
+ */
+export function describeDeployment(deploymentName: string): string {
+  return MODEL_REGISTRY[deploymentName]?.displayName ?? deploymentName;
 }
 
 /** Check if a session type will require async processing */
