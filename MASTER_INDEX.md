@@ -44,6 +44,16 @@ gates are `npm run typecheck` / `lint` / `test`.
 - [docs/SHADOW_AUTHORITY_MODEL.md](docs/SHADOW_AUTHORITY_MODEL.md)
 - [docs/SHADOW_EVENT_MODEL.md](docs/SHADOW_EVENT_MODEL.md)
 - [docs/SHADOW_PHASE1_HARDENING_CHECKLIST.md](docs/SHADOW_PHASE1_HARDENING_CHECKLIST.md)
+- [docs/SHADOW_CHAT_FUNCTIONALITY_AUDIT_2026-07-28.md](docs/SHADOW_CHAT_FUNCTIONALITY_AUDIT_2026-07-28.md)
+  — dated audit, but still live: 8 of its findings are fixed and recorded as
+  such, while 4 dimensions were never audited and its 13 `[U]` findings were
+  never verified. Treat the remainder as a to-check queue, not as fact.
+
+## Audits
+
+Point-in-time, but not archived — these describe issues that may still be open.
+
+- [docs/DEEP_CRITICAL_APP_AUDIT_2026-07-18.md](docs/DEEP_CRITICAL_APP_AUDIT_2026-07-18.md)
 
 ## Operations
 
