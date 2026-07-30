@@ -22,7 +22,9 @@ const workflowPath = path.join(
 const packageJsonPath = path.join(repositoryRoot, 'apps/web/package.json');
 
 describe('announcements schema ownership', () => {
-  const module = fs.readFileSync(modulePath, 'utf8');
+  // Not named `module`: @next/next/no-assign-module-variable rejects that
+  // identifier even in a test file.
+  const moduleSource = fs.readFileSync(modulePath, 'utf8');
   const migration = fs.readFileSync(migrationPath, 'utf8');
   const runner = fs.readFileSync(runnerPath, 'utf8');
   const workflow = fs.readFileSync(workflowPath, 'utf8');
@@ -35,7 +37,7 @@ describe('announcements schema ownership', () => {
   test('the module issues no DDL -- schema belongs to the migration, not a request handler', () => {
     // Comments are stripped first: this file deliberately DESCRIBES the DDL it
     // removed, and prose about a defect must not be mistaken for the defect.
-    const code = module
+    const code = moduleSource
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/^[ \t]*\/\/.*$/gm, '');
 
