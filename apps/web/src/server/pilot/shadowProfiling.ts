@@ -96,6 +96,25 @@ function scoreInteractionCount(ic: number, reasons: string[]): number {
   return 0;
 }
 
+/**
+ * Profile completeness on the metrics surface. Counts only factors with a
+ * production writer: recent_topics (chat turns) and remembered_facts
+ * (human-approved learning). communication_style, open_questions, and
+ * shadow_notes were advertised factors nothing could ever write -- profiles
+ * are born 'unknown'/empty/null and stay that way (the same dead factors #83
+ * removed from tier scoring) -- so counting them capped this metric at 0.4
+ * while advertising a scale of 1.0. Must stay in step with the SQL average
+ * in the metrics route.
+ */
+export function calculateProfileCompleteness(
+  profile: Pick<ShadowUserProfileRow, 'recent_topics' | 'remembered_facts'>,
+): number {
+  let score = 0;
+  if (profile.recent_topics?.length > 0) score += 0.5;
+  if (profile.remembered_facts?.length > 0) score += 0.5;
+  return Math.min(1, score);
+}
+
 function scoreRememberedFacts(facts: RememberedFact[], reasons: string[]): number {
   const factCount = facts.length;
   const highConf = facts.filter((f) => f.confidence >= 0.7).length;

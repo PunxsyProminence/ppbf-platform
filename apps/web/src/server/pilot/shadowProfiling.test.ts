@@ -2,6 +2,7 @@ import type { ShadowUserProfileRow } from './shadowUserProfile';
 import {
   TIER_CONFIGS,
   buildPersonalizationPrompt,
+  calculateProfileCompleteness,
   classifyProfileTier,
 } from './shadowProfiling';
 
@@ -76,6 +77,26 @@ describe('SHADOW profile badges', () => {
     });
     expect(reviewed.score).toBe(75);
     expect(reviewed.tier).toBe('gold');
+  });
+
+  test('profile completeness counts only writable factors, and the full scale is reachable', () => {
+    // Empty profile scores zero; each real factor is worth half; both
+    // together reach 1.0 -- which the old five-factor version could never do,
+    // because three of its factors (style, open questions, notes) had no
+    // production writer and capped every organization's "average" at 0.4.
+    expect(calculateProfileCompleteness({ ...profile, recent_topics: [], remembered_facts: [] })).toBe(0);
+    expect(calculateProfileCompleteness({ ...profile, remembered_facts: [] })).toBe(0.5);
+    expect(calculateProfileCompleteness(profile)).toBe(1);
+
+    // Dead-factor invariance, same contract as tier scoring below: profiles
+    // differing only in the writerless columns score identically.
+    const withDeadColumns = calculateProfileCompleteness({
+      ...profile,
+      communication_style: 'concise',
+      open_questions: ['q1'],
+      shadow_notes: 'a note well over the twenty character threshold',
+    } as ShadowUserProfileRow);
+    expect(withDeadColumns).toBe(calculateProfileCompleteness(profile));
   });
 
   test('the removed factors stay removed: style and open questions do not score', () => {

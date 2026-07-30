@@ -4,7 +4,7 @@ import { requireRole } from '@/src/server/pilot/access';
 import { query, queryOne } from '@/src/server/pilot/db';
 import { jsonError, parseSafeLimit, requirePrincipal } from '@/src/server/pilot/http';
 import { getGrowthMetrics } from '@/src/server/pilot/shadowMetrics';
-import { classifyProfileTier } from '@/src/server/pilot/shadowProfiling';
+import { calculateProfileCompleteness, classifyProfileTier } from '@/src/server/pilot/shadowProfiling';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import type { ShadowUserProfileRow } from '@/src/server/pilot/shadowUserProfile';
 import { evaluateShadowUnlockState } from '@/src/server/pilot/shadowUnlocks';
@@ -258,13 +258,17 @@ async function getOperationalMetrics(organizationId: string, days: number): Prom
         FROM pilot.shadow_human_review_queue
         WHERE organization_id = $1
           AND created_at > NOW() - ($2 * INTERVAL '1 day')) AS escalations,
+       -- Completeness counts only factors something can actually write:
+       -- recent_topics (chat turns) and remembered_facts (human-approved
+       -- learning). communication_style, open_questions, and shadow_notes
+       -- have no production writer -- profiles are born 'unknown'/empty/null
+       -- and stay that way (the same dead factors #83 removed from tier
+       -- scoring) -- so counting them capped this "average" at 0.4 while
+       -- advertising a scale of 1.0.
        (SELECT AVG((
           (CASE WHEN cardinality(recent_topics) > 0 THEN 1 ELSE 0 END) +
-          (CASE WHEN jsonb_array_length(remembered_facts) > 0 THEN 1 ELSE 0 END) +
-          (CASE WHEN communication_style <> 'unknown' THEN 1 ELSE 0 END) +
-          (CASE WHEN cardinality(open_questions) > 0 THEN 1 ELSE 0 END) +
-          (CASE WHEN length(COALESCE(shadow_notes, '')) > 20 THEN 1 ELSE 0 END)
-        )::numeric / 5)
+          (CASE WHEN jsonb_array_length(remembered_facts) > 0 THEN 1 ELSE 0 END)
+        )::numeric / 2)
         FROM pilot.shadow_user_profiles
         WHERE organization_id = $1) AS avg_profile_completeness`,
     [organizationId, days],
@@ -349,7 +353,7 @@ async function getUserMetrics(organizationId: string, userId: string): Promise<U
     userId,
     profile: {
       tier: tierLevel,
-      completeness: calculateCompleteness(profile),
+      completeness: calculateProfileCompleteness(profile),
       totalInteractions: profile.interaction_count,
       daysSinceFirstInteraction: Math.floor((nowTime - createdTime) / 86_400_000),
       daysSinceLastInteraction: Math.floor((nowTime - lastTime) / 86_400_000),
@@ -385,12 +389,4 @@ async function getTierCounts(
   return counts;
 }
 
-function calculateCompleteness(profile: ShadowUserProfileRow): number {
-  let score = 0;
-  if (profile.recent_topics?.length > 0) score += 0.2;
-  if (profile.remembered_facts?.length > 0) score += 0.2;
-  if (profile.communication_style !== 'unknown') score += 0.2;
-  if (profile.open_questions?.length > 0) score += 0.2;
-  if (profile.shadow_notes && profile.shadow_notes.length > 20) score += 0.2;
-  return Math.min(1, score);
-}
+
