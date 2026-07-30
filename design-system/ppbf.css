@@ -47,6 +47,7 @@
   --bone-400: #B5A688;  /* tertiary, captions */
   --paper:    #F4EBD4;  /* torn notes, board packets */
   --paper-2:  #E6DABE;  /* paper shadow side */
+  --canvas-warm: #EFE4C8;  /* the second ground (Law 6) — Guardian, Public Onboarding */
 
   /* --- Chalk + slate ---------------------------------------------------- */
   --slate-board: #1C2420;
@@ -68,6 +69,27 @@
 
   --stamp-red:  #A81E22;  /* refusal, redaction, destructive */
   --stamp-green:#2F7A3E;  /* approved, compliant */
+
+  /* --- Grit — golden-era, poor man's gym ---------------------------------
+     A period-accent layer, not a new ground (Law 6 stays two grounds: ink
+     for staff, warm canvas for family). Most hardware in a gym that's run
+     forty years on donations is oxidized, not polished — --brass-* stays
+     reserved for the few things that would actually see a polishing rag:
+     the crest, a championship belt, one ceremonial rivet. Everything
+     load-bearing is patina. */
+  --patina-900: #262418;
+  --patina-700: #46421F;
+  --patina-500: #6B6430;
+  --patina-300: #8E8548;
+  --patina-100: #B5AA6E;
+
+  /* Dried blood / old rust. Deliberately far from --locked (#A81E22) in both
+     hue and saturation — this is atmosphere, never status, and must never be
+     mistaken for the safety ladder (Law 2 amendment, see README). */
+  --rust-900: #241009;
+  --rust-700: #3E1B12;
+  --rust-500: #5C2A1C;
+  --rust-300: #7A4130;
 
   /* --- Type -------------------------------------------------------------
      Swap --font-stencil for a licensed face (Big Shoulders Stencil or
@@ -282,6 +304,86 @@ body.ppbf {
     var(--brass-200), var(--brass-400) 45%, var(--brass-800) 100%);
 }
 
+/* --- Worn leather --------------------------------------------------------
+   Cracks are two crossing repeating-linear-gradients multiply-blended over
+   the raised-leather base, darker and less saturated overall than
+   .mat-leather--raised — this is hand-me-down equipment, not a boutique's
+   showroom hide. Use for anything that's been handled for decades: the
+   kiosk shell, the coach desk, the console frame. */
+.mat-leather--worn {
+  background-color: var(--hide-700);
+  background-image:
+    var(--grain),
+    repeating-linear-gradient(78deg,  transparent 0 18px, rgba(0,0,0,.24) 18px 19px, transparent 19px 46px),
+    repeating-linear-gradient(146deg, transparent 0 31px, rgba(0,0,0,.17) 31px 32px, transparent 32px 70px),
+    radial-gradient(120% 100% at 30% 4%, rgba(186,143,86,.20), transparent 56%),
+    linear-gradient(168deg, #443123 0%, #2E2116 55%, #1E160F 100%);
+  background-blend-mode: overlay, multiply, multiply, screen, normal;
+  box-shadow:
+    inset 0 1px 0 rgba(200,160,100,.12),
+    inset 0 -2px 6px rgba(0,0,0,.6),
+    0 3px 8px rgba(0,0,0,.5);
+}
+
+/* --- Patina brass ---------------------------------------------------------
+   The workaday hardware — frames, rivets, rope on anything that isn't a
+   trophy. .mat-brass stays reserved for the crest, a belt, one ceremonial
+   rivet per screen at most (Law 1 still applies: brass is chassis, never
+   message — patina doesn't change that, it just admits most chassis here
+   hasn't seen a polishing rag since the Reagan administration). */
+.mat-brass--patina {
+  background-image: linear-gradient(158deg,
+    var(--patina-900) 0%,  var(--patina-500) 16%, var(--patina-100) 32%,
+    var(--patina-300) 48%, var(--patina-700) 66%, var(--patina-500) 82%, var(--patina-900) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(180,170,110,.32),
+    inset 0 -1px 0 rgba(0,0,0,.55),
+    0 2px 6px rgba(0,0,0,.5);
+}
+.frame--patina {
+  background-image: linear-gradient(158deg,
+    var(--patina-900) 0%,  var(--patina-500) 16%, var(--patina-100) 32%,
+    var(--patina-300) 48%, var(--patina-700) 66%, var(--patina-500) 82%, var(--patina-900) 100%);
+}
+.rivet--patina {
+  background-image: radial-gradient(circle at 34% 28%,
+    var(--patina-100) 0%, var(--patina-300) 38%, var(--patina-700) 68%, var(--patina-900) 100%);
+}
+.rope--frayed {
+  background-image: repeating-linear-gradient(112deg,
+    var(--patina-700) 0 6px, var(--patina-100) 6px 10px,
+    var(--patina-500) 10px 15px, var(--patina-900) 15px 20px);
+  box-shadow:
+    inset 0 1px 2px rgba(180,170,110,.16),
+    inset 0 -3px 4px rgba(0,0,0,.6),
+    0 2px 4px rgba(0,0,0,.5);
+  clip-path: polygon(0 8%, 3% 0, 97% 4%, 100% 14%, 98% 86%, 100% 96%, 3% 100%, 0 90%);
+}
+
+/* --- Stains ----------------------------------------------------------------
+   A period detail, not a status signal — see the Law 2 amendment in
+   README.md. Multiply-blended so it reads as soaked into whatever sits
+   underneath rather than stuck on top. At most one per screen, in a fixed
+   decorative zone (a corner, behind a title), never touching a control,
+   badge, or stamp. */
+.stain {
+  position: absolute; width: 46px; height: 34px; pointer-events: none;
+  background-image:
+    radial-gradient(38% 46% at 32% 38%, var(--rust-500) 0%, transparent 68%),
+    radial-gradient(28% 34% at 68% 62%, var(--rust-700) 0%, transparent 70%),
+    radial-gradient(20% 24% at 50% 20%, var(--rust-300) 0%, transparent 72%);
+  border-radius: 42% 58% 55% 45% / 55% 45% 58% 42%;
+  opacity: .5;
+  mix-blend-mode: multiply;
+}
+.stain::after {
+  content: ""; position: absolute; left: 44%; top: 92%; width: 3px; height: 21px;
+  background: linear-gradient(180deg, var(--rust-700), transparent);
+  border-radius: 0 0 3px 3px; opacity: .8;
+}
+.stain--sm { width: 21px; height: 16px; }
+.stain--lg { width: 89px; height: 55px; }
+
 /* ============================================================== TYPE ===== */
 .t-command {                        /* Stencil — headers, mottos, tile labels */
   font-family: var(--font-stencil);
@@ -308,6 +410,23 @@ body.ppbf {
 }
 .t-data  { font: 650 13px/1.5 var(--font-data); color: var(--bone-200); }
 .t-hand  { font-family: var(--font-hand); font-size: 14px; line-height: 1.5; color: #33291B; }
+
+/* Hand-painted signage — plywood-and-brush lettering rather than the lit,
+   registered stencil of .t-command. A slight rotation and a rust-tinted
+   drop shadow, offset like a cheap second pass of paint, stand in for a
+   roughened edge without masking the glyphs (Law 3: distress never costs
+   legibility — that lesson cost us the first version of .stamp). */
+.t-painted {
+  font-family: var(--font-stencil);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--bone-100);
+  transform: rotate(-0.6deg);
+  text-shadow:
+    1.5px 1px 0 var(--rust-700),
+    0 2px 0 rgba(0,0,0,.55),
+    0 0 14px rgba(122,65,48,.16);
+}
 
 /* ============================================================ STAMPS ===== */
 /* Law 7 — governance speaks in ink.
@@ -411,6 +530,50 @@ body.ppbf {
 .input::placeholder { color: #6E6152; }
 .input:focus, .select:focus, .textarea:focus { outline: 0; border-color: var(--brass-400); box-shadow: inset 0 2px 6px rgba(0,0,0,.7), var(--focus); }
 .input--kiosk { min-height: var(--tap); font-size: 19px; }
+
+/* ============================================================ ON CANVAS == */
+/* Law 6 — two grounds, one system. Everything above was tuned against ink
+   leather: light tints on a near-black mix, bright bone on a dark backdrop.
+   None of that survives a straight swap to --canvas-warm — a badge mixed
+   toward #120E0B reads as a muddy smear on cream paper, and bone-100 text
+   needs a dark ink colour instead of a light one to stay legible.
+   Wrap any of the affected components in .on-canvas when they sit on
+   --canvas-warm (Guardian, Public Onboarding) rather than re-deriving the
+   palette per screen. .on-canvas is a ground in its own right — like
+   .mat-leather or .mat-cork, it paints its own background — so apply it
+   directly to <body class="ppbf on-canvas"> or a full-bleed wrapper, not
+   just as a scoping hook for children. */
+.on-canvas {
+  background-color: var(--canvas-warm);
+  background-image: var(--grain-fine), radial-gradient(120% 90% at 50% -10%, rgba(120,90,50,.08), transparent 62%);
+  background-blend-mode: overlay, normal;
+}
+.on-canvas .t-command   { color: #241B12; text-shadow: 0 1px 0 rgba(255,255,255,.4), 0 0 0 transparent; }
+.on-canvas .t-painted   { color: #241B12; text-shadow: 1.5px 1px 0 var(--rust-500), 0 1px 0 rgba(255,255,255,.35); }
+.on-canvas .t-body      { color: #3A2E1D; }
+.on-canvas .t-muted     { color: #6E5B3E; }
+.on-canvas .t-label     { color: #4A3B26; }
+.on-canvas .t-eyebrow   { color: var(--brass-700); }
+
+.on-canvas .badge {
+  background-color: color-mix(in srgb, var(--badge) 20%, var(--canvas-warm));
+  border-color: color-mix(in srgb, var(--badge) 65%, var(--canvas-warm));
+  color: color-mix(in srgb, var(--badge) 80%, #241B12);
+}
+.on-canvas .badge i { color: inherit; }
+
+.on-canvas .input, .on-canvas .select, .on-canvas .textarea {
+  background-color: var(--paper-2);
+  background-image: none;
+  color: #2A2013;
+  border: 1px solid rgba(0,0,0,.18);
+  box-shadow: inset 0 2px 5px rgba(0,0,0,.14);
+}
+.on-canvas .input::placeholder { color: #8A7A5E; }
+.on-canvas .input:focus, .on-canvas .select:focus, .on-canvas .textarea:focus {
+  border-color: var(--brass-700);
+  box-shadow: inset 0 2px 5px rgba(0,0,0,.14), var(--focus);
+}
 
 /* ============================================================== GAUGE ==== */
 /* 144 × 89 — consecutive Fibonacci numbers, so the bezel is a golden rectangle. */

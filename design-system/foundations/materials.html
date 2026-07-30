@@ -223,5 +223,94 @@
       </span>
     </div>
   </div>
+
+  <h2>Grit — golden-era, poor man's gym</h2>
+  <p class="lede" style="margin-bottom: var(--s5)">
+    This is not a boutique leather shop. It's a gym that's been running on donations since
+    the '50s: hardware oxidizes, hide cracks, and every so often something in a boxing gym
+    gets a stain nobody talks about. This is atmosphere layered on the same five materials —
+    not a sixth one, and never a stand-in for the safety ladder.
+  </p>
+  <div class="grid">
+    <div class="spec">
+      <div class="swatch mat-leather--worn"></div>
+      <div class="cap">
+        <b>Worn leather</b><code>.mat-leather--worn</code>
+        <p>Two crossing crack streaks multiply-blended over the raised base. Darker, flatter,
+           less rich than the showroom hide — for the kiosk shell, the coach desk, anything
+           that's been handled for decades.</p>
+      </div>
+    </div>
+    <div class="spec">
+      <div class="swatch frame frame--patina" style="padding: var(--s4)">
+        <span class="rivet rivet--patina rivet--tl"></span><span class="rivet rivet--patina rivet--tr"></span>
+        <span class="rivet rivet--patina rivet--bl"></span><span class="rivet rivet--patina rivet--br"></span>
+        <div class="frame-in mat-leather--worn" style="height: 100%"></div>
+      </div>
+      <div class="cap">
+        <b>Patina brass</b><code>.frame--patina · .rivet--patina</code>
+        <p>Oxidized bronze-olive instead of gleaming gold. Reserve bright <code style="display:inline">.mat-brass</code>
+           for the crest and a belt — everything load-bearing here hasn't seen a polishing rag
+           in decades.</p>
+      </div>
+    </div>
+    <div class="spec">
+      <div class="swatch mat-leather--worn" style="display:flex; align-items:center; justify-content:center; padding: var(--s5)">
+        <div class="rope rope--frayed" style="width: 144px"></div>
+      </div>
+      <div class="cap">
+        <b>Frayed rope</b><code>.rope--frayed</code>
+        <p>Same repeating gradient as <code style="display:inline">.rope</code>, patina toned down
+           and a jagged clip-path silhouette instead of a clean rounded rectangle.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="frame frame--patina" style="margin-top: var(--s5)">
+    <span class="rivet rivet--patina rivet--tl"></span><span class="rivet rivet--patina rivet--tr"></span>
+    <span class="rivet rivet--patina rivet--bl"></span><span class="rivet rivet--patina rivet--br"></span>
+    <div class="frame-in mat-leather--worn" style="padding: var(--s6); position: relative;">
+      <span class="stain" style="top: var(--s4); right: var(--s5);"></span>
+      <div class="t-painted" style="font-size: var(--t-xl)">Gym Rules</div>
+      <p style="font-size: var(--t-sm); line-height: 1.65; color: var(--bone-300); margin: var(--s4) 0 0; max-width: 52ch;">
+        No excuses. No shortcuts. Wrap your hands. Respect the ring. Anything else, take it
+        up with the Chair.
+      </p>
+    </div>
+  </div>
+  <p class="cap">
+    <b>The stain is decoration, not data.</b> <code style="display:inline">.stain</code> uses
+    <code style="display:inline">--rust</code>, a hue and saturation deliberately far from
+    <code style="display:inline">--locked</code> — dried-out, brown, nowhere near the safety
+    ladder's vivid red. It appears at most once per screen, in a fixed corner, away from any
+    control or badge. <code style="display:inline">.t-painted</code> is the plywood-sign voice:
+    a slight rotation and a rust-tinted second shadow standing in for hand lettering, without
+    masking a single glyph — Law 3 still holds.
+  </p>
+
+  <h2>Two grounds — leather vs. warm canvas</h2>
+  <p class="lede" style="margin-bottom: var(--s5)">
+    Everything above is tuned against ink. Wrap a component in <code style="display:inline">.on-canvas</code>
+    before using it on <code style="display:inline">--canvas-warm</code> — Guardian and Public
+    Onboarding surfaces — or badges mix toward black and vanish into the paper.
+  </p>
+  <div class="two" style="display:grid; gap: var(--s5); grid-template-columns: repeat(auto-fit, minmax(300px,1fr))">
+    <div class="mat-leather--raised" style="border-radius: var(--r-lg); padding: var(--s5)">
+      <div class="t-command" style="font-size: var(--t-sm); margin-bottom: var(--s4)">On Ink</div>
+      <div style="display:flex; gap: var(--s3); flex-wrap:wrap; margin-bottom: var(--s4)">
+        <span class="badge badge--cleared"><i>✓</i>Cleared</span>
+        <span class="badge badge--restricted"><i>▲</i>Restricted</span>
+      </div>
+      <input class="input" placeholder="Guardian name" style="max-width: 260px">
+    </div>
+    <div class="on-canvas" style="border-radius: var(--r-lg); padding: var(--s5); border: 1px solid rgba(0,0,0,.08)">
+      <div class="t-command" style="font-size: var(--t-sm); margin-bottom: var(--s4)">On Warm Canvas · .on-canvas</div>
+      <div style="display:flex; gap: var(--s3); flex-wrap:wrap; margin-bottom: var(--s4)">
+        <span class="badge badge--cleared"><i>✓</i>Cleared</span>
+        <span class="badge badge--restricted"><i>▲</i>Restricted</span>
+      </div>
+      <input class="input" placeholder="Guardian name" style="max-width: 260px">
+    </div>
+  </div>
 </div>
 </body>

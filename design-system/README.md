@@ -103,10 +103,22 @@ accessibility floor agree — that is not luck, it is why 55 was chosen over 56.
 - `components/surfaces.html` — chalkboard schedule, cork board, tag nav, controls
 
 ### Screens
-- `screens/command-center.html` — PPBF Command Center
-- `screens/library-shadow.html` — The Library, with Shadow's refusal protocol
-- `screens/board-workspace.html` — Board Workspace, role tags and redaction
-- `screens/capability-console.html` — Capability Management Console
+- `screens/athlete-kiosk.html` — gym-floor check-in: cleared and Layer 11 locked states
+- `screens/coach-review-queue.html` — Layer 10 queue + Shadow (Layer 20) refusal panel
+- `screens/board-workspace.html` — role binder rail, governance metrics, k-anonymity redaction
+
+### Not yet built
+- `components/forms.html` — dedicated forms sheet (waivers, consent, PIN entry) — the input
+  and select styles exist in `components/instruments.html`, but multi-field flows don't
+- `screens/capability-console.html` — the admin grid (People / PIN Mgmt / Compliance / Volunteers
+  / Scheduling / Reports / System) — the capability tile itself is done in `instruments.html`,
+  this is composition into a full screen
+- `screens/guardian-portal.html` — warm ground (`--canvas-warm`), consent renewal, minor lookup
+- `screens/public-onboarding.html` — warm ground, enrollment intake
+- A guardian/public component pass — every component built so far (badges, tiles, buttons,
+  gauges) has only been proven on the ink ground. The warm canvas-ground variants (Law 6,
+  "two grounds") are unverified — colours and shadows tuned for leather need re-checking
+  against `--canvas-warm`.
 
 ---
 
