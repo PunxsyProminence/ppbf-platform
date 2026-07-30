@@ -164,6 +164,31 @@ jobs:
             -o tsv)"
           test "$AI_KEY_REF" = "azure-ai-key"
 
+      # `az containerapp update` returns when the new revision is CREATED, not
+      # when it is serving. Run 30503641552 chatted with the app ~60s after the
+      # update and reached the PREVIOUS revision -- the gate failed on behavior
+      # the new image had already fixed. Everything after this step assumes it
+      # is talking to the revision this run just deployed, so wait until the
+      # latest revision is Running and holds 100% of traffic.
+      - name: Wait For New Revision To Take Traffic
+        run: |
+          LATEST="$(az containerapp show --name app-ppbf-staging \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.latestRevisionName -o tsv)"
+          echo "Waiting on revision $LATEST"
+          for i in $(seq 1 60); do
+            READ="$(az containerapp revision show --name app-ppbf-staging \
+              --resource-group "$RESOURCE_GROUP" --revision "$LATEST" \
+              --query "[properties.runningState, properties.trafficWeight]" -o tsv | tr '\n' ' ')"
+            echo "  $i: $READ"
+            case "$READ" in
+              "Running 100"*) exit 0 ;;
+            esac
+            sleep 5
+          done
+          echo "::error::Revision $LATEST did not reach Running/100% traffic within 5 minutes."
+          exit 1
+
       - name: Resolve Staging API Base URL
         run: |
           FQDN="$(az containerapp show --name app-ppbf-staging --resource-group "$RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)"
