@@ -588,3 +588,82 @@ h6 {
     transform: none;
   }
 }
+
+/* =========================================================
+   DEEP RETRO IMMERSION (closes gap to design mockups)
+   Applied only when data-theme="retro". Forces hard edges,
+   paper surfaces, and mechanical feel on modern Tailwind
+   utility classes so pages that still use rounded-* still
+   read as 1930s–50s gym desk.
+   ========================================================= */
+[data-theme="retro"] {
+  --radius-none: 0;
+}
+
+[data-theme="retro"] .rounded-\[28px\],
+[data-theme="retro"] .rounded-\[24px\],
+[data-theme="retro"] .rounded-2xl,
+[data-theme="retro"] .rounded-xl,
+[data-theme="retro"] .rounded-lg,
+[data-theme="retro"] .rounded-full,
+[data-theme="retro"] [class*="rounded-"] {
+  border-radius: 0 !important;
+}
+
+[data-theme="retro"] .shadow-sm,
+[data-theme="retro"] .shadow-md,
+[data-theme="retro"] .shadow-lg {
+  box-shadow: var(--shadow-md) !important;
+}
+
+/* Cards / panels → paper tickets */
+[data-theme="retro"] .bg-white {
+  background-color: var(--paper) !important;
+  border-color: var(--black) !important;
+}
+
+/* Stronger paper grain on retro body */
+[data-theme="retro"] body::before {
+  opacity: 1;
+  background-image:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='noise'><feTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3'/></filter><rect width='180' height='180' filter='url(%23noise)' opacity='0.12'/></svg>"),
+    linear-gradient(180deg, rgba(92,58,36,0.04), transparent 40%);
+  mix-blend-mode: multiply;
+}
+
+/* Buttons that aren't already .stamp / .brass-plate get hard desk feel */
+[data-theme="retro"] button:not(.stamp):not(.brass-plate):not(.leather-tag) {
+  border-radius: 0 !important;
+  box-shadow: var(--shadow-sm);
+  border-width: 2px;
+  border-style: solid;
+  border-color: var(--black);
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+[data-theme="retro"] input,
+[data-theme="retro"] select,
+[data-theme="retro"] textarea {
+  border-radius: 0 !important;
+  border: 3px solid var(--black) !important;
+  background: var(--canvas-tan-light) !important;
+  box-shadow: inset 2px 2px 0 rgba(0,0,0,0.08);
+  font-family: var(--font-mono);
+}
+
+[data-theme="retro"] input:focus,
+[data-theme="retro"] select:focus,
+[data-theme="retro"] textarea:focus {
+  outline: none;
+  border-color: var(--red-primary) !important;
+  box-shadow: inset 2px 2px 0 rgba(0,0,0,0.08), 0 0 0 2px rgba(139,0,0,0.2);
+}
+
+/* Header already good; ensure brass-ish feel */
+[data-theme="retro"] header.sticky {
+  background: linear-gradient(180deg, var(--brass-light), var(--brass), var(--brass-dark)) !important;
+  border-bottom: 3px solid var(--black) !important;
+  box-shadow: var(--shadow-md) !important;
+}
