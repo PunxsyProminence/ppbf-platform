@@ -131,6 +131,15 @@ jobs:
       # production ever runs it. Production states it explicitly false until
       # staging has proven a full enqueue -> drain -> render cycle.
       #
+      # AZURE_AI_EMBEDDING_DEPLOYMENT_NAME names the embedding deployment for
+      # semantic Library search (#102). Staging first, like every flag. The
+      # value is a deployment NAME, not a secret (the hygiene test permits
+      # *_NAME literals), and the owner creates the deployment with exactly
+      # this name; until it exists, embedText fails closed and search stays
+      # on the keyword path by design, so this line is safe to ship ahead of
+      # the deployment. Production stays unset (= disabled) until staging has
+      # proven semantic results through real use.
+      #
       # PPBF_INTAKE_PROMOTION_ENABLED lets an approved intake case be promoted
       # to real athlete/guardian/domain records (review-action 'promote').
       # Default OFF in code. Enabled HERE FIRST, same rollout as the worker:
@@ -168,6 +177,7 @@ jobs:
               PPBF_SHADOW_PROVIDER_TIMEOUT_MS=120000 \
               PPBF_SHADOW_WORKER_ENABLED=true \
               PPBF_INTAKE_PROMOTION_ENABLED=true \
+              AZURE_AI_EMBEDDING_DEPLOYMENT_NAME=text-embedding-3-small \
               PPBF_PILOT_BOOTSTRAP_KEY=secretref:ppbf-pilot-bootstrap-key \
               PPBF_PILOT_DEFAULT_ORG_ID=secretref:ppbf-pilot-default-org-id \
               PPBF_PILOT_SHADOW_CONTAINER=secretref:ppbf-pilot-shadow-container \
