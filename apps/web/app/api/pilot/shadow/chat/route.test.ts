@@ -15,7 +15,8 @@ import {
 } from '@/src/server/pilot/shadowConversations';
 import { enforceShadowRateLimit } from '@/src/server/pilot/shadowRateLimit';
 import { classifyRequest } from '@/src/server/pilot/shadowClassifier';
-import { executeHeavyBagSync } from '@/src/server/pilot/shadowHeavyBag';
+import { executeHeavyBagAsync, executeHeavyBagSync } from '@/src/server/pilot/shadowHeavyBag';
+import { isShadowWorkerEnabled } from '@/src/server/pilot/shadowJobWorker';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { retrieveShadowEvidenceBundle } from '@/src/server/pilot/shadowEvidence';
 import { getBoardSummary } from '@/src/server/pilot/boardSummary';
@@ -98,6 +99,12 @@ jest.mock('@/src/server/pilot/shadowHeavyBag', () => ({
   shouldRunAsync: jest.fn(() => false),
 }));
 
+// Default false: every pre-worker test runs against the worker-disabled
+// behavior it was written for. The queued-path tests flip it explicitly.
+jest.mock('@/src/server/pilot/shadowJobWorker', () => ({
+  isShadowWorkerEnabled: jest.fn(() => false),
+}));
+
 jest.mock('@/src/server/pilot/shadowUnlocks', () => ({
   evaluateShadowUnlockState: jest.fn(),
   isFeatureEnabled: jest.fn(() => false),
@@ -178,6 +185,8 @@ const mockQueueHumanReview = jest.mocked(queueHumanReview);
 const mockEnforceRateLimit = jest.mocked(enforceShadowRateLimit);
 const mockClassifyRequest = jest.mocked(classifyRequest);
 const mockExecuteHeavyBagSync = jest.mocked(executeHeavyBagSync);
+const mockExecuteHeavyBagAsync = jest.mocked(executeHeavyBagAsync);
+const mockIsShadowWorkerEnabled = jest.mocked(isShadowWorkerEnabled);
 const mockRetrieveEvidence = jest.mocked(retrieveShadowEvidenceBundle);
 const mockBoardSummary = jest.mocked(getBoardSummary);
 const mockGrowthMetrics = jest.mocked(getGrowthMetrics);
@@ -791,5 +800,89 @@ describe('Omega cross-organization breadth', () => {
     await POST(postRequest({ message: CROSS_GYM_QUESTION }));
 
     expect(systemPrompt()).toContain('OMEGA SCOPE): UNAVAILABLE');
+  });
+});
+
+describe('background session types via the job worker', () => {
+  test('worker disabled: a scout report request is refused with an honest 503, never enqueued', async () => {
+    // Pre-worker behavior, now pinned: a queue nothing drains must refuse
+    // work, not strand it. This is also the behavior of every environment
+    // that has not set PPBF_SHADOW_WORKER_ENABLED.
+    const response = await POST(postRequest({
+      message: 'Generate a scout report for my training group.',
+      sessionType: 'scout_report',
+    }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(payload.state).toBe('degraded');
+    expect(payload.error).toBe('Background worker unavailable.');
+    expect(mockExecuteHeavyBagAsync).not.toHaveBeenCalled();
+  });
+
+  test('worker enabled: the same request enqueues and returns queued with the job id', async () => {
+    mockIsShadowWorkerEnabled.mockReturnValue(true);
+    mockExecuteHeavyBagAsync.mockResolvedValue({
+      mode: 'async',
+      jobId: 'job-123',
+      routing: {} as never,
+      sessionType: 'scout_report',
+    });
+
+    const response = await POST(postRequest({
+      message: 'Generate a scout report for my training group.',
+      sessionType: 'scout_report',
+    }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.success).toBe(true);
+    expect(payload.state).toBe('queued');
+    expect(payload.async).toBe(true);
+    expect(payload.jobId).toBe('job-123');
+    // No model answered yet, so no model may be named.
+    expect(payload.modelUsed).toBeUndefined();
+
+    // The enqueue writes pilot.shadow_jobs outside any local catch, so the
+    // route must have demanded that table's readiness for this request.
+    expect(jest.mocked(assertShadowRuntimeReadiness)).toHaveBeenCalledWith({
+      requiredTables: ['shadow_jobs'],
+    });
+
+    // The job carries the authenticated actor and session type -- the
+    // processor's re-validation depends on this snapshot being right.
+    expect(mockExecuteHeavyBagAsync).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 'account-1',
+      organizationId: 'org-session',
+      role: 'coach',
+      sessionType: 'scout_report',
+    }));
+
+    // Queue-only modes produce documents read from job output, never
+    // conversation turns: nothing may be persisted to a conversation.
+    expect(mockAppendConversationExchange).not.toHaveBeenCalled();
+  });
+
+  test('an athlete cannot reach the queue through a requested session type', async () => {
+    mockIsShadowWorkerEnabled.mockReturnValue(true);
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'athlete' }));
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'RESEARCH NEEDED — general guidance only.' } }] }),
+    }) as unknown as typeof fetch;
+
+    const response = await POST(postRequest({
+      message: 'Generate a scout report.',
+      sessionType: 'scout_report',
+    }));
+    const payload = await response.json();
+
+    // The manual session-type override is role-gated upstream: for an
+    // athlete the requested type is discarded and the message flows down
+    // the ordinary quick-round path instead of into the queue.
+    expect(response.status).toBe(200);
+    expect(payload.state).toBe('ok');
+    expect(payload.sessionType).toBe('quick_round');
+    expect(mockExecuteHeavyBagAsync).not.toHaveBeenCalled();
   });
 });

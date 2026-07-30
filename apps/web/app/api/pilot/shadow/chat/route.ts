@@ -23,7 +23,8 @@ import { classifyRequest, type ShadowTier } from '@/src/server/pilot/shadowClass
 import { buildShadowContext } from '@/src/server/pilot/shadowContextBuilder';
 import { describeDeployment, tierToSessionType } from '@/src/server/pilot/shadowRouter';
 import { classifyProfileTier, buildPersonalizationPrompt } from '@/src/server/pilot/shadowProfiling';
-import { executeHeavyBagSync } from '@/src/server/pilot/shadowHeavyBag';
+import { executeHeavyBagAsync, executeHeavyBagSync } from '@/src/server/pilot/shadowHeavyBag';
+import { isShadowWorkerEnabled } from '@/src/server/pilot/shadowJobWorker';
 import {
   evaluateShadowUnlockState,
   isFeatureEnabled,
@@ -342,18 +343,46 @@ Only describe a claim as supported, proven, or evidence-based when verified evid
     : '';
   const capabilityAuthorizedPrompt = `${trustBoundaryPrompt}${personalization}`;
 
-  // Background generation remains fail-closed until the worker can carry the
-  // exact server-owned evidence bundle through completion and persist its
-  // citations. Heavy Bag therefore runs synchronously even when preferAsync is
-  // requested. Unsupported async-only session types are rejected before this
-  // function is reached.
-
   const prompt = `${capabilityAuthorizedPrompt}
 
 ## AUTHORIZED REQUEST CONTEXT
 ${contextOutput.context}
 
 Use only this authorized role and scope. Do not infer or disclose data outside it.`;
+
+  // Scout reports and board summaries are queue-only modes: they produce
+  // documents read from job output, never conversation turns, and their
+  // prompts forbid invented citations and demand RESEARCH NEEDED labels --
+  // so enqueueing them is honest today. The POST handler has already
+  // refused these session types when the worker is disabled, so a job
+  // enqueued here is one the worker will actually drain.
+  //
+  // Interactive Heavy Bag stays synchronous even when preferAsync is
+  // requested: its answers persist into the conversation with citations,
+  // and that persistence does not exist for background completion yet.
+  // Declining is honest; answering without the receipts would not be.
+  if (sessionType === 'scout_report' || sessionType === 'board_summary') {
+    const heavyBagResult = await executeHeavyBagAsync({
+      message,
+      userId,
+      organizationId,
+      role: userRole as PilotRole,
+      userProfile,
+      tierResult,
+      contextOutput,
+      classification,
+      sessionType,
+      athleteId,
+      systemPromptBase: prompt,
+      conversationHistory,
+    });
+    return {
+      llmResponse: 'Queued for background processing. The result will appear when SHADOW completes it.',
+      resolvedAsync: true,
+      asyncJobId: heavyBagResult.jobId,
+      state: 'queued',
+    };
+  }
 
   if (sessionType === 'heavy_bag') {
     try {
@@ -584,7 +613,13 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
         { status: 400 },
       );
     }
-    if (sessionType === 'scout_report' || sessionType === 'board_summary') {
+    if ((sessionType === 'scout_report' || sessionType === 'board_summary') && isShadowWorkerEnabled()) {
+      // The worker is live, so these queue-only modes are real: the request
+      // continues through every gate below and routeLlmCall enqueues it.
+      // Enqueueing writes pilot.shadow_jobs outside any local catch, so its
+      // absence must fail this request the readable way.
+      await assertShadowRuntimeReadiness({ requiredTables: ['shadow_jobs'] });
+    } else if (sessionType === 'scout_report' || sessionType === 'board_summary') {
       return NextResponse.json(
         {
           success: false,
