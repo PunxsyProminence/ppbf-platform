@@ -11,7 +11,7 @@ import {
   loadAuthoritativeRoleSession,
 } from '@/components/roleSession';
 import { createMicrosoftSignInHandler } from '@/src/client/loginPageHelpers';
-import { ThemeToggle, useThemeOptional } from '@/components/ThemeProvider';
+import { useThemeOptional } from '@/components/ThemeProvider';
 
 interface LoginAnnouncement {
   id: string;
@@ -348,7 +348,7 @@ function LoginPageContent() {
                       className="space-y-4"
                     >
                       <p className="font-mono text-xs uppercase tracking-wide text-[var(--gray-dark)]">
-                        Enter Account ID & PIN. Ask coach if you need a new one.
+                        Enter Account ID and PIN. Ask coach if you need a new one.
                       </p>
                       <div>
                         <label
@@ -513,7 +513,7 @@ function LoginPageContent() {
                       <p className={`text-xs font-black uppercase tracking-[0.15em] ${selectedMethod === 'pin' ? 'text-[var(--red-primary)]' : 'text-[var(--gray-dark)]'}`}>
                         PIN
                       </p>
-                      <p className="mt-1 text-[11px] leading-relaxed text-[var(--gray-medium)]">Sign in with Account ID & PIN</p>
+                      <p className="mt-1 text-[11px] leading-relaxed text-[var(--gray-medium)]">Sign in with Account ID and PIN</p>
                     </div>
                     {selectedMethod === 'pin' && <span className="text-xl">✓</span>}
                   </div>
