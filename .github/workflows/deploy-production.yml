@@ -129,6 +129,24 @@ jobs:
       #
       # --set-env-vars updates the listed variables and leaves the rest in
       # place; it cannot unset a stale value already on the app.
+      #
+      # PPBF_SHADOW_MAX_COMPLETION_TOKENS was 4096 here while staging ran 8192,
+      # and 4096 is below what a reasoning deployment actually spends on a
+      # demanding prompt. Completion tokens measured 2026-07-29
+      # (shadowRouter.ts:31-35): luna 4110, mini 5168, sol 5579, gpt-5 6352 --
+      # every one of them above 4096. Azure counts reasoning tokens against this
+      # budget and returns HTTP 200 with finish_reason "length" and NO content
+      # when it runs out, which this app reads as failure and answers with
+      # DEGRADED_RESPONSE ("temporarily unavailable ... try again later"). So a
+      # permanent misconfiguration was being shown to users as a transient
+      # outage, on exactly the long-form questions SHADOW exists to answer.
+      # Short prompts (measured 964-2054 tokens) fit in 4096 and were fine,
+      # which is why this read as intermittent rather than broken.
+      #
+      # 8192 is the value staging has been exercising, and is also
+      # MAX_COMPLETION_TOKENS_CEILING in the chat route -- so this aligns the two
+      # environments rather than inventing a third number. Headroom is not
+      # billed: charges follow tokens produced, not the budget.
       - name: Deploy Tested Digest to Azure Container App (Production)
         run: |
           az containerapp update \
@@ -153,7 +171,7 @@ jobs:
               AZURE_AI_DEPLOYMENT_NAME=secretref:azure-ai-deployment-name \
               AZURE_AI_API_VERSION=secretref:azure-ai-api-version \
               AZURE_AI_KEY=secretref:azure-ai-key \
-              PPBF_SHADOW_MAX_COMPLETION_TOKENS=4096 \
+              PPBF_SHADOW_MAX_COMPLETION_TOKENS=8192 \
               PPBF_DURABLE_RATE_LIMIT=true
 
       - name: Resolve Production Base URL
