@@ -127,9 +127,29 @@ own PR:
 
 ## 8. Deploy and environment rules
 
-- **AIs never dispatch production workflows.** Staging dispatches are the
-  deploy coordinator's job; production dispatches are the human's. The
-  production deploy takes only a digest that already passed the gate.
+- **Only the deploy coordinator dispatches production workflows, and only
+  because GitHub — not this document — enforces the human checkpoint.** The
+  `production` environment carries a `required_reviewers` protection rule, so
+  every production deploy and every production migration halts at `pending`
+  until the owner approves it in GitHub. Dispatching queues the request; it
+  cannot ship anything. Every other AI session dispatches nothing at all, in
+  any environment. Changed 2026-07-30: the rule previously read "production
+  dispatches are the human's", which predated that protection rule and made
+  the owner retype inputs they were reading off the coordinator anyway —
+  a copying step, not an independent check, and it produced its own errors.
+- **The digest and the SHA must describe the same commit.** The production
+  deploy takes only a digest that already passed the gate, and the guard
+  independently re-checks `confirm_sha` against whatever `refs/heads/main`
+  resolves to at dispatch time. So a digest goes stale the moment anything
+  merges: validate, then dispatch immediately, or re-validate. Never pair a
+  digest built from one commit with a `confirm_sha` naming another to satisfy
+  the guard — that deploys an image the SHA does not describe.
+- **`migrations_complete` is an attestation, not a check** — the workflow
+  says so itself. Before typing CONFIRMED, diff `infra/` across the range
+  being deployed. A migration file alone is not the whole story: confirm a
+  runner actually applies it (the per-migration runners in
+  `apps/web/scripts/` list their SQL files explicitly, and a new file may be
+  added to an existing runner rather than getting its own workflow choice).
 - **The deploy coordinator is the workspace (VS Code) Claude instance.**
   Handed off 2026-07-30 by the remote session that held the role before it.
   Every other AI session — the remote work-and-merge session included — does
