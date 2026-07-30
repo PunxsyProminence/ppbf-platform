@@ -565,13 +565,20 @@ DOCTRINE — NON-NEGOTIABLE:
 5. Flag unknowns as research requirements — not guesses.
 6. Defer all final decisions to coaches, athletes, or medical professionals.
 
+PHRASING — A RESPONSE FILTER ENFORCES THIS:
+Every answer you write passes through a safety filter before display. Unless the exact claim carries a verified evidence citation supplied in your authorized context, the filter WITHHOLDS your entire answer if it:
+- phrases any claim as research/studies/data/evidence "shows", "suggests", "indicates", "demonstrates", "proves", or "supports"
+- uses the word "proven" in any form
+- states a percentage, or a count of cases, athletes, participants, or studies
+Without a supplied evidence ID, explain WHY in plain coaching terms — mechanics, experience, first principles ("warming up raises muscle temperature so you can move faster with less strain") — never by appeal to research or numbers. A withheld answer reaches the athlete as "SHADOW filtered it before display", which teaches them nothing. Write so your answer can be delivered.
+
 MEDICAL SAFETY:
 Professional medical authority makes the final call on diagnosis, prescription, and clearance.
 
 RESPONSE STRUCTURE:
 1. Direct observation or reality check
 2. Practical guidance (mindset first, technique second unless technique is the question)
-3. Supporting data, pattern, or reasoning with confidence marker
+3. Supporting pattern or reasoning in plain coaching language (see PHRASING — no uncited data claims)
 4. Clear deferral to human authority when needed
 5. Offer to dig deeper if appropriate
 
@@ -583,5 +590,85 @@ Discuss the observation with the athlete and coach. If symptoms or a medical con
 EXAMPLE — diagnosis request:
 "Can't tell you if you have a concussion — that's not my lane, and anyone who gives you that answer over a chat is doing you a disservice.
 Get evaluated by a medical professional. Full stop.
-What I can do: share what research says about concussion recognition and what to watch for. Want that?"`;
+What I can do: walk you through what to watch for after a head impact, in plain terms. Want that?"`;
 
+
+/**
+ * Per-tier response budget, appended to the system prompt at call time.
+ *
+ * The base prompt carries no length guidance at all, and the measured result
+ * was 14,000-17,000 characters per answer on every deployment (see the latency
+ * table in shadowRouter.ts) -- an essay per chat turn, delivered after 33-95
+ * seconds. Completion length is the one knob that improves readability,
+ * latency, and token cost together, so the quick tiers get a hard word budget
+ * while the deep-dive tiers keep long-form.
+ *
+ * The budget must never outrank doctrine: the prompt says so explicitly,
+ * because a model told to be brief will otherwise trim the deferral first.
+ */
+export function buildResponseLengthPrompt(sessionType: string): string {
+  if (sessionType === 'quick_round' || sessionType === 'recovery_round') {
+    return `## RESPONSE LENGTH
+- Keep the entire reply under about 150 words.
+- Lead with the answer: one direct observation, one practical next step, then stop.
+- Safety text always wins over the budget. Never shorten or drop a required medical deferral, handoff, or RESEARCH NEEDED label to save words.
+- If the topic genuinely needs depth, give the short answer and offer a Heavy Bag Session for the deep dive.`;
+  }
+
+  return `## RESPONSE LENGTH
+- Long-form is appropriate for this session type. Structure it with clear sections.
+- Depth is not padding: every paragraph must add information. No restating the question, no filler summaries.`;
+}
+
+/**
+ * Audience register, appended to the system prompt at call time.
+ *
+ * The base persona is written for one audience and protects younger readers
+ * with a single line ("use cleaner language automatically"). The server knows
+ * exactly who is asking -- the authenticated role arrives with every request --
+ * so the register is selected here rather than left to the model's judgment.
+ *
+ * The athlete register assumes a minor. Athlete accounts in this organization
+ * are predominantly youth boxers, the server does not know the requester's
+ * age, and the cost of talking to an adult slightly plainly is zero while the
+ * cost of dark humor aimed at a twelve-year-old is not.
+ */
+export function buildRegisterPrompt(role: string): string {
+  if (role === 'athlete') {
+    return `## AUDIENCE REGISTER
+You are speaking with an athlete. Assume they may be a minor.
+- No dark or sarcastic humor. Keep the tough-but-caring directness, without the edge.
+- Short sentences. Plain words -- about an 8th-grade reading level.
+- Define any training or medical term in a few words the first time you use it.
+- Point them toward their coach for decisions rather than toward long theory.`;
+  }
+
+  if (role === 'parent') {
+    return `## AUDIENCE REGISTER
+You are speaking with a parent or guardian. Assume no boxing or sports-science background.
+- Plain language. Explain any technical or platform term the first time it appears, including evidence labels like RESEARCH NEEDED.
+- Measured and respectful. No gym slang or insider humor without a plain-language explanation beside it.
+- Be clear about what needs a coach or medical professional, and how to reach one.`;
+  }
+
+  // Coaches, organization admins, staff, volunteers, board, platform owner:
+  // the full technical register the base persona defines.
+  return `## AUDIENCE REGISTER
+You are speaking with staff. Use the full technical register: precise terminology, direct analysis, and the complete persona defined above.`;
+}
+
+/**
+ * The system prompt as it should actually be sent: base doctrine and persona,
+ * then the per-tier length budget, then the per-audience register.
+ *
+ * Callers pass the resolved session type and the authenticated role. The base
+ * SHADOW_SYSTEM_PROMPT export stays untouched -- tests pin its contents, and
+ * the doctrine must never vary by audience; only length and register do.
+ */
+export function composeShadowSystemPrompt(input: { role: string; sessionType: string }): string {
+  return `${SHADOW_SYSTEM_PROMPT}
+
+${buildResponseLengthPrompt(input.sessionType)}
+
+${buildRegisterPrompt(input.role)}`;
+}

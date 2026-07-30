@@ -164,6 +164,31 @@ jobs:
             -o tsv)"
           test "$AI_KEY_REF" = "azure-ai-key"
 
+      # `az containerapp update` returns when the new revision is CREATED, not
+      # when it is serving. Run 30503641552 chatted with the app ~60s after the
+      # update and reached the PREVIOUS revision -- the gate failed on behavior
+      # the new image had already fixed. Everything after this step assumes it
+      # is talking to the revision this run just deployed, so wait until the
+      # latest revision is Running and holds 100% of traffic.
+      - name: Wait For New Revision To Take Traffic
+        run: |
+          LATEST="$(az containerapp show --name app-ppbf-staging \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.latestRevisionName -o tsv)"
+          echo "Waiting on revision $LATEST"
+          for i in $(seq 1 60); do
+            READ="$(az containerapp revision show --name app-ppbf-staging \
+              --resource-group "$RESOURCE_GROUP" --revision "$LATEST" \
+              --query "[properties.runningState, properties.trafficWeight]" -o tsv | tr '\n' ' ')"
+            echo "  $i: $READ"
+            case "$READ" in
+              "Running 100"*) exit 0 ;;
+            esac
+            sleep 5
+          done
+          echo "::error::Revision $LATEST did not reach Running/100% traffic within 5 minutes."
+          exit 1
+
       - name: Resolve Staging API Base URL
         run: |
           FQDN="$(az containerapp show --name app-ppbf-staging --resource-group "$RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)"
@@ -209,6 +234,32 @@ jobs:
           test -n "$ORG_ID"
           echo "::add-mask::$ORG_ID"
           echo "GATE_DEFAULT_ORG_ID=$ORG_ID" >> "$GITHUB_ENV"
+
+      # The gate deliberately provisions nothing (see gate-session.mjs), so the
+      # administrator fixture it authenticates as must already exist. It did in
+      # the old shared database, but staging PostgreSQL was recreated on
+      # 2026-07-26 and the first wired gate run (30497491164) refused with
+      # "Gate fixture account org_admin_shadow does not exist". This is the
+      # explicit provisioning step: idempotent, visible in the run log, and
+      # scoped to the administrator only -- the athlete and guardian fixtures
+      # are created by the gate through the real intake-promotion API, which is
+      # part of what the gate is testing.
+      - name: Provision Gate Fixture Accounts
+        if: inputs.enable_shadow_gate
+        env:
+          AZURE_POSTGRES_CONNECTION_STRING: ${{ env.GATE_DB_CONNECTION }}
+          PPBF_PILOT_DEFAULT_ORG_ID: ${{ env.GATE_DEFAULT_ORG_ID }}
+          PILOT_ADMIN_ACCOUNT_ID: org_admin_shadow
+          # Same identities the gate step passes below: the provisioner creates
+          # the athlete directly (intake promotion cannot -- document approval
+          # is unreachable until the review feature is built, see the gate's
+          # known-gap branch), and when promotion works again both paths upsert
+          # the same rows.
+          PILOT_SHADOW_ATHLETE_ACCOUNT_ID: gate_shadow_athlete
+          PILOT_SHADOW_ATHLETE_PIN: "224466"
+          PILOT_SHADOW_ATHLETE_ID: GATE-SHADOW-ATH-1
+        run: |
+          npm --prefix apps/web run gate:pilot:fixtures
 
       # The first enabled run of this gate (30485899526, 2026-07-29) showed the
       # step was never fully wired: the script hard-requires the fixture

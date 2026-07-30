@@ -294,8 +294,19 @@ const isMainModule = process.argv[1] === fileURLToPath(import.meta.url);
 if (isMainModule) {
   try {
     await run();
-  } catch {
+  } catch (error) {
     console.error('PILOT SHADOW RUNTIME MIGRATION FAIL');
+    // Every error this script throws on purpose is a bare machine token
+    // (MISSING_<VAR>, POSTGRES_TARGET_MISMATCH, ...) that carries no secret
+    // material. Raw error objects stay unprinted -- driver errors can embed
+    // connection details, and the contract test enforces that -- but a FAIL
+    // with no reason at all cost a debugging round-trip on run 30497857832,
+    // where the cause was simply MISSING_PPBF_EXPECTED_POSTGRES_HOSTNAME.
+    // So: print exactly the safe tokens, and nothing else.
+    const message = error instanceof Error ? error.message : '';
+    if (/^[A-Z0-9_]+$/.test(message)) {
+      console.error(message);
+    }
     process.exit(1);
   }
 }
