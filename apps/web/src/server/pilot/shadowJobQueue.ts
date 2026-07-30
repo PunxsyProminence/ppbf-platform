@@ -317,11 +317,12 @@ export async function claimNextJob(jobType?: JobType): Promise<ShadowJob | null>
          lease_expires_at = NOW() + ($2 * INTERVAL '1 second')
      FROM next_job
      WHERE jobs.job_id = next_job.job_id
-     RETURNING job_id, job_type, organization_id, account_id, subject_id, role,
-               status, input_payload, output_payload, error_message, safety_status,
-               priority, retry_count, max_retries, lease_token, lease_expires_at,
-               created_at, started_at,
-               completed_at, expires_at`,
+     RETURNING jobs.job_id, jobs.job_type, jobs.organization_id, jobs.account_id,
+               jobs.subject_id, jobs.role, jobs.status, jobs.input_payload,
+               jobs.output_payload, jobs.error_message, jobs.safety_status,
+               jobs.priority, jobs.retry_count, jobs.max_retries, jobs.lease_token,
+               jobs.lease_expires_at, jobs.created_at, jobs.started_at,
+               jobs.completed_at, jobs.expires_at`,
     [jobType ?? null, JOB_LEASE_SECONDS],
   );
 
