@@ -62,7 +62,7 @@ export default function CoachVideoAnalysisPage() {
   const loadVideos = () => {
     void (async () => {
       try {
-        const res = await fetch(`${apiBase()}/api/pilot/video/list`);
+        const res = await fetch(`${apiBase()}/api/pilot/video/list`, { credentials: 'include' });
         if (!res.ok) throw new Error('Failed to load video library');
         const data = (await res.json()) as { items: VideoSession[] };
         setVideos(data.items ?? []);
@@ -78,6 +78,7 @@ export default function CoachVideoAnalysisPage() {
     void (async () => {
       try {
         const res = await fetch(`${apiBase()}/api/pilot/shadow/observation-projection`, {
+        credentials: 'include',
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ limit: 30 }),
@@ -103,7 +104,8 @@ export default function CoachVideoAnalysisPage() {
       form.append('title', uploadTitle || file.name);
       form.append('notes', uploadNotes);
       if (uploadAthleteId.trim()) form.append('athlete_id', uploadAthleteId.trim());
-      const res = await fetch(`${apiBase()}/api/pilot/video/upload`, { method: 'POST', body: form });
+      const res = await fetch(`${apiBase()}/api/pilot/video/upload`, {
+        credentials: 'include', method: 'POST', body: form });
       if (!res.ok) {
         const err = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(err.error ?? `Upload failed (${res.status})`);
@@ -122,7 +124,7 @@ export default function CoachVideoAnalysisPage() {
   const openVideo = async (videoId: string) => {
     setLoadingVideoId(videoId);
     try {
-      const res = await fetch(`${apiBase()}/api/pilot/video/${videoId}`);
+      const res = await fetch(`${apiBase()}/api/pilot/video/${videoId}`, { credentials: 'include' });
       if (!res.ok) throw new Error('Could not load video');
       const data = (await res.json()) as { stream_url: string; title: string };
       setActiveVideo({ url: data.stream_url, title: data.title });

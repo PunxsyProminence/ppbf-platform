@@ -42,7 +42,6 @@ function AnnouncementCard({ item }: Readonly<{ item: LoginAnnouncement }>) {
 type LoginMethod = 'microsoft' | 'pin';
 
 interface LoginTabProps {
-  announcements: LoginAnnouncement[];
   signInWithMicrosoft: () => void;
   loginAccountId: string;
   setLoginAccountId: (value: string) => void;
@@ -240,16 +239,15 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
               Open Simple Athlete PIN Sign-In
             </Link>
           </div>
+          {/* Static gym notice. This block used to present itself as "Latest
+              Updates" backed by a fetch that could never succeed: the
+              announcements endpoint requires an authenticated session, and
+              everyone on the login page is signed out by definition. The
+              fetch failed silently on every load and the panel only ever
+              showed the hardcoded default -- so now it says it is static. */}
           <div className="rounded-lg border border-[rgba(0,0,0,0.12)] bg-white p-3">
-            <p className="text-xs font-semibold text-[var(--black)] mb-2">📢 Latest Updates</p>
-            <div className="space-y-2">
-              {props.announcements.slice(0, 2).map((item) => (
-                <AnnouncementCard key={item.id} item={item} />
-              ))}
-            </div>
-            {props.announcements.length === 0 && (
-              <p className="text-xs text-[var(--gray-medium)] italic">No announcements yet</p>
-            )}
+            <p className="text-xs font-semibold text-[var(--black)] mb-2">📢 Gym Notice</p>
+            <AnnouncementCard item={DEFAULT_ANNOUNCEMENT} />
           </div>
         </div>
       </div>
@@ -261,7 +259,6 @@ function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [selectedMethod, setSelectedMethod] = useState<LoginMethod>('pin');
-  const [announcements, setAnnouncements] = useState<LoginAnnouncement[]>([DEFAULT_ANNOUNCEMENT]);
   const [loginAccountId, setLoginAccountId] = useState('');
   const [loginPin, setLoginPin] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
@@ -339,44 +336,6 @@ function LoginPageContent() {
     return () => controller.abort();
   }, [router]);
 
-  useEffect(() => {
-    void (async () => {
-      const response = await fetch(`${apiBase()}/api/pilot/announcements/get`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ limit: 12 }),
-      });
-
-      if (!response.ok) {
-        return;
-      }
-
-      const payload = (await response.json().catch(() => ({ ok: false }))) as {
-        ok?: boolean;
-        announcements?: Array<{
-          announcement_id: string;
-          message: string;
-          author_name: string;
-          author_role: ClubRole | 'system';
-          created_at: string;
-        }>;
-      };
-
-      if (!payload.ok || !Array.isArray(payload.announcements) || payload.announcements.length === 0) {
-        return;
-      }
-
-      const normalized: LoginAnnouncement[] = payload.announcements.map((item) => ({
-        id: item.announcement_id,
-        message: item.message,
-        authorName: item.author_name,
-        authorRole: item.author_role,
-        createdAt: new Date(item.created_at).toLocaleString(),
-      }));
-
-      setAnnouncements(normalized);
-    })();
-  }, []);
 
   async function loginWithPin() {
     const acctId = loginAccountId.trim();
@@ -480,7 +439,6 @@ function LoginPageContent() {
 
           <div className="space-y-6 px-8 py-8">
             <LoginTabContent
-              announcements={announcements}
               signInWithMicrosoft={microsoftSignIn}
               loginAccountId={loginAccountId}
               setLoginAccountId={setLoginAccountId}

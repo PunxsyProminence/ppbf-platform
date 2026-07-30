@@ -49,6 +49,7 @@ export default function ResearchIntakePage() {
     void (async () => {
       try {
         const response = await fetch(`${apiBase()}/api/pilot/shadow/research-projection`, {
+        credentials: 'include',
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ limit: 120 }),
@@ -71,7 +72,7 @@ export default function ResearchIntakePage() {
   useEffect(() => {
     void (async () => {
       try {
-        const response = await fetch(`${apiBase()}/api/pilot/shadow/research-requirements`);
+        const response = await fetch(`${apiBase()}/api/pilot/shadow/research-requirements`, { credentials: 'include' });
 
         if (!response.ok) {
           throw new Error('Unable to load SHADOW research requirements.');
@@ -101,6 +102,7 @@ export default function ResearchIntakePage() {
 
     try {
       const response = await fetch(`${apiBase()}/api/pilot/shadow/research-requirements`, {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -156,6 +158,7 @@ export default function ResearchIntakePage() {
 
     try {
       const response = await fetch(`${apiBase()}/api/pilot/shadow/research-requirements`, {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

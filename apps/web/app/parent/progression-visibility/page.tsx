@@ -37,8 +37,9 @@ export default function ParentProgressionVisibilityPage() {
     void (async () => {
       try {
         const [observationResponse, requirementResponse] = await Promise.all([
-          fetch(`${apiBase()}/api/pilot/shadow/observation-projection`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 8 }) }),
-          fetch(`${apiBase()}/api/pilot/shadow/research-requirements`),
+          fetch(`${apiBase()}/api/pilot/shadow/observation-projection`, {
+        credentials: 'include', method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 8 }) }),
+          fetch(`${apiBase()}/api/pilot/shadow/research-requirements`, { credentials: 'include' }),
         ]);
 
         if (!observationResponse.ok || !requirementResponse.ok) {

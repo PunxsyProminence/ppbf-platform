@@ -46,8 +46,8 @@ export default function CoachProgressionIntelligencePage() {
         if (!selectedAthlete) return;
 
         const [gapsRes, assignRes] = await Promise.all([
-          fetch(`${apiBase()}/api/pilot/progression/gaps?athlete_id=${selectedAthlete}`),
-          fetch(`${apiBase()}/api/pilot/progression/assignments?athlete_id=${selectedAthlete}`),
+          fetch(`${apiBase()}/api/pilot/progression/gaps?athlete_id=${selectedAthlete}`, { credentials: 'include' }),
+          fetch(`${apiBase()}/api/pilot/progression/assignments?athlete_id=${selectedAthlete}`, { credentials: 'include' }),
         ]);
 
         if (!gapsRes.ok || !assignRes.ok) {
@@ -74,6 +74,7 @@ export default function CoachProgressionIntelligencePage() {
 
     try {
       const res = await fetch(`${apiBase()}/api/pilot/progression/gaps`, {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -91,7 +92,7 @@ export default function CoachProgressionIntelligencePage() {
       setNewGap({ gap_type: 'technique', gap_description: '', severity: 'medium' });
 
       // Reload gaps
-      const reloadRes = await fetch(`${apiBase()}/api/pilot/progression/gaps?athlete_id=${selectedAthlete}`);
+      const reloadRes = await fetch(`${apiBase()}/api/pilot/progression/gaps?athlete_id=${selectedAthlete}`, { credentials: 'include' });
       if (reloadRes.ok) {
         const data = (await reloadRes.json()) as { items?: ProgressionGap[] };
         setGaps(data.items ?? []);

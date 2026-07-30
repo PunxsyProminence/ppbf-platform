@@ -47,7 +47,7 @@ export default function AthleteVideoAnalysisPage() {
   useEffect(() => {
     void (async () => {
       try {
-        const res = await fetch(`${apiBase()}/api/pilot/video/list`);
+        const res = await fetch(`${apiBase()}/api/pilot/video/list`, { credentials: 'include' });
         if (!res.ok) throw new Error('Failed to load film library');
         const data = (await res.json()) as { items: VideoSession[] };
         setVideos(data.items ?? []);
@@ -58,6 +58,7 @@ export default function AthleteVideoAnalysisPage() {
     void (async () => {
       try {
         const response = await fetch(`${apiBase()}/api/pilot/shadow/observation-projection`, {
+        credentials: 'include',
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ limit: 30 }),
@@ -74,7 +75,7 @@ export default function AthleteVideoAnalysisPage() {
   const openVideo = async (videoId: string) => {
     setLoadingVideoId(videoId);
     try {
-      const res = await fetch(`${apiBase()}/api/pilot/video/${videoId}`);
+      const res = await fetch(`${apiBase()}/api/pilot/video/${videoId}`, { credentials: 'include' });
       if (!res.ok) throw new Error('Could not load video');
       const data = (await res.json()) as { stream_url: string; title: string };
       setActiveVideo({ url: data.stream_url, title: data.title });

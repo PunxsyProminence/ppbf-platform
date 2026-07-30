@@ -33,7 +33,7 @@ export default function PublicationWorkflowPage() {
   useEffect(() => {
     void (async () => {
       try {
-        const response = await fetch(`${apiBase()}/api/pilot/shadow/research-requirements`);
+        const response = await fetch(`${apiBase()}/api/pilot/shadow/research-requirements`, { credentials: 'include' });
         if (!response.ok) {
           throw new Error('Unable to load SHADOW research requirements.');
         }
