@@ -225,6 +225,14 @@ jobs:
           AZURE_POSTGRES_CONNECTION_STRING: ${{ env.GATE_DB_CONNECTION }}
           PPBF_PILOT_DEFAULT_ORG_ID: ${{ env.GATE_DEFAULT_ORG_ID }}
           PILOT_ADMIN_ACCOUNT_ID: org_admin_shadow
+          # Same identities the gate step passes below: the provisioner creates
+          # the athlete directly (intake promotion cannot -- document approval
+          # is unreachable until the review feature is built, see the gate's
+          # known-gap branch), and when promotion works again both paths upsert
+          # the same rows.
+          PILOT_SHADOW_ATHLETE_ACCOUNT_ID: gate_shadow_athlete
+          PILOT_SHADOW_ATHLETE_PIN: "224466"
+          PILOT_SHADOW_ATHLETE_ID: GATE-SHADOW-ATH-1
         run: |
           npm --prefix apps/web run gate:pilot:fixtures
 
