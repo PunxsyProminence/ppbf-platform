@@ -79,13 +79,15 @@ own PR:
 
 ## 5. Known landmines (do not "fix" casually)
 
-- **KNOWN GAP — intake approval is unreachable**: documents are born
-  `pending_security_review` and no scanner/review mechanism exists, so
-  approval (and therefore promotion) cannot run. The gate tolerates exactly
-  this one refusal and loudly skips the dependent steps. Do NOT make the
-  gate pass differently; the correct fix is building the document-review
-  feature (an audited admin action), after which the gate resumes the full
-  path automatically.
+- **CLOSED (2026-07-30) — intake approval was unreachable for months**:
+  documents are born `pending_security_review`, and until the
+  document-review feature existed nothing could produce the scanned+ready
+  state approval requires. The closure is the audited human review pair
+  (`/api/pilot/intake/document-review` + `document-link`) this landmine
+  always prescribed. Two things must stay true: approval on unreviewed
+  documents must still refuse (the gate asserts the refusal BEFORE
+  reviewing — never remove that), and review must stay a human attestation
+  with an audit row, not an auto-pass.
 - **SHADOW job worker is dormant by design**: it starts only when
   `PPBF_SHADOW_WORKER_ENABLED=true` is set in a deploy workflow. Queued
   scout reports/board summaries not processing is configuration, not a bug.

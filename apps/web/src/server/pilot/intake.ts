@@ -266,6 +266,73 @@ export async function listIntakeDocumentsByCase(organizationId: string, intakeCa
   );
 }
 
+export async function getIntakeDocumentById(
+  organizationId: string,
+  intakeDocumentId: string,
+): Promise<IntakeDocumentRecord | null> {
+  return queryOne<IntakeDocumentRecord>(
+    'select * from pilot.intake_documents where organization_id = $1 and intake_document_id = $2',
+    [organizationId, intakeDocumentId],
+  );
+}
+
+export type IntakeDocumentSecurityDecision = 'clean' | 'quarantined';
+
+/**
+ * The human closure of the security-scan requirement. Uploads are born
+ * pending_security_review, and no automated scanner exists (the requirement
+ * dates to #17) -- so the state approval demands is produced the way this
+ * platform produces every other trust transition: a named human looks at the
+ * document and attests. 'clean' writes exactly the states
+ * isIntakeDocumentReadyForReview requires; 'quarantined' writes states that
+ * can never satisfy it, so one quarantined document keeps the whole case
+ * unapprovable. The attestation itself (who, when, which decision, notes) is
+ * merged into metadata so re-reviews overwrite the verdict but the row always
+ * carries the latest reviewer on record.
+ */
+export async function reviewIntakeDocumentSecurity(params: {
+  organizationId: string;
+  intakeDocumentId: string;
+  decision: IntakeDocumentSecurityDecision;
+  reviewedByAccountId: string;
+  reviewedByRole: PilotRole;
+  notes?: string;
+}): Promise<IntakeDocumentRecord | null> {
+  const patch = params.decision === 'clean'
+    ? {
+        security_state: 'clean',
+        quarantine_status: 'clean',
+        extraction_state: 'ready_for_review',
+      }
+    : {
+        security_state: 'quarantined',
+        quarantine_status: 'quarantined',
+        extraction_state: 'blocked',
+      };
+
+  return queryOne<IntakeDocumentRecord>(
+    `update pilot.intake_documents
+     set metadata = metadata || $3::jsonb,
+         updated_at = now()
+     where organization_id = $1 and intake_document_id = $2
+     returning *`,
+    [
+      params.organizationId,
+      params.intakeDocumentId,
+      JSON.stringify({
+        ...patch,
+        security_review: {
+          decision: params.decision,
+          reviewed_by_account_id: params.reviewedByAccountId,
+          reviewed_by_role: params.reviewedByRole,
+          reviewed_at: new Date().toISOString(),
+          notes: params.notes ?? null,
+        },
+      }),
+    ],
+  );
+}
+
 export async function updateIntakeCaseStatus(params: {
   organizationId: string;
   intakeCaseId: string;

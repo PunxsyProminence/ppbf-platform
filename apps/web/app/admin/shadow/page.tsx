@@ -201,6 +201,185 @@ function newId(): string {
   return `${Date.now()}-fallback-id`;
 }
 
+interface CaseDocumentRow {
+  intake_document_id: string;
+  document_type: string;
+  file_name: string;
+  metadata: Record<string, unknown> | null;
+}
+
+type DocumentReviewState = 'clean' | 'quarantined' | 'unreviewed';
+
+// Mirrors isIntakeDocumentReadyForReview server-side: 'clean' here means the
+// document satisfies the states case approval checks.
+function documentReviewState(metadata: Record<string, unknown> | null | undefined): DocumentReviewState {
+  if (!metadata) return 'unreviewed';
+  if (metadata.security_state === 'quarantined') return 'quarantined';
+  if (
+    (metadata.security_state === 'clean' || metadata.quarantine_status === 'clean')
+    && metadata.extraction_state === 'ready_for_review'
+  ) {
+    return 'clean';
+  }
+  return 'unreviewed';
+}
+
+function reviewStateChip(state: DocumentReviewState): string {
+  if (state === 'clean') return 'border-[#3f8b5b] bg-[#162a1d] text-[#c9f0d7]';
+  if (state === 'quarantined') return 'border-[#8b4444] bg-[#2a1414] text-[#f0c9c9]';
+  return 'border-[#d4a574] bg-[#241a10] text-[#e8d7c6]';
+}
+
+// Per-case document security review: every uploaded file must be opened and
+// attested clean by a human before case approval unblocks. This panel is that
+// workflow -- open the document (short-lived signed link), then record the
+// verdict. Approval stays refused server-side while any document is
+// unreviewed or quarantined.
+function CaseDocumentsPanel({ intakeCaseId }: { intakeCaseId: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [documents, setDocuments] = useState<CaseDocumentRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [busyDocumentId, setBusyDocumentId] = useState('');
+  const [error, setError] = useState('');
+
+  async function loadDocuments() {
+    setLoading(true);
+    setError('');
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/intake/cases/get`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ intake_case_id: intakeCaseId }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.found) {
+        throw new Error(payload?.error || 'Failed to load case documents');
+      }
+      setDocuments((payload.aggregate?.documents ?? []) as CaseDocumentRow[]);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Failed to load case documents');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleToggle() {
+    const next = !expanded;
+    setExpanded(next);
+    if (next && documents.length === 0) {
+      await loadDocuments();
+    }
+  }
+
+  async function handleOpenDocument(intakeDocumentId: string) {
+    setBusyDocumentId(intakeDocumentId);
+    setError('');
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/intake/document-link`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ intake_document_id: intakeDocumentId }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.error || 'Failed to issue document link');
+      }
+      window.open(payload.url as string, '_blank', 'noopener');
+    } catch (linkError) {
+      setError(linkError instanceof Error ? linkError.message : 'Failed to issue document link');
+    } finally {
+      setBusyDocumentId('');
+    }
+  }
+
+  async function handleReviewDocument(intakeDocumentId: string, decision: 'clean' | 'quarantined') {
+    setBusyDocumentId(intakeDocumentId);
+    setError('');
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/intake/document-review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ intake_document_id: intakeDocumentId, decision }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.error || 'Failed to record document review');
+      }
+      await loadDocuments();
+    } catch (reviewError) {
+      setError(reviewError instanceof Error ? reviewError.message : 'Failed to record document review');
+    } finally {
+      setBusyDocumentId('');
+    }
+  }
+
+  return (
+    <div className="mt-3 border-t-2 border-[#8b4444]/50 pt-3">
+      <button
+        type="button"
+        onClick={() => void handleToggle()}
+        className="h-9 border-2 border-[#8b4444] bg-[#141414] px-3 text-[12px] font-bold text-[#d4a574] transition hover:border-[#d4a574]"
+      >
+        {expanded ? 'Hide Document Security Review' : 'Document Security Review'}
+      </button>
+      {expanded ? (
+        <div className="mt-2 space-y-2">
+          {loading ? <p className="text-[13px] text-[#d4a574]/80">Loading documents…</p> : null}
+          {error ? <p className="text-[13px] text-[#f0c9c9]">{error}</p> : null}
+          {!loading && documents.length === 0 && !error ? (
+            <p className="text-[13px] text-[#d4a574]/80">No documents on this case.</p>
+          ) : null}
+          {documents.map((doc) => {
+            const state = documentReviewState(doc.metadata);
+            const busy = busyDocumentId === doc.intake_document_id;
+            return (
+              <div
+                key={doc.intake_document_id}
+                className="flex flex-wrap items-center gap-2 border border-[#8b4444]/60 bg-[#141414] p-2 text-[13px] text-[#e8d7c6]"
+              >
+                <span className="min-w-0 flex-1 truncate font-mono">{doc.file_name}</span>
+                <span className={`inline-flex border px-2 py-0.5 font-mono text-[11px] uppercase ${reviewStateChip(state)}`}>
+                  {state}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void handleOpenDocument(doc.intake_document_id)}
+                  disabled={busy}
+                  className="h-9 border-2 border-[#8b4444] bg-[#2a1414] px-2 text-[12px] font-bold text-[#e8d7c6] transition hover:border-[#d4a574] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Open
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleReviewDocument(doc.intake_document_id, 'clean')}
+                  disabled={busy}
+                  className="h-9 border-2 border-[#3f8b5b] bg-[#162a1d] px-2 text-[12px] font-bold text-[#c9f0d7] transition hover:border-[#d4a574] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Mark Clean
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleReviewDocument(doc.intake_document_id, 'quarantined')}
+                  disabled={busy}
+                  className="h-9 border-2 border-[#8b4444] bg-[#2a1414] px-2 text-[12px] font-bold text-[#f0c9c9] transition hover:border-[#d4a574] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Quarantine
+                </button>
+              </div>
+            );
+          })}
+          <p className="text-[12px] text-[#d4a574]/70">
+            Open each document before marking it clean. Case approval stays blocked until every document is reviewed clean; quarantining any document keeps the case unapprovable.
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -1397,6 +1576,7 @@ export default function AdminShadowConsolePage() {
                         </button>
                       ))}
                     </div>
+                    {item.reviewNeeded ? <CaseDocumentsPanel intakeCaseId={item.intakeCaseId} /> : null}
                   </article>
                 ))}
               </div>

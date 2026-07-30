@@ -38,7 +38,7 @@ export async function uploadPilotVideoFile(path: string, file: File): Promise<vo
   });
 }
 
-export function getPilotVideoSasUrl(blobPath: string, expiryMinutes = 60): string {
+function getReadOnlySasUrl(containerName: string, blobPath: string, expiryMinutes: number): string {
   const connStr = getAzureStorageConnectionString();
   const accountNameMatch = /AccountName=([^;]+)/.exec(connStr);
   const accountKeyMatch = /AccountKey=([^;]+)/.exec(connStr);
@@ -47,7 +47,6 @@ export function getPilotVideoSasUrl(blobPath: string, expiryMinutes = 60): strin
   }
   const accountName = accountNameMatch[1];
   const accountKey = accountKeyMatch[1];
-  const containerName = getPilotVideoContainerName();
   const sharedKeyCredential = new StorageSharedKeyCredential(accountName, accountKey);
   const startsOn = new Date();
   const expiresOn = new Date(startsOn.getTime() + expiryMinutes * 60 * 1000);
@@ -56,4 +55,14 @@ export function getPilotVideoSasUrl(blobPath: string, expiryMinutes = 60): strin
     sharedKeyCredential,
   ).toString();
   return `https://${accountName}.blob.core.windows.net/${containerName}/${blobPath}?${sasToken}`;
+}
+
+export function getPilotVideoSasUrl(blobPath: string, expiryMinutes = 60): string {
+  return getReadOnlySasUrl(getPilotVideoContainerName(), blobPath, expiryMinutes);
+}
+
+// Short default expiry: the link exists so a reviewer can open one quarantined
+// document while looking at the review screen, not to be stored or shared.
+export function getPilotShadowSasUrl(blobPath: string, expiryMinutes = 15): string {
+  return getReadOnlySasUrl(getPilotShadowContainerName(), blobPath, expiryMinutes);
 }
