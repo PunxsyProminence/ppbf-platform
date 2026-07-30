@@ -1,0 +1,106 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>PPBF Design System</title>
+  <link rel="stylesheet" href="ppbf.css">
+  <style>
+    body { margin: 0; padding: 0; background-color: var(--hide-950); }
+    .container { max-width: 1200px; margin: 0 auto; padding: var(--s6); }
+    h1 { font-family: var(--font-stencil); color: var(--bone-100); font-size: var(--t-2xl);
+         text-shadow: 0 2px 0 rgba(0,0,0,.6), 0 0 22px rgba(232,206,122,.14); margin: 0 0 var(--s4); }
+    h2 { font-family: var(--font-stencil); color: var(--brass-300); font-size: var(--t-lg);
+         margin: var(--s6) 0 var(--s4); border-bottom: 1px solid rgba(212,175,74,.28); padding-bottom: var(--s3); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--s5); margin-bottom: var(--s6); }
+    .card { background: linear-gradient(135deg, var(--hide-800), var(--hide-900)); border-radius: var(--r-lg);
+            padding: var(--s5); border: 1px solid rgba(212,175,74,.18); box-shadow: 0 4px 12px rgba(0,0,0,.4); }
+    .card h3 { margin: 0 0 var(--s3); color: var(--bone-100); font-size: var(--t-md); font-family: var(--font-stencil); }
+    .card p { margin: 0 0 var(--s4); color: var(--bone-300); font-size: var(--t-sm); line-height: 1.5; }
+    .card a { display: inline-block; background: linear-gradient(180deg, var(--brass-200), var(--brass-500) 55%, var(--brass-800));
+              color: var(--hide-950); padding: var(--s2) var(--s4); border-radius: var(--r-sm); text-decoration: none;
+              font: 650 var(--t-xs) var(--font-stencil); letter-spacing: .06em; box-shadow: 0 2px 6px rgba(0,0,0,.5); }
+    .card a:hover { opacity: .9; }
+  </style>
+</head>
+<body class="ppbf">
+<div class="container">
+  <h1>PPBF Design System</h1>
+  <p style="color: var(--bone-300); max-width: 66ch; margin: 0 0 var(--s6);">
+    Golden-era boxing gym aesthetic. Oiled leather, cast brass, slate chalkboard, cork, and aged paper.
+    All textures generated — zero external assets.
+  </p>
+
+  <h2>Foundations</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>Materials & Grit</h3>
+      <p>Five real materials, oxidized hardware, worn leather, patina brass, hand-painted type, decorative stains.</p>
+      <a href="foundations/materials.html">View</a>
+    </div>
+    <div class="card">
+      <h3>Palette</h3>
+      <p>Hide, brass, bone ramps. Safety ladder: cleared, monitor, restricted, locked.</p>
+      <a href="foundations/palette.html">View</a>
+    </div>
+    <div class="card">
+      <h3>Proportion</h3>
+      <p>Golden ratio type ladder (√φ), Fibonacci spacing, 55px tap targets, golden-section layout.</p>
+      <a href="foundations/proportion.html">View</a>
+    </div>
+  </div>
+
+  <h2>Components</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>Instruments</h3>
+      <p>Brass gauges, workload satchels, capability tiles, badges, controls.</p>
+      <a href="components/instruments.html">View</a>
+    </div>
+    <div class="card">
+      <h3>Surfaces</h3>
+      <p>Chalkboard schedule, cork board, tag nav, controls.</p>
+      <a href="components/surfaces.html">View</a>
+    </div>
+    <div class="card">
+      <h3>Forms</h3>
+      <p>Checkboxes, PIN entry grid (kiosk-sized), signature line, contact-risk acknowledgment.</p>
+      <a href="components/forms.html">View</a>
+    </div>
+  </div>
+
+  <h2>Screens</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>Athlete Kiosk</h3>
+      <p>Gym-floor check-in: cleared and Layer 11 locked states.</p>
+      <a href="screens/athlete-kiosk.html">View</a>
+    </div>
+    <div class="card">
+      <h3>Coach Review Queue</h3>
+      <p>Layer 10 queue + Shadow (Layer 20) refusal panel.</p>
+      <a href="screens/coach-review-queue.html">View</a>
+    </div>
+    <div class="card">
+      <h3>Board Workspace</h3>
+      <p>Role binder rail, governance metrics, k-anonymity redaction.</p>
+      <a href="screens/board-workspace.html">View</a>
+    </div>
+    <div class="card">
+      <h3>Capability Console</h3>
+      <p>Admin grid (9 tiles), KPI plaque, ledger tape, compliance stamp.</p>
+      <a href="screens/capability-console.html">View</a>
+    </div>
+    <div class="card">
+      <h3>Guardian Portal</h3>
+      <p>Warm canvas ground, minor participant lookup, waiver renewal.</p>
+      <a href="screens/guardian-portal.html">View</a>
+    </div>
+    <div class="card">
+      <h3>Public Onboarding</h3>
+      <p>Warm canvas ground, enrollment intake form, golden-section layout.</p>
+      <a href="screens/public-onboarding.html">View</a>
+    </div>
+  </div>
+</div>
+</body>
+</html>
