@@ -2,6 +2,9 @@
   SHADOW Intake mandatory gate:
   - Upload real PDFs for required document classes
   - Persist to Blob + shadow_intake + intake case/doc tables
+  - Human security review of each document (the producer of the
+    scanned+extracted state approval requires; unreviewed approval must
+    still be refused, and a signed read link must open the document)
   - Approve + promote to domain records
   - Verify retrieval and audit trail
   - Verify SHADOW chat answers live (both sync tiers, then the background
@@ -411,38 +414,69 @@ async function run() {
   const queue = await admin.call('/api/pilot/intake/review-queue', { method: 'POST', body: {} });
   assertQueueContainsCase(queue, intakeCaseId);
 
-  console.log('4) Approve case');
-  // KNOWN GAP (run 30499019009, 2026-07-29): approval requires every document
-  // to be security-scanned and extracted, and no code path in the product can
-  // produce that state -- uploads are born pending_security_review and the
-  // scanner/review mechanism was never built (the requirement dates to #17).
-  // Until that feature exists, the exact refusal is tolerated here and the
-  // promotion-dependent steps (5-9, 11) are skipped; the athlete fixture is
-  // provisioned directly instead so chat validation still runs. The moment
-  // approval starts working, this branch stops matching, the full path runs,
-  // and any failure in it is real. Any OTHER approval error still fails the
-  // gate immediately.
-  let approvalBlockedByKnownGap = false;
+  console.log('4) Review each document, then approve case');
+  // The KNOWN GAP that lived here (runs 30499019009 onward): approval requires
+  // every document scanned clean and extraction-ready, a state nothing could
+  // produce because the scanner assumed by #17 was never built. The producer
+  // now exists -- the human review route (document-review) -- so the full
+  // path runs. The refusal is still asserted FIRST, deliberately: if approval
+  // ever succeeds on unreviewed documents, the security gate has stopped
+  // enforcing, and that must fail this step loudly rather than let the
+  // review quietly become decorative.
+  let refusedBeforeReview = false;
   try {
     await admin.call('/api/pilot/intake/review-action', {
       method: 'POST',
       body: {
         intake_case_id: intakeCaseId,
         action: 'approve',
-        notes: 'Gate approval before promotion',
+        notes: 'Gate approval attempt before document review',
       },
     });
   } catch (error) {
     if (String(error).includes('intake documents must pass security scanning and extraction')) {
-      approvalBlockedByKnownGap = true;
-      console.log('   KNOWN GAP: document scanning/review is unbuilt; approval is unreachable.');
-      console.log('   Skipping promotion-dependent steps 5-9 and 11. Build the review feature to close this.');
+      refusedBeforeReview = true;
     } else {
       throw error;
     }
   }
+  if (!refusedBeforeReview) {
+    throw new Error('Approval succeeded with unreviewed documents -- the intake security gate is not enforcing.');
+  }
 
-  if (!approvalBlockedByKnownGap) {
+  // The reviewer must be able to open what they attest to; a signed read
+  // link for the first document proves the seeing half of review works.
+  const documentLink = await admin.call('/api/pilot/intake/document-link', {
+    method: 'POST',
+    body: { intake_document_id: uploaded[0].intake_document_id },
+  });
+  if (typeof documentLink.url !== 'string' || !documentLink.url.includes('?')) {
+    throw new Error('Document link did not return a signed read URL');
+  }
+
+  for (const doc of uploaded) {
+    const review = await admin.call('/api/pilot/intake/document-review', {
+      method: 'POST',
+      body: {
+        intake_document_id: doc.intake_document_id,
+        decision: 'clean',
+        notes: 'Gate review: generated fixture PDF, contents as expected.',
+      },
+    });
+    if (review.ready_for_review !== true) {
+      throw new Error(`Document ${doc.intake_document_id} is not ready for approval after a clean review`);
+    }
+  }
+
+  await admin.call('/api/pilot/intake/review-action', {
+    method: 'POST',
+    body: {
+      intake_case_id: intakeCaseId,
+      action: 'approve',
+      notes: 'Gate approval after document review',
+    },
+  });
+
   console.log('5) Promote case to domain records + accounts + linkage');
   await admin.call('/api/pilot/intake/review-action', {
     method: 'POST',
@@ -567,11 +601,10 @@ async function run() {
     body: { entity_id: intakeCaseId, limit: 100 },
   });
   assertAuditPromotionEvent(audit);
-  } // end of promotion-dependent steps 5-9
 
-  // Step 10 runs in both modes: when promotion is blocked by the known gap,
-  // the athlete was provisioned directly by the fixtures step with the same
-  // identities promotion would have used.
+  // The athlete identity comes from two writers on purpose: the fixtures step
+  // provisions it before the gate, and promotion just upserted over it with
+  // the same identities. Login must work on the promoted state.
   console.log('10) Verify athlete login and retrieval');
   await athlete.call('/api/pilot/auth/login', {
     method: 'POST',
@@ -589,13 +622,11 @@ async function run() {
     throw new Error('Athlete cannot retrieve persisted profile');
   }
 
-  if (!approvalBlockedByKnownGap) {
   console.log('11) Verify guardian retrieval permissions');
   // A parent cannot sign in with a PIN -- PIN sessions are athlete-only -- so
   // the guardian is authenticated the same way the administrator is. The
   // promotion step above provisioned this account through the Microsoft staff
-  // path, so it can hold a session. Skipped in known-gap mode: the guardian
-  // only exists when promotion ran.
+  // path, so it can hold a session.
   const guardianSession = await mintGateSession({
     connectionString,
     accountId: guardianAccountId,
@@ -611,7 +642,6 @@ async function run() {
   if (!guardianDomain.guardians?.length) {
     throw new Error('Guardian retrieval verification failed');
   }
-  } // end of promotion-dependent step 11
 
   // Steps 12-13 exercise the two SHADOW chat tiers end to end -- session,
   // capability check, context build, live model call, and the provider
@@ -649,11 +679,7 @@ async function run() {
   }
   const backgroundRender = await assertBackgroundHeavyBagRendered(admin, background.queued, background.job);
 
-  if (approvalBlockedByKnownGap) {
-    console.log('SHADOW INTAKE GATE PASS WITH KNOWN GAP (document review unbuilt; promotion untested)');
-  } else {
-    console.log('SHADOW INTAKE GATE PASS');
-  }
+  console.log('SHADOW INTAKE GATE PASS');
   console.log(
     JSON.stringify(
       {
@@ -661,7 +687,7 @@ async function run() {
         athlete_id: athleteId,
         guardian_parent_id: guardianParentId,
         uploaded_documents: uploaded,
-        promotion_tested: !approvalBlockedByKnownGap,
+        promotion_tested: true,
         shadow_chat: {
           quick_round: quickChat.state,
           heavy_bag: heavyChat.state,

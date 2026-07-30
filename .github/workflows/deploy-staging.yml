@@ -130,6 +130,16 @@ jobs:
       # E2E gate and manual staging use exercise the drain loop before
       # production ever runs it. Production states it explicitly false until
       # staging has proven a full enqueue -> drain -> render cycle.
+      #
+      # PPBF_INTAKE_PROMOTION_ENABLED lets an approved intake case be promoted
+      # to real athlete/guardian/domain records (review-action 'promote').
+      # Default OFF in code. Enabled HERE FIRST, same rollout as the worker:
+      # with the document security review built, the gate now drives
+      # review -> approve -> promote end to end and needs the promotion arm
+      # live in staging. Production does not set it, which is the same
+      # disabled state -- it gains an explicit false (and eventually true)
+      # only through its own workflow change once staging has proven the
+      # promotion path through this gate.
       - name: Deploy to Azure Container App
         env:
           AZURE_AI_ENDPOINT: ${{ vars.AZURE_AI_ENDPOINT }}
@@ -157,6 +167,7 @@ jobs:
               PPBF_SHADOW_MAX_COMPLETION_TOKENS=8192 \
               PPBF_SHADOW_PROVIDER_TIMEOUT_MS=120000 \
               PPBF_SHADOW_WORKER_ENABLED=true \
+              PPBF_INTAKE_PROMOTION_ENABLED=true \
               PPBF_PILOT_BOOTSTRAP_KEY=secretref:ppbf-pilot-bootstrap-key \
               PPBF_PILOT_DEFAULT_ORG_ID=secretref:ppbf-pilot-default-org-id \
               PPBF_PILOT_SHADOW_CONTAINER=secretref:ppbf-pilot-shadow-container \
