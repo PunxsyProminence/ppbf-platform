@@ -3,6 +3,12 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { apiBase } from '@/lib/apiBase';
+import {
+  askLibrary,
+  claimStatusLabel,
+  LibraryResearchError,
+  type LibraryEvidenceItem,
+} from '@/client/libraryResearch';
 
 interface QAMessage {
   id: string;
@@ -10,6 +16,7 @@ interface QAMessage {
   text: string;
   timestamp: string;
   source?: string;
+  evidence?: LibraryEvidenceItem[];
 }
 
 interface ShadowResearchSignal {
@@ -25,11 +32,12 @@ export default function ResearchQAChatPage() {
     {
       id: '0',
       type: 'system',
-      text: "The library's open. Ask questions about training, techniques, science, or how this place works.",
+      text: "The Library searches your organization's approved evidence. Answers come only from sources a reviewer approved -- nothing here is generated or guessed. No match means the question gets logged as a research need.",
       timestamp: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
     },
   ]);
   const [userInput, setUserInput] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
   const [researchNotes, setResearchNotes] = useState<string>('');
   const [shadowSignals, setShadowSignals] = useState<ShadowResearchSignal[]>([]);
   const [signalError, setSignalError] = useState('');
@@ -44,6 +52,7 @@ export default function ResearchQAChatPage() {
       try {
         const response = await fetch(`${apiBase()}/api/pilot/shadow/research-projection`, {
           method: 'POST',
+          credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ limit: 20 }),
         });
@@ -62,76 +71,46 @@ export default function ResearchQAChatPage() {
     })();
   }, []);
 
-  function addMessage(type: QAMessage['type'], text: string, source?: string) {
+  function addMessage(type: QAMessage['type'], text: string, source?: string, evidence?: LibraryEvidenceItem[]) {
     const newMessage: QAMessage = {
-      id: Date.now().toString(),
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       type,
       text,
       timestamp: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       source,
+      evidence,
     };
     setMessages((prev) => [...prev, newMessage]);
   }
 
-  function handleSendMessage(e: React.SyntheticEvent<HTMLFormElement>) {
+  // The Library answers from approved evidence or says plainly that it has
+  // none -- the keyword if/else this replaces answered every question with
+  // canned strings while the real chat pointed users here for evidence.
+  async function handleSendMessage(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!userInput.trim()) return;
+    const question = userInput.trim();
+    if (!question || isSearching) return;
 
-    addMessage('user', userInput);
-    const question = userInput.toLowerCase();
-
-    // Simple Q&A responses
-    if (question.includes('readiness')) {
-      addMessage(
-        'research',
-        'Readiness Score = max(1, min(10, (sleepHours × 1.25) - (sorenessLevel × 0.45) + (disciplineScore × 0.3))). Score under 5.0 triggers readiness alert.',
-        'SHADOW Spec'
-      );
-    } else if (question.includes('rpe') || question.includes('exertion')) {
-      addMessage(
-        'research',
-        'RPE (Rate of Perceived Exertion) is rated 1-10. ΔRPE (delta RPE) = observedRpe - intendedRpe. When ΔRPE ≥ 2, simplify mode activates.',
-        'Training Science'
-      );
-    } else if (question.includes('technique') || question.includes('drill')) {
-      addMessage(
-        'research',
-        'Drills are organized in 6 tiers: L01 Floor Cue, L02 Field Instructions, L03 Psycho-Physiological Maps, L04 Biomechanics Citation, L05 Genesis Origins, L06 Historical Chronology.',
-        'Drill Library'
-      );
-    } else if (question.includes('injury') || question.includes('symptom')) {
-      addMessage(
-        'research',
-        'Critical distress signals: Pain detected, dizziness, water panic, unsafe breath hold. Any trigger = CAPABILITY 194 lockout (full system freeze, manual override required).',
-        'Safety Gates'
-      );
-    } else if (question.includes('role') || question.includes('access')) {
-      addMessage(
-        'research',
-        '12 role tiers: ATHLETE (L1-L3), COACH (L4-L6), BOARD MEMBER (L7-L9), ADMIN/AUDITOR (L10-L12). Each role has distinct canSee[], canDo[], cannotDo[] boundaries.',
-        'SHADOW Spec'
-      );
-    } else if (question.includes('audit') || question.includes('log')) {
-      addMessage(
-        'research',
-        'All system events are Zulu-timestamped and audit-logged with role context. Immutable record for compliance, safety, and operational review.',
-        'Audit System'
-      );
-    } else if (question.includes('data') || question.includes('import')) {
-      addMessage(
-        'research',
-        'SHADOW Admin Console (/admin/shadow) accepts workout data, biometric feeds, coach notes, and video annotations. Use "merge" command to consolidate.',
-        'Data Integration'
-      );
-    } else {
-      addMessage(
-        'research',
-        `Your question: "${userInput}". Try asking about readiness, RPE, drills, injuries, roles, audits, or data import.`,
-        'General'
-      );
-    }
-
+    addMessage('user', question);
     setUserInput('');
+    setIsSearching(true);
+    try {
+      const result = await askLibrary(apiBase(), question);
+      addMessage('research', result.answer, claimStatusLabel(result.status), result.evidence);
+      if (result.status === 'unsupported' && result.researchRequirementId !== null) {
+        addMessage(
+          'system',
+          `This gap is now research requirement #${result.researchRequirementId} -- it will show up in the research queue for staff to source.`,
+        );
+      }
+    } catch (error) {
+      const message = error instanceof LibraryResearchError
+        ? error.safeMessage
+        : 'The Library could not answer right now. Try again shortly.';
+      addMessage('system', message);
+    } finally {
+      setIsSearching(false);
+    }
   }
 
   function handleSaveNote(e: React.SyntheticEvent<HTMLFormElement>) {
@@ -175,8 +154,23 @@ export default function ResearchQAChatPage() {
 
               return (
               <div key={msg.id} className={`flex gap-3 ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-xs px-3 py-2 ${messageTone}`}>
+                <div className={`max-w-md px-3 py-2 ${messageTone}`}>
                   <p className="text-xs leading-5">{msg.text}</p>
+                  {msg.evidence?.length ? (
+                    <div className="mt-2 border-t border-[#5a4a3a] pt-2">
+                      <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#d4a574]">Sources</p>
+                      <ul className="mt-1 space-y-1">
+                        {msg.evidence.map((item, index) => (
+                          <li key={`${msg.id}-ev-${index}`} className="text-[10px] leading-4 text-[#cfbfae]">
+                            <span className="font-semibold text-[#e8d7c6]">
+                              {item.sourceTitle} (tier {item.authorityTier}) — {item.documentName}
+                            </span>
+                            <span className="mt-0.5 block opacity-80">“{item.snippet}”</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
                   <div className="mt-1 flex items-center justify-between gap-2">
                     <p className="text-[9px] opacity-50">{msg.timestamp}</p>
                     {msg.source && <p className="text-[9px] text-[#d4a574]">{msg.source}</p>}
@@ -194,14 +188,16 @@ export default function ResearchQAChatPage() {
               type="text"
               value={userInput}
               onChange={(e) => setUserInput(e.target.value)}
-              placeholder="Ask about readiness, work rate, drills, injuries, roles..."
+              placeholder="Ask the Library -- answers come only from approved sources"
+              disabled={isSearching}
               className="flex-1 border-2 border-[#d4a574] bg-[#1a1a1a] px-3 py-2 text-sm text-[#e8d7c6] placeholder-[#666666] outline-none transition focus:border-[#d4a574] focus:bg-[#3a3020]"
             />
             <button
               type="submit"
-              className="border-2 border-[#d4a574] bg-[#1f1f1f] px-4 py-2 text-xs font-mono font-bold text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#3a3020] hover:text-[#e8d7c6]"
+              disabled={isSearching}
+              className="border-2 border-[#d4a574] bg-[#1f1f1f] px-4 py-2 text-xs font-mono font-bold text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#3a3020] hover:text-[#e8d7c6] disabled:opacity-50"
             >
-              Ask
+              {isSearching ? 'Searching…' : 'Ask'}
             </button>
           </form>
         </section>

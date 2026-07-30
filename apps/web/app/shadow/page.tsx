@@ -561,6 +561,7 @@ function ShadowChatPageContent() {
           // "Human Handoff Required" banner.
           evidenceTier: mapped.type === 'shadow' ? mapped.evidenceTier : undefined,
           handoff: mapped.type === 'shadow' ? mapped.handoff : undefined,
+          citations: mapped.type === 'shadow' ? mapped.citations : undefined,
         };
       });
 
