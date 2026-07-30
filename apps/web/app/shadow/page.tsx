@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, useEffect, useRef, useState, type SyntheticEvent } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { readRoleSession, clearRoleSession } from '@/components/roleSession';
 import {
@@ -203,6 +203,20 @@ function formatTimestamp() {
   return new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
+// Entry hints from the launching page's query string (ShadowChatButton sends
+// ?context=...&subject=...). Display-only: they shape the heading, welcome
+// line, and the "Context:" caption -- authorization never reads them, and the
+// server-authoritative mode from the capabilities API is unaffected. Bounded
+// and stripped of control characters because they render verbatim in headers.
+function sanitizeEntryParam(value: string | null): string {
+  if (!value) return '';
+  return value
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80);
+}
+
 function appendContext(base: string, context: string, prefix: string) {
   if (!context) {
     return `${base}.`;
@@ -272,8 +286,13 @@ function ShadowChatPageContent() {
   const [authChecked, setAuthChecked] = useState(false);
   const [capabilitiesLoaded, setCapabilitiesLoaded] = useState(false);
   const [mode, setMode] = useState<ShadowChatMode>('scoped');
-  const context = '';
-  const subject = '';
+  // These were hardcoded '' for the page's whole life, which made the
+  // subject-scoped heading, welcome text, and Context caption unreachable
+  // from all 17 launch points that send them (the Suspense wrapper below
+  // existed for exactly this useSearchParams call and was never used).
+  const entryParams = useSearchParams();
+  const context = sanitizeEntryParam(entryParams.get('context'));
+  const subject = sanitizeEntryParam(entryParams.get('subject'));
   const roleLabel = (userRole || 'guest').toUpperCase();
   const { heading, intro, scopeSummary } = buildHeading(mode, subject);
   const [messages, setMessages] = useState<ShadowMessage[]>([
@@ -377,7 +396,7 @@ function ShadowChatPageContent() {
             setMessages([{
               id: '0',
               type: 'shadow',
-              text: buildWelcomeMessage('scoped', (userRole || 'guest').toUpperCase(), '', ''),
+              text: buildWelcomeMessage('scoped', (userRole || 'guest').toUpperCase(), context, subject),
               timestamp: formatTimestamp(),
             }]);
             setCapabilitiesLoaded(true);
@@ -407,7 +426,7 @@ function ShadowChatPageContent() {
           setMessages([{
             id: '0',
             type: 'shadow',
-            text: buildWelcomeMessage(serverMode, (userRole || 'guest').toUpperCase(), '', ''),
+            text: buildWelcomeMessage(serverMode, (userRole || 'guest').toUpperCase(), context, subject),
             timestamp: formatTimestamp(),
           }]);
           setCapabilitiesLoaded(true);
@@ -430,7 +449,7 @@ function ShadowChatPageContent() {
     return () => {
       cancelled = true;
     };
-  }, [authChecked, userRole]);
+  }, [authChecked, userRole, context, subject]);
 
   useEffect(() => {
     if (!capabilitiesLoaded || !allowedSessionTypes.includes('heavy_bag')) return;
@@ -854,10 +873,17 @@ function ShadowChatPageContent() {
                 documentName: entry.documentName as string,
               }))
           : [];
+        // The completion carries the persisted assistant message's server id.
+        // Adopting it makes this bubble identical to a restored message --
+        // including feedback eligibility, which keys on the server id.
+        const serverMessageId = typeof output.assistantMessageId === 'string' && output.assistantMessageId
+          ? output.assistantMessageId
+          : null;
         setMessages((prev) => prev.map((msg) => (
           msg.id === messageId
             ? {
                 ...msg,
+                id: safeCompletion && serverMessageId ? serverMessageId : msg.id,
                 text: safeCompletion
                   ? (outputResponse
                     ?? 'Heavy Bag Session completed. Open Scout Reports to review the server-validated result.')
@@ -866,9 +892,7 @@ function ShadowChatPageContent() {
                 state: safeCompletion ? 'ok' : 'degraded',
                 evidenceTier: safeCompletion && outputResponse ? gradedTier : NO_SERVER_EVIDENCE_TIER,
                 citations: safeCompletion && outputCitations.length > 0 ? outputCitations : undefined,
-                // Feedback keys on the server's message id; this bubble holds
-                // a client-local id, so rating happens after a restore.
-                feedbackEligible: false,
+                feedbackEligible: Boolean(safeCompletion && serverMessageId && outputResponse),
               }
             : msg
         )));
