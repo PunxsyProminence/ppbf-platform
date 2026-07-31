@@ -42,6 +42,20 @@ build is deliberately deferred.
 5. **Youth-data separation.** Donor and payer PII lives with the processor.
    The mirror stores the minimum for reconciliation and receipts — never card
    data, never a minor as the payer of record.
+6. **Per-org connected accounts on a single platform processor** (owner
+   decision 2026-07-31). Each organization connects its OWN account
+   (Stripe-Connect-style) and is its own merchant of record — its class fees
+   and donations settle directly to it, its donation receipts carry its
+   name, and its books never entangle with PPBF's. What organizations do NOT
+   get is a choice of processor: one org on Stripe and another on Square
+   would mean one integration, webhook surface, and refund-semantics
+   codepath per processor, forever, for a volunteer-scale ops team.
+   Routing other orgs' revenue through PPBF's account is ruled out for the
+   same reasons in reverse: it would make PPBF merchant of record for money
+   that is not PPBF's (money-transmission exposure) and would make a gift to
+   another gym legally look like a gift to PPBF. The connected-account model
+   also leaves an optional platform-fee mechanism available later without
+   rearchitecting — a separate decision, deliberately not made here.
 
 ## What is reserved (names only — nothing exists)
 
