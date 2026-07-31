@@ -701,6 +701,45 @@ async function run() {
   }
   const backgroundRender = await assertBackgroundHeavyBagRendered(admin, background.queued, background.job);
 
+  console.log('15) Film Study measurement diagnostic (records numbers; asserts nothing yet)');
+  // #103 orders measured facts before the film_study executor exists:
+  // in-container ffmpeg timing and one real vision call. The diagnostic
+  // route answers only where PPBF_FILM_STUDY_DIAGNOSTIC_ENABLED is set
+  // (staging), so this step self-detects -- 403/404 means the flag or route
+  // is absent on this revision, recorded and skipped. The step never fails
+  // the gate, because there is no product behavior to assert until the
+  // executor ships; but a failure WITH the flag on is printed loudly, since
+  // it means the measurement machinery itself is broken on the deployed
+  // revision.
+  let filmStudyDiagnostic;
+  try {
+    const diag = await admin.call('/api/pilot/shadow/film-study/diagnostic', {
+      method: 'POST',
+      body: { vision_frames: 3 },
+    });
+    filmStudyDiagnostic = {
+      enabled: true,
+      ffmpeg: diag.ffmpeg ?? null,
+      vision: diag.vision ?? null,
+    };
+    const visionSummary = diag.vision?.attempted
+      ? (diag.vision.ok
+        ? `vision ok in ${diag.vision.latency_ms}ms (prompt ${diag.vision.prompt_tokens} / completion ${diag.vision.completion_tokens} / reasoning ${diag.vision.reasoning_tokens} tokens)`
+        : `vision FAILED: ${diag.vision.error}`)
+      : 'vision not attempted (deployment unconfigured)';
+    console.log(`   film study: synthesize ${diag.ffmpeg?.synthesize_ms}ms, extract ${diag.ffmpeg?.extract_ms}ms for ${diag.ffmpeg?.frame_count} frames; ${visionSummary}`);
+  } catch (error) {
+    const status = Number(/failed \((\d{3})\)/.exec(String(error))?.[1] ?? 0);
+    if (status === 403 || status === 404) {
+      filmStudyDiagnostic = { enabled: false, status };
+      console.log(`   film study diagnostic not enabled on this revision (${status}); skipping.`);
+    } else {
+      filmStudyDiagnostic = { enabled: true, error: String(error).slice(0, 300) };
+      console.error('   FILM STUDY DIAGNOSTIC FAILED (gate continues; measurement missing):');
+      console.error(`   ${String(error).slice(0, 300)}`);
+    }
+  }
+
   console.log('SHADOW INTAKE GATE PASS');
   console.log(
     JSON.stringify(
@@ -722,6 +761,7 @@ async function run() {
           citations: backgroundRender.citationCount,
           evidence_tier: background.job.output?.evidenceTier ?? null,
         },
+        film_study_diagnostic: filmStudyDiagnostic,
       },
       null,
       2,
