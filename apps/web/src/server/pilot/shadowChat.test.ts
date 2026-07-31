@@ -421,6 +421,14 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
         expect(result.filtered).toBe(false);
       });
 
+      // The one live case from the retired shadowChat.test.ts.disabled suite
+      // (its Test 11): "You should do X because it is best." still validates
+      // today -- no statistic, no "proven", no medical or weight-cut trigger.
+      // Whether generic should-directives must carry a citation is a safety
+      // design decision, not a regression fix, so the case is recorded here
+      // instead of vanishing with the deleted file.
+      test.todo('decide whether a bare unevidenced directive ("You should do X because it is best.") should filter');
+
       describe('coaching speech that was withheld as a false positive', () => {
         // Measured live 2026-07-30 against the staging deployment: only 2 of 6
         // benign warm-up answers were deliverable. The three offenders below

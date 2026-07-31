@@ -26,8 +26,44 @@ wrong, not a ceiling.
 
 ## Status since publication
 
-Eight findings have been fixed since this report was written. Each row below was re-verified
-against the merged tree at `d59bad7`, not assumed from the PR titles.
+> **Re-verified 2026-07-31 against `4e09b03`.** Every finding below this box was checked
+> against the current tree, not assumed from PR titles. The short version: **everything in
+> §1–§3 is fixed.** What remains open:
+>
+> - **§4.1** — fixed in the same change that updates this notice: the learning loop now loads
+>   the durable assistant message text itself, so an approved thumbs-up can write
+>   `communication_style`.
+> - **§4.2** — the unverified [U] leads are still the to-check queue, minus three now
+>   resolved: the locked-feature test gap and the research-failure misattribution are pinned
+>   by tests in `shadowLearningLoop.test.ts`, and the duplicate tier-system lead died with
+>   §3.3's module deletions. The scout-report-unlock lead changed shape: the job pipeline now
+>   exists (see §3.1 below), so re-check it rather than assume it.
+> - **§6** — two of the four unaudited dimensions were since covered by the PR #106 audit
+>   passes (`/admin/shadow` internals; spec conformance, which archived the fiction spec).
+>   Still uncovered: **jobs-feedback-unlocks** end to end (newly worth doing — the worker is
+>   real now) and the remainder of **classification-routing-evidence**.
+> - **Two activation steps, not code:** the SHADOW job worker ships OFF until a deployment
+>   sets `PPBF_SHADOW_WORKER_ENABLED=true` (`instrumentation.ts`), and Library semantic
+>   search waits on the `text-embedding-3-small` Azure deployment (#108's other half).
+> - The one live regression in the retired `shadowChat.test.ts.disabled` (its Test 11 — bare
+>   unevidenced directives validate) is recorded as a `test.todo` in `shadowChat.test.ts`;
+>   the disabled file itself is deleted.
+>
+> Later fixes verified in the current tree: §2.2 (`modelUsed` now derives from the deployment
+> that actually answered, `chat/route.ts`), §2.3 (router rewritten — explicit `quick_round`
+> stays `quick_round`, `shadowRouter.ts`), §2.4 (`/research/chat` now queries the real
+> Library via `askLibrary`; unsupported answers file research requirements), §2.4a (all three
+> validator holes closed in `shadowChat.ts` with regression tests), §2.6 (the send path now
+> clears a dead conversation id on 404 and says so), §3.1 (**built, not deleted**:
+> `shadowJobWorker` + `shadowJobProcessor` + `jobs/process` route), §3.2 (`useSearchParams`
+> wired), §3.3 (all three orphaned modules deleted), §3.4 (session rename/delete UI shipped —
+> `src/client/shadowSessions.ts` issues the PATCH/DELETE), §3.5 (citations rendered), §3.6
+> (`chat/route.ts` imports `MANUAL_OVERRIDE_ROLES` from `shadowRoleSets`), and the
+> post-publication bare-path fetch item (**zero** bare `/api` fetches remain in `app/` and
+> `components/`).
+
+The original notice follows. Eight findings had been fixed when this report was written; each
+row below was re-verified against the merged tree at `d59bad7`, not assumed from the PR titles.
 
 | Finding | Status | Fixed by |
 |---|---|---|
@@ -591,23 +627,25 @@ Items marked ✅ have since landed; see *Status since publication* above.
 3. ✅ **§1.1, §1.2, §1.3** — three independent always-fails bugs, each small.
 4. ✅ **§2.1** — carry `evidenceTier` and `handoff` through persistence and restore. The safety
    banner loss is the most consequential single defect in the report.
-5. **§2.4a** — close the response-validator gaps: make `proven` a trigger, catch bare
+5. ✅ **§2.4a** — close the response-validator gaps: make `proven` a trigger, catch bare
    percentages without a framing phrase, and gate weight cutting on the response side as well as
-   the request side. Then re-enable disabled Test 11 (§2.4b) as a regression guard — it is the
-   only thing in the repo that ever caught this, and it is currently invisible to CI.
+   the request side. (Test 11's bare-directive case survives as a `test.todo` — see the
+   2026-07-31 notice above.)
 6. ✅ **§3.0** — build the four missing `library/{sources,documents,chunks,capability-coverage}`
    routes so `seed:shadow:library` can actually run, or remove the script and stop shipping an
    evidence pipeline whose source of truth cannot be filled. Everything in the evidence story —
    retrieval, grading, the four-tier shading, the citation plumbing — is downstream of this.
-7. **§2.4** — either wire `/research/chat` to a real endpoint or stop calling it "The
+7. ✅ **§2.4** — either wire `/research/chat` to a real endpoint or stop calling it "The
    Library" and stop routing users there for evidence.
-8. **§2.2, §2.3** — make Quick Round honour the routing it displays.
-9. **§3.1** — decide: build the worker, or delete the async scaffolding and the UI that
-   depends on it. Leaving it half-present is what produced the unreachable unlock.
-10. **§3.3** — delete or wire the orphaned modules; collapse the two competing tier systems.
-11. **§3.4** — build the UI for session rename/delete, or stop advertising
+8. ✅ **§2.2, §2.3** — make Quick Round honour the routing it displays.
+9. ✅ **§3.1** — decide: build the worker, or delete the async scaffolding and the UI that
+   depends on it. (Built: worker + processor + `jobs/process`; OFF until
+   `PPBF_SHADOW_WORKER_ENABLED=true`.)
+10. ✅ **§3.3** — delete or wire the orphaned modules; collapse the two competing tier systems.
+11. ✅ **§3.4** — build the UI for session rename/delete, or stop advertising
     `canManageSessions`. The backend is already done and tested.
-12. **§3.6** — have `chat/route.ts` import `MANUAL_OVERRIDE_ROLES` from `shadowRoleSets`
+12. ✅ **§3.6** — have `chat/route.ts` import `MANUAL_OVERRIDE_ROLES` from `shadowRoleSets`
     instead of redeclaring it. Cheap, and it removes a latent repeat of §1.2.
-13. Audit the 5 dimensions still uncovered (§6) and run the adversarial verification pass over
-    the remaining **[U]** findings.
+13. Audit the dimensions still uncovered (§6 — now down to jobs-feedback-unlocks and the rest
+    of classification-routing-evidence) and run the adversarial verification pass over the
+    remaining **[U]** findings in §4.2.
