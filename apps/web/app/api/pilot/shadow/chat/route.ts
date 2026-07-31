@@ -847,6 +847,30 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           citationCatalog: publicEvidenceCitations(evidenceBundle, evidenceBundle.allowedEvidenceIds),
         },
       });
+      // The queued turn is audited HERE because this branch returns before
+      // Step 9. Skipping it made queued turns invisible to
+      // shadow_chat_audit, which is the denominator of feedbackRate -- an
+      // org leaning on background Heavy Bag could show a feedback rate
+      // above 100%.
+      try {
+        await query(
+          `INSERT INTO pilot.shadow_chat_audit
+           (organization_id, user_id, user_role, athlete_id, user_message, shadow_response, was_filtered, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [
+            organizationId,
+            userId,
+            userRole,
+            athleteId || null,
+            `<redacted:${interactionTopic}>`,
+            '<state:queued>',
+            false,
+            createdAt.toISOString(),
+          ],
+        );
+      } catch {
+        console.error('SHADOW audit logging failed');
+      }
       return NextResponse.json({
         success: true,
         state: 'queued',

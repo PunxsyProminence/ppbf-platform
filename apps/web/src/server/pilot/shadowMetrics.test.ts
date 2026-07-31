@@ -39,6 +39,9 @@ describe('SHADOW metrics availability', () => {
       filterRate: 'NO_CHAT_INTERACTIONS_IN_PERIOD',
       avgEffectiveness: 'NO_HUMAN_REVIEWED_OUTCOMES_IN_PERIOD',
       positiveOutcomeRate: 'NO_HUMAN_REVIEWED_OUTCOMES_IN_PERIOD',
+      // The rating UI does not exist, so AVG(rating) is structurally null --
+      // the tile must say why rather than render a bare em dash forever.
+      avgSatisfaction: 'RATING_INPUT_NOT_BUILT',
     }));
     const sql = mockQueryOne.mock.calls[0][0];
     expect(sql).toContain('FROM pilot.shadow_chat_audit');
@@ -50,7 +53,7 @@ describe('SHADOW metrics availability', () => {
     await recordRecommendationEffectiveness({
       organizationId: 'org-1',
       userId: 'account-1',
-      role: 'athlete',
+      recommendationType: 'heavy_bag',
       feedbackId: 9,
       recommendationId: 'message-9',
       outcome: 'improved',
@@ -64,5 +67,13 @@ describe('SHADOW metrics availability', () => {
     expect(sql).toContain("EXCLUDED.verification_state <> 'human_reviewed'");
     expect(params).toContain('durable_client');
     expect(params).toContain(true);
+    // The recommendation_type column stores the recommendation kind, not the
+    // actor role it used to silently receive.
+    expect(params).toContain('heavy_bag');
+    // Approval restamps created_at the first time a row reaches
+    // human_reviewed: every read windows reviewed counts on created_at, so a
+    // late approval must land in the current window instead of vanishing.
+    expect(sql).toContain('created_at = CASE');
+    expect(sql).toContain("EXCLUDED.verification_state = 'human_reviewed'");
   });
 });
