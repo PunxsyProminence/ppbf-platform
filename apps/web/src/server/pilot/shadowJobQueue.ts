@@ -165,7 +165,10 @@ function toStatusResult(job: ShadowJob): JobStatusResult {
     subjectId: job.subjectId,
     safetyStatus: job.safetyStatus,
     output: job.status === 'completed' ? job.outputPayload : null,
-    error: job.status === 'failed' ? job.errorCode : null,
+    // Cancelled jobs carry their reason too (SHADOW_JOB_EXPIRED et al.);
+    // hiding it rendered a bare "cancelled" chip with no explanation
+    // (audit 2026-07-31 finding B3).
+    error: job.status === 'failed' || job.status === 'cancelled' ? job.errorCode : null,
     createdAt: job.createdAt,
     completedAt: job.completedAt,
   };
@@ -230,6 +233,25 @@ export async function enqueueJob(input: CreateJobInput): Promise<string> {
 
   if (!row) throw new Error('Failed to create job');
   return row.job_id;
+}
+
+// Terminal rows are not history the product reads -- completed output is
+// adopted into the conversation at poll time, and failed/cancelled rows only
+// matter while someone might still ask about them. Before this sweep existed
+// nothing ever deleted them, so output payloads and up to 12k chars of
+// authorized context in input_payload outlived their declared TTLs
+// indefinitely (audit 2026-07-31 finding B2; owner decision: 30 days).
+export const TERMINAL_JOB_RETENTION_DAYS = 30;
+
+export async function purgeTerminalShadowJobs(): Promise<number> {
+  const rows = await query<{ job_id: string }>(
+    `DELETE FROM pilot.shadow_jobs
+     WHERE status IN ('completed', 'failed', 'cancelled')
+       AND COALESCE(completed_at, updated_at, created_at) < NOW() - ($1 * INTERVAL '1 day')
+     RETURNING job_id`,
+    [TERMINAL_JOB_RETENTION_DAYS],
+  );
+  return rows.length;
 }
 
 export async function getJobStatusForActor(

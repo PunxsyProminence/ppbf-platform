@@ -52,6 +52,7 @@ interface ShadowMessage {
   feedbackEligible?: boolean;
   state?: ShadowResponseState;
   evidenceTier?: ShadowEvidenceTier;
+  evidenceNotice?: string;
   handoff?: string;
   citations?: ShadowDisplayCitation[];
 }
@@ -70,6 +71,7 @@ interface ShadowAIResult {
   jobId?: string;
   error?: string;
   evidenceTier?: ShadowEvidenceTier;
+  evidenceNotice?: string;
   handoff?: string;
   citations?: ShadowDisplayCitation[];
   unlockHints?: ShadowUnlockHint[];
@@ -514,7 +516,7 @@ function ShadowChatPageContent() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  function addMessage(type: 'user' | 'shadow', text: string, meta?: Partial<Pick<ShadowMessage, 'id' | 'tier' | 'profileTier' | 'modelUsed' | 'isAsync' | 'jobId' | 'state' | 'feedbackEligible' | 'evidenceTier' | 'handoff' | 'citations'>>) {
+  function addMessage(type: 'user' | 'shadow', text: string, meta?: Partial<Pick<ShadowMessage, 'id' | 'tier' | 'profileTier' | 'modelUsed' | 'isAsync' | 'jobId' | 'state' | 'feedbackEligible' | 'evidenceTier' | 'evidenceNotice' | 'handoff' | 'citations'>>) {
     const newMessage: ShadowMessage = {
       id: createMessageId(),
       type,
@@ -800,6 +802,7 @@ function ShadowChatPageContent() {
       jobId: data.jobId,
       state: data.state,
       evidenceTier: data.evidenceTier ?? NO_SERVER_EVIDENCE_TIER,
+      evidenceNotice: data.evidenceNotice,
       handoff: data.handoff,
       // The server has always computed and returned these; the client dropped
       // them on the floor, so evidence-backed answers showed no receipts.
@@ -1246,6 +1249,13 @@ function ShadowChatPageContent() {
                       title={EVIDENCE_TIER_MEANINGS[msg.evidenceTier]}
                     >
                       Evidence: {getEvidenceTierLabel(msg.evidenceTier)}
+                    </p>
+                  ) : null}
+                  {msg.type === 'shadow' && msg.evidenceNotice === 'EVIDENCE_RETRIEVAL_UNAVAILABLE' ? (
+                    // A broken evidence lookup must not read as "the Library
+                    // is empty" -- the floor tier is honest, the reason is not.
+                    <p className="mt-1 text-[9px] font-mono uppercase tracking-[0.12em] text-[#d4a574] opacity-80">
+                      Evidence lookup temporarily unavailable -- graded without it.
                     </p>
                   ) : null}
                   {msg.type === 'shadow' && msg.citations?.length ? (

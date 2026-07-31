@@ -34,15 +34,19 @@ piece someone must decide on), **OK** (traced and sound).
 > was built independently the same day: `FeatureUnlockPanel` in the admin console now
 > drives the threshold/activation endpoint, stating WHY a feature is locked.
 >
-> **Still open, all deliberate:** the DESIGN-GAP decisions — C3 (ratings immutable), A6
-> (evidence block joined last into the 12k context slice, with an oversize guard that can
-> never fire), E3/E4 (duplicate fine-tuning metric; four unwritable outcome signals),
-> F5 (retrieval failure indistinguishable from an empty Library), F6/F7 (classifier
-> high-risk score unused by safety; two topic vocabularies in one column), F8
-> (`shadowContextWeights` decorative, with a tie-break that would resolve "weight cut" to
-> `training`), B2/B3 (no job purge; invisible cancellation reasons), and the
-> `shadowChat.test.ts` `test.todo` on bare unevidenced directives. Each needs an owner
-> call, not a code fix someone should sneak in.
+> **Owner decisions, called and executed same day:** C3 — ratings are editable until
+> reviewed, immutable after. Bare directives — deliberately allowed; the `test.todo`
+> became a passing test pinning the decision. F8 — deleted down to `detectQueryType`,
+> whose tie-break now resolves to safety. A6 — evidence joins FIRST, so the 12k slice
+> costs the tail, never the evidence boundary. F5 — a broken evidence lookup now says
+> "evidence lookup temporarily unavailable" instead of impersonating an empty Library.
+> B2 — terminal job rows purge 30 days post-terminal via the worker's housekeeping tick.
+> B3 — cancelled jobs surface their reason.
+>
+> **Deliberately deferred by the owner:** E3/E4 (duplicate fine-tuning metric and the
+> four unwritable outcome signals stay as-is until the fine-tuning lane is real — it is
+> governance-gated regardless) and F6/F7 (classifier high-risk score and the dual topic
+> vocabularies; revisit if review triage ever sorts on that column in practice).
 
 > **Status (later the same day) — items 3, 4 and 5 of the suggested order are DONE.**
 > Re-verified against source on 2026-07-31 after this document had already gone stale twice:

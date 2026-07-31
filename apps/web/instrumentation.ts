@@ -24,10 +24,15 @@ export async function register(): Promise<void> {
   }
 
   const { processNextShadowJob } = await import('./src/server/pilot/shadowJobProcessor');
+  const { purgeTerminalShadowJobs } = await import('./src/server/pilot/shadowJobQueue');
   const intervalMs = resolveShadowWorkerIntervalMs();
   const handle = startShadowJobWorker({
     processOne: () => processNextShadowJob(),
     intervalMs,
+    housekeeping: async () => {
+      const purged = await purgeTerminalShadowJobs();
+      if (purged > 0) console.log('SHADOW job retention sweep', { purged });
+    },
   });
 
   if (handle) {
