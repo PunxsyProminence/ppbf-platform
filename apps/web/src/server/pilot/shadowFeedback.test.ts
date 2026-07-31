@@ -206,6 +206,71 @@ describe('SHADOW feedback correlation', () => {
     })).resolves.toBeNull();
   });
 
+  test('reject remains reachable for items the approve gate refuses', async () => {
+    // Feedback on a filtered answer or a deleted session used to match
+    // NOTHING -- the eligibility conditions lived in the joins, so Approve
+    // and Reject both 404ed and the item wedged the review queue forever.
+    // Eligibility is now an approve-only gate.
+    mockQueryOne.mockResolvedValueOnce({
+      feedback_id: '41',
+      organization_id: 'org-1',
+      account_id: 'athlete-account-1',
+      role: 'athlete',
+      message_id: '00000000-0000-4000-8000-000000000041',
+      topic: 'defense',
+      session_type: 'heavy_bag',
+      outcome_signal: 'thumbs_down',
+      user_note: null,
+      already_resolved: false,
+    });
+
+    const review = await resolveShadowFeedbackReview({
+      organizationId: 'org-1',
+      feedbackId: 41,
+      reviewerAccountId: 'admin-1',
+      decision: 'reject',
+    });
+
+    expect(review).toMatchObject({ feedbackId: 41, decision: 'reject' });
+    const [sql] = mockQueryOne.mock.calls[0];
+    expect(sql).toContain("($3 = 'reject' OR scoped.learning_eligible)");
+    expect(sql).toContain("(m.response_state = 'ok' AND s.deleted_at IS NULL) AS learning_eligible");
+    // The joins themselves must NOT filter on state or liveness anymore.
+    expect(sql).not.toContain("AND m.response_state = 'ok'\n");
+    expect(sql).not.toContain('AND s.deleted_at IS NULL\n');
+  });
+
+  test('approve on a reject-only item reports reject_only instead of vanishing', async () => {
+    mockQueryOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ present: true });
+
+    const review = await resolveShadowFeedbackReview({
+      organizationId: 'org-1',
+      feedbackId: 41,
+      reviewerAccountId: 'admin-1',
+      decision: 'approve',
+    });
+
+    expect(review).toBe('reject_only');
+    const [fallbackSql, fallbackParams] = mockQueryOne.mock.calls[1];
+    expect(fallbackSql).toContain("m.response_state IS DISTINCT FROM 'ok' OR s.deleted_at IS NOT NULL");
+    expect(fallbackParams).toEqual([41, 'org-1']);
+  });
+
+  test('approve on a genuinely missing item still resolves to null', async () => {
+    mockQueryOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+
+    await expect(resolveShadowFeedbackReview({
+      organizationId: 'org-1',
+      feedbackId: 999,
+      reviewerAccountId: 'admin-1',
+      decision: 'approve',
+    })).resolves.toBeNull();
+  });
+
   test('verifies an organization-scoped durable human-reviewed learning event', async () => {
     mockQueryOne.mockResolvedValueOnce({ present: true });
 

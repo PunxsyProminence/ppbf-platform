@@ -83,6 +83,21 @@ describe('interpretShadowFeedbackReviewResponse', () => {
   // The endpoint returns 503 + retryable when the review committed but durable
   // learning promotion did not. Collapsing this into a generic failure would
   // strand the signal with no way for the reviewer to finish it.
+  test('surfaces a reject-only 409 as not_eligible with the server explanation', () => {
+    const outcome = interpretShadowFeedbackReviewResponse({
+      status: 409,
+      payload: {
+        ok: false,
+        error: 'This feedback can only be rejected: its answer was filtered or its conversation was deleted, so it is not eligible to train on.',
+      },
+      feedbackId: 41,
+      decision: 'approve',
+    });
+
+    expect(outcome.kind).toBe('not_eligible');
+    expect(outcome).toMatchObject({ message: expect.stringContaining('can only be rejected') });
+  });
+
   test('classifies a recorded-but-unpromoted approval as retry_required', () => {
     const outcome = interpretShadowFeedbackReviewResponse({
       status: 503,
