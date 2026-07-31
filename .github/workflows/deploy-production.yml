@@ -210,10 +210,6 @@ jobs:
               AZURE_AI_EMBEDDING_DEPLOYMENT_NAME=text-embedding-3-small \
               AZURE_AI_VISION_DEPLOYMENT_NAME=gpt-5-vision-shadow \
               PPBF_DURABLE_RATE_LIMIT=true
-              AZURE_AI_EMBEDDING_DEPLOYMENT_NAME=text-embedding-3-small \
-              AZURE_AI_VISION_DEPLOYMENT_NAME=gpt-5-vision-shadow \
-              PPBF_DURABLE_RATE_LIMIT=true
-              PPBF_DURABLE_RATE_LIMIT=true
 
       - name: Resolve Production Base URL
         run: |
