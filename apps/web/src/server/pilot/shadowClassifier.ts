@@ -127,21 +127,36 @@ export function classifyRequest(
   role: PilotRole,
   userManualTier?: ShadowTier,
 ): ShadowClassification {
-  // If user explicitly requested Heavy Bag (coach/admin only), honor it
+  // Measured before the manual-tier branches, because an honored override
+  // changes which TIER runs, not how complex the message actually is.
+  const topic = detectTopic(message, role);
+  const complexity = calculateComplexityScore(message, role);
+
+  // If user explicitly requested Heavy Bag (coach/admin only), honor it.
+  //
+  // complexity was hardcoded to 0.9 here (audit F2) while the quick_round
+  // mirror below already reported the measured value -- an asymmetry that
+  // marks it as an oversight rather than a decision. The 0.9 reached both the
+  // model, as a "Complexity Score: 0.90" prompt line (shadowHeavyBag.ts), and
+  // the user, as the response's complexity field. Asking for the deeper model
+  // is not evidence that the question was hard, and a reviewer reading 0.90
+  // against a one-line message is reading a number nothing measured.
+  //
+  // Reporting the measured value changes no routing: heavyBagRoute takes
+  // complexity only to interpolate it into its rationale string and never
+  // branches on it, so the honored tier still gets the heavy model. The
+  // override itself stays recorded in `reasoning`.
   if (userManualTier === 'heavy_bag' && (role === 'coach' || role === 'admin' || role === 'organization_admin' || role === 'platform_owner')) {
     return {
       tier: 'heavy_bag',
-      complexity: 0.9,
-      topic: detectTopic(message, role),
+      complexity,
+      topic,
       confidence: 1.0,
       reasoning: 'User explicitly requested Heavy Bag session',
       requiresManualOverride: false,
       suggestedContextDepth: 'full',
     };
   }
-
-  const topic = detectTopic(message, role);
-  const complexity = calculateComplexityScore(message, role);
 
   // The mirror of the heavy_bag escalation above, deliberately without a role
   // gate: an explicit Quick Round request is a downgrade -- cheaper, faster,

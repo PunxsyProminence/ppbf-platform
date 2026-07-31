@@ -941,7 +941,18 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     const persistedEvidenceTier = deriveEvidenceTier({
       isAnsweredState: state === 'ok',
       evidenceAvailability: evidenceBundle.availability,
-      citationCount: responseValidation.citationIds.length,
+      // Audit F3: this counted responseValidation.citationIds, which includes
+      // platform-rollup and near-miss context ids. Those are authorized for
+      // validation but are NOT library evidence, so `citations` above strips
+      // them from what the user sees. An answer citing two platform ids and no
+      // library document therefore earned PROVEN -- the top tier -- and
+      // rendered it above an empty Sources list.
+      //
+      // The tier is now derived from the citations actually displayed, so it
+      // can never claim more evidence than the reader can check. Latent while
+      // the Library is empty (every answer is RESEARCH_NEEDED), and no longer
+      // latent now that it has real doctrine in it.
+      citationCount: citations.length,
     });
     const persistedRequiresHumanReview = responseValidation.requiresHumanReview || state === 'filtered';
     const persistedHandoff = resolveHandoff({

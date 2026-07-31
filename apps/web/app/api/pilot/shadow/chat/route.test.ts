@@ -828,6 +828,40 @@ describe('Omega cross-organization breadth', () => {
     }));
   });
 
+  // Audit F3. The tier counted every authorized citation, but only bundle
+  // items are rendered as Sources -- so two platform ids and no library
+  // document earned PROVEN, the top tier, above an empty Sources list. The
+  // grade must never outrun what the reader can actually check.
+  test('platform citations do not inflate the evidence tier above an empty source list', async () => {
+    // The bundle must be AVAILABLE or deriveEvidenceTier short-circuits to
+    // RESEARCH_NEEDED and the assertion below passes for the wrong reason --
+    // which is exactly what the first draft of this test did. Available, but
+    // carrying no items: the Library returned nothing relevant, and the only
+    // citation in the answer is a platform id.
+    mockRetrieveEvidence.mockResolvedValueOnce({
+      bundleId: '00000000-0000-4000-8000-000000000300',
+      availability: 'available',
+      allowedEvidenceIds: [],
+      context: 'No library excerpt matched.',
+      items: [],
+    } as never);
+    // One platform citation is enough: under the old count that is
+    // citationCount 1, which grades EMERGING. It must grade EXPERIMENTAL,
+    // because zero library sources are shown.
+    respondWith(`Alpha Boxing has 12 athletes [E:${platformGymEvidenceId('gym-a')}].`);
+
+    const payload = await (await POST(postRequest({ message: CROSS_GYM_QUESTION }))).json();
+
+    expect(payload.state).toBe('ok');
+    // The citation was authorized and survived validation...
+    expect(payload.response).toContain('12 athletes');
+    // ...but it is not library evidence, so it is not shown as a source and
+    // the tier must not read as though the claim were backed by doctrine.
+    expect(payload.citations ?? []).toEqual([]);
+    expect(payload.evidenceTier).not.toBe('PROVEN');
+    expect(payload.evidenceTier).not.toBe('EMERGING');
+  });
+
   test('no other role reaches the block, even asking the same question', async () => {
     mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin' }));
     mockRetrieveShadowContext.mockResolvedValue({
