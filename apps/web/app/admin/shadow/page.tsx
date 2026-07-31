@@ -1669,7 +1669,7 @@ export default function AdminShadowConsolePage() {
   const commandHints = ['merge', 'status', 'list', 'clear', 'summarize', 'approve', 'reject'];
 
   return (
-    <RoleStandaloneView roleLabel="SHADOW Admin Console" routeLabel="/admin/shadow" allowedRoles={['admin']} showShellHeader={false}>
+    <RoleStandaloneView roleLabel="SHADOW Admin Console" routeLabel="/admin/shadow" allowedRoles={['admin', 'platform_owner']} showShellHeader={false}>
       <main className="grid gap-6 xl:grid-cols-[1.25fr_0.95fr]">
         {/* ── SHADOW Growth Metrics ─────────────────────────────────── */}
         {renderMetricsPanel(growthMetrics, metricsLoading)}

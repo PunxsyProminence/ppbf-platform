@@ -197,7 +197,20 @@ export function subscribeRoleSession(listener: () => void) {
 }
 
 export function mapPilotRoleToClubRole(role: unknown): ClubRole | null {
-  if (role === 'platform_owner' || role === 'organization_admin' || role === 'admin') {
+  // platform_owner used to fold in here with the org admins. It cannot: the
+  // server treats Omega as broader in breadth and strictly narrower in depth,
+  // so a single 'admin' bucket made every page guard wrong in one direction
+  // or the other. Two live symptoms, both reported: an organization_admin
+  // could not open /coach/video-analysis even though the upload API admits
+  // that role, and Omega rendered admin pages whose API then refused it
+  // ("admin takes me to omega, i dont have access").
+  if (role === 'platform_owner') {
+    return 'platform_owner';
+  }
+
+  // 'admin' remains the ORGANIZATION administrator bucket, so every existing
+  // ['admin'] guard keeps meaning what it already meant for these two roles.
+  if (role === 'organization_admin' || role === 'admin') {
     return 'admin';
   }
 

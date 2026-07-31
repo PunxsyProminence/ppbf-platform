@@ -45,7 +45,10 @@ describe('login page helpers', () => {
   });
 
   test('maps backend login roles to supported frontend sessions', () => {
-    expect(mapPilotLoginRoleToClubRole('platform_owner')).toBe('admin');
+    // platform_owner no longer folds into 'admin': the server treats Omega as
+    // broader in breadth and strictly narrower in depth, and one shared club
+    // role made every page guard wrong in one direction or the other.
+    expect(mapPilotLoginRoleToClubRole('platform_owner')).toBe('platform_owner');
     expect(mapPilotLoginRoleToClubRole('organization_admin')).toBe('admin');
     expect(mapPilotLoginRoleToClubRole('coach')).toBe('coach');
     expect(mapPilotLoginRoleToClubRole('athlete')).toBe('athlete');
@@ -61,6 +64,9 @@ describe('login page helpers', () => {
   test('permits only the expected announcement roles', () => {
     expect(canPublishAnnouncement('coach')).toBe(true);
     expect(canPublishAnnouncement('admin')).toBe(true);
+    // Kept when the club roles split. announcements/post admits platform_owner,
+    // so dropping it here would have withdrawn a capability the server grants.
+    expect(canPublishAnnouncement('platform_owner')).toBe(true);
     expect(canPublishAnnouncement('board')).toBe(false);
     expect(canPublishAnnouncement('board-chair')).toBe(false);
     expect(canPublishAnnouncement('athlete')).toBe(false);

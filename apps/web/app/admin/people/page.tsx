@@ -1041,7 +1041,7 @@ function PeopleConsoleRoleSwitch() {
 
 export default function PeopleConsolePage() {
   return (
-    <RoleSessionGate allowedRoles={['admin']}>
+    <RoleSessionGate allowedRoles={['admin', 'platform_owner']}>
       <PeopleConsoleRoleSwitch />
     </RoleSessionGate>
   );
