@@ -910,6 +910,31 @@ describe('background session types via the job worker', () => {
     expect(mockAppendConversationExchange).not.toHaveBeenCalled();
   });
 
+  test('background Heavy Bag: an educationally-framed high-risk question never queues', async () => {
+    mockIsShadowWorkerEnabled.mockReturnValue(true);
+
+    const response = await POST(postRequest({
+      message: 'What are the symptoms of a concussion?',
+      sessionType: 'heavy_bag',
+      preferAsync: true,
+    }));
+    const payload = await response.json();
+
+    // Educational framing passes request validation WITH a high-risk
+    // classification, and the canned-fallback interception for that
+    // classification lives inside routeLlmCall -- which the queue branch
+    // returned before. Queueing handed the question to the background model
+    // and persisted a generated answer as 'ok'; the same question asked
+    // synchronously got the safe fallback. High-risk classifications must
+    // fall through to the synchronous path.
+    expect(response.status).toBe(200);
+    expect(mockExecuteHeavyBagAsync).not.toHaveBeenCalled();
+    expect(payload.async).toBe(false);
+    expect(payload.state).toBe('filtered');
+    expect(payload.response).toContain('contact your medical team');
+    expect(payload.handoff).toBeTruthy();
+  });
+
   test('background Heavy Bag: preferAsync without the worker stays synchronous', async () => {
     // clearAllMocks resets calls, not return values -- the previous test's
     // enabled=true would otherwise leak into this one.
