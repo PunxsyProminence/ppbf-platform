@@ -42,6 +42,10 @@ wrong, not a ceiling.
 >   passes (`/admin/shadow` internals; spec conformance, which archived the fiction spec).
 >   Still uncovered: **jobs-feedback-unlocks** end to end (newly worth doing — the worker is
 >   real now) and the remainder of **classification-routing-evidence**.
+>   **Update, later on 2026-07-31:** both dimensions are now audited — see
+>   `SHADOW_JOBS_ROUTING_EVIDENCE_AUDIT_2026-07-31.md`, which also resolves every §4.2 lead
+>   (4 confirmed, 1 refuted, 6 stale, 1 fixed-and-pinned). §6 has no remaining uncovered
+>   dimensions.
 > - **Two activation steps, not code:** the SHADOW job worker ships OFF until a deployment
 >   sets `PPBF_SHADOW_WORKER_ENABLED=true` (`instrumentation.ts`), and Library semantic
 >   search waits on the `text-embedding-3-small` Azure deployment (#108's other half).
