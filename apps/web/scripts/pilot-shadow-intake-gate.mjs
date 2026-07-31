@@ -488,7 +488,9 @@ async function run() {
         athlete: {
           athlete_id: athleteId,
           account_id: athleteAccountId,
-          pin: athletePin,
+          // No pin here: promotion refuses athlete.pin outright (it was
+          // silently discarded for months). Step 9b sets the credential
+          // through the real admin activate flow.
           full_name: 'Gate Athlete',
           dob: '2011-02-10',
           weight_class: '119',

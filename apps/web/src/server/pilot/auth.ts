@@ -385,6 +385,51 @@ export async function resetAccountPin(accountId: string, pin: string, organizati
   });
 }
 
+/**
+ * Repair one account stranded by the pre-#46 guardian provisioning defect:
+ * a non-athlete row on auth_provider 'ppbf_local' has NO working login path
+ * (PIN login is athlete-only, Microsoft login matches only provider
+ * 'microsoft', and resolvePrincipal revokes non-athlete local sessions on
+ * sight). Flipping the provider makes the row matchable by the Microsoft
+ * callback's lower(login_email) lookup — which is why a login email is
+ * required — and clears the useless pin_hash the old path wrote.
+ *
+ * Deliberately per-account, never bulk: the stranded-guardians check
+ * (pilot-check-stranded-guardians.mjs / check-database.yml) prescribes an
+ * explicit operator decision per row, and the WHERE below makes every guard
+ * structural — wrong org, athlete rows, already-microsoft rows, inactive
+ * rows, and rows with no login email all refuse rather than half-repair.
+ */
+export async function repairStrandedGuardianAuthProvider(
+  accountId: string,
+  organizationId: string,
+): Promise<{ account_id: string; role: PilotRole; login_email: string }> {
+  const repaired = await queryOne<{ account_id: string; role: PilotRole; login_email: string }>(
+    `update pilot.accounts
+     set auth_provider = 'microsoft',
+         pin_hash = null,
+         must_change_pin = false,
+         updated_at = now()
+     where account_id = $1
+       and organization_id = $2
+       and auth_provider = 'ppbf_local'
+       and role <> 'athlete'
+       and is_platform_owner = false
+       and active_flag = true
+       and login_email is not null
+       and login_email <> ''
+     returning account_id, role, login_email`,
+    [accountId, organizationId],
+  );
+  if (!repaired) {
+    throw new Error(
+      'Not found: no active, stranded (ppbf_local) non-athlete account with a login email '
+      + 'matches that account_id in this organization',
+    );
+  }
+  return repaired;
+}
+
 export async function activateAccountPin(accountId: string, pin: string, organizationId: string): Promise<void> {
   validatePinPolicy(pin);
   const pinHash = await hashPin(pin);
