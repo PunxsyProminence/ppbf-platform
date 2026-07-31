@@ -175,7 +175,7 @@ const seedCapabilityBlueprints: Array<{ capabilityId: string; name: string; grou
     status: 'BLOCKED',
     owner: 'Admin Control',
     roles: ['Admin', 'Board'],
-    description: 'Reserved payment capability lane pending backend and compliance sign-off.',
+    description: 'Reserved payment lane covering donations, recurring giving, class fees, and B2B wholesale invoicing — scope and integration contract in docs/PAYMENT_SERVICE_SLOT.md; blocked pending backend and compliance sign-off.',
   },
   {
     capabilityId: 'CAP-013',

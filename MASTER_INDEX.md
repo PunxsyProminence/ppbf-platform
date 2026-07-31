@@ -37,6 +37,9 @@ gates are `npm run typecheck` / `lint` / `test`.
 - [ORGANIZATION_ADMIN_WORKFLOW.md](ORGANIZATION_ADMIN_WORKFLOW.md) — org
   lifecycle workflow, tracks closely to real functions in
   [apps/web/src/server/pilot/auth.ts](apps/web/src/server/pilot/auth.ts)
+- [docs/PAYMENT_SERVICE_SLOT.md](docs/PAYMENT_SERVICE_SLOT.md) — RESERVED, NOT
+  BUILT: the payment capability's scope (donations, recurring giving, class
+  fees, B2B wholesale) and the names the future build must use
 
 ## SHADOW
 
