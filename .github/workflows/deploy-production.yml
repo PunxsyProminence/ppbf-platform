@@ -59,8 +59,12 @@ jobs:
 
       - name: Verify supplied SHA matches the checked-out commit
         run: |
+          if [ -z "${{ inputs.confirm_sha }}" ]; then
+            echo "::error::confirm_sha is empty. Re-running a previous run does not re-supply workflow_dispatch inputs -- dispatch a fresh run with confirm_sha=${{ github.sha }}."
+            exit 1
+          fi
           if [ "${{ inputs.confirm_sha }}" != "${{ github.sha }}" ]; then
-            echo "::error::confirm_sha ('${{ inputs.confirm_sha }}') does not match the checked-out commit ('${{ github.sha }}'). Refusing to deploy."
+            echo "::error::confirm_sha ('${{ inputs.confirm_sha }}') does not match the checked-out commit ('${{ github.sha }}'). Pass the full 40-character SHA. Refusing to deploy."
             exit 1
           fi
 
