@@ -149,6 +149,21 @@ jobs:
       # disabled state -- it gains an explicit false (and eventually true)
       # only through its own workflow change once staging has proven the
       # promotion path through this gate.
+      #
+      # AZURE_AI_VISION_DEPLOYMENT_NAME names the vision deployment for Film
+      # Study (#103); owner-verified to exist on the shadow-ai resource
+      # 2026-07-30. Staging-only while the feature is pre-executor: setting it
+      # here powers the measurement diagnostic below, and film_study jobs
+      # remain SHADOW_JOB_TYPE_UNAVAILABLE until the executor ships on
+      # measured numbers. A deployment NAME, not a secret, like the embedding
+      # line above.
+      #
+      # PPBF_FILM_STUDY_DIAGNOSTIC_ENABLED exposes the admin-only measurement
+      # probe (synthesize test clip -> extract frames -> one timed vision
+      # call) that gate step 15 records. It is #103's required
+      # measured-facts source: in-container ffmpeg timing and real vision
+      # latency/token spend. Staging only; production leaves it unset until
+      # Film Study is a real feature.
       - name: Deploy to Azure Container App
         env:
           AZURE_AI_ENDPOINT: ${{ vars.AZURE_AI_ENDPOINT }}
@@ -178,6 +193,8 @@ jobs:
               PPBF_SHADOW_WORKER_ENABLED=true \
               PPBF_INTAKE_PROMOTION_ENABLED=true \
               AZURE_AI_EMBEDDING_DEPLOYMENT_NAME=text-embedding-3-small \
+              AZURE_AI_VISION_DEPLOYMENT_NAME=gpt-5-vision-shadow \
+              PPBF_FILM_STUDY_DIAGNOSTIC_ENABLED=true \
               PPBF_PILOT_BOOTSTRAP_KEY=secretref:ppbf-pilot-bootstrap-key \
               PPBF_PILOT_DEFAULT_ORG_ID=secretref:ppbf-pilot-default-org-id \
               PPBF_PILOT_SHADOW_CONTAINER=secretref:ppbf-pilot-shadow-container \
