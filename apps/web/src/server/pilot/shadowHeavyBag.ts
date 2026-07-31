@@ -242,69 +242,31 @@ You are in an **extended coaching session**.
   return sections.join('\n');
 }
 
-// ─── Scout Report Generator ───────────────────────────────────────────────────
-
-export interface ScoutReportInput {
-  userId: string;
-  organizationId: string;
-  role: PilotRole;
-  profile: ShadowUserProfileRow;
-  tierResult: ProfileTierResult;
-  recentInteractionSummary?: string;
-}
-
-export interface ScoutReport {
-  userId: string;
-  generatedAt: string;
-  profileTier: string;
-  summary: string;
-  strengths: string[];
-  growthAreas: string[];
-  recommendedTopics: string[];
-  openQuestions: string[];
-  insightNotes: string;
-}
-
-/**
- * Generate a Scout Report — deep user intelligence document.
- * Eligibility: Gold tier users only.
- * Execution: Always async (enqueued as a recovery round job).
- */
-export async function generateScoutReport(input: ScoutReportInput): Promise<{ jobId: string }> {
-  const jobId = await enqueueJob({
-    jobType: 'scout_report',
-    organizationId: input.organizationId,
-    accountId: input.userId,
-    role: input.role,
-    inputPayload: {
-      requestMode: 'profile',
-      authenticatedRole: input.role,
-      profileTier: input.tierResult.tier,
-      interactionCount: input.profile.interaction_count,
-      recentTopics: input.profile.recent_topics,
-      openQuestions: input.profile.open_questions,
-      communicationStyle: input.profile.communication_style,
-      rememberedFactCount: input.profile.remembered_facts?.length ?? 0,
-      recentInteractionSummary: input.recentInteractionSummary ?? null,
-    },
-    priority: 2,
-    ttlHours: 72,
-  });
-
-  return { jobId };
-}
+// generateScoutReport lived here: a second, fully-implemented scout producer
+// (requestMode 'profile', 72h TTL) that never gained a caller -- the live
+// scout path has always been the chat route's executeHeavyBagAsync branch.
+// Deleted rather than kept plausible (audit 2026-07-31 finding B5); the git
+// history holds the implementation if a profile-mode scout is ever wanted.
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function sessionTypeToJobType(
   sessionType: ShadowSessionType,
 ): import('./shadowJobQueue').JobType {
-  const map: Record<ShadowSessionType, import('./shadowJobQueue').JobType> = {
+  // recovery_round deliberately has no queue mapping. It used to map to
+  // 'learning_loop', a job type with no executor arm -- a row enqueued that
+  // way passed every write-side check and died as 'Unknown job type' only
+  // AFTER a claim was burned on it. Chat refuses the session type upstream
+  // today; if a future producer reaches this, it must fail at enqueue time
+  // with an honest code, not post-claim (audit 2026-07-31 finding B4).
+  if (sessionType === 'recovery_round') {
+    throw new Error('SHADOW_SESSION_TYPE_NOT_QUEUEABLE');
+  }
+  const map: Record<Exclude<ShadowSessionType, 'recovery_round'>, import('./shadowJobQueue').JobType> = {
     heavy_bag: 'heavy_bag_session',
     scout_report: 'scout_report',
     board_summary: 'board_summary',
     film_study: 'film_study',
-    recovery_round: 'learning_loop',
     quick_round: 'heavy_bag_session',
   };
   return map[sessionType] ?? 'heavy_bag_session';
