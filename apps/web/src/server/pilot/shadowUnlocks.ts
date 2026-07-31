@@ -330,7 +330,14 @@ export function buildShadowUnlockHints(unlockState: ShadowUnlockState | null): S
       featureKey: status.featureKey,
       unlocked: status.unlocked,
       progress,
-      closeToUnlocking: !status.unlocked && progress >= CLOSE_TO_UNLOCKING_PROGRESS,
+      // A feature whose activation mode is observation/disabled cannot unlock
+      // no matter the counter, so advertising it as "close to unlocking" was
+      // a permanent false promise -- three of the four features default to
+      // exactly that state, and their banners read 100% progress forever.
+      // Progress still reports honestly; only the promise is gated.
+      closeToUnlocking: status.activationMode === 'enabled'
+        && !status.unlocked
+        && progress >= CLOSE_TO_UNLOCKING_PROGRESS,
     };
   });
 }
