@@ -19,7 +19,7 @@ function GuardianPortalContent() {
       description="A secure, easy-to-read snapshot for parents or guardians to monitor attendance, progress, and safety notes."
       status="ready"
       primaryLinks={[
-        { label: 'Athlete dashboard', href: '/athlete/dashboard' },
+        { label: 'Parent dashboard', href: '/parent/dashboard' },
         { label: 'The Ring', href: '/operations' },
       ]}
       stats={[

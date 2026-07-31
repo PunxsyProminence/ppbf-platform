@@ -14,6 +14,10 @@ const PUNCH_TYPES: PunchType[] = ['Jab', 'Cross', 'Hook', 'Uppercut', 'Body', 'O
 // Contact Exposure, Focus Attainment, and 7-Day Weight Change from it.
 interface DeepTrackResult {
   ok: boolean;
+  // How many observations the server actually accepted. Zero means nothing was
+  // recorded at all, which the athlete must be told to re-enter; anything above
+  // zero is a kept record they must not submit a second time.
+  savedCount: number;
   // Set when the server raised a safety review because contact was logged for an
   // athlete with no current medical clearance. The submission still succeeded --
   // the record is kept deliberately -- but the athlete should be told, not left
@@ -90,9 +94,11 @@ async function submitDeepTrackObservations(input: {
   }));
 
   const fulfilled = results.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
+  const savedCount = fulfilled.filter((value) => value.ok).length;
 
   return {
-    ok: fulfilled.length === results.length && fulfilled.every((value) => value.ok),
+    ok: savedCount === results.length,
+    savedCount,
     // Any one of the contact observations tripping the gate is enough; they all
     // concern the same session.
     safetyReviewRaised: fulfilled.some((value) => value.safetyReviewRaised),
@@ -146,7 +152,7 @@ export default function SparringTelemetryPage() {
     const observedAt = new Date().toISOString();
 
     try {
-      const { ok, safetyReviewRaised } = await submitDeepTrackObservations({
+      const { ok, savedCount, safetyReviewRaised } = await submitDeepTrackObservations({
         athleteId,
         contextId,
         observedAt,
@@ -161,6 +167,12 @@ export default function SparringTelemetryPage() {
         bodyWeightKg: bodyWeightKg.trim() ? Number(bodyWeightKg) : null,
         opponentStance,
       });
+
+      if (savedCount === 0) {
+        setStatusMessage('Nothing was saved. No part of this session reached the SHADOW formula engine -- '
+          + 'check your connection and log it again.');
+        return;
+      }
 
       const timestamp = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
       setLastSubmitted(timestamp);

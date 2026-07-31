@@ -152,6 +152,7 @@ describe('session revocation after provider/role/organization changes', () => {
   });
 
   test('setOrganizationStatus revokes every session in that organization when it becomes inactive', async () => {
+    currentClient.query.mockResolvedValueOnce({ rows: [{ organization_id: 'org-1' }] });
     await setOrganizationStatus('org-1', 'suspended');
     const orgRevoke = currentClient.query.mock.calls.filter(
       ([sql]) => sql.includes('pilot.session_tokens') && sql.includes('organization_id = $1'),
@@ -161,7 +162,19 @@ describe('session revocation after provider/role/organization changes', () => {
   });
 
   test('setOrganizationStatus does not revoke sessions when the organization stays active', async () => {
+    currentClient.query.mockResolvedValueOnce({ rows: [{ organization_id: 'org-1' }] });
     await setOrganizationStatus('org-1', 'active');
+    expect(revokeCalls()).toHaveLength(0);
+  });
+
+  // Reporting success for an organization_id that matched no row let a
+  // platform owner believe an organization had been suspended while every
+  // session in it kept working.
+  test('setOrganizationStatus refuses an organization that does not exist', async () => {
+    currentClient.query.mockResolvedValueOnce({ rows: [] });
+    await expect(setOrganizationStatus('org-missing', 'suspended')).rejects.toThrow(
+      'Not found: no such organization',
+    );
     expect(revokeCalls()).toHaveLength(0);
   });
 

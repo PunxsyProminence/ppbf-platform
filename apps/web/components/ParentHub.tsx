@@ -150,9 +150,10 @@ export default function ParentHub() {
         });
         
         setChildren(childList);
-        if (childList.length > 0 && !activeChildId) {
-          setActiveChildId(childList[0].id);
-        }
+        // Functional update so the default selection does not read activeChildId
+        // here: depending on it would refetch the whole roster and re-show the
+        // loading spinner every time the parent switches child.
+        setActiveChildId((current) => current || childList[0]?.id || current);
       } catch (error) {
         setChildrenError(error instanceof Error ? error.message : 'Failed to load children');
         setChildren([]);
@@ -160,7 +161,7 @@ export default function ParentHub() {
         setChildrenLoading(false);
       }
     })();
-  }, [activeChildId, childrenRetryNonce]);
+  }, [childrenRetryNonce]);
 
   const activeChild = children.find(c => c.id === activeChildId);
   const tasksDue = homeAssignments.filter(a => a.status !== 'Completed').length;

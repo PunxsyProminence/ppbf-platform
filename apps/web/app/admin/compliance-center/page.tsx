@@ -11,7 +11,6 @@ interface ComplianceViolation {
   athlete_id: string;
   severity: 'critical' | 'high' | 'medium' | 'low';
   status: 'new' | 'acknowledged' | 'escalated' | 'resolved' | 'dismissed';
-  violation_timestamp: string;
   created_at: string;
   description?: string;
 }
@@ -268,7 +267,7 @@ export default function AdminComplianceCenterPage() {
                       <p className="text-sm font-semibold text-[#111111]">Athlete: {v.athlete_id}</p>
                       <p className="text-xs text-[#333333]">Rule: {v.rule_id}</p>
                       <p className="mt-1 text-xs text-[#444444]">
-                        {new Date(v.violation_timestamp).toLocaleString()}
+                        {new Date(v.created_at).toLocaleString()}
                       </p>
                       {v.description && <p className="mt-2 text-sm text-[#222222]">{v.description}</p>}
                     </div>

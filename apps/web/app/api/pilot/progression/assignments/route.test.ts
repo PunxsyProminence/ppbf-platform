@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { GET, POST } from './route';
-import { query, queryOne } from '@/src/server/pilot/db';
+import { query, queryOne, withTransaction } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
@@ -13,11 +13,27 @@ jest.mock('@/src/server/pilot/http', () => {
 jest.mock('@/src/server/pilot/db', () => ({
   query: jest.fn(),
   queryOne: jest.fn(),
+  // The assignment insert and the gap's status change have to commit together,
+  // so both statements run on a transaction client rather than the module's
+  // query(). The fake hands the callback a client whose query() is the same
+  // spy, keeping the call assertions meaningful.
+  withTransaction: jest.fn(),
 }));
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockQuery = query as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
+const mockWithTransaction = withTransaction as jest.Mock;
+
+beforeEach(() => {
+  // A transaction client returns the pg Result shape ({ rows }), unlike the
+  // module's query() which returns the rows array directly.
+  mockWithTransaction.mockImplementation(
+    (work: (client: { query: jest.Mock }) => Promise<unknown>) => work({
+      query: jest.fn(async (...args: unknown[]) => ({ rows: (await mockQuery(...args)) ?? [] })) as jest.Mock,
+    }),
+  );
+});
 
 afterEach(() => {
   jest.clearAllMocks();

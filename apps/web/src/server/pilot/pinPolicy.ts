@@ -35,10 +35,15 @@ export const DEFAULT_FIRST_LOGIN_PIN = '123456';
  * which clears must_change_pin and leaves the account reachable by anyone who
  * knows the sign-in ID -- on a PIN that is published in this file and printed in
  * the admin UI. It is also the first PIN anyone would guess.
+ *
+ * The message has to lead with "PIN" like the ones in validatePinPolicy:
+ * jsonError maps that prefix to a 400 carrying the text, and anything else to a
+ * 500 "Internal server error", which would tell the athlete nothing about why
+ * their chosen PIN was refused.
  */
 export function assertChosenPinAllowed(pin: string): void {
   if (pin.trim() === DEFAULT_FIRST_LOGIN_PIN) {
-    throw new Error('That is the starting PIN everyone is given. Choose a different one.');
+    throw new Error('PIN cannot be the starting PIN everyone is given. Choose a different one.');
   }
 }
 

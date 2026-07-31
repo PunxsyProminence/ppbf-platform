@@ -7,6 +7,8 @@ import {
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getPilotDefaultOrganizationId } from '@/src/server/pilot/env';
 import { jsonError } from '@/src/server/pilot/http';
+import { getClientIp, checkRateLimit, recordFailedAttempt, clearRateLimit } from '@/src/server/pilot/rateLimit';
+import { bootstrapKeyMatches } from '@/src/server/pilot/security';
 
 export const runtime = 'nodejs';
 
@@ -16,15 +18,31 @@ const ROOT_ORG_NAME = 'PPBF Root Platform Organization';
 export async function POST(request: NextRequest) {
   try {
     const bootstrapKey = process.env.PPBF_PILOT_BOOTSTRAP_KEY?.trim() || '';
-    const providedKey = request.headers.get('x-ppbf-bootstrap-key')?.trim() || '';
 
     if (!bootstrapKey) {
       throw new Error('Missing PPBF_PILOT_BOOTSTRAP_KEY');
     }
 
-    if (!providedKey || providedKey !== bootstrapKey) {
+    // Shares one per-IP bucket with /api/pilot/admin/bootstrap: both gates
+    // guard the same key, so guessing attempts must not get a fresh budget by
+    // switching endpoint.
+    const clientIp = getClientIp(request);
+    const ipKey = `pin_bootstrap:${clientIp}`;
+
+    const ipLimitCheck = checkRateLimit(ipKey);
+    if (ipLimitCheck.isLimited) {
+      return NextResponse.json(
+        { error: 'Too many attempts. Please try again later.' },
+        { status: 429 }
+      );
+    }
+
+    if (!bootstrapKeyMatches(request.headers, bootstrapKey)) {
+      recordFailedAttempt(ipKey);
       throw new Error('Forbidden: invalid bootstrap key');
     }
+
+    clearRateLimit(ipKey);
 
     const body = (await request.json().catch(() => ({}))) as {
       organization_id?: string;

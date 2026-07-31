@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { publishToResearchLibrary } from '@/src/server/pilot/publication';
-import { requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
+import { hiddenNotFound, requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
 
@@ -30,6 +30,13 @@ export async function POST(request: NextRequest) {
       description: body.description || '',
       tags: body.tags || [],
     });
+
+    // No publication of that id in the caller's organization. Indistinguishable
+    // from "does not exist" on purpose: the response must not confirm that
+    // another gym holds this publication_id.
+    if (!libraryId) {
+      return hiddenNotFound();
+    }
 
     return NextResponse.json({ ok: true, library_id: libraryId });
   } catch (error) {

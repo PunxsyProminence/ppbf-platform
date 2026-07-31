@@ -341,8 +341,14 @@ export async function POST(request: NextRequest) {
       if (result.outcome === 'class_not_found') {
         throw new Error('Missing class record');
       }
+      // A duplicate registration is a caller-visible conflict, not a server
+      // fault: thrown here it would carry no jsonError prefix and be masked
+      // as a 500, leaving the parent no way to tell they are already signed up.
       if (result.outcome === 'already_registered') {
-        throw new Error('Athlete already registered for this class');
+        return NextResponse.json(
+          { error: 'Athlete already registered for this class' },
+          { status: 409 },
+        );
       }
 
       return NextResponse.json({

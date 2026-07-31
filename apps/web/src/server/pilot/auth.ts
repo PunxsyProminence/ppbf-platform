@@ -287,10 +287,6 @@ export async function logoutWithToken(token: string): Promise<void> {
   await query('update pilot.session_tokens set revoked_at = now() where token_hash = $1 and revoked_at is null', [tokenHash]);
 }
 
-export async function revokeAllSessionsForAccount(accountId: string): Promise<void> {
-  await query('update pilot.session_tokens set revoked_at = now() where account_id = $1 and revoked_at is null', [accountId]);
-}
-
 // Used by organization-admin-triggered revocation. Authorizes the target
 // through an ACTIVE pilot.organization_memberships row for this specific
 // (account, organization) pair -- not the account's single denormalized
@@ -377,8 +373,12 @@ export async function resetAccountPin(accountId: string, pin: string, organizati
       [pinHash, accountId, organizationId],
     );
 
+    // Leads with "Not found:" because jsonError maps by message prefix: any
+    // other wording is masked as a 500 "Internal server error", which tells the
+    // admin their reset broke the server rather than that they picked an
+    // account this reset cannot apply to.
     if (result.rows.length === 0) {
-      throw new Error('Account not found or cannot be reset');
+      throw new Error('Not found: no such account, or it cannot be reset');
     }
 
     await revokeAllSessionsForAccountTx(client, accountId);
@@ -449,7 +449,7 @@ export async function activateAccountPin(accountId: string, pin: string, organiz
     );
 
     if (result.rows.length === 0) {
-      throw new Error('Account not found or cannot be activated');
+      throw new Error('Not found: no such account, or it cannot be activated');
     }
 
     await client.query(
@@ -867,10 +867,19 @@ export async function setOrganizationStatus(
   status: 'active' | 'inactive' | 'suspended' | 'pending',
 ): Promise<void> {
   await withTransaction(async (client) => {
-    await client.query(
-      'update pilot.organizations set status = $2, updated_at = now() where organization_id = $1',
+    const rows = await client.query<{ organization_id: string }>(
+      `update pilot.organizations
+       set status = $2,
+           updated_at = now()
+       where organization_id = $1
+       returning organization_id`,
       [organizationId, status],
     );
+
+    // A suspension that matched no organization must not report success.
+    if (rows.rows.length === 0) {
+      throw new Error('Not found: no such organization');
+    }
 
     if (status !== 'active') {
       // Revoke every session scoped to this organization so members can't

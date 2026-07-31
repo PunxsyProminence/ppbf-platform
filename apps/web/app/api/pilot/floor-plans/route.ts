@@ -8,6 +8,10 @@ import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
 
+// The plan is stored whole as jsonb, so the row size is whatever the client
+// sends. Matches the SHADOW job payload ceiling.
+const MAX_PLAN_BYTES = 100_000;
+
 type FloorPlanPayload = {
   athleteName: string;
   readiness: string;
@@ -107,10 +111,21 @@ export async function POST(request: NextRequest) {
       throw new Error('Missing plan');
     }
 
+    const plan = body.plan;
+    const serializedPlan = JSON.stringify(plan);
+    if (Buffer.byteLength(serializedPlan, 'utf8') > MAX_PLAN_BYTES) {
+      throw new Error('Request body plan exceeds the allowed size');
+    }
+
     await assertActorCanAccessAthlete(principal, athleteId);
 
-    const plan = body.plan;
-    const generatedAt = typeof plan.generatedAt === 'string' && plan.generatedAt ? plan.generatedAt : new Date().toISOString();
+    // generated_at is timestamptz, and the raw client string reached it
+    // unchecked -- anything Postgres could not parse failed the insert and
+    // surfaced as a masked 500 instead of storing the plan.
+    const claimedGeneratedAt = typeof plan.generatedAt === 'string' ? new Date(plan.generatedAt) : null;
+    const generatedAt = claimedGeneratedAt && !Number.isNaN(claimedGeneratedAt.getTime())
+      ? claimedGeneratedAt.toISOString()
+      : new Date().toISOString();
 
     await query(
       `insert into pilot.athlete_floor_plans (
@@ -134,7 +149,7 @@ export async function POST(request: NextRequest) {
         generatedAt,
         plan.readiness || 'UNKNOWN',
         plan.athleteName || 'Unknown Athlete',
-        JSON.stringify(plan),
+        serializedPlan,
         principal.accountId,
         principal.role,
       ],

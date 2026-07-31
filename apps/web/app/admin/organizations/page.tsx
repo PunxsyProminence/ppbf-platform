@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 
 import { usePilotSession } from '@/components/usePilotSession';
@@ -19,8 +19,9 @@ const gymCapabilities = [
 ];
 
 async function postJson(path: string, body: Record<string, unknown>) {
-  const response = await fetch(path, {
+  const response = await fetch(`${apiBase()}${path}`, {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
@@ -45,32 +46,14 @@ export default function SetupWizard() {
   // Step 2: Provision the gym's first organization admin
   const [adminEmail, setAdminEmail] = useState('');
 
-  // Step 3: Configure Features
+  // Step 3: Configure Features. Starts empty on purpose -- this is the new
+  // gym's feature set, not the signed-in platform owner's own organization.
   const [gymCapabilityAccess, setGymCapabilityAccess] = useState<Record<string, boolean>>({});
 
   // UI State
   const [feedback, setFeedback] = useState<{ kind: FeedbackKind; text: string } | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
-
-  // Load gym capabilities
-  useEffect(() => {
-    void (async () => {
-      try {
-        const response = await fetch(`${apiBase()}/api/pilot/admin/gym-capabilities`, {
-          method: 'GET',
-          credentials: 'include',
-        });
-
-        if (!response.ok) return;
-
-        const data = (await response.json()) as { capabilityAccess?: Record<string, boolean> };
-        setGymCapabilityAccess(data.capabilityAccess || {});
-      } catch {
-        // Ignore
-      }
-    })();
-  }, []);
 
   function showFeedback(kind: FeedbackKind, text: string) {
     setFeedback({ kind, text });
@@ -125,7 +108,12 @@ export default function SetupWizard() {
   }
 
   async function saveCapabilities() {
-    const enabledCount = Object.values(gymCapabilityAccess).filter(Boolean).length;
+    // Only the ids this wizard offers, so nothing outside the checkbox list can
+    // ride along into the new gym's capability set.
+    const capabilityAccess = Object.fromEntries(
+      gymCapabilities.map(({ id }) => [id, gymCapabilityAccess[id] === true]),
+    );
+    const enabledCount = Object.values(capabilityAccess).filter(Boolean).length;
 
     if (enabledCount === 0) {
       throw new Error('Please select at least one feature for your gym');
@@ -137,7 +125,7 @@ export default function SetupWizard() {
     // empty capability set to the platform owner's own organization instead.
     await postJson('/api/pilot/admin/gym-capabilities', {
       organization_id: gymId.trim(),
-      capabilityAccess: gymCapabilityAccess,
+      capabilityAccess,
     });
 
     return `Saved ${enabledCount} feature${enabledCount === 1 ? '' : 's'} for your gym`;
@@ -439,8 +427,8 @@ export default function SetupWizard() {
               <ol className="space-y-2 text-sm text-[var(--gray-dark)]">
                 <li><strong>1. Invite the gym admin as an Entra guest</strong> if their email is outside your Microsoft tenant — they cannot sign in until you do</li>
                 <li><strong>2. Have them sign in with Microsoft</strong> and open People to add their coaches</li>
-                <li><strong>3. They add athletes in People</strong> and hand out the one-time activation codes</li>
-                <li><strong>4. Athletes activate themselves</strong> at /activate and choose their own PIN</li>
+                <li><strong>3. They add athletes in People</strong> and hand out each athlete&apos;s sign-in ID plus the starting PIN</li>
+                <li><strong>4. Athletes choose their own PIN</strong> the first time they sign in</li>
               </ol>
             </div>
 

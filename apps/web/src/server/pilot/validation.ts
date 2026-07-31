@@ -29,23 +29,28 @@ function assertOnlyAllowedKeys(record: Record<string, unknown>, allowedKeys: rea
   }
 }
 
+// Every message below has to begin with a prefix jsonError maps to 400
+// ("Request body", "Missing", "Unsupported"). Anything else is an unrecognized
+// message, which jsonError replaces with a 500 "Internal server error" -- so a
+// caller who sent one bad field would be told the server was broken and never
+// learn which field to fix.
 function requireString(value: unknown, field: string): string {
   if (typeof value !== 'string' || !value.trim()) {
-    throw new Error(`${field} must be a non-empty string`);
+    throw new Error(`Request body field ${field} must be a non-empty string`);
   }
   return value.trim();
 }
 
 function requireBoolean(value: unknown, field: string): boolean {
   if (typeof value !== 'boolean') {
-    throw new TypeError(`${field} must be a boolean`);
+    throw new TypeError(`Request body field ${field} must be a boolean`);
   }
   return value;
 }
 
 function requireNumber(value: unknown, field: string): number {
   if (typeof value !== 'number' || Number.isNaN(value)) {
-    throw new TypeError(`${field} must be a valid number`);
+    throw new TypeError(`Request body field ${field} must be a valid number`);
   }
   return value;
 }
