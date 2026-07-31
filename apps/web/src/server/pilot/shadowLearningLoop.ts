@@ -2,7 +2,7 @@
 // Connects recommendation outcomes → Growth Metrics → SHADOW Library → Scout Reports.
 // This is how SHADOW improves over time: each interaction informs future advice.
 
-import { query } from './db';
+import { query, queryOne } from './db';
 import type { PilotRole } from './contracts';
 import { recordRecommendationEffectiveness } from './shadowMetrics';
 import { upsertRememberedFact } from './shadowUserProfile';
@@ -300,16 +300,40 @@ async function queueClientSignalForReview(
 }
 
 async function maybeUpdateCommunicationStyle(signal: LearningSignal, actions: string[]): Promise<void> {
-  if (signal.outcome !== 'thumbs_up' || !signal.responseText) {
+  if (signal.outcome !== 'thumbs_up') {
     return;
   }
 
   try {
-    await inferCommunicationPreference(signal);
+    // Neither feedback call site supplies responseText, so requiring it here
+    // meant communication_style stayed 'unknown' forever and the
+    // "Communication Preference" branch of personalization never fired. The
+    // text now comes from the durable assistant message row itself -- the
+    // server-trusted record the feedback was verified against -- rather than
+    // anything a client chose to send.
+    const responseText = signal.responseText ?? await loadDurableResponseText(signal);
+    if (!responseText) {
+      return;
+    }
+    await inferCommunicationPreference({ ...signal, responseText });
     actions.push('Communication preference updated');
   } catch {
     actions.push('Style update skipped');
   }
+}
+
+async function loadDurableResponseText(signal: LearningSignal): Promise<string | null> {
+  const row = await queryOne<{ content: string }>(
+    `SELECT content
+     FROM pilot.shadow_chat_messages
+     WHERE message_id = $1::uuid
+       AND organization_id = $2
+       AND account_id = $3
+       AND role = 'assistant'
+       AND response_state = 'ok'`,
+    [signal.messageId, signal.organizationId, signal.userId],
+  );
+  return row?.content ?? null;
 }
 
 // ─── Profile Fact Extraction ──────────────────────────────────────────────────

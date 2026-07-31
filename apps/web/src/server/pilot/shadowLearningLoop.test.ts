@@ -1,4 +1,4 @@
-import { query } from './db';
+import { query, queryOne } from './db';
 import { processLearningSignal } from './shadowLearningLoop';
 import { recordRecommendationEffectiveness } from './shadowMetrics';
 import { createShadowResearchRequirement } from './shadowResearch';
@@ -24,6 +24,7 @@ jest.mock('./shadowUserProfile', () => ({
 }));
 
 const mockQuery = jest.mocked(query);
+const mockQueryOne = jest.mocked(queryOne);
 const mockRecordMetrics = jest.mocked(recordRecommendationEffectiveness);
 const mockResearch = jest.mocked(createShadowResearchRequirement);
 const mockEvaluateUnlocks = jest.mocked(evaluateShadowUnlockState);
@@ -45,6 +46,7 @@ describe('SHADOW learning-loop trust gates', () => {
   beforeEach(() => {
     jest.resetAllMocks();
     mockQuery.mockResolvedValue([]);
+    mockQueryOne.mockResolvedValue(null);
     mockRecordMetrics.mockResolvedValue(undefined);
     mockResearch.mockResolvedValue(1);
     mockEvaluateUnlocks.mockResolvedValue({ features: {} } as never);
@@ -153,5 +155,53 @@ describe('SHADOW learning-loop trust gates', () => {
     expect(trail).toContain('Library entry flagged for review');
     expect(trail).toContain('Research requirement creation failed');
     expect(trail).not.toContain('Library review flag failed');
+  });
+
+  // communication_style was unwritable in production: the inference required
+  // signal.responseText, and neither feedback call site supplies it. The loop
+  // now reads the durable assistant message itself, so an approved thumbs-up
+  // can set the preference without trusting client-sent text.
+  describe('communication style inference', () => {
+    test('approved thumbs-up loads the durable response text and writes the style', async () => {
+      mockQueryOne.mockResolvedValue({ content: 'Keep your guard up between combinations.' });
+
+      const result = await processLearningSignal({
+        ...baseSignal,
+        verificationState: 'human_reviewed',
+      });
+
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('FROM pilot.shadow_chat_messages'),
+        ['durable-message-1', 'org-1', 'account-1'],
+      );
+      const styleUpdate = mockQuery.mock.calls.find(([sql]) =>
+        typeof sql === 'string' && sql.includes('SET communication_style'));
+      expect(styleUpdate).toBeDefined();
+      expect(styleUpdate?.[1]).toEqual(['account-1', 'org-1', 'concise']);
+      expect(result.actions.join(' ')).toContain('Communication preference updated');
+    });
+
+    test('a missing durable message skips the style update without failing the loop', async () => {
+      mockQueryOne.mockResolvedValue(null);
+
+      const result = await processLearningSignal({
+        ...baseSignal,
+        verificationState: 'human_reviewed',
+      });
+
+      expect(mockQuery.mock.calls.some(([sql]) =>
+        typeof sql === 'string' && sql.includes('SET communication_style'))).toBe(false);
+      expect(result.actions.join(' ')).not.toContain('Communication preference updated');
+      expect(result.profileUpdated).toBe(true);
+    });
+
+    test('durable-client feedback never touches the durable message text', async () => {
+      await processLearningSignal({
+        ...baseSignal,
+        verificationState: 'durable_client',
+      });
+
+      expect(mockQueryOne).not.toHaveBeenCalled();
+    });
   });
 });
