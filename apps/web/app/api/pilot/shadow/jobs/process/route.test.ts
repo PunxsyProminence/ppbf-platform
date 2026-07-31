@@ -79,32 +79,74 @@ describe('SHADOW job processor fail-closed modes', () => {
     }
   });
 
-  // Only Film Study remains gated -- it hard-requires the vision pipeline
-  // that does not exist. Scout reports and board summaries left this set the
-  // day the worker became real; their execution paths are covered below.
-  test.each<JobType>(['film_study'])(
-    'terminally fails unavailable %s jobs without executing or completing them',
-    async (jobType) => {
-      const job = claimedJob(jobType);
-      mockClaimNextJob.mockResolvedValueOnce(job);
+  // UNAVAILABLE_JOB_TYPES is empty now: film_study was the last entry and
+  // left it when the vision pipeline became real (#103). A job type the
+  // product can enqueue but not execute strands the request, so the set
+  // staying empty is the invariant -- if something is added back here, its
+  // producer must be removed in the same change.
+  test('no job type is enqueueable-but-unexecutable', async () => {
+    for (const jobType of ['heavy_bag_session', 'scout_report', 'board_summary', 'film_study'] as JobType[]) {
+      jest.clearAllMocks();
+      mockFailJob.mockResolvedValue(undefined);
+      mockClaimNextJob.mockResolvedValueOnce(claimedJob(jobType));
+      mockQueryOne.mockResolvedValueOnce({
+        role: 'coach',
+        athlete_id: null,
+        is_platform_owner: false,
+        organization_status: 'active',
+      });
 
       const response = await POST(processorRequest(jobType));
+      const payload = await response.json();
+
+      expect(payload.error).not.toBe('SHADOW_JOB_TYPE_UNAVAILABLE');
+    }
+  });
+
+  test('film study fails closed when the vision deployment is unset', async () => {
+    // The honest refusal that replaced the blanket unavailability: an
+    // "observation" produced without the vision model would be invention
+    // about a real child, so the executor refuses rather than degrading.
+    const previousDeployment = process.env.AZURE_AI_VISION_DEPLOYMENT_NAME;
+    delete process.env.AZURE_AI_VISION_DEPLOYMENT_NAME;
+    try {
+      // A fully valid film_study job, so the refusal under test is the
+      // vision gate and not a payload complaint.
+      const job = {
+        ...claimedJob('film_study'),
+        inputPayload: {
+          videoSessionId: 'vs-1',
+          athleteId: 'ATH-1',
+          blobPath: 'org-1/vs-1.mp4',
+          organizationId: 'org-1',
+          authenticatedRole: 'coach',
+          authorizedContext: 'Film study requested for video session vs-1.',
+        },
+      };
+      mockClaimNextJob.mockResolvedValueOnce(job);
+      mockQueryOne.mockResolvedValueOnce({
+        role: 'coach',
+        athlete_id: null,
+        is_platform_owner: false,
+        organization_status: 'active',
+      });
+
+      const response = await POST(processorRequest('film_study'));
 
       expect(response.status).toBe(200);
       await expect(response.json()).resolves.toMatchObject({
         processed: true,
-        jobId: job.jobId,
-        jobType,
-        error: 'SHADOW_JOB_TYPE_UNAVAILABLE',
+        error: 'SHADOW_FILM_VISION_UNCONFIGURED',
       });
-      expect(mockFailJob).toHaveBeenCalledWith(
-        job,
-        'SHADOW_JOB_TYPE_UNAVAILABLE',
-        { retryable: false },
-      );
       expect(mockCompleteJob).not.toHaveBeenCalled();
-    },
-  );
+    } finally {
+      if (previousDeployment === undefined) {
+        delete process.env.AZURE_AI_VISION_DEPLOYMENT_NAME;
+      } else {
+        process.env.AZURE_AI_VISION_DEPLOYMENT_NAME = previousDeployment;
+      }
+    }
+  });
 
   test('scout reports now execute -- and fail closed when the AI runtime is unconfigured', async () => {
     // The job passes authorization and reaches its executor; with no
