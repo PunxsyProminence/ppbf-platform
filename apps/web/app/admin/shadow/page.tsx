@@ -493,6 +493,26 @@ function renderMetricsPanel(
  * `processLearningSignal` (profile facts, communication style, effectiveness
  * metrics, research requirements). Without this panel the queue has no exit.
  */
+type ActivationModeValue = 'disabled' | 'observation' | 'enabled';
+
+interface UnlockThresholdRow {
+  featureKey: string;
+  metricKey: string;
+  minValue: number;
+  activationMode: ActivationModeValue;
+  description: string;
+}
+
+interface UnlockStatusRow {
+  unlocked: boolean;
+  activationMode: ActivationModeValue;
+  satisfied: boolean;
+  currentValue: number;
+  thresholdValue: number;
+}
+
+type UnlockAdminRow = UnlockThresholdRow & { status: UnlockStatusRow | null };
+
 interface LibraryReviewFlag {
   flag_id: string;
   topic: string;
@@ -621,6 +641,197 @@ function LibraryReviewFlagsPanel() {
             </div>
           );
         })}
+      </div>
+    </section>
+  );
+}
+
+// Feature unlock thresholds (audit E1). The GET/POST endpoint has existed and
+// worked for months with ZERO client callers, so activation mode was
+// unreachable: three of the four features ship in observation/disabled, which
+// means `unlocked = activationMode === 'enabled' && satisfied` can never be
+// true for them no matter how high the counter climbs. #123 stopped the UI
+// promising those unlocks; this is the other half -- the surface that can
+// actually grant one.
+//
+// The panel states the REASON a feature is locked, because "counter not met"
+// and "cannot ever unlock in this mode" are different facts and conflating
+// them is what made the old banners dishonest.
+function FeatureUnlockPanel() {
+  const [rows, setRows] = useState<UnlockAdminRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyFeatureKey, setBusyFeatureKey] = useState('');
+  const [error, setError] = useState('');
+  const [drafts, setDrafts] = useState<Record<string, { minValue: string; activationMode: ActivationModeValue }>>({});
+
+  const loadThresholds = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/shadow/unlocks`, {
+        credentials: 'include',
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.error || 'Failed to load feature thresholds');
+      }
+      const thresholds = (payload.thresholds ?? []) as UnlockThresholdRow[];
+      const features = (payload.state?.features ?? {}) as Record<string, UnlockStatusRow>;
+      const merged: UnlockAdminRow[] = thresholds.map((threshold) => ({
+        ...threshold,
+        status: features[threshold.featureKey] ?? null,
+      }));
+      setRows(merged);
+      setDrafts(Object.fromEntries(merged.map((row) => [
+        row.featureKey,
+        { minValue: String(row.minValue), activationMode: row.activationMode },
+      ])));
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Failed to load feature thresholds');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadThresholds();
+  }, [loadThresholds]);
+
+  async function handleSave(row: UnlockAdminRow) {
+    const draft = drafts[row.featureKey];
+    if (!draft) return;
+    const parsedMinValue = Number.parseInt(draft.minValue, 10);
+    if (!Number.isFinite(parsedMinValue) || parsedMinValue < 0) {
+      setError(`Threshold for ${row.featureKey} must be a whole number of 0 or more.`);
+      return;
+    }
+
+    setBusyFeatureKey(row.featureKey);
+    setError('');
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/shadow/unlocks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          featureKey: row.featureKey,
+          metricKey: row.metricKey,
+          minValue: parsedMinValue,
+          activationMode: draft.activationMode,
+          description: row.description,
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.error || 'Failed to save threshold');
+      }
+      await loadThresholds();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Failed to save threshold');
+    } finally {
+      setBusyFeatureKey('');
+    }
+  }
+
+  return (
+    <section className="border-4 border-[#d4a574] bg-[#0a0a0a]/70 p-4">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">Capability Governance</p>
+          <h3 className="mt-1 text-xl font-black text-[#e8d7c6]">Feature Unlock Thresholds</h3>
+        </div>
+        <button
+          type="button"
+          onClick={() => void loadThresholds()}
+          className="h-9 border-2 border-[#8b4444] bg-[#141414] px-3 text-[12px] font-bold text-[#d4a574] transition hover:border-[#d4a574]"
+        >
+          Refresh
+        </button>
+      </div>
+      <p className="mt-1 text-[12px] text-[#d4a574]/70">
+        A feature unlocks only when its activation mode is <span className="font-mono">enabled</span> AND its counter has reached the threshold. In <span className="font-mono">observation</span> or <span className="font-mono">disabled</span>, the counter is tracked but the feature can never unlock — raising it changes nothing.
+      </p>
+      <div className="mt-3 space-y-2">
+        {loading ? <p className="text-[13px] text-[#d4a574]/80">Loading thresholds…</p> : null}
+        {error ? <p className="text-[13px] text-[#f0c9c9]">{error}</p> : null}
+        {rows.map((row) => {
+          const busy = busyFeatureKey === row.featureKey;
+          const draft = drafts[row.featureKey] ?? { minValue: String(row.minValue), activationMode: row.activationMode };
+          const status = row.status;
+          const dirty = draft.minValue !== String(row.minValue) || draft.activationMode !== row.activationMode;
+          // Why it is locked, stated separately: a counter that is met but
+          // gated by mode is a different fact from one that is not met.
+          const lockReason = status?.unlocked
+            ? null
+            : row.activationMode !== 'enabled'
+              ? `Cannot unlock: activation mode is '${row.activationMode}'.`
+              : 'Counter has not reached the threshold.';
+
+          return (
+            <div key={row.featureKey} className="border border-[#8b4444]/60 bg-[#141414] p-3 text-[13px] text-[#e8d7c6]">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-bold">{row.featureKey}</span>
+                <span className={`border px-2 py-0.5 font-mono text-[11px] uppercase ${
+                  status?.unlocked
+                    ? 'border-[#3f8b5b] text-[#c9f0d7]'
+                    : 'border-[#8b4444] text-[#f0c9c9]'
+                }`}>
+                  {status?.unlocked ? 'unlocked' : 'locked'}
+                </span>
+                <span className="font-mono text-[11px] text-[#d4a574]/70">
+                  {row.metricKey}: {status?.currentValue ?? 0} / {row.minValue}
+                </span>
+              </div>
+              <p className="mt-2 text-[12px] text-[#b0a095]">{row.description}</p>
+              {lockReason ? (
+                <p className="mt-1 text-[12px] text-[#f0c9c9]">{lockReason}</p>
+              ) : null}
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-1 text-[12px] text-[#d4a574]/80">
+                  Mode
+                  <select
+                    value={draft.activationMode}
+                    onChange={(event) => setDrafts((previous) => ({
+                      ...previous,
+                      [row.featureKey]: { ...draft, activationMode: event.target.value as ActivationModeValue },
+                    }))}
+                    className="h-9 border-2 border-[#8b4444] bg-[#0a0a0a] px-2 text-[12px] text-[#e8d7c6]"
+                  >
+                    <option value="disabled">disabled</option>
+                    <option value="observation">observation</option>
+                    <option value="enabled">enabled</option>
+                  </select>
+                </label>
+                <label className="flex items-center gap-1 text-[12px] text-[#d4a574]/80">
+                  Threshold
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={draft.minValue}
+                    onChange={(event) => setDrafts((previous) => ({
+                      ...previous,
+                      [row.featureKey]: { ...draft, minValue: event.target.value },
+                    }))}
+                    className="h-9 w-24 border-2 border-[#8b4444] bg-[#0a0a0a] px-2 text-[12px] text-[#e8d7c6]"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => void handleSave(row)}
+                  disabled={busy || !dirty}
+                  className="h-9 border-2 border-[#3f8b5b] bg-[#162a1d] px-3 text-[12px] font-bold text-[#c9f0d7] transition hover:border-[#d4a574] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {busy ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+        {!loading && !error && rows.length === 0 ? (
+          <p className="text-[13px] text-[#d4a574]/80">No feature thresholds returned.</p>
+        ) : null}
       </div>
     </section>
   );
@@ -1483,6 +1694,8 @@ export default function AdminShadowConsolePage() {
         })}
         {/* ── Library Review Flags (negative-outcome verdicts) ─────── */}
         <LibraryReviewFlagsPanel />
+
+        <FeatureUnlockPanel />
         <section className="space-y-6 border-4 border-[#8b4444] bg-[#0a0a0a]/70 p-6">
           <div className="mb-6 border-b border-[#8b4444]/20 pb-4">
             <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">AI/ML Telemetry Scout</p>
