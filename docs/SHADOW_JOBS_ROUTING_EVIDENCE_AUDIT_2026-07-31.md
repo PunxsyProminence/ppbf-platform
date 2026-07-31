@@ -17,11 +17,32 @@ piece someone must decide on), **OK** (traced and sound).
 
 > **Status (same day):** A1–A5, A7 (async parity, with A7's processor half reduced to
 > retry-then-log because the job is already completed at that point) and B1 (lease raised to
-> 300s) are fixed with pinning tests in the async-parity PR. That work also surfaced a
+> 300s) are fixed with pinning tests in the async-parity PR (#120). That work also surfaced a
 > finding this audit missed: the output sweep validated the `evidenceTier` label itself, so
 > 'PROVEN' — the label earned by 2+ authorized citations — tripped the validator's own
 > \bproven\b trigger and safe-filtered the entire job output. The better the evidence, the
 > surer the self-filter. Fixed by exempting platform-assigned enum labels from the sweep.
+>
+> **Status (end of day):** every remaining DEFECT in this report is now fixed and merged:
+> C1/C2 (review-queue exit — reject always resolves, approve refuses honestly with a 409,
+> #122), E2 (`closeToUnlocking` respects activation mode, #123), D1–D6 (metrics honesty
+> pass — reason codes for structurally-dead tiles, `recommendation_type` stores the
+> recommendation kind, approval restamps `created_at`, `reviewedOutcomes` rename, queued
+> turns audited into the feedbackRate denominator, `viewerUnlocks` rename, #124), B5
+> (`generateScoutReport` deleted) + B4 (`recovery_round` fails at enqueue, not post-claim)
+> + the residual duplicate tier formula in `getUserMetrics` (#135). E1's missing surface
+> was built independently the same day: `FeatureUnlockPanel` in the admin console now
+> drives the threshold/activation endpoint, stating WHY a feature is locked.
+>
+> **Still open, all deliberate:** the DESIGN-GAP decisions — C3 (ratings immutable), A6
+> (evidence block joined last into the 12k context slice, with an oversize guard that can
+> never fire), E3/E4 (duplicate fine-tuning metric; four unwritable outcome signals),
+> F5 (retrieval failure indistinguishable from an empty Library), F6/F7 (classifier
+> high-risk score unused by safety; two topic vocabularies in one column), F8
+> (`shadowContextWeights` decorative, with a tie-break that would resolve "weight cut" to
+> `training`), B2/B3 (no job purge; invisible cancellation reasons), and the
+> `shadowChat.test.ts` `test.todo` on bare unevidenced directives. Each needs an owner
+> call, not a code fix someone should sneak in.
 
 > **Status (later the same day) — items 3, 4 and 5 of the suggested order are DONE.**
 > Re-verified against source on 2026-07-31 after this document had already gone stale twice:
