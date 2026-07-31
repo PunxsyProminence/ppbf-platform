@@ -103,7 +103,11 @@ describe('SHADOW feedback correlation', () => {
     const [sql, params] = mockQueryOne.mock.calls[0];
     expect(sql).toContain('verification_state');
     expect(sql).toContain('human_review_required');
-    expect(sql).toContain('feedback_id = pilot.shadow_feedback.feedback_id');
+    // The conflict arm updates rating fields only while the row still awaits
+    // review -- never the identity or verification columns, and nothing once
+    // a decision is recorded.
+    expect(sql).toContain("pilot.shadow_feedback.human_review_required = true");
+    expect(sql).not.toContain('verification_state = EXCLUDED.verification_state');
     expect(sql).toContain('(xmax = 0) AS created');
     expect(params).toContain('durable_client');
     expect(params).toContain(true);
@@ -148,6 +152,44 @@ describe('SHADOW feedback correlation', () => {
       outcomeSignal: 'thumbs_up',
       comment: 'Original reviewed note',
     });
+  });
+
+  test('a pending rating absorbs the corrected values; a resolved one never does', async () => {
+    // Owner decision 2026-07-31: editable until reviewed. The old upsert was
+    // a literal no-op (SET feedback_id = feedback_id), so flipping a
+    // thumbs-down to thumbs-up silently changed nothing while the route
+    // reported ok:true.
+    mockQueryOne.mockResolvedValueOnce({
+      feedback_id: '41',
+      created: false,
+      verification_state: 'durable_client',
+      human_review_required: true,
+      outcome_signal: 'thumbs_up',
+      comment: 'Corrected: this actually helped.',
+    });
+
+    const recorded = await recordShadowFeedback({
+      organizationId: 'org-1',
+      accountId: 'athlete-account-1',
+      role: 'athlete',
+      helpful: true,
+      outcomeSignal: 'thumbs_up',
+      comment: 'Corrected: this actually helped.',
+      correlationType: 'shadow_message',
+      correlationId: 'message-1',
+      recommendationRef: 'message-1',
+      verificationState: 'durable_client',
+      humanReviewRequired: true,
+    });
+
+    expect(recorded).toMatchObject({ created: false, outcomeSignal: 'thumbs_up' });
+    const [sql] = mockQueryOne.mock.calls[0];
+    // The update is gated on still-awaiting-review, field by field, and the
+    // no-op assignment is gone.
+    expect(sql).toContain('THEN EXCLUDED.helpful');
+    expect(sql).toContain('THEN EXCLUDED.outcome_signal');
+    expect(sql).toContain("pilot.shadow_feedback.verification_state = 'durable_client'");
+    expect(sql).not.toContain('feedback_id = pilot.shadow_feedback.feedback_id');
   });
 
   test('resolves approval from the organization-scoped durable feedback and message records', async () => {

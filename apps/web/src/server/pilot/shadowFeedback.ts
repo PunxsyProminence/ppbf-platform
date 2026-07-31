@@ -128,7 +128,36 @@ export async function recordShadowFeedback(input: ShadowFeedbackInput): Promise<
      ON CONFLICT (organization_id, account_id, correlation_id)
        WHERE correlation_type = 'shadow_message' AND correlation_id IS NOT NULL
      DO UPDATE SET
-       feedback_id = pilot.shadow_feedback.feedback_id
+       -- Editable until reviewed (owner decision 2026-07-31). The old no-op
+       -- here meant a corrected thumbs-up silently changed nothing while the
+       -- route returned ok:true. A rating still awaiting review now takes the
+       -- user's CURRENT judgment; once the review is resolved -- rejected or
+       -- promoted -- the row is part of the learning audit trail and stays
+       -- exactly what the reviewer saw.
+       helpful = CASE
+         WHEN pilot.shadow_feedback.verification_state = 'durable_client'
+          AND pilot.shadow_feedback.human_review_required = true
+         THEN EXCLUDED.helpful
+         ELSE pilot.shadow_feedback.helpful
+       END,
+       rating = CASE
+         WHEN pilot.shadow_feedback.verification_state = 'durable_client'
+          AND pilot.shadow_feedback.human_review_required = true
+         THEN EXCLUDED.rating
+         ELSE pilot.shadow_feedback.rating
+       END,
+       comment = CASE
+         WHEN pilot.shadow_feedback.verification_state = 'durable_client'
+          AND pilot.shadow_feedback.human_review_required = true
+         THEN EXCLUDED.comment
+         ELSE pilot.shadow_feedback.comment
+       END,
+       outcome_signal = CASE
+         WHEN pilot.shadow_feedback.verification_state = 'durable_client'
+          AND pilot.shadow_feedback.human_review_required = true
+         THEN EXCLUDED.outcome_signal
+         ELSE pilot.shadow_feedback.outcome_signal
+       END
      RETURNING
        feedback_id,
        (xmax = 0) AS created,

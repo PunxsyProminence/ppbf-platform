@@ -421,13 +421,19 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
         expect(result.filtered).toBe(false);
       });
 
-      // The one live case from the retired shadowChat.test.ts.disabled suite
-      // (its Test 11): "You should do X because it is best." still validates
-      // today -- no statistic, no "proven", no medical or weight-cut trigger.
-      // Whether generic should-directives must carry a citation is a safety
-      // design decision, not a regression fix, so the case is recorded here
-      // instead of vanishing with the deleted file.
-      test.todo('decide whether a bare unevidenced directive ("You should do X because it is best.") should filter');
+      test('deliberately allows a bare unevidenced coaching directive', () => {
+        // DECIDED (owner, 2026-07-31): bare should-directives with no
+        // statistic, no "proven", and no medical or weight-cut trigger pass
+        // without a citation. Requiring one would filter ordinary coaching
+        // speech ("you should keep your guard up"), and the dangerous shapes
+        // -- medical directives, quantified claims, weight cutting -- are
+        // covered by their own gates above. This pins the decision so a
+        // future validator change that flips it does so knowingly.
+        // (Originally Test 11 of the retired shadowChat.test.ts.disabled.)
+        const result = validateShadowResponse('You should do X because it is best.');
+        expect(result.filtered).toBe(false);
+        expect(result.reasons).toEqual([]);
+      });
 
       describe('coaching speech that was withheld as a false positive', () => {
         // Measured live 2026-07-30 against the staging deployment: only 2 of 6
