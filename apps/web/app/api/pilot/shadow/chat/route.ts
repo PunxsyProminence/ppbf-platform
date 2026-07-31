@@ -21,7 +21,7 @@ import {
 } from '@/src/server/pilot/shadowUserProfile';
 import { classifyRequest, type ShadowTier } from '@/src/server/pilot/shadowClassifier';
 import { buildShadowContext } from '@/src/server/pilot/shadowContextBuilder';
-import { describeDeployment, tierToSessionType } from '@/src/server/pilot/shadowRouter';
+import { describeDeployment, sessionTypeToTier, tierToSessionType } from '@/src/server/pilot/shadowRouter';
 import { classifyProfileTier, buildPersonalizationPrompt } from '@/src/server/pilot/shadowProfiling';
 import { executeHeavyBagAsync, executeHeavyBagSync } from '@/src/server/pilot/shadowHeavyBag';
 import { isShadowWorkerEnabled } from '@/src/server/pilot/shadowJobWorker';
@@ -569,12 +569,24 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
 
     // Step 1: Classify request + route via The Corner
     const classification = classifyRequest(message, userRole as PilotRole, sanitizedTier);
-    const effectiveTier = classification.tier;
     const sessionType = resolveSessionType({
       requestedSessionType,
-      effectiveTier,
+      effectiveTier: classification.tier,
       role: userRole as PilotRole,
     });
+    // Audit F1. Three things must agree: the model that runs (chosen from
+    // sessionType), the context depth built for it, and the tier badge shown
+    // to the user (both taken from the tier). An explicit sessionType override
+    // moved only the first, so `{sessionType:'heavy_bag'}` with no tier ran
+    // the Heavy Bag model against a Quick Round context and reported
+    // "Quick Round" -- a more expensive model answering with less context than
+    // it was built for, while the user was told the opposite.
+    //
+    // Deriving the tier back from the session type realigns all three. With no
+    // override this is a no-op: ShadowTier has exactly two values and the
+    // mapping round-trips, so only an honored override changes anything. Async
+    // and refused session types have no tier and keep the classifier's.
+    const effectiveTier = sessionTypeToTier(sessionType) ?? classification.tier;
 
     if (sessionType === 'film_study' || sessionType === 'recovery_round') {
       return NextResponse.json(
@@ -929,7 +941,18 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     const persistedEvidenceTier = deriveEvidenceTier({
       isAnsweredState: state === 'ok',
       evidenceAvailability: evidenceBundle.availability,
-      citationCount: responseValidation.citationIds.length,
+      // Audit F3: this counted responseValidation.citationIds, which includes
+      // platform-rollup and near-miss context ids. Those are authorized for
+      // validation but are NOT library evidence, so `citations` above strips
+      // them from what the user sees. An answer citing two platform ids and no
+      // library document therefore earned PROVEN -- the top tier -- and
+      // rendered it above an empty Sources list.
+      //
+      // The tier is now derived from the citations actually displayed, so it
+      // can never claim more evidence than the reader can check. Latent while
+      // the Library is empty (every answer is RESEARCH_NEEDED), and no longer
+      // latent now that it has real doctrine in it.
+      citationCount: citations.length,
     });
     const persistedRequiresHumanReview = responseValidation.requiresHumanReview || state === 'filtered';
     const persistedHandoff = resolveHandoff({

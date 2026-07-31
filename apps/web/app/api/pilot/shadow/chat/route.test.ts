@@ -80,9 +80,17 @@ jest.mock('@/src/server/pilot/shadowContextBuilder', () => ({
   })),
 }));
 
+// The two tier<->sessionType mappings are pure and total, and the route now
+// relies on them round-tripping (audit F1), so they mirror the real
+// implementations rather than returning a fixed value. tierToSessionType used
+// to be stubbed to 'quick_round' for every input, which meant no test could
+// have caught a tier/session-type disagreement.
 jest.mock('@/src/server/pilot/shadowRouter', () => ({
   describeDeployment: jest.fn((name: string) => name),
-  tierToSessionType: jest.fn(() => 'quick_round'),
+  tierToSessionType: jest.fn((tier: string) => (tier === 'heavy_bag' ? 'heavy_bag' : 'quick_round')),
+  sessionTypeToTier: jest.fn((sessionType: string) => (
+    sessionType === 'heavy_bag' ? 'heavy_bag' : sessionType === 'quick_round' ? 'quick_round' : null
+  )),
   isAsyncSession: jest.fn(() => false),
 }));
 
@@ -515,6 +523,64 @@ describe('POST /api/pilot/shadow/chat trust boundary', () => {
     expect(global.fetch).toBe(originalFetch);
   });
 
+  // Audit F1. The model is chosen from sessionType; the context depth and the
+  // tier badge are taken from the tier. An explicit sessionType override moved
+  // only the first, so all three could disagree at once.
+  test('a sessionType override without a tier reports the tier that actually ran', async () => {
+    // The classifier sees a short message and says quick_round. The caller
+    // overrode sessionType to heavy_bag, so the Heavy Bag model runs -- and
+    // before this fix the response still said "quick_round", while the context
+    // was built lightweight for a model that expects the full picture.
+    mockClassifyRequest.mockReturnValueOnce({
+      tier: 'quick_round',
+      complexity: 0.2,
+      topic: 'general',
+      confidence: 1,
+      reasoning: 'Short message',
+      requiresManualOverride: false,
+      suggestedContextDepth: 'lightweight',
+    });
+    mockExecuteHeavyBagSync.mockResolvedValueOnce({
+      mode: 'sync',
+      response: 'RESEARCH NEEDED — no verified evidence was supplied.',
+      routing: { model: { displayName: 'Test Heavy Model' } } as never,
+      sessionType: 'heavy_bag',
+    });
+
+    const response = await POST(postRequest({
+      message: 'Thoughts?',
+      sessionType: 'heavy_bag',
+    }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.sessionType).toBe('heavy_bag');
+    // The badge now matches the model that answered.
+    expect(payload.tier).toBe('heavy_bag');
+    expect(mockExecuteHeavyBagSync).toHaveBeenCalled();
+  });
+
+  test('without an override the classifier tier is unchanged', async () => {
+    // The realignment must be a no-op on the ordinary path: ShadowTier has
+    // exactly two values and the mapping round-trips, so a request carrying no
+    // sessionType must still report exactly what the classifier decided.
+    mockClassifyRequest.mockReturnValueOnce({
+      tier: 'quick_round',
+      complexity: 0.2,
+      topic: 'general',
+      confidence: 1,
+      reasoning: 'Short message',
+      requiresManualOverride: false,
+      suggestedContextDepth: 'lightweight',
+    });
+
+    const response = await POST(postRequest({ message: 'Thoughts?' }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.tier).toBe('quick_round');
+  });
+
   test('returns a degraded state and never reads or logs a provider response body', async () => {
     const providerText = jest.fn(async () => 'SECRET_PROVIDER_BODY');
     global.fetch = jest.fn().mockResolvedValue({
@@ -760,6 +826,40 @@ describe('Omega cross-organization breadth', () => {
     expect(mockAppendConversationExchange).toHaveBeenCalledWith(expect.objectContaining({
       evidence: expect.objectContaining({ citationIds: [] }),
     }));
+  });
+
+  // Audit F3. The tier counted every authorized citation, but only bundle
+  // items are rendered as Sources -- so two platform ids and no library
+  // document earned PROVEN, the top tier, above an empty Sources list. The
+  // grade must never outrun what the reader can actually check.
+  test('platform citations do not inflate the evidence tier above an empty source list', async () => {
+    // The bundle must be AVAILABLE or deriveEvidenceTier short-circuits to
+    // RESEARCH_NEEDED and the assertion below passes for the wrong reason --
+    // which is exactly what the first draft of this test did. Available, but
+    // carrying no items: the Library returned nothing relevant, and the only
+    // citation in the answer is a platform id.
+    mockRetrieveEvidence.mockResolvedValueOnce({
+      bundleId: '00000000-0000-4000-8000-000000000300',
+      availability: 'available',
+      allowedEvidenceIds: [],
+      context: 'No library excerpt matched.',
+      items: [],
+    } as never);
+    // One platform citation is enough: under the old count that is
+    // citationCount 1, which grades EMERGING. It must grade EXPERIMENTAL,
+    // because zero library sources are shown.
+    respondWith(`Alpha Boxing has 12 athletes [E:${platformGymEvidenceId('gym-a')}].`);
+
+    const payload = await (await POST(postRequest({ message: CROSS_GYM_QUESTION }))).json();
+
+    expect(payload.state).toBe('ok');
+    // The citation was authorized and survived validation...
+    expect(payload.response).toContain('12 athletes');
+    // ...but it is not library evidence, so it is not shown as a source and
+    // the tier must not read as though the claim were backed by doctrine.
+    expect(payload.citations ?? []).toEqual([]);
+    expect(payload.evidenceTier).not.toBe('PROVEN');
+    expect(payload.evidenceTier).not.toBe('EMERGING');
   });
 
   test('no other role reaches the block, even asking the same question', async () => {
