@@ -41,6 +41,28 @@ describe('drain loop', () => {
     jest.useRealTimers();
   });
 
+  test('housekeeping runs only every housekeepingIntervalTicks ticks', async () => {
+    // Retention work rides the drain loop (it can never overlap a claim)
+    // but not its cadence -- purging terminal rows every 30 seconds would
+    // be pure churn.
+    const processOne = jest.fn(async () => ({ processed: false }));
+    const housekeeping = jest.fn(async () => {});
+
+    handle = startShadowJobWorker({
+      processOne,
+      intervalMs: 1_000,
+      housekeeping,
+      housekeepingIntervalTicks: 3,
+    });
+
+    await jest.advanceTimersByTimeAsync(2_000);
+    expect(housekeeping).not.toHaveBeenCalled();
+    await jest.advanceTimersByTimeAsync(1_000);
+    expect(housekeeping).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(3_000);
+    expect(housekeeping).toHaveBeenCalledTimes(2);
+  });
+
   test('a tick drains until the queue reports empty', async () => {
     const results = [
       { processed: true, jobId: 'a' },

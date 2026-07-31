@@ -48,7 +48,14 @@ interface StartOptions {
   intervalMs: number;
   maxJobsPerTick?: number;
   onError?: (error: unknown) => void;
+  // Periodic retention work (e.g. purging terminal job rows). Runs inside
+  // the tick, so it can never overlap job processing, and only every
+  // housekeepingIntervalTicks ticks -- retention does not need 30s cadence.
+  housekeeping?: () => Promise<void>;
+  housekeepingIntervalTicks?: number;
 }
+
+const DEFAULT_HOUSEKEEPING_INTERVAL_TICKS = 120; // ~1 hour at the 30s default
 
 // Hot reload in dev re-runs module initialization; a plain module-level flag
 // would be reset with it and stack a second loop. The guard therefore lives
@@ -74,6 +81,8 @@ export function startShadowJobWorker(options: StartOptions): ShadowJobWorkerHand
 
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let ticksSinceHousekeeping = 0;
+  const housekeepingEvery = Math.max(1, options.housekeepingIntervalTicks ?? DEFAULT_HOUSEKEEPING_INTERVAL_TICKS);
 
   // A chained setTimeout rather than setInterval: a tick that runs long (a
   // 95-second Heavy Bag generation) must delay the next tick, not overlap it.
@@ -90,6 +99,13 @@ export function startShadowJobWorker(options: StartOptions): ShadowJobWorkerHand
         if (stopped) return;
         const result = await options.processOne();
         if (!result.processed) break;
+      }
+      if (options.housekeeping) {
+        ticksSinceHousekeeping += 1;
+        if (ticksSinceHousekeeping >= housekeepingEvery) {
+          ticksSinceHousekeeping = 0;
+          await options.housekeeping();
+        }
       }
     } catch (error) {
       onError(error);

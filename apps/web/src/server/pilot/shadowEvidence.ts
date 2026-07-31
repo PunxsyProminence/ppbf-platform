@@ -31,6 +31,12 @@ export interface ShadowEvidenceBundle {
   items: ShadowEvidenceItem[];
   allowedEvidenceIds: string[];
   context: string;
+  // True only when retrieval THREW (owner decision 2026-07-31, audit finding
+  // F5). An empty-but-healthy Library and a broken lookup used to produce
+  // byte-identical bundles, so "no verified evidence yet" quietly covered
+  // for outages. The model boundary text is the same either way; this flag
+  // exists so the RESPONSE can say which one happened.
+  retrievalDegraded?: boolean;
 }
 
 function sha256(value: string): string {
@@ -54,6 +60,16 @@ export function unavailableShadowEvidenceBundle(): ShadowEvidenceBundle {
     items: [],
     allowedEvidenceIds: [],
     context: buildUnavailableContext(),
+  };
+}
+
+// The retrieval-failure twin of the bundle above: same model-facing boundary
+// text, same fail-closed shape, but marked degraded so the client can say
+// "evidence lookup unavailable" instead of implying the Library is empty.
+export function degradedShadowEvidenceBundle(): ShadowEvidenceBundle {
+  return {
+    ...unavailableShadowEvidenceBundle(),
+    retrievalDegraded: true,
   };
 }
 

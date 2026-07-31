@@ -62,6 +62,7 @@ import {
   publicEvidenceCitations,
   retrieveShadowEvidenceBundle,
   unavailableShadowEvidenceBundle,
+  degradedShadowEvidenceBundle,
   type ShadowEvidenceCitation,
 } from '@/src/server/pilot/shadowEvidence';
 
@@ -733,7 +734,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       queryText: message,
     }).catch(() => {
       console.error('SHADOW evidence retrieval unavailable');
-      return unavailableShadowEvidenceBundle();
+      // Degraded, not merely unavailable: a broken lookup and an empty
+      // Library must stop reading identically to the user (audit F5).
+      return degradedShadowEvidenceBundle();
     });
     // Omega breadth: the platform tier may draw on aggregate operational
     // counters from every gym, but only when the question is actually about
@@ -772,10 +775,17 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     const authorizedContextOutput = {
       ...contextOutput,
       context: [
+        // Evidence first (owner decision 2026-07-31, audit finding A6): the
+        // background path slices this string to a hard 12,000 chars at
+        // enqueue, and the bundle used to be joined LAST -- an oversized
+        // role/profile context silently pushed the verified excerpts and the
+        // "label unsupported claims RESEARCH NEEDED" instruction past the
+        // cut. Truncation now costs the tail (platform rollup, then general
+        // context) before it can ever cost the evidence boundary.
+        evidenceBundle.context,
         roleBasedContext.context,
         contextOutput.context,
         platformContext,
-        evidenceBundle.context,
       ].filter(Boolean).join('\n\n'),
     };
     const conversationHistory = requestedConversationId
@@ -1081,6 +1091,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       requiresHumanReview: responseRequiresHumanReview,
       highRiskTopic: responseTopic,
       evidenceTier: persistedEvidenceTier,
+      // Present only when the evidence lookup itself failed -- the tier
+      // legend's "no verified evidence yet" must not cover for an outage.
+      evidenceNotice: evidenceBundle.retrievalDegraded ? 'EVIDENCE_RETRIEVAL_UNAVAILABLE' : undefined,
       handoff: persistedHandoff,
       unlockHints: buildShadowUnlockHints(unlockState),
       tier: effectiveTier,
