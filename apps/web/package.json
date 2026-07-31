@@ -56,7 +56,8 @@
     "pilot:apply-publications": "node scripts/pilot-apply-publications-migration.mjs",
     "test:migrations:video-sessions": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/videoSessionsMigration.pg.test.ts --testTimeout=180000",
     "pilot:apply-film-study-proposals": "node scripts/pilot-apply-film-study-proposals-migration.mjs",
-    "test:migrations:film-proposals": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/filmStudyProposals.pg.test.ts --testTimeout=180000"
+    "test:migrations:film-proposals": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/filmStudyProposals.pg.test.ts --testTimeout=180000",
+    "pilot:apply-compliance-progression-publication": "node scripts/pilot-apply-compliance-progression-publication-migration.mjs"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.28.0",

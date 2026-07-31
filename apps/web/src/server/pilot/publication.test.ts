@@ -50,3 +50,64 @@ describe('updatePublicationStatus', () => {
     expect(params).toEqual(['pub-1', 'pending_review', expect.any(String), null]);
   });
 });
+
+// tags is `text[] not null default '{}'::text[]`. node-pg passes a bound string
+// through verbatim, and Postgres array_in rejects a JSON literal -- so
+// JSON.stringify(tags) raised 22P02 on EVERY insert, including the empty
+// default, and both publication endpoints returned a generic 500 forever.
+describe('array-typed tags reach Postgres as arrays', () => {
+  test('createPublication binds tags as a JS array, never a JSON string', async () => {
+    mockQuery.mockResolvedValueOnce([{ publication_id: 'pub-1' }]);
+
+    const { createPublication } = await import('./publication');
+    await createPublication({
+      organizationId: 'org-1',
+      videoSessionId: 'vid-1',
+      athleteId: 'ath-1',
+      submittedByAccountId: 'coach-1',
+      publicationType: 'research_library',
+      title: 'Jab mechanics',
+      description: 'Session review',
+      tags: ['jab', 'footwork'],
+    });
+
+    const [, params] = mockQuery.mock.calls[0];
+    expect(params[8]).toEqual(['jab', 'footwork']);
+    expect(typeof params[8]).not.toBe('string');
+  });
+
+  test('the empty-tags default is an empty array, not "[]"', async () => {
+    mockQuery.mockResolvedValueOnce([{ publication_id: 'pub-1' }]);
+
+    const { createPublication } = await import('./publication');
+    await createPublication({
+      organizationId: 'org-1',
+      videoSessionId: 'vid-1',
+      athleteId: 'ath-1',
+      submittedByAccountId: 'coach-1',
+      publicationType: 'private_archive',
+      title: 'Untagged',
+      description: '',
+    });
+
+    const [, params] = mockQuery.mock.calls[0];
+    expect(params[8]).toEqual([]);
+  });
+
+  test('publishToResearchLibrary binds tags as a JS array too', async () => {
+    mockQuery.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+
+    const { publishToResearchLibrary } = await import('./publication');
+    await publishToResearchLibrary({
+      organizationId: 'org-1',
+      publicationId: 'pub-1',
+      videoSessionId: 'vid-1',
+      title: 'Jab mechanics',
+      description: 'Session review',
+      tags: ['jab'],
+    });
+
+    const [, params] = mockQuery.mock.calls[0];
+    expect(params[6]).toEqual(['jab']);
+  });
+});

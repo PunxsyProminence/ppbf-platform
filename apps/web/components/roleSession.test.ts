@@ -82,10 +82,27 @@ describe('roleSession display cache', () => {
     expect(storage.getItem('ppbf-club-role')).toBeNull();
   });
 
+  // platform_owner has no roleRoutes landing card, so the parse set was built
+  // without it and threw away a session the login page had just written --
+  // blanking the global header on every ungated page for the owner.
+  test('a stored platform_owner session survives the next read', () => {
+    const storage = new MemoryStorage();
+    installWindow(storage);
+    jest.spyOn(Date, 'now').mockReturnValue(1_000);
+
+    createPersistentRoleSession('platform_owner');
+
+    expect(readRoleSession()).toEqual({ role: 'platform_owner', expiresAt: 1_000 + ROLE_SESSION_TTL_MS });
+    expect(storage.getItem(ROLE_SESSION_KEY)).not.toBeNull();
+  });
+
   test.each([
     ['missing expiry', JSON.stringify({ role: 'admin' })],
     ['expired', JSON.stringify({ role: 'admin', expiresAt: 999 })],
-    ['unsupported role', JSON.stringify({ role: 'platform_owner', expiresAt: 2_000 })],
+    // Was 'platform_owner' until 95bc5f9 made that a real ClubRole that
+    // mapPilotRoleToClubRole returns and login stores. Keeping it here pinned
+    // the bug where the owner's own cache was erased on the next read.
+    ['unsupported role', JSON.stringify({ role: 'sysadmin', expiresAt: 2_000 })],
     ['malformed JSON', '{'],
   ])('rejects and removes a stale cache: %s', (_label, raw) => {
     const storage = new MemoryStorage();

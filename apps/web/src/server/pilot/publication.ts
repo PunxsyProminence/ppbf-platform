@@ -52,7 +52,9 @@ export async function createPublication(params: {
       params.publicationType,
       params.title,
       params.description,
-      JSON.stringify(params.tags || []),
+      // tags is text[]; node-pg serializes a JS array into a Postgres array
+      // literal. JSON.stringify produced '[...]', which array_in rejects.
+      params.tags || [],
     ],
   );
 
@@ -129,7 +131,7 @@ export async function publishToResearchLibrary(params: {
       params.videoSessionId,
       params.title,
       params.description,
-      JSON.stringify(params.tags || []),
+      params.tags || [],
     ],
   );
 

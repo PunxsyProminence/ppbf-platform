@@ -19,7 +19,10 @@ const WEB_ROOT = path.resolve(__dirname, '../..');
 const SCAN_ROOTS = ['app', 'components', 'src/client'];
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx']);
 
-const BARE_API_FETCH = /fetch\(\s*['"`]\/api\//;
+// \s* spans newlines: a call whose URL sat on its own line ("fetch(\n  '/api/...")
+// slipped through a line-by-line scan for a year. The scan below is whole-file
+// for that reason.
+const BARE_API_FETCH = /fetch\(\s*['"`]\/api\//g;
 
 function isTestFile(filePath: string): boolean {
   return /\.(test|spec)\.[jt]sx?$/.test(filePath);
@@ -49,12 +52,13 @@ test('every client /api fetch goes through apiBase()', () => {
     if (!fs.existsSync(absoluteRoot)) continue;
 
     for (const filePath of collectSourceFiles(absoluteRoot)) {
-      const lines = fs.readFileSync(filePath, 'utf8').split('\n');
-      lines.forEach((line, index) => {
-        if (BARE_API_FETCH.test(line)) {
-          offenders.push(`${path.relative(WEB_ROOT, filePath)}:${index + 1}: ${line.trim()}`);
-        }
-      });
+      const source = fs.readFileSync(filePath, 'utf8');
+      for (const match of source.matchAll(BARE_API_FETCH)) {
+        const matchIndex = match.index ?? 0;
+        const lineNumber = source.slice(0, matchIndex).split('\n').length;
+        const relative = path.relative(WEB_ROOT, filePath).split(path.sep).join('/');
+        offenders.push(`${relative}:${lineNumber}: ${match[0].replace(/\s+/g, ' ')}`);
+      }
     }
   }
 

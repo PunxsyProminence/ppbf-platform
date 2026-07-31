@@ -307,7 +307,7 @@ export default function AthleteWorkspace() {
       setGoalsLoading(true);
       setGoalsError(null);
       const response = await fetch(
-        `/api/pilot/goals/list?athlete_id=${encodeURIComponent(backendAthleteId)}`,
+        `${apiBase()}/api/pilot/goals/list?athlete_id=${encodeURIComponent(backendAthleteId)}`,
         { method: 'GET', credentials: 'include' }
       );
       if (!response.ok) throw new Error('Failed to load goals');

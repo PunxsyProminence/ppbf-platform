@@ -327,7 +327,11 @@ export async function POST(request: NextRequest) {
         athlete_id: athleteId,
         requested_by_role: actorRole,
         requested_by_account_id: actor.accountId,
-        parent_reviewed: actor.role !== 'parent',
+        // true means "a parent has reviewed this registration" (see
+        // markSchedulerRegistrationReviewed). Only a parent registering their
+        // own child satisfies that at insert time; an athlete self-registering
+        // is exactly the case the review step exists for.
+        parent_reviewed: actor.role === 'parent',
         parent_reviewed_at: actor.role === 'parent' ? now : undefined,
         parent_reviewer_account_id: actor.role === 'parent' ? actor.accountId : undefined,
         created_at: now,
