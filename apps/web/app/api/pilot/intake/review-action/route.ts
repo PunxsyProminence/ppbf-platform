@@ -297,11 +297,26 @@ export async function POST(request: NextRequest) { // NOSONAR
       updated_at: athleteCreatedAt,
     });
 
-    if (promotion.athlete.account_id && promotion.athlete.pin) {
+    // An athlete PIN is deliberately NOT settable at promotion. The account
+    // is provisioned with no credential and inactive, and the supported flow
+    // sets the PIN afterward through /api/pilot/admin/accounts/pin-reset with
+    // mode 'activate' — the same promote → activate → sign-in sequence the
+    // E2E gate exercises. This request used to ACCEPT athlete.pin and
+    // silently discard it (it landed in createOrUpdateAthleteAccount's
+    // ignored legacy parameter), so an administrator believed a credential
+    // was set that never was. Refuse it the way the guardian branch below
+    // refuses guardian.pin; the prefix keeps jsonError mapping it to a 400.
+    if (promotion.athlete.pin) {
+      throw new Error(
+        'Unsupported athlete.pin: promotion provisions the account without a credential. '
+        + 'Set the PIN after promotion via /api/pilot/admin/accounts/pin-reset with mode "activate".',
+      );
+    }
+
+    if (promotion.athlete.account_id) {
       await createOrUpdateAthleteAccount(
         promotion.athlete.account_id,
         promotion.athlete.athlete_id,
-        promotion.athlete.pin,
         principal.organizationId,
       );
     }

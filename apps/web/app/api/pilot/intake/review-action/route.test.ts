@@ -184,8 +184,8 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
     expect(mockStaffProvision).not.toHaveBeenCalled();
   });
 
-  test('athletes keep PIN provisioning, which is still the supported path for them', async () => {
-    const request = new NextRequest('http://localhost/api/pilot/intake/review-action', {
+  function athletePromoteRequest(athleteExtra: Record<string, unknown>) {
+    return new NextRequest('http://localhost/api/pilot/intake/review-action', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -194,23 +194,40 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
         promotion: {
           athlete: {
             athlete_id: 'ath-1',
-            account_id: 'athlete-1',
-            pin: '482913',
             full_name: 'Gate Athlete',
             dob: '2011-02-10',
             weight_class: '119',
             gym_status: 'active',
             emergency_contact: 'Guardian 555-0102',
             coach_id: 'acct-admin',
+            ...athleteExtra,
           },
         },
       }),
     });
+  }
 
-    await POST(request);
+  test('rejects an athlete PIN instead of silently discarding it', async () => {
+    // The predecessor of this test asserted the PIN was "provisioned" -- but
+    // the value it asserted on landed in createOrUpdateAthleteAccount's
+    // ignored legacy parameter and was never written anywhere. The test was
+    // fooled by the same signature the administrators were. The supported
+    // credential flow is promote -> pin-reset (mode 'activate'), which the
+    // E2E gate exercises end to end.
+    const response = await POST(athletePromoteRequest({ account_id: 'athlete-1', pin: '482913' }));
+    const payload = await response.json();
 
-    // The athlete-only PIN boundary is the reason guardians moved off PINs;
-    // it must not be read as "PINs are gone".
-    expect(mockAthleteAccount).toHaveBeenCalledWith('athlete-1', 'ath-1', '482913', 'org-real');
+    expect(response.status).toBe(400);
+    expect(String(payload.error)).toMatch(/Unsupported athlete\.pin/);
+    expect(mockAthleteAccount).not.toHaveBeenCalled();
+  });
+
+  test('provisions the athlete account credential-less when account_id is given without a pin', async () => {
+    const response = await POST(athletePromoteRequest({ account_id: 'athlete-1' }));
+
+    expect(response.status).toBe(200);
+    // Three-argument form: the org rides in the legacy slot, and no
+    // credential is involved at promotion time.
+    expect(mockAthleteAccount).toHaveBeenCalledWith('athlete-1', 'ath-1', 'org-real');
   });
 });
