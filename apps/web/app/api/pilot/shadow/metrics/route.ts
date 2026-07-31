@@ -367,14 +367,15 @@ async function getUserMetrics(organizationId: string, userId: string): Promise<U
     : createdTime;
   const nowTime = Date.now();
 
-  let tierLevel: 'bronze' | 'silver' | 'gold' = 'bronze';
-  if (profile.interaction_count >= 50) tierLevel = 'gold';
-  else if (profile.interaction_count >= 20) tierLevel = 'silver';
-
   return {
     userId,
     profile: {
-      tier: tierLevel,
+      // Same single authority as getTierCounts and the chat badge. This was
+      // the last surviving copy of the retired interaction-count-only
+      // formula (20/50) -- unreachable today (no client sends ?userId=),
+      // but a divergent tier definition is exactly the drift the audit
+      // kept finding, so it dies here rather than waiting for a caller.
+      tier: classifyProfileTier(profile).tier,
       completeness: calculateProfileCompleteness(profile),
       totalInteractions: profile.interaction_count,
       daysSinceFirstInteraction: Math.floor((nowTime - createdTime) / 86_400_000),
