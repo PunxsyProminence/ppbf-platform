@@ -223,6 +223,12 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
       });
       const assistantMessageId = await appendAssistantMessage({
         actor: currentActor,
+        // Audit B1's remaining half. This append happens BEFORE completeJob
+        // below, so a worker that dies between the two leaves an appended
+        // answer on an uncompleted job: the lease expires, the job is
+        // re-claimed, and the same answer is appended a second time. Keying
+        // the message id on the job makes the retry a no-op instead.
+        idempotencyKey: job.jobId,
         conversationId: binding.conversationId,
         content: decision.message,
         topic: payloadToText(job.inputPayload.topic, 'general'),
