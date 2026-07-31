@@ -1,51 +1,50 @@
 @import "tailwindcss";
 
-/* The PPBF "Leather & Brass" design system is the single source of truth for
-   every token below. It is imported, not copied, so the sheet the Claude
-   Design previews render against and the sheet the app ships are the same
-   file — a value can never drift between them.
+/* The PPBF "Leather & Brass" design system is imported for its PROPORTION
+   tokens only — the √φ type ladder (--t-*) and the Fibonacci space scale
+   (--s*). Law 8 is the part of the system the app actually runs on, and it is
+   imported rather than copied so those values can never drift from the sheet
+   the Claude Design previews render against.
 
-   Everything in the :root block that follows is an ALIAS. The app's ~61 pages
-   style themselves with Tailwind arbitrary values reading these legacy names
-   (`bg-[var(--canvas-tan)]`, `text-[var(--red-primary)]`), so pointing the old
-   names at design-system values re-themes the whole app without editing a
-   single page. Add new work against the ppbf tokens directly (--hide-*,
-   --brass-*, --t-*, --s*); the aliases exist to carry the pages that predate
-   the design system, not as a second vocabulary. */
+   Its COLOUR is deliberately NOT used. The app keeps its own tactical palette
+   (tan / oxblood / olive) as literal values below. The golden-era colour
+   vocabulary — --canvas-warm, --patina-*, --rust-*, --hide-*, --bone-* —
+   stays in ppbf.css for the Claude Design previews and the design-system/
+   screens, and must not be aliased back into the app's legacy token names:
+   pointing the old names at those values is precisely what turned all ~61
+   pages retro, which is not the direction.
+
+   So: new app work may read --t-* and --s* directly. It may not read ppbf
+   colour tokens. */
 @import "../../../design-system/ppbf.css";
 
 :root {
   /* --- Ground ------------------------------------------------------------
-     Was #d4c4a8, a flat tan with no relationship to the rest of the palette.
-     Now the design system's warm canvas — aged paper, the golden-era ground.
+     The app's own tactical palette, as literal values. These were briefly
+     aliased to the design system's golden-era colours; that is reverted.
+     Every value below is a literal on purpose — a var() pointing into
+     ppbf.css is how the retro look leaks back in. */
+  --canvas-tan: #d4c4a8;
+  --canvas-tan-light: #e5d9c3;
+  --canvas-tan-dark: #8b7355;
 
-     Note this is the ONLY theme. There is deliberately no second palette and
-     no [data-theme] override: one look, the golden-era one. Law 6's ink ground
-     is still available per-screen via ppbf.css's .mat-leather / .on-canvas
-     materials, but that is a per-surface material choice, not a user toggle. */
-  --canvas-tan: var(--canvas-warm);
-  --canvas-tan-light: var(--paper);
-  --canvas-tan-dark: var(--hide-600);
+  --olive-dark: #3d3d2e;
+  --black: #1a1a1a;
+  --gray-dark: #2a2a2a;
+  --gray-medium: #4a4a4a;
+  --white: #f5f5f5;
+  --white-off: #e8e8e8;
 
-  --olive-dark: var(--patina-900);
-  --black: var(--hide-950);
-  --gray-dark: var(--hide-800);
-  --gray-medium: var(--hide-600);
-  --white: var(--bone-100);
-  --white-off: var(--bone-200);
+  /* --- Danger ----------------------------------------------------------- */
+  --red-primary: #8b0000;
+  --red-highlight: #a52a2a;
+  --red-blood: #660000;
 
-  /* --- Danger ------------------------------------------------------------
-     Was #8b0000, a pure-red that sat badly against brass. Now the Layer 11
-     locked rung, which was chosen to stay separable from a gold bezel. */
-  --red-primary: var(--locked);
-  --red-highlight: var(--restricted);
-  --red-blood: var(--rust-900);
-
-  /* --- Status ladder (Law 2: saturated colour means safety, nothing else) - */
-  --status-ready: var(--cleared);
-  --status-warning: var(--restricted);
-  --status-critical: var(--locked);
-  --status-inactive: var(--hide-600);
+  /* --- Status ladder ---------------------------------------------------- */
+  --status-ready: #4a5d23;
+  --status-warning: #8b6914;
+  --status-critical: var(--red-primary);
+  --status-inactive: var(--gray-medium);
 
   /* --font-stencil keeps its next/font wiring — --font-tactical-display is a
      real loaded face, where the design system's fallback chain is not. The
@@ -96,17 +95,21 @@
   --background: var(--canvas-tan);
   --foreground: var(--black);
 
-  /* Retro stamp palette — remapped onto the real status ladder so a stamp and
-     a badge reporting the same state can no longer disagree on its colour. */
-  --stamp-cleared: var(--cleared);
-  --stamp-hold: var(--restricted);
-  --stamp-restricted: var(--locked);
-  --stamp-present: var(--monitor);
-  --stamp-neutral: var(--patina-700);
-  --brass: var(--brass-500);
-  --brass-light: var(--brass-300);
-  --brass-dark: var(--brass-800);
-  --leather: var(--hide-800);
+  /* --- Stamp / brass / leather accents -----------------------------------
+     Literals, same reasoning as above. --paper has to be declared here rather
+     than left to fall through: the app reads var(--paper) in three places and
+     ppbf.css defines its own --paper (#F4EBD4, the golden-era sheet), so
+     omitting it would quietly hand those three call sites a retro value. */
+  --stamp-cleared: #4a5c2e;
+  --stamp-hold: #a67c2d;
+  --stamp-restricted: #8b0000;
+  --stamp-present: #2e4a3e;
+  --stamp-neutral: #4a3c2e;
+  --brass: #b08d57;
+  --brass-light: #d4af77;
+  --brass-dark: #8a6a3c;
+  --leather: #3b2415;
+  --paper: #e8d9c0;
 }
 
 .font-display {
