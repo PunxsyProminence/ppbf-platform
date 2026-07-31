@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { assertActorCanAccessAthlete, type ActorIdentity } from './access';
 import { query, withTransaction } from './db';
@@ -384,6 +384,19 @@ export async function appendUserMessage(input: {
  * the job processor under the enqueuing actor's re-validated identity -- the
  * ownership predicate here is therefore the same one the live chat satisfies.
  */
+/**
+ * Deterministic message id for a caller that may legitimately retry.
+ *
+ * Formatted as a v5 UUID (version nibble 5, RFC-4122 variant) so it satisfies
+ * the same validation as a random one -- isUuid() checks the version digit.
+ */
+function messageIdForKey(key: string): string {
+  const hex = createHash('sha256').update(`shadow-assistant-message:${key}`).digest('hex');
+  const version = `5${hex.slice(13, 16)}`;
+  const variant = ((parseInt(hex.slice(16, 17), 16) & 0x3) | 0x8).toString(16) + hex.slice(17, 20);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${version}-${variant}-${hex.slice(20, 32)}`;
+}
+
 export async function appendAssistantMessage(input: {
   actor: ActorIdentity;
   conversationId: string;
@@ -398,6 +411,20 @@ export async function appendAssistantMessage(input: {
     availability: 'available' | 'unavailable';
     citationIds: string[];
   };
+  /**
+   * Makes the append idempotent (audit B1). A background job persists its
+   * answer here and is marked complete afterwards; if the worker dies between
+   * those two writes, the lease expires, the job is re-claimed, and the answer
+   * is appended a SECOND time -- the user reads the same answer twice, from a
+   * second paid model call.
+   *
+   * The audit's suggestion was to complete before appending, but that only
+   * swaps which side loses: complete-then-crash leaves the user with no answer
+   * at all. Deriving the message id from a stable key instead removes the race
+   * rather than moving it, and needs no schema change because message_id is
+   * already the primary key.
+   */
+  idempotencyKey?: string;
 }): Promise<string> {
   requireTenantOwner(input.actor);
 
@@ -416,11 +443,18 @@ export async function appendAssistantMessage(input: {
       throw new Error('SHADOW_CONVERSATION_NOT_FOUND');
     }
 
-    const assistantMessageId = randomUUID();
-    await client.query(
+    const assistantMessageId = input.idempotencyKey
+      ? messageIdForKey(input.idempotencyKey)
+      : randomUUID();
+    // ON CONFLICT rather than a pre-SELECT: the conversation row is already
+    // locked FOR UPDATE above, but the primary key is what actually makes a
+    // concurrent re-claim a no-op instead of a duplicate.
+    const inserted = await client.query(
       `insert into pilot.shadow_chat_messages
          (message_id, conversation_id, organization_id, account_id, role, content, response_state, topic, session_type, evidence_tier, handoff, created_at)
-       values ($1, $2, $3, $4, 'assistant', $5, $6, $7, $8, $9, $10, statement_timestamp())`,
+       values ($1, $2, $3, $4, 'assistant', $5, $6, $7, $8, $9, $10, statement_timestamp())
+       on conflict (message_id) do nothing
+       returning message_id`,
       [
         assistantMessageId,
         input.conversationId,
@@ -434,6 +468,12 @@ export async function appendAssistantMessage(input: {
         input.handoff?.slice(0, 500) ?? null,
       ],
     );
+    // Already appended by an earlier attempt at the same job. Return the id
+    // and write nothing further -- re-running the evidence writes would
+    // duplicate the citation records the message already carries.
+    if (inserted.rowCount === 0) {
+      return assistantMessageId;
+    }
     await client.query(
       `update pilot.shadow_chat_sessions
        set session_type = $1, updated_at = now()
