@@ -28,7 +28,7 @@
     "gate:pilot": "node scripts/pilot-gate.mjs",
     "gate:pilot:multiorg": "node scripts/pilot-multiorg-gate.mjs",
     "test": "jest --runInBand --testPathIgnorePatterns=\\.pg\\.test\\.ts$",
-    "test:migrations": "npm run test:migrations:session && npm run test:migrations:library && npm run test:migrations:gate && npm run test:migrations:multiorg-orphans && npm run test:migrations:stranded-guardians && npm run test:migrations:job-queue && npm run test:migrations:intake-review && npm run test:migrations:library-flags && npm run test:migrations:near-miss && npm run test:migrations:guardian-repair && npm run test:migrations:volunteer-program && npm run test:migrations:announcements",
+    "test:migrations": "npm run test:migrations:session && npm run test:migrations:library && npm run test:migrations:gate && npm run test:migrations:multiorg-orphans && npm run test:migrations:stranded-guardians && npm run test:migrations:job-queue && npm run test:migrations:intake-review && npm run test:migrations:library-flags && npm run test:migrations:near-miss && npm run test:migrations:guardian-repair && npm run test:migrations:volunteer-program && npm run test:migrations:announcements && npm run test:migrations:feedback-exit",
     "test:migrations:guardian-repair": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/strandedGuardianRepair.pg.test.ts --testTimeout=180000",
     "test:migrations:volunteer-program": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/volunteerProgram.pg.test.ts --testTimeout=180000",
     "test:migrations:announcements": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/announcementsPersistence.pg.test.ts --testTimeout=180000",
@@ -48,7 +48,8 @@
     "test:e2e:board": "playwright test e2e/board-governance.spec.ts",
     "test:e2e:board:update": "playwright test e2e/board-governance.spec.ts --update-snapshots",
     "test:e2e:homepage": "playwright test e2e/public-homepage.spec.ts",
-    "test:e2e:homepage:update": "playwright test e2e/public-homepage.spec.ts --update-snapshots"
+    "test:e2e:homepage:update": "playwright test e2e/public-homepage.spec.ts --update-snapshots",
+    "test:migrations:feedback-exit": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/feedbackReviewExit.pg.test.ts --testTimeout=180000"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.28.0",
