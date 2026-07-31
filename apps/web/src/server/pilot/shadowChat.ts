@@ -460,8 +460,21 @@ export function validateShadowResponse(
   // (measured live 2026-07-30: half of all filtered warm-up answers were the
   // model saying exactly this). A match whose subject is introduced by a
   // conditional is hypothetical, not an assertion about this athlete.
+  // The subject alternation was second-person plus 'the athlete', so a
+  // third-person diagnosis passed clean. Measured 2026-07-31:
+  //   'The athlete has a rotator cuff injury.'    -> filtered
+  //   'He has a concussion.'                      -> NOT filtered
+  //   'She has a fracture in the left wrist.'     -> NOT filtered
+  // Same claim, same harm, different pronoun. This became load-bearing with
+  // Film Study (#128): a vision model describing a child in frames writes
+  // 'he' and 'she' by default, so the surface most likely to produce a
+  // diagnosis was the one the filter did not read.
+  //
+  // Widened only -- the exemptions below are untouched, because loosening
+  // them for existing subjects would be a weakening this fix has no mandate
+  // for.
   let makesDiagnosisClaim = false;
-  const assertedDiagnosisPattern = /\b(you|your symptoms|the athlete|this)\b.{0,40}\b(have|has|definitely|confirm|confirms|proves|means)\b.{0,60}\b(concussion|fracture|injury|disease|syndrome|disorder|condition)\b/g;
+  const assertedDiagnosisPattern = /\b(you|your symptoms|his symptoms|her symptoms|their symptoms|the athlete|the boxer|the fighter|the kid|this|he|she|they)\b.{0,40}\b(have|has|definitely|confirm|confirms|proves|means)\b.{0,60}\b(concussion|fracture|injury|disease|syndrome|disorder|condition)\b/g;
   // Clause-scoped: a conditional anywhere earlier in the same clause makes the
   // subject hypothetical ("if at any point you have sharp pain, stop"). The
   // window stops at sentence punctuation so a conditional in a PREVIOUS
