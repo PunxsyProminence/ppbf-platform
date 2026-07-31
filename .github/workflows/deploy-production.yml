@@ -189,8 +189,6 @@ jobs:
             --resource-group "$RESOURCE_GROUP" \
             --image "${ACR_LOGIN_SERVER}/ppbf-frontend@${{ inputs.release_digest }}" \
             --set-env-vars \
-              PPBF_ONBOARDING_LIVE_SAVE=false \
-              PPBF_AUTH_PROVIDER_WIRED=false \
               AZURE_POSTGRES_CONNECTION_STRING=secretref:azure-postgres-connection-string \
               AZURE_STORAGE_CONNECTION_STRING=secretref:azure-storage-connection-string \
               PPBF_MS_TENANT_ID=secretref:ppbf-ms-tenant-id \
