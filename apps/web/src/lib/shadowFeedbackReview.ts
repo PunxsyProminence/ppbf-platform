@@ -83,6 +83,17 @@ export function interpretShadowFeedbackReviewResponse(input: {
     };
   }
 
+  // 409: the item exists but can only be rejected (filtered answer or
+  // deleted conversation). The reviewer keeps an exit -- Reject -- rather
+  // than an unexplained dead Approve button.
+  if (status === 409) {
+    return {
+      kind: 'not_eligible',
+      message: payload?.error
+        || `Feedback #${feedbackId} can only be rejected — its answer is not eligible to train on.`,
+    };
+  }
+
   if (status < 200 || status >= 300 || payload?.ok !== true) {
     return {
       kind: 'failed',

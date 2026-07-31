@@ -265,13 +265,18 @@ export async function verifyShadowFeedbackCorrelation(input: {
  * the feedback row and its exact durable assistant message. The conditional
  * update also makes retries idempotent while preventing a later request from
  * reversing an already-recorded decision.
+ *
+ * Returns 'reject_only' when the feedback exists but its answer was filtered
+ * or its conversation was deleted: such feedback can be rejected (clearing it
+ * from the queue) but never approved, because learning must not be promoted
+ * from a filtered answer or an erased conversation.
  */
 export async function resolveShadowFeedbackReview(input: {
   organizationId: string;
   feedbackId: number;
   reviewerAccountId: string;
   decision: ShadowFeedbackReviewDecision;
-}): Promise<ShadowFeedbackReviewContext | null> {
+}): Promise<ShadowFeedbackReviewContext | 'reject_only' | null> {
   const row = await queryOne<{
     feedback_id: number | string;
     organization_id: string;
@@ -296,19 +301,24 @@ export async function resolveShadowFeedbackReview(input: {
          f.human_review_required,
          m.message_id,
          m.topic,
-         m.session_type
+         m.session_type,
+         -- Learning may only be promoted from an unfiltered answer in a live
+         -- session, but that is an APPROVE gate, not an existence gate. When
+         -- these two conditions lived in the joins, feedback on a filtered
+         -- answer (or a later-deleted session) matched nothing at all -- so
+         -- Approve AND Reject both 404ed and the item sat in the review
+         -- queue forever, silently capping every learning counter behind it.
+         (m.response_state = 'ok' AND s.deleted_at IS NULL) AS learning_eligible
        FROM pilot.shadow_feedback f
        JOIN pilot.shadow_chat_messages m
          ON m.message_id::text = f.correlation_id
         AND m.organization_id = f.organization_id
         AND m.account_id = f.account_id
         AND m.role = 'assistant'
-        AND m.response_state = 'ok'
        JOIN pilot.shadow_chat_sessions s
          ON s.conversation_id = m.conversation_id
         AND s.organization_id = m.organization_id
         AND s.account_id = m.account_id
-        AND s.deleted_at IS NULL
        WHERE f.feedback_id = $1
          AND f.organization_id = $2
          AND f.correlation_type = 'shadow_message'
@@ -334,6 +344,7 @@ export async function resolveShadowFeedbackReview(input: {
        FROM scoped_feedback scoped
        WHERE f.feedback_id = scoped.feedback_id
          AND f.organization_id = scoped.organization_id
+         AND ($3 = 'reject' OR scoped.learning_eligible)
          AND (
            (
              scoped.human_review_required = true
@@ -380,6 +391,33 @@ export async function resolveShadowFeedbackReview(input: {
   );
 
   if (!row) {
+    // An approve that matched nothing may be a reject-only item rather than
+    // a missing one -- tell those apart so the reviewer gets an honest
+    // "this can only be rejected" instead of an unexplained 404.
+    if (input.decision === 'approve') {
+      const rejectOnly = await queryOne<{ present: boolean }>(
+        `SELECT true AS present
+         FROM pilot.shadow_feedback f
+         JOIN pilot.shadow_chat_messages m
+           ON m.message_id::text = f.correlation_id
+          AND m.organization_id = f.organization_id
+          AND m.account_id = f.account_id
+          AND m.role = 'assistant'
+         JOIN pilot.shadow_chat_sessions s
+           ON s.conversation_id = m.conversation_id
+          AND s.organization_id = m.organization_id
+          AND s.account_id = m.account_id
+         WHERE f.feedback_id = $1
+           AND f.organization_id = $2
+           AND f.correlation_type = 'shadow_message'
+           AND (m.response_state IS DISTINCT FROM 'ok' OR s.deleted_at IS NOT NULL)
+         LIMIT 1`,
+        [input.feedbackId, input.organizationId],
+      );
+      if (rejectOnly?.present === true) {
+        return 'reject_only';
+      }
+    }
     return null;
   }
 
