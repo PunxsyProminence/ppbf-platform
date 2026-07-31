@@ -93,19 +93,38 @@ describe('buildShadowUnlockHints', () => {
     });
   });
 
-  it('flags a feature as close to unlocking once progress crosses 80% without being unlocked yet', () => {
+  it('flags an activatable feature as close to unlocking once progress crosses 80%', () => {
     const state: ShadowUnlockState = {
       organizationId: 'org-a',
       accountId: 'account-a',
       evaluatedAt: new Date().toISOString(),
       features: {
-        strong_personalization: featureStatus({ currentValue: 9, thresholdValue: 10 }),
+        strong_personalization: featureStatus({ activationMode: 'enabled', currentValue: 9, thresholdValue: 10 }),
       } as ShadowUnlockState['features'],
     };
 
     const hints = buildShadowUnlockHints(state);
     expect(hints?.[0].progress).toBe(0.9);
     expect(hints?.[0].closeToUnlocking).toBe(true);
+  });
+
+  it('never promises unlocking for a feature whose activation mode cannot unlock', () => {
+    // Three of four features default to observation/disabled: unlocked
+    // requires activationMode === 'enabled', so a full counter used to show
+    // a 100%-progress "close to unlocking" banner forever, for features that
+    // could not unlock without an admin threshold change.
+    const state: ShadowUnlockState = {
+      organizationId: 'org-a',
+      accountId: 'account-a',
+      evaluatedAt: new Date().toISOString(),
+      features: {
+        strong_personalization: featureStatus({ activationMode: 'observation', satisfied: true, currentValue: 10, thresholdValue: 10 }),
+      } as ShadowUnlockState['features'],
+    };
+
+    const hints = buildShadowUnlockHints(state);
+    expect(hints?.[0].progress).toBe(1);
+    expect(hints?.[0].closeToUnlocking).toBe(false);
   });
 
   it('never reports closeToUnlocking once a feature is already unlocked', () => {
