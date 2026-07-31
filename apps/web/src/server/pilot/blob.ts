@@ -38,6 +38,36 @@ export async function uploadPilotVideoFile(path: string, file: File): Promise<vo
   });
 }
 
+/**
+ * Read one video blob into memory, server-side.
+ *
+ * Film Study's executor runs inside the worker with no browser and no user
+ * session, so it reads the bytes directly rather than minting a SAS URL and
+ * fetching it back over the network -- one fewer credential in flight, and no
+ * signed URL for a minor's video existing even briefly.
+ *
+ * Capped because the caller is a background job holding a lease: an
+ * unbounded read of an arbitrarily large upload would blow the container's
+ * memory and lose the lease with it.
+ */
+export async function downloadPilotVideoFile(
+  blobPath: string,
+  maxBytes = 512 * 1024 * 1024,
+): Promise<Buffer> {
+  const serviceClient = getBlobServiceClient();
+  const containerClient = serviceClient.getContainerClient(getPilotVideoContainerName());
+  const blobClientForPath = containerClient.getBlockBlobClient(blobPath);
+
+  const properties = await blobClientForPath.getProperties();
+  if (typeof properties.contentLength === 'number' && properties.contentLength > maxBytes) {
+    throw new Error('SHADOW_FILM_VIDEO_TOO_LARGE');
+  }
+
+  return blobClientForPath.downloadToBuffer(0, undefined, {
+    maxRetryRequestsPerBlock: 2,
+  });
+}
+
 function getReadOnlySasUrl(containerName: string, blobPath: string, expiryMinutes: number): string {
   const connStr = getAzureStorageConnectionString();
   const accountNameMatch = /AccountName=([^;]+)/.exec(connStr);

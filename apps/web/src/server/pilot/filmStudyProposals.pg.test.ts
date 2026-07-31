@@ -43,6 +43,7 @@ const VIDEO_ID = 'vs-film-1';
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let proposals: typeof import('./shadowFilmStudyProposals');
+let videoSessions: typeof import('./videoSessions');
 let db: typeof import('./db');
 
 function connectionStringFor(database: string): string {
@@ -124,6 +125,9 @@ beforeAll(async () => {
   await migrateClient.query(
     await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_film_study_proposals_migration.sql'), 'utf8'),
   );
+  await migrateClient.query(
+    await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_video_sessions_migration.sql'), 'utf8'),
+  );
   for (const orgId of [ORG_ID, OTHER_ORG_ID]) {
     await migrateClient.query(
       `insert into pilot.organizations (organization_id, organization_name, status)
@@ -151,6 +155,7 @@ beforeAll(async () => {
 
   db = await import('./db');
   proposals = await import('./shadowFilmStudyProposals');
+  videoSessions = await import('./videoSessions');
 });
 
 afterAll(async () => {
@@ -315,5 +320,42 @@ describe('film study proposals against the real schema', () => {
     await expect(
       newProposal({ athleteId: 'ATH-DOES-NOT-EXIST' }),
     ).rejects.toThrow(/pilot_film_study_proposals_athlete_fk|foreign key/);
+  });
+});
+
+// The executor's source-of-truth read. pilot.video_sessions has TWO competing
+// definitions -- the migration (#125) and the DDL that
+// /api/pilot/admin/migrate-multiorg creates over HTTP -- so a column this
+// query names could exist in one and not the other, and the mocked route test
+// would still pass. These run the real function against the migrated schema.
+describe('the Film Study video read path against the real schema', () => {
+  const VIDEO_ID = 'vs-read-1';
+
+  beforeAll(async () => {
+    await db.query(
+      `insert into pilot.video_sessions
+         (video_session_id, organization_id, uploaded_by_account_id, athlete_id, title, notes,
+          blob_path, file_name, file_size_bytes, mime_type, status, created_at, updated_at)
+       values ($1, $2, $3, $4, 'Mitt work', '', $5, 'tape.mp4', 2048, 'video/mp4', 'ready', now(), now())`,
+      [VIDEO_ID, ORG_ID, COACH_ID, ATHLETE_ID, `${ORG_ID}/${VIDEO_ID}.mp4`],
+    );
+  });
+
+  test('returns the blob path and status the executor depends on', async () => {
+    const row = await videoSessions.getVideoSessionById(ORG_ID, VIDEO_ID);
+
+    expect(row).toMatchObject({
+      video_session_id: VIDEO_ID,
+      organization_id: ORG_ID,
+      athlete_id: ATHLETE_ID,
+      blob_path: `${ORG_ID}/${VIDEO_ID}.mp4`,
+      status: 'ready',
+    });
+  });
+
+  test('another organization cannot read the row', async () => {
+    // The route turns a null into a hidden 404, so this predicate is the only
+    // thing standing between a cross-org id guess and someone else's video.
+    await expect(videoSessions.getVideoSessionById(OTHER_ORG_ID, VIDEO_ID)).resolves.toBeNull();
   });
 });
