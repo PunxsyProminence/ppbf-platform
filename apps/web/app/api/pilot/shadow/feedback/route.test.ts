@@ -350,7 +350,7 @@ describe('POST /api/pilot/shadow/feedback idempotency', () => {
     expect(payload.learning).toMatchObject({
       accepted: false,
       humanReviewRequired: true,
-      reason: 'FEEDBACK_ALREADY_RECORDED',
+      reason: 'FEEDBACK_UPDATED_PENDING_REVIEW',
     });
   });
 

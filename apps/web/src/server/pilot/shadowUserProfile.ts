@@ -1,14 +1,5 @@
 import { query, queryOne } from './db';
 import type { PilotRole } from './contracts';
-import {
-  type ContextCategory,
-  type ShadowQueryType,
-  type WeightedContextItem,
-  calculateDynamicWeights,
-  detectQueryType,
-  scoreConfidence,
-  selectTopContextItems,
-} from './shadowContextWeights';
 
 export interface RememberedFact {
   key: string;      // e.g. "prefers_concise_answers", "coaches_welterweights"
@@ -34,15 +25,6 @@ export interface ShadowUserProfileRow {
   shadow_notes: string | null;         // Free-form accumulated observations
   created_at: string;
   updated_at: string;
-}
-
-export interface ShadowUserContext {
-  interactionCount: number;
-  lastInteractionAt: string | null;
-  recentTopics: string[];
-  openQuestions: string[];
-  rememberedFacts: RememberedFact[];
-  communicationStyle: CommunicationStyle;
 }
 
 // Get or create a user's shadow profile
@@ -211,112 +193,9 @@ export async function updateShadowUserProfile(
   }
 }
 
-// Build role+query-aware context string for LLM prompt injection
-export function buildUserShadowContext(
-  profile: ShadowUserProfileRow,
-  userQuery = '',
-): string {
-  const role = profile.role;
-  const queryType: ShadowQueryType = detectQueryType(userQuery);
-  const weights = calculateDynamicWeights(role, queryType);
-  const now = new Date();
-
-  const items: WeightedContextItem[] = [];
-
-  const push = (
-    category: ContextCategory,
-    content: string,
-    initialConfidence: number,
-    timestamp?: Date,
-    sourceType?: 'verified_pattern' | 'observation' | 'profile' | 'raw_data',
-  ) => {
-    const confidence = scoreConfidence(category, initialConfidence, timestamp, sourceType);
-    const weight = weights[category] ?? 0;
-    items.push({ category, content, weight, confidence, priority: weight * confidence, timestamp });
-  };
-
-  // ── Role framing ──────────────────────────────────────────────────────────
-  const roleFraming: Partial<Record<PilotRole, string>> = {
-    coach:              'Responding to a COACH. Prioritize: actionable recommendations, athlete patterns, program effectiveness, practical next steps.',
-    athlete:            'Responding to an ATHLETE. Prioritize: education, mindset, personal clarity, encouragement. Keep it simple and direct.',
-    organization_admin: 'Responding to an ADMIN. Prioritize: organizational patterns, compliance trends, research requirements, strategic insights.',
-    admin:              'Responding to an ADMIN. Prioritize: organizational patterns, compliance trends, research requirements, strategic insights.',
-    parent:             'Responding to a PARENT. Prioritize: safety transparency, child progress, how to support their athlete. No jargon.',
-    volunteer:          'Responding to a VOLUNTEER. Prioritize: role clarity, safety awareness, how to contribute effectively.',
-  };
-  const framing = roleFraming[role];
-  if (framing) push('role_framing', framing, 1.0, now, 'profile');
-
-  // ── Communication style ───────────────────────────────────────────────────
-  if (profile.communication_style !== 'unknown') {
-    const styleMap: Record<CommunicationStyle, string> = {
-      concise:        'Preference: concise, action-focused answers.',
-      detailed:       'Preference: detailed explanations with full reasoning.',
-      'example-heavy':'Preference: concrete examples over abstract theory.',
-      unknown:        '',
-    };
-    const hint = styleMap[profile.communication_style];
-    if (hint) push('communication_style', hint, 0.85, undefined, 'profile');
-  }
-
-  // ── Remembered facts — role-filtered, confidence-decayed ─────────────────
-  const allFacts = (profile.remembered_facts || []).filter(f => f.confidence >= 0.5);
-  const roleFacts = role === 'coach'
-    ? allFacts.filter(f => f.key.includes('athlete') || f.key.includes('program') || f.key.includes('team'))
-    : (() => role === 'athlete'
-        ? allFacts.filter(f => !f.key.startsWith('org_') && !f.key.startsWith('program_'))
-        : allFacts
-      )();
-
-  if (roleFacts.length > 0) {
-    const topFacts = roleFacts
-      .map(f => ({ ...f, decayed: scoreConfidence('remembered_facts', f.confidence, f.updatedAt ? new Date(f.updatedAt) : undefined) }))
-      .sort((a, b) => b.decayed - a.decayed)
-      .slice(0, 4);
-    const facts = topFacts.map(f => `-  ${f.key}: ${f.value}`);
-    const factsText = `Known:\n${facts.join('\n')}`;
-    const avgConf = topFacts.reduce((s, f) => s + f.decayed, 0) / topFacts.length;
-    push('remembered_facts', factsText, avgConf, undefined, 'observation');
-  }
-
-  // ── Open questions ────────────────────────────────────────────────────────
-  const openQ = profile.open_questions.slice(-2);
-  if (openQ.length > 0) {
-    const openQList = openQ.map(q => `- ${q}`).join('\n');
-    push('open_questions', `Unresolved:\n${openQList}`, 0.70);
-  }
-
-  // ── Recent topics ─────────────────────────────────────────────────────────
-  if (profile.interaction_count > 1 && profile.recent_topics.length > 0) {
-    const topics = profile.recent_topics.slice(-3).join(', ');
-    const label = role === 'coach'
-      ? `Coach's recent focus: ${topics}.`
-      : (() => role === 'athlete'
-          ? `What this athlete has been working on: ${topics}.`
-          : `Recent topics: ${topics}.`
-        )();
-    push('org_patterns', label, 0.60);
-  }
-
-  const selected = selectTopContextItems(items, 6);
-  if (selected.length === 0) return '';
-  return `\nUSER CONTEXT:\n${selected.map(i => i.content).join('\n')}`;
-}
-
-
-// Get lightweight context for prompt injection (no DB write)
-export async function getShadowUserContext(
-  accountId: string,
-  organizationId: string,
-  role: PilotRole,
-): Promise<ShadowUserContext> {
-  const profile = await getOrCreateShadowUserProfile(accountId, organizationId, role);
-  return {
-    interactionCount: profile.interaction_count,
-    lastInteractionAt: profile.last_interaction_at,
-    recentTopics: profile.recent_topics,
-    openQuestions: profile.open_questions,
-    rememberedFacts: profile.remembered_facts || [],
-    communicationStyle: profile.communication_style,
-  };
-}
+// buildUserShadowContext and getShadowUserContext lived here: a complete
+// role/query-weighted context assembler and its lightweight sibling, neither
+// with a single caller anywhere in the tree. Deleted with the weighting
+// system that fed them (audit 2026-07-31 finding F8; owner decision --
+// git history keeps both). Real prompt context comes from
+// shadowContextBuilder.

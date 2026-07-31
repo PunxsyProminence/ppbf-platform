@@ -171,8 +171,13 @@ export async function POST(request: NextRequest) {
     let learningAccepted = false;
     let learningReason = correlation.reason;
     if (!recordedFeedback.created) {
+      // A pending rating now absorbs the user's corrected values (owner
+      // decision 2026-07-31), so the pending case reports an update rather
+      // than pretending the resubmission was ignored. The review-flag queue
+      // reads the row at approval time, so the correction flows through
+      // without re-signaling learning here.
       learningReason = recordedFeedback.humanReviewRequired
-        ? 'FEEDBACK_ALREADY_RECORDED'
+        ? 'FEEDBACK_UPDATED_PENDING_REVIEW'
         : 'FEEDBACK_ALREADY_RESOLVED';
     } else if (correlation.learningEligible && correlation.correlationId) {
       try {
