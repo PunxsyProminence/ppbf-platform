@@ -23,6 +23,28 @@ piece someone must decide on), **OK** (traced and sound).
 > \bproven\b trigger and safe-filtered the entire job output. The better the evidence, the
 > surer the self-filter. Fixed by exempting platform-assigned enum labels from the sweep.
 
+> **Status (later the same day) — items 3, 4 and 5 of the suggested order are DONE.**
+> Re-verified against source on 2026-07-31 after this document had already gone stale twice:
+> two separate sessions began rebuilding fixes that had already landed, and one of them
+> (#121/#122) duplicated real work before the collision was caught. Read this block before
+> starting anything below.
+>
+> | # | Fixed in | Evidence |
+> |---|---|---|
+> | C1/C2 | #122, pg coverage #121 | review-queue exit for filtered and deleted-session items |
+> | D1 | — | `shadowMetrics.ts:191` — `unavailableReasons.avgSatisfaction = 'RATING_INPUT_NOT_BUILT'`, so the dead tile now says why |
+> | D2 | — | `shadowLearningLoop.ts:149` — passes `signal.sessionType`, no longer the actor role |
+> | D3 | — | `shadowMetrics.ts:89` — `created_at` restamped the first time a row reaches `human_reviewed` |
+> | D4 | — | `shadowMetrics.ts:26` — renamed off `recommendationsMade`; the count says what it counts |
+> | D5 | — | `chat/route.ts:857` — the queued branch now writes `shadow_chat_audit` before returning, so the denominator includes background turns |
+> | D6 | — | `metrics/route.ts:61,209` — renamed to `viewerUnlocks`, which makes the per-viewer scope honest rather than implying an org figure |
+> | E2 | #123 | `shadowUnlocks.ts:338` — `closeToUnlocking` gates on `activationMode === 'enabled'` |
+> | E1 (UI half) | #131 | `page.tsx:660` `FeatureUnlockPanel` — the threshold/activation endpoint had zero client callers; the panel also names WHICH gate holds a feature (mode vs counter). The write is now audited: `unlocks/route.ts:83`, `entity_type: 'shadow_feature_threshold'`, carrying before/after |
+>
+> **Still open:** B1's "complete before append" half, and the DESIGN-GAPs — A6, B4, C3,
+> E3/E4, F1–F3 and F5–F8. F1/F2/F3 are DEFECTs and are now the highest-value unclaimed
+> items in this document.
+
 ---
 
 ## A. Async/sync safety parity (classification-routing-evidence trace)

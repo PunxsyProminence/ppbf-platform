@@ -80,9 +80,17 @@ jest.mock('@/src/server/pilot/shadowContextBuilder', () => ({
   })),
 }));
 
+// The two tier<->sessionType mappings are pure and total, and the route now
+// relies on them round-tripping (audit F1), so they mirror the real
+// implementations rather than returning a fixed value. tierToSessionType used
+// to be stubbed to 'quick_round' for every input, which meant no test could
+// have caught a tier/session-type disagreement.
 jest.mock('@/src/server/pilot/shadowRouter', () => ({
   describeDeployment: jest.fn((name: string) => name),
-  tierToSessionType: jest.fn(() => 'quick_round'),
+  tierToSessionType: jest.fn((tier: string) => (tier === 'heavy_bag' ? 'heavy_bag' : 'quick_round')),
+  sessionTypeToTier: jest.fn((sessionType: string) => (
+    sessionType === 'heavy_bag' ? 'heavy_bag' : sessionType === 'quick_round' ? 'quick_round' : null
+  )),
   isAsyncSession: jest.fn(() => false),
 }));
 
@@ -513,6 +521,64 @@ describe('POST /api/pilot/shadow/chat trust boundary', () => {
       'test-key',
     );
     expect(global.fetch).toBe(originalFetch);
+  });
+
+  // Audit F1. The model is chosen from sessionType; the context depth and the
+  // tier badge are taken from the tier. An explicit sessionType override moved
+  // only the first, so all three could disagree at once.
+  test('a sessionType override without a tier reports the tier that actually ran', async () => {
+    // The classifier sees a short message and says quick_round. The caller
+    // overrode sessionType to heavy_bag, so the Heavy Bag model runs -- and
+    // before this fix the response still said "quick_round", while the context
+    // was built lightweight for a model that expects the full picture.
+    mockClassifyRequest.mockReturnValueOnce({
+      tier: 'quick_round',
+      complexity: 0.2,
+      topic: 'general',
+      confidence: 1,
+      reasoning: 'Short message',
+      requiresManualOverride: false,
+      suggestedContextDepth: 'lightweight',
+    });
+    mockExecuteHeavyBagSync.mockResolvedValueOnce({
+      mode: 'sync',
+      response: 'RESEARCH NEEDED — no verified evidence was supplied.',
+      routing: { model: { displayName: 'Test Heavy Model' } } as never,
+      sessionType: 'heavy_bag',
+    });
+
+    const response = await POST(postRequest({
+      message: 'Thoughts?',
+      sessionType: 'heavy_bag',
+    }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.sessionType).toBe('heavy_bag');
+    // The badge now matches the model that answered.
+    expect(payload.tier).toBe('heavy_bag');
+    expect(mockExecuteHeavyBagSync).toHaveBeenCalled();
+  });
+
+  test('without an override the classifier tier is unchanged', async () => {
+    // The realignment must be a no-op on the ordinary path: ShadowTier has
+    // exactly two values and the mapping round-trips, so a request carrying no
+    // sessionType must still report exactly what the classifier decided.
+    mockClassifyRequest.mockReturnValueOnce({
+      tier: 'quick_round',
+      complexity: 0.2,
+      topic: 'general',
+      confidence: 1,
+      reasoning: 'Short message',
+      requiresManualOverride: false,
+      suggestedContextDepth: 'lightweight',
+    });
+
+    const response = await POST(postRequest({ message: 'Thoughts?' }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.tier).toBe('quick_round');
   });
 
   test('returns a degraded state and never reads or logs a provider response body', async () => {
