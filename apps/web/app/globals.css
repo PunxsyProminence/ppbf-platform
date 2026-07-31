@@ -1,38 +1,66 @@
 @import "tailwindcss";
 
+/* The PPBF "Leather & Brass" design system is the single source of truth for
+   every token below. It is imported, not copied, so the sheet the Claude
+   Design previews render against and the sheet the app ships are the same
+   file — a value can never drift between them.
+
+   Everything in the :root block that follows is an ALIAS. The app's ~61 pages
+   style themselves with Tailwind arbitrary values reading these legacy names
+   (`bg-[var(--canvas-tan)]`, `text-[var(--red-primary)]`), so pointing the old
+   names at design-system values re-themes the whole app without editing a
+   single page. Add new work against the ppbf tokens directly (--hide-*,
+   --brass-*, --t-*, --s*); the aliases exist to carry the pages that predate
+   the design system, not as a second vocabulary. */
+@import "../../../design-system/ppbf.css";
+
 :root {
-  --canvas-tan: #d4c4a8;
-  --canvas-tan-light: #e5d9c3;
-  --canvas-tan-dark: #8b7355;
+  /* --- Ground ------------------------------------------------------------
+     Was #d4c4a8, a flat tan with no relationship to the rest of the palette.
+     Now the design system's warm canvas — the family/public ground (Law 6). */
+  --canvas-tan: var(--canvas-warm);
+  --canvas-tan-light: var(--paper);
+  --canvas-tan-dark: var(--hide-600);
 
-  --olive-dark: #3d3d2e;
-  --black: #1a1a1a;
-  --gray-dark: #2a2a2a;
-  --gray-medium: #4a4a4a;
-  --white: #f5f5f5;
-  --white-off: #e8e8e8;
+  --olive-dark: var(--patina-900);
+  --black: var(--hide-950);
+  --gray-dark: var(--hide-800);
+  --gray-medium: var(--hide-600);
+  --white: var(--bone-100);
+  --white-off: var(--bone-200);
 
-  --red-primary: #8b0000;
-  --red-highlight: #a52a2a;
-  --red-blood: #660000;
+  /* --- Danger ------------------------------------------------------------
+     Was #8b0000, a pure-red that sat badly against brass. Now the Layer 11
+     locked rung, which was chosen to stay separable from a gold bezel. */
+  --red-primary: var(--locked);
+  --red-highlight: var(--restricted);
+  --red-blood: var(--rust-900);
 
-  --status-ready: #4a5d23;
-  --status-warning: #8b6914;
-  --status-critical: var(--red-primary);
-  --status-inactive: var(--gray-medium);
+  /* --- Status ladder (Law 2: saturated colour means safety, nothing else) - */
+  --status-ready: var(--cleared);
+  --status-warning: var(--restricted);
+  --status-critical: var(--locked);
+  --status-inactive: var(--hide-600);
 
+  /* --font-stencil keeps its next/font wiring — --font-tactical-display is a
+     real loaded face, where the design system's fallback chain is not. The
+     design system's own --font-stencil stays available for previews. */
   --font-stencil: var(--font-tactical-display), "Impact", "Arial Black", sans-serif;
   --font-body: var(--font-tactical-body), "Segoe UI", "Arial Narrow", Arial, sans-serif;
   --font-mono: var(--font-geist-mono), "Courier New", "Courier", monospace;
 
-  --text-xs: 11px;
-  --text-sm: 12px;
-  --text-base: 15px;
-  --text-lg: 16px;
-  --text-xl: 18px;
-  --text-2xl: 24px;
-  --text-3xl: 32px;
-  --text-4xl: 48px;
+  /* --- Type: was an eyeballed 11/12/15/16/18/24/32/48 ladder with no ratio.
+     Now the √φ ladder (Law 8). --text-sm climbing 12px→15px and --text-lg
+     16px→19.1px are the two visible jumps; 19.1px is the kiosk floor (Law 5),
+     which the old 16px silently violated on the gym floor. */
+  --text-xs: var(--t-xs);
+  --text-sm: var(--t-sm);
+  --text-base: var(--t-sm);
+  --text-lg: var(--t-md);
+  --text-xl: var(--t-lg);
+  --text-2xl: var(--t-xl);
+  --text-3xl: var(--t-2xl);
+  --text-4xl: var(--t-3xl);
 
   --leading-tight: 1.2;
   --leading-normal: 1.5;
@@ -41,18 +69,21 @@
   --tracking-wide: 1px;
   --tracking-wider: 2px;
 
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
+  /* --- Space: was a 4px grid. Now Fibonacci, which converges on φ (Law 8). */
+  --space-1: var(--s1);
+  --space-2: var(--s2);
+  --space-3: var(--s3);
+  --space-4: var(--s4);
+  --space-5: var(--s5);
+  --space-6: var(--s6);
+  --space-8: var(--s7);
 
   --border-thin: 1px;
   --border-medium: 2px;
   --border-thick: 3px;
 
+  /* Hard-offset shadows: no design-system equivalent, so these stay. The
+     system's own panels carry their depth in their material gradients. */
   --shadow-sm: 2px 2px 0 rgba(0, 0, 0, 0.3);
   --shadow-md: 4px 4px 0 rgba(0, 0, 0, 0.4);
   --shadow-lg: 6px 6px 0 rgba(0, 0, 0, 0.5);
@@ -60,57 +91,79 @@
   --background: var(--canvas-tan);
   --foreground: var(--black);
 
-  /* Retro stamp palette (available in both themes) */
-  --stamp-cleared: #4a5c2e;
-  --stamp-hold: #a67c2d;
-  --stamp-restricted: #8b0000;
-  --stamp-present: #2e4a3e;
-  --stamp-neutral: #4a3c2e;
-  --brass: #b08d57;
-  --brass-light: #d4af77;
-  --brass-dark: #8a6a3c;
-  --leather: #3b2415;
-  --paper: #e8d9c0;
+  /* Retro stamp palette — remapped onto the real status ladder so a stamp and
+     a badge reporting the same state can no longer disagree on its colour. */
+  --stamp-cleared: var(--cleared);
+  --stamp-hold: var(--restricted);
+  --stamp-restricted: var(--locked);
+  --stamp-present: var(--monitor);
+  --stamp-neutral: var(--patina-700);
+  --brass: var(--brass-500);
+  --brass-light: var(--brass-300);
+  --brass-dark: var(--brass-800);
+  --leather: var(--hide-800);
 }
 
 /* =========================================================
    RETRO GOLDEN-ERA THEME ("Poor Man's Sport")
-   Toggle with data-theme="retro" on <html>
-   See docs/RETRO_DESIGN_SYSTEM.md
+   Toggle with data-theme="retro" on <html> — ThemeProvider sets it, and this
+   is the DEFAULT theme, so this block is what most users actually see.
+
+   This selector has the same specificity as :root but comes later, so it wins
+   wherever it names a token. It previously hardcoded its own palette, which
+   silently overrode the design-system aliases above and reverted the whole
+   theme to pre-design-system values. Every value here now derives from
+   ppbf.css, so the toggle changes *ground* rather than changing which design
+   system is in effect.
+
+   Both themes stay LIGHT-ground on purpose. The app's pages pair
+   `bg-[var(--canvas-tan)]` with `text-[var(--black)]` inline, so a theme that
+   darkened the ground without also inverting --black would render body copy
+   invisible on every one of them. The toggle therefore shifts warmth and
+   hardware finish, not lightness: tactical is the cooler canvas, retro the
+   warmer paper with oxidised patina hardware instead of polished brass.
+
+   Note this is NOT Law 6's two grounds — those are chosen per screen (staff
+   ink vs. family canvas) via `.on-canvas`, independent of this toggle.
    ========================================================= */
 [data-theme="retro"] {
-  --canvas-tan: #e8d9c0;
-  --canvas-tan-light: #f3e8d4;
-  --canvas-tan-dark: #5c3a24;
+  /* Warmer, slightly deeper paper than tactical's canvas — still light */
+  --canvas-tan: var(--paper-2);
+  --canvas-tan-light: var(--paper);
+  --canvas-tan-dark: var(--hide-600);
 
-  --olive-dark: #2c1810;
-  --black: #1a120b;
-  --gray-dark: #3d2e22;
-  --gray-medium: #5c4a3a;
-  --white: #f5e6c8;
-  --white-off: #ebe0c8;
+  --olive-dark: var(--patina-900);
+  --black: var(--hide-950);
+  --gray-dark: var(--hide-700);
+  --gray-medium: var(--hide-500);
+  --white: var(--bone-100);
+  --white-off: var(--bone-200);
 
-  --red-primary: #8b0000;
-  --red-highlight: #a52a2a;
-  --red-blood: #5c0000;
+  --red-primary: var(--locked);
+  --red-highlight: var(--restricted);
+  --red-blood: var(--rust-900);
 
-  --status-ready: #4a5c2e;
-  --status-warning: #a67c2d;
-  --status-critical: #8b0000;
-  --status-inactive: #5c4a3a;
+  --status-ready: var(--cleared);
+  --status-warning: var(--restricted);
+  --status-critical: var(--locked);
+  --status-inactive: var(--hide-500);
 
-  --shadow-sm: 3px 3px 0 #1a120b;
-  --shadow-md: 4px 4px 0 #1a120b;
-  --shadow-lg: 6px 6px 0 #1a120b;
+  --shadow-sm: 3px 3px 0 var(--hide-950);
+  --shadow-md: 4px 4px 0 var(--hide-950);
+  --shadow-lg: 6px 6px 0 var(--hide-950);
 
   --background: var(--canvas-tan);
   --foreground: var(--black);
 
-  --paper: #e8d9c0;
-  --leather: #3b2415;
-  --brass: #b08d57;
-  --brass-light: #d4af77;
-  --brass-dark: #8a6a3c;
+  /* --paper is deliberately not restated: omitting it lets ppbf.css's own
+     --paper cascade through, which is the value the design system intends. */
+  --leather: var(--hide-800);
+
+  /* Grit: hardware in a gym run forty years on donations is oxidised, not
+     polished. --brass-* stays reserved for the crest and the belt (Law 1). */
+  --brass: var(--patina-300);
+  --brass-light: var(--patina-100);
+  --brass-dark: var(--patina-700);
 }
 
 [data-theme="retro"] body::before {
