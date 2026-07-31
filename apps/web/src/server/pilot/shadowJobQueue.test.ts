@@ -110,7 +110,10 @@ describe('SHADOW job queue safeguards', () => {
     expect(sql).toContain("error_message = 'SHADOW_JOB_LEASE_EXPIRED'");
     expect(sql).toContain('lease_expires_at IS NULL OR lease_expires_at <= NOW()');
     expect(sql).toContain('lease_token = gen_random_uuid()');
-    expect(params).toEqual(['heavy_bag_session', 120]);
+    // 300, not 120: the lease must exceed the 120s provider ceiling plus
+    // persistence overhead, or completion throws on its own expired lease and
+    // the re-claim duplicates an already-appended answer.
+    expect(params).toEqual(['heavy_bag_session', 300]);
   });
 
   test('does not reveal another account job within the same tenant', async () => {

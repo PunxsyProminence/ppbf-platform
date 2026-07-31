@@ -25,6 +25,7 @@ import { claimNextJob, completeJob, failJob, type JobType } from './shadowJobQue
 import { composeShadowSystemPrompt, SHADOW_SYSTEM_PROMPT, validateShadowResponse } from './shadowChat';
 import { appendAssistantMessage, queueHumanReview } from './shadowConversations';
 import { deriveEvidenceTier } from './shadowEvidenceTier';
+import { resolveHandoff } from './shadowHandoff';
 import { buildAzureAiChatCompletionsUrl, getAzureAiRuntimeConfig } from './azureAiRuntime';
 
 export interface JobProcessorResult {
@@ -170,18 +171,40 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
       : null;
     let outputForCompletion: Record<string, unknown> = rawOutput;
     let bindingFiltered = false;
+    let bindingRequiresHumanReview = false;
     if (binding) {
       const decision = validateShadowResponse(
         typeof rawOutput.response === 'string' ? rawOutput.response : '',
         { allowedEvidenceIds: binding.allowedEvidenceIds },
       );
       bindingFiltered = !decision.valid || decision.filtered;
+      // Sync parity: the synchronous path queues human review on
+      // requiresHumanReview even when the answer is not filtered. Hoisted so
+      // the review-queue condition below can see it.
+      bindingRequiresHumanReview = decision.requiresHumanReview;
       const allowedIdSet = new Set(binding.allowedEvidenceIds);
       const citationIds = decision.citationIds.filter((id) => allowedIdSet.has(id));
+      // The allowlist admits near-miss and platform-rollup ids so the model
+      // is not punished for citing context it was handed, but those are not
+      // library evidence and must not be persisted against the library
+      // bundle -- the citation insert resolves ids from shadow_evidence_items
+      // and THROWS on anything else, which aborted the append and lost the
+      // user's answer. The catalog holds exactly the bundle's own ids, so it
+      // is the persistence filter, same as the synchronous path's
+      // nonBundleEvidenceIdSet strip.
+      const catalogIdSet = new Set(binding.citationCatalog.map((item) => item.evidenceId));
+      const bundleCitationIds = citationIds.filter((citationId) => catalogIdSet.has(citationId));
       const evidenceTier = deriveEvidenceTier({
         isAnsweredState: !bindingFiltered,
         evidenceAvailability: binding.availability,
         citationCount: citationIds.length,
+      });
+      // Same banner the synchronous path stores: the response's own topic
+      // wins (a benign question can draw an answer that volunteers weight-cut
+      // guidance), and a review-worthy answer never persists without one.
+      const handoff = resolveHandoff({
+        requiresHumanReview: bindingFiltered || bindingRequiresHumanReview,
+        topic: decision.topic,
       });
       const assistantMessageId = await appendAssistantMessage({
         actor: currentActor,
@@ -191,11 +214,12 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
         sessionType: 'heavy_bag',
         responseState: bindingFiltered ? 'filtered' : 'ok',
         evidenceTier,
+        handoff,
         evidence: binding.bundleId
           ? {
               bundleId: binding.bundleId,
               availability: binding.availability,
-              citationIds,
+              citationIds: bundleCitationIds,
             }
           : undefined,
       });
@@ -206,7 +230,8 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
         assistantMessageId,
         evidenceTier,
         responseState: bindingFiltered ? 'filtered' : 'ok',
-        citations: binding.citationCatalog.filter((item) => citationIds.includes(item.evidenceId)),
+        handoff,
+        citations: binding.citationCatalog.filter((item) => bundleCitationIds.includes(item.evidenceId)),
       };
     }
 
@@ -215,21 +240,42 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
     });
     const finalSafetyStatus = bindingFiltered ? 'filtered' as const : checkedOutput.safetyStatus;
     await completeJob(job, checkedOutput.output, finalSafetyStatus);
-    if (finalSafetyStatus === 'filtered') {
-      await queueHumanReview({
+    // Sync parity: the synchronous path queues review on filtered OR
+    // requiresHumanReview; this queued only on filtered, so a background
+    // answer that tripped reasons without the filter displayed to the user
+    // and no reviewer ever saw it.
+    if (finalSafetyStatus === 'filtered' || bindingRequiresHumanReview) {
+      const reviewTicket = {
         organizationId: job.organizationId,
         accountId: job.accountId,
         category: 'async_response_safety',
-        severity: 'high',
-        summary: 'A generated SHADOW background result was replaced by the post-generation safety boundary.',
+        severity: 'high' as const,
+        summary: finalSafetyStatus === 'filtered'
+          ? 'A generated SHADOW background result was replaced by the post-generation safety boundary.'
+          : 'A generated SHADOW background result requires human review.',
         metadata: {
           jobId: job.jobId,
           jobType: job.jobType,
           subjectScoped: Boolean(job.subjectId),
         },
-      }).catch(() => {
-        console.error('SHADOW async human-review queue write failed');
-      });
+      };
+      // The job is already completed above, so a throw here would route to
+      // failJob against a completed row -- retry once, then log loudly. (The
+      // synchronous path can fail its request closed; this path cannot
+      // without reordering completion, which would let a re-claim duplicate
+      // the already-appended answer.)
+      try {
+        await queueHumanReview(reviewTicket);
+      } catch {
+        try {
+          await queueHumanReview(reviewTicket);
+        } catch {
+          console.error('SHADOW async human-review queue write failed twice', {
+            jobId: job.jobId,
+            jobType: job.jobType,
+          });
+        }
+      }
     }
 
     return {
@@ -324,6 +370,13 @@ function jobFailureCode(error: unknown): string {
   return 'SHADOW_JOB_EXECUTION_FAILED';
 }
 
+// Platform-assigned enum labels, not model prose. The safety sweep must not
+// validate these: the evidence-tier label 'PROVEN' matches the validator's
+// own \bproven\b evidence-claim trigger, so every answer that earned the top
+// tier (2+ authorized citations) had its entire job output replaced by the
+// safe-filtered text -- the better the evidence, the surer the self-filter.
+const OUTPUT_LABEL_KEYS = new Set(['evidenceTier', 'responseState', 'resultStatus', 'safetyStatus']);
+
 function collectOutputStrings(value: unknown, strings: string[], depth = 0): void {
   if (depth > 8 || strings.length >= 100) return;
   if (typeof value === 'string') {
@@ -335,7 +388,8 @@ function collectOutputStrings(value: unknown, strings: string[], depth = 0): voi
     return;
   }
   if (value && typeof value === 'object') {
-    for (const item of Object.values(value as Record<string, unknown>)) {
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      if (OUTPUT_LABEL_KEYS.has(key)) continue;
       collectOutputStrings(item, strings, depth + 1);
     }
   }

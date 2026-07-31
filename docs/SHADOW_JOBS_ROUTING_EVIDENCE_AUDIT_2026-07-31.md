@@ -15,6 +15,14 @@ within one tick, then removed) confirmed the queue→claim→terminal loop works
 Verdicts: **DEFECT** (wrong behavior, concrete failure scenario), **DESIGN-GAP** (missing
 piece someone must decide on), **OK** (traced and sound).
 
+> **Status (same day):** A1–A5, A7 (async parity, with A7's processor half reduced to
+> retry-then-log because the job is already completed at that point) and B1 (lease raised to
+> 300s) are fixed with pinning tests in the async-parity PR. That work also surfaced a
+> finding this audit missed: the output sweep validated the `evidenceTier` label itself, so
+> 'PROVEN' — the label earned by 2+ authorized citations — tripped the validator's own
+> \bproven\b trigger and safe-filtered the entire job output. The better the evidence, the
+> surer the self-filter. Fixed by exempting platform-assigned enum labels from the sweep.
+
 ---
 
 ## A. Async/sync safety parity (classification-routing-evidence trace)

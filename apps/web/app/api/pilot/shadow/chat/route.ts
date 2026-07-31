@@ -25,6 +25,7 @@ import { describeDeployment, tierToSessionType } from '@/src/server/pilot/shadow
 import { classifyProfileTier, buildPersonalizationPrompt } from '@/src/server/pilot/shadowProfiling';
 import { executeHeavyBagAsync, executeHeavyBagSync } from '@/src/server/pilot/shadowHeavyBag';
 import { isShadowWorkerEnabled } from '@/src/server/pilot/shadowJobWorker';
+import { resolveHandoff } from '@/src/server/pilot/shadowHandoff';
 import {
   evaluateShadowUnlockState,
   isFeatureEnabled,
@@ -109,26 +110,8 @@ const FALLBACK_RESPONSES: Record<string, string> = {
   medical_clearance: 'Medical clearance decisions are made by qualified medical professionals. SHADOW can help you understand what clearance evaluations typically include.',
 };
 
-// Human-handoff guidance for specific high-risk topics. Anything not listed
-// here still gets a non-empty handoff via DEFAULT_HANDOFF_MESSAGE below --
-// handoff must never be empty when a response requires human review.
-const HANDOFF_MESSAGES: Record<string, string> = {
-  concussion: 'Loop in your medical staff before any return-to-activity decision.',
-  weight_cutting: 'Talk to your medical team and sports nutritionist before changing any weight-cut plan.',
-  return_to_play: 'Return-to-play calls belong to a qualified medical professional -- bring this to them directly.',
-  medical_clearance: 'Medical clearance is a licensed professional\'s call, not SHADOW\'s -- follow up with them directly.',
-};
-const DEFAULT_HANDOFF_MESSAGE = 'This needs a human coach, medical professional, or your organization admin to weigh in directly -- please follow up with them.';
-
-function resolveHandoff(input: { requiresHumanReview: boolean; topic: string | undefined }): string | undefined {
-  if (!input.requiresHumanReview && !input.topic) {
-    return undefined;
-  }
-  if (input.topic && HANDOFF_MESSAGES[input.topic]) {
-    return HANDOFF_MESSAGES[input.topic];
-  }
-  return DEFAULT_HANDOFF_MESSAGE;
-}
+// Handoff banner text lives in shadowHandoff.ts so the background job
+// processor resolves the identical banner this route resolves.
 
 /**
  * Provider timeout for the Quick Round path. This was a flat 15s, which no
@@ -800,7 +783,18 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // the job carries the evidence snapshot so the completion can cite only
     // what this user was allowed to see at ask time. The answer is appended
     // by the processor under this same actor's re-validated identity.
-    if (sessionType === 'heavy_bag' && preferAsync && isShadowWorkerEnabled()) {
+    //
+    // A high-risk classification never queues. The canned-fallback
+    // interception for concussion-class questions lives inside routeLlmCall,
+    // which this branch returns before -- so an educationally-framed
+    // concussion question with preferAsync was generated in the background
+    // and persisted as 'ok' while the same question answered synchronously
+    // got the safe fallback. Falling through to the synchronous path gives
+    // those requests the identical interception, banner, and review queueing.
+    const interceptableHighRisk = Boolean(
+      requestValidation.classification && requestValidation.classification in FALLBACK_RESPONSES,
+    );
+    if (sessionType === 'heavy_bag' && preferAsync && !interceptableHighRisk && isShadowWorkerEnabled()) {
       await assertShadowRuntimeReadiness({ requiredTables: ['shadow_jobs'] });
       const queuedConversationId = await resolveConversation({
         actor: principal,
@@ -835,14 +829,19 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
         evidenceSnapshot: {
           bundleId: evidenceBundle.bundleId,
           availability: evidenceBundle.availability,
-          // Context-record ids (near-miss events) ride along: the queued
-          // prompt carries the near-miss context, so the completion validator
-          // must accept those citations or a background answer referencing a
-          // recorded event gets filtered. They are absent from the citation
-          // catalog on purpose -- they persist as prose references, not
-          // library citations, same as the synchronous path.
+          // Context-record ids (near-miss events) and platform-rollup ids
+          // ride along: the queued prompt carries that context, so the
+          // completion validator must accept those citations or a background
+          // answer citing ids it was told to cite gets filtered. This list
+          // must equal the synchronous path's validation allowlist exactly --
+          // omitting platformEvidenceIds here meant an async cross-gym answer
+          // was safe-filtered for citing the rollup ids in its own prompt.
+          // They are absent from the citation catalog on purpose: they
+          // persist as prose references, not library citations, same as the
+          // synchronous path.
           allowedEvidenceIds: [
             ...evidenceBundle.allowedEvidenceIds,
+            ...platformEvidenceIds,
             ...(roleBasedContext.evidenceIds ?? []),
           ],
           citationCatalog: publicEvidenceCitations(evidenceBundle, evidenceBundle.allowedEvidenceIds),
@@ -948,15 +947,15 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           : undefined,
       });
       if (state === 'filtered' || responseValidation.requiresHumanReview) {
-        await queueHumanReview({
+        const reviewTicket = {
           organizationId,
           accountId: userId,
           conversationId,
           category: interactionTopic,
           severity: ['chest_pain', 'fainting', 'loss_of_consciousness', 'urgent_personal_symptom']
             .includes(requestValidation.classification ?? '')
-            ? 'critical'
-            : 'high',
+            ? ('critical' as const)
+            : ('high' as const),
           summary: 'A generated SHADOW response was replaced by the post-generation safety boundary.',
           metadata: {
             assistantMessageId: messageId,
@@ -964,9 +963,24 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
             athleteScoped: Boolean(athleteId),
             safetyReasons: responseValidation.reasons.slice(0, 10),
           },
-        }).catch(() => {
-          console.error('SHADOW human-review queue write failed');
-        });
+        };
+        // This write used to be swallowed into console.error while the
+        // response still told the user a human would review -- the one
+        // failure mode where the safety posture shown on screen was strictly
+        // false. One retry covers a transient blip; a second failure fails
+        // the request instead of making a claim nothing recorded. The
+        // persisted message keeps its banner, which is guidance to seek a
+        // human, not a claim that one was queued.
+        try {
+          await queueHumanReview(reviewTicket);
+        } catch {
+          try {
+            await queueHumanReview(reviewTicket);
+          } catch (retryError) {
+            console.error('SHADOW human-review queue write failed twice; failing the request closed');
+            throw retryError;
+          }
+        }
       }
     }
 
