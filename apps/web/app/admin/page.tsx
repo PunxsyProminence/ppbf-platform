@@ -805,7 +805,7 @@ export default function AdminCapabilitiesPage() {
   }
 
   return (
-    <RoleSessionGate allowedRoles={['admin']}>
+    <RoleSessionGate allowedRoles={['admin', 'platform_owner']}>
       <main className="min-h-screen bg-[#0a0a0a] text-[#e8d7c6]">
         <header className="border-b-4 border-[#8b4444] bg-[#1a1a1a] px-6 py-4">
           <div className="flex flex-wrap items-center justify-between gap-4">

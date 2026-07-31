@@ -3,6 +3,13 @@ export type ClubRole =
   | 'coach'
   | 'parent'
   | 'admin'
+  // Distinct from 'admin' on purpose. Omega is broader in breadth and
+  // strictly NARROWER in depth (shadowRoleSets.ts): access.ts refuses it
+  // every athlete-scoped record. While both collapsed to 'admin', the client
+  // could not express that, so page guards were wrong in both directions --
+  // Omega rendered pages whose API then refused it, and an organization_admin
+  // was locked out of pages its API allows.
+  | 'platform_owner'
   | 'board'
   | 'board-president'
   | 'board-chair'

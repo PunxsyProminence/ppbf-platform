@@ -13,7 +13,12 @@ export function mapPilotLoginRoleToClubRole(role: string): ClubRole {
 }
 
 export function canPublishAnnouncement(role: ClubRole): boolean {
-  return role === 'coach' || role === 'admin';
+  // platform_owner is listed explicitly because it used to arrive here folded
+  // into 'admin'. announcements/post resolveAuthorRole() admits it, so leaving
+  // it out when the club roles split would have quietly withdrawn a capability
+  // the server still grants -- speaking for the club is breadth, not the
+  // athlete-scoped depth Omega is barred from.
+  return role === 'coach' || role === 'admin' || role === 'platform_owner';
 }
 
 export function validateAnnouncementPublishInput(params: {

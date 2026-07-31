@@ -343,7 +343,7 @@ function PinManagementPageContent() {
 
 export default function PinManagementPage() {
   return (
-    <RoleSessionGate allowedRoles={['admin']}>
+    <RoleSessionGate allowedRoles={['admin', 'platform_owner']}>
       <PinManagementPageContent />
     </RoleSessionGate>
   );

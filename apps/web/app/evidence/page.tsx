@@ -108,7 +108,7 @@ export default function EvidenceReviewPage() {
     <RoleStandaloneView
       roleLabel="Evidence Review"
       routeLabel="/evidence"
-      allowedRoles={['admin']}
+      allowedRoles={['admin', 'platform_owner']}
     >
       <div className="space-y-6">
         <header className="border-2 border-[#8b4444] bg-[#111] p-5">

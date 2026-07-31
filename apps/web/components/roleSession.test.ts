@@ -10,6 +10,7 @@ import {
   readRoleSession,
   resolveAuthoritativeRoleSession,
 } from './roleSession';
+import type { ClubRole } from './roleRoutes';
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -119,7 +120,7 @@ describe('roleSession display cache', () => {
 
 describe('authoritative server role resolution', () => {
   test.each([
-    ['platform_owner', 'admin', '/admin/platform'],
+    ['platform_owner', 'platform_owner', '/admin/platform'],
     ['organization_admin', 'admin', '/admin'],
     ['admin', 'admin', '/admin'],
     ['coach', 'coach', '/coach/review-queue'],
@@ -138,6 +139,34 @@ describe('authoritative server role resolution', () => {
       expect(getPilotRoleDestination(role)).toBeNull();
     },
   );
+
+  // The whole point of the split: these two must stop being interchangeable.
+  // While both mapped to 'admin', every page guard was wrong in one direction
+  // or the other -- an organization_admin was locked out of /coach/video-analysis
+  // even though the upload API admits that role, and Omega rendered admin
+  // pages whose API then refused it.
+  test('platform_owner and organization_admin are no longer the same club role', () => {
+    expect(mapPilotRoleToClubRole('platform_owner'))
+      .not.toBe(mapPilotRoleToClubRole('organization_admin'));
+  });
+
+  test('the legacy admin alias still resolves with the organization admins', () => {
+    // roleEquals() treats 'admin' and 'organization_admin' as the same server
+    // role while legacy rows migrate, so the client must not split them.
+    expect(mapPilotRoleToClubRole('admin')).toBe(mapPilotRoleToClubRole('organization_admin'));
+  });
+
+  test('an admin-gated page admits organization_admin but not platform_owner', () => {
+    // isRoleSessionAllowed is what every page guard runs. Pinned as behavior
+    // rather than as a mapping detail, because this is the property the
+    // guards actually depend on.
+    const adminOnly: ClubRole[] = ['admin'];
+    const orgAdmin = mapPilotRoleToClubRole('organization_admin') as ClubRole;
+    const omega = mapPilotRoleToClubRole('platform_owner') as ClubRole;
+
+    expect(adminOnly.includes(orgAdmin)).toBe(true);
+    expect(adminOnly.includes(omega)).toBe(false);
+  });
 
   test('accepts athlete local auth but requires Microsoft for every privileged role', () => {
     expect(resolveAuthoritativeRoleSession({
