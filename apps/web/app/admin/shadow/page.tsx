@@ -466,7 +466,7 @@ function renderMetricsPanel(
             ['Filter Rate', growthMetrics.growth.filterRate != null ? `${(growthMetrics.growth.filterRate * 100).toFixed(1)}%` : '—'],
             ['Avg Satisfaction', growthMetrics.growth.avgSatisfaction != null ? growthMetrics.growth.avgSatisfaction.toFixed(2) : '—'],
             ['Effectiveness %', growthMetrics.effectiveness.avgRecommendationScore != null ? String(growthMetrics.effectiveness.avgRecommendationScore) : '—'],
-            ['Recommendations', growthMetrics.growth.recommendationsMade],
+            ['Reviewed Outcomes', growthMetrics.growth.reviewedOutcomes],
             ['Research Created', growthMetrics.growth.researchRequirementsCreated],
             ['Research Closed', growthMetrics.growth.researchRequirementsClosed],
             ['New Patterns', growthMetrics.growth.newLibraryPatterns],

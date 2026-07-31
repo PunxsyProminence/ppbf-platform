@@ -908,6 +908,12 @@ describe('background session types via the job worker', () => {
     }));
     // The assistant turn is written by the processor at completion, never here.
     expect(mockAppendConversationExchange).not.toHaveBeenCalled();
+    // The queued turn is audited: shadow_chat_audit is the denominator of
+    // feedbackRate, and skipping queued turns let async-heavy orgs exceed
+    // a 100% feedback rate.
+    expect(mockQuery.mock.calls.some(([sql, params]) =>
+      typeof sql === 'string' && sql.includes('shadow_chat_audit')
+      && Array.isArray(params) && params.includes('<state:queued>'))).toBe(true);
   });
 
   test('background Heavy Bag: an educationally-framed high-risk question never queues', async () => {

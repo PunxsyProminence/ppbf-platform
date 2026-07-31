@@ -5,7 +5,11 @@ export type RecommendationVerificationState = 'unverified' | 'durable_client' | 
 export interface RecommendationEffectivenessInput {
   organizationId: string;
   userId: string;
-  role: string;
+  // What kind of recommendation this outcome grades (e.g. the session type
+  // that produced it). This used to be the ACTOR ROLE, silently written into
+  // the NOT NULL recommendation_type column -- any future query grouping by
+  // recommendation type would have bucketed by coach/athlete instead.
+  recommendationType: string;
   feedbackId?: number | null;
   recommendationId?: string;
   outcome: 'improved' | 'neutral' | 'degraded' | 'unknown';
@@ -19,7 +23,11 @@ export interface GrowthMetrics {
   totalInteractions: number;
   avgSatisfaction: number | null;
   avgEffectiveness: number | null;
-  recommendationsMade: number;
+  // Renamed from recommendationsMade: the count is COUNT(*) of human-reviewed
+  // effectiveness rows -- reviewed outcomes -- and was rendered as
+  // "Recommendations", implying SHADOW's output volume when it is the review
+  // throughput.
+  reviewedOutcomes: number;
   researchRequirementsCreated: number;
   researchRequirementsClosed: number;
   newLibraryPatterns: number;
@@ -71,13 +79,25 @@ export async function recordRecommendationEffectiveness(
          WHEN pilot.shadow_recommendation_effectiveness.verification_state = 'human_reviewed'
          THEN pilot.shadow_recommendation_effectiveness.human_review_required
          ELSE EXCLUDED.human_review_required
+       END,
+       -- Every read of this table windows human_reviewed rows on created_at,
+       -- but created_at was stamped at FEEDBACK time and never refreshed --
+       -- so approving feedback older than the dashboard window silently
+       -- excluded it from every counter, in this window and all later ones.
+       -- The reviewed outcome materially comes into existence at approval,
+       -- so the row is restamped the first time it reaches human_reviewed.
+       created_at = CASE
+         WHEN pilot.shadow_recommendation_effectiveness.verification_state <> 'human_reviewed'
+          AND EXCLUDED.verification_state = 'human_reviewed'
+         THEN NOW()
+         ELSE pilot.shadow_recommendation_effectiveness.created_at
        END`,
     [
       data.organizationId,
       data.userId,
       data.feedbackId ?? null,
       data.recommendationId || null,
-      data.role,
+      data.recommendationType,
       data.outcome,
       score,
       data.verificationState,
@@ -97,7 +117,6 @@ export async function getGrowthMetrics(
     filtered_interactions: string;
     avg_satisfaction: string | null;
     avg_effectiveness: string | null;
-    recommendations_made: string;
     positive_outcomes: string;
     reviewed_outcomes: string;
     research_created: string;
@@ -119,11 +138,6 @@ export async function getGrowthMetrics(
         WHERE organization_id = $1
           AND verification_state = 'human_reviewed'
           AND created_at > NOW() - ($2 * INTERVAL '1 day')) AS avg_effectiveness,
-       (SELECT COUNT(*)
-        FROM pilot.shadow_recommendation_effectiveness
-        WHERE organization_id = $1
-          AND verification_state = 'human_reviewed'
-          AND created_at > NOW() - ($2 * INTERVAL '1 day')) AS recommendations_made,
        (SELECT COUNT(*)
         FROM pilot.shadow_recommendation_effectiveness
         WHERE organization_id = $1
@@ -170,6 +184,12 @@ export async function getGrowthMetrics(
   if (reviewedOutcomes === 0) {
     unavailableReasons.positiveOutcomeRate = 'NO_HUMAN_REVIEWED_OUTCOMES_IN_PERIOD';
   }
+  // avg_satisfaction is AVG(rating), and no shipped client sends a rating --
+  // the feedback UI is thumbs only. Without this reason code the tile
+  // rendered a bare em dash indefinitely with nothing saying why.
+  if (row?.avg_satisfaction == null) {
+    unavailableReasons.avgSatisfaction = 'RATING_INPUT_NOT_BUILT';
+  }
 
   return {
     period: `Last ${safeDays} days`,
@@ -178,7 +198,7 @@ export async function getGrowthMetrics(
     avgSatisfaction:
       row?.avg_satisfaction != null ? Number.parseFloat(row.avg_satisfaction) : null,
     avgEffectiveness,
-    recommendationsMade: Number.parseInt(row?.recommendations_made ?? '0', 10),
+    reviewedOutcomes,
     researchRequirementsCreated: Number.parseInt(row?.research_created ?? '0', 10),
     researchRequirementsClosed: Number.parseInt(row?.research_closed ?? '0', 10),
     newLibraryPatterns: Number.parseInt(row?.new_patterns ?? '0', 10),

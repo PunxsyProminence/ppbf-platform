@@ -146,9 +146,9 @@ async function recordMetrics(
 ): Promise<boolean> {
   try {
     await recordRecommendationEffectiveness({
+      recommendationType: signal.sessionType,
       organizationId: signal.organizationId,
       userId: signal.userId,
-      role: signal.role,
       feedbackId: signal.feedbackId,
       recommendationId: signal.messageId,
       outcome,

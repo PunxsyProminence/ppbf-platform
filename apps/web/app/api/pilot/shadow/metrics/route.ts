@@ -48,12 +48,17 @@ export interface OrgMetrics {
     // compile error there instead of a NaN tile.
     filterRate: number | null;
     avgSatisfaction: number | null;
-    recommendationsMade: number;
+    reviewedOutcomes: number;
     researchRequirementsCreated: number;
     researchRequirementsClosed: number;
     newLibraryPatterns: number;
   };
-  unlocks: {
+  // Named viewerUnlocks because the counters behind unlock state are
+  // PER-USER (user_high_quality_interactions), evaluated for the requesting
+  // account -- two admins opening the same org dashboard legitimately see
+  // different values. The old name "unlocks" presented the viewer's own
+  // progress as an organization fact.
+  viewerUnlocks: {
     strongPersonalization: boolean;
     autoLibraryUpdates: boolean;
     aggressiveResearchGeneration: boolean;
@@ -188,7 +193,7 @@ async function getOrgMetrics(
       positiveOutcomeRate: growthMetrics.positiveOutcomeRate,
       filterRate: growthMetrics.filterRate,
       avgSatisfaction: growthMetrics.avgSatisfaction,
-      recommendationsMade: growthMetrics.recommendationsMade,
+      reviewedOutcomes: growthMetrics.reviewedOutcomes,
       researchRequirementsCreated: growthMetrics.researchRequirementsCreated,
       researchRequirementsClosed: growthMetrics.researchRequirementsClosed,
       newLibraryPatterns: growthMetrics.newLibraryPatterns,
@@ -201,7 +206,7 @@ async function getOrgMetrics(
           : {}),
       },
     },
-    unlocks: {
+    viewerUnlocks: {
       strongPersonalization:
         unlockState?.features.strong_personalization?.unlocked ?? false,
       autoLibraryUpdates:
