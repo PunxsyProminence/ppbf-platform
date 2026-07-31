@@ -17,7 +17,12 @@
 :root {
   /* --- Ground ------------------------------------------------------------
      Was #d4c4a8, a flat tan with no relationship to the rest of the palette.
-     Now the design system's warm canvas — the family/public ground (Law 6). */
+     Now the design system's warm canvas — aged paper, the golden-era ground.
+
+     Note this is the ONLY theme. There is deliberately no second palette and
+     no [data-theme] override: one look, the golden-era one. Law 6's ink ground
+     is still available per-screen via ppbf.css's .mat-leather / .on-canvas
+     materials, but that is a per-surface material choice, not a user toggle. */
   --canvas-tan: var(--canvas-warm);
   --canvas-tan-light: var(--paper);
   --canvas-tan-dark: var(--hide-600);
@@ -102,73 +107,6 @@
   --brass-light: var(--brass-300);
   --brass-dark: var(--brass-800);
   --leather: var(--hide-800);
-}
-
-/* =========================================================
-   RETRO GOLDEN-ERA THEME ("Poor Man's Sport")
-   Toggle with data-theme="retro" on <html> — ThemeProvider sets it, and this
-   is the DEFAULT theme, so this block is what most users actually see.
-
-   This selector has the same specificity as :root but comes later, so it wins
-   wherever it names a token. It previously hardcoded its own palette, which
-   silently overrode the design-system aliases above and reverted the whole
-   theme to pre-design-system values. Every value here now derives from
-   ppbf.css, so the toggle changes *ground* rather than changing which design
-   system is in effect.
-
-   Both themes stay LIGHT-ground on purpose. The app's pages pair
-   `bg-[var(--canvas-tan)]` with `text-[var(--black)]` inline, so a theme that
-   darkened the ground without also inverting --black would render body copy
-   invisible on every one of them. The toggle therefore shifts warmth and
-   hardware finish, not lightness: tactical is the cooler canvas, retro the
-   warmer paper with oxidised patina hardware instead of polished brass.
-
-   Note this is NOT Law 6's two grounds — those are chosen per screen (staff
-   ink vs. family canvas) via `.on-canvas`, independent of this toggle.
-   ========================================================= */
-[data-theme="retro"] {
-  /* Warmer, slightly deeper paper than tactical's canvas — still light */
-  --canvas-tan: var(--paper-2);
-  --canvas-tan-light: var(--paper);
-  --canvas-tan-dark: var(--hide-600);
-
-  --olive-dark: var(--patina-900);
-  --black: var(--hide-950);
-  --gray-dark: var(--hide-700);
-  --gray-medium: var(--hide-500);
-  --white: var(--bone-100);
-  --white-off: var(--bone-200);
-
-  --red-primary: var(--locked);
-  --red-highlight: var(--restricted);
-  --red-blood: var(--rust-900);
-
-  --status-ready: var(--cleared);
-  --status-warning: var(--restricted);
-  --status-critical: var(--locked);
-  --status-inactive: var(--hide-500);
-
-  --shadow-sm: 3px 3px 0 var(--hide-950);
-  --shadow-md: 4px 4px 0 var(--hide-950);
-  --shadow-lg: 6px 6px 0 var(--hide-950);
-
-  --background: var(--canvas-tan);
-  --foreground: var(--black);
-
-  /* --paper is deliberately not restated: omitting it lets ppbf.css's own
-     --paper cascade through, which is the value the design system intends. */
-  --leather: var(--hide-800);
-
-  /* Grit: hardware in a gym run forty years on donations is oxidised, not
-     polished. --brass-* stays reserved for the crest and the belt (Law 1). */
-  --brass: var(--patina-300);
-  --brass-light: var(--patina-100);
-  --brass-dark: var(--patina-700);
-}
-
-[data-theme="retro"] body::before {
-  opacity: 0.9;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='noise'><feTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3'/></filter><rect width='180' height='180' filter='url(%23noise)' opacity='0.09'/></svg>");
 }
 
 .font-display {
@@ -643,40 +581,42 @@ h6 {
 }
 
 /* =========================================================
-   DEEP RETRO IMMERSION (closes gap to design mockups)
-   Applied only when data-theme="retro". Forces hard edges,
-   paper surfaces, and mechanical feel on modern Tailwind
-   utility classes so pages that still use rounded-* still
-   read as 1930s–50s gym desk.
-   ========================================================= */
-[data-theme="retro"] {
-  --radius-none: 0;
-}
+   GOLDEN-ERA IMMERSION
+   Closes the gap between the design mockups and pages still written in modern
+   Tailwind idiom: forces hard edges, paper surfaces, and a mechanical feel so
+   a page using `rounded-2xl` still reads as a 1930s–50s gym desk.
 
-[data-theme="retro"] .rounded-\[28px\],
-[data-theme="retro"] .rounded-\[24px\],
-[data-theme="retro"] .rounded-2xl,
-[data-theme="retro"] .rounded-xl,
-[data-theme="retro"] .rounded-lg,
-[data-theme="retro"] .rounded-full,
-[data-theme="retro"] [class*="rounded-"] {
+   This was previously gated behind [data-theme="retro"] and therefore only
+   applied to users who had toggled into it. It is now unconditional — the
+   golden-era look is the only look, so the rules that produce it should not
+   be reachable only by a toggle. The `!important` flags are load-bearing:
+   they exist to beat Tailwind utilities baked into ~61 pages that would
+   otherwise reassert soft modern corners.
+   ========================================================= */
+.rounded-\[28px\],
+.rounded-\[24px\],
+.rounded-2xl,
+.rounded-xl,
+.rounded-lg,
+.rounded-full,
+[class*="rounded-"] {
   border-radius: 0 !important;
 }
 
-[data-theme="retro"] .shadow-sm,
-[data-theme="retro"] .shadow-md,
-[data-theme="retro"] .shadow-lg {
+.shadow-sm,
+.shadow-md,
+.shadow-lg {
   box-shadow: var(--shadow-md) !important;
 }
 
 /* Cards / panels → paper tickets */
-[data-theme="retro"] .bg-white {
+.bg-white {
   background-color: var(--paper) !important;
   border-color: var(--black) !important;
 }
 
 /* Stronger paper grain on retro body */
-[data-theme="retro"] body::before {
+body::before {
   opacity: 1;
   background-image:
     url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='noise'><feTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3'/></filter><rect width='180' height='180' filter='url(%23noise)' opacity='0.12'/></svg>"),
@@ -685,7 +625,7 @@ h6 {
 }
 
 /* Buttons that aren't already .stamp / .brass-plate get hard desk feel */
-[data-theme="retro"] button:not(.stamp):not(.brass-plate):not(.leather-tag) {
+button:not(.stamp):not(.brass-plate):not(.leather-tag) {
   border-radius: 0 !important;
   box-shadow: var(--shadow-sm);
   border-width: 2px;
@@ -696,9 +636,9 @@ h6 {
   text-transform: uppercase;
 }
 
-[data-theme="retro"] input,
-[data-theme="retro"] select,
-[data-theme="retro"] textarea {
+input,
+select,
+textarea {
   border-radius: 0 !important;
   border: 3px solid var(--black) !important;
   background: var(--canvas-tan-light) !important;
@@ -706,16 +646,16 @@ h6 {
   font-family: var(--font-mono);
 }
 
-[data-theme="retro"] input:focus,
-[data-theme="retro"] select:focus,
-[data-theme="retro"] textarea:focus {
+input:focus,
+select:focus,
+textarea:focus {
   outline: none;
   border-color: var(--red-primary) !important;
   box-shadow: inset 2px 2px 0 rgba(0,0,0,0.08), 0 0 0 2px rgba(139,0,0,0.2);
 }
 
 /* Header already good; ensure brass-ish feel */
-[data-theme="retro"] header.sticky {
+header.sticky {
   background: linear-gradient(180deg, var(--brass-light), var(--brass), var(--brass-dark)) !important;
   border-bottom: 3px solid var(--black) !important;
   box-shadow: var(--shadow-md) !important;

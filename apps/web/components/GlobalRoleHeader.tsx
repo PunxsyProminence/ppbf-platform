@@ -5,14 +5,13 @@ import { usePathname, useRouter } from "next/navigation";
 import { useSyncExternalStore } from "react";
 import { clearRoleSession, getRoleSessionSnapshot, subscribeRoleSession } from "./roleSession";
 import { apiBase } from '@/lib/apiBase';
-import { ThemeToggle } from "./ThemeProvider";
 
 export default function GlobalRoleHeader() {
   const router = useRouter();
   const pathname = usePathname();
   const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
 
-  // Always show a minimal bar on login so theme can be tested pre-auth
+  // Minimal bar pre-auth and on login
   if (!session || pathname === "/login") {
     return (
       <header className="sticky top-0 z-50 border-b-[3px] border-[var(--black)] bg-[var(--canvas-tan-dark)] shadow-[var(--shadow-sm)]">
@@ -27,7 +26,6 @@ export default function GlobalRoleHeader() {
             >
               Retro Lab
             </Link>
-            <ThemeToggle />
           </div>
         </div>
       </header>
@@ -60,7 +58,6 @@ export default function GlobalRoleHeader() {
           >
             Retro Lab
           </Link>
-          <ThemeToggle />
           <Link
             href="/operations"
             className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-1 text-[11px] font-mono text-[var(--black)] transition hover:bg-[var(--olive-dark)] hover:text-[var(--white)]"

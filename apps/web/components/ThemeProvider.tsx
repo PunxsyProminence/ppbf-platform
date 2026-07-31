@@ -10,6 +10,16 @@ import {
   type ReactNode,
 } from "react";
 
+/* The platform ships ONE look: the golden-era design system in
+   design-system/ppbf.css, applied unconditionally by app/globals.css.
+
+   This provider is kept wired but inert on purpose — a second theme is a
+   planned feature, not a current one. Nothing reads data-theme any more (the
+   [data-theme="retro"] rules that used to gate the golden-era styling are now
+   unconditional), and ThemeToggle is no longer mounted in the global header.
+   Restoring a real toggle means adding a second palette block back to
+   globals.css and re-mounting ThemeToggle; the plumbing below is what makes
+   that a small change rather than a rewrite. */
 export type PpbfTheme = "tactical" | "retro";
 
 const STORAGE_KEY = "ppbf-theme";
