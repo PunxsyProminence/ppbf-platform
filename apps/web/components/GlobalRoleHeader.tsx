@@ -19,14 +19,6 @@ export default function GlobalRoleHeader() {
           <span className="text-[10px] font-mono uppercase tracking-[0.35em] text-[var(--black)]">
             PPBF
           </span>
-          <div className="flex items-center gap-2">
-            <Link
-              href="/retro-lab"
-              className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-1 text-[11px] font-mono text-[var(--black)] transition hover:bg-[var(--olive-dark)] hover:text-[var(--white)]"
-            >
-              Retro Lab
-            </Link>
-          </div>
         </div>
       </header>
     );
@@ -52,12 +44,6 @@ export default function GlobalRoleHeader() {
         </div>
 
         <div className="flex items-center gap-2">
-          <Link
-            href="/retro-lab"
-            className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-1 text-[11px] font-mono text-[var(--black)] transition hover:bg-[var(--olive-dark)] hover:text-[var(--white)]"
-          >
-            Retro Lab
-          </Link>
           <Link
             href="/operations"
             className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-1 text-[11px] font-mono text-[var(--black)] transition hover:bg-[var(--olive-dark)] hover:text-[var(--white)]"
