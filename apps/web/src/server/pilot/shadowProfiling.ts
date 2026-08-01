@@ -210,12 +210,6 @@ export function buildPersonalizationPrompt(
         lines.push(`- ${f.key}: ${f.value} (confidence: ${Math.round(f.confidence * 100)}%)`);
       });
     }
-
-    const questions = (profile.open_questions ?? []).slice(0, 3);
-    if (questions.length > 0) {
-      lines.push('', '### Open Questions to Address When Relevant');
-      questions.forEach((q: string) => lines.push(`- ${q}`));
-    }
   }
 
   return lines.join('\n');

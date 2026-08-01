@@ -135,6 +135,144 @@ describe('POST /api/pilot/progression/assignments', () => {
     expect(await res.json()).toEqual({ error: 'Not found' });
   });
 
+  // A coach picks a drill from the gym library instead of typing one out. The
+  // drill's own wording is what gets recorded when the coach typed nothing.
+  test('201 when a coach assigns a drill from the library by drill_id alone', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', athleteId: null }));
+    mockQueryOne
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' }) // assertCoachAssignedToAthlete
+      .mockResolvedValueOnce({ gap_id: 'gap-1', athlete_id: 'ath-1' }) // getProgressionGapById
+      .mockResolvedValueOnce({
+        organization_id: 'org-1',
+        drill_id: 'drill-jab',
+        name: 'Straight Jab Retraction Snap',
+        focus: 'Quick fist return to protect the chin.',
+        difficulty: 'advanced',
+        active: true,
+      }); // getDrill
+    mockQuery.mockResolvedValueOnce([{ assignment_id: 'asg-1' }]).mockResolvedValueOnce([]);
+
+    const res = await POST(postRequest({ athlete_id: 'ath-1', gap_id: 'gap-1', drill_id: 'drill-jab' }));
+
+    expect(res.status).toBe(201);
+    const [, insertParams] = mockQuery.mock.calls[0];
+    expect(insertParams[5]).toBe('Straight Jab Retraction Snap');
+    expect(insertParams[6]).toBe('Quick fist return to protect the chin.');
+    expect(insertParams[7]).toBe('advanced');
+    expect(insertParams[12]).toBe('drill-jab');
+  });
+
+  // What the coach typed is the record of what was actually assigned that day,
+  // so it is stored as typed even when the assignment also carries an anchor.
+  test('keeps the wording a coach typed over the drill it anchors to', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', athleteId: null }));
+    mockQueryOne
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' })
+      .mockResolvedValueOnce({ gap_id: 'gap-1', athlete_id: 'ath-1' })
+      .mockResolvedValueOnce({
+        organization_id: 'org-1',
+        drill_id: 'drill-jab',
+        name: 'Straight Jab Retraction Snap',
+        focus: 'Quick fist return to protect the chin.',
+        difficulty: 'intermediate',
+        active: true,
+      });
+    mockQuery.mockResolvedValueOnce([{ assignment_id: 'asg-1' }]).mockResolvedValueOnce([]);
+
+    const res = await POST(postRequest({
+      athlete_id: 'ath-1',
+      gap_id: 'gap-1',
+      drill_id: 'drill-jab',
+      drill_name: 'Jab retraction (Tuesday floor)',
+      drill_description: 'Three rounds, focus on the elbow',
+    }));
+
+    expect(res.status).toBe(201);
+    const [, insertParams] = mockQuery.mock.calls[0];
+    expect(insertParams[5]).toBe('Jab retraction (Tuesday floor)');
+    expect(insertParams[6]).toBe('Three rounds, focus on the elbow');
+    expect(insertParams[12]).toBe('drill-jab');
+  });
+
+  // The path every assignment written before drills had identity takes.
+  test('a typed assignment still works and carries no anchor', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', athleteId: null }));
+    mockQueryOne
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' })
+      .mockResolvedValueOnce({ gap_id: 'gap-1', athlete_id: 'ath-1' });
+    mockQuery.mockResolvedValueOnce([{ assignment_id: 'asg-1' }]).mockResolvedValueOnce([]);
+
+    const res = await POST(
+      postRequest({ athlete_id: 'ath-1', gap_id: 'gap-1', drill_name: 'd', drill_description: 'x' }),
+    );
+
+    expect(res.status).toBe(201);
+    const [, insertParams] = mockQuery.mock.calls[0];
+    expect(insertParams[12]).toBeNull();
+    // No drill was named, so none was looked up.
+    expect(mockQueryOne).toHaveBeenCalledTimes(2);
+  });
+
+  test('an assignment naming neither a drill nor a drill_name is refused', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', athleteId: null }));
+
+    const res = await POST(postRequest({ athlete_id: 'ath-1', gap_id: 'gap-1', drill_name: 'd' }));
+
+    expect(res.status).toBe(400);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  test('a drill_id from another organization returns a hidden not-found response', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', athleteId: null }));
+    mockQueryOne
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' })
+      .mockResolvedValueOnce({ gap_id: 'gap-1', athlete_id: 'ath-1' })
+      .mockResolvedValueOnce(null); // no such drill in this organization
+
+    const res = await POST(postRequest({ athlete_id: 'ath-1', gap_id: 'gap-1', drill_id: 'drill-other-org' }));
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Not found' });
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  // Retiring is how a gym stops teaching a drill; a new assignment must not
+  // quietly revive it.
+  test('a retired drill cannot be newly assigned', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', athleteId: null }));
+    mockQueryOne
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' })
+      .mockResolvedValueOnce({ gap_id: 'gap-1', athlete_id: 'ath-1' })
+      .mockResolvedValueOnce({
+        organization_id: 'org-1',
+        drill_id: 'drill-retired',
+        name: 'Retired Drill',
+        focus: 'No longer taught.',
+        difficulty: 'intermediate',
+        active: false,
+      });
+
+    const res = await POST(postRequest({ athlete_id: 'ath-1', gap_id: 'gap-1', drill_id: 'drill-retired' }));
+
+    expect(res.status).toBe(400);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  test('a difficulty outside the shared vocabulary is refused before the write', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', athleteId: null }));
+
+    const res = await POST(postRequest({
+      athlete_id: 'ath-1',
+      gap_id: 'gap-1',
+      drill_name: 'd',
+      drill_description: 'x',
+      drill_difficulty: 'expert',
+    }));
+
+    expect(res.status).toBe(400);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
   test('gap belonging to another athlete returns a hidden not-found response', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', athleteId: null }));
     mockQueryOne

@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { DEFAULT_COMPLIANCE_RULES, complianceRuleSeedId } from './complianceRuleSeeds';
+
 const repositoryRoot = path.resolve(__dirname, '../../../../..');
 
 const migrationPath = path.join(
@@ -98,5 +100,45 @@ describe('compliance rule seeds ownership', () => {
   test('the `all` list orders the seeds after the compliance migration', () => {
     const allList = workflow.match(/for m in ([a-z0-9 -]+); do/)?.[1].split(' ') ?? [];
     expect(allList.indexOf('compliance-rule-seeds')).toBeGreaterThan(allList.indexOf('compliance'));
+  });
+
+  // The seeds exist in SQL and in TypeScript, because they have two jobs: the
+  // migration reaches organizations that already exist, and createOrganization
+  // reaches one being created now. Neither can do the other's job, so the
+  // duplication stays -- and this is what stops it drifting. A rule added,
+  // renamed, or re-graded in one place and not the other fails here rather than
+  // leaving one set of gyms monitoring something the other set does not.
+  describe('the TypeScript seeds match the migration', () => {
+    test('same five rules, same order', () => {
+      expect(DEFAULT_COMPLIANCE_RULES.map((rule) => rule.name)).toEqual(DEFAULT_RULE_NAMES);
+    });
+
+    test('every field of every rule matches the SQL', () => {
+      for (const rule of DEFAULT_COMPLIANCE_RULES) {
+        // The migration builds each row as a single `select` of literals, so the
+        // whole tuple can be matched at once -- catching a severity or escalation
+        // level that changed on one side without touching the rule name.
+        const tuple = new RegExp(
+          [
+            `'${rule.idPrefix}'\\s*\\|\\|\\s*organization_id\\s*\\|\\|\\s*'${rule.idSuffix}'`,
+            'organization_id',
+            `'${rule.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'`,
+            `'${rule.category}'`,
+            `'${rule.description}'`,
+            `'${rule.detectionLogic}'`,
+            `'${rule.severity}'`,
+            `'${rule.escalationLevel}'`,
+          ].join(',\\s*'),
+          'i',
+        );
+        expect(statements).toMatch(tuple);
+      }
+    });
+
+    test('both paths build the same deterministic rule id', () => {
+      // Same gym, either path, same row -- not a duplicate.
+      expect(complianceRuleSeedId(DEFAULT_COMPLIANCE_RULES[0], 'ppbf-default-org'))
+        .toBe('rule_safety_ppbf-default-org_physical_injury');
+    });
   });
 });

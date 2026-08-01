@@ -1,9 +1,9 @@
 session_id,athlete_id,date,rpe,notes,completed_flag
-sess-001,ath-001,2026-07-18,7,Good form on takedowns,true
-sess-002,ath-001,2026-07-19,8,Worked on positioning,true
-sess-003,ath-002,2026-07-18,6,Recovery session,true
-sess-004,ath-002,2026-07-19,9,Intense conditioning circuit,true
-sess-005,ath-003,2026-07-18,7,Drilling escapes,true
-sess-006,ath-003,2026-07-19,5,Light practice,false
-sess-007,ath-004,2026-07-20,8,Match prep,true
-sess-008,ath-005,2026-07-20,7,Technique focus,true
+sess-001,EXAMPLE-001,2026-07-18,7,Good form on takedowns,true
+sess-002,EXAMPLE-001,2026-07-19,8,Worked on positioning,true
+sess-003,EXAMPLE-002,2026-07-18,6,Recovery session,true
+sess-004,EXAMPLE-002,2026-07-19,9,Intense conditioning circuit,true
+sess-005,EXAMPLE-003,2026-07-18,7,Drilling escapes,true
+sess-006,EXAMPLE-003,2026-07-19,5,Light practice,false
+sess-007,EXAMPLE-001,2026-07-20,8,Match prep,true
+sess-008,EXAMPLE-002,2026-07-20,7,Technique focus,true

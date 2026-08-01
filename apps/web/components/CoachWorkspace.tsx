@@ -90,6 +90,21 @@ interface ShadowObservationItem {
   created_at: string;
 }
 
+// One athlete's self-reported pain, already filtered server-side to the
+// athletes this coach is authorized for. Every nullable field is a detail the
+// athlete did not supply -- render it as "not stated" and never as a value.
+interface CoachPainReport {
+  nearMissId: string;
+  athleteId: string;
+  athleteName: string | null;
+  severity: 'low' | 'moderate' | 'high' | 'critical';
+  painScore: number | null;
+  location: string | null;
+  painType: string | null;
+  observedAt: string | null;
+  recordedAt: string | null;
+}
+
 function readinessDotClass(readiness: Athlete['readiness']): string {
   if (readiness === 'GREEN') return 'bg-green-500';
   if (readiness === 'YELLOW') return 'bg-yellow-500';
@@ -104,7 +119,7 @@ function priorityTone(priority: CoachTask['priority']): string {
 }
 
 function taskStatusTone(status: CoachTask['status']): string {
-  if (status === 'Open') return 'bg-[#6b4a2a] text-[#d4a574]';
+  if (status === 'Open') return 'bg-[#6b4a2a] text-[color:var(--brass-300)]';
   if (status === 'In Progress') return 'bg-[#4a6b2a] text-[#b4d474]';
   return 'bg-[#4a4a6b] text-[#a4a4d4]';
 }
@@ -114,6 +129,22 @@ function readinessBadgeTone(readiness: Athlete['readiness']): string {
   if (readiness === 'YELLOW') return 'bg-yellow-900 text-yellow-200';
   if (readiness === 'RED') return 'bg-red-900 text-red-200';
   return 'bg-gray-800 text-gray-300';
+}
+
+function painSeverityTone(severity: CoachPainReport['severity']): string {
+  if (severity === 'critical') return 'bg-red-700 text-white';
+  if (severity === 'high') return 'bg-red-900 text-red-100';
+  return 'bg-[#6b4a2a] text-[#f0d9bf]';
+}
+
+// A stored timestamp the browser cannot parse is shown verbatim rather than as
+// "Invalid Date": the raw value is at least something a coach can report.
+function painReportTime(value: string | null): string {
+  if (!value) {
+    return 'Not recorded';
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
 }
 
 export default function CoachWorkspace() {
@@ -131,6 +162,11 @@ export default function CoachWorkspace() {
   const [shadowObservations, setShadowObservations] = useState<ShadowObservationItem[]>([]);
   const [shadowReadError, setShadowReadError] = useState('');
   const [shadowQueueUnavailable, setShadowQueueUnavailable] = useState(false);
+  const [painReports, setPainReports] = useState<CoachPainReport[]>([]);
+  const [painReportWindowDays, setPainReportWindowDays] = useState<number | null>(null);
+  const [painReportsTruncated, setPainReportsTruncated] = useState(false);
+  const [painReportsLoading, setPainReportsLoading] = useState(true);
+  const [painReportsError, setPainReportsError] = useState('');
 
   // Dashboard data - Real API
   const [athletes, setAthletes] = useState<Athlete[]>([]);
@@ -303,6 +339,46 @@ export default function CoachWorkspace() {
   );
   const reviewsNeeded = coachTasks.filter(t => t.status === 'Open' && t.title.includes('Review')).length;
   const assignmentsDue = coachTasks.filter(t => t.status === 'Open').length;
+
+  // Athlete pain reports. The write path refuses to store a pain report it
+  // could not raise a coach-visible record for, so anything returned here is a
+  // child who told the platform they were hurting and was told a coach would
+  // see it. The server filters to the athletes this coach is authorized for.
+  const loadPainReports = useCallback(async () => {
+    setPainReportsLoading(true);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/coach/pain-reports`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error('Unable to load athlete pain reports');
+      }
+
+      const payload = (await response.json()) as {
+        painReports?: CoachPainReport[];
+        windowDays?: number;
+        truncated?: boolean;
+      };
+      setPainReports(payload.painReports ?? []);
+      setPainReportWindowDays(typeof payload.windowDays === 'number' ? payload.windowDays : null);
+      setPainReportsTruncated(payload.truncated === true);
+      setPainReportsError('');
+    } catch (error) {
+      // Never fall through to the "no reports" line: a coach reading that after
+      // a failed read would believe no child had reported pain.
+      setPainReportsError(error instanceof Error ? error.message : 'Unable to load athlete pain reports');
+      setPainReports([]);
+      setPainReportsTruncated(false);
+    } finally {
+      setPainReportsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadPainReports();
+  }, [loadPainReports]);
 
   const loadFloorPlans = useCallback(async () => {
     try {
@@ -518,48 +594,164 @@ export default function CoachWorkspace() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-[#e8d7c6] font-sans">
+    <div className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)] font-sans">
       <div className="max-w-7xl mx-auto p-4 space-y-8">
         {/* HEADER */}
-        <div className="border-b-2 border-[#8b4444] pb-6 space-y-4">
+        <div className="border-b-2 border-[color:var(--brass-700)] pb-6 space-y-4">
           <div>
-            <p className="text-xs font-mono uppercase tracking-[0.15em] text-[#d4a574]">Coach Development Workspace</p>
+            <p className="text-xs font-mono uppercase tracking-[0.15em] text-[color:var(--brass-300)]">Coach Development Workspace</p>
             <h1 className="text-3xl md:text-4xl font-black mt-2">Live Session Management</h1>
-            <p className="text-base text-[#b0a095] mt-2">Manage your program floor, develop yourself, and track athlete progress with SMART goals and assessments.</p>
-            <p className="text-sm font-mono uppercase tracking-[0.14em] text-[#cfbfae] mt-2">Old Gauze | Sweat | Grit | Grind | Dedication | Motivation</p>
+            <p className="text-base text-[color:var(--bone-400)] mt-2">Manage your program floor, develop yourself, and track athlete progress with SMART goals and assessments.</p>
+            <p className="text-sm font-mono uppercase tracking-[0.14em] text-[color:var(--bone-300)] mt-2">Old Gauze | Sweat | Grit | Grind | Dedication | Motivation</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <ShadowChatButton
               context="Coach Workspace"
               label="Open SHADOW Chat"
-              className="border-[#8b4444] bg-[#2a1414] text-[#e8d7c6] hover:bg-[#3a1a1a]"
+              className="border-[color:var(--brass-700)] bg-[var(--rust-900)] text-[color:var(--bone-200)] hover:bg-[var(--rust-900)]"
             />
             <button
               type="button"
               onClick={() => setActiveTab('shadow')}
-              className="min-h-[40px] border-2 border-[#5a4a3a] bg-[#101010] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[#cfbfae] transition hover:border-[#8b4444]"
+              className="min-h-[40px] border-2 border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)]"
             >
               Open SHADOW Intel Tab
             </button>
           </div>
         </div>
 
+        {/* ATHLETE PAIN REPORTS -- deliberately outside the tab switch and above
+            everything else on the page. A child reporting pain has to reach the
+            coach on whatever screen they are already looking at, not on a tab
+            they have to know to open. */}
+        <section aria-live="polite" className="border-2 border-[color:var(--locked)] bg-[#180d0d] p-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-mono text-sm font-bold uppercase tracking-[0.12em] text-[#ff9d9d]">
+              Athlete Pain Reports
+            </h2>
+            <button
+              type="button"
+              onClick={() => void loadPainReports()}
+              className="min-h-[32px] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 text-[11px] font-mono font-bold uppercase tracking-[0.08em] text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-300)]"
+              aria-label="Refresh athlete pain reports"
+            >
+              Refresh
+            </button>
+          </div>
+
+          {painReportsLoading && (
+            <p className="text-xs text-[color:var(--bone-300)]">Checking for athlete pain reports...</p>
+          )}
+
+          {!painReportsLoading && painReportsError && (
+            <div className="border-2 border-red-600 bg-red-900/20 p-3">
+              <p className="text-sm font-semibold text-red-400">{painReportsError}</p>
+              <p className="mt-1 text-xs text-red-300">
+                Pain reports may exist that are not shown here. Do not read this as &quot;no athlete
+                reported pain&quot; -- ask the floor.
+              </p>
+            </div>
+          )}
+
+          {!painReportsLoading && !painReportsError && painReports.length === 0 && (
+            <p className="text-xs text-[color:var(--bone-400)]">
+              No athlete on your roster has reported pain
+              {painReportWindowDays === null ? '' : ` in the last ${painReportWindowDays} days`}. A report
+              appears here as soon as an athlete submits one.
+            </p>
+          )}
+
+          {!painReportsLoading && !painReportsError && painReports.length > 0 && (
+            <div className="space-y-3">
+              {painReportsTruncated && (
+                <p className="text-xs text-[#ffb3b3]">
+                  More reports matched than are listed here. The highest-severity ones are shown first;
+                  the rest are in each athlete&apos;s near-miss history on the decision loop.
+                </p>
+              )}
+
+              {painReports.map((report) => (
+                <article key={report.nearMissId} className="border-2 border-[color:var(--locked)] bg-[var(--hide-950)] p-3 space-y-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="text-lg font-black text-[color:var(--bone-100)]">
+                        {report.athleteName ?? 'Athlete name unavailable'}
+                      </p>
+                      <p className="text-xs font-mono text-[color:var(--bone-400)]">Athlete ID {report.athleteId}</p>
+                    </div>
+                    <span className={`rounded px-2 py-1 text-xs font-bold uppercase tracking-[0.08em] ${painSeverityTone(report.severity)}`}>
+                      {report.severity}
+                      {report.painScore === null ? '' : ` - ${report.painScore}/10`}
+                    </span>
+                  </div>
+
+                  <dl className="grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
+                    <div>
+                      <dt className="font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Body location</dt>
+                      <dd className={report.location ? 'text-[color:var(--bone-200)]' : 'text-[color:var(--bone-400)]'}>
+                        {report.location ?? 'Not stated by the athlete'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Pain type</dt>
+                      <dd className={report.painType ? 'text-[color:var(--bone-200)]' : 'text-[color:var(--bone-400)]'}>
+                        {report.painType ?? 'Not stated by the athlete'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Athlete reported it happened</dt>
+                      <dd className={report.observedAt ? 'text-[color:var(--bone-200)]' : 'text-[color:var(--bone-400)]'}>
+                        {painReportTime(report.observedAt)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Recorded</dt>
+                      <dd className={report.recordedAt ? 'text-[color:var(--bone-200)]' : 'text-[color:var(--bone-400)]'}>
+                        {painReportTime(report.recordedAt)}
+                      </dd>
+                    </div>
+                  </dl>
+
+                  <p className="text-xs text-[color:var(--bone-300)]">
+                    Self-reported by the athlete. This is not a coach assessment and not a medical
+                    assessment.
+                  </p>
+                </article>
+              ))}
+
+              <div className="flex flex-wrap items-center gap-3">
+                <Link
+                  href="/coach/decision-loop"
+                  className="min-h-[36px] inline-flex items-center border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 text-[11px] font-mono font-bold uppercase tracking-[0.08em] text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-300)]"
+                >
+                  Record What You Did
+                </Link>
+                <p className="text-[11px] text-[color:var(--bone-400)]">
+                  There is no clear button: a report stays here until it ages out of the window, and the
+                  permanent record is the athlete&apos;s near-miss history, which nothing on this screen
+                  can remove.
+                </p>
+              </div>
+            </div>
+          )}
+        </section>
+
         <AnnouncementBanner
           placement="coach_workspace"
           kind="notice"
           heading="Gym Notices"
-          className="border-2 border-[#8b4444] bg-[#e8d7c6] p-4"
+          className="border-2 border-[color:var(--brass-700)] bg-[var(--bone-200)] p-4"
         />
         <AnnouncementBanner
           placement="coach_workspace"
           kind="motivation"
           heading="From the Gym"
-          className="border-2 border-[#694838] bg-[#e8d7c6] p-4"
+          className="border-2 border-[color:var(--hide-500)] bg-[var(--bone-200)] p-4"
         />
 
-        <div className="border border-[#694838] bg-[#14100d] p-4">
-          <p className="text-sm text-[#d4a574] font-semibold">Coach Standard</p>
-          <p className="mt-1 text-sm text-[#cfbfae]">Lead with discipline, protect the culture, and model the grind. The room rises when the coach stays locked in.</p>
+        <div className="border border-[color:var(--hide-500)] bg-[var(--hide-950)] p-4">
+          <p className="text-sm text-[color:var(--brass-300)] font-semibold">Coach Standard</p>
+          <p className="mt-1 text-sm text-[color:var(--bone-300)]">Lead with discipline, protect the culture, and model the grind. The room rises when the coach stays locked in.</p>
         </div>
 
         {/* ROLE SUMMARY PANEL */}
@@ -572,7 +764,7 @@ export default function CoachWorkspace() {
         />
 
         {/* MODE TOGGLE */}
-        <div className="flex w-fit gap-2 border-2 border-[#8b4444] bg-[#0f0f0f] p-2">
+        <div className="flex w-fit gap-2 border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-2">
           {(['Group', 'One-on-One'] as const).map(mode => (
             <button
               key={mode}
@@ -621,84 +813,91 @@ export default function CoachWorkspace() {
           {/* DASHBOARD */}
           {activeTab === 'dashboard' && (
             <div className="space-y-6 animate-fadeIn">
-              <section className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
-                <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Quick Actions</h3>
+              <section className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4">
+                <h3 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">Quick Actions</h3>
                 <div className="mt-3 grid gap-2 md:grid-cols-2 lg:grid-cols-4">
                   <ShadowChatButton
                     context="Coach Dashboard"
                     label="SHADOW Chat"
-                    className="min-h-[44px] border-[#8b4444] bg-[#2a1414] text-[#e8d7c6] hover:bg-[#3a1a1a]"
+                    className="min-h-[44px] border-[color:var(--brass-700)] bg-[var(--rust-900)] text-[color:var(--bone-200)] hover:bg-[var(--rust-900)]"
                   />
                   <Link
                     href="/schedule"
-                    className="min-h-[44px] border border-[#8b4444] bg-[#2a1414] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#e8d7c6] transition hover:bg-[#3a1a1a] inline-flex items-center justify-center"
+                    className="min-h-[44px] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[color:var(--bone-200)] transition hover:bg-[var(--rust-900)] inline-flex items-center justify-center"
                   >
                     Open Scheduler
                   </Link>
                   <button
                     type="button"
                     onClick={() => setActiveTab('floor')}
-                    className="min-h-[44px] border border-[#8b4444] bg-[#2a1414] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#e8d7c6] transition hover:bg-[#3a1a1a]"
+                    className="min-h-[44px] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[color:var(--bone-200)] transition hover:bg-[var(--rust-900)]"
                   >
                     Open Live Floor
                   </button>
                   <button
                     type="button"
                     onClick={() => setActiveTab('athlete-floor-plans')}
-                    className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#cfbfae] transition hover:border-[#8b4444]"
+                    className="min-h-[44px] border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)]"
                   >
                     Review Athlete Plans
                   </button>
                   <button
                     type="button"
                     onClick={() => setActiveTab('tasks')}
-                    className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#cfbfae] transition hover:border-[#8b4444]"
+                    className="min-h-[44px] border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)]"
                   >
                     Process Tasks
                   </button>
                   <button
                     type="button"
                     onClick={() => setActiveTab('shadow')}
-                    className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#cfbfae] transition hover:border-[#8b4444]"
+                    className="min-h-[44px] border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)]"
                   >
                     Open SHADOW Intel
                   </button>
+                  <Link
+                    href="/rabbit-holes"
+                    className="min-h-[44px] border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)] inline-flex items-center justify-center"
+                  >
+                    Write a Rabbit Hole
+                  </Link>
                 </div>
               </section>
 
               <section className="grid gap-3 md:grid-cols-3">
-                <article className="border border-[#5a4a3a] bg-[#101010] px-4 py-3">
-                  <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Readiness Alerts</p>
+                <article className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-4 py-3">
+                  <p className="text-xs font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Readiness Alerts</p>
                   {readinessTrackingAvailable ? (
                     <>
-                      <p className="mt-2 text-2xl font-black text-[#f2e7da]">{redReadinessCount + yellowReadinessCount}</p>
-                      <p className="text-xs text-[#b0a095]">{redReadinessCount} RED, {yellowReadinessCount} YELLOW</p>
+                      <p className="mt-2 text-2xl font-black text-[color:var(--bone-100)]">{redReadinessCount + yellowReadinessCount}</p>
+                      <p className="text-xs text-[color:var(--bone-400)]">{redReadinessCount} RED, {yellowReadinessCount} YELLOW</p>
                     </>
                   ) : (
                     <>
-                      <p className="mt-2 text-2xl font-black text-[#8a8a8a]">Not tracked</p>
-                      <p className="text-xs text-[#b0a095]">No backend readiness feed yet -- do not read this as &quot;zero flags&quot;</p>
+                      <p className="mt-2 text-2xl font-black text-[color:var(--bone-400)]">Not tracked</p>
+                      <p className="text-xs text-[color:var(--bone-400)]">No backend readiness feed yet -- do not read this as &quot;zero flags&quot;</p>
                     </>
                   )}
                 </article>
-                <article className="border border-[#5a4a3a] bg-[#101010] px-4 py-3">
-                  <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Injury Flags</p>
+                <article className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-4 py-3">
+                  <p className="text-xs font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Injury Flags</p>
                   {injuryTrackingAvailable ? (
                     <>
-                      <p className="mt-2 text-2xl font-black text-[#f2e7da]">{injuryFlags}</p>
-                      <p className="text-xs text-[#b0a095]">Escalate before block progression</p>
+                      <p className="mt-2 text-2xl font-black text-[color:var(--bone-100)]">{injuryFlags}</p>
+                      <p className="text-xs text-[color:var(--bone-400)]">Escalate before block progression</p>
                     </>
                   ) : (
                     <>
-                      <p className="mt-2 text-2xl font-black text-[#8a8a8a]">Not tracked</p>
-                      <p className="text-xs text-[#b0a095]">No backend injury feed yet -- do not read this as &quot;no injuries&quot;</p>
+                      <p className="mt-2 text-2xl font-black text-[color:var(--bone-400)]">Not tracked</p>
+                      <p className="text-xs text-[color:var(--bone-400)]">No backend injury feed yet -- do not read this as &quot;no injuries&quot;</p>
+                      <p className="mt-1 text-xs text-[color:var(--bone-400)]">Pain an athlete reported themselves is a separate feed, at the top of this page.</p>
                     </>
                   )}
                 </article>
-                <article className="border border-[#5a4a3a] bg-[#101010] px-4 py-3">
-                  <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Open Reviews</p>
-                  <p className="mt-2 text-2xl font-black text-[#f2e7da]">{reviewsNeeded}</p>
-                  <p className="text-xs text-[#b0a095]">Resolve queue items this session</p>
+                <article className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-4 py-3">
+                  <p className="text-xs font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Open Reviews</p>
+                  <p className="mt-2 text-2xl font-black text-[color:var(--bone-100)]">{reviewsNeeded}</p>
+                  <p className="text-xs text-[color:var(--bone-400)]">Resolve queue items this session</p>
                 </article>
               </section>
 
@@ -721,32 +920,32 @@ export default function CoachWorkspace() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Session Status */}
                 <div className={ui.panelSpaced}>
-                  <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Today&apos;s Session</h3>
-                  <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                  <h3 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">Today&apos;s Session</h3>
+                  <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked)]">
                     PLANNED | NOT YET IMPLEMENTED
                   </p>
-                  <p className="text-xs text-[#b0a095]">
+                  <p className="text-xs text-[color:var(--bone-400)]">
                     There is no scheduling backend feed yet -- session name, time, and status below are not
                     real. Check your actual schedule directly until this is wired up.
                   </p>
                   <div className="space-y-3">
                     <div>
-                      <p className="text-xs text-[#b0a095] block mb-1">Session Name</p>
-                      <p className="text-base font-semibold text-[#8a8a8a]">Unavailable - not yet tracked</p>
+                      <p className="text-xs text-[color:var(--bone-400)] block mb-1">Session Name</p>
+                      <p className="text-base font-semibold text-[color:var(--bone-400)]">Unavailable - not yet tracked</p>
                     </div>
                     <div>
-                      <p className="text-xs text-[#b0a095] block mb-1">Time</p>
-                      <p className="text-base font-semibold text-[#8a8a8a]">Unavailable - not yet tracked</p>
+                      <p className="text-xs text-[color:var(--bone-400)] block mb-1">Time</p>
+                      <p className="text-base font-semibold text-[color:var(--bone-400)]">Unavailable - not yet tracked</p>
                     </div>
                     <div>
-                      <p className="text-xs text-[#b0a095] block mb-1">Status</p>
-                      <p className="text-base font-semibold text-[#8a8a8a]">Unavailable - not yet tracked</p>
+                      <p className="text-xs text-[color:var(--bone-400)] block mb-1">Status</p>
+                      <p className="text-base font-semibold text-[color:var(--bone-400)]">Unavailable - not yet tracked</p>
                     </div>
                     <div>
-                      <p className="text-xs text-[#b0a095] block mb-1">Athletes Present</p>
+                      <p className="text-xs text-[color:var(--bone-400)] block mb-1">Athletes Present</p>
                       <p className="text-base font-semibold">
                         {trackedAttendanceCount > 0 ? `${activeAthletes}/${athletes.length}` : (
-                          <span className="text-[#8a8a8a]">Not tracked</span>
+                          <span className="text-[color:var(--bone-400)]">Not tracked</span>
                         )}
                       </p>
                     </div>
@@ -755,13 +954,13 @@ export default function CoachWorkspace() {
 
                 {/* Athlete Roster */}
                 <div className={ui.panelSpaced}>
-                  <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Athlete Roster</h3>
+                  <h3 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">Athlete Roster</h3>
                   
                   {athletesLoading && (
-                    <div className="border-2 border-[#8b4444] bg-[#0f0f0f] p-4 text-center">
-                      <p className="text-[#b0a095] text-sm">Loading athletes...</p>
+                    <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-4 text-center">
+                      <p className="text-[color:var(--bone-400)] text-sm">Loading athletes...</p>
                       <div className="mt-3 flex justify-center">
-                        <div className="animate-spin h-5 w-5 border-2 border-[#d4a574] border-t-transparent rounded-full"></div>
+                        <div className="animate-spin h-5 w-5 border-2 border-[color:var(--brass-300)] border-t-transparent rounded-full"></div>
                       </div>
                     </div>
                   )}
@@ -783,8 +982,8 @@ export default function CoachWorkspace() {
                   )}
                   
                   {!athletesLoading && athletes.length === 0 && !athletesError && (
-                    <div className="border-2 border-[#8b4444] bg-[#0f0f0f] p-4 text-center">
-                      <p className="text-[#b0a095] text-sm">No athletes found</p>
+                    <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-4 text-center">
+                      <p className="text-[color:var(--bone-400)] text-sm">No athletes found</p>
                     </div>
                   )}
                   
@@ -796,8 +995,8 @@ export default function CoachWorkspace() {
                         onClick={() => setSelectedAthleteId(athlete.id)}
                         className={`w-full p-3 border-2 rounded cursor-pointer transition text-left ${
                           selectedAthleteId === athlete.id
-                            ? 'bg-[#2a2a2a] border-[#8b4444]'
-                            : 'bg-[#0f0f0f] border-[#4a4a4a] hover:border-[#8b4444]'
+                            ? 'bg-[#2a2a2a] border-[color:var(--brass-700)]'
+                            : 'bg-[var(--hide-950)] border-[color:var(--hide-600)] hover:border-[color:var(--brass-700)]'
                         }`}
                       >
                         <div className="flex items-center justify-between">
@@ -808,7 +1007,7 @@ export default function CoachWorkspace() {
                             ></div>
                             <span className="font-semibold">{athlete.name}</span>
                           </div>
-                          <span className="text-xs text-[#8a8a8a]">{athlete.attendance}</span>
+                          <span className="text-xs text-[color:var(--bone-400)]">{athlete.attendance}</span>
                         </div>
                         {athlete.injuryFlag && (
                           <p className="text-xs text-red-400 mt-1">🚨 Injury flag active</p>
@@ -819,22 +1018,22 @@ export default function CoachWorkspace() {
                 </div>
 
                 {/* Open Tasks */}
-                <div className="md:col-span-2 border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4">
-                  <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Open Tasks</h3>
+                <div className="md:col-span-2 border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4">
+                  <h3 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">Open Tasks</h3>
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {coachTasks.filter(t => t.status !== 'Completed').map(task => (
-                      <div key={task.id} className="border-2 border-[#8b4444] bg-[#0f0f0f] p-3">
+                      <div key={task.id} className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-3">
                         <div className="flex justify-between items-start mb-2">
                           <h4 className="font-semibold">{task.title}</h4>
                           <span className={`text-xs px-2 py-1 rounded font-semibold ${priorityTone(task.priority)}`}>
                             {task.priority}
                           </span>
                         </div>
-                        <p className="text-xs text-[#b0a095]">{task.when}</p>
+                        <p className="text-xs text-[color:var(--bone-400)]">{task.when}</p>
                       </div>
                     ))}
                     {coachTasks.length === 0 && (
-                      <p className="text-xs text-[#b0a095]">No open tasks. Items appear here from the SHADOW review queue.</p>
+                      <p className="text-xs text-[color:var(--bone-400)]">No open tasks. Items appear here from the SHADOW review queue.</p>
                     )}
                   </div>
                 </div>
@@ -877,19 +1076,19 @@ export default function CoachWorkspace() {
                   <p className="text-red-300 text-xs mt-1">Plans may exist that are not shown here. Do not read this as an empty queue.</p>
                 </div>
               ) : athleteFloorPlans.length === 0 ? (
-                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6">
-                  <p className="text-sm text-[#d4a574] font-semibold">No athlete floor plans received yet.</p>
-                  <p className="mt-2 text-sm text-[#b0a095]">Once an athlete checks in and their floor plan auto-generates, it will appear here as an individual coach review tab.</p>
+                <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6">
+                  <p className="text-sm text-[color:var(--brass-300)] font-semibold">No athlete floor plans received yet.</p>
+                  <p className="mt-2 text-sm text-[color:var(--bone-400)]">Once an athlete checks in and their floor plan auto-generates, it will appear here as an individual coach review tab.</p>
                 </div>
               ) : (
                 <div className="space-y-4">
                   {athleteFloorPlans.map((plan, index) => (
-                    <article key={`${plan.athleteName}-${plan.generatedAt}-${index}`} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-5 space-y-4">
+                    <article key={`${plan.athleteName}-${plan.generatedAt}-${index}`} className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-5 space-y-4">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div>
-                          <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Individual Plan</p>
-                          <h4 className="text-lg font-semibold text-[#e8d7c6]">{plan.athleteName}</h4>
-                          <p className="text-xs text-[#8a8a8a]">Generated {new Date(plan.generatedAt).toLocaleString()}</p>
+                          <p className="text-xs font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Individual Plan</p>
+                          <h4 className="text-lg font-semibold text-[color:var(--bone-200)]">{plan.athleteName}</h4>
+                          <p className="text-xs text-[color:var(--bone-400)]">Generated {new Date(plan.generatedAt).toLocaleString()}</p>
                         </div>
                         <span className={`inline-flex items-center rounded px-2 py-1 text-xs font-bold ${readinessBadgeTone(plan.readiness)}`}>
                           {plan.readiness}
@@ -898,15 +1097,15 @@ export default function CoachWorkspace() {
 
                       <div className="grid gap-3 md:grid-cols-2">
                         {plan.tasks.map((task) => (
-                          <div key={task.id} className="border border-[#694838] bg-[#0f0f0f] p-3">
+                          <div key={task.id} className="border border-[color:var(--hide-500)] bg-[var(--hide-950)] p-3">
                             <div className="flex items-center justify-between gap-2">
-                              <p className="text-sm font-semibold text-[#e8d7c6]">{task.title}</p>
+                              <p className="text-sm font-semibold text-[color:var(--bone-200)]">{task.title}</p>
                               <span className={`text-[11px] font-semibold px-2 py-1 rounded ${task.priority === 'High' ? 'bg-red-900 text-red-200' : 'bg-yellow-900 text-yellow-200'}`}>
                                 {task.priority}
                               </span>
                             </div>
-                            <p className="mt-1 text-xs text-[#d4a574]">{task.category} - {task.dueDate}</p>
-                            <p className="mt-2 text-xs text-[#b0a095]">{task.description}</p>
+                            <p className="mt-1 text-xs text-[color:var(--brass-300)]">{task.category} - {task.dueDate}</p>
+                            <p className="mt-2 text-xs text-[color:var(--bone-400)]">{task.description}</p>
                           </div>
                         ))}
                       </div>
@@ -937,12 +1136,12 @@ export default function CoachWorkspace() {
                 ]}
               />
 
-              <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4">
-                <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Session Workout Plan</h3>
-                <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+              <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4">
+                <h3 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">Session Workout Plan</h3>
+                <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked)]">
                   PLANNED | NOT YET IMPLEMENTED
                 </p>
-                <p className="text-xs text-[#b0a095]">
+                <p className="text-xs text-[color:var(--bone-400)]">
                   This is the standard {sessionMode} block template, not a running session. Block
                   completion and session progress are not tracked yet. Track the live session on the
                   floor until this is wired up.
@@ -950,26 +1149,26 @@ export default function CoachWorkspace() {
 
                 <div className="space-y-2">
                   {workoutBlocks.map((block) => (
-                    <div key={block.id} className="border-2 border-[#8b4444] bg-[#0f0f0f] p-3 rounded">
+                    <div key={block.id} className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-3 rounded">
                       <div className="flex justify-between items-center">
                         <div>
                           <p className="font-semibold">{block.title}</p>
-                          <p className="text-xs text-[#b0a095]">{block.duration} minutes</p>
-                          <p className="text-xs text-[#d4a574] mt-1">{block.objective}</p>
+                          <p className="text-xs text-[color:var(--bone-400)]">{block.duration} minutes</p>
+                          <p className="text-xs text-[color:var(--brass-300)] mt-1">{block.objective}</p>
                         </div>
                       </div>
                       <div className="mt-3 grid gap-2 md:grid-cols-2">
-                        <div className="border border-[#694838] bg-[#111111] p-2">
-                          <p className="text-[11px] font-mono uppercase tracking-[0.08em] text-[#d4a574]">Planned Training</p>
-                          <ul className="mt-1 space-y-1 text-xs text-[#cfbfae]">
+                        <div className="border border-[color:var(--hide-500)] bg-[var(--hide-900)] p-2">
+                          <p className="text-[11px] font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Planned Training</p>
+                          <ul className="mt-1 space-y-1 text-xs text-[color:var(--bone-300)]">
                             {block.trainingItems.map((item) => (
                               <li key={item}>- {item}</li>
                             ))}
                           </ul>
                         </div>
-                        <div className="border border-[#694838] bg-[#111111] p-2">
-                          <p className="text-[11px] font-mono uppercase tracking-[0.08em] text-[#d4a574]">Coach Cues</p>
-                          <ul className="mt-1 space-y-1 text-xs text-[#cfbfae]">
+                        <div className="border border-[color:var(--hide-500)] bg-[var(--hide-900)] p-2">
+                          <p className="text-[11px] font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Coach Cues</p>
+                          <ul className="mt-1 space-y-1 text-xs text-[color:var(--bone-300)]">
                             {block.coachingCues.map((cue) => (
                               <li key={cue}>- {cue}</li>
                             ))}
@@ -1004,24 +1203,24 @@ export default function CoachWorkspace() {
               />
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4">
-                  <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Current Certifications</h3>
-                  <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4">
+                  <h3 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">Current Certifications</h3>
+                  <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked)]">
                     PLANNED | NOT YET IMPLEMENTED
                   </p>
-                  <p className="text-sm text-[#b0a095]">
+                  <p className="text-sm text-[color:var(--bone-400)]">
                     There is no backend feed for coach certifications yet, so this platform holds no record
                     of your credentials or their expiry dates and cannot tell you whether a license is
                     current. Check with your certifying body until this is wired up.
                   </p>
                 </div>
 
-                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4">
-                  <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Development Topics</h3>
-                  <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4">
+                  <h3 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">Development Topics</h3>
+                  <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked)]">
                     PLANNED | NOT YET IMPLEMENTED
                   </p>
-                  <p className="text-sm text-[#b0a095]">
+                  <p className="text-sm text-[color:var(--bone-400)]">
                     Reference list of the coach development curriculum. There is no backend store for
                     completion yet, so progress through these topics cannot be recorded here.
                   </p>
@@ -1033,7 +1232,7 @@ export default function CoachWorkspace() {
                       'Class Management Skills',
                       'Adaptive Coaching'
                     ].map((topic) => (
-                      <li key={topic} className="p-2 border-2 border-[#8b4444] bg-[#0f0f0f] text-sm">
+                      <li key={topic} className="p-2 border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] text-sm">
                         {topic}
                       </li>
                     ))}
@@ -1062,28 +1261,28 @@ export default function CoachWorkspace() {
                 ]}
               />
 
-              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked)]">
                 PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for coach goals yet, so this section
                 is always empty.
               </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {coachGoals.map(goal => (
-                  <div key={goal.id} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 space-y-3">
+                  <div key={goal.id} className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4 space-y-3">
                     <div className="flex justify-between items-start">
                       <h4 className="font-semibold">{goal.title}</h4>
-                      <span className="text-xs bg-[#4a4a4a] text-[#8a8a8a] px-2 py-1">{goal.category}</span>
+                      <span className="text-xs bg-[var(--hide-600)] text-[color:var(--bone-400)] px-2 py-1">{goal.category}</span>
                     </div>
                     <div>
                       <div className="flex justify-between text-xs mb-1">
-                        <span className="text-[#b0a095]">Progress</span>
+                        <span className="text-[color:var(--bone-400)]">Progress</span>
                         <span className="font-semibold">{goal.progress}%</span>
                       </div>
-                      <div className="w-full bg-[#4a4a4a] h-2">
-                        <div className="bg-[#d4a574] h-2" style={{width: `${goal.progress}%`}}></div>
+                      <div className="w-full bg-[var(--hide-600)] h-2">
+                        <div className="bg-[var(--brass-300)] h-2" style={{width: `${goal.progress}%`}}></div>
                       </div>
                     </div>
-                    <p className="text-xs text-[#b0a095]">Due: {goal.dueDate}</p>
+                    <p className="text-xs text-[color:var(--bone-400)]">Due: {goal.dueDate}</p>
                   </div>
                 ))}
               </div>
@@ -1127,16 +1326,16 @@ export default function CoachWorkspace() {
 
               <div className="space-y-3">
                 {coachTasks.length === 0 && !shadowQueueUnavailable && (
-                  <p className="text-sm text-[#b0a095]">No open tasks. Items appear here from the SHADOW review queue.</p>
+                  <p className="text-sm text-[color:var(--bone-400)]">No open tasks. Items appear here from the SHADOW review queue.</p>
                 )}
                 {coachTasks.map(task => (
                   <div key={task.id} className={`border-2 p-4 rounded ${
-                    task.status === 'Completed' ? 'bg-[#2a5a2a]/30 border-green-700' : 'bg-[#1a1a1a] border-[#8b4444]'
+                    task.status === 'Completed' ? 'bg-[#2a5a2a]/30 border-green-700' : 'bg-[var(--hide-900)] border-[color:var(--brass-700)]'
                   }`}>
                     <div className="flex justify-between items-start mb-2">
                       <div>
                         <h4 className="font-semibold">{task.title}</h4>
-                        <p className="text-xs text-[#b0a095] mt-1">{task.when}</p>
+                        <p className="text-xs text-[color:var(--bone-400)] mt-1">{task.when}</p>
                       </div>
                       <div className="flex gap-2">
                         <span className={`text-xs px-2 py-1 rounded font-semibold ${priorityTone(task.priority)}`}>
@@ -1148,7 +1347,7 @@ export default function CoachWorkspace() {
                       </div>
                     </div>
                     {task.relatedAthlete && (
-                      <p className="text-xs text-[#8a8a8a]">Related: {athletes.find(a => a.id === task.relatedAthlete)?.name}</p>
+                      <p className="text-xs text-[color:var(--bone-400)]">Related: {athletes.find(a => a.id === task.relatedAthlete)?.name}</p>
                     )}
                   </div>
                 ))}
@@ -1165,21 +1364,21 @@ export default function CoachWorkspace() {
                 chatContext="Coach Workspace"
               />
 
-              <div className="border-2 border-[#d4a574] bg-[#0f0f0f] p-6 space-y-4">
-                <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">SHADOW Coach Assistant</h3>
-                <p className="text-sm text-[#b0a095]">Ask questions about session management, athlete readiness, goals, tasks, or coaching strategy.</p>
+              <div className="border-2 border-[color:var(--brass-300)] bg-[var(--hide-950)] p-6 space-y-4">
+                <h3 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">SHADOW Coach Assistant</h3>
+                <p className="text-sm text-[color:var(--bone-400)]">Ask questions about session management, athlete readiness, goals, tasks, or coaching strategy.</p>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
-                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
-                  <h3 className="font-mono text-xs font-bold uppercase tracking-[0.08em] text-[#d4a574]">SHADOW Review Projection</h3>
+                <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4">
+                  <h3 className="font-mono text-xs font-bold uppercase tracking-[0.08em] text-[color:var(--brass-300)]">SHADOW Review Projection</h3>
                   {shadowQueue.length === 0 ? (
-                    <p className="mt-2 text-xs text-[#b0a095]">No SHADOW queue items returned.</p>
+                    <p className="mt-2 text-xs text-[color:var(--bone-400)]">No SHADOW queue items returned.</p>
                   ) : (
                     <div className="mt-2 space-y-2">
                       {shadowQueue.slice(0, 6).map((item) => (
-                        <div key={item.intake_case_id} className="border border-[#5a4a3a] bg-[#101010] p-2 text-xs text-[#cfbfae]">
-                          <p className="font-semibold text-[#e8d7c6]">{item.summary}</p>
+                        <div key={item.intake_case_id} className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-2 text-xs text-[color:var(--bone-300)]">
+                          <p className="font-semibold text-[color:var(--bone-200)]">{item.summary}</p>
                           <p>Status: {item.status}</p>
                           <p>Documents: {item.document_count}</p>
                         </div>
@@ -1188,15 +1387,15 @@ export default function CoachWorkspace() {
                   )}
                 </div>
 
-                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
-                  <h3 className="font-mono text-xs font-bold uppercase tracking-[0.08em] text-[#d4a574]">SHADOW Observation Projection</h3>
+                <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4">
+                  <h3 className="font-mono text-xs font-bold uppercase tracking-[0.08em] text-[color:var(--brass-300)]">SHADOW Observation Projection</h3>
                   {shadowObservations.length === 0 ? (
-                    <p className="mt-2 text-xs text-[#b0a095]">No SHADOW observation items returned.</p>
+                    <p className="mt-2 text-xs text-[color:var(--bone-400)]">No SHADOW observation items returned.</p>
                   ) : (
                     <div className="mt-2 space-y-2">
                       {shadowObservations.slice(0, 6).map((item) => (
-                        <div key={item.id} className="border border-[#5a4a3a] bg-[#101010] p-2 text-xs text-[#cfbfae]">
-                          <p className="font-semibold text-[#e8d7c6]">{item.label}</p>
+                        <div key={item.id} className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-2 text-xs text-[color:var(--bone-300)]">
+                          <p className="font-semibold text-[color:var(--bone-200)]">{item.label}</p>
                           <p>Source: {item.source}</p>
                           <p>State: {item.review_state}</p>
                         </div>
@@ -1225,27 +1424,27 @@ export default function CoachWorkspace() {
 
           {/* ASSESSMENTS */}
           {activeTab === 'assessments' && (
-            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
-              <h3 className="font-mono font-bold text-[#d4a574] uppercase">Coach Assessments</h3>
-              <p className="text-[#b0a095]">Evaluate coaching effectiveness, communication, and athlete development.</p>
-              <div className="text-sm text-[#8a8a8a]">Coming soon: Leadership assessment, communication effectiveness survey, teaching impact evaluation.</div>
+            <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4 animate-fadeIn">
+              <h3 className="font-mono font-bold text-[color:var(--brass-300)] uppercase">Coach Assessments</h3>
+              <p className="text-[color:var(--bone-400)]">Evaluate coaching effectiveness, communication, and athlete development.</p>
+              <div className="text-sm text-[color:var(--bone-400)]">Coming soon: Leadership assessment, communication effectiveness survey, teaching impact evaluation.</div>
             </div>
           )}
 
           {/* FILM STUDY */}
           {activeTab === 'film-study' && (
-            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
-              <h3 className="font-mono font-bold text-[#d4a574] uppercase">Film Study</h3>
-              <p className="text-[#b0a095]">Record observations from training videos and self-evaluations.</p>
-              <div className="text-sm text-[#8a8a8a]">Coming soon: Video upload, timestamp annotations, technical analysis tools.</div>
-              <div className="border border-[#5a4a3a] bg-[#101010] p-3">
-                <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">AI Video Analysis - Planned</p>
-                <p className="mt-1 text-xs text-[#cfbfae]">Video Upload: FRONT-END PLACEHOLDER | Skill Recognition: BACKEND REQUIRED | Technique Scoring: ML REQUIRED</p>
+            <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4 animate-fadeIn">
+              <h3 className="font-mono font-bold text-[color:var(--brass-300)] uppercase">Film Study</h3>
+              <p className="text-[color:var(--bone-400)]">Record observations from training videos and self-evaluations.</p>
+              <div className="text-sm text-[color:var(--bone-400)]">Coming soon: Video upload, timestamp annotations, technical analysis tools.</div>
+              <div className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-3">
+                <p className="text-xs font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">AI Video Analysis - Planned</p>
+                <p className="mt-1 text-xs text-[color:var(--bone-300)]">Video Upload: FRONT-END PLACEHOLDER | Skill Recognition: BACKEND REQUIRED | Technique Scoring: ML REQUIRED</p>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  <Link href="/coach/video-analysis" className="border border-[#8b4444] bg-[#2a1414] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[#e8d7c6]">
+                  <Link href="/coach/video-analysis" className="border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[color:var(--bone-200)]">
                     Open Video Analysis Surface
                   </Link>
-                  <Link href="/athlete/video-analysis" className="border border-[#4a4a4a] bg-[#1a1a1a] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[#cfbfae]">
+                  <Link href="/athlete/video-analysis" className="border border-[color:var(--hide-600)] bg-[var(--hide-900)] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[color:var(--bone-300)]">
                     Athlete Feedback Surface
                   </Link>
                 </div>
@@ -1255,21 +1454,21 @@ export default function CoachWorkspace() {
 
           {/* ATHLETE REVIEWS */}
           {activeTab === 'athlete-reviews' && (
-            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
-              <h3 className="font-mono font-bold text-[#d4a574] uppercase">Athlete Performance Reviews</h3>
-              <p className="text-[#b0a095]">Comprehensive athlete progress tracking and performance feedback.</p>
-              <div className="border border-[#5a4a3a] bg-[#101010] p-3 space-y-3">
-                <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Persist Coach Review</p>
+            <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4 animate-fadeIn">
+              <h3 className="font-mono font-bold text-[color:var(--brass-300)] uppercase">Athlete Performance Reviews</h3>
+              <p className="text-[color:var(--bone-400)]">Comprehensive athlete progress tracking and performance feedback.</p>
+              <div className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-3 space-y-3">
+                <p className="text-xs font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Persist Coach Review</p>
                 <input
                   value={reviewSessionId}
                   onChange={(event) => setReviewSessionId(event.target.value)}
                   placeholder="Session ID (from persisted session)"
-                  className="h-11 w-full border border-[#8b4444] bg-[#141414] px-3 text-sm text-[#e8d7c6]"
+                  className="h-11 w-full border border-[color:var(--brass-700)] bg-[#141414] px-3 text-sm text-[color:var(--bone-200)]"
                 />
                 <select
                   value={reviewDecision}
                   onChange={(event) => setReviewDecision(event.target.value)}
-                  className="h-11 w-full border border-[#8b4444] bg-[#141414] px-3 text-sm text-[#e8d7c6]"
+                  className="h-11 w-full border border-[color:var(--brass-700)] bg-[#141414] px-3 text-sm text-[color:var(--bone-200)]"
                 >
                   <option value="approved">approved</option>
                   <option value="follow_up">follow_up</option>
@@ -1279,22 +1478,22 @@ export default function CoachWorkspace() {
                   value={reviewNotes}
                   onChange={(event) => setReviewNotes(event.target.value)}
                   placeholder="Review notes"
-                  className="min-h-[84px] w-full border border-[#8b4444] bg-[#141414] px-3 py-2 text-sm text-[#e8d7c6]"
+                  className="min-h-[84px] w-full border border-[color:var(--brass-700)] bg-[#141414] px-3 py-2 text-sm text-[color:var(--bone-200)]"
                 />
                 <button
                   type="button"
                   onClick={() => void submitCoachReview()}
                   disabled={reviewSubmitting}
-                  className="h-11 border-2 border-[#8b4444] bg-[#2a1414] px-4 text-xs font-mono font-bold uppercase tracking-[0.08em] text-[#e8d7c6] transition hover:border-[#d4a574] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="h-11 border-2 border-[color:var(--brass-700)] bg-[var(--rust-900)] px-4 text-xs font-mono font-bold uppercase tracking-[0.08em] text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-300)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {reviewSubmitting ? 'Saving...' : 'Save Coach Review'}
                 </button>
-                {reviewSyncMessage ? <p className="text-xs text-[#d4a574]">{reviewSyncMessage}</p> : null}
+                {reviewSyncMessage ? <p className="text-xs text-[color:var(--brass-300)]">{reviewSyncMessage}</p> : null}
               </div>
-              <div className="border border-[#5a4a3a] bg-[#101010] p-3">
-                <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Closed-Loop Progression Intelligence - Planned</p>
-                <p className="mt-1 text-xs text-[#cfbfae]">Development Recommendation: PLACEHOLDER | Coach Review Required | Human Review Required</p>
-                <Link href="/coach/progression-intelligence" className="mt-2 inline-flex border border-[#8b4444] bg-[#2a1414] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[#e8d7c6]">
+              <div className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-3">
+                <p className="text-xs font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Closed-Loop Progression Intelligence - Planned</p>
+                <p className="mt-1 text-xs text-[color:var(--bone-300)]">Development Recommendation: PLACEHOLDER | Coach Review Required | Human Review Required</p>
+                <Link href="/coach/progression-intelligence" className="mt-2 inline-flex border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[color:var(--bone-200)]">
                   Open Progression Intelligence Surface
                 </Link>
               </div>
