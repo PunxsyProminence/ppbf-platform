@@ -2,11 +2,26 @@ import { queryOne } from './db';
 
 export class ShadowRateLimitExceeded extends Error {
   readonly retryAfterSeconds: number;
+  /**
+   * Which bucket refused the request.
+   *
+   * Carried because not every SHADOW limit means the same thing to the person
+   * who hit it. `chat` and `chat_daily` throttle all of SHADOW, so telling
+   * someone "too many SHADOW requests" is accurate. `heavy_bag` throttles one
+   * tier while Quick Round stays fully available -- and a caller that cannot
+   * tell the two apart has to describe a partial cap as a total outage, which
+   * sends a coach away for an hour they did not need to wait.
+   *
+   * Optional so existing test fixtures that construct this by hand keep
+   * working; the single throw site always populates it.
+   */
+  readonly endpointKey?: string;
 
-  constructor(retryAfterSeconds: number) {
+  constructor(retryAfterSeconds: number, endpointKey?: string) {
     super('SHADOW_RATE_LIMIT_EXCEEDED');
     this.name = 'ShadowRateLimitExceeded';
     this.retryAfterSeconds = retryAfterSeconds;
+    this.endpointKey = endpointKey;
   }
 }
 
@@ -166,6 +181,6 @@ export async function enforceShadowRateLimit(input: {
     throw new Error('SHADOW_RATE_LIMIT_UNAVAILABLE');
   }
   if (row.request_count > input.limit) {
-    throw new ShadowRateLimitExceeded(row.retry_after_seconds);
+    throw new ShadowRateLimitExceeded(row.retry_after_seconds, input.endpointKey);
   }
 }
