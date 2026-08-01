@@ -663,6 +663,12 @@ export default function CoachWorkspace() {
                   >
                     Open SHADOW Intel
                   </button>
+                  <Link
+                    href="/rabbit-holes"
+                    className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#cfbfae] transition hover:border-[#8b4444] inline-flex items-center justify-center"
+                  >
+                    Write a Rabbit Hole
+                  </Link>
                 </div>
               </section>
 

@@ -19,6 +19,7 @@ jest.mock('next/link', () => ({
 
 import { FORMULA_UNITS, OBSERVATION_KINDS } from '@/src/server/pilot/formulas/types';
 import type { AnnouncementItem } from './AnnouncementBanner';
+import type { RabbitHoleLessonItem } from './RabbitHole';
 import AthleteWorkspace from './AthleteWorkspace';
 
 type FetchCall = { url: string; method: string; body: Record<string, unknown> };
@@ -29,6 +30,8 @@ let resolveGoalPost: ((value: unknown) => void) | null = null;
 let painObservationResponse: Response | null = null;
 let liveAnnouncements: AnnouncementItem[] = [];
 let announcementsFail = false;
+let rabbitHolesByAnchor: Record<string, RabbitHoleLessonItem[]> = {};
+let rabbitHolesFail = false;
 
 function announcement(overrides: Partial<AnnouncementItem> = {}): AnnouncementItem {
   return {
@@ -73,6 +76,8 @@ beforeEach(() => {
   painObservationResponse = null;
   liveAnnouncements = [];
   announcementsFail = false;
+  rabbitHolesByAnchor = {};
+  rabbitHolesFail = false;
 
   global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -80,6 +85,16 @@ beforeEach(() => {
 
     if (url.includes('/api/pilot/shadow/formulas/observations') && painObservationResponse) {
       return painObservationResponse;
+    }
+    if (url.includes('/api/pilot/rabbit-holes/get')) {
+      if (rabbitHolesFail) {
+        throw new Error('rabbit holes offline');
+      }
+      const { anchor_type: anchorType, anchor_key: anchorKey } = parseBody(init);
+      return jsonResponse({
+        ok: true,
+        rabbit_holes: rabbitHolesByAnchor[`${String(anchorType)}:${String(anchorKey)}`] ?? [],
+      });
     }
     if (url.includes('/api/pilot/announcements/get')) {
       if (announcementsFail) {
@@ -305,5 +320,89 @@ describe('authored announcements on the athlete workspace', () => {
     expect(screen.queryByText('From the Gym')).toBeNull();
     expect(screen.getByText('Current Readiness')).toBeTruthy();
     expect(screen.getByRole('button', { name: '✅ Check In' })).toBeTruthy();
+  });
+});
+
+// The tab held one lesson written into the component, addressed to one role and
+// unretirable without a deploy. It now reads what coaches published, which
+// means the two claims it can get wrong are "the gym has written nothing" (a
+// statement about the coaches, not the network) and the authority the teaching
+// speaks with.
+describe('the rabbit holes tab', () => {
+  const LESSON: RabbitHoleLessonItem = {
+    rabbit_hole_id: 'rh-1',
+    title: 'Biomechanics of Kinetic Force Transfer',
+    concept:
+      'Power does not generate in the shoulders. Force begins with rear-foot ground rotation through hip rotation into target through clean wrist extension.',
+    homework:
+      'Complete 30 slow shadowboxing crosses, holding full extension for 3 seconds to confirm your rear foot heel is rotated fully outward.',
+    author_display_name: 'Coach Jason',
+    citation: null,
+  };
+
+  async function openRabbitHoles() {
+    await renderWorkspace();
+    await act(async () => {
+      openTab('Rabbit Holes');
+    });
+  }
+
+  test('the tab asks the authored source for the development terms it covers', async () => {
+    await openRabbitHoles();
+
+    const asked = postedTo('/api/pilot/rabbit-holes/get').map(
+      (call) => `${String(call.body.anchor_type)}:${String(call.body.anchor_key)}`,
+    );
+    expect(asked).toContain('gap_type:technique');
+    expect(asked).toContain('gap_type:tactical');
+    expect(asked).toContain('severity:critical');
+  });
+
+  test('a published lesson renders under its topic with concept, homework and author', async () => {
+    rabbitHolesByAnchor = { 'gap_type:technique': [LESSON] };
+    await openRabbitHoles();
+
+    expect(await screen.findByText('Biomechanics of Kinetic Force Transfer')).toBeTruthy();
+    expect(screen.getByText(/Power does not generate in the shoulders/)).toBeTruthy();
+    expect(screen.getByText(/30 slow shadowboxing crosses/)).toBeTruthy();
+    expect(screen.getByText(/Written by Coach Jason/)).toBeTruthy();
+    // The topic is named in the words the rest of the app uses, not as the slug
+    // the lesson is stored against.
+    expect(screen.getByText('Progression gap type: Technique')).toBeTruthy();
+  });
+
+  test('the tab says whose coaching this is and borrows no evidence tier', async () => {
+    rabbitHolesByAnchor = { 'gap_type:technique': [LESSON] };
+    await openRabbitHoles();
+    await screen.findByText('Biomechanics of Kinetic Force Transfer');
+
+    expect(screen.getByText(/is not research and it is not SHADOW evidence/)).toBeTruthy();
+    for (const tier of ['PROVEN', 'EMERGING', 'EXPERIMENTAL', 'RESEARCH_NEEDED']) {
+      expect(screen.queryByText(tier)).toBeNull();
+    }
+  });
+
+  test('a topic with no lesson leaves no heading and no empty card behind', async () => {
+    rabbitHolesByAnchor = { 'gap_type:technique': [LESSON] };
+    await openRabbitHoles();
+    await screen.findByText('Biomechanics of Kinetic Force Transfer');
+
+    expect(screen.queryByText('Progression gap type: Strength')).toBeNull();
+    expect(screen.queryByText('Gap severity: Critical')).toBeNull();
+  });
+
+  test('an empty library reports the coaches, and the lesson is no longer hardcoded', async () => {
+    await openRabbitHoles();
+
+    expect(await screen.findByText(/have not published a rabbit hole yet/)).toBeTruthy();
+    expect(screen.queryByText('Biomechanics of Kinetic Force Transfer')).toBeNull();
+  });
+
+  test('a failed read is never presented as an empty library', async () => {
+    rabbitHolesFail = true;
+    await openRabbitHoles();
+
+    expect(await screen.findByText(/could not be loaded right now/)).toBeTruthy();
+    expect(screen.queryByText(/have not published a rabbit hole yet/)).toBeNull();
   });
 });

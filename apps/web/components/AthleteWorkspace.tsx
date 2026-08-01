@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import React, { type FormEvent, useCallback, useEffect, useState } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
+import type { RabbitHoleLessonItem } from './RabbitHole';
+import { ANCHOR_KEY_OPTIONS, anchorLabel } from './rabbitHoleAnchorLabels';
 import { AthleteSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
 import { cx, ui } from './uiStyles';
@@ -226,6 +228,157 @@ async function submitFastTrackObservations(input: {
       idempotencyKey: `${input.contextId}-${observation.kind}`,
     }),
   })));
+}
+
+// The vocabularies this tab reads. A rabbit hole is stored against one stable
+// key, and the read takes one anchor at a time, so the tab asks for the terms
+// that describe an athlete's own development: every progression gap type and
+// every severity. Built from the shared vocabulary rather than retyped, so a
+// term added to either list is asked for here without another edit.
+const RABBIT_HOLE_TAB_ANCHORS: ReadonlyArray<{ anchorType: 'gap_type' | 'severity'; anchorKey: string }> = [
+  ...ANCHOR_KEY_OPTIONS.gap_type.map((option) => ({ anchorType: 'gap_type' as const, anchorKey: option.key })),
+  ...ANCHOR_KEY_OPTIONS.severity.map((option) => ({ anchorType: 'severity' as const, anchorKey: option.key })),
+];
+
+interface RabbitHoleTopic {
+  anchorType: string;
+  anchorKey: string;
+  lessons: RabbitHoleLessonItem[];
+}
+
+type RabbitHoleLoadState = 'loading' | 'loaded' | 'unavailable';
+
+/**
+ * The gym's authored lessons, as the athlete reads them.
+ *
+ * Every lesson here was written by a person at this gym. Nothing on this
+ * surface carries a SHADOW evidence tier -- PROVEN / EMERGING / EXPERIMENTAL /
+ * RESEARCH_NEEDED grade retrieved and cited material, and coaching written by
+ * hand cannot borrow that authority.
+ *
+ * A topic with no lesson is not drawn at all, and a read that did not complete
+ * is never reported as an empty library: "the gym has published nothing" is a
+ * claim about the coaches, not about the network.
+ */
+function AthleteRabbitHoleLibrary() {
+  const [topics, setTopics] = useState<RabbitHoleTopic[]>([]);
+  const [loadState, setLoadState] = useState<RabbitHoleLoadState>('loading');
+  const [isPartial, setIsPartial] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    void (async () => {
+      const results = await Promise.all(RABBIT_HOLE_TAB_ANCHORS.map(async (anchor) => {
+        try {
+          const response = await fetch(`${apiBase()}/api/pilot/rabbit-holes/get`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ anchor_type: anchor.anchorType, anchor_key: anchor.anchorKey }),
+            signal: controller.signal,
+          });
+
+          if (!response.ok) {
+            return { anchor, lessons: null };
+          }
+
+          const payload = (await response.json()) as { ok?: boolean; rabbit_holes?: RabbitHoleLessonItem[] };
+          if (payload.ok !== true || !Array.isArray(payload.rabbit_holes)) {
+            return { anchor, lessons: null };
+          }
+
+          return { anchor, lessons: payload.rabbit_holes };
+        } catch {
+          return { anchor, lessons: null };
+        }
+      }));
+
+      if (controller.signal.aborted) {
+        return;
+      }
+
+      const failures = results.filter((result) => result.lessons === null).length;
+      if (failures === results.length) {
+        setTopics([]);
+        setIsPartial(false);
+        setLoadState('unavailable');
+        return;
+      }
+
+      setTopics(
+        results
+          .filter((result) => result.lessons !== null && result.lessons.length > 0)
+          .map((result) => ({
+            anchorType: result.anchor.anchorType,
+            anchorKey: result.anchor.anchorKey,
+            lessons: result.lessons as RabbitHoleLessonItem[],
+          })),
+      );
+      setIsPartial(failures > 0);
+      setLoadState('loaded');
+    })();
+
+    return () => controller.abort();
+  }, []);
+
+  if (loadState === 'loading') {
+    return <p className="text-sm text-[#b0a095]">Loading the gym&apos;s rabbit holes...</p>;
+  }
+
+  if (loadState === 'unavailable') {
+    return (
+      <p className="text-sm text-[#b0a095]">
+        The gym&apos;s rabbit holes could not be loaded right now. That is a problem reaching the app, not a sign
+        that none have been written.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {isPartial ? (
+        <p className="text-sm text-[#b0a095]">
+          Some topics could not be loaded, so what follows is not the full list.
+        </p>
+      ) : null}
+
+      {topics.length === 0 && !isPartial ? (
+        <p className="text-sm text-[#b0a095]">
+          Your coaches have not published a rabbit hole yet. When they do, it appears here.
+        </p>
+      ) : null}
+
+      {topics.map((topic) => (
+        <div key={`${topic.anchorType}:${topic.anchorKey}`} className="space-y-3">
+          <h3 className="font-mono text-sm font-bold uppercase tracking-[0.1em] text-[#d4a574]">
+            {anchorLabel(topic.anchorType, topic.anchorKey)}
+          </h3>
+          {topic.lessons.map((lesson) => (
+            <article key={lesson.rabbit_hole_id} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4">
+              {/* Provenance before content: who is talking, and on what
+                  authority, before the claim itself. */}
+              <p className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-[#d4a574]">
+                Gym coaching · Written by {lesson.author_display_name}
+              </p>
+              <h4 className="font-semibold text-lg">{lesson.title}</h4>
+              <p className="text-[#b0a095]"><strong>Concept:</strong> {lesson.concept}</p>
+              {lesson.homework ? (
+                <div className="bg-[#0f0f0f] border-2 border-[#8b4444] p-4">
+                  <p className="text-sm text-[#e8d7c6]"><strong>Homework:</strong> {lesson.homework}</p>
+                </div>
+              ) : null}
+              {lesson.citation ? (
+                <p className="text-xs text-[#b0a095]">
+                  <strong>Library source:</strong> {lesson.citation.document_name}
+                </p>
+              ) : null}
+            </article>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function AthleteWorkspace() {
@@ -1489,12 +1642,12 @@ export default function AthleteWorkspace() {
             <div className="space-y-6 animate-fadeIn">
               <HelpPanel
                 title="Rabbit Holes - Deep Learning"
-                description="Advanced research into biomechanics, neurology, and boxing theory with homework assignments."
+                description="Deep-dive lessons your coaches wrote, each one a concept to understand and something to go and do with it."
                 usage={[
                   'Read concept breakdowns carefully',
                   'Complete homework to internalize learning',
                   'Apply learnings to your training',
-                  'Ask Coach Jason for clarification'
+                  'Ask a coach for clarification'
                 ]}
                 mistakes={[
                   'Reading but not doing homework',
@@ -1502,13 +1655,15 @@ export default function AthleteWorkspace() {
                 ]}
               />
 
-              <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
-                <h3 className="font-semibold text-lg">Biomechanics of Kinetic Force Transfer</h3>
-                <p className="text-[#b0a095]"><strong>Concept:</strong> Power does not generate in the shoulders. Force begins with rear-foot ground rotation through hip rotation into target through clean wrist extension.</p>
-                <div className="bg-[#0f0f0f] border-2 border-[#8b4444] p-4">
-                  <p className="text-sm text-[#e8d7c6]"><strong>Homework:</strong> Complete 30 slow shadowboxing crosses, holding full extension for 3 seconds to confirm your rear foot heel is rotated fully outward.</p>
-                </div>
-              </div>
+              {/* The honesty line the whole tab depends on. A rabbit hole is a
+                  person's coaching, so it makes no evidence claim and carries
+                  no SHADOW evidence tier. */}
+              <p className="text-sm text-[#b0a095]">
+                Everything here is this gym&apos;s own coaching, written by a coach and published under their name. It
+                is not research and it is not SHADOW evidence.
+              </p>
+
+              <AthleteRabbitHoleLibrary />
             </div>
           )}
 
