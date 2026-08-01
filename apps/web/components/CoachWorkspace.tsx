@@ -624,7 +624,7 @@ export default function CoachWorkspace() {
             everything else on the page. A child reporting pain has to reach the
             coach on whatever screen they are already looking at, not on a tab
             they have to know to open. */}
-        <section aria-live="polite" className="border-2 border-[#dc2626] bg-[#180d0d] p-4 space-y-3">
+        <section aria-live="polite" className="border-2 border-[color:var(--locked)] bg-[#180d0d] p-4 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="font-mono text-sm font-bold uppercase tracking-[0.12em] text-[#ff9d9d]">
               Athlete Pain Reports
@@ -632,7 +632,7 @@ export default function CoachWorkspace() {
             <button
               type="button"
               onClick={() => void loadPainReports()}
-              className="min-h-[32px] border border-[#8b4444] bg-[#2a1414] px-3 text-[11px] font-mono font-bold uppercase tracking-[0.08em] text-[#e8d7c6] transition hover:border-[#d4a574]"
+              className="min-h-[32px] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 text-[11px] font-mono font-bold uppercase tracking-[0.08em] text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-300)]"
               aria-label="Refresh athlete pain reports"
             >
               Refresh
@@ -640,7 +640,7 @@ export default function CoachWorkspace() {
           </div>
 
           {painReportsLoading && (
-            <p className="text-xs text-[#cfbfae]">Checking for athlete pain reports...</p>
+            <p className="text-xs text-[color:var(--bone-300)]">Checking for athlete pain reports...</p>
           )}
 
           {!painReportsLoading && painReportsError && (
@@ -654,7 +654,7 @@ export default function CoachWorkspace() {
           )}
 
           {!painReportsLoading && !painReportsError && painReports.length === 0 && (
-            <p className="text-xs text-[#b0a095]">
+            <p className="text-xs text-[color:var(--bone-400)]">
               No athlete on your roster has reported pain
               {painReportWindowDays === null ? '' : ` in the last ${painReportWindowDays} days`}. A report
               appears here as soon as an athlete submits one.
@@ -671,13 +671,13 @@ export default function CoachWorkspace() {
               )}
 
               {painReports.map((report) => (
-                <article key={report.nearMissId} className="border-2 border-[#dc2626] bg-[#0f0f0f] p-3 space-y-3">
+                <article key={report.nearMissId} className="border-2 border-[color:var(--locked)] bg-[var(--hide-950)] p-3 space-y-3">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>
-                      <p className="text-lg font-black text-[#f2e7da]">
+                      <p className="text-lg font-black text-[color:var(--bone-100)]">
                         {report.athleteName ?? 'Athlete name unavailable'}
                       </p>
-                      <p className="text-xs font-mono text-[#b0a095]">Athlete ID {report.athleteId}</p>
+                      <p className="text-xs font-mono text-[color:var(--bone-400)]">Athlete ID {report.athleteId}</p>
                     </div>
                     <span className={`rounded px-2 py-1 text-xs font-bold uppercase tracking-[0.08em] ${painSeverityTone(report.severity)}`}>
                       {report.severity}
@@ -687,32 +687,32 @@ export default function CoachWorkspace() {
 
                   <dl className="grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
                     <div>
-                      <dt className="font-mono uppercase tracking-[0.08em] text-[#d4a574]">Body location</dt>
-                      <dd className={report.location ? 'text-[#e8d7c6]' : 'text-[#8a8a8a]'}>
+                      <dt className="font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Body location</dt>
+                      <dd className={report.location ? 'text-[color:var(--bone-200)]' : 'text-[color:var(--bone-400)]'}>
                         {report.location ?? 'Not stated by the athlete'}
                       </dd>
                     </div>
                     <div>
-                      <dt className="font-mono uppercase tracking-[0.08em] text-[#d4a574]">Pain type</dt>
-                      <dd className={report.painType ? 'text-[#e8d7c6]' : 'text-[#8a8a8a]'}>
+                      <dt className="font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Pain type</dt>
+                      <dd className={report.painType ? 'text-[color:var(--bone-200)]' : 'text-[color:var(--bone-400)]'}>
                         {report.painType ?? 'Not stated by the athlete'}
                       </dd>
                     </div>
                     <div>
-                      <dt className="font-mono uppercase tracking-[0.08em] text-[#d4a574]">Athlete reported it happened</dt>
-                      <dd className={report.observedAt ? 'text-[#e8d7c6]' : 'text-[#8a8a8a]'}>
+                      <dt className="font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Athlete reported it happened</dt>
+                      <dd className={report.observedAt ? 'text-[color:var(--bone-200)]' : 'text-[color:var(--bone-400)]'}>
                         {painReportTime(report.observedAt)}
                       </dd>
                     </div>
                     <div>
-                      <dt className="font-mono uppercase tracking-[0.08em] text-[#d4a574]">Recorded</dt>
-                      <dd className={report.recordedAt ? 'text-[#e8d7c6]' : 'text-[#8a8a8a]'}>
+                      <dt className="font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Recorded</dt>
+                      <dd className={report.recordedAt ? 'text-[color:var(--bone-200)]' : 'text-[color:var(--bone-400)]'}>
                         {painReportTime(report.recordedAt)}
                       </dd>
                     </div>
                   </dl>
 
-                  <p className="text-xs text-[#cfbfae]">
+                  <p className="text-xs text-[color:var(--bone-300)]">
                     Self-reported by the athlete. This is not a coach assessment and not a medical
                     assessment.
                   </p>
@@ -722,11 +722,11 @@ export default function CoachWorkspace() {
               <div className="flex flex-wrap items-center gap-3">
                 <Link
                   href="/coach/decision-loop"
-                  className="min-h-[36px] inline-flex items-center border border-[#8b4444] bg-[#2a1414] px-3 text-[11px] font-mono font-bold uppercase tracking-[0.08em] text-[#e8d7c6] transition hover:border-[#d4a574]"
+                  className="min-h-[36px] inline-flex items-center border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 text-[11px] font-mono font-bold uppercase tracking-[0.08em] text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-300)]"
                 >
                   Record What You Did
                 </Link>
-                <p className="text-[11px] text-[#b0a095]">
+                <p className="text-[11px] text-[color:var(--bone-400)]">
                   There is no clear button: a report stays here until it ages out of the window, and the
                   permanent record is the athlete&apos;s near-miss history, which nothing on this screen
                   can remove.
@@ -857,7 +857,7 @@ export default function CoachWorkspace() {
                   </button>
                   <Link
                     href="/rabbit-holes"
-                    className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#cfbfae] transition hover:border-[#8b4444] inline-flex items-center justify-center"
+                    className="min-h-[44px] border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)] inline-flex items-center justify-center"
                   >
                     Write a Rabbit Hole
                   </Link>

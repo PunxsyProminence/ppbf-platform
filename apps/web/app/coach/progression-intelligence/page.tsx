@@ -12,7 +12,7 @@ import { apiBase } from '@/lib/apiBase';
 // anchors are read per gap and either may have nothing to show, so there must
 // be no container left behind when they do not.
 const GAP_RABBIT_HOLE_CLASS =
-  'mt-3 border-l-4 border-[#d4a574] bg-[var(--canvas-tan-light)] p-3';
+  'mt-3 border-l-4 border-[color:var(--brass-300)] bg-[var(--canvas-tan-light)] p-3';
 
 interface ProgressionGap {
   gap_id: string;
@@ -269,7 +269,7 @@ export default function CoachProgressionIntelligencePage() {
           <Link href="/coach/review-queue" className="border-2 border-[color:var(--brass-700)] bg-[#2a1a1a] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)]">
             Back to Coach Workspace
           </Link>
-          <Link href="/rabbit-holes" className="border-2 border-[#8b4444] bg-[#2a1a1a] px-4 py-2 text-xs font-mono text-[#d4a574]">
+          <Link href="/rabbit-holes" className="border-2 border-[color:var(--brass-700)] bg-[#2a1a1a] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)]">
             Write a Rabbit Hole
           </Link>
         </div>
