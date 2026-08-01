@@ -9,9 +9,11 @@ classification/routing/evidence — were completed in
 `SHADOW_JOBS_ROUTING_EVIDENCE_AUDIT_2026-07-31.md` and are not re-audited here. **§6 of the
 2026-07-28 audit is now fully covered.**
 
-Verdicts follow the 2026-07-31 convention: **DEFECT** (wrong behavior, concrete failure
-scenario), **DESIGN-GAP** (missing piece someone must decide on), **STALE-SPEC** (code is
-right, the document is wrong), **OK** (traced and sound).
+Verdicts follow the 2026-07-31 convention — **DEFECT** (wrong behavior, concrete failure
+scenario), **DESIGN-GAP** (missing piece someone must decide on), **OK** (traced and sound)
+— plus one category this audit adds, because measuring code against a specification produces
+a finding the earlier audits had no need to name: **STALE-SPEC** (the code is right and the
+document is wrong). Filing those as DEFECTs would have counted working behavior as broken.
 
 ---
 
