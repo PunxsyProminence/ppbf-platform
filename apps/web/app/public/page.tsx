@@ -286,7 +286,7 @@ export default function PublicPortalPage() {
           <div className="flex flex-wrap items-center gap-2">
             <Link
               href="/login"
-              className="inline-flex min-h-[40px] items-center justify-center border-2 border-[var(--black)] bg-[var(--red-primary)] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--white)] transition hover:bg-[var(--red-highlight)]"
+              className="inline-flex min-h-[44px] items-center justify-center border-2 border-[var(--black)] bg-[var(--red-primary)] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--white)] transition hover:bg-[var(--red-highlight)]"
             >
               Member Login
             </Link>
@@ -296,7 +296,7 @@ export default function PublicPortalPage() {
             <ShadowChatButton context="Public Portal" label="MEMBER SHADOW CHAT" />
             <Link
               href="/help#tester-guide"
-              className="inline-flex min-h-[40px] items-center justify-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"
+              className="inline-flex min-h-[44px] items-center justify-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"
             >
               Tester Guide
             </Link>
@@ -326,13 +326,13 @@ export default function PublicPortalPage() {
               <p className="text-sm leading-6 text-[var(--white)]">You are viewing the public surface as an admin. Use these links to manage visitor-facing content and announcements.</p>
               <Link
                 href="/admin"
-                className="inline-flex min-h-[40px] items-center justify-center border-2 border-[var(--white)] bg-transparent px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--white)] transition hover:bg-[var(--white)] hover:text-[var(--red-primary)]"
+                className="inline-flex min-h-[44px] items-center justify-center border-2 border-[var(--white)] bg-transparent px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--white)] transition hover:bg-[var(--white)] hover:text-[var(--red-primary)]"
               >
                 Open Admin Workspace
               </Link>
               <Link
                 href="/login"
-                className="inline-flex min-h-[40px] items-center justify-center border-2 border-[var(--white)] bg-[var(--canvas-tan-light)] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--white)]"
+                className="inline-flex min-h-[44px] items-center justify-center border-2 border-[var(--white)] bg-[var(--canvas-tan-light)] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--white)]"
               >
                 Manage Announcements
               </Link>

@@ -245,10 +245,10 @@ export default function PlatformConsole() {
             organizations for operational data only -- never medical/PHI records, which stay each gym&apos;s own.
           </p>
           <div className="flex flex-wrap gap-3 pt-2">
-            <Link href="/admin/platform/overview" className="inline-flex min-h-[40px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]">
+            <Link href="/admin/platform/overview" className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]">
               All Gyms Overview
             </Link>
-            <Link href="/admin/organizations" className="inline-flex min-h-[40px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]">
+            <Link href="/admin/organizations" className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]">
               Onboard A New Gym
             </Link>
           </div>

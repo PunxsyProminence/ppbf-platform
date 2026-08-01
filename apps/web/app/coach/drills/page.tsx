@@ -130,7 +130,7 @@ function CoachDrillLibrary() {
           </p>
           <Link
             href="/coach/review-queue"
-            className="mt-4 inline-flex min-h-[40px] items-center rounded-full border border-[rgba(0,0,0,0.16)] bg-white px-4 text-xs font-bold uppercase tracking-[0.1em]"
+            className="mt-4 inline-flex min-h-[44px] items-center rounded-full border border-[rgba(0,0,0,0.16)] bg-white px-4 text-xs font-bold uppercase tracking-[0.1em]"
           >
             Back to review queue
           </Link>

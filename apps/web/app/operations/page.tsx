@@ -356,7 +356,7 @@ export default function OperationsHubPage() {
                       {item.href ? (
                         <Link
                           href={item.href}
-                          className="mt-3 inline-flex min-h-[38px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"
+                          className="mt-3 inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"
                         >
                           Open Capability
                         </Link>
@@ -364,7 +364,7 @@ export default function OperationsHubPage() {
                         <button
                           type="button"
                           disabled
-                          className="mt-3 inline-flex min-h-[38px] cursor-not-allowed items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--red-primary)] opacity-80"
+                          className="mt-3 inline-flex min-h-[44px] cursor-not-allowed items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--red-primary)] opacity-80"
                         >
                           Planned Capability
                         </button>

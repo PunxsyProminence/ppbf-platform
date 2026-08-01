@@ -274,7 +274,7 @@ export default function SchedulerPage() {
                               );
                             }}
                             disabled={actionInFlight}
-                            className="min-h-[40px] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 text-xs font-bold uppercase tracking-[0.08em] disabled:opacity-50"
+                            className="min-h-[44px] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 text-xs font-bold uppercase tracking-[0.08em] disabled:opacity-50"
                           >
                             Register
                           </button>
@@ -283,7 +283,7 @@ export default function SchedulerPage() {
                               type="button"
                               onClick={() => void runAction({ action: 'cover_class', class_id: item.class_id }, 'Coach cover assignment updated.')}
                               disabled={actionInFlight}
-                              className="min-h-[40px] border border-[color:var(--hide-600)] bg-[#111] px-3 text-xs font-bold uppercase tracking-[0.08em] disabled:opacity-50"
+                              className="min-h-[44px] border border-[color:var(--hide-600)] bg-[#111] px-3 text-xs font-bold uppercase tracking-[0.08em] disabled:opacity-50"
                             >
                               Cover Class
                             </button>
@@ -363,7 +363,7 @@ export default function SchedulerPage() {
                         )
                       }
                       disabled={actionInFlight}
-                      className="min-h-[42px] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-4 text-xs font-bold uppercase tracking-[0.08em] disabled:opacity-50"
+                      className="min-h-[44px] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-4 text-xs font-bold uppercase tracking-[0.08em] disabled:opacity-50"
                     >
                       Schedule Class
                     </button>
@@ -424,7 +424,7 @@ export default function SchedulerPage() {
                       );
                     }}
                     disabled={actionInFlight}
-                    className="min-h-[42px] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-4 text-xs font-bold uppercase tracking-[0.08em] disabled:opacity-50"
+                    className="min-h-[44px] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-4 text-xs font-bold uppercase tracking-[0.08em] disabled:opacity-50"
                   >
                     Submit Request
                   </button>
@@ -498,7 +498,7 @@ export default function SchedulerPage() {
                       );
                     }}
                     disabled={actionInFlight}
-                    className="min-h-[42px] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-4 text-xs font-bold uppercase tracking-[0.08em] disabled:opacity-50"
+                    className="min-h-[44px] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-4 text-xs font-bold uppercase tracking-[0.08em] disabled:opacity-50"
                   >
                     {role === 'athlete' ? 'Check In' : 'Update Attendance'}
                   </button>
@@ -527,7 +527,7 @@ export default function SchedulerPage() {
                               )
                             }
                             disabled={actionInFlight}
-                            className="mt-1 min-h-[34px] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-2 text-[11px] font-bold uppercase tracking-[0.08em] disabled:opacity-50"
+                            className="mt-1 min-h-[44px] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-2 text-[11px] font-bold uppercase tracking-[0.08em] disabled:opacity-50"
                           >
                             Mark Parent Reviewed
                           </button>

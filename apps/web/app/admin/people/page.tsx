@@ -721,7 +721,7 @@ function PeopleConsoleContent() {
               <button
                 type="button"
                 onClick={() => setCreatedAthlete(null)}
-                className="min-h-[40px] rounded-full border border-[rgba(0,0,0,0.14)] px-4 text-xs font-bold uppercase tracking-[0.1em]"
+                className="min-h-[44px] rounded-full border border-[rgba(0,0,0,0.14)] px-4 text-xs font-bold uppercase tracking-[0.1em]"
               >
                 Done
               </button>
@@ -894,7 +894,7 @@ function PeopleConsoleContent() {
                                               link.athlete_full_name,
                                             )
                                           }
-                                          className="min-h-[32px] rounded-full border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-3 text-[11px] font-black uppercase tracking-[0.08em] text-white disabled:opacity-50"
+                                          className="min-h-[44px] rounded-full border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-3 text-[11px] font-black uppercase tracking-[0.08em] text-white disabled:opacity-50"
                                         >
                                           Confirm Remove
                                         </button>
@@ -902,7 +902,7 @@ function PeopleConsoleContent() {
                                           type="button"
                                           disabled={busy}
                                           onClick={() => setPendingUnlink(null)}
-                                          className="min-h-[32px] rounded-full border border-[rgba(0,0,0,0.2)] px-3 text-[11px] font-bold uppercase tracking-[0.08em] disabled:opacity-50"
+                                          className="min-h-[44px] rounded-full border border-[rgba(0,0,0,0.2)] px-3 text-[11px] font-bold uppercase tracking-[0.08em] disabled:opacity-50"
                                         >
                                           Keep
                                         </button>
@@ -917,7 +917,7 @@ function PeopleConsoleContent() {
                                             athleteId: link.athlete_id,
                                           })
                                         }
-                                        className="min-h-[32px] rounded-full border border-[rgba(0,0,0,0.2)] px-3 text-[11px] font-bold uppercase tracking-[0.08em] disabled:opacity-50"
+                                        className="min-h-[44px] rounded-full border border-[rgba(0,0,0,0.2)] px-3 text-[11px] font-bold uppercase tracking-[0.08em] disabled:opacity-50"
                                       >
                                         Remove
                                       </button>

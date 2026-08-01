@@ -13,13 +13,13 @@ export default function HelpCenterPage() {
             Learn how to navigate the PPBF platform, understand each workspace, and test current capabilities safely.
           </p>
           <div className="flex flex-wrap gap-3">
-            <Link href="/operations" className="inline-flex min-h-[42px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.1em]">
+            <Link href="/operations" className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.1em]">
               Mission Control
             </Link>
-            <Link href="/admin" className="inline-flex min-h-[42px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.1em]">
+            <Link href="/admin" className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.1em]">
               Admin Hub
             </Link>
-            <Link href="/public" className="inline-flex min-h-[42px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.1em]">
+            <Link href="/public" className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.1em]">
               Public Portal
             </Link>
           </div>

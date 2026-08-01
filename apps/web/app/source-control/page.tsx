@@ -135,7 +135,7 @@ export default function SourceControlPage() {
             <p className="text-[12px] font-mono uppercase tracking-[0.16em] text-[color:var(--brass-300)]">AUTOMATED PUBLICATION WORKFLOW - PLANNED</p>
             <Link
               href="/source-control/publication-workflow"
-              className="inline-flex min-h-[40px] items-center border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 text-[11px] font-mono font-bold uppercase tracking-[0.1em] text-[color:var(--bone-200)]"
+              className="inline-flex min-h-[44px] items-center border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 text-[11px] font-mono font-bold uppercase tracking-[0.1em] text-[color:var(--bone-200)]"
             >
               Open Workflow Surface
             </Link>

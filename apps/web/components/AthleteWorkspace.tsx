@@ -2101,7 +2101,7 @@ export default function AthleteWorkspace() {
               <div className="flex flex-wrap gap-2">
                 <Link
                   href="/schedule"
-                  className="inline-flex min-h-[40px] items-center border-2 border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 text-xs font-mono font-bold uppercase tracking-[0.1em] text-[color:var(--bone-200)] transition hover:bg-[var(--rust-900)]"
+                  className="inline-flex min-h-[44px] items-center border-2 border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 text-xs font-mono font-bold uppercase tracking-[0.1em] text-[color:var(--bone-200)] transition hover:bg-[var(--rust-900)]"
                 >
                   Open Unified Scheduler
                 </Link>

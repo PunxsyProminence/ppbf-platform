@@ -107,7 +107,7 @@ export default function PlatformOverview() {
           <p className="text-base leading-7 text-[var(--gray-dark)]">
             Every gym on the platform, one row each. Aggregate operational figures only.
           </p>
-          <Link href="/admin/platform" className="inline-flex min-h-[40px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]">
+          <Link href="/admin/platform" className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]">
             Back To Gym Switcher
           </Link>
         </header>
