@@ -832,6 +832,25 @@ export default function AdminCapabilitiesPage() {
               >
                 SHADOW
               </Link>
+              {/*
+                Video upload lives on a COACH page, and an organization_admin
+                lands here -- so the only surface that calls
+                POST /api/pilot/video/upload had no entry point for a role its
+                own API admits. The owner found it the only way anyone would:
+                by trying to upload a video and not finding a button.
+                Gated on the same organization-admin check as PEOPLE, because
+                platform_owner is refused by that API (access.ts bars Omega
+                from athlete-scoped records) and a link that 403s is worse
+                than no link.
+              */}
+              {canManagePeople && (
+                <Link
+                  href="/coach/video-analysis"
+                  className="inline-flex h-11 items-center border border-[#8b4444] bg-[#1a1a1a] px-4 text-[14px] font-bold text-[#f2e7da] transition hover:bg-[#2a1a1a]"
+                >
+                  VIDEO UPLOAD
+                </Link>
+              )}
               <Link
                 href="/operations"
                 className="inline-flex h-11 items-center border border-[#5a4a3a] bg-[#111111] px-4 text-[14px] font-bold text-[#cfbfae] transition hover:border-[#8b4444]"
