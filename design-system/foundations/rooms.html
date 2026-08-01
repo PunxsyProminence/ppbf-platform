@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PPBF — Rooms</title>
+<link rel="stylesheet" href="../ppbf.css">
+<style>
+  body.ppbf { padding: 0; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: var(--s6) var(--s5); }
+  .lede { color: var(--bone-300); font-size: var(--t-sm); line-height: 1.6; max-width: 68ch; }
+  .lede b { color: var(--bone-100); }
+  h2.sect {
+    font-family: var(--font-stencil); text-transform: uppercase;
+    font-size: var(--t-lg); letter-spacing: .06em; color: var(--brass-300);
+    margin: var(--s7) 0 var(--s2); border-bottom: 1px solid var(--patina-700);
+    padding-bottom: var(--s2);
+  }
+  .note { color: var(--bone-400); font-size: var(--t-xs); margin: 0 0 var(--s4); }
+  /* Each demo room is boxed so several can sit on one page. */
+  .roombox { border-radius: var(--r-sm); overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,.6); }
+  .roombox .room { min-height: 340px; padding: var(--s6) var(--s5) var(--s7); }
+  .sheet {
+    max-width: 760px; margin: 0 auto; padding: var(--s5);
+    background-color: var(--paper);
+    background-image: var(--grain-fine), linear-gradient(178deg, #F8F0DC, #E7DBBD);
+    background-blend-mode: overlay, normal;
+    color: #33291B; box-shadow: 0 10px 26px rgba(0,0,0,.55);
+  }
+  .sheet-head {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    gap: var(--s4); border-bottom: 3px solid #33291B; padding-bottom: var(--s2);
+    margin-bottom: var(--s4);
+  }
+  .sheet-title {
+    font-family: var(--font-stencil); text-transform: uppercase;
+    font-size: var(--t-2xl); line-height: .95; letter-spacing: .01em; color: #241C11;
+  }
+  .sheet-sub {
+    font-family: var(--font-stencil); text-transform: uppercase; text-align: right;
+    font-size: var(--t-sm); line-height: 1.15; color: #3E3120;
+  }
+  .rail {
+    display: flex; gap: var(--s4); flex-wrap: wrap; justify-content: center;
+    padding: var(--s4) var(--s5); border-radius: 3px;
+  }
+  .roster { display: grid; gap: var(--s2); max-width: 720px; margin: 0 auto; }
+  .roster-row { display: grid; grid-template-columns: 1fr 132px 96px; gap: var(--s3); align-items: center; }
+  .swatchrow { display: flex; flex-wrap: wrap; gap: var(--s3); }
+  .sw { width: 89px; }
+  .sw i { display: block; height: 55px; border-radius: var(--r-sm); box-shadow: inset 0 0 0 1px rgba(0,0,0,.5); }
+  .sw span { display: block; font: 600 9px/1.5 var(--font-data); letter-spacing: .07em;
+             text-transform: uppercase; color: var(--bone-400); margin-top: 4px; }
+  .cards { display: flex; gap: var(--s4); flex-wrap: wrap; justify-content: center; }
+  .card {
+    width: 216px; padding: var(--s4);
+    background-color: var(--paper);
+    background-image: var(--grain-fine), linear-gradient(178deg, #F8F0DC, #E7DBBD);
+    background-blend-mode: overlay, normal;
+    color: #33291B; box-shadow: 0 5px 14px rgba(0,0,0,.5);
+  }
+  .card h4 {
+    margin: 0 0 var(--s2); font-family: var(--font-stencil); text-transform: uppercase;
+    font-size: var(--t-sm); letter-spacing: .05em; border-bottom: 1px solid rgba(51,41,27,.45);
+    padding-bottom: 3px;
+  }
+  .hand { font-family: var(--font-hand); font-size: var(--t-sm); line-height: 1.5; }
+  .sig { font-family: var(--font-hand); font-size: var(--t-md); border-top: 1px solid rgba(51,41,27,.5);
+         margin-top: var(--s4); padding-top: 3px; display: inline-block; min-width: 180px; }
+  .pinned { display: flex; gap: var(--s5); flex-wrap: wrap; justify-content: center; }
+  .pinned > * { position: relative; width: 232px; }
+</style>
+</head>
+<body class="ppbf">
+<div class="wrap">
+
+  <h1 class="motto" style="text-align:left">Rooms</h1>
+  <p class="lede">
+    Law 6, restated. The platform is not one ground, nor two — it is a
+    <b>building with rooms</b>, and every screen declares which room it stands in.
+    A room supplies three things: the <b>wall</b>, the <b>light</b>, and the
+    floor-level <b>shadow</b>. Panels are the furniture placed in it, and they
+    work in any room. Every wall below is generated from gradients and
+    <code>feTurbulence</code> — no image assets, so the floor tablet renders it
+    all with no network.
+  </p>
+
+  <h2 class="sect">Wood &amp; brick — the two new materials</h2>
+  <p class="note">Leather is what you hold. Wood is what the room is built from — and it had to be
+     separate from <code>--hide-*</code> so a wooden frame around a leather panel reads as two objects.</p>
+  <div class="swatchrow">
+    <div class="sw"><i style="background:var(--wood-900)"></i><span>wood 900</span></div>
+    <div class="sw"><i style="background:var(--wood-800)"></i><span>wood 800</span></div>
+    <div class="sw"><i style="background:var(--wood-700)"></i><span>wood 700</span></div>
+    <div class="sw"><i style="background:var(--wood-600)"></i><span>wood 600</span></div>
+    <div class="sw"><i style="background:var(--wood-500)"></i><span>wood 500</span></div>
+    <div class="sw"><i style="background:var(--wood-300)"></i><span>wood 300</span></div>
+    <div class="sw"><i style="background:var(--brick-700)"></i><span>brick 700</span></div>
+    <div class="sw"><i style="background:var(--brick-500)"></i><span>brick 500</span></div>
+    <div class="sw"><i style="background:var(--mortar)"></i><span>mortar</span></div>
+    <div class="sw"><i style="background:var(--lamp)"></i><span>lamp</span></div>
+  </div>
+
+  <!-- ============================================ OFFICE -->
+  <h2 class="sect">.room--office &nbsp;·&nbsp; plank wall, desk lamps</h2>
+  <p class="note">Admin, records, audit, organizations. The ledger sheet is the furniture.</p>
+  <div class="roombox">
+    <div class="room room--office">
+      <div class="sheet aged crease">
+        <div class="sheet-head">
+          <div>
+            <div class="sheet-title">Audit Log</div>
+            <div class="t-eyebrow" style="color:#4A3B28">PPBF · Continuity Ledger</div>
+          </div>
+          <div class="sheet-sub">Honest governance trail<br>for free youth program</div>
+        </div>
+        <table class="ledger">
+          <thead>
+            <tr><th>Date</th><th>Entry ID</th><th>User / Role</th><th>Action</th><th>Notes</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>05/12/48</td><td class="ledger-id">E-194805120914</td>
+              <td>J. Callahan, Dir.<span class="ledger-val">Program funds allocated $250.00</span></td>
+              <td></td>
+              <td><span class="stamp" style="font-size:11px;padding:3px 7px;border-width:2px">Approved ✓</span></td>
+            </tr>
+            <tr>
+              <td>05/12/48</td><td class="ledger-id">E-194805121107</td>
+              <td>M. O'Rourke, Coach<span class="ledger-val">Equipment issued — 6 pair gloves</span></td>
+              <td></td>
+              <td><span class="stamp" style="color:var(--monitor);font-size:11px;padding:3px 7px;border-width:2px">Recorded ◉</span></td>
+            </tr>
+            <tr>
+              <td>05/13/48</td><td class="ledger-id">E-194805130845</td>
+              <td>T. Washington, Admin.<span class="ledger-val">Youth enrollment — 12 new members</span></td>
+              <td></td>
+              <td><span class="stamp stamp--green" style="font-size:11px;padding:3px 7px;border-width:2px">Filed ✓</span></td>
+            </tr>
+          </tbody>
+        </table>
+        <p style="margin:var(--s4) 0 0;font-family:var(--font-stencil);text-transform:uppercase;
+                  font-size:var(--t-sm);letter-spacing:.04em;text-align:center;color:#241C11">
+          Every dollar. Every decision. Every kid. This record stands.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ FLOOR -->
+  <h2 class="sect">.room--floor &nbsp;·&nbsp; brick wall, caged lamps</h2>
+  <p class="note">Schedule and the gym-floor kiosk. Session cards are the chalk voice's paper cousin;
+     capacity is a stamp, never a colour alone (Law 3).</p>
+  <div class="roombox">
+    <div class="room room--floor">
+      <div class="woodframe" style="max-width:820px;margin:0 auto">
+        <div class="frame-in sheet aged" style="max-width:none;margin:0">
+          <div class="sheet-head">
+            <div class="sheet-title" style="font-size:var(--t-xl)">Schedule</div>
+            <div class="sheet-sub">Classes &amp; Sessions</div>
+          </div>
+          <div class="cards">
+            <div class="card aged" style="width:150px">
+              <h4>Monday</h4>
+              <div style="font-family:var(--font-data);font-size:10px;line-height:1.7">
+                7:00 AM Beginners<br>10:00 AM Open Gym<br>6:00 PM Sparring
+              </div>
+              <div style="margin-top:var(--s3)">
+                <span class="stamp" style="font-size:11px;padding:3px 7px;border-width:2px">Full ✕</span>
+              </div>
+            </div>
+            <div class="card aged" style="width:150px">
+              <h4>Tuesday</h4>
+              <div style="font-family:var(--font-data);font-size:10px;line-height:1.7">
+                7:00 AM Conditioning<br>10:00 AM Youth Class<br>6:00 PM Technique
+              </div>
+              <div style="margin-top:var(--s3)">
+                <span class="stamp stamp--green" style="font-size:11px;padding:3px 7px;border-width:2px">Open ✓</span>
+              </div>
+            </div>
+            <div class="card aged" style="width:150px">
+              <h4>Wednesday</h4>
+              <div style="font-family:var(--font-data);font-size:10px;line-height:1.7">
+                7:00 AM Footwork<br>10:00 AM Open Gym<br>6:00 PM Sparring
+              </div>
+              <div style="margin-top:var(--s3)">
+                <span class="stamp" style="font-size:11px;padding:3px 7px;border-width:2px">Full ✕</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ BOARD -->
+  <h2 class="sect">.room--board &nbsp;·&nbsp; wainscot, hung board, brass nameplates</h2>
+  <p class="note">Volunteer roster, board seats, organizations rail. Nameplates label (Law 1) —
+     status is the separate stamp at the end of the row.</p>
+  <div class="roombox">
+    <div class="room room--board room--lit-center">
+      <div class="woodframe" style="max-width:860px;margin:0 auto">
+        <div class="frame-in mat-wood--dark" style="padding:var(--s5)">
+          <div style="text-align:center;margin-bottom:var(--s5)">
+            <div class="t-command" style="font-size:var(--t-xl);color:var(--brass-300)">Volunteer Management</div>
+            <div class="t-eyebrow" style="color:var(--brass-500)">★ Gym Helpers Roster ★</div>
+          </div>
+          <div class="roster">
+            <div class="roster-row">
+              <span class="nameplate" style="width:100%">Joe Moretti</span>
+              <span class="nameplate nameplate--patina" style="width:100%;font-size:11px">Trainer</span>
+              <span class="nameplate nameplate--leather" style="width:100%;font-size:11px">M W F</span>
+            </div>
+            <div class="roster-row">
+              <span class="nameplate" style="width:100%">Salvatore DiGiacomo</span>
+              <span class="nameplate nameplate--patina" style="width:100%;font-size:11px">Ringside</span>
+              <span class="nameplate nameplate--leather" style="width:100%;font-size:11px">T TH</span>
+            </div>
+            <div class="roster-row">
+              <span class="nameplate" style="width:100%">Frankie Valenti</span>
+              <span class="nameplate nameplate--patina" style="width:100%;font-size:11px">Equipment</span>
+              <span class="nameplate nameplate--leather" style="width:100%;font-size:11px">M W F</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ FILE -->
+  <h2 class="sect">.room--file &nbsp;·&nbsp; cork wall, pinned reports</h2>
+  <p class="note">Research, evidence library, knowledge graph, Shadow's pinned findings.
+     <code>.rope</code> already draws the twine between pins.</p>
+  <div class="roombox">
+    <div class="room room--file">
+      <div style="text-align:center;margin-bottom:var(--s5)">
+        <span class="signboard" style="font-size:var(--t-lg)">Evidence Library</span>
+      </div>
+      <div class="pinned">
+        <div class="card aged note-torn"><span class="pin pin--brass"></span>
+          <h4>Fight Report</h4>
+          <div style="font-family:var(--font-data);font-size:10px;line-height:1.6">
+            J. Walker vs. T. Reyes<br>Date: 4/12/52<br>Result: Dec.
+          </div>
+          <p class="hand" style="margin:var(--s2) 0 0;font-size:12px">Good start, faded late.</p>
+        </div>
+        <div class="card aged note-torn"><span class="pin"></span>
+          <h4>Medical File</h4>
+          <div style="font-family:var(--font-data);font-size:10px;line-height:1.6">
+            Name: J. Walker<br>Last physical: 4/1/52<br>Cleared: Yes
+          </div>
+          <div style="margin-top:var(--s3)">
+            <span class="badge badge--monitor">◉ Monitor</span>
+          </div>
+        </div>
+        <div class="clipping aged"><span class="pin pin--brass"></span>
+          <div class="clipping-head">Young Boxers Face Old Challenges</div>
+          <div class="clipping-body" style="margin-top:4px">
+            Conditioning, discipline, and heart still the difference in the ring.
+            The neighbourhood clubs report steady enrollment through the spring
+            season, with equipment grants carrying most of the cost.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ CLINIC -->
+  <h2 class="sect">.room--clinic &nbsp;·&nbsp; cabinetry, green banker's shade</h2>
+  <p class="note">Medical clearance and safety. The one place the blackletter voice is allowed,
+     and the one place handwriting carries real content (a physician's note and signature).</p>
+  <div class="roombox">
+    <div class="room room--clinic">
+      <span class="lamp lamp--green" style="left:14%"></span>
+      <div class="sheet aged" style="margin-top:var(--s6)">
+        <div style="text-align:center;border-bottom:2px solid #33291B;padding-bottom:var(--s2);margin-bottom:var(--s4)">
+          <div class="t-eyebrow" style="color:#4A3B28">PPBF</div>
+          <div class="t-gothic" style="font-size:var(--t-2xl);line-height:1;color:#241C11">Sports Medicine</div>
+          <div class="t-gothic" style="font-size:var(--t-lg);color:#3E3120">Clearance &amp; Observations</div>
+        </div>
+        <div class="cards">
+          <div class="card aged">
+            <h4>Doctor's Observation</h4>
+            <p class="hand" style="margin:0">Fighter reports dizziness after 6th round. BP 138/88.
+               Observe 48 hrs. No heavy sparring.</p>
+            <span class="sig">J. L. McCarthy, M.D.</span>
+            <div style="margin-top:var(--s3)">
+              <span class="stamp" style="font-size:12px">Hold ▲</span>
+            </div>
+          </div>
+          <div class="card aged">
+            <h4>Clearance Note</h4>
+            <p class="hand" style="margin:0">Fit to train. No restrictions. Lungs clear.
+               Heart regular. Hydration good.</p>
+            <span class="sig">A. R. Finnegan, M.D.</span>
+            <div style="margin-top:var(--s3)">
+              <span class="stamp stamp--green" style="font-size:12px">Cleared ✓</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ NIGHT -->
+  <h2 class="sect">.room--night &nbsp;·&nbsp; the original ink ground</h2>
+  <p class="note">Kept, not deleted — after-hours surfaces and the locked kiosk. This is the ground the
+     app was migrated onto before the reference art arrived; it is now one room among six, not the default.</p>
+  <div class="roombox">
+    <div class="room room--night">
+      <div class="frame" style="max-width:600px;margin:0 auto">
+        <span class="rivet rivet--tl"></span><span class="rivet rivet--tr"></span>
+        <span class="rivet rivet--bl"></span><span class="rivet rivet--br"></span>
+        <div class="frame-in mat-leather" style="padding:var(--s5);text-align:center">
+          <div class="t-command" style="font-size:var(--t-lg)">Gym Closed</div>
+          <p class="t-muted" style="margin:var(--s2) 0 var(--s4)">Check-in resumes 7:00 AM</p>
+          <span class="stamp stamp--lg">Locked ✕</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sect">What a room does not decide</h2>
+  <p class="lede" style="margin-bottom:var(--s7)">
+    A room sets the wall and the light. It never sets <b>status</b> — that stays the
+    four-rung ladder plus a glyph and an uppercase word, in any room (Laws 2 and 3).
+    It never sets <b>proportion</b> — type still climbs by √φ and spacing is still
+    Fibonacci, in any room (Law 8). And it never sets <b>refusal</b> — a declined
+    action is stamped in ink on the page whether that page is hanging on brick or
+    cork (Law 7).
+  </p>
+
+</div>
+</body>
+</html>

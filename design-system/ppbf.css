@@ -2,9 +2,10 @@
    PPBF Design System — "Leather & Brass"
    Punxsutawney Prominence Boxing Foundation
    ---------------------------------------------------------------------------
-   A skeuomorphic system: every surface in the platform is a real object found
-   in a boxing gym's back office — oiled leather, cast brass, slate chalkboard,
-   cork, and stamped paper.
+   A skeuomorphic system: the platform is a building, and every screen is a
+   ROOM in it. A room supplies the wall, the light, and the shadow; the panels
+   standing in it are real objects — oiled leather, cast brass, slate
+   chalkboard, cork, stamped paper, stained wood, brick.
 
    Zero external assets. Textures are generated from SVG feTurbulence data URIs
    and layered gradients, so the kiosk renders on a cold tablet with no network.
@@ -13,9 +14,11 @@
      1. Brass is the chassis, never the message.
      2. Saturated colour means safety or status. Nothing else may use it.
      3. Colour is never the only channel — glyph + uppercase label, always.
-     4. Four voices: stencil commands, bone informs, chalk schedules, mono records.
+     4. Six voices: stencil commands, bone informs, chalk schedules, hand annotates,
+        gothic mastheads the clinic, mono records.
      5. Kiosk-first sizing — 55px targets, 19.1px type on the gym floor.
-     6. Every panel is a real object. If it isn't one of the materials, it doesn't ship.
+     6. Every screen is a room, and every panel in it is a real object. If a
+        surface isn't one of the materials, it doesn't ship.
      7. Refusal is a stamp, not an error toast.
      8. Proportion descends from φ. Nothing is sized by eye.
    ========================================================================= */
@@ -58,6 +61,31 @@
   --cork:      #C08E4E;
   --cork-dark: #96682F;
 
+  /* --- Wood — the surround ------------------------------------------------
+     Stained oak: the frame around a board, the rail a row of plaques hangs
+     from, the plank wall behind it, the desk it all sits on. Leather is what
+     you hold; wood is what the room is built from. Distinct from --hide-*
+     (which is hide, and warmer/redder) because a wooden frame around a
+     leather panel has to read as two different objects. */
+  --wood-900: #1F1409;  /* frame shadow, deepest recess */
+  --wood-800: #2E1D0E;  /* dark-stained board face */
+  --wood-700: #422A15;  /* standard frame */
+  --wood-600: #5A3A1E;  /* mid oak, rail */
+  --wood-500: #7A5029;  /* lit edge */
+  --wood-300: #9C6B3A;  /* specular along a bevel */
+
+  /* --- Brick + mortar — the gym wall ------------------------------------ */
+  --brick-900: #2A1712;
+  --brick-700: #4A251C;
+  --brick-500: #6B3A2A;
+  --mortar:    #6E6255;
+
+  /* --- Lamp — the practical light ----------------------------------------
+     Every surface in this system is lit by a hanging fixture or a gooseneck,
+     never by ambient fill. Warm, pooled, falling off fast. */
+  --lamp:      #FFE9B8;
+  --lamp-hot:  #FFF6DF;
+
   /* --- Status ladder ----------------------------------------------------
      Layer 11 Safety Gate + Layer 10 queue states. Chosen to sit correctly on
      leather while staying clearly separate from brass — a gold bezel must
@@ -71,8 +99,9 @@
   --stamp-green:#2F7A3E;  /* approved, compliant */
 
   /* --- Grit — golden-era, poor man's gym ---------------------------------
-     A period-accent layer, not a new ground (Law 6 stays two grounds: ink
-     for staff, warm canvas for family). Most hardware in a gym that's run
+     A period-accent layer, not a room of its own (see the ROOMS section: the
+     wall is what varies per screen, and grit sits on top of any of them).
+     Most hardware in a gym that's run
      forty years on donations is oxidized, not polished — --brass-* stays
      reserved for the few things that would actually see a polishing rag:
      the crest, a championship belt, one ceremonial rivet. Everything
@@ -102,6 +131,10 @@
                   Roboto, Helvetica, Arial, sans-serif;
   --font-hand:    "Segoe Print", "Bradley Hand", "Chalkboard SE", cursive;
   --font-data:    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  /* One blackletter voice, for the clinic's masthead only — a medical notice
+     in 1948 was set in it. Never for body copy; it fails Law 3 at small sizes. */
+  --font-gothic:  "UnifrakturCook", "Cloister Black", "Old English Text MT",
+                  "Blackadder ITC", Luminari, serif;
 
   /* --- Proportion — φ ---------------------------------------------------
      Law 8. Every measurement in the system descends from the golden ratio.
@@ -727,4 +760,458 @@ body.ppbf.on-canvas {
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
+}
+
+/* ================================================================ ROOMS ==
+   Law 6, restated. The platform is not one ground, nor two — it is a building
+   with rooms, and every screen declares which room it is standing in. A room
+   supplies three things: the WALL behind everything, the LIGHT falling on it,
+   and the floor-level shadow. Panels (paper, leather, slate, cork, wood) are
+   the furniture placed in it, and they work in any room.
+
+   This replaces "ink for staff, canvas for family," which forced dense
+   operational screens onto a ground the reference art never uses. A room is
+   chosen by what the screen IS, not who is looking:
+
+     .room--office   front office, admin, records     plank wall + desk lamp
+     .room--floor    gym floor, schedule, kiosk       brick wall + caged lamps
+     .room--board    rosters, seats, assignments      wainscot + hung board
+     .room--file     research, evidence, graph        cork wall + gooseneck
+     .room--clinic   medical, clearance, safety       cabinetry + green shade
+     .room--night    after hours, locked kiosk        the old ink ground
+
+   Every room is zero-asset: walls are gradients + feTurbulence like every
+   other material, so the floor tablet still renders them with no network. */
+.room {
+  position: relative;
+  min-height: 100%;
+  padding: var(--s6) var(--s5);
+  color: var(--bone-200);
+  background-color: var(--wood-800);
+  background-image: var(--grain);
+  background-blend-mode: overlay;
+}
+/* The light. A room is lit by fixtures, never by ambient fill, so the pool
+   sits high and falls off fast — content lands in the lit third. */
+.room::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background-image:
+    /* the two fixtures' pools, thrown wide and deep enough to actually land on
+       the content rather than dying in the top margin */
+    radial-gradient(86% 78% at 20% -12%, rgba(255,233,184,.34), transparent 72%),
+    radial-gradient(86% 78% at 80% -12%, rgba(255,233,184,.30), transparent 72%),
+    /* a broad warm wash across the middle where the work sits */
+    radial-gradient(120% 62% at 50% 34%, rgba(255,233,184,.13), transparent 78%),
+    radial-gradient(130% 84% at 50% 112%, rgba(0,0,0,.66), transparent 68%);
+}
+.room > * { position: relative; z-index: 1; }
+/* One lamp overhead instead of two in the corners. */
+.room--lit-center::before {
+  background-image:
+    radial-gradient(78% 74% at 50% -12%, rgba(255,246,223,.38), transparent 70%),
+    radial-gradient(120% 60% at 50% 36%, rgba(255,233,184,.12), transparent 78%),
+    radial-gradient(130% 84% at 50% 112%, rgba(0,0,0,.62), transparent 68%);
+}
+
+/* --- Office: horizontal stained plank wall -------------------------------
+   Three layers make a plank read as a plank: a dark seam, a lit top edge just
+   under it, and long grain streaks running along the board. Without the lit
+   edge the wall is just a brown field with lines on it. */
+.room--office {
+  background-color: var(--wood-700);
+  background-image:
+    var(--grain),
+    /* long grain streaks along the board */
+    repeating-linear-gradient(91deg,
+      transparent 0 7px, rgba(0,0,0,.13) 7px 9px, transparent 9px 23px,
+      rgba(156,107,58,.10) 23px 25px, transparent 25px 47px),
+    /* seam + the lit edge of the board below it */
+    repeating-linear-gradient(180deg,
+      rgba(0,0,0,.55) 0 3px,
+      rgba(156,107,58,.34) 3px 6px,
+      transparent 6px 68px,
+      rgba(0,0,0,.22) 68px 74px),
+    linear-gradient(178deg, #543516 0%, #3E2713 54%, #2A1B0C 100%);
+  background-size: 180px 180px, 100% 100%, 100% 74px, 100% 100%;
+  background-blend-mode: overlay, overlay, normal, normal;
+}
+
+/* --- Floor: brick and mortar, offset courses ----------------------------
+   Mortar is LIGHTER than the brick, so those layers blend normally — running
+   them through multiply turns the joints into black gaps, which reads as a
+   grid drawn on top of the wall rather than as masonry. */
+.room--floor {
+  background-color: var(--brick-700);
+  background-image:
+    var(--grain),
+    /* per-brick tonal variation, so courses aren't uniform */
+    repeating-linear-gradient(90deg,
+      rgba(0,0,0,.16) 0 89px, rgba(255,255,255,.05) 89px 178px,
+      rgba(0,0,0,.09) 178px 267px, transparent 267px 356px),
+    /* horizontal joints */
+    repeating-linear-gradient(180deg,
+      var(--mortar) 0 3px, transparent 3px 37px),
+    /* vertical joints, alternating courses offset by half a brick */
+    repeating-linear-gradient(90deg,
+      var(--mortar) 0 3px, transparent 3px 89px),
+    repeating-linear-gradient(90deg,
+      transparent 0 44px, var(--mortar) 44px 47px, transparent 47px 89px),
+    linear-gradient(168deg, #5E2D21 0%, #43231A 58%, #2E1913 100%);
+  background-size: 180px 180px, 100% 74px, 100% 74px, 100% 37px, 100% 37px, 100% 100%;
+  background-position: 0 0, 0 0, 0 0, 0 0, 0 37px, 0 0;
+  background-blend-mode: overlay, multiply, normal, normal, normal, normal;
+}
+
+/* --- Board room: painted wainscot below, plaster above ------------------ */
+.room--board {
+  background-color: var(--wood-800);
+  background-image:
+    var(--grain),
+    linear-gradient(180deg,
+      #C9BBA0 0%, #BCAC8E 52%, #6B4A2A 52%, #4A3119 56%, #33200F 100%),
+    repeating-linear-gradient(90deg,
+      transparent 0 53px, rgba(0,0,0,.22) 53px 55px, transparent 55px 108px);
+  background-blend-mode: overlay, normal, multiply;
+  color: var(--hide-900);
+}
+
+/* --- File room: cork wall, wood rail ------------------------------------ */
+.room--file {
+  background-color: var(--cork);
+  background-image:
+    var(--grain),
+    radial-gradient(circle at 22% 28%, rgba(120,78,34,.5)  0 2px, transparent 3px),
+    radial-gradient(circle at 68% 72%, rgba(150,105,55,.45) 0 3px, transparent 4px),
+    radial-gradient(circle at 84% 20%, rgba(110,70,30,.4)   0 1.5px, transparent 2.5px),
+    linear-gradient(178deg, #C89757 0%, #B0813F 60%, #96682F 100%);
+  background-size: 180px 180px, 17px 17px, 27px 27px, 11px 11px, 100% 100%;
+  background-blend-mode: overlay, normal, normal, normal, normal;
+  color: var(--hide-900);
+}
+
+/* --- Clinic: varnished cabinetry, cooler green-shaded light ------------- */
+.room--clinic {
+  background-color: var(--wood-700);
+  background-image:
+    var(--grain),
+    repeating-linear-gradient(90deg,
+      transparent 0 87px, rgba(0,0,0,.3) 87px 91px, transparent 91px 178px),
+    linear-gradient(172deg, #55371B 0%, #3E2712 55%, #2B1B0C 100%);
+  background-blend-mode: overlay, multiply, normal;
+}
+.room--clinic::before {
+  background-image:
+    radial-gradient(46% 34% at 26% -4%, rgba(190,255,206,.24), transparent 62%),
+    radial-gradient(60% 44% at 26% 2%,  rgba(255,246,223,.22), transparent 68%),
+    radial-gradient(120% 90% at 50% 108%, rgba(0,0,0,.6), transparent 70%);
+}
+
+/* --- Night: the original ink ground, kept for after-hours surfaces ------ */
+.room--night {
+  background-color: var(--hide-950);
+  background-image:
+    var(--grain),
+    radial-gradient(120% 90% at 50% -10%, rgba(150,112,66,.18), transparent 62%),
+    linear-gradient(180deg, #1B1410, #0F0C0A);
+  background-blend-mode: overlay, screen, normal;
+}
+.room--night::before {
+  background-image: radial-gradient(120% 90% at 50% 104%, rgba(0,0,0,.5), transparent 72%);
+}
+
+/* ============================================================= WOOD ======
+   Furniture-grade surfaces: the frame around a board, the rail a row of
+   plaques hangs from, a routed sign. */
+.mat-wood {
+  background-color: var(--wood-700);
+  background-image:
+    var(--grain),
+    repeating-linear-gradient(94deg,
+      transparent 0 5px, rgba(0,0,0,.13) 5px 6px, transparent 6px 14px),
+    linear-gradient(170deg, var(--wood-500) 0%, var(--wood-700) 54%, var(--wood-900) 100%);
+  background-blend-mode: overlay, multiply, normal;
+  box-shadow:
+    inset 0 1px 0 rgba(156,107,58,.42),
+    inset 0 -2px 5px rgba(0,0,0,.55),
+    0 4px 12px rgba(0,0,0,.5);
+}
+.mat-wood--dark {
+  background-color: var(--wood-900);
+  background-image:
+    var(--grain),
+    repeating-linear-gradient(94deg,
+      transparent 0 7px, rgba(0,0,0,.2) 7px 8px, transparent 8px 19px),
+    linear-gradient(170deg, #3A250F 0%, #26180A 56%, #170E06 100%);
+  background-blend-mode: overlay, multiply, normal;
+  color: var(--brass-200);
+}
+/* A wooden frame: put the content in a child so the bevel reads as depth. */
+.woodframe {
+  padding: var(--s4);
+  border-radius: var(--r-sm);
+  background-color: var(--wood-700);
+  background-image:
+    var(--grain),
+    repeating-linear-gradient(94deg,
+      transparent 0 5px, rgba(0,0,0,.14) 5px 6px, transparent 6px 15px),
+    linear-gradient(168deg, var(--wood-500) 0%, var(--wood-600) 38%, var(--wood-800) 100%);
+  background-blend-mode: overlay, multiply, normal;
+  box-shadow:
+    inset 0 2px 0 rgba(156,107,58,.5),
+    inset 0 -3px 6px rgba(0,0,0,.6),
+    0 14px 34px rgba(0,0,0,.6);
+}
+.woodframe > .frame-in {
+  border-radius: 3px;
+  box-shadow: inset 0 3px 12px rgba(0,0,0,.62), inset 0 0 0 1px rgba(0,0,0,.55);
+  overflow: hidden;
+}
+/* Routed hanging sign — two chains and a plank. */
+.signboard {
+  display: inline-block; padding: var(--s3) var(--s5);
+  border-radius: var(--r-sm);
+  background-color: var(--wood-600);
+  background-image:
+    var(--grain),
+    linear-gradient(170deg, var(--wood-500), var(--wood-700) 60%, var(--wood-900));
+  background-blend-mode: overlay, normal;
+  box-shadow:
+    inset 0 1px 0 rgba(156,107,58,.5),
+    inset 0 -2px 4px rgba(0,0,0,.5),
+    0 6px 16px rgba(0,0,0,.55);
+  font-family: var(--font-stencil); text-transform: uppercase;
+  letter-spacing: .07em; color: var(--bone-100);
+  text-shadow: 0 -1px 0 rgba(0,0,0,.8), 0 1px 0 rgba(156,107,58,.3);
+}
+
+/* ============================================================ FIXTURES ===
+   The lamp itself, for when a screen wants the fixture visible and not just
+   its light. Hangs from the top edge of its container. */
+.lamp {
+  position: absolute; top: 0; width: 89px; height: 55px; pointer-events: none;
+}
+.lamp::before {           /* the shade */
+  content: ""; position: absolute; top: 0; left: 50%; translate: -50% 0;
+  width: 89px; height: 27px;
+  border-radius: 50% 50% 42% 42% / 78% 78% 30% 30%;
+  background-image: linear-gradient(178deg,
+    var(--patina-300) 0%, var(--patina-700) 46%, var(--patina-900) 100%);
+  box-shadow: inset 0 -3px 6px rgba(0,0,0,.6), 0 3px 7px rgba(0,0,0,.6);
+}
+.lamp::after {            /* the pool of light under it */
+  content: ""; position: absolute; top: 21px; left: 50%; translate: -50% 0;
+  width: 233px; height: 178px;
+  background-image: radial-gradient(50% 46% at 50% 0%,
+    var(--lamp-hot) 0%, rgba(255,233,184,.44) 26%, transparent 72%);
+  mix-blend-mode: screen;
+}
+.lamp--green::before {    /* banker's shade, the clinic lamp */
+  background-image: linear-gradient(178deg, #7FB08A 0%, #3E6B4A 52%, #24402C 100%);
+}
+.lamp--green::after {
+  background-image: radial-gradient(50% 46% at 50% 0%,
+    #EAFFF0 0%, rgba(190,255,206,.4) 26%, transparent 72%);
+}
+.lamp--caged::before {    /* wire-caged floor fixture */
+  background-image:
+    repeating-linear-gradient(90deg, rgba(0,0,0,.5) 0 1.5px, transparent 1.5px 9px),
+    linear-gradient(178deg, var(--patina-300), var(--patina-700) 48%, var(--patina-900));
+  background-blend-mode: multiply, normal;
+}
+
+/* ============================================================= LEDGER ====
+   A ruled paper record. Law 4: mono voice, because every row is auditable.
+   The action line carries ledger-red ink — a period bookkeeping convention,
+   atmosphere rather than status, so it must never be the only signal that
+   something is wrong (that is what .stamp and .badge are for). */
+.ledger {
+  width: 100%; border-collapse: collapse;
+  font-family: var(--font-data); font-size: var(--t-xs);
+  color: #33291B;
+}
+.ledger caption {
+  font-family: var(--font-stencil); text-transform: uppercase;
+  font-size: var(--t-lg); letter-spacing: .05em;
+  color: #2A2116; padding-bottom: var(--s3);
+}
+.ledger th {
+  font-weight: 700; text-transform: uppercase; letter-spacing: .1em;
+  font-size: var(--t-xs); text-align: left;
+  padding: var(--s2) var(--s3);
+  border-bottom: 2px solid rgba(51,41,27,.7);
+  white-space: nowrap;
+}
+.ledger td {
+  padding: var(--s3);
+  border-bottom: 1px solid rgba(51,41,27,.26);
+  vertical-align: top;
+}
+.ledger tbody tr:last-child td { border-bottom: 0; }
+.ledger .rule-v { border-left: 1px solid rgba(51,41,27,.26); }
+.ledger-val {                       /* the red-ink action line */
+  display: block; color: var(--rust-500);
+  text-transform: uppercase; letter-spacing: .04em;
+}
+.ledger-id { letter-spacing: .06em; opacity: .84; }
+
+/* ========================================================== NAMEPLATE ====
+   An engraved brass plate screwed to a board — the Organizations rail and the
+   Volunteer roster. Chassis, so it labels and never reports status (Law 1). */
+.nameplate {
+  position: relative;
+  /* Padding clears the screws at both ends; nowrap because a plate is a single
+     engraved line — a wrapped nameplate is a physically impossible object. */
+  display: inline-block; padding: var(--s3) var(--s5);
+  white-space: nowrap; text-align: center;
+  border-radius: 2px;
+  /* A plate screwed to a board for thirty years is not a glossy bar. The ramp
+     stays inside brass-400..800 with no specular white, the grain is blended
+     in rather than laid over, and the only bright line is the 1px top bevel —
+     a full highlight sweep across the face reads as moulded plastic. */
+  background-color: var(--brass-600);
+  background-image:
+    var(--grain-fine),
+    linear-gradient(174deg,
+      var(--brass-400) 0%, var(--brass-600) 34%,
+      var(--brass-500) 58%, var(--brass-700) 82%, var(--brass-800) 100%);
+  background-blend-mode: overlay, normal;
+  box-shadow:
+    inset 0 1px 0 rgba(242,226,168,.42),
+    inset 0 0 0 1px rgba(74,52,11,.55),
+    inset 0 -2px 3px rgba(0,0,0,.34),
+    0 2px 6px rgba(0,0,0,.5);
+  font-family: var(--font-stencil); text-transform: uppercase;
+  letter-spacing: .08em; color: #2A1E06;
+  text-shadow: 0 1px 0 rgba(242,226,168,.34);   /* engraved, not printed */
+}
+/* The two screws holding it on. */
+.nameplate::before, .nameplate::after {
+  content: ""; position: absolute; top: 50%; translate: 0 -50%;
+  width: 7px; height: 7px; border-radius: 50%;
+  background-image: radial-gradient(circle at 36% 30%,
+    var(--brass-300) 0%, var(--brass-600) 44%, var(--brass-900) 100%);
+  box-shadow: inset 0 -1px 1px rgba(0,0,0,.6);
+}
+.nameplate::before { left: var(--s3); }
+.nameplate::after  { right: var(--s3); }
+.nameplate--noscrew::before, .nameplate--noscrew::after { content: none; }
+.nameplate--patina {
+  background-image: linear-gradient(172deg,
+    var(--patina-100) 0%, var(--patina-300) 24%, var(--patina-100) 46%,
+    var(--patina-500) 64%, var(--patina-900) 100%);
+  color: #1E1C10;
+}
+.nameplate--leather {           /* blank embossed hide, the spacer plate */
+  background-image: var(--grain), linear-gradient(168deg, #6B4630, #46291B);
+  background-blend-mode: overlay, normal;
+  color: var(--bone-300); text-shadow: 0 -1px 0 rgba(0,0,0,.7);
+  box-shadow: inset 0 1px 0 rgba(200,150,100,.25), 0 3px 8px rgba(0,0,0,.5);
+}
+
+/* ============================================================= KEYTAG ====
+   A hanging brass luggage tag — PIN cards, access keys. */
+.keytag {
+  position: relative;
+  display: inline-block; width: 144px; padding: var(--s5) var(--s3) var(--s3);
+  border-radius: var(--r-md) var(--r-md) var(--r-sm) var(--r-sm);
+  background-image: var(--grain-fine), linear-gradient(172deg,
+    var(--brass-200) 0%, var(--brass-400) 30%, var(--brass-600) 72%, var(--brass-800) 100%);
+  background-blend-mode: overlay, normal;
+  box-shadow: inset 0 1px 0 rgba(255,244,214,.6), 0 5px 12px rgba(0,0,0,.55);
+  font-family: var(--font-data); font-size: var(--t-xs);
+  color: #2A1E06; text-align: center;
+  rotate: -2deg;
+}
+.keytag::before {               /* the grommet */
+  content: ""; position: absolute; top: 7px; left: 50%; translate: -50% 0;
+  width: 15px; height: 15px; border-radius: 50%;
+  background: var(--wood-900);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,.8), 0 1px 0 rgba(255,244,214,.4);
+}
+.keytag--expired { filter: saturate(.55) brightness(.86); }
+
+/* ============================================================== PHOTO ====
+   A sepia print in a white border — the People roster board. */
+.photo {
+  display: block; padding: 5px 5px 21px;
+  background: linear-gradient(178deg, #F7F1E1, #E4DAC2);
+  box-shadow: 0 3px 9px rgba(0,0,0,.55);
+  rotate: -1deg;
+  font-family: var(--font-data); font-size: 9px; text-align: center;
+  color: #4A3B28; text-transform: uppercase; letter-spacing: .08em;
+}
+.photo > img, .photo > .photo-plate {
+  display: block; width: 100%; aspect-ratio: 4 / 5;
+  filter: sepia(.55) contrast(1.06) brightness(.94);
+  background-color: var(--hide-700);
+  background-image: var(--grain), linear-gradient(168deg, #6E5A44, #2E241A);
+  background-blend-mode: overlay, normal;
+}
+
+/* =========================================================== CLIPPING ====
+   Newsprint: greyer and thinner than --paper, set in narrow columns. */
+.clipping {
+  background-color: #E8E2D2;
+  background-image: var(--grain-fine), linear-gradient(178deg, #EFEADB, #DED7C4);
+  background-blend-mode: overlay, normal;
+  color: #2B2721;
+  padding: var(--s3);
+  box-shadow: 0 3px 9px rgba(0,0,0,.45);
+  rotate: 1deg;
+}
+.clipping-head {
+  font-family: var(--font-stencil); text-transform: uppercase;
+  font-size: var(--t-sm); line-height: 1.05; letter-spacing: .01em;
+  border-bottom: 1px solid rgba(43,39,33,.5); padding-bottom: 3px;
+}
+.clipping-body { columns: 2; column-gap: var(--s3); font-size: 9px; line-height: 1.35; }
+
+/* ============================================================= CREASE ====
+   Fold lines across a sheet that has been carried in a pocket. Decorative
+   only, and deliberately near-threshold: a crease strong enough to notice
+   while reading a row is a crease that will be mistaken for a table rule or a
+   rendering fault. One per surface. */
+.crease { position: relative; }
+.crease::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  opacity: .5;
+  background-image:
+    linear-gradient(90deg, transparent 0 49.6%, rgba(0,0,0,.05) 49.8%,
+                    rgba(255,255,255,.16) 50.2%, transparent 50.5%),
+    linear-gradient(180deg, transparent 0 33.6%, rgba(0,0,0,.04) 33.8%,
+                    rgba(255,255,255,.12) 34.2%, transparent 34.5%);
+}
+
+/* ============================================================== AGING ====
+   Paper that has sat in a filing cabinet since the Truman administration:
+   darkened edges, foxing blooms, and a soft warm cast. Applied as an overlay
+   so it ages whatever paper it wraps without touching the text colour. Put it
+   on the panel, not on the text container. */
+.aged { position: relative; isolation: isolate; }
+.aged::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 1;
+  mix-blend-mode: multiply;
+  background-image:
+    /* edge darkening — handled, stacked, rubbed */
+    radial-gradient(118% 108% at 50% 50%,
+      transparent 56%, rgba(150,116,66,.20) 78%, rgba(105,78,42,.42) 100%),
+    /* foxing blooms, irregular and off-centre */
+    radial-gradient(19% 13% at 12% 18%, rgba(163,124,74,.24), transparent 72%),
+    radial-gradient(13% 9%  at 88% 26%, rgba(150,112,66,.20), transparent 74%),
+    radial-gradient(23% 15% at 74% 88%, rgba(140,104,60,.17), transparent 76%),
+    radial-gradient(11% 8%  at 31% 79%, rgba(163,124,74,.15), transparent 78%);
+}
+/* Deckled/damaged edge, for a sheet that isn't machine-trimmed. */
+.aged--deckle {
+  clip-path: polygon(
+    0.4% 1%, 12% 0.2%, 27% 1.1%, 41% 0.3%, 58% 1.2%, 73% 0.4%, 88% 1.1%, 99.6% 0.5%,
+    99.3% 14%, 100% 31%, 99.2% 48%, 99.8% 66%, 99.1% 83%, 99.7% 99%,
+    87% 99.3%, 71% 98.7%, 55% 99.6%, 39% 98.8%, 24% 99.5%, 9% 98.9%, 0.5% 99.4%,
+    1% 82%, 0.2% 65%, 0.9% 47%, 0.3% 30%, 1% 15%);
+}
+
+/* --- Blackletter, the clinic's one voice --------------------------------- */
+.t-gothic {
+  font-family: var(--font-gothic);
+  letter-spacing: .01em; font-weight: 400;
 }

@@ -9,9 +9,11 @@ sheet. Every preview in this folder consumes it.
 
 ## The direction
 
-The platform looks like the back office of a boxing gym that has been run properly for
-forty years. Oiled leather, cast brass, a slate board with today's sessions on it, a cork
-wall of pinned notes, and a stamp pad for anything official.
+The platform looks like a boxing gym that has been run properly for forty years — and
+not one room of it, the whole building. A front office of stained plank and ledgers, a
+gym floor of brick and caged lamps, a board of screwed-on brass nameplates, a file room
+walled in cork, a clinic under a green banker's shade. Oiled leather, cast brass, a slate
+board with today's sessions on it, and a stamp pad for anything official.
 
 That is not decoration. It solves a real problem: PPBF serves one spectrum with two very
 different halves — a nine-year-old checking in at a floor tablet, and an AF_SPECOPS
@@ -48,10 +50,12 @@ everything else, even if the empty dial looks plainer. Plainer is correct.
 Every state carries a distinct glyph (`✓ ◉ ▲ ✕`) and an uppercase label. The ladder
 survives greyscale printing for board packets and every form of colour blindness.
 
-**4. Four voices, each with a job.**
+**4. Six voices, each with a job.**
 - **Stencil** commands — headers, mottos, tile names, buttons. It gives orders.
 - **Bone sans** informs — body copy, forms, anything read at length.
 - **Chalk** schedules — the day's sessions. Erasable by definition.
+- **Hand** annotates — a coach's note, a physician's observation, a signature.
+- **Gothic** (`.t-gothic`) is the clinic masthead only. Never body copy; it fails Law 3 small.
 - **Mono** records — IDs, timestamps, RPE, ledger hashes. Anything auditable.
 
 **5. Kiosk-first sizing.**
@@ -59,10 +63,37 @@ Anything an athlete touches on the gym floor is at least `--tap` (55px) with `--
 (19.1px) type. Sweaty hands, bad light, a queue behind them. Desks may go smaller; the
 floor may not.
 
-**6. Every panel is a real object.**
-Leather, brass, slate, cork, paper. If a surface isn't one of those five materials, it
-doesn't ship. This is the rule that keeps skeuomorphism from sliding into pastiche —
-there is a fixed vocabulary and nothing gets invented per-screen.
+**6. Every screen is a room, and every panel in it is a real object.**
+The platform is a building. A **room** supplies three things — the *wall* behind
+everything, the *light* falling on it, and the floor-level *shadow* — and the panels
+standing in it are furniture: leather, brass, slate, cork, paper, stained wood, brick.
+If a surface isn't one of those materials it doesn't ship. This is the rule that keeps
+skeuomorphism from sliding into pastiche: there is a fixed vocabulary and nothing gets
+invented per-screen.
+
+The six rooms, chosen by what a screen **is** rather than who is looking at it:
+
+| Room | Wall + light | For |
+|---|---|---|
+| `.room--office` | stained plank, two desk lamps | admin, records, audit, organizations |
+| `.room--floor` | brick and mortar, caged lamps | schedule, gym-floor kiosk |
+| `.room--board` | wainscot, hung board, brass nameplates | rosters, board seats, assignments |
+| `.room--file` | cork wall, gooseneck | research, evidence, knowledge graph |
+| `.room--clinic` | varnished cabinetry, green banker's shade | medical, clearance, safety |
+| `.room--night` | the ink ground | after hours, locked kiosk |
+
+This supersedes the earlier "two grounds — ink for staff, warm canvas for family"
+formulation. That rule sorted screens by *audience*, which forced dense operational
+surfaces (Shadow, the admin console, the workspaces) onto a near-black ground that no
+reference art ever used, while a governance record and a family record — the same
+object, a sheet of stamped paper — ended up on opposite grounds. Rooms sort by what
+the screen is instead, which is why the audit log and the guardian report can both be
+paper on wood while the after-hours kiosk keeps its ink.
+
+A room sets the wall and the light, and nothing else. It never sets **status** (Laws 2
+and 3 hold in every room), never sets **proportion** (Law 8 likewise), and never
+softens **refusal** (Law 7: a declined action is stamped in ink whether the page hangs
+on brick or on cork).
 
 **7. Refusal is a stamp, not an error toast.**
 When Layer 20 declines to answer, or Layer 17 withholds a cohort below the k-anonymity
@@ -94,7 +125,8 @@ accessibility floor agree — that is not luck, it is why 55 was chosen over 56.
 ## Contents
 
 ### Foundations
-- `foundations/materials.html` — the five materials plus brass hardware and the stamp pad
+- `foundations/rooms.html` — the six rooms, the wood/brick walls, lamps, ledger, nameplates
+- `foundations/materials.html` — the panel materials plus brass hardware and the stamp pad
 - `foundations/palette.html` — hide / brass / bone ramps and the status ladder
 - `foundations/proportion.html` — the φ type ladder, Fibonacci space, golden splits
 
