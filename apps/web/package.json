@@ -16,6 +16,7 @@
     "pilot:apply-audit-event-vocabulary": "node scripts/pilot-apply-audit-event-vocabulary-migration.mjs",
     "pilot:check-multiorg-orphans": "node scripts/pilot-check-multiorg-orphans.mjs",
     "pilot:check-stranded-guardians": "node scripts/pilot-check-stranded-guardians.mjs",
+    "pilot:check-orphan-chat-audit": "node scripts/pilot-check-orphan-chat-audit.mjs",
     "pilot:apply-shadow-runtime": "node scripts/pilot-apply-shadow-runtime-migration.mjs",
     "pilot:apply-shadow-evidence": "node scripts/pilot-apply-shadow-evidence-migration.mjs",
     "pilot:apply-shadow-decision-loop": "node scripts/pilot-apply-shadow-decision-loop-migration.mjs",
