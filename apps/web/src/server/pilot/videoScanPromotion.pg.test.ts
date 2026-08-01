@@ -393,6 +393,126 @@ describe('settleVideoSessionScan', () => {
   });
 });
 
+describe('reviewVideoSessionScan (human attestation)', () => {
+  test('approving releases the video and keeps the machine verdict it overrode', async () => {
+    await insertQuarantined('vs-1');
+    await client.query(
+      `update pilot.video_sessions
+       set scan_state = 'needs_human_review',
+           scan_detail = '{"decision":"needs_human_review","reason":"CONTENT_SCREEN_UNCERTAIN","content_verdict":"uncertain"}'::jsonb`,
+    );
+
+    const updated = await videoSessions.reviewVideoSessionScan({
+      organizationId: 'org-1',
+      videoSessionId: 'vs-1',
+      decision: 'approve',
+      priorScanState: 'needs_human_review',
+      reviewedByAccountId: 'coach-1',
+      reviewedByRole: 'coach',
+      notes: 'ordinary sparring, poor lighting',
+    });
+
+    expect(updated).toMatchObject({ status: 'ready', scan_state: 'passed' });
+
+    const row = await readRow('vs-1');
+    expect(row.status).toBe('ready');
+    const detail = row.scan_detail as Record<string, unknown>;
+    // The override is recorded WITHOUT erasing what the screen concluded --
+    // a human-released video must never look like one the screen passed.
+    expect(detail.reason).toBe('CONTENT_SCREEN_UNCERTAIN');
+    expect(detail.content_verdict).toBe('uncertain');
+    expect(detail.human_review).toMatchObject({
+      decision: 'approve',
+      prior_scan_state: 'needs_human_review',
+      reviewed_by_account_id: 'coach-1',
+      reviewed_by_role: 'coach',
+      notes: 'ordinary sparring, poor lighting',
+    });
+    expect(row.scanned_at).not.toBeNull();
+  });
+
+  test('blocking leaves the video exactly as unwatchable as it was', async () => {
+    await insertQuarantined('vs-1');
+
+    const updated = await videoSessions.reviewVideoSessionScan({
+      organizationId: 'org-1',
+      videoSessionId: 'vs-1',
+      decision: 'block',
+      priorScanState: 'needs_human_review',
+      reviewedByAccountId: 'coach-1',
+      reviewedByRole: 'coach',
+    });
+
+    expect(updated).toMatchObject({ status: 'quarantined', scan_state: 'blocked' });
+    expect((await readRow('vs-1')).status).toBe('quarantined');
+  });
+
+  test('a human override of a blocked verdict is recorded as such', async () => {
+    await insertQuarantined('vs-1');
+    await client.query("update pilot.video_sessions set scan_state = 'blocked'");
+
+    await videoSessions.reviewVideoSessionScan({
+      organizationId: 'org-1',
+      videoSessionId: 'vs-1',
+      decision: 'approve',
+      priorScanState: 'blocked',
+      reviewedByAccountId: 'admin-1',
+      reviewedByRole: 'organization_admin',
+    });
+
+    const detail = (await readRow('vs-1')).scan_detail as Record<string, unknown>;
+    expect(detail.human_review).toMatchObject({ decision: 'approve', prior_scan_state: 'blocked' });
+  });
+
+  test('cannot release a video that is no longer quarantined', async () => {
+    // Same claim-to-settle window the sweep has. An archived video must not
+    // become streamable because a review was in flight.
+    await insertQuarantined('vs-1', { status: 'archived' });
+
+    const updated = await videoSessions.reviewVideoSessionScan({
+      organizationId: 'org-1',
+      videoSessionId: 'vs-1',
+      decision: 'approve',
+      priorScanState: 'needs_human_review',
+      reviewedByAccountId: 'coach-1',
+      reviewedByRole: 'coach',
+    });
+
+    expect(updated).toBeNull();
+    expect((await readRow('vs-1')).status).toBe('archived');
+  });
+
+  test('is scoped to the organization', async () => {
+    await insertQuarantined('vs-1');
+
+    const updated = await videoSessions.reviewVideoSessionScan({
+      organizationId: 'someone-elses-org',
+      videoSessionId: 'vs-1',
+      decision: 'approve',
+      priorScanState: 'needs_human_review',
+      reviewedByAccountId: 'coach-1',
+      reviewedByRole: 'coach',
+    });
+
+    expect(updated).toBeNull();
+    expect((await readRow('vs-1')).status).toBe('quarantined');
+  });
+
+  test('a released video is never re-claimed by the sweep', async () => {
+    await insertQuarantined('vs-1');
+    await videoSessions.reviewVideoSessionScan({
+      organizationId: 'org-1',
+      videoSessionId: 'vs-1',
+      decision: 'approve',
+      priorScanState: 'pending',
+      reviewedByAccountId: 'coach-1',
+      reviewedByRole: 'coach',
+    });
+
+    expect(await videoSessions.claimNextVideoSessionForScan()).toBeNull();
+  });
+});
+
 describe('the sweep end to end against real Postgres', () => {
   // The unit suite proves the sweep calls the right functions; this proves the
   // whole chain actually moves a row. Only the two network boundaries are
