@@ -23,6 +23,10 @@
      8. Proportion descends from φ. Nothing is sized by eye.
    ========================================================================= */
 
+/* Self-hosted OFL faces — see fonts.css. Imported here so ppbf.css stays the
+   single thing a consumer needs to include. */
+@import "./fonts.css";
+
 /* ---------------------------------------------------------------- TOKENS -- */
 :root {
   /* --- Leather — the ground ---------------------------------------------- */
@@ -121,20 +125,34 @@
   --rust-300: #7A4130;
 
   /* --- Type -------------------------------------------------------------
-     Swap --font-stencil for a licensed face (Big Shoulders Stencil or
-     Stardos Stencil, self-hosted for offline kiosk use) — the fallbacks are
-     the closest condensed poster faces already on Windows and macOS. */
-  --font-stencil: "Big Shoulders Stencil", "Stardos Stencil", Impact,
-                  Haettenschweiler, "Franklin Gothic Bold", "Arial Narrow Bold",
-                  "Arial Narrow", sans-serif;
-  --font-ui:      "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+     All faces are SIL OFL 1.1 and self-hosted from fonts/ — no licence to buy
+     and no CDN, because the gym floor renders with no network. See fonts.css.
+
+     THE DISPLAY VOICE IS A CHOICE. The reference art is a jobbing printshop,
+     not a military crate: heavy slab and heavy grotesque, letterpress-printed,
+     ink eroded at the edges. It is NOT stencil — stencil letterforms carry
+     bridges through the strokes and none of the reference headers have them.
+     Three candidate voices ship; put .voice-a/-b/-c on <body> to compare.
+       a  Alfa Slab One   wood-type poster slab — SCHEDULE, PEOPLE, GUARDIAN
+       b  Archivo Black   heavy grotesque, tight and black — AUDIT LOG
+       c  Oswald 700      condensed bill poster — PIN MANAGEMENT, ORGANIZATIONS
+     --font-stencil is kept as an alias so nothing already written breaks. */
+  --font-display: "Alfa Slab One", "Archivo Black", Impact, Haettenschweiler,
+                  "Arial Narrow Bold", sans-serif;
+  --font-stencil: var(--font-display);          /* legacy alias */
+  --font-ui:      "Oswald", "Inter", ui-sans-serif, system-ui, -apple-system,
+                  "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-body:    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
                   Roboto, Helvetica, Arial, sans-serif;
-  --font-hand:    "Segoe Print", "Bradley Hand", "Chalkboard SE", cursive;
+  /* A typed document — the typewriter in the back office. Distinct from
+     --font-data, which is for columns that must align; this is for prose that
+     was typed rather than printed. */
+  --font-type:    "Special Elite", "Courier Prime", Courier, monospace;
+  --font-hand:    "Caveat", "Segoe Print", "Bradley Hand", "Chalkboard SE", cursive;
   --font-data:    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  /* One blackletter voice, for the clinic's masthead only — a medical notice
-     in 1948 was set in it. Never for body copy; it fails Law 3 at small sizes. */
-  --font-gothic:  "UnifrakturCook", "Cloister Black", "Old English Text MT",
-                  "Blackadder ITC", Luminari, serif;
+  /* One blackletter voice, for the clinic masthead only — a medical notice in
+     1948 was set in it. Never body copy; it fails Law 3 at small sizes. */
+  --font-gothic:  "UnifrakturCook", "Cloister Black", "Old English Text MT", serif;
 
   /* --- Proportion — φ ---------------------------------------------------
      Law 8. Every measurement in the system descends from the golden ratio.
@@ -1215,3 +1233,516 @@ body.ppbf.on-canvas {
   font-family: var(--font-gothic);
   letter-spacing: .01em; font-weight: 400;
 }
+
+/* ======================================================== DISPLAY VOICE ==
+   Flip these on <body> to compare the three candidates. Whichever wins,
+   delete the other two and fold it into --font-display. */
+.voice-a { --font-display: "Alfa Slab One", Impact, serif; }
+.voice-b { --font-display: "Archivo Black", Impact, sans-serif; }
+.voice-c { --font-display: "Oswald", "Arial Narrow Bold", sans-serif;
+           --display-tight: .01em; }
+
+/* Letterpress: ink pressed into paper, so the face is bitten in, not floating
+   on top. The light direction drives which side the bite falls on, which is
+   why it reads correctly in every room. */
+.t-press {
+  font-family: var(--font-display); text-transform: uppercase;
+  color: #241C11;
+  text-shadow:
+    calc(var(--sx, 1) * -1px) calc(var(--sy, 1) * -1px) 0 rgba(255,255,255,.42),
+    calc(var(--sx, 1) *  1px) calc(var(--sy, 1) *  1px) 0 rgba(0,0,0,.34),
+    calc(var(--sx, 1) *  2px) calc(var(--sy, 1) *  2px) 3px rgba(0,0,0,.20);
+}
+/* Dimensional wood type — a deep extrude, for a masthead only. */
+.t-press--deep {
+  text-shadow:
+    calc(var(--sx, 1) * -1px) calc(var(--sy, 1) * -1px) 0 rgba(255,255,255,.34),
+    1px 1px 0 #3E3120, 2px 2px 0 #33291B, 3px 3px 0 #2A2116,
+    4px 4px 0 #241C11, 5px 6px 8px rgba(0,0,0,.44);
+}
+/* Worn ink — the plate was old and the impression broke up. A screen-blended
+   grain overlay rather than a mask, for the same reason .stamp does it that
+   way: masking costs ~50% of the ink's contrast and Law 3 does not let
+   distress buy itself legibility. Degrades to solid ink, the correct failure. */
+.t-eroded { position: relative; display: inline-block; }
+.t-eroded::after {
+  content: ""; position: absolute; inset: -2px; pointer-events: none;
+  background-image: var(--grain); background-size: 90px;
+  mix-blend-mode: screen; opacity: .30;
+}
+.t-eroded--heavy::after { opacity: .46; background-size: 64px; }
+/* Typed, not printed. */
+.t-typed { font-family: var(--font-type); letter-spacing: .01em; }
+
+/* ============================================================== LIGHT ====
+   Every shadow in the system used to fall straight down with a 0 x-offset,
+   regardless of where the room's lamp was — which is the single loudest tell
+   that a "physical" surface is a stack of divs. Light is now a token, and
+   shadows read from it.
+
+   A light declares two things:
+     WHERE it is   → --sx / --sy, the unit direction a shadow travels (away
+                     from the source). Set by .light-at--*.
+     WHAT it is    → --sh-len (how far the shadow throws), --sh-blur (how soft
+                     the penumbra), --sh-op (how dark). Set by .light--*.
+
+   A bare bulb close to the wall throws a long hard black shadow. An overcast
+   window throws a short soft grey one. Same object, same .lift-2 class.
+
+   NOT EVERY SCREEN NEEDS A VISIBLE FIXTURE. .light--ambient and
+   .light--overcast give a room believable soft light with no lamp drawn at
+   all — use them for dense working screens where a big glowing lamp in the
+   corner would just be one more thing competing with the data. */
+:root { --sx: 1; --sy: 1; --sh-len: 1; --sh-blur: 1; --sh-op: 1; }
+
+/* --- Where the light is -------------------------------------------------- */
+.light-at--tl { --sx:  1;   --sy:  1;   }   /* top-left  → shadow down-right */
+.light-at--tr { --sx: -1;   --sy:  1;   }
+.light-at--tc { --sx:  0;   --sy:  1;   }   /* directly overhead */
+.light-at--bl { --sx:  1;   --sy: -1;   }   /* uplight, a floor lamp */
+.light-at--l  { --sx:  1;   --sy:  0.3; }   /* raking from a window */
+.light-at--r  { --sx: -1;   --sy:  0.3; }
+.light-at--split { --sx: 0; --sy: 1;    }   /* two matched fixtures cancel out */
+
+/* --- What kind of light -------------------------------------------------- */
+.light--bulb     { --sh-len: 1.35; --sh-blur: .55; --sh-op: 1.20; }  /* bare, harsh */
+.light--caged    { --sh-len: 1.15; --sh-blur: .80; --sh-op: 1.05; }
+.light--pendant  { --sh-len: 1.00; --sh-blur: 1.00; --sh-op: .95; }
+.light--gooseneck{ --sh-len: 1.40; --sh-blur: .65; --sh-op: 1.10; }  /* close + directional */
+.light--banker   { --sh-len:  .85; --sh-blur: 1.15; --sh-op: .80; }  /* green shade, contained */
+.light--window   { --sh-len:  .70; --sh-blur: 1.70; --sh-op: .62; }  /* soft daylight */
+.light--skylight { --sh-len:  .30; --sh-blur: 2.10; --sh-op: .50; }  /* overhead diffuse */
+.light--overcast { --sh-len:  .45; --sh-blur: 1.90; --sh-op: .45; }
+.light--ambient  { --sh-len:  .40; --sh-blur: 1.45; --sh-op: .55; }  /* no fixture drawn */
+
+/* --- How far off the surface the object sits ----------------------------
+   Height drives shadow length: a pinned note is nearly flat, a framed board
+   stands well off the wall. Use these instead of hand-written box-shadows so
+   every object in a room agrees about where the lamp is. */
+.lift-0 {                                    /* flush — a stamp, an inlay */
+  box-shadow:
+    calc(var(--sx) * 1px * var(--sh-len)) calc(var(--sy) * 1px * var(--sh-len))
+    calc(2px * var(--sh-blur)) rgba(0,0,0,calc(.28 * var(--sh-op)));
+}
+.lift-1 {                                    /* paper on a wall */
+  box-shadow:
+    calc(var(--sx) * 2px * var(--sh-len)) calc(var(--sy) * 3px * var(--sh-len))
+    calc(7px * var(--sh-blur)) rgba(0,0,0,calc(.34 * var(--sh-op)));
+}
+.lift-2 {                                    /* a card, a plaque */
+  box-shadow:
+    calc(var(--sx) * 5px * var(--sh-len)) calc(var(--sy) * 8px * var(--sh-len))
+    calc(16px * var(--sh-blur)) rgba(0,0,0,calc(.42 * var(--sh-op)));
+}
+.lift-3 {                                    /* a framed board off the wall */
+  box-shadow:
+    calc(var(--sx) * 9px * var(--sh-len)) calc(var(--sy) * 14px * var(--sh-len))
+    calc(30px * var(--sh-blur)) rgba(0,0,0,calc(.52 * var(--sh-op)));
+}
+.lift-4 {                                    /* hanging, well proud of the wall */
+  box-shadow:
+    calc(var(--sx) * 14px * var(--sh-len)) calc(var(--sy) * 22px * var(--sh-len))
+    calc(48px * var(--sh-blur)) rgba(0,0,0,calc(.58 * var(--sh-op)));
+}
+/* A lit top edge, on the side the light actually comes from. */
+.lit-edge {
+  box-shadow:
+    inset calc(var(--sx) * -1px) calc(var(--sy) * -1px) 0 rgba(255,233,184,.20),
+    calc(var(--sx) * 5px * var(--sh-len)) calc(var(--sy) * 8px * var(--sh-len))
+    calc(16px * var(--sh-blur)) rgba(0,0,0,calc(.42 * var(--sh-op)));
+}
+
+/* Rooms declare their own light so panels inherit it without being told. */
+.room--office  { --sx:  1; --sy: 1; --sh-len: 1.05; --sh-blur: .95; --sh-op: 1; }
+.room--floor   { --sx:  0; --sy: 1; --sh-len: 1.15; --sh-blur: .80; --sh-op: 1.05; }
+.room--board   { --sx:  0; --sy: 1; --sh-len: 1.00; --sh-blur: 1.00; --sh-op: .95; }
+.room--file    { --sx:  1; --sy: 1; --sh-len: 1.40; --sh-blur: .65; --sh-op: 1.10; }
+.room--clinic  { --sx:  1; --sy: 1; --sh-len:  .85; --sh-blur: 1.15; --sh-op: .80; }
+.room--night   { --sx:  0; --sy: 1; --sh-len:  .40; --sh-blur: 1.45; --sh-op: .55; }
+
+/* ============================================================== PAPER ====
+   Paper is not one material. A fresh intake form, a carbon copy that has lived
+   in a shirt pocket, and a 1948 ledger page pulled from a damp basement are
+   three different objects, and the system needs to say which one it means.
+
+   Four independent axes, composable — stock × age × soil × damage:
+     STOCK    .pap--bond .pap--news .pap--onion .pap--card .pap--kraft
+              .pap--graph .pap--ruled
+     AGE      .age-0 (fresh) → .age-3 (ancient). Yellowing + edge darkening.
+     SOIL     .soil-1 → .soil-3, plus named marks: blood, sweat, coffee, oil.
+     DAMAGE   .tear--* and .fold--*.
+
+   All of it multiply-blends over whatever stock is underneath, so ageing a
+   newsprint clipping and ageing a card-stock index card give different — and
+   correct — results from the same .age-2. */
+
+/* --- Stock --------------------------------------------------------------- */
+.pap {
+  position: relative; isolation: isolate;
+  background-color: var(--paper);
+  background-image: var(--grain-fine), linear-gradient(178deg, #F8F0DC, #E7DBBD);
+  background-blend-mode: overlay, normal;
+  color: #33291B;
+}
+.pap--news {                       /* newsprint: greyer, thinner, cheaper */
+  background-color: #E8E2D2;
+  background-image: var(--grain-fine), linear-gradient(178deg, #EFEADB, #DCD5C1);
+  color: #2B2721;
+}
+.pap--onion {                      /* carbon copy: translucent, bluish, flimsy */
+  background-color: #EDEFE6;
+  background-image: var(--grain-fine), linear-gradient(178deg, #F2F4EC, #DFE2D6);
+  color: #37423B; opacity: .96;
+}
+.pap--card {                       /* index card / card stock: brighter, stiffer */
+  background-color: #F7F2E2;
+  background-image: var(--grain-fine), linear-gradient(178deg, #FBF7EA, #EDE4CC);
+  color: #2E2519;
+}
+.pap--kraft {                      /* buff envelope / folder stock */
+  background-color: #C9A874;
+  background-image: var(--grain-fine), linear-gradient(178deg, #D3B584, #B08F5C);
+  color: #33240F;
+}
+.pap--graph {                      /* engineering grid, for load profiles */
+  background-image:
+    repeating-linear-gradient(90deg, rgba(70,110,150,.22) 0 1px, transparent 1px 13px),
+    repeating-linear-gradient(180deg, rgba(70,110,150,.22) 0 1px, transparent 1px 13px),
+    var(--grain-fine), linear-gradient(178deg, #F8F5E6, #E9E3CD);
+  background-blend-mode: normal, normal, overlay, normal;
+}
+.pap--ruled {                      /* legal pad ruling + red margin */
+  background-image:
+    linear-gradient(90deg, transparent 0 33px, rgba(168,30,34,.34) 33px 34px, transparent 34px),
+    repeating-linear-gradient(180deg, transparent 0 20px, rgba(70,110,150,.26) 20px 21px),
+    var(--grain-fine), linear-gradient(178deg, #F8F0DC, #E7DBBD);
+  background-blend-mode: normal, normal, overlay, normal;
+}
+
+/* --- Age ----------------------------------------------------------------
+   Yellowing pulls the whole sheet warm; edge darkening is where hands and
+   stacking wore it. Foxing blooms only appear from .age-2 — a form filled in
+   last week does not have mould on it. */
+.age-0::before { content: none; }
+.age-1::before, .age-2::before, .age-3::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 1;
+  mix-blend-mode: multiply;
+}
+.age-1::before {
+  background-image:
+    radial-gradient(122% 112% at 50% 50%, transparent 62%, rgba(163,124,74,.14) 84%, rgba(120,90,50,.26) 100%),
+    linear-gradient(178deg, rgba(214,186,132,.10), rgba(196,166,112,.16));
+}
+.age-2::before {
+  background-image:
+    radial-gradient(118% 108% at 50% 50%, transparent 54%, rgba(150,116,66,.22) 78%, rgba(105,78,42,.46) 100%),
+    radial-gradient(19% 13% at 12% 18%, rgba(163,124,74,.26), transparent 72%),
+    radial-gradient(13% 9%  at 88% 26%, rgba(150,112,66,.22), transparent 74%),
+    radial-gradient(23% 15% at 74% 88%, rgba(140,104,60,.19), transparent 76%),
+    linear-gradient(178deg, rgba(206,174,116,.18), rgba(184,150,96,.26));
+}
+.age-3::before {
+  background-image:
+    radial-gradient(112% 104% at 50% 50%, transparent 42%, rgba(132,98,52,.34) 70%, rgba(84,60,30,.62) 100%),
+    radial-gradient(22% 15% at 14% 22%, rgba(140,102,54,.40), transparent 70%),
+    radial-gradient(16% 11% at 84% 30%, rgba(128,94,50,.34), transparent 72%),
+    radial-gradient(26% 17% at 72% 84%, rgba(120,88,46,.30), transparent 74%),
+    radial-gradient(13% 9%  at 34% 74%, rgba(146,108,58,.28), transparent 76%),
+    linear-gradient(178deg, rgba(190,156,98,.30), rgba(166,132,80,.40));
+}
+/* .aged from the rooms work is .age-2 under its original name. */
+.aged { position: relative; isolation: isolate; }
+
+/* --- Soil ---------------------------------------------------------------
+   Generalised grime, distinct from ageing: this is a gym, and the forms live
+   on a clipboard next to the ring. Thumb smudges at the edges where it was
+   held, not evenly spread. */
+.soil-1::after, .soil-2::after, .soil-3::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 2;
+  mix-blend-mode: multiply;
+  background-image:
+    radial-gradient(9% 12% at 4% 46%,  rgba(62,44,26,.40), transparent 70%),
+    radial-gradient(8% 10% at 97% 62%, rgba(62,44,26,.34), transparent 72%),
+    radial-gradient(14% 7%  at 52% 2%, rgba(62,44,26,.26), transparent 74%);
+}
+.soil-1::after { opacity: .34; }
+.soil-2::after { opacity: .62; }
+.soil-3::after { opacity: .92; }
+
+/* --- Named marks ---------------------------------------------------------
+   Atmosphere, never status (the Law 2 amendment). At most one or two per
+   surface, in a decorative zone, never touching a control, badge or stamp.
+   They are absolutely-positioned children, so they can be placed precisely
+   rather than hoping a background gradient lands somewhere plausible. */
+.mark {
+  position: absolute; pointer-events: none; z-index: 2;
+  mix-blend-mode: multiply; opacity: .5;
+}
+/* Old blood: oxidised to brown, dark ring at the rim where it dried last,
+   with a spatter fleck or two. Deliberately far from --locked in hue and
+   saturation so it can never be read as the safety ladder. */
+.mark--blood {
+  width: 34px; height: 27px; opacity: .58;
+  background-image:
+    radial-gradient(44% 50% at 44% 44%, var(--rust-700) 0%, var(--rust-500) 54%, transparent 72%),
+    radial-gradient(30% 34% at 62% 62%, var(--rust-900) 0%, transparent 68%);
+  border-radius: 46% 54% 52% 48% / 52% 48% 54% 46%;
+  box-shadow: inset 0 0 4px rgba(36,16,9,.55);
+}
+.mark--blood::after {              /* a fleck alongside */
+  content: ""; position: absolute; top: -6px; left: 78%;
+  width: 6px; height: 5px; border-radius: 50%;
+  background: var(--rust-700); opacity: .8;
+}
+/* Sweat: a salt ring. Pale, cool, diffuse, with a harder tide line at the
+   edge — it lifts colour out of the paper rather than adding any. */
+.mark--sweat {
+  width: 55px; height: 44px; opacity: .42;
+  mix-blend-mode: color-burn;
+  background-image:
+    radial-gradient(50% 50% at 50% 50%, transparent 58%, rgba(150,146,116,.50) 76%, rgba(124,120,92,.30) 90%, transparent 100%),
+    radial-gradient(46% 46% at 50% 50%, rgba(186,182,150,.22), transparent 70%);
+  border-radius: 50%;
+}
+.mark--coffee {                    /* cup ring, darker at the rim */
+  width: 46px; height: 42px; opacity: .46;
+  background-image:
+    radial-gradient(50% 50% at 50% 50%, transparent 56%, rgba(104,66,30,.58) 74%, rgba(74,46,20,.34) 88%, transparent 100%);
+  border-radius: 50%;
+}
+.mark--oil {                       /* chain/machine oil, dark and translucent */
+  width: 27px; height: 21px; opacity: .5;
+  background-image: radial-gradient(50% 54% at 46% 46%, rgba(28,24,18,.72), transparent 74%);
+  border-radius: 52% 48% 44% 56% / 48% 56% 44% 52%;
+}
+.mark--sm { scale: .62; } .mark--lg { scale: 1.7; }
+
+/* --- Damage: tears ------------------------------------------------------- */
+.tear--bottom { clip-path: polygon(0 0, 100% 0, 100% 94%,
+  96% 100%, 91% 95%, 86% 100%, 81% 96%, 76% 100%, 70% 95%, 65% 100%, 59% 96%,
+  54% 100%, 48% 95%, 43% 100%, 37% 96%, 32% 100%, 26% 95%, 21% 100%, 15% 96%,
+  10% 100%, 5% 95%, 0 100%); }
+.tear--top { clip-path: polygon(0 6%, 5% 0, 10% 5%, 15% 0, 21% 4%, 26% 0,
+  32% 5%, 37% 0, 43% 4%, 48% 0, 54% 5%, 59% 0, 65% 4%, 70% 0, 76% 5%, 81% 0,
+  86% 4%, 91% 0, 96% 5%, 100% 0, 100% 100%, 0 100%); }
+.tear--right { clip-path: polygon(0 0, 95% 0, 100% 5%, 96% 11%, 100% 18%,
+  95% 25%, 100% 32%, 96% 39%, 100% 46%, 95% 53%, 100% 60%, 96% 67%, 100% 74%,
+  95% 81%, 100% 88%, 96% 95%, 100% 100%, 0 100%); }
+.tear--corner {                    /* a bite out of the top-right */
+  clip-path: polygon(0 0, 78% 0, 84% 4%, 90% 3%, 95% 8%, 100% 14%, 100% 100%, 0 100%);
+}
+.tear--half {                      /* torn clean in two, right half missing */
+  clip-path: polygon(0 0, 62% 0, 58% 9%, 64% 19%, 57% 28%, 63% 38%, 56% 47%,
+    62% 57%, 55% 66%, 61% 76%, 54% 85%, 60% 94%, 55% 100%, 0 100%);
+}
+/* Deckled — not machine-trimmed, all four edges irregular. */
+.tear--deckle { clip-path: polygon(
+  0.4% 1%, 12% 0.2%, 27% 1.1%, 41% 0.3%, 58% 1.2%, 73% 0.4%, 88% 1.1%, 99.6% 0.5%,
+  99.3% 14%, 100% 31%, 99.2% 48%, 99.8% 66%, 99.1% 83%, 99.7% 99%,
+  87% 99.3%, 71% 98.7%, 55% 99.6%, 39% 98.8%, 24% 99.5%, 9% 98.9%, 0.5% 99.4%,
+  1% 82%, 0.2% 65%, 0.9% 47%, 0.3% 30%, 1% 15%); }
+
+/* --- Damage: folds -------------------------------------------------------
+   A fold is a valley and a ridge next to each other. The light direction sets
+   which side catches, so a folded sheet in the clinic and the same sheet on
+   the gym floor crease the correct way. */
+.fold--half, .fold--tri, .fold--quarto, .fold--pocket { position: relative; }
+.fold--half::after, .fold--tri::after, .fold--quarto::after, .fold--pocket::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 3;
+}
+.fold--half::after {                /* one fold, across the middle */
+  background-image: linear-gradient(180deg, transparent 0 49.4%,
+    rgba(0,0,0,.10) 49.7%, rgba(255,255,255,.26) 50.3%, transparent 50.8%);
+}
+.fold--tri::after {                 /* letter-folded in thirds for an envelope */
+  background-image:
+    linear-gradient(180deg, transparent 0 32.7%, rgba(0,0,0,.10) 33%,
+      rgba(255,255,255,.24) 33.6%, transparent 34%),
+    linear-gradient(180deg, transparent 0 66.1%, rgba(0,0,0,.10) 66.4%,
+      rgba(255,255,255,.24) 67%, transparent 67.4%);
+}
+.fold--quarto::after {              /* quartered — carried in a hip pocket */
+  background-image:
+    linear-gradient(180deg, transparent 0 49.4%, rgba(0,0,0,.11) 49.7%,
+      rgba(255,255,255,.28) 50.3%, transparent 50.8%),
+    linear-gradient(90deg, transparent 0 49.4%, rgba(0,0,0,.09) 49.7%,
+      rgba(255,255,255,.22) 50.3%, transparent 50.8%);
+}
+.fold--pocket::after {              /* folded small and soft at the corners */
+  background-image:
+    linear-gradient(180deg, transparent 0 49.5%, rgba(0,0,0,.12) 49.8%,
+      rgba(255,255,255,.30) 50.2%, transparent 50.6%),
+    linear-gradient(90deg, transparent 0 33%, rgba(0,0,0,.08) 33.3%,
+      rgba(255,255,255,.20) 33.7%, transparent 34%),
+    linear-gradient(90deg, transparent 0 66%, rgba(0,0,0,.08) 66.3%,
+      rgba(255,255,255,.20) 66.7%, transparent 67%),
+    radial-gradient(120% 100% at 50% 50%, transparent 72%, rgba(120,90,50,.20) 100%);
+}
+/* A dog-eared corner, turned down and casting onto the sheet. */
+.dogear::before {
+  content: ""; position: absolute; top: 0; right: 0; width: 27px; height: 27px;
+  background-image: linear-gradient(225deg, #D8CBA8 0 50%, transparent 50%);
+  box-shadow: calc(var(--sx) * -2px) calc(var(--sy) * 2px) 4px rgba(0,0,0,.28);
+  z-index: 3;
+}
+
+/* ========================================================== PLACEMENT ====
+   Rotation and overlap are one problem, not two: tilting every card but
+   keeping them in tidy lanes just looks like a tilted grid, and overlapping
+   them while all axis-aligned looks like a z-index bug. Objects on a real
+   surface are both slightly turned AND slightly on top of each other.
+
+   Rotation is DETERMINISTIC (nth-child, not random) so a screen looks
+   identical on every render and in every screenshot diff — a paper that
+   wanders between reloads reads as breakage, not as craft. */
+.desk { display: flex; flex-wrap: wrap; gap: var(--s5); align-items: flex-start; }
+.desk > * { position: relative; }
+.desk > :nth-child(7n+1) { rotate: -1.1deg; }
+.desk > :nth-child(7n+2) { rotate:   .7deg; }
+.desk > :nth-child(7n+3) { rotate: -0.4deg; }
+.desk > :nth-child(7n+4) { rotate:  1.3deg; }
+.desk > :nth-child(7n+5) { rotate: -0.8deg; }
+.desk > :nth-child(7n+6) { rotate:   .5deg; }
+.desk > :nth-child(7n+7) { rotate: -1.6deg; }
+/* Stacking: later children sit on top, and each is pulled back over the last.
+   z-index climbs so the overlap direction stays consistent. */
+.desk--stack { gap: 0; }
+.desk--stack > * + * { margin-left: calc(var(--s5) * -1); }
+.desk--stack > :nth-child(1) { z-index: 1; } .desk--stack > :nth-child(2) { z-index: 2; }
+.desk--stack > :nth-child(3) { z-index: 3; } .desk--stack > :nth-child(4) { z-index: 4; }
+.desk--stack > :nth-child(5) { z-index: 5; } .desk--stack > :nth-child(6) { z-index: 6; }
+.desk--stack > :nth-child(7) { z-index: 7; } .desk--stack > :nth-child(8) { z-index: 8; }
+/* A loose pile — heavier overlap and vertical drift, for an in-tray. */
+.desk--pile { gap: 0; }
+.desk--pile > * + *          { margin-left: calc(var(--s7) * -1); }
+.desk--pile > :nth-child(2n) { margin-top: var(--s3); }
+.desk--pile > :nth-child(3n) { margin-top: calc(var(--s2) * -1); }
+.desk--calm > * { rotate: none; }            /* opt out where alignment matters */
+
+/* Explicit placement, when a specific object needs a specific spot. */
+.place { position: relative; rotate: var(--rot, 0deg);
+         translate: var(--dx, 0) var(--dy, 0); }
+/* Deliberate overrun — a stamp hanging off the edge of the card it stamps, a
+   photo breaking its frame. This is most of what makes a screen read as
+   objects on a surface rather than boxes in a column. */
+.overrun     { position: absolute; z-index: 5; }
+.overrun--br { right: calc(var(--s4) * -1); bottom: calc(var(--s3) * -1); }
+.overrun--tr { right: calc(var(--s4) * -1); top:    calc(var(--s3) * -1); }
+.overrun--bl { left:  calc(var(--s4) * -1); bottom: calc(var(--s3) * -1); }
+.overrun--tl { left:  calc(var(--s4) * -1); top:    calc(var(--s3) * -1); }
+
+/* =============================================================== SEAL ====
+   The PPBF roundel — the most repeated mark in the whole body of reference
+   art, and the system had no component for it. Circular, double-ruled, with
+   text following the curve. Curved text needs SVG <textPath>, so .seal styles
+   an inline SVG (still zero-asset — the markup ships in the page):
+
+     <span class="seal">
+       <svg viewBox="0 0 100 100" aria-hidden="true">
+         <defs><path id="ring" d="M50,50 m-37,0 a37,37 0 1,1 74,0 a37,37 0 1,1 -74,0"/></defs>
+         <text><textPath href="#ring" startOffset="0%">POOR MAN'S SPORT ·</textPath></text>
+       </svg>
+       <b>PPBF</b>
+     </span>
+
+   Rotated a few degrees and ink-eroded, because it is a rubber stamp pressed
+   by hand, not a logo placed by a designer. */
+.seal {
+  position: relative; display: inline-grid; place-items: center;
+  width: 89px; height: 89px; rotate: -7deg;
+  color: var(--stamp-red);
+  border: 2.5px solid currentColor; border-radius: 50%;
+  box-shadow: inset 0 0 0 2px currentColor;   /* the inner rule */
+}
+.seal > svg { position: absolute; inset: 0; width: 100%; height: 100%;
+              fill: currentColor; }
+.seal > svg text { font: 700 8.5px var(--font-ui); letter-spacing: .18em;
+                   text-transform: uppercase; }
+.seal > b {
+  font-family: var(--font-display); font-size: 25px; line-height: 1;
+  letter-spacing: .02em;
+}
+.seal::after {                     /* the worn ink */
+  content: ""; position: absolute; inset: -3px; border-radius: 50%;
+  background-image: var(--grain); background-size: 70px;
+  mix-blend-mode: screen; opacity: .40; pointer-events: none;
+}
+.seal--green { color: var(--stamp-green); }
+.seal--ink   { color: #2A2116; }
+.seal--sm { width: 55px; height: 55px; }
+.seal--sm > b { font-size: 16px; }
+.seal--sm > svg text { font-size: 6px; letter-spacing: .12em; }
+.seal--lg { width: 144px; height: 144px; }
+.seal--lg > b { font-size: 42px; }
+.seal--lg > svg text { font-size: 11px; }
+
+/* ======================================================== DISCOVERABLES ==
+   Rewards for touching things. Each one is a real object behaving the way the
+   real object would, so exploring the interface teaches the metaphor instead
+   of just decorating it. All CSS-only, all keyboard-reachable, and all inert
+   under prefers-reduced-motion (handled by the global rule at the end). */
+
+/* A sheet whose corner you can lift to read what is filed underneath. This is
+   progressive disclosure that fits the world — the detail is literally behind
+   the top sheet. Works on hover AND focus-within, so it is not mouse-only. */
+.peek { position: relative; }
+.peek > .peek-under {
+  position: absolute; inset: 0; z-index: 0;
+  display: grid; place-items: end start; padding: var(--s4);
+  font-family: var(--font-hand); font-size: var(--t-sm); color: #4A3B28;
+}
+.peek > .peek-top {
+  position: relative; z-index: 1;
+  transform-origin: bottom right;
+  transition: clip-path .34s ease, box-shadow .34s ease;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+}
+.peek:hover > .peek-top, .peek:focus-within > .peek-top {
+  clip-path: polygon(0 0, 100% 0, 100% 64%, 64% 100%, 0 100%);
+  box-shadow: calc(var(--sx) * 8px) calc(var(--sy) * 10px) 20px rgba(0,0,0,.44);
+}
+
+/* Hanging gloves that swing when disturbed. */
+.gloves {
+  display: inline-block; font-size: var(--t-2xl); line-height: 1;
+  transform-origin: 50% 6%;
+  transition: rotate .5s cubic-bezier(.36,.07,.19,.97);
+}
+.gloves:hover, .gloves:focus-visible { animation: ppbf-swing 1.5s ease-out; }
+@keyframes ppbf-swing {
+  0%{rotate:0deg} 15%{rotate:11deg} 35%{rotate:-8deg} 55%{rotate:5deg}
+  75%{rotate:-3deg} 100%{rotate:0deg}
+}
+
+/* The ring bell. Press it and it actually rings (visually). */
+.bell {
+  display: inline-grid; place-items: center; width: var(--tap); height: var(--tap);
+  border: 0; border-radius: 50%; cursor: pointer;
+  background-image: radial-gradient(circle at 34% 28%,
+    var(--brass-200), var(--brass-400) 42%, var(--brass-700) 78%, var(--brass-900));
+  box-shadow: inset 0 -2px 3px rgba(0,0,0,.5), 0 3px 8px rgba(0,0,0,.55);
+}
+.bell:active { animation: ppbf-ring .42s ease-out; }
+@keyframes ppbf-ring {
+  0%{scale:1} 20%{scale:.94} 40%{scale:1.03} 60%{scale:.98} 100%{scale:1}
+}
+.bell:active::after {              /* the ring-out */
+  content: ""; position: absolute; inset: -8px; border-radius: 50%;
+  border: 2px solid var(--brass-300); animation: ppbf-ringout .6s ease-out forwards;
+}
+@keyframes ppbf-ringout { to { inset: -21px; opacity: 0; } }
+
+/* A speed bag that takes a hit. */
+.speedbag { display: inline-block; transform-origin: 50% 0; }
+.speedbag:hover { animation: ppbf-bag .28s linear 3; }
+@keyframes ppbf-bag { 0%{translate:0 0} 50%{translate:3px 2px} 100%{translate:0 0} }
+
+/* Tally marks — four strokes and a slash, the way a gym counts rounds. */
+.tally {
+  font-family: var(--font-hand); font-size: var(--t-lg); letter-spacing: .12em;
+  color: var(--rust-500);
+}
+
+/* The long-press reward: hold a stamp down and it presses in harder. */
+.stamp--press { transition: scale .1s ease, filter .1s ease; }
+.stamp--press:active { scale: .96; filter: saturate(1.3) contrast(1.15); }

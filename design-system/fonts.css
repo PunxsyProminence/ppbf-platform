@@ -1,0 +1,58 @@
+/* PPBF self-hosted type — every face SIL Open Font License 1.1. Zero licensing
+   cost and no CDN: the gym floor renders with no network, so these are served
+   from fonts/ alongside the stylesheet.
+
+   Latin subset only. Every string in the platform is Latin and the kiosk is in
+   Punxsutawney, so the cyrillic/vietnamese/latin-ext subsets are dead weight on
+   a cold tablet.
+
+   Oswald and Caveat are VARIABLE fonts — Google serves one file covering the
+   whole weight range, so they are declared once with a weight range rather than
+   once per weight. Declaring them per-weight downloads the identical file
+   several times under different names (which is exactly what a first pass here
+   did: 105 KB of the same two files).
+
+   font-display:swap so a slow tablet paints text in the fallback rather than
+   painting nothing. */
+/* wood-type poster slab — display voice A */
+@font-face {
+  font-family: 'Alfa Slab One';
+  font-style: normal; font-weight: 400; font-display: swap;
+  src: url('fonts/alfa-slab-one-400.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* heavy grotesque — display voice B */
+@font-face {
+  font-family: 'Archivo Black';
+  font-style: normal; font-weight: 400; font-display: swap;
+  src: url('fonts/archivo-black-400.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* condensed; variable, one file covers 400–700 — voice C + UI */
+@font-face {
+  font-family: 'Oswald';
+  font-style: normal; font-weight: 400 700; font-display: swap;
+  src: url('fonts/oswald-var.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* typewriter — typed documents */
+@font-face {
+  font-family: 'Special Elite';
+  font-style: normal; font-weight: 400; font-display: swap;
+  src: url('fonts/special-elite-400.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* hand — notes and signatures; variable */
+@font-face {
+  font-family: 'Caveat';
+  font-style: normal; font-weight: 400 700; font-display: swap;
+  src: url('fonts/caveat-var.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* blackletter — clinic masthead only */
+@font-face {
+  font-family: 'UnifrakturCook';
+  font-style: normal; font-weight: 700; font-display: swap;
+  src: url('fonts/unifrakturcook-700.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}

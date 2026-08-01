@@ -22,9 +22,12 @@ impact. Abstract flat UI gives all of them the same undifferentiated grey. Physi
 objects give each surface an obvious identity and an obvious weight: a chalkboard is
 today and it gets erased, a stamped paper is a decision and it does not.
 
-Zero external assets. All texture is generated from SVG `feTurbulence` data URIs and
-layered gradients, so the kiosk renders on a cold tablet with no network and grant packets
-print identically anywhere.
+**Nothing is fetched at runtime.** All texture — every wall, material, stain and grain —
+is generated from SVG `feTurbulence` data URIs and layered gradients, so there are no
+image assets at all. The six type faces are the one exception to "no files": they are
+real `.woff2` files, but self-hosted from `fonts/` rather than pulled from a CDN, and
+they total 200 KB. The constraint that actually matters is unchanged — the kiosk renders
+on a cold tablet with no network, and grant packets print identically anywhere.
 
 ---
 
@@ -51,11 +54,24 @@ Every state carries a distinct glyph (`✓ ◉ ▲ ✕`) and an uppercase label.
 survives greyscale printing for board packets and every form of colour blindness.
 
 **4. Six voices, each with a job.**
-- **Stencil** commands — headers, mottos, tile names, buttons. It gives orders.
+
+All six are **self-hosted, SIL OFL 1.1, and free** — 200 KB total, latin subset only, no
+CDN (see `fonts.css`). The display voice is **wood type, not stencil**: the reference art
+is a jobbing printshop — heavy slab and heavy grotesque, letterpress-printed, ink broken
+up at the edges. Stencil letterforms carry bridges through the strokes and not one
+reference header has them. `--font-stencil` survives as an alias so older markup keeps
+working. Three candidates ship (`.voice-a` Alfa Slab One, `.voice-b` Archivo Black,
+`.voice-c` Oswald 700) — pick one, delete the rest, fold it into `--font-display`.
+
+- **Display** commands — headers, mottos, tile names, buttons. It gives orders.
+  `.t-press` bites it into the paper, `.t-eroded` breaks the ink up.
 - **Bone sans** informs — body copy, forms, anything read at length.
 - **Chalk** schedules — the day's sessions. Erasable by definition.
 - **Hand** annotates — a coach's note, a physician's observation, a signature.
 - **Gothic** (`.t-gothic`) is the clinic masthead only. Never body copy; it fails Law 3 small.
+- **Typed** (`--font-type`, Special Elite) is a document that came out of the back-office
+  typewriter — prose that was typed, not printed. Distinct from mono, which is for columns
+  that must align.
 - **Mono** records — IDs, timestamps, RPE, ledger hashes. Anything auditable.
 
 **5. Kiosk-first sizing.**
@@ -122,9 +138,53 @@ accessibility floor agree — that is not luck, it is why 55 was chosen over 56.
 
 ---
 
+## Matter — paper, light, placement
+
+Three systems added after the reference art landed. `foundations/matter.html` renders all
+of them side by side.
+
+**Paper is four composable axes**, not one material: stock (`.pap--news`, `--onion`,
+`--card`, `--kraft`, `--graph`, `--ruled`) × age (`.age-0` fresh → `.age-3` ancient) ×
+soil (`.soil-1..3`) × damage (`.tear--*`, `.fold--*`, `.dogear`). Foxing only appears from
+`.age-2` — a form filled in last week does not have mould on it. Named marks
+(`.mark--blood`, `--sweat`, `--coffee`, `--oil`) are placed children rather than
+background gradients, so they land where you put them. Old blood stays deliberately far
+from `--locked` in hue and saturation: a stain must never be readable as a safety state.
+
+**Light is a token, and shadows obey it.** Every shadow used to fall straight down with a
+zero x-offset regardless of where the room's lamp was — the loudest single tell that a
+"physical" surface is a stack of divs. A light now declares *where* it is
+(`.light-at--tl/tr/tc/bl/l/r`, setting the direction a shadow travels) and *what* it is
+(`.light--bulb/caged/pendant/gooseneck/banker/window/skylight/overcast/ambient`, setting
+throw, softness and darkness). Objects declare their height off the surface
+(`.lift-0`…`.lift-4`). A bare bulb close to the wall throws a long hard black shadow; an
+overcast window throws a short soft grey one — same object, same `.lift-2`.
+
+**Not every screen needs a visible fixture.** `.light--ambient` and `.light--overcast`
+give a room believable soft light with no lamp drawn at all. Use them for dense working
+screens, where a glowing lamp in the corner is just one more thing competing with data.
+
+**Placement is one system, not two.** Rotation and overlap only work together: tilting
+every card while keeping tidy lanes looks like a tilted grid, and overlapping while
+axis-aligned looks like a z-index bug. `.desk` rotates children **deterministically**
+(`nth-child`, never random — paper that wanders between reloads reads as breakage, not
+craft), `.desk--stack`/`--pile` control overlap, `.overrun--*` lets a stamp hang off the
+card it stamps, and `.desk--calm` opts out where alignment actually matters.
+
+**The seal** (`.seal`) is the roundel that appears in all nine references and had no
+component at all. Curved text via inline `<textPath>`, so it stays zero-asset.
+
+**Discoverables** reward touching things: `.peek` lifts a sheet's corner to reveal what is
+filed underneath (progressive disclosure that fits the world), `.gloves` swing, `.bell`
+rings, `.tally` counts rounds the way a gym does. All keyboard-reachable via
+`:focus-within` rather than hover-only, and all inert under `prefers-reduced-motion`.
+
+---
+
 ## Contents
 
 ### Foundations
+- `foundations/matter.html` — type voices to choose from, paper conditions, light + shadow, placement, the seal, discoverables
 - `foundations/rooms.html` — the six rooms, the wood/brick walls, lamps, ledger, nameplates
 - `foundations/materials.html` — the panel materials plus brass hardware and the stamp pad
 - `foundations/palette.html` — hide / brass / bone ramps and the status ladder
