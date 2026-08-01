@@ -268,7 +268,7 @@ function ActivatePageContent() {
         )}
 
         {stage === 'done' && (
-          <section className="space-y-5 rounded-2xl border-2 border-[#4caf50] bg-[rgba(76,175,80,0.06)] p-6 text-center">
+          <section className="space-y-5 rounded-2xl border-2 border-[var(--cleared)] bg-[rgba(76,175,80,0.06)] p-6 text-center">
             <p className="text-4xl" aria-hidden="true">✓</p>
             <h2 className="font-display text-2xl font-black">You&apos;re all set</h2>
 

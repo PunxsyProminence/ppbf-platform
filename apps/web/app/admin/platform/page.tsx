@@ -260,13 +260,13 @@ export default function PlatformConsole() {
               feedback.kind === 'error'
                 ? 'border-[var(--red-primary)] bg-[rgba(184,59,52,0.05)]'
                 : feedback.kind === 'success'
-                  ? 'border-[#4caf50] bg-[rgba(76,175,80,0.05)]'
+                  ? 'border-[var(--cleared)] bg-[rgba(76,175,80,0.05)]'
                   : 'border-[var(--gray-medium)] bg-[rgba(0,0,0,0.03)]'
             }`}
           >
             <p
               className={`text-sm font-semibold ${
-                feedback.kind === 'error' ? 'text-[var(--red-primary)]' : feedback.kind === 'success' ? 'text-[#2e7d32]' : 'text-[var(--gray-dark)]'
+                feedback.kind === 'error' ? 'text-[var(--red-primary)]' : feedback.kind === 'success' ? 'text-[var(--cleared)]' : 'text-[var(--gray-dark)]'
               }`}
             >
               {feedback.kind === 'error' && '❌ '}

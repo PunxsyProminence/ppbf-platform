@@ -32,10 +32,10 @@ const BOARD_SEATS = [
 ] as const;
 
 const LIFECYCLE_TONE: Record<AnnouncementLifecycle, string> = {
-  live: 'border-[var(--status-ready)] bg-[#dce7ca]',
-  scheduled: 'border-[var(--status-warning)] bg-[#efe3c4]',
+  live: 'border-[var(--status-ready)] bg-[var(--cleared-ink)]',
+  scheduled: 'border-[var(--status-warning)] bg-[var(--canvas-warm)]',
   expired: 'border-[var(--gray-medium)] bg-[var(--canvas-tan)]',
-  retired: 'border-[var(--red-primary)] bg-[#f1d6d1]',
+  retired: 'border-[var(--red-primary)] bg-[var(--locked-ink)]',
 };
 
 const EMPTY_DRAFT = {

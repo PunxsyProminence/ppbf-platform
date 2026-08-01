@@ -368,7 +368,7 @@ function BoardSeatsConsole() {
           </p>
         )}
         {notice && (
-          <p className="rounded-xl border border-[rgba(16,120,40,0.5)] bg-[rgba(16,120,40,0.08)] px-4 py-3 text-sm font-semibold text-[#1b5e20]">
+          <p className="rounded-xl border border-[rgba(16,120,40,0.5)] bg-[rgba(16,120,40,0.08)] px-4 py-3 text-sm font-semibold text-[var(--cleared)]">
             {notice}
           </p>
         )}
@@ -393,7 +393,7 @@ function BoardSeatsConsole() {
                       {primary ? (
                         <p className="mt-1 text-sm">
                           <span className="font-mono">{nameFor(primary.account_id)}</span>
-                          <span className="ml-2 text-xs font-bold uppercase tracking-[0.1em] text-[#1b5e20]">Holds the seat</span>
+                          <span className="ml-2 text-xs font-bold uppercase tracking-[0.1em] text-[var(--cleared)]">Holds the seat</span>
                         </p>
                       ) : (
                         <p className="mt-1 text-xs font-bold uppercase tracking-[0.1em] text-[var(--red-primary)]">

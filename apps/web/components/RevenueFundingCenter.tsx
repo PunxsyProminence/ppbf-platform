@@ -238,22 +238,22 @@ const revenueCapabilities: Array<{ capability: string; state: 'EXISTS' | 'PARTIA
 ];
 
 function capabilityBadgeTone(state: 'EXISTS' | 'PARTIAL' | 'PLACEHOLDER' | 'MISSING'): string {
-  if (state === 'EXISTS') return 'border-[var(--status-ready)] bg-[#dce7ca] text-[var(--black)]';
-  if (state === 'PARTIAL') return 'border-[var(--status-warning)] bg-[#efe3c4] text-[var(--black)]';
-  if (state === 'PLACEHOLDER') return 'border-[var(--red-primary)] bg-[#f1d6d1] text-[var(--black)]';
+  if (state === 'EXISTS') return 'border-[var(--status-ready)] bg-[var(--cleared-ink)] text-[var(--black)]';
+  if (state === 'PARTIAL') return 'border-[var(--status-warning)] bg-[var(--canvas-warm)] text-[var(--black)]';
+  if (state === 'PLACEHOLDER') return 'border-[var(--red-primary)] bg-[var(--locked-ink)] text-[var(--black)]';
   return 'border-[var(--gray-medium)] bg-[var(--canvas-tan)] text-[var(--black)]';
 }
 
 function statusTone(status: string): string {
   const normalized = status.toLowerCase();
   if (normalized.includes('active') || normalized.includes('received') || normalized.includes('awarded')) {
-    return 'text-[var(--black)] border-[var(--status-ready)] bg-[#dce7ca]';
+    return 'text-[var(--black)] border-[var(--status-ready)] bg-[var(--cleared-ink)]';
   }
   if (normalized.includes('pending') || normalized.includes('review') || normalized.includes('draft') || normalized.includes('submitted')) {
-    return 'text-[var(--black)] border-[var(--status-warning)] bg-[#efe3c4]';
+    return 'text-[var(--black)] border-[var(--status-warning)] bg-[var(--canvas-warm)]';
   }
   if (normalized.includes('past due') || normalized.includes('declined') || normalized.includes('not connected')) {
-    return 'text-[var(--black)] border-[var(--red-primary)] bg-[#f1d6d1]';
+    return 'text-[var(--black)] border-[var(--red-primary)] bg-[var(--locked-ink)]';
   }
   return 'text-[var(--black)] border-[var(--gray-medium)] bg-[var(--canvas-tan)]';
 }

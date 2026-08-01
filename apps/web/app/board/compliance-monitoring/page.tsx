@@ -123,8 +123,8 @@ export default function BoardComplianceMonitoringPage() {
   const nothingToShow = summary?.total.status === 'unavailable';
 
   const severityTiles = [
-    { label: 'Critical', metric: severityCounts?.critical, tone: 'border-2 border-[var(--black)] bg-[#fce8e6] p-4', headingTone: 'text-[var(--red-primary)]' },
-    { label: 'High', metric: severityCounts?.high, tone: 'border-2 border-[var(--black)] bg-[#fff3cd] p-4', headingTone: 'text-[#ff9800]' },
+    { label: 'Critical', metric: severityCounts?.critical, tone: 'border-2 border-[var(--black)] bg-[var(--locked-ink)] p-4', headingTone: 'text-[var(--red-primary)]' },
+    { label: 'High', metric: severityCounts?.high, tone: 'border-2 border-[var(--black)] bg-[var(--restricted-ink)] p-4', headingTone: 'text-[var(--restricted)]' },
     { label: 'Medium', metric: severityCounts?.medium, tone: 'border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4', headingTone: '' },
     { label: 'Low', metric: severityCounts?.low, tone: 'border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4', headingTone: '' },
   ];

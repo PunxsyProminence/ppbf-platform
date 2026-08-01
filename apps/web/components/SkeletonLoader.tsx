@@ -79,7 +79,7 @@ export default function SkeletonLoader({
     width,
     height: isCircle ? width : height, // For circles, height = width
     borderRadius: isCircle ? '50%' : borderRadius,
-    backgroundColor: 'var(--skeleton-bg, #e0e0e0)',
+    backgroundColor: 'var(--skeleton-bg, var(--hide-700))',
     animation: disableAnimation ? 'none' : 'shimmer 2s infinite',
   };
 
@@ -94,7 +94,7 @@ export default function SkeletonLoader({
       <style>{`
         @keyframes shimmer {
           0% {
-            background-color: var(--skeleton-bg, #e0e0e0);
+            background-color: var(--skeleton-bg, var(--hide-700));
             background-image: linear-gradient(
               90deg,
               transparent,
@@ -105,7 +105,7 @@ export default function SkeletonLoader({
             background-position: -200% 0;
           }
           100% {
-            background-color: var(--skeleton-bg, #e0e0e0);
+            background-color: var(--skeleton-bg, var(--hide-700));
             background-image: linear-gradient(
               90deg,
               transparent,

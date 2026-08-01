@@ -54,9 +54,9 @@ interface RoleSpecificShadowProps {
 }
 
 function getAttendanceColor(attendancePercent: number): string {
-  if (attendancePercent >= 90) return 'bg-[#dce7ca] border-[var(--status-ready)]';
-  if (attendancePercent >= 75) return 'bg-[#efe3c4] border-[var(--status-warning)]';
-  return 'bg-[#f1d6d1] border-[var(--red-primary)]';
+  if (attendancePercent >= 90) return 'bg-[var(--cleared-ink)] border-[var(--status-ready)]';
+  if (attendancePercent >= 75) return 'bg-[var(--canvas-warm)] border-[var(--status-warning)]';
+  return 'bg-[var(--locked-ink)] border-[var(--red-primary)]';
 }
 
 // ATHLETE SUMMARY PANEL
@@ -68,9 +68,9 @@ export function AthleteSummaryPanel({
   unreadMessages
 }: Readonly<AthleteSummaryPanelProps>) {
   const readinessColor = {
-    GREEN: 'bg-[#dce7ca] border-[var(--status-ready)]',
-    YELLOW: 'bg-[#efe3c4] border-[var(--status-warning)]',
-    RED: 'bg-[#f1d6d1] border-[var(--red-primary)]'
+    GREEN: 'bg-[var(--cleared-ink)] border-[var(--status-ready)]',
+    YELLOW: 'bg-[var(--canvas-warm)] border-[var(--status-warning)]',
+    RED: 'bg-[var(--locked-ink)] border-[var(--red-primary)]'
   }[readiness];
 
   const readinessText = {
@@ -122,7 +122,7 @@ export function CoachSummaryPanel({
   reviewsNeeded,
   assignmentsDue
 }: Readonly<CoachSummaryPanelProps>) {
-  const injuryAlert = injuryFlags > 0 ? 'bg-[#f1d6d1] border-[var(--red-primary)]' : 'border-[var(--black)] bg-[var(--canvas-tan-light)]';
+  const injuryAlert = injuryFlags > 0 ? 'bg-[var(--locked-ink)] border-[var(--red-primary)]' : 'border-[var(--black)] bg-[var(--canvas-tan-light)]';
 
   return (
     <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-5">
@@ -218,8 +218,8 @@ export function AdminSummaryPanel({
   complianceItems,
   pendingReviews
 }: Readonly<AdminSummaryPanelProps>) {
-  const programAlert = programAlerts > 0 ? 'bg-[#f1d6d1] border-[var(--red-primary)]' : 'border-[var(--black)] bg-[var(--canvas-tan-light)]';
-  const boardAlert = boardAlerts > 0 ? 'bg-[#efe3c4] border-[var(--status-warning)]' : 'border-[var(--black)] bg-[var(--canvas-tan-light)]';
+  const programAlert = programAlerts > 0 ? 'bg-[var(--locked-ink)] border-[var(--red-primary)]' : 'border-[var(--black)] bg-[var(--canvas-tan-light)]';
+  const boardAlert = boardAlerts > 0 ? 'bg-[var(--canvas-warm)] border-[var(--status-warning)]' : 'border-[var(--black)] bg-[var(--canvas-tan-light)]';
 
   return (
     <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-5">

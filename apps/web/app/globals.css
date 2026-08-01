@@ -55,6 +55,11 @@
   --status-danger: var(--locked);
   --status-info: var(--monitor);
 
+  /* SkeletonLoader.tsx read var(--skeleton-bg, #e0e0e0) and nothing defined the
+     name, so every loading placeholder fell back to a light grey that belonged
+     to neither ground. Raised leather is what an empty panel should look like. */
+  --skeleton-bg: var(--hide-700);
+
   /* --font-stencil keeps its next/font wiring — --font-tactical-display is a
      real loaded face, where the design system's fallback chain is not. The
      design system's own --font-stencil stays available for previews. */
@@ -192,83 +197,13 @@ h6 {
   box-shadow: var(--shadow-sm);
 }
 
-.tactical-panel-dark {
-  background: var(--gray-dark);
-  color: var(--white-off);
-  border: var(--border-medium) solid var(--black);
-  box-shadow: var(--shadow-sm);
-}
+/* .tactical-panel-dark, .tactical-chip(-critical), .tactical-btn(-critical),
+   .tactical-input and .tactical-alert-critical were removed: all six had zero
+   uses in the app and each duplicated a ppbf.css component that does the job
+   properly — use .btn / .btn--danger, .input / .field, .badge and .frame
+   instead. .tactical-panel stays because 6 call sites still use it. */
 
-.tactical-chip {
-  display: inline-block;
-  padding: var(--space-1) var(--space-2);
-  border: var(--border-thin) solid var(--black);
-  background: var(--canvas-tan-light);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
-}
-
-.tactical-chip-critical {
-  background: var(--red-primary);
-  color: var(--white);
-  border-color: var(--black);
-}
-
-.tactical-btn {
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-2) var(--space-4);
-  border: var(--border-medium) solid var(--black);
-  background: var(--canvas-tan-dark);
-  color: var(--black);
-  font-family: var(--font-stencil);
-  font-size: var(--text-sm);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
-  box-shadow: var(--shadow-sm);
-}
-
-.tactical-btn:hover {
-  background: var(--olive-dark);
-  color: var(--white);
-}
-
-.tactical-btn-critical {
-  background: var(--red-primary);
-  color: var(--white);
-}
-
-.tactical-btn-critical:hover {
-  background: var(--red-highlight);
-}
-
-.tactical-input {
-  width: 100%;
-  min-height: 44px;
-  border: var(--border-medium) solid var(--black);
-  background: var(--canvas-tan-light);
-  color: var(--black);
-  padding: var(--space-2) var(--space-3);
-  font-size: var(--text-base);
-}
-
-.tactical-input:focus {
-  border-color: var(--red-primary);
-  box-shadow: 0 0 0 2px rgba(139, 0, 0, 0.15);
-}
-
-.tactical-alert-critical {
-  background: #f0d6d6;
-  color: var(--red-primary);
-  border: var(--border-medium) solid var(--red-primary);
-  padding: var(--space-3);
-}
-
-/* ---------- Retro components (work in both themes) ---------- */
+/* ---------- Retro components ---------- */
 
 .stamp {
   display: inline-flex;
@@ -283,7 +218,7 @@ h6 {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #f5e6c8;
+  color: var(--bone-100);
   box-shadow: var(--shadow-md);
   cursor: pointer;
   user-select: none;
@@ -307,28 +242,28 @@ h6 {
 
 .stamp--cleared {
   background: var(--stamp-cleared);
-  border-color: #2a3518;
+  border-color: var(--patina-900);
 }
 
 .stamp--hold {
   background: var(--stamp-hold);
-  border-color: #6a4e1a;
+  border-color: var(--brass-800);
 }
 
 .stamp--restricted,
 .stamp--escalate {
   background: var(--stamp-restricted);
-  border-color: #4a0000;
+  border-color: var(--rust-900);
 }
 
 .stamp--present {
   background: var(--stamp-present);
-  border-color: #1a2e24;
+  border-color: var(--slate-board);
 }
 
 .stamp--neutral {
   background: var(--stamp-neutral);
-  border-color: #2a2018;
+  border-color: var(--hide-900);
 }
 
 .brass-plate {
@@ -462,7 +397,7 @@ h6 {
 
 .ledger-tape__entries li {
   padding: 4px 0;
-  border-bottom: 1px dashed rgba(26, 18, 11, 0.25);
+  border-bottom: 1px dashed color-mix(in oklab, var(--hide-950) 25%, transparent);
   line-height: 1.4;
 }
 
@@ -551,7 +486,7 @@ h6 {
   font-size: 10px;
   padding: 2px 6px;
   background: var(--stamp-restricted);
-  color: #f5e6c8;
+  color: var(--bone-100);
   border: 1px solid var(--black);
   font-family: var(--font-mono);
   letter-spacing: 0.06em;

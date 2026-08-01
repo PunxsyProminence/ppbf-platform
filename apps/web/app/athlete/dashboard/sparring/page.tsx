@@ -196,16 +196,16 @@ export default function SparringTelemetryPage() {
   const contactLevelLabel = ['None', 'Light', 'Moderate', 'Heavy'][contactLevel] ?? 'Unknown';
 
   return (
-    <main className="min-h-screen bg-[#0a0a0a] text-[#e8d7c6]">
-      <header className="border-b-4 border-[#8b4444] bg-[#1a1a1a] px-10 py-5">
+    <main className="min-h-screen bg-[var(--hide-950)] text-[var(--bone-200)]">
+      <header className="border-b-4 border-[var(--patina-700)] bg-[var(--hide-900)] px-10 py-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-[0.72rem] uppercase tracking-[0.24em] text-[#d4a574] font-mono">
+            <div className="text-[0.72rem] uppercase tracking-[0.24em] text-[var(--brass-300)] font-mono">
               Track D/E · Deep-Track
             </div>
             <div className="font-display text-2xl tracking-tight">Combat Telemetry Log</div>
           </div>
-          <div className="inline-flex items-center gap-2 border-2 border-[#8b4444] bg-[#3d2817] px-3 py-2 text-xs font-mono text-[#e8d7c6]">
+          <div className="inline-flex items-center gap-2 border-2 border-[var(--patina-700)] bg-[var(--hide-800)] px-3 py-2 text-xs font-mono text-[var(--bone-200)]">
             SHADOW formula engine surface
           </div>
         </div>
@@ -213,10 +213,10 @@ export default function SparringTelemetryPage() {
 
       <form onSubmit={onSubmit} className="px-10 py-7">
         <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-          <section className="grid gap-4 border-4 border-[#8b4444] bg-[#1a1a1a] p-6 shadow-2xl shadow-black/70">
+          <section className="grid gap-4 border-4 border-[var(--patina-700)] bg-[var(--hide-900)] p-6 shadow-2xl shadow-black/70">
             <div className="grid gap-1.5">
               <h2 className="m-0 font-display text-2xl tracking-tight">Session Capture</h2>
-              <p className="m-0 leading-6 text-[#b0a095]">
+              <p className="m-0 leading-6 text-[var(--bone-400)]">
                 Log rounds, contact, punch output, focus, and weight for the coach review pipeline. Every field here
                 feeds a real SHADOW formula -- this is the high-effort, high-quality-feedback path.
               </p>
@@ -232,7 +232,7 @@ export default function SparringTelemetryPage() {
                   max={12}
                   value={totalRoundsCompleted}
                   onChange={(event) => setTotalRoundsCompleted(Number(event.target.value))}
-                  className="w-full border-2 border-[#8b4444] bg-[#0f0f0f] px-3.5 py-3 text-[#e8d7c6] outline-none transition focus:border-[#d4a574]"
+                  className="w-full border-2 border-[var(--patina-700)] bg-[var(--hide-950)] px-3.5 py-3 text-[var(--bone-200)] outline-none transition focus:border-[var(--brass-500)]"
                 />
               </div>
 
@@ -242,7 +242,7 @@ export default function SparringTelemetryPage() {
                   id="opponentStance"
                   value={opponentStance}
                   onChange={(event) => setOpponentStance(event.target.value as OpponentStance)}
-                  className="w-full border-2 border-[#8b4444] bg-[#0f0f0f] px-3.5 py-3 text-[#e8d7c6] outline-none transition focus:border-[#d4a574]"
+                  className="w-full border-2 border-[var(--patina-700)] bg-[var(--hide-950)] px-3.5 py-3 text-[var(--bone-200)] outline-none transition focus:border-[var(--brass-500)]"
                 >
                   <option value="Orthodox">Orthodox</option>
                   <option value="Southpaw">Southpaw</option>
@@ -262,9 +262,9 @@ export default function SparringTelemetryPage() {
                   step={1}
                   value={contactLevel}
                   onChange={(event) => setContactLevel(Number(event.target.value))}
-                  style={{ accentColor: '#d4a574', flex: '1 1 260px' }}
+                  style={{ accentColor: 'var(--brass-500)', flex: '1 1 260px' }}
                 />
-                <span className="min-w-[122px] border-2 border-[#8b4444] bg-[#3d2817] px-3 py-2 text-center text-sm text-[#e8d7c6]">
+                <span className="min-w-[122px] border-2 border-[var(--patina-700)] bg-[var(--hide-800)] px-3 py-2 text-center text-sm text-[var(--bone-200)]">
                   {contactLevel}/3 {contactLevelLabel}
                 </span>
               </div>
@@ -277,7 +277,7 @@ export default function SparringTelemetryPage() {
                   id="punchType"
                   value={punchType}
                   onChange={(event) => setPunchType(event.target.value as PunchType)}
-                  className="w-full border-2 border-[#8b4444] bg-[#0f0f0f] px-3.5 py-3 text-[#e8d7c6] outline-none transition focus:border-[#d4a574]"
+                  className="w-full border-2 border-[var(--patina-700)] bg-[var(--hide-950)] px-3.5 py-3 text-[var(--bone-200)] outline-none transition focus:border-[var(--brass-500)]"
                 >
                   {PUNCH_TYPES.map((type) => (
                     <option key={type} value={type}>{type}</option>
@@ -292,7 +292,7 @@ export default function SparringTelemetryPage() {
                   min={0}
                   value={punchesAttempted}
                   onChange={(event) => setPunchesAttempted(Math.max(0, Number(event.target.value)))}
-                  className="w-full border-2 border-[#8b4444] bg-[#0f0f0f] px-3.5 py-3 text-[#e8d7c6] outline-none transition focus:border-[#d4a574]"
+                  className="w-full border-2 border-[var(--patina-700)] bg-[var(--hide-950)] px-3.5 py-3 text-[var(--bone-200)] outline-none transition focus:border-[var(--brass-500)]"
                 />
               </div>
               <div className="grid gap-2">
@@ -303,7 +303,7 @@ export default function SparringTelemetryPage() {
                   min={0}
                   value={punchesLanded}
                   onChange={(event) => setPunchesLanded(Math.max(0, Number(event.target.value)))}
-                  className="w-full border-2 border-[#8b4444] bg-[#0f0f0f] px-3.5 py-3 text-[#e8d7c6] outline-none transition focus:border-[#d4a574]"
+                  className="w-full border-2 border-[var(--patina-700)] bg-[var(--hide-950)] px-3.5 py-3 text-[var(--bone-200)] outline-none transition focus:border-[var(--brass-500)]"
                 />
               </div>
             </div>
@@ -317,7 +317,7 @@ export default function SparringTelemetryPage() {
                   min={0}
                   value={punchesAbsorbed}
                   onChange={(event) => setPunchesAbsorbed(Math.max(0, Number(event.target.value)))}
-                  className="w-full border-2 border-[#8b4444] bg-[#0f0f0f] px-3.5 py-3 text-[#e8d7c6] outline-none transition focus:border-[#d4a574]"
+                  className="w-full border-2 border-[var(--patina-700)] bg-[var(--hide-950)] px-3.5 py-3 text-[var(--bone-200)] outline-none transition focus:border-[var(--brass-500)]"
                 />
               </div>
               <div className="grid gap-2">
@@ -330,7 +330,7 @@ export default function SparringTelemetryPage() {
                   value={bodyWeightKg}
                   onChange={(event) => setBodyWeightKg(event.target.value)}
                   placeholder="Leave blank to skip"
-                  className="w-full border-2 border-[#8b4444] bg-[#0f0f0f] px-3.5 py-3 text-[#e8d7c6] outline-none transition focus:border-[#d4a574] placeholder-[#6a5a4a]"
+                  className="w-full border-2 border-[var(--patina-700)] bg-[var(--hide-950)] px-3.5 py-3 text-[var(--bone-200)] outline-none transition focus:border-[var(--brass-500)] placeholder-[var(--bone-400)]"
                 />
               </div>
             </div>
@@ -348,47 +348,47 @@ export default function SparringTelemetryPage() {
                 onChange={(event) => setRecoveryNotes(event.target.value)}
                 maxLength={RECOVERY_NOTES_MAX_LENGTH}
                 placeholder="How the athlete felt afterward, recovery plan, anything the coach should know..."
-                className="w-full h-20 border-2 border-[#8b4444] bg-[#0f0f0f] px-3.5 py-3 text-[#e8d7c6] outline-none transition focus:border-[#d4a574] placeholder-[#6a5a4a]"
+                className="w-full h-20 border-2 border-[var(--patina-700)] bg-[var(--hide-950)] px-3.5 py-3 text-[var(--bone-200)] outline-none transition focus:border-[var(--brass-500)] placeholder-[var(--bone-400)]"
               />
             </div>
 
             <button
               type="submit"
               disabled={isSubmitting || !athleteId}
-              className="mt-1 w-fit border-2 border-[#8b4444] bg-[#5a2a2a] px-4 py-3 font-semibold text-[#e8d7c6] transition hover:border-[#d4a574] hover:bg-[#8b4444] disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-1 w-fit border-2 border-[var(--patina-700)] bg-[var(--rust-500)] px-4 py-3 font-semibold text-[var(--bone-200)] transition hover:border-[var(--brass-500)] hover:bg-[var(--patina-700)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isSubmitting ? 'Saving…' : 'Log Combat Session'}
             </button>
           </section>
 
-          <aside className="grid gap-4 border-4 border-[#3d2817] bg-[#1a1a1a] p-6">
+          <aside className="grid gap-4 border-4 border-[var(--hide-800)] bg-[var(--hide-900)] p-6">
             <div className="grid gap-2">
-              <div className="font-mono text-[0.72rem] uppercase tracking-[0.22em] text-[#d4a574]">
+              <div className="font-mono text-[0.72rem] uppercase tracking-[0.22em] text-[var(--brass-300)]">
                 SHADOW formula status
               </div>
-              <p className="m-0 leading-6 text-[#e8d7c6]">{statusMessage}</p>
+              <p className="m-0 leading-6 text-[var(--bone-200)]">{statusMessage}</p>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="border-2 border-[#5a4a3a] bg-[#0f0f0f] p-3.5">
-                <div className="font-mono text-xs uppercase tracking-[0.16em] text-[#d4a574]">Rounds</div>
-                <div className="mt-2 text-2xl font-black text-[#e8d7c6]">{totalRoundsCompleted}</div>
+              <div className="border-2 border-[var(--hide-500)] bg-[var(--hide-950)] p-3.5">
+                <div className="font-mono text-xs uppercase tracking-[0.16em] text-[var(--brass-300)]">Rounds</div>
+                <div className="mt-2 text-2xl font-black text-[var(--bone-200)]">{totalRoundsCompleted}</div>
               </div>
-              <div className="border-2 border-[#5a4a3a] bg-[#0f0f0f] p-3.5">
-                <div className="font-mono text-xs uppercase tracking-[0.16em] text-[#d4a574]">Stance</div>
-                <div className="mt-2 text-2xl font-black text-[#e8d7c6]">{opponentStance}</div>
+              <div className="border-2 border-[var(--hide-500)] bg-[var(--hide-950)] p-3.5">
+                <div className="font-mono text-xs uppercase tracking-[0.16em] text-[var(--brass-300)]">Stance</div>
+                <div className="mt-2 text-2xl font-black text-[var(--bone-200)]">{opponentStance}</div>
               </div>
-              <div className="border-2 border-[#5a4a3a] bg-[#0f0f0f] p-3.5">
-                <div className="font-mono text-xs uppercase tracking-[0.16em] text-[#d4a574]">Contact</div>
-                <div className="mt-2 text-2xl font-black text-[#e8d7c6]">{contactLevelLabel}</div>
+              <div className="border-2 border-[var(--hide-500)] bg-[var(--hide-950)] p-3.5">
+                <div className="font-mono text-xs uppercase tracking-[0.16em] text-[var(--brass-300)]">Contact</div>
+                <div className="mt-2 text-2xl font-black text-[var(--bone-200)]">{contactLevelLabel}</div>
               </div>
-              <div className="border-2 border-[#5a4a3a] bg-[#0f0f0f] p-3.5">
-                <div className="font-mono text-xs uppercase tracking-[0.16em] text-[#d4a574]">Last save</div>
-                <div className="mt-2 text-lg font-black text-[#e8d7c6]">{lastSubmitted}</div>
+              <div className="border-2 border-[var(--hide-500)] bg-[var(--hide-950)] p-3.5">
+                <div className="font-mono text-xs uppercase tracking-[0.16em] text-[var(--brass-300)]">Last save</div>
+                <div className="mt-2 text-lg font-black text-[var(--bone-200)]">{lastSubmitted}</div>
               </div>
             </div>
 
-            <div className="border-2 border-[#8b4444] bg-[#3d2817] p-3.5 leading-6 text-[#e8d7c6]">
+            <div className="border-2 border-[var(--patina-700)] bg-[var(--hide-800)] p-3.5 leading-6 text-[var(--bone-200)]">
               This is Deep-Track: rounds, contact level, punch accuracy, focus attainment, and weight all become real
               inputs to SHADOW&apos;s formula engine (Accuracy, Connect Differential, Contact Exposure, Focus
               Attainment Rate, 7-Day Weight Change) the moment you submit.
@@ -397,7 +397,7 @@ export default function SparringTelemetryPage() {
         </div>
       </form>
 
-      <footer className="px-10 pb-8 text-sm text-[#8a8a8a]">
+      <footer className="px-10 pb-8 text-sm text-[var(--bone-400)]">
         Punxsy Prominence Boxing and Fitness, Registered Office: 204 PENNSYLVANIA AVE, BIG RUN(PA), PA 15715
       </footer>
     </main>

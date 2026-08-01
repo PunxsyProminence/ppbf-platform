@@ -180,19 +180,19 @@ export default function ScoutReportPage() {
   );
 
   return (
-    <main className="min-h-screen bg-[#0a0a0a] text-[#e8d7c6]">
+    <main className="min-h-screen bg-[var(--hide-950)] text-[var(--bone-200)]">
       {/* HEADER */}
-      <header className="border-b-4 border-[#8b4444] bg-[#1a1a1a] px-4 py-4 md:px-8">
+      <header className="border-b-4 border-[var(--patina-700)] bg-[var(--hide-900)] px-4 py-4 md:px-8">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
           <div>
-            <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-[#dc2626]">SHADOW Intelligence</p>
-            <h1 className="font-display text-2xl font-black tracking-tight text-[#e8d7c6]">Scout Reports</h1>
-            <p className="mt-1 text-xs text-[#b0a095]">Profile intelligence, Recovery Round jobs, and The Scorecard</p>
+            <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-[var(--locked)]">SHADOW Intelligence</p>
+            <h1 className="font-display text-2xl font-black tracking-tight text-[var(--bone-200)]">Scout Reports</h1>
+            <p className="mt-1 text-xs text-[var(--bone-400)]">Profile intelligence, Recovery Round jobs, and The Scorecard</p>
           </div>
           <div className="flex gap-3">
             <Link
               href="/shadow"
-              className="border-2 border-[#5a4a3a] bg-[#1a1a1a] px-3 py-2 text-xs font-mono text-[#b0a095] transition hover:border-[#8b4444] hover:text-[#e8d7c6]"
+              className="border-2 border-[var(--hide-500)] bg-[var(--hide-900)] px-3 py-2 text-xs font-mono text-[var(--bone-400)] transition hover:border-[var(--patina-700)] hover:text-[var(--bone-200)]"
             >
               ← SHADOW
             </Link>
@@ -200,7 +200,7 @@ export default function ScoutReportPage() {
               type="button"
               disabled
               title="Requires the secure scheduled SHADOW worker"
-              className="border-2 border-[#5a4a3a] bg-[#1a1a1a] px-4 py-2 text-xs font-mono font-bold text-[#6a5a4a] opacity-60"
+              className="border-2 border-[var(--hide-500)] bg-[var(--hide-900)] px-4 py-2 text-xs font-mono font-bold text-[var(--bone-400)] opacity-60"
             >
               Scout Report worker not active
             </button>
@@ -210,18 +210,18 @@ export default function ScoutReportPage() {
 
       <div className="mx-auto max-w-5xl p-4 md:p-8 space-y-6">
         {error ? (
-          <p className="border border-[#dc2626] bg-[#1a0a0a] px-4 py-2 text-xs font-mono text-[#dc2626]">{error}</p>
+          <p className="border border-[var(--locked)] bg-[var(--rust-900)] px-4 py-2 text-xs font-mono text-[var(--locked)]">{error}</p>
         ) : null}
 
         {/* METRICS DASHBOARD */}
         {scoreboard ? (
-          <section className="border-2 border-[#8b4444] bg-[#151515] p-5 space-y-4">
-            <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[#d4a574]">Metrics Dashboard — {scoreboard.period}</p>
+          <section className="border-2 border-[var(--patina-700)] bg-[var(--hide-900)] p-5 space-y-4">
+            <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--brass-300)]">Metrics Dashboard — {scoreboard.period}</p>
 
             {/* Tier Distribution */}
             <div className="grid md:grid-cols-2 gap-4">
               <div>
-                <p className="text-xs font-mono text-[#b0a095] mb-2">Tier Distribution</p>
+                <p className="text-xs font-mono text-[var(--bone-400)] mb-2">Tier Distribution</p>
                 <div className="space-y-2">
                   {[
                     { label: '🥇 Gold', count: scoreboard.engagement.usersByTier.gold, percent: ((scoreboard.engagement.usersByTier.gold / Math.max(scoreboard.engagement.usersByTier.gold + scoreboard.engagement.usersByTier.silver + scoreboard.engagement.usersByTier.bronze, 1)) * 100).toFixed(0) },
@@ -229,13 +229,13 @@ export default function ScoutReportPage() {
                     { label: '🥉 Bronze', count: scoreboard.engagement.usersByTier.bronze, percent: ((scoreboard.engagement.usersByTier.bronze / Math.max(scoreboard.engagement.usersByTier.gold + scoreboard.engagement.usersByTier.silver + scoreboard.engagement.usersByTier.bronze, 1)) * 100).toFixed(0) },
                   ].map(({ label, count, percent }: { label: string; count: number; percent: string }) => (
                     <div key={label} className="space-y-1">
-                      <div className="flex justify-between text-[9px] text-[#b0a095]">
+                      <div className="flex justify-between text-[9px] text-[var(--bone-400)]">
                         <span>{label} {count} users</span>
                         <span>{percent}%</span>
                       </div>
-                      <div className="h-1.5 bg-[#0f0f0f] border border-[#3a2a2a] overflow-hidden">
+                      <div className="h-1.5 bg-[var(--hide-950)] border border-[var(--rust-700)] overflow-hidden">
                         <div
-                          className="h-full bg-[#d4a574]"
+                          className="h-full bg-[var(--brass-500)]"
                           style={{ width: `${percent}%` }}
                         />
                       </div>
@@ -246,15 +246,15 @@ export default function ScoutReportPage() {
 
               {/* Effectiveness */}
               <div>
-                <p className="text-xs font-mono text-[#b0a095] mb-2">Effectiveness Metrics</p>
+                <p className="text-xs font-mono text-[var(--bone-400)] mb-2">Effectiveness Metrics</p>
                 <div className="space-y-2">
                   {[
-                    { label: 'Positive Outcome Rate', value: scoreboard.growth.positiveOutcomeRate == null ? 'Unavailable' : `${Math.round(scoreboard.growth.positiveOutcomeRate * 100)}%`, color: '#4a8a4a' },
-                    { label: 'Reviewed Recommendation Score', value: scoreboard.effectiveness.avgRecommendationScore == null ? 'Unavailable' : `${scoreboard.effectiveness.avgRecommendationScore}%`, color: '#d4a574' },
-                    { label: 'Human Escalations', value: scoreboard.safety.escalationsToHuman, color: '#dc2626' },
+                    { label: 'Positive Outcome Rate', value: scoreboard.growth.positiveOutcomeRate == null ? 'Unavailable' : `${Math.round(scoreboard.growth.positiveOutcomeRate * 100)}%`, color: 'var(--cleared)' },
+                    { label: 'Reviewed Recommendation Score', value: scoreboard.effectiveness.avgRecommendationScore == null ? 'Unavailable' : `${scoreboard.effectiveness.avgRecommendationScore}%`, color: 'var(--brass-300)' },
+                    { label: 'Human Escalations', value: scoreboard.safety.escalationsToHuman, color: 'var(--locked)' },
                   ].map(({ label, value, color }) => (
-                    <div key={label} className="flex justify-between border border-[#3a2a2a] bg-[#0f0f0f] px-3 py-2">
-                      <span className="text-[9px] text-[#b0a095]">{label}</span>
+                    <div key={label} className="flex justify-between border border-[var(--rust-700)] bg-[var(--hide-950)] px-3 py-2">
+                      <span className="text-[9px] text-[var(--bone-400)]">{label}</span>
                       <span className="text-[9px] font-mono font-bold" style={{ color }}>{value}</span>
                     </div>
                   ))}
@@ -263,17 +263,17 @@ export default function ScoutReportPage() {
             </div>
 
             {/* Engagement Summary */}
-            <div className="border-t border-[#3a2a2a] pt-3">
-              <p className="text-xs font-mono text-[#b0a095] mb-2">Engagement Summary</p>
+            <div className="border-t border-[var(--rust-700)] pt-3">
+              <p className="text-xs font-mono text-[var(--bone-400)] mb-2">Engagement Summary</p>
               <div className="grid md:grid-cols-3 gap-2">
                 {[
                   { label: 'Total Interactions', value: scoreboard.growth.totalInteractions },
                   { label: 'Daily Active Users', value: scoreboard.engagement.dailyActiveUsers },
                   { label: 'Avg Messages / Session', value: scoreboard.engagement.avgMessagesPerSession?.toFixed(1) ?? 'Unavailable' },
                 ].map(({ label, value }) => (
-                  <div key={label} className="border border-[#3a2a2a] bg-[#0f0f0f] px-3 py-2 text-center">
-                    <p className="text-[9px] text-[#8a8a8a]">{label}</p>
-                    <p className="mt-1 text-sm font-mono font-bold text-[#d4a574]">{value}</p>
+                  <div key={label} className="border border-[var(--rust-700)] bg-[var(--hide-950)] px-3 py-2 text-center">
+                    <p className="text-[9px] text-[var(--bone-400)]">{label}</p>
+                    <p className="mt-1 text-sm font-mono font-bold text-[var(--brass-300)]">{value}</p>
                   </div>
                 ))}
               </div>
@@ -281,11 +281,11 @@ export default function ScoutReportPage() {
 
             {/* Top Topics */}
             {scoreboard.effectiveness.concernedTopics.length > 0 ? (
-              <div className="border-t border-[#3a2a2a] pt-3">
-                <p className="text-xs font-mono text-[#b0a095] mb-2">Top Engaged Topics</p>
+              <div className="border-t border-[var(--rust-700)] pt-3">
+                <p className="text-xs font-mono text-[var(--bone-400)] mb-2">Top Engaged Topics</p>
                 <div className="flex flex-wrap gap-2">
                   {scoreboard.effectiveness.concernedTopics.map((topic, idx) => (
-                    <span key={topic} className="border border-[#5a4a3a] bg-[#0f0f0f] px-3 py-1 text-[9px] font-mono text-[#d4a574]">
+                    <span key={topic} className="border border-[var(--hide-500)] bg-[var(--hide-950)] px-3 py-1 text-[9px] font-mono text-[var(--brass-300)]">
                       #{idx + 1} {topic}
                     </span>
                   ))}
@@ -297,8 +297,8 @@ export default function ScoutReportPage() {
 
         {/* THE SCORECARD */}
         {scoreboard ? (
-          <section className="border-2 border-[#8b4444] bg-[#151515] p-5">
-            <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[#d4a574]">The Scorecard — {scoreboard.period}</p>
+          <section className="border-2 border-[var(--patina-700)] bg-[var(--hide-900)] p-5">
+            <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--brass-300)]">The Scorecard — {scoreboard.period}</p>
             <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
               {[
                 { label: 'Total Interactions', value: scoreboard.growth.totalInteractions },
@@ -306,9 +306,9 @@ export default function ScoutReportPage() {
                 { label: 'Active Users', value: scoreboard.engagement.dailyActiveUsers },
                 { label: 'Gold Profiles', value: scoreboard.engagement.usersByTier.gold },
               ].map(({ label, value }) => (
-                <div key={label} className="border border-[#5a4a3a] bg-[#0f0f0f] p-3 text-center">
-                  <p className="text-xs font-mono text-[#8a8a8a]">{label}</p>
-                  <p className="mt-1 text-xl font-black text-[#d4a574]">{value}</p>
+                <div key={label} className="border border-[var(--hide-500)] bg-[var(--hide-950)] p-3 text-center">
+                  <p className="text-xs font-mono text-[var(--bone-400)]">{label}</p>
+                  <p className="mt-1 text-xl font-black text-[var(--brass-300)]">{value}</p>
                 </div>
               ))}
             </div>
@@ -318,13 +318,13 @@ export default function ScoutReportPage() {
                 { label: '🥈 Silver', count: scoreboard.engagement.usersByTier.silver },
                 { label: '🥉 Bronze', count: scoreboard.engagement.usersByTier.bronze },
               ].map(({ label, count }) => (
-                <div key={label} className="text-xs font-mono text-[#b0a095]">
-                  <span className="text-[#d4a574]">{label}</span> {count} users
+                <div key={label} className="text-xs font-mono text-[var(--bone-400)]">
+                  <span className="text-[var(--brass-300)]">{label}</span> {count} users
                 </div>
               ))}
               {scoreboard.effectiveness.concernedTopics.length > 0 ? (
-                <div className="text-xs font-mono text-[#b0a095]">
-                  Topics needing review: <span className="text-[#d4a574]">{scoreboard.effectiveness.concernedTopics.join(', ')}</span>
+                <div className="text-xs font-mono text-[var(--bone-400)]">
+                  Topics needing review: <span className="text-[var(--brass-300)]">{scoreboard.effectiveness.concernedTopics.join(', ')}</span>
                 </div>
               ) : null}
             </div>
@@ -332,15 +332,15 @@ export default function ScoutReportPage() {
         ) : null}
 
         {/* SCOUT REPORTS */}
-        <section className="border-2 border-[#8b4444] bg-[#151515] p-5">
+        <section className="border-2 border-[var(--patina-700)] bg-[var(--hide-900)] p-5">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[#d4a574]">
+            <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--brass-300)]">
               Scout Reports ({scoutJobs.length})
             </p>
           </div>
 
-          <div className="mt-3 border border-[#5a4a3a] bg-[#0f0f0f] p-3">
-            <label htmlFor="generate-focus" className="block text-[10px] font-mono uppercase tracking-[0.14em] text-[#a89478]">
+          <div className="mt-3 border border-[var(--hide-500)] bg-[var(--hide-950)] p-3">
+            <label htmlFor="generate-focus" className="block text-[10px] font-mono uppercase tracking-[0.14em] text-[var(--bone-400)]">
               Generate (optional focus)
             </label>
             <div className="mt-2 flex flex-wrap gap-2">
@@ -351,14 +351,14 @@ export default function ScoutReportPage() {
                 onChange={(event) => setGenerateFocus(event.target.value)}
                 maxLength={500}
                 placeholder="e.g. progress since the last competition cycle"
-                className="min-w-[220px] flex-1 border border-[#5a4a3a] bg-[#151515] px-3 py-2 text-xs text-[#cfbfae] outline-none focus:border-[#d4a574]"
+                className="min-w-[220px] flex-1 border border-[var(--hide-500)] bg-[var(--hide-900)] px-3 py-2 text-xs text-[var(--bone-300)] outline-none focus:border-[var(--brass-500)]"
                 disabled={generateBusy}
               />
               <button
                 type="button"
                 onClick={() => void requestGeneration('scout_report')}
                 disabled={generateBusy}
-                className="border-2 border-[#8b4444] bg-[#2a1a1a] px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-[0.12em] text-[#dc2626] transition hover:border-[#dc2626] disabled:opacity-50"
+                className="border-2 border-[var(--patina-700)] bg-[var(--rust-900)] px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-[0.12em] text-[var(--locked)] transition hover:border-[var(--locked)] disabled:opacity-50"
               >
                 {generateBusy ? 'Queuing…' : 'Generate scout report'}
               </button>
@@ -367,37 +367,37 @@ export default function ScoutReportPage() {
                   type="button"
                   onClick={() => void requestGeneration('board_summary')}
                   disabled={generateBusy}
-                  className="border-2 border-[#5a4a3a] bg-[#1a1a1a] px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-[0.12em] text-[#d4a574] transition hover:border-[#d4a574] disabled:opacity-50"
+                  className="border-2 border-[var(--hide-500)] bg-[var(--hide-900)] px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-[0.12em] text-[var(--brass-300)] transition hover:border-[var(--brass-500)] disabled:opacity-50"
                 >
                   Generate board summary
                 </button>
               ) : null}
             </div>
-            {generateNotice ? <p role="status" className="mt-2 text-xs text-[#d4a574]">{generateNotice}</p> : null}
-            {generateError ? <p role="alert" className="mt-2 text-xs text-[#dc2626]">{generateError}</p> : null}
+            {generateNotice ? <p role="status" className="mt-2 text-xs text-[var(--brass-300)]">{generateNotice}</p> : null}
+            {generateError ? <p role="alert" className="mt-2 text-xs text-[var(--locked)]">{generateError}</p> : null}
           </div>
 
           {loadingJobs ? (
-            <p className="mt-4 text-xs text-[#6a5a4a] font-mono">Loading...</p>
+            <p className="mt-4 text-xs text-[var(--bone-400)] font-mono">Loading...</p>
           ) : scoutJobs.length === 0 ? (
-            <p className="mt-4 text-xs text-[#6a5a4a] font-mono">No Scout Reports yet. Generate one above — it is processed by the background worker and listed here when complete.</p>
+            <p className="mt-4 text-xs text-[var(--bone-400)] font-mono">No Scout Reports yet. Generate one above — it is processed by the background worker and listed here when complete.</p>
           ) : (
             <div className="mt-4 space-y-3">
               {scoutJobs.map((job) => (
                 <button
                   key={job.jobId}
-                  className={`border bg-[#0f0f0f] p-4 cursor-pointer transition w-full text-left ${
-                    selectedJob?.jobId === job.jobId ? 'border-[#d4a574]' : 'border-[#5a4a3a] hover:border-[#8b4444]'
+                  className={`border bg-[var(--hide-950)] p-4 cursor-pointer transition w-full text-left ${
+                    selectedJob?.jobId === job.jobId ? 'border-[var(--brass-500)]' : 'border-[var(--hide-500)] hover:border-[var(--patina-700)]'
                   }`}
                   onClick={() => setSelectedJob(selectedJob?.jobId === job.jobId ? null : job)}
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <StatusBadge status={job.status} />
-                      <p className="mt-1 text-[10px] text-[#8a8a8a] font-mono">{job.jobId.slice(0, 8)}... · {new Date(job.createdAt).toLocaleDateString()}</p>
+                      <p className="mt-1 text-[10px] text-[var(--bone-400)] font-mono">{job.jobId.slice(0, 8)}... · {new Date(job.createdAt).toLocaleDateString()}</p>
                     </div>
                     {safeCompleted(job) && job.output?.profileTier ? (
-                      <span className="text-[10px] font-mono text-[#d4a574] border border-[#5a4a3a] px-2 py-0.5">
+                      <span className="text-[10px] font-mono text-[var(--brass-300)] border border-[var(--hide-500)] px-2 py-0.5">
                         {job.output.profileTier.toUpperCase()}
                       </span>
                     ) : null}
@@ -408,40 +408,40 @@ export default function ScoutReportPage() {
                     <div className="mt-4 space-y-3 text-xs">
                       {job.output.summary ? (
                         <div>
-                          <p className="font-mono text-[#d4a574] uppercase tracking-[0.1em]">Summary</p>
-                          <p className="mt-1 leading-6 text-[#cfbfae]">{job.output.summary}</p>
+                          <p className="font-mono text-[var(--brass-300)] uppercase tracking-[0.1em]">Summary</p>
+                          <p className="mt-1 leading-6 text-[var(--bone-300)]">{job.output.summary}</p>
                         </div>
                       ) : null}
                       {job.output.strengths?.length ? (
                         <div>
-                          <p className="font-mono text-[#d4a574] uppercase tracking-[0.1em]">Strengths</p>
-                          <ul className="mt-1 space-y-1 text-[#cfbfae]">
+                          <p className="font-mono text-[var(--brass-300)] uppercase tracking-[0.1em]">Strengths</p>
+                          <ul className="mt-1 space-y-1 text-[var(--bone-300)]">
                             {job.output.strengths.map((s) => <li key={s}>→ {s}</li>)}
                           </ul>
                         </div>
                       ) : null}
                       {job.output.growthAreas?.length ? (
                         <div>
-                          <p className="font-mono text-[#d4a574] uppercase tracking-[0.1em]">Growth Areas</p>
-                          <ul className="mt-1 space-y-1 text-[#cfbfae]">
+                          <p className="font-mono text-[var(--brass-300)] uppercase tracking-[0.1em]">Growth Areas</p>
+                          <ul className="mt-1 space-y-1 text-[var(--bone-300)]">
                             {job.output.growthAreas.map((a) => <li key={a}>→ {a}</li>)}
                           </ul>
                         </div>
                       ) : null}
                       {job.output.recommendedTopics?.length ? (
                         <div>
-                          <p className="font-mono text-[#d4a574] uppercase tracking-[0.1em]">Recommended Topics</p>
+                          <p className="font-mono text-[var(--brass-300)] uppercase tracking-[0.1em]">Recommended Topics</p>
                           <div className="mt-1 flex flex-wrap gap-2">
                             {job.output.recommendedTopics.map((t) => (
-                              <span key={t} className="border border-[#5a4a3a] px-2 py-0.5 text-[9px] text-[#b0a095]">{t}</span>
+                              <span key={t} className="border border-[var(--hide-500)] px-2 py-0.5 text-[9px] text-[var(--bone-400)]">{t}</span>
                             ))}
                           </div>
                         </div>
                       ) : null}
                       {job.output.insightNotes ? (
                         <div>
-                          <p className="font-mono text-[#d4a574] uppercase tracking-[0.1em]">Insight Notes</p>
-                          <p className="mt-1 leading-6 text-[#cfbfae]">{job.output.insightNotes}</p>
+                          <p className="font-mono text-[var(--brass-300)] uppercase tracking-[0.1em]">Insight Notes</p>
+                          <p className="mt-1 leading-6 text-[var(--bone-300)]">{job.output.insightNotes}</p>
                         </div>
                       ) : null}
                     </div>
@@ -450,21 +450,21 @@ export default function ScoutReportPage() {
                   {selectedJob?.jobId === job.jobId
                     && job.status === 'completed'
                     && !safeCompleted(job) ? (
-                      <p className="mt-2 text-[10px] font-mono text-[#d4a574]">
+                      <p className="mt-2 text-[10px] font-mono text-[var(--brass-300)]">
                         This result is unavailable because it did not pass the server safety boundary or the required model capability is not active.
                       </p>
                     ) : null}
 
                   {selectedJob?.jobId === job.jobId && job.status === 'pending' ? (
-                    <p className="mt-2 text-[10px] font-mono text-[#8a8a8a]">Queued for secure background processing.</p>
+                    <p className="mt-2 text-[10px] font-mono text-[var(--bone-400)]">Queued for secure background processing.</p>
                   ) : null}
 
                   {selectedJob?.jobId === job.jobId && job.status === 'failed' ? (
-                    <p className="mt-2 text-[10px] font-mono text-[#dc2626]">Error: {job.error}</p>
+                    <p className="mt-2 text-[10px] font-mono text-[var(--locked)]">Error: {job.error}</p>
                   ) : null}
 
                   {selectedJob?.jobId === job.jobId && job.status === 'cancelled' ? (
-                    <p className="mt-2 text-[10px] font-mono text-[#d4a574]">
+                    <p className="mt-2 text-[10px] font-mono text-[var(--brass-300)]">
                       Cancelled{job.error ? `: ${job.error}` : ''} — usually the request expired before the worker reached it. Re-run it if you still need the report.
                     </p>
                   ) : null}
@@ -476,21 +476,21 @@ export default function ScoutReportPage() {
 
         {/* BOARD SUMMARIES */}
         {canViewOrgMetrics && boardJobs.length > 0 ? (
-          <section className="border-2 border-[#5a4a3a] bg-[#151515] p-5">
-            <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[#d4a574]">
+          <section className="border-2 border-[var(--hide-500)] bg-[var(--hide-900)] p-5">
+            <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--brass-300)]">
               Board Summaries ({boardJobs.length})
             </p>
             <div className="mt-4 space-y-3">
               {boardJobs.slice(0, 10).map((job) => (
-                <div key={job.jobId} className="border border-[#5a4a3a] bg-[#0f0f0f] p-4">
+                <div key={job.jobId} className="border border-[var(--hide-500)] bg-[var(--hide-950)] p-4">
                   <div className="flex items-center justify-between gap-3">
                     <StatusBadge status={job.status} />
-                    <p className="text-[10px] text-[#8a8a8a] font-mono">{job.jobId.slice(0, 8)}… · {new Date(job.createdAt).toLocaleDateString()}</p>
+                    <p className="text-[10px] text-[var(--bone-400)] font-mono">{job.jobId.slice(0, 8)}… · {new Date(job.createdAt).toLocaleDateString()}</p>
                   </div>
                   {safeCompleted(job) && typeof job.output?.summary === 'string' ? (
-                    <p className="mt-3 whitespace-pre-wrap text-xs leading-6 text-[#cfbfae]">{job.output.summary}</p>
+                    <p className="mt-3 whitespace-pre-wrap text-xs leading-6 text-[var(--bone-300)]">{job.output.summary}</p>
                   ) : job.status === 'completed' ? (
-                    <p className="mt-3 text-xs text-[#8a8a8a] font-mono">Result withheld or unavailable — no validated summary to display.</p>
+                    <p className="mt-3 text-xs text-[var(--bone-400)] font-mono">Result withheld or unavailable — no validated summary to display.</p>
                   ) : null}
                 </div>
               ))}
@@ -500,22 +500,22 @@ export default function ScoutReportPage() {
 
         {/* HEAVY BAG HISTORY */}
         {heavyBagJobs.length > 0 ? (
-          <section className="border-2 border-[#5a4a3a] bg-[#151515] p-5">
-            <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[#b0a095]">
+          <section className="border-2 border-[var(--hide-500)] bg-[var(--hide-900)] p-5">
+            <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--bone-400)]">
               Heavy Bag Session History ({heavyBagJobs.length})
             </p>
             <div className="mt-3 space-y-2">
               {heavyBagJobs.slice(0, 10).map((job) => (
                 <div
                   key={job.jobId}
-                  className="flex items-center justify-between border border-[#3a2a2a] bg-[#0f0f0f] px-3 py-2"
+                  className="flex items-center justify-between border border-[var(--rust-700)] bg-[var(--hide-950)] px-3 py-2"
                 >
                   <div className="flex items-center gap-3">
                     <StatusBadge status={job.status} />
-                    <span className="text-[10px] font-mono text-[#8a8a8a]">{new Date(job.createdAt).toLocaleString()}</span>
+                    <span className="text-[10px] font-mono text-[var(--bone-400)]">{new Date(job.createdAt).toLocaleString()}</span>
                   </div>
                   {job.status === 'completed' && job.completedAt ? (
-                    <span className="text-[9px] font-mono text-[#6a5a4a]">
+                    <span className="text-[9px] font-mono text-[var(--bone-400)]">
                       {Math.round((new Date(job.completedAt).getTime() - new Date(job.createdAt).getTime()) / 1000)}s
                     </span>
                   ) : null}
@@ -532,11 +532,11 @@ export default function ScoutReportPage() {
 
 function StatusBadge({ status }: { readonly status: JobStatusResult['status'] }) {
   const styles: Record<JobStatusResult['status'], string> = {
-    pending:   'text-[#8a8a8a] border-[#5a4a3a]',
-    running:   'text-[#d4a574] border-[#d4a574]',
-    completed: 'text-[#4a8a4a] border-[#4a8a4a]',
-    failed:    'text-[#dc2626] border-[#dc2626]',
-    cancelled: 'text-[#6a5a4a] border-[#5a4a3a]',
+    pending:   'text-[var(--bone-400)] border-[var(--hide-500)]',
+    running:   'text-[var(--brass-300)] border-[var(--brass-500)]',
+    completed: 'text-[var(--cleared)] border-[var(--cleared)]',
+    failed:    'text-[var(--locked)] border-[var(--locked)]',
+    cancelled: 'text-[var(--bone-400)] border-[var(--hide-500)]',
   };
   return (
     <span className={`border px-2 py-0.5 text-[9px] font-mono uppercase tracking-[0.1em] ${styles[status]}`}>

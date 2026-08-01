@@ -78,14 +78,14 @@ export default function PublicationWorkflowPage() {
       ]}
     >
       <div className="space-y-4">
-        {errorMessage ? <p className="text-sm text-[#f0c4c4]">{errorMessage}</p> : null}
-        <section className="border-2 border-[#8b4444] bg-[#151515] p-4">
-          <p className="text-[12px] font-mono uppercase tracking-[0.16em] text-[#d4a574]">Workflow Surface Registry</p>
+        {errorMessage ? <p className="text-sm text-[var(--locked-ink)]">{errorMessage}</p> : null}
+        <section className="border-2 border-[var(--patina-700)] bg-[var(--hide-900)] p-4">
+          <p className="text-[12px] font-mono uppercase tracking-[0.16em] text-[var(--brass-300)]">Workflow Surface Registry</p>
           <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {workflowPanels.map((stage) => (
-              <article key={stage} className="border border-[#5a4a3a] bg-[#101010] p-3">
-                <p className="text-[14px] font-semibold text-[#e8d7c6]">{stage}</p>
-                <p className="mt-1 text-[11px] font-mono uppercase tracking-[0.09em] text-[#d4a574]">
+              <article key={stage} className="border border-[var(--hide-500)] bg-[var(--hide-950)] p-3">
+                <p className="text-[14px] font-semibold text-[var(--bone-200)]">{stage}</p>
+                <p className="mt-1 text-[11px] font-mono uppercase tracking-[0.09em] text-[var(--brass-300)]">
                   {capabilityStatus}
                 </p>
               </article>
