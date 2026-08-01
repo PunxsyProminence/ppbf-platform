@@ -408,10 +408,10 @@ describe('the sweep end to end against real Postgres', () => {
     jest.resetModules();
     jest.doMock('./videoScan', () => ({ scanVideoSession: scanImpl }));
     jest.doMock('./shadowEvents', () => ({ emitShadowEvent: jest.fn(async () => {}) }));
-    const module = await import('./videoScanSweep');
+    const sweepModule = await import('./videoScanSweep');
     const { closePool: closeRegistryPool } = await import('./db');
     registryPools.push(closeRegistryPool);
-    return module.sweepQuarantinedVideos;
+    return sweepModule.sweepQuarantinedVideos;
   }
 
   afterEach(async () => {
