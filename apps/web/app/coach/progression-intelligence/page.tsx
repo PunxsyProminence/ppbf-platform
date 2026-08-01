@@ -103,7 +103,7 @@ export default function CoachProgressionIntelligencePage() {
   };
 
   return (
-    <RoleStandaloneView roleLabel="Coach Workspace" routeLabel="/coach/progression-intelligence" allowedRoles={['coach']} showShellHeader={false}>
+    <RoleStandaloneView roleLabel="Coach Workspace" routeLabel="/coach/progression-intelligence" allowedRoles={['coach']} room="floor" showShellHeader={false}>
       <div className="space-y-6">
         <header className="border-2 border-[var(--patina-700)] bg-[var(--hide-950)] p-5">
           <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--brass-300)]">Closed-Loop Progression Intelligence</p>

@@ -136,7 +136,7 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
   }
 
   return (
-    <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
+    <main className="room--board min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-10 lg:px-10">
         <header className="flex flex-col gap-4 border-b-2 border-[var(--black)] pb-6 md:flex-row md:items-end md:justify-between">
           <div className="space-y-3">

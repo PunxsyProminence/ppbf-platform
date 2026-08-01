@@ -167,6 +167,7 @@ export default function AdminComplianceCenterPage() {
       routeLabel="/admin/compliance-center"
       allowedRoles={['admin']}
       showShellHeader={false}
+      room="clinic"
     >
       <div className="space-y-6">
         <header className="border-2 border-[var(--patina-700)] bg-[var(--hide-950)] p-5">

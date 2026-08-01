@@ -168,7 +168,7 @@ export default function CoachVideoAnalysisPage() {
   };
 
   return (
-    <RoleStandaloneView roleLabel="Coach Workspace" routeLabel="/coach/video-analysis" allowedRoles={['coach', 'admin']} showShellHeader={false}>
+    <RoleStandaloneView roleLabel="Coach Workspace" routeLabel="/coach/video-analysis" allowedRoles={['coach', 'admin']} showShellHeader={false} room="floor">
       <div className="space-y-6">
         <header className="border-2 border-[var(--patina-700)] bg-[var(--hide-950)] p-5">
           <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--brass-300)]">Video Analysis</p>

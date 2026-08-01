@@ -109,6 +109,7 @@ export default function EvidenceReviewPage() {
       roleLabel="Evidence Review"
       routeLabel="/evidence"
       allowedRoles={['admin', 'platform_owner']}
+      room="file"
     >
       <div className="space-y-6">
         <header className="border-2 border-[var(--patina-700)] bg-[var(--hide-950)] p-5">

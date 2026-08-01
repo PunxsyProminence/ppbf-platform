@@ -111,6 +111,20 @@ and 3 hold in every room), never sets **proportion** (Law 8 likewise), and never
 softens **refusal** (Law 7: a declined action is stamped in ink whether the page hangs
 on brick or on cork).
 
+**Where the app stands.** Rooms are wired into `apps/web` through the three shells that
+already wrap most pages, so a page declares its room and inherits wall, light and shadow:
+
+| Shell | How | Pages |
+|---|---|---|
+| `RoleStandaloneView` | `room="floor"` prop | athlete, coach, parent, guardian, shadow, compliance-center |
+| `FeatureSurface` | `room="file"` prop | research, knowledge-graph |
+| `BoardMemberDashboard` | `.room--board` on its `<main>` | all eight board seat workspaces |
+
+Pages with their own `<main>` carry the class directly (`admin`, `board` hub, `schedule`,
+`evidence`, `compliance-monitoring`). The prop is optional and defaults to no room, so a
+page that has not been assigned one renders exactly as it did before — the rollout is
+additive, never a flag day.
+
 **7. Refusal is a stamp, not an error toast.**
 When Layer 20 declines to answer, or Layer 17 withholds a cohort below the k-anonymity
 threshold, it says so in ink on the page: `RESEARCH NEEDED`, `REDACTED`. A stamp is

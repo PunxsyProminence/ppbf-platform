@@ -139,7 +139,7 @@ export default function BoardComplianceMonitoringPage() {
 
   return (
     <RoleSessionGate allowedRoles={['board']}>
-      <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
+      <main className="room--clinic min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
         <div className="mx-auto max-w-7xl px-6 py-10 lg:px-10">
           <header className="space-y-3 border-b-[3px] border-[var(--black)] pb-6">
             <p className="text-xs font-mono uppercase tracking-[0.22em] text-[var(--red-primary)]">Board Workspace</p>

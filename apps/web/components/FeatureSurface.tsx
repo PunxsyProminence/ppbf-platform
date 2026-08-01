@@ -12,6 +12,7 @@ interface FeatureSurfaceProps {
   readonly primaryLinks: Array<{ label: string; href: string }>;
   readonly stats: Array<{ label: string; value: string }>;
   readonly children?: ReactNode;
+  readonly room?: 'office' | 'floor' | 'board' | 'file' | 'clinic' | 'night';
 }
 
 export default function FeatureSurface({
@@ -23,6 +24,7 @@ export default function FeatureSurface({
   primaryLinks,
   stats,
   children,
+  room,
 }: FeatureSurfaceProps) {
   const quickLinks = [
     ...primaryLinks,
@@ -31,7 +33,7 @@ export default function FeatureSurface({
   ].filter((link, index, all) => all.findIndex((item) => item.href === link.href) === index);
 
   return (
-    <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
+    <main className={`${room ? `room--${room}` : ''} min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]`.trim()}>
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-10 lg:px-10">
         <header className="flex flex-col gap-4 border-b-[3px] border-[var(--black)] pb-6 md:flex-row md:items-end md:justify-between">
           <div className="space-y-3">

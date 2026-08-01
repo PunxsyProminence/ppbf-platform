@@ -5,7 +5,7 @@ import RoleStandaloneView from '@/components/RoleStandaloneView';
 
 export default function ParentDashboardPage() {
   return (
-    <RoleStandaloneView roleLabel="Parent Hub" routeLabel="/parent/dashboard" allowedRoles={['parent']} showShellHeader={false}>
+    <RoleStandaloneView roleLabel="Parent Hub" routeLabel="/parent/dashboard" allowedRoles={['parent']} room="office" showShellHeader={false}>
       <ParentHub />
     </RoleStandaloneView>
   );

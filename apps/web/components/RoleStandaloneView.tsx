@@ -12,6 +12,7 @@ interface RoleStandaloneViewProps {
   readonly allowedRoles: ClubRole[];
   readonly children: ReactNode;
   readonly showShellHeader?: boolean;
+  readonly room?: 'office' | 'floor' | 'board' | 'file' | 'clinic' | 'night';
 }
 
 export default function RoleStandaloneView({
@@ -20,10 +21,12 @@ export default function RoleStandaloneView({
   allowedRoles,
   children,
   showShellHeader = true,
+  room,
 }: RoleStandaloneViewProps) {
+  const roomClass = room ? `room--${room}` : '';
   return (
     <RoleSessionGate allowedRoles={allowedRoles}>
-      <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
+      <main className={`${roomClass} min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]`.trim()}>
         {showShellHeader && (
           <header className="border-b-[3px] border-[var(--black)] bg-[var(--canvas-tan-dark)] px-6 py-5 shadow-[var(--shadow-sm)]">
             <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-4">
