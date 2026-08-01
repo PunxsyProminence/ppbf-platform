@@ -627,7 +627,47 @@ export function validateShadowResponse(
     .replace(/\b10\s*%\s*coach\b[^.\n]{0,10}\b90\s*%\s*athlete\b/gi, '')
     .replace(/\b(?:at|to)\s+\d+(?:\.\d+)?\s*%(?:\s*(?:of\s+max(?:imum)?|effort|intensity|power|speed|pace|capacity))?(?!\s*of\b)/gi, '')
     .replace(/\b\d+(?:\.\d+)?\s*%\s*(?:effort|intensity|power|speed|pace|max(?:imum)?|capacity)\b/gi, '');
-  const makesQuantifiedEvidenceClaim = /\b\d+(?:\.\d+)?\s*%|\b\d+\s+(?:similar\s+)?(cases?|athletes?|participants?|studies?)\b/i.test(quantSource);
+  // The count-noun branch was one alternation over cases/athletes/participants/
+  // studies, which read every roster count as a sample size. 'cases' and
+  // 'studies' are inherently evidentiary -- counting them IS stating a sample.
+  // 'athletes' and 'participants' are not: in a session plan they are how many
+  // people stand where. Measured 2026-08-01, this is what withheld the
+  // background Heavy Bag answer and failed the staging gate on 0f47b35 --
+  // step 14 asks for a four-station circuit for a 60-minute youth class, and
+  // no good answer to that avoids saying how many athletes go to a station
+  // ("split the 12 athletes into four groups", "3 athletes per station").
+  // Both retries filtered because the trigger is in the question, not in the
+  // phrasing, so the retry policy could never clear it.
+  //
+  // Narrowed the same way the percentage strip above was: the count reads as
+  // evidence only when framed as a sample -- drawn 'out of' a population, or
+  // attached to an observed outcome. "300 athletes improved their guard" still
+  // filters without a citation; "3 athletes per station" no longer does.
+  // Stated as a strip rather than a narrowed trigger, deliberately. An
+  // unrecognized phrasing then keeps filtering -- a withheld benign answer,
+  // which is the safe direction -- instead of letting an uncited figure
+  // through. "Alpha Boxing has 12 athletes" is an organizational rollup and
+  // must still carry a citation; only allocation speech is removed.
+  const peopleCountSource = quantSource
+    // "3 athletes per bag", "4 athletes per station"
+    .replace(/\b\d+\s+(?:athletes?|participants?)\s+per\b/gi, '')
+    // "groups of 3 athletes", "pairs of 2 participants"
+    .replace(/\b(?:groups?|pairs?|teams?|waves?|lines?|rotations?)\s+of\s+\d+\s+(?:athletes?|participants?)\b/gi, '')
+    // "3 athletes at each station", "4 athletes to every bag"
+    .replace(/\b\d+\s+(?:athletes?|participants?)\s+(?:at|to|on)\s+(?:each|every)\b/gi, '')
+    // Instruction-led allocation: "split the 12 athletes", "pair up the 10 athletes"
+    .replace(/\b(?:split|divide|put|place|pair|group|assign|rotate|send|line|keep|run|start|stagger|alternate)\b[^.\n]{0,20}?\b\d+\s+(?:athletes?|participants?)\b/gi, '')
+    // "4 athletes rotate through", "3 athletes work the bag"
+    .replace(/\b\d+\s+(?:athletes?|participants?)\s+(?:rotate|work|go|move|start|begin|switch|cycle|share|train|hit|shadowbox|spar)\b/gi, '')
+    // Planning conditional: "with 8 participants you can run two stations"
+    .replace(/\bwith\s+\d+\s+(?:athletes?|participants?)\b/gi, '');
+  const makesQuantifiedEvidenceClaim = (
+    /\b\d+(?:\.\d+)?\s*%/i.test(quantSource)
+    // 'cases' and 'studies' are inherently evidentiary -- counting them IS
+    // stating a sample, in any sentence. Untouched.
+    || /\b\d+\s+(?:similar\s+)?(?:cases?|studies?)\b/i.test(quantSource)
+    || /\b\d+\s+(?:similar\s+)?(?:athletes?|participants?)\b/i.test(peopleCountSource)
+  );
   if ((makesEvidenceClaim || makesQuantifiedEvidenceClaim) && citationIds.length === 0) {
     filtered = true;
     reasons.push('Makes an evidence or quantitative claim without an exact retrieved evidence citation');
