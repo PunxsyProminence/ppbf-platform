@@ -25,10 +25,24 @@ export async function register(): Promise<void> {
 
   const { processNextShadowJob } = await import('./src/server/pilot/shadowJobProcessor');
   const { purgeTerminalShadowJobs } = await import('./src/server/pilot/shadowJobQueue');
+  const { sweepQuarantinedVideos } = await import('./src/server/pilot/videoScanSweep');
   const intervalMs = resolveShadowWorkerIntervalMs();
   const handle = startShadowJobWorker({
     processOne: () => processNextShadowJob(),
     intervalMs,
+    // Promotes quarantined uploads that clear every configured scan gate
+    // (#49). No-ops entirely when no gate is configured, so this is inert
+    // until PPBF_VIDEO_CONTENT_SCAN / PPBF_VIDEO_MALWARE_SCAN are set.
+    sweep: async () => {
+      const result = await sweepQuarantinedVideos();
+      if (result.scanned > 0) {
+        console.log('SHADOW video scan sweep', {
+          scanned: result.scanned,
+          promoted: result.promoted,
+          blocked: result.blocked,
+        });
+      }
+    },
     housekeeping: async () => {
       const purged = await purgeTerminalShadowJobs();
       if (purged > 0) console.log('SHADOW job retention sweep', { purged });

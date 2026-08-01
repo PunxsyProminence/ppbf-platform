@@ -194,6 +194,26 @@ jobs:
       # measured-facts source: in-container ffmpeg timing and real vision
       # latency/token spend. Staging only; production leaves it unset until
       # Film Study is a real feature.
+      #
+      # PPBF_VIDEO_CONTENT_SCAN turns on the video scan sweep's content gate
+      # (#49) -- the thing that can finally move an upload off 'quarantined'.
+      # Until this exists, uploaded videos are stranded: every reader requires
+      # status 'ready' and nothing in the platform ever wrote it. Staging
+      # first, like every flag; production leaves it unset (= no gate, no
+      # promotion, videos stay quarantined) until staging has promoted a real
+      # upload and a human has looked at the result.
+      #
+      # PPBF_VIDEO_MALWARE_SCAN is deliberately NOT set, here or in
+      # production. It reads a verdict Microsoft Defender for Storage writes
+      # onto the blob as an index tag; whether malware scanning is enabled on
+      # the storage account is an Azure setting this repository cannot see or
+      # turn on. Enabling the gate without the scanner behind it would leave
+      # every upload retrying until it timed out into human review -- worse
+      # than not enabling it, and it would put "malware scanned" in
+      # scan_detail for videos nothing scanned. Set it to
+      # defender_index_tags only after confirming Defender for Storage
+      # malware scanning is on for the account behind
+      # AZURE_STORAGE_CONNECTION_STRING.
       - name: Deploy to Azure Container App
         env:
           AZURE_AI_ENDPOINT: ${{ vars.AZURE_AI_ENDPOINT }}
@@ -223,6 +243,7 @@ jobs:
               AZURE_AI_EMBEDDING_DEPLOYMENT_NAME=text-embedding-3-small \
               AZURE_AI_VISION_DEPLOYMENT_NAME=gpt-5-vision-shadow \
               PPBF_FILM_STUDY_DIAGNOSTIC_ENABLED=true \
+              PPBF_VIDEO_CONTENT_SCAN=vision \
               PPBF_PILOT_BOOTSTRAP_KEY=secretref:ppbf-pilot-bootstrap-key \
               PPBF_PILOT_DEFAULT_ORG_ID=secretref:ppbf-pilot-default-org-id \
               PPBF_PILOT_SHADOW_CONTAINER=secretref:ppbf-pilot-shadow-container \

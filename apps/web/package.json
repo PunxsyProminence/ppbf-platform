@@ -28,7 +28,7 @@
     "gate:pilot": "node scripts/pilot-gate.mjs",
     "gate:pilot:multiorg": "node scripts/pilot-multiorg-gate.mjs",
     "test": "jest --runInBand --testPathIgnorePatterns=\\.pg\\.test\\.ts$",
-    "test:migrations": "npm run test:migrations:session && npm run test:migrations:library && npm run test:migrations:gate && npm run test:migrations:multiorg-orphans && npm run test:migrations:stranded-guardians && npm run test:migrations:job-queue && npm run test:migrations:intake-review && npm run test:migrations:library-flags && npm run test:migrations:near-miss && npm run test:migrations:guardian-repair && npm run test:migrations:volunteer-program && npm run test:migrations:announcements && npm run test:migrations:feedback-exit && npm run test:migrations:video-sessions && npm run test:migrations:film-proposals",
+    "test:migrations": "npm run test:migrations:session && npm run test:migrations:library && npm run test:migrations:gate && npm run test:migrations:multiorg-orphans && npm run test:migrations:stranded-guardians && npm run test:migrations:job-queue && npm run test:migrations:intake-review && npm run test:migrations:library-flags && npm run test:migrations:near-miss && npm run test:migrations:guardian-repair && npm run test:migrations:volunteer-program && npm run test:migrations:announcements && npm run test:migrations:feedback-exit && npm run test:migrations:video-sessions && npm run test:migrations:video-scan && npm run test:migrations:film-proposals",
     "test:migrations:guardian-repair": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/strandedGuardianRepair.pg.test.ts --testTimeout=180000",
     "test:migrations:volunteer-program": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/volunteerProgram.pg.test.ts --testTimeout=180000",
     "test:migrations:announcements": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/announcementsPersistence.pg.test.ts --testTimeout=180000",
@@ -55,6 +55,7 @@
     "pilot:apply-compliance": "node scripts/pilot-apply-compliance-migration.mjs",
     "pilot:apply-publications": "node scripts/pilot-apply-publications-migration.mjs",
     "test:migrations:video-sessions": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/videoSessionsMigration.pg.test.ts --testTimeout=180000",
+    "test:migrations:video-scan": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/videoScanPromotion.pg.test.ts --testTimeout=180000",
     "pilot:apply-film-study-proposals": "node scripts/pilot-apply-film-study-proposals-migration.mjs",
     "test:migrations:film-proposals": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/filmStudyProposals.pg.test.ts --testTimeout=180000"
   },

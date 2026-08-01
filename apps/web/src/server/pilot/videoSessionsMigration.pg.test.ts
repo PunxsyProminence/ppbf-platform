@@ -257,6 +257,136 @@ describe('video_sessions migration against real Postgres', () => {
     }
   });
 
+  // ─── Scan bookkeeping (#49) ───────────────────────────────────────────────
+  // Quarantine now has an exit. These prove the columns the sweep claims and
+  // settles into actually arrive -- on a fresh install AND on the legacy
+  // route-created table, which is the shape staging and production carry.
+
+  test('a fresh install lands every scan column with the safe defaults', async () => {
+    const client = await freshDatabase('ppbf_test_video_scan_fresh');
+    try {
+      await client.query(migrationSql);
+      await client.query(UPLOAD_INSERT, UPLOAD_PARAMS);
+
+      const row = await client.query(
+        `select status, scan_state, scan_detail, scan_attempts, scan_claimed_at, scanned_at,
+                scan_next_attempt_at <= now() as due_now
+         from pilot.video_sessions where video_session_id = $1`,
+        ['vs-1'],
+      );
+      // A fresh upload is quarantined, unscanned, and immediately eligible.
+      expect(row.rows[0]).toMatchObject({
+        status: 'quarantined',
+        scan_state: 'pending',
+        scan_attempts: 0,
+        scan_claimed_at: null,
+        scanned_at: null,
+        due_now: true,
+      });
+      expect(row.rows[0].scan_detail).toEqual({});
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the legacy route-created table gains the scan columns', async () => {
+    // The case that matters operationally. Without this the sweep's claim
+    // query would reference columns that are not there, and every scan attempt
+    // would error against a table the environment believes is up to date.
+    const client = await freshDatabase('ppbf_test_video_scan_upgrade');
+    try {
+      await client.query(LEGACY_TABLE);
+      await expect(
+        client.query('select scan_state from pilot.video_sessions'),
+      ).rejects.toThrow(/column "scan_state" does not exist/);
+
+      await client.query(migrationSql);
+      await client.query(UPLOAD_INSERT, UPLOAD_PARAMS);
+
+      const row = await client.query(
+        'select scan_state, scan_attempts from pilot.video_sessions where video_session_id = $1',
+        ['vs-1'],
+      );
+      expect(row.rows[0]).toMatchObject({ scan_state: 'pending', scan_attempts: 0 });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a video quarantined BEFORE this migration becomes eligible for its first scan', async () => {
+    // The owner's own upload is exactly this row: it landed quarantined while
+    // nothing could promote it. Backfilling it to 'pending' with an immediate
+    // next-attempt time is what lets the sweep pick it up rather than leaving
+    // it stranded for having arrived too early.
+    const client = await freshDatabase('ppbf_test_video_scan_backfill');
+    try {
+      // Reconstruct the pre-#49 migration by cutting at the section marker.
+      // Asserted rather than assumed: if the marker is ever renamed, this
+      // fails loudly instead of quietly applying the WHOLE migration and
+      // "passing" without testing the backfill at all.
+      const markerIndex = migrationSql.indexOf('-- ─── Scan bookkeeping');
+      expect(markerIndex).toBeGreaterThan(0);
+      await client.query(migrationSql.slice(0, markerIndex));
+      await client.query(UPLOAD_INSERT, UPLOAD_PARAMS);
+
+      await client.query(migrationSql);
+
+      const row = await client.query(
+        `select status, scan_state, scan_next_attempt_at <= now() as due_now
+         from pilot.video_sessions where video_session_id = $1`,
+        ['vs-1'],
+      );
+      expect(row.rows[0]).toMatchObject({ status: 'quarantined', scan_state: 'pending', due_now: true });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('scan_state is constrained, not free text', async () => {
+    const client = await freshDatabase('ppbf_test_video_scan_reject');
+    try {
+      await client.query(migrationSql);
+      await client.query(UPLOAD_INSERT, UPLOAD_PARAMS);
+
+      await expect(
+        client.query('update pilot.video_sessions set scan_state = $1', ['definitely-not-a-scan-state']),
+      ).rejects.toThrow(/violates check constraint "video_sessions_scan_state_check"/);
+
+      // Every state the policy can produce must be accepted, or a real scan
+      // would fail at settle time with the verdict already computed.
+      for (const state of ['pending', 'scanning', 'passed', 'infected', 'blocked', 'needs_human_review', 'unconfigured']) {
+        await client.query('update pilot.video_sessions set scan_state = $1', [state]);
+      }
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('re-running leaves exactly one scan_state constraint and one scan-queue index', async () => {
+    const client = await freshDatabase('ppbf_test_video_scan_idempotent');
+    try {
+      await client.query(migrationSql);
+      await client.query(migrationSql);
+      await client.query(migrationSql);
+
+      const constraints = await client.query(
+        `select count(*)::int as n
+         from pg_constraint
+         where conrelid = 'pilot.video_sessions'::regclass
+           and conname = 'video_sessions_scan_state_check'`,
+      );
+      expect(constraints.rows[0].n).toBe(1);
+
+      const indexes = await client.query(
+        `select count(*)::int as n from pg_indexes
+         where schemaname = 'pilot' and indexname = 'idx_video_sessions_scan_queue'`,
+      );
+      expect(indexes.rows[0].n).toBe(1);
+    } finally {
+      await client.end();
+    }
+  });
+
   test('both indexes exist after the migration', async () => {
     const client = await freshDatabase('ppbf_test_video_indexes');
     try {

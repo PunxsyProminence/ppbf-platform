@@ -71,7 +71,34 @@ const READINESS_QUERY = `
       from pg_indexes
       where schemaname = 'pilot'
         and indexname = 'idx_video_sessions_athlete'
-    ) as video_sessions_athlete_index_ready
+    ) as video_sessions_athlete_index_ready,
+    -- Scan bookkeeping (#49). Asserted column by column rather than as a
+    -- table-exists check, because the failure this guards against is an
+    -- environment that got video_sessions from the old route DDL and would
+    -- otherwise report "ready" while the sweep's claim query referenced
+    -- columns that are not there.
+    (
+      select count(*) = 6
+      from information_schema.columns
+      where table_schema = 'pilot'
+        and table_name = 'video_sessions'
+        and column_name in (
+          'scan_state', 'scan_detail', 'scan_attempts',
+          'scan_claimed_at', 'scan_next_attempt_at', 'scanned_at'
+        )
+    ) as video_sessions_scan_columns_ready,
+    exists (
+      select 1
+      from pg_constraint
+      where conrelid = 'pilot.video_sessions'::regclass
+        and conname = 'video_sessions_scan_state_check'
+    ) as video_sessions_scan_state_check_ready,
+    exists (
+      select 1
+      from pg_indexes
+      where schemaname = 'pilot'
+        and indexname = 'idx_video_sessions_scan_queue'
+    ) as video_sessions_scan_index_ready
 `;
 
 function assertReadiness(row) {
