@@ -148,7 +148,25 @@ Ordered by a floor-readiness trace run 2026-08-01.
 
 | Item | Session | Branch |
 |---|---|---|
-| Knowledge + feedback (drills, Rabbit Holes, feedback box) | this session | `feature/knowledge-and-feedback` |
+| Knowledge + feedback (drills, Rabbit Holes, feedback box) | session A | `feature/knowledge-and-feedback` |
+| Backup + roster export | session A | `feature/knowledge-and-feedback` |
+| Pain report names the child on the coach's screen | session A | `feature/knowledge-and-feedback` |
+| Guardian invite silent failure | session A | `feature/knowledge-and-feedback` |
+| `/admin` seeding fabricated capabilities into the database | session A | `feature/knowledge-and-feedback` |
+| Athlete record correction + deactivation | session A | `feature/knowledge-and-feedback` |
+| Athlete check-out losing notes | session A | `feature/knowledge-and-feedback` |
+| Coach coverage (403 on a covered class) | session A | `feature/knowledge-and-feedback` |
+
+**Free for the other session** — none of the above, and none of these files:
+`scripts/`, `.github/workflows/`, `apps/web/app/admin/page.tsx`,
+`apps/web/app/admin/people/page.tsx`, `apps/web/components/CoachWorkspace.tsx`,
+`apps/web/components/AthleteWorkspace.tsx`,
+`apps/web/src/server/pilot/{staffProvisioning,access,drills,feedback,rabbitHoles}.ts`.
+
+Good unclaimed candidates: per-athlete starting PIN, the honesty sweep
+(fabricated donations, the example minors in `scripts/data/`, `/public`
+program copy), the two platform-owner routes returning minors' names, and
+`drillsPersistence.pg.test.ts` running nowhere.
 
 ---
 
