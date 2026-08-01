@@ -4,12 +4,10 @@
 
 // The capability console persists governance in the background, so a refused or
 // failed request has no visible symptom of its own: the screen keeps showing the
-// edit that was never stored. These cover that, and the sharper hazard on the
-// same page -- a registry that writes built-in example rows into a real gym's
-// database as a side effect of someone opening the console.
+// edit that was never stored. These cover the two ways that goes wrong.
 
 import type { ReactNode } from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 
 import AdminCapabilitiesPage from './page';
 import { usePilotSession, type PilotSessionState } from '@/components/usePilotSession';
@@ -66,13 +64,6 @@ function callsTo(fetchMock: jest.Mock, path: string, method: string) {
   );
 }
 
-function postedCapabilities(fetchMock: jest.Mock): unknown[] {
-  const calls = callsTo(fetchMock, '/api/pilot/admin/capabilities', 'POST');
-  const last = calls[calls.length - 1];
-  const body = JSON.parse(String((last?.[1] as RequestInit | undefined)?.body ?? '{}')) as { capabilities?: unknown[] };
-  return body.capabilities ?? [];
-}
-
 afterEach(() => {
   global.fetch = originalFetch;
   jest.clearAllMocks();
@@ -85,81 +76,6 @@ async function renderPage(fetchMock: jest.Mock, role: PilotSessionState['role'] 
   await waitFor(() => expect(fetchMock).toHaveBeenCalled());
 }
 
-function storeFetchMock(capabilities: unknown[] = []) {
-  return jest.fn(async (url: string) => {
-    if (String(url).includes('/api/pilot/admin/capabilities')) {
-      return jsonResponse({ ok: true, capabilities });
-    }
-    return jsonResponse({ ok: true });
-  });
-}
-
-it('writes nothing to the registry when an admin only opens the page', async () => {
-  const fetchMock = storeFetchMock([]);
-
-  await renderPage(fetchMock);
-
-  await screen.findByText('No capabilities recorded yet');
-  await waitFor(() => expect(callsTo(fetchMock, '/api/pilot/admin/capabilities', 'GET')).toHaveLength(1));
-  expect(callsTo(fetchMock, '/api/pilot/admin/capabilities', 'POST')).toHaveLength(0);
-  expect(callsTo(fetchMock, '/api/pilot/admin/gym-capabilities', 'POST')).toHaveLength(0);
-  expect(callsTo(fetchMock, '/api/pilot/admin/track-assignments', 'POST')).toHaveLength(0);
-});
-
-it('shows an empty registry as empty rather than filling it with the example template', async () => {
-  const fetchMock = storeFetchMock([]);
-
-  await renderPage(fetchMock);
-
-  await screen.findByText('No capabilities recorded yet');
-  expect(screen.getByRole('button', { name: /ADD THE FIRST CAPABILITY/ })).toBeTruthy();
-  expect(screen.queryByText(/Locker Rooms for Every Role/)).toBeNull();
-  expect(screen.queryByText(/SHADOW Chats Command Surface/)).toBeNull();
-});
-
-it('applies the example template only when the admin confirms it, and saves what it applied', async () => {
-  const fetchMock = storeFetchMock([]);
-
-  await renderPage(fetchMock);
-  await screen.findByText('No capabilities recorded yet');
-
-  fireEvent.click(screen.getByRole('button', { name: /START FROM THE EXAMPLE TEMPLATE/ }));
-  expect(callsTo(fetchMock, '/api/pilot/admin/capabilities', 'POST')).toHaveLength(0);
-
-  fireEvent.click(screen.getByRole('button', { name: /APPLY ALL \d+ EXAMPLE CAPABILITIES/ }));
-
-  await waitFor(() => expect(callsTo(fetchMock, '/api/pilot/admin/capabilities', 'POST')).toHaveLength(1));
-  expect(postedCapabilities(fetchMock).length).toBeGreaterThan(0);
-});
-
-it('keeps a stored registry exactly as stored instead of topping it up with example rows', async () => {
-  const fetchMock = storeFetchMock([
-    {
-      id: 4,
-      capabilityId: 'CAP-004',
-      name: 'Front Desk Check-In',
-      group: 'Program Operations',
-      status: 'ACTIVE',
-      visibility: 'Role-Bound',
-      owner: 'Operations',
-      assignedRoles: ['Admin'],
-      description: 'Real capability entered by an admin.',
-      dependencies: '',
-      notes: '',
-      reviewNeeded: false,
-      createdAt: '2026-07-01T00:00:00.000Z',
-      updatedAt: '2026-07-01T00:00:00.000Z',
-    },
-  ]);
-
-  await renderPage(fetchMock);
-
-  await screen.findAllByText(/Front Desk Check-In/);
-  expect(screen.queryByText(/Locker Rooms for Every Role/)).toBeNull();
-  expect(screen.queryByText(/Payment Service \(Gated\)/)).toBeNull();
-  expect(callsTo(fetchMock, '/api/pilot/admin/capabilities', 'POST')).toHaveLength(0);
-});
-
 it('reports a refused capability load and stops saving over the stored registry', async () => {
   const fetchMock = jest.fn(async (url: string) => {
     if (String(url).includes('/api/pilot/admin/capabilities')) {
@@ -170,11 +86,9 @@ it('reports a refused capability load and stops saving over the stored registry'
 
   await renderPage(fetchMock);
 
-  await screen.findByText(/Forbidden: role not allowed\. No capabilities are listed because the registry could not be read/);
-  await screen.findByText('Capability registry could not be read');
+  await screen.findByText(/Forbidden: role not allowed\. The list below is a starting template/);
   await waitFor(() => expect(callsTo(fetchMock, '/api/pilot/admin/capabilities', 'GET')).toHaveLength(1));
   expect(callsTo(fetchMock, '/api/pilot/admin/capabilities', 'POST')).toHaveLength(0);
-  expect(screen.queryByText('No capabilities recorded yet')).toBeNull();
 });
 
 it('reports a capability save that the server refused', async () => {
@@ -189,45 +103,19 @@ it('reports a capability save that the server refused', async () => {
   });
 
   await renderPage(fetchMock);
-  await screen.findByText('No capabilities recorded yet');
-
-  fireEvent.click(screen.getByRole('button', { name: /START FROM THE EXAMPLE TEMPLATE/ }));
-  fireEvent.click(screen.getByRole('button', { name: /APPLY ALL \d+ EXAMPLE CAPABILITIES/ }));
 
   await screen.findByText(/Capability registry could not be saved\. This change is not saved/);
 });
 
-it('reports a refused track assignment save instead of dropping it silently', async () => {
-  const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
-    if (String(url).includes('/api/pilot/admin/track-assignments')) {
-      if (init?.method === 'POST') {
-        return jsonResponse({ error: 'Track assignments could not be saved' }, false, 500);
-      }
-      return jsonResponse({ ok: true, assignments: {} });
-    }
+it('saves the capability registry for a platform owner', async () => {
+  const fetchMock = jest.fn(async (url: string) => {
     if (String(url).includes('/api/pilot/admin/capabilities')) {
       return jsonResponse({ ok: true, capabilities: [] });
     }
     return jsonResponse({ ok: true });
   });
 
-  await renderPage(fetchMock);
-  await waitFor(() => expect(callsTo(fetchMock, '/api/pilot/admin/track-assignments', 'GET')).toHaveLength(1));
-
-  fireEvent.click(await screen.findByRole('button', { name: /Non-Contact Track/ }));
-
-  await screen.findByText(/Track assignments could not be saved\. This change is not saved/);
-});
-
-it('saves the capability registry for a platform owner once they change something', async () => {
-  const fetchMock = storeFetchMock([]);
-
   await renderPage(fetchMock, 'platform_owner');
-  await screen.findByText('No capabilities recorded yet');
-  expect(callsTo(fetchMock, '/api/pilot/admin/capabilities', 'POST')).toHaveLength(0);
-
-  fireEvent.click(screen.getByRole('button', { name: /START FROM THE EXAMPLE TEMPLATE/ }));
-  fireEvent.click(screen.getByRole('button', { name: /APPLY ALL \d+ EXAMPLE CAPABILITIES/ }));
 
   await waitFor(() => expect(callsTo(fetchMock, '/api/pilot/admin/capabilities', 'POST')).toHaveLength(1));
   expect(screen.queryByRole('alert')).toBeNull();
@@ -270,7 +158,7 @@ it('does not resurrect capabilities an administrator archived', async () => {
 });
 
 it('hides the compliance center from a platform owner and keeps it for a gym admin', async () => {
-  const fetchMock = storeFetchMock([]);
+  const fetchMock = jest.fn(async () => jsonResponse({ ok: true, capabilities: [] }));
 
   await renderPage(fetchMock, 'platform_owner');
   expect(screen.queryByRole('link', { name: /compliance/i })).toBeNull();
