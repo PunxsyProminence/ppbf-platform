@@ -1746,3 +1746,80 @@ body.ppbf.on-canvas {
 /* The long-press reward: hold a stamp down and it presses in harder. */
 .stamp--press { transition: scale .1s ease, filter .1s ease; }
 .stamp--press:active { scale: .96; filter: saturate(1.3) contrast(1.15); }
+
+/* ============================================================ NOTIFICATIONS === */
+/* Persistent alerts that live on the page — not dismissible toasts. Law 7 applied:
+   critical notifications (clearance needed, alert fired, lock engaged) are stamps
+   that sit until actively clicked. Styled as inline banners with clear status. */
+.alert { border-left: 4px solid; padding: var(--s4) var(--s5); border-radius: 0 var(--r-lg) var(--r-lg) 0;
+         margin: var(--s5) 0; display: flex; gap: var(--s4); align-items: flex-start; }
+.alert-icon { flex-shrink: 0; font-size: 18px; margin-top: 2px; }
+.alert-body { flex: 1; }
+.alert-title { font: 650 12px/1 var(--font-data); letter-spacing: .1em; text-transform: uppercase; margin: 0 0 var(--s2); }
+.alert-msg { font-size: var(--t-sm); line-height: 1.55; margin: 0; }
+.alert-action { margin-top: var(--s3); }
+.alert-action a { color: inherit; text-decoration: underline; cursor: pointer; }
+
+.alert--info    { border-left-color: var(--monitor);    background: color-mix(in srgb, var(--monitor) 12%, transparent);
+                  color: var(--bone-100); }
+.alert--warning { border-left-color: var(--restricted); background: color-mix(in srgb, var(--restricted) 12%, transparent);
+                  color: var(--bone-100); }
+.alert--critical { border-left-color: var(--locked);    background: color-mix(in srgb, var(--locked) 12%, transparent);
+                   color: var(--bone-100); }
+.alert--success { border-left-color: var(--cleared);    background: color-mix(in srgb, var(--cleared) 12%, transparent);
+                  color: var(--bone-100); }
+
+/* ========================================================= UNDO/REDO CONTROL === */
+/* Form history buttons styled as physical levers. Pairs (.undo-redo-group) sit
+   near the form controls and roll back to the last saved state. */
+.undo-redo-group { display: flex; gap: var(--s2); margin: var(--s4) 0; }
+.btn--lever { min-height: 38px; padding: 0 var(--s3); font-size: 12px; letter-spacing: .08em;
+              text-transform: uppercase; display: inline-flex; align-items: center; gap: var(--s2);
+              position: relative; transition: all .15s ease; }
+.btn--lever::before { content: ""; display: inline-block; width: 6px; height: 18px;
+                       background: linear-gradient(90deg, var(--brass-600), var(--brass-400), var(--brass-600));
+                       border-radius: 3px; box-shadow: inset 0 1px 2px rgba(255,255,255,.1), 0 1px 3px rgba(0,0,0,.4); }
+.btn--lever:hover::before { background: linear-gradient(90deg, var(--brass-500), var(--brass-300), var(--brass-500));
+                            box-shadow: inset 0 1px 2px rgba(255,255,255,.2), 0 2px 4px rgba(0,0,0,.5); }
+.btn--lever:active::before { scale: .92; box-shadow: inset 0 2px 3px rgba(0,0,0,.3); }
+
+/* ========================================================= EMPTY STATES ===== */
+/* When a list, grid, or panel is empty, show what's supposed to go there and
+   what's needed to fill it. Encourages exploration and explains the flow. */
+.empty { text-align: center; padding: var(--s8) var(--s6); color: var(--bone-400); }
+.empty-glyph { font-size: 48px; opacity: .42; margin-bottom: var(--s4); }
+.empty-title { font: 650 14px/1.4 var(--font-ui); letter-spacing: .04em; color: var(--bone-300); margin: 0 0 var(--s3); }
+.empty-msg { font-size: var(--t-sm); line-height: 1.6; margin: 0 0 var(--s5); max-width: 44ch; }
+.empty-action { display: inline-flex; gap: var(--s3); flex-wrap: wrap; justify-content: center; margin-top: var(--s4); }
+
+/* ====================================================== COMMAND REFERENCE === */
+/* Keyboard shortcuts and command reference card. Styled as a laminated card
+   posted on the wall. Lives in a corner or pops on ? press. */
+.commands { border: 1px solid rgba(212,175,74,.24); border-radius: var(--r-lg);
+            padding: var(--s4) var(--s5); background: linear-gradient(135deg, rgba(42,31,24,.8), rgba(30,23,18,.9));
+            font-size: 11px; max-width: 220px; }
+.commands-title { font: 650 10px/1 var(--font-data); letter-spacing: .12em; text-transform: uppercase;
+                  color: var(--brass-300); margin: 0 0 var(--s3); display: flex; align-items: center; gap: var(--s2); }
+.commands-title::before { content: ""; display: inline-block; width: 8px; height: 8px; background: var(--brass-400);
+                          border-radius: 2px; }
+.commands-list { list-style: none; padding: 0; margin: 0; }
+.commands-item { display: flex; justify-content: space-between; gap: var(--s4); padding: var(--s2) 0;
+                 border-bottom: 1px dashed rgba(212,175,74,.12); }
+.commands-item:last-child { border-bottom: 0; }
+.commands-key { font-family: var(--font-data); font-weight: 650; color: var(--brass-300); letter-spacing: .02em; }
+.commands-desc { color: var(--bone-400); text-align: left; }
+
+/* ======================================================== PRINT MEDIA RULES === */
+/* Every screen must print identically to how it renders on screen.
+   Board records and family records are the same sheet of stamped paper. */
+@media print {
+  body, html { background: #FFF; color: #000; }
+  a { color: #000; text-decoration: underline; }
+  button, .btn, .btn--ghost, .btn--lever { border: 1px solid #000; background: #FFF; color: #000; }
+  .btn::after, .btn::before, .btn--lever::before { display: none; }
+  .kiosk-bar, .rail, .shadow-panel, .commands { display: none; }
+  .room--floor::before, .room--office::before, .room--board::before,
+  .room--file::before, .room--clinic::before, .room--night::before { display: none; }
+  @page { margin: 1in; size: letter portrait; }
+  .page-break { page-break-after: always; }
+}

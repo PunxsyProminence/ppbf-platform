@@ -181,9 +181,45 @@ rings, `.tally` counts rounds the way a gym does. All keyboard-reachable via
 
 ---
 
+## UX Patterns — the five
+
+Five patterns that improve usability without breaking the gym aesthetic. All are zero-asset,
+keyboard-accessible, and respect `prefers-reduced-motion`. See `foundations/patterns.html`.
+
+**1. Persistent Alert Notifications** (`.alert`, `.alert--critical/warning/success/info`)
+Critical alerts live on the page, not as dismissible toasts. Law 7 applied: refusal is a stamp,
+not an error toast. Athletes see a locked status and it stays visible. Coaches see an incoming
+lock and they address it before navigating away. Examples: clearance needed, lock engaged, system
+offline, sync complete.
+
+**2. Form Undo/Redo Levers** (`.btn--lever`, `.undo-redo-group`)
+Undo and redo buttons styled as physical levers. Sit near form controls. Click to roll back
+to the last saved state. Solves "oops I submitted the wrong RPE" without complex recovery flows.
+Connected to form state; rolls back to the last saved checkpoint, not every keystroke.
+
+**3. Empty State Guidance** (`.empty`, `.empty-glyph`, `.empty-title`, `.empty-msg`, `.empty-action`)
+When a list or panel loads empty, show what's supposed to go there and what's needed to fill it.
+"No pending reviews — all athletes cleared" beats a blank screen. Encourages exploration and
+explains the flow. Every empty list should have an action button or next step.
+
+**4. Command Reference Card** (`.commands`, `.commands-list`, `.commands-item`)
+Keyboard shortcuts and command reference as a laminated card styled like a posted gym notice.
+Lives in a corner or pops on `?` keypress. Discoverable without breaking the interface. Commands
+are critical for coaches (approve/deny, lock/unlock) and admins (submit, undo, print, export).
+
+**5. Print Parity** (`@media print` rules per room)
+Every screen prints identically to how it renders on screen. A board governance record and a
+family record are the same stamped sheet. Print this page: the room backgrounds, lamps, and
+shadows disappear; the content reorganizes for paper; all data remains visible and legible.
+Each room has specific print rules: office ledger becomes columnar, floor kiosk scales to card
+stock, etc.
+
+---
+
 ## Contents
 
 ### Foundations
+- `foundations/patterns.html` — persistent alerts, form undo, empty state guidance, command reference, print parity
 - `foundations/matter.html` — type voices to choose from, paper conditions, light + shadow, placement, the seal, discoverables
 - `foundations/rooms.html` — the six rooms, the wood/brick walls, lamps, ledger, nameplates
 - `foundations/materials.html` — the panel materials plus brass hardware and the stamp pad
