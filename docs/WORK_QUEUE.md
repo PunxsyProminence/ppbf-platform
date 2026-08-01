@@ -63,33 +63,86 @@ recoverable. It is not a public launch, and it is not a demo.
 
 ## Ready to build — unclaimed
 
-Ordered by what the pilot needs first.
+Ordered by a floor-readiness trace run 2026-08-01.
 
-- [ ] **Bulk athlete + guardian import.** A roster arrives as a spreadsheet.
-      One-at-a-time creation is the only path today. Needs: a CSV shape, a
-      dry-run that reports what it *would* create, guardian linking, and an
-      idempotent re-run. This is the difference between an evening of data
-      entry and a coffee.
-- [ ] **An export / "give me my data back" path.** A family in the pilot can
-      ask for their child's records, and there is no answer today. Also the
-      only real backup story.
-- [ ] **Consent and waiver capture.** Nothing records that a guardian agreed to
-      anything, or to what. For a coaches-and-their-own-kids pilot this is a
-      conversation rather than a form, but the record still has to exist.
-- [ ] **Demo-data sweep before real families see it.** Owner's standing
-      instruction: fake data goes before real athletes. Much was removed
-      already; the floor-readiness trace produces the remaining inventory.
-- [ ] **Rabbit Hole seed content.** The mechanism ships empty by design. The
-      original hardcoded lesson (Biomechanics of Kinetic Force Transfer) should
-      be re-authored through the real path so the feature has something in it.
+### The pilot cannot honestly start without these
+
+- [ ] **Backup and export. Neither exists.** A repo-wide search for `pg_dump`,
+      `text/csv` and `Content-Disposition` returns zero matches;
+      `scripts/backup-export.ps1` is eleven `Write-Host` lines telling you to
+      back up Supabase, a database this platform no longer uses. No workflow
+      has a schedule. **This is the only item here that cannot be repaired
+      after the fact** — lose the database in week three and forty children's
+      records are gone. Needs a scheduled dump of the `pilot` schema to durable
+      storage, plus a roster export in the product.
+- [ ] **`/admin` writes 13 fabricated capability rows into the production
+      database the first time it is opened** (`app/admin/page.tsx` seeds,
+      hydrates, and POSTs them back). This is where demo data stops being a UI
+      artifact and becomes a record nobody can distinguish from a real one.
+- [ ] **Do not invite anyone as "Parent / Guardian" until guardian linking has
+      a screen.** `createOrUpdateMicrosoftStaffAccount` writes `pilot.accounts`
+      and never touches `pilot.parents`, while every parent read path joins
+      `pilot.parents` on `account_id`. The parent signs in fine, the People
+      list shows them healthy, and they see an empty list of children with no
+      error. Silent, and discovered with a parent watching.
+- [ ] **Decide the consent posture and write it down.** `pilot.waivers`,
+      `pilot.medical_intake` and `pilot.emergency_contacts` exist with correct
+      writers; **zero `.tsx` files reference any of them**. Build the capture
+      screens or commit to paper — but say which, to the board and the insurer,
+      because the seeded "Medical Clearance Status" rule currently tells your
+      Safety Director the platform is verifying forms it cannot store.
+
+### Needed for a usable first session
+
+- [ ] **An athlete record cannot be corrected or deactivated.** `POST
+      /api/pilot/athletes/update` works and has no UI caller. With 40
+      hand-typed records a mistyped date of birth is a certainty, and today it
+      is permanent without direct SQL. No offboarding path either.
+- [ ] **Coach coverage.** The scheduler lists every athlete in the gym, but
+      writes call `assertCoachAssignedToAthlete` and 403. A coach covering
+      someone else's class picks the child in front of them and gets an error
+      they cannot resolve. That is a coach stuck mid-session.
+- [ ] **A pain report does not name the child on the coach's screen.** The
+      write path is the best-engineered thing in the platform — it fails the
+      request rather than storing a child's pain unannounced. The read path
+      renders `SHADOW_ATHLETE_PAIN_REPORT_PENDING_REVIEW` with no name, no
+      severity and no body location, in a mixed feed on a non-default tab.
+- [ ] **Athlete check-out loses notes silently.** Session state is in-memory
+      React state, never rehydrated from the server. A reload or a recycled tab
+      makes the Check Out button vanish, the session row stays open forever,
+      and the notes written for the coach are gone.
+- [ ] **The coach review form cannot be completed.** Its first required field
+      is a session ID minted in the *athlete's* browser and shown on no screen.
+- [ ] **Per-athlete starting PIN.** Every account is created on `123456` with a
+      guessable hand-typed sign-in ID. `must_change_pin` genuinely blocks reads
+      and brute-force protection is real, but neither stops someone guessing
+      `ath-001` + `123456` before the child's first sign-in. Creating 40
+      accounts a week early widens that window 40-fold. Interim mitigation:
+      create each account minutes before handing over the credentials.
+- [ ] **Bulk athlete + guardian import.** `npm run seed:data` cannot start —
+      four independent failures (no ts-node, no csv-parse, no root tsconfig for
+      its `@/` import, no config file) — and even repaired it writes no logins
+      and no guardians. Hand entry is 8 mandatory fields per athlete plus
+      inventing and tracking 80 unique IDs: 1.5–2 hours for 40, and a coach
+      must be fully provisioned first or the form will not submit.
+
+### Honesty sweep before real families see it
+
+- [ ] **Fabricated donations** in `RevenueFundingCenter.tsx` — "Community Donor
+      A, $250" and "Sponsor Family B, $75" with no placeholder marker, so a
+      treasurer reads $325 of giving that does not exist.
+- [ ] **`scripts/data/` ships five invented minors** with real-looking dates of
+      birth, in the exact folder the seed guide says to put the real roster in.
+- [ ] **`/public` advertises seven programs and seven FAQ answers**, hardcoded.
+      That is the page a Punxsutawney family lands on. Read it once and confirm
+      it matches what PPBF actually runs; changing it needs a deploy today.
+- [ ] **Two platform-owner routes return a full roster of minors' names**
+      (`athlete-pin-directory`, `athlete-accounts`), contradicting the boundary
+      `access.ts` states three files away.
+- [ ] **Rabbit Hole seed content** — re-author the original Biomechanics lesson
+      through the real path so the feature ships with something in it.
 - [ ] **`drillsPersistence.pg.test.ts` runs nowhere.** No `test:migrations:*`
-      script names it, so a 397-line Postgres suite never executes. Register it
-      or fold it into `drills.pg.test.ts`.
-- [ ] **Athlete PIN sign-in on a shared gym device.** Verify how a session ends
-      so the next athlete is not inside the previous athlete's account. This is
-      a floor reality, not a theoretical one.
-
----
+      script names it, so a 397-line Postgres suite never executes.
 
 ## In progress — claimed
 
@@ -122,3 +175,43 @@ revisiting any of them; the reasoning is there rather than in a chat log.
 
 Deliberately deferred: fine-tuning metadata capture (E3/E4) until that lane is
 real; review-queue sort (F6/F7) until triage sorts on that column.
+
+---
+
+## Known and accepted for the pilot — tell the coaches, do not fix tonight
+
+Real, and survivable with informed adults in the room. Discovering them
+mid-session is what is not.
+
+- **No offline support of any kind.** No service worker, no queue, no
+  `navigator.onLine` handling. In a metal-roofed gym every attendance mark,
+  pain report and session note silently does not exist whenever signal drops.
+- **Shared-device hygiene is one Logout button.** The session cookie lasts 24
+  hours with no idle timeout, no kiosk mode, no "switch athlete". A kid who
+  walks away without tapping Logout leaves the next kid inside their account.
+  **Assign an adult to own the tablet.**
+- **The mobile header overruns a phone viewport**, forcing horizontal scroll on
+  every screen. A Pixel 7 Playwright project is configured; no coach, athlete
+  or attendance flow has any mobile coverage.
+- **No audit event exists for READING a record** — the vocabulary is create,
+  update, login, logout and three shadow types. Nobody can answer "who looked
+  at my daughter's medical file", and `intake/domain-get` returns a child's
+  complete medical intake while writing no audit row.
+- **Nothing ever deletes a child's record** and there is no retention schedule.
+  A child who joins at eight still has their medical record and sparring video
+  at twenty-eight.
+- **A guardian cannot request erasure or get a copy.** The only deletion
+  endpoint covers the caller's own SHADOW chat and writes to a table nothing
+  reads.
+- **Volunteer background check gates nothing.** `background_check_status` is
+  free text and approval never consults it. Handle it outside the platform and
+  document that you did — it is the first question an insurer asks.
+- **The platform sends no email, ever.** Every coach, staff member, volunteer
+  and guardian needs a hand-made Azure Entra B2B guest invitation and their own
+  Microsoft account. For 40 families that is 40 portal actions plus 40 parents
+  creating accounts — the largest hidden cost in the rollout.
+- **Coaches cannot write session records or observations about a child.**
+  `pilot.sessions` is written only from the athlete's browser, so every note a
+  coach wants to leave lives on paper.
+- **`/coach/decision-loop` works fully and is linked from nowhere.** Bookmark it
+  on the coach's phone before the first session.
