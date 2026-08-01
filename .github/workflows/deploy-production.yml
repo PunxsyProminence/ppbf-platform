@@ -193,6 +193,42 @@ jobs:
       # same rollout as the worker flag, and this line flips only after the
       # staging gate has run the full intake path green. Until then promotion
       # keeps its honest 403 in production.
+      #
+      # PPBF_VIDEO_CONTENT_SCAN enables the video scan sweep's content gate
+      # (#49) -- the only thing in the platform that moves an upload off
+      # 'quarantined'. Without it, production video uploads succeed and then
+      # sit in a state every reader refuses, which is precisely the dead end
+      # #147 was written to close.
+      #
+      # Staging first, then here, same as every flag above. The staging
+      # evidence is a real upload rather than a fixture: video session
+      # ce5843d0-d619-45e6-8267-4fde9cf29cb0 ("Neeko fight", 17.3MB, uploaded
+      # by an organization_admin) sat quarantined from 01:19:42Z with nothing
+      # able to promote it, and after deploy run 30679936999 put the sweep in
+      # front of it, event video.scan_settled recorded decision=promote,
+      # reason=ALL_GATES_PASSED, gates_passed=["content"], status=ready at
+      # 02:29:39Z -- roughly one minute after the revision took traffic.
+      #
+      # Enabled on the owner's explicit instruction (2026-08-01), on the
+      # stated basis that no athlete footage reaches production until the
+      # platform is in live use at the gym. So this turns the gate on BEFORE
+      # any minor's video exists in production, rather than applying a new
+      # automated decision to footage already sitting there. That ordering is
+      # the whole reason it is defensible on a single staging observation.
+      #
+      # AZURE_AI_VISION_DEPLOYMENT_NAME above is what makes this gate real
+      # here: with it unset the screen cannot run, returns no verdict, and
+      # every upload stays quarantined. The two lines have to move together.
+      #
+      # PPBF_VIDEO_MALWARE_SCAN is deliberately NOT set, in either
+      # environment. It reads a verdict Microsoft Defender for Storage writes
+      # onto the blob as an index tag, and whether malware scanning is enabled
+      # on the storage account is an Azure setting this repository cannot see.
+      # Enabling the gate without the scanner behind it would strand every
+      # upload in retry until it timed out into human review, and would record
+      # "malware" among the gates for videos nothing scanned. Set it to
+      # defender_index_tags only after confirming Defender for Storage malware
+      # scanning is on for the account behind AZURE_STORAGE_CONNECTION_STRING.
       - name: Deploy Tested Digest to Azure Container App (Production)
         run: |
           az containerapp update \
@@ -221,6 +257,7 @@ jobs:
               PPBF_INTAKE_PROMOTION_ENABLED=false \
               AZURE_AI_EMBEDDING_DEPLOYMENT_NAME=text-embedding-3-small \
               AZURE_AI_VISION_DEPLOYMENT_NAME=gpt-5-vision-shadow \
+              PPBF_VIDEO_CONTENT_SCAN=vision \
               PPBF_DURABLE_RATE_LIMIT=true
 
       - name: Resolve Production Base URL
