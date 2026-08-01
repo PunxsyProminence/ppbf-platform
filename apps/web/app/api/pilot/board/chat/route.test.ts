@@ -83,4 +83,21 @@ describe('POST /api/pilot/board/chat adapter', () => {
     expect(response.status).toBe(403);
     expect(mockPostShadowChat).not.toHaveBeenCalled();
   });
+
+  // The board role is refused by the route that carries its name, and that is
+  // the contract rather than an oversight: SHADOW chat is free-form and cannot
+  // be held to the k-anonymity floor the board role depends on. The refusal
+  // must say so, because a bare "Forbidden" on a board-addressed URL reads as a
+  // bug and invites someone to "fix" it by adding the role to the allow-list.
+  test('refuses the board role and says why', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('board'));
+
+    const response = await POST(postRequest({ message: 'hello' }));
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      error: expect.stringContaining('aggregate-only'),
+    });
+    expect(mockPostShadowChat).not.toHaveBeenCalled();
+  });
 });

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
+import { usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
 import type { OrgMetrics } from '@/app/api/pilot/shadow/metrics/route';
 import {
@@ -194,6 +195,14 @@ const QUICK_ADD_OPTIONS: Array<{ label: DataType; source: string; destination: I
   { label: 'Incident Note', source: 'Safety', destination: 'Incident / Safety Log', route: '/audit' },
   { label: 'Assessment Result', source: 'Program Team', destination: 'Evidence Library', route: '/evidence' },
 ];
+
+// Upload, case review-action, document review, and feedback promotion are all
+// organization-scoped writes whose routes admit only an organization admin or
+// coach. A platform owner gathers data here and reads every projection, so the
+// refusal is stated on the control instead of arriving as a 403 that reads like
+// a bug.
+const INTAKE_WRITE_REFUSAL =
+  'Read-only in a platform-owner session: SHADOW intake and review actions belong to gym admins and coaches.';
 
 function newId(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -844,14 +853,16 @@ function renderFeedbackReviewPanel(props: {
   loading: boolean;
   error: string;
   pendingFeedbackId: number | null;
+  reviewRefusal: string;
   onReview: (item: ShadowFeedbackItem, decision: 'approve' | 'reject') => void;
   onRefresh: () => void;
 }) {
-  const { summary, reviewQueue, retryQueue, loading, error, pendingFeedbackId, onReview, onRefresh } = props;
+  const { summary, reviewQueue, retryQueue, loading, error, pendingFeedbackId, reviewRefusal, onReview, onRefresh } = props;
 
   const renderItem = (item: ShadowFeedbackItem, mode: 'review' | 'retry') => {
     const busy = pendingFeedbackId === item.feedback_id;
     const resolvable = isShadowFeedbackResolvable(item);
+    const reviewable = resolvable && !reviewRefusal;
 
     return (
       <article key={`${mode}-${item.feedback_id}`} className="border border-[#3f8b5b]/30 bg-[#0f1f14] p-3">
@@ -888,7 +899,7 @@ function renderFeedbackReviewPanel(props: {
         <div className="mt-3 flex flex-wrap gap-2">
           <button
             type="button"
-            disabled={busy || !resolvable}
+            disabled={busy || !reviewable}
             onClick={() => onReview(item, 'approve')}
             className="border border-[#3f8b5b] px-3 py-1 font-mono text-[11px] uppercase tracking-[0.14em] text-[#c9f0d7] transition hover:bg-[#3f8b5b]/25 disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -897,7 +908,7 @@ function renderFeedbackReviewPanel(props: {
           {mode === 'review' && (
             <button
               type="button"
-              disabled={busy || !resolvable}
+              disabled={busy || !reviewable}
               onClick={() => onReview(item, 'reject')}
               className="border border-[#8b4444] px-3 py-1 font-mono text-[11px] uppercase tracking-[0.14em] text-[#e8d7c6] transition hover:bg-[#8b4444]/25 disabled:cursor-not-allowed disabled:opacity-40"
             >
@@ -919,6 +930,9 @@ function renderFeedbackReviewPanel(props: {
           <p className="mt-1 text-[13px] leading-6 text-[#c9f0d7]/70">
             Nothing SHADOW learns from user feedback is applied until it is approved here.
           </p>
+          {reviewRefusal && (
+            <p className="mt-1 text-[13px] leading-6 text-[#e3c99a]">{reviewRefusal}</p>
+          )}
         </div>
         <div className="flex items-center gap-3">
           {loading && <span className="text-xs text-[#c9f0d7]/40">Loading…</span>}
@@ -979,6 +993,8 @@ function renderFeedbackReviewPanel(props: {
 }
 
 export default function AdminShadowConsolePage() {
+  const pilotSession = usePilotSession();
+  const intakeWriteRefusal = pilotSession.role === 'platform_owner' ? INTAKE_WRITE_REFUSAL : '';
   const [consoleLogs, setConsoleLogs] = useState<ConsoleLogEntry[]>([
     {
       id: newId(),
@@ -1379,6 +1395,19 @@ export default function AdminShadowConsolePage() {
       return;
     }
 
+    // Also covers the command bar and the A/R/I shortcuts, which reach the same
+    // refused routes as the buttons.
+    if (intakeWriteRefusal) {
+      appendConsoleLog({
+        source: 'SHADOW',
+        dataType: item.dataType,
+        status: 'Blocked',
+        message: intakeWriteRefusal,
+        destination: 'SHADOW Local State',
+      });
+      return;
+    }
+
     if (action === 'APPROVE' || action === 'REJECT') {
       await handleReviewAction(item, action);
       return;
@@ -1681,6 +1710,7 @@ export default function AdminShadowConsolePage() {
           loading: feedbackLoading,
           error: feedbackError,
           pendingFeedbackId: feedbackPendingId,
+          reviewRefusal: intakeWriteRefusal,
           onReview: (item, decision) => {
             void handleFeedbackReview(item, decision);
           },
@@ -1831,14 +1861,20 @@ export default function AdminShadowConsolePage() {
                           key={action}
                           type="button"
                           onClick={() => void handleItemAction(item.id, action)}
-                          disabled={action === 'IMPORT' && item.status !== 'Approved'}
+                          disabled={
+                            (action !== 'VIEW' && Boolean(intakeWriteRefusal))
+                            || (action === 'IMPORT' && item.status !== 'Approved')
+                          }
                           className="h-11 border-2 border-[#8b4444] bg-[#2a1414] px-3 text-[13px] font-bold text-[#e8d7c6] transition hover:border-[#d4a574] disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           {action}
                         </button>
                       ))}
                     </div>
-                    {item.reviewNeeded ? <CaseDocumentsPanel intakeCaseId={item.intakeCaseId} /> : null}
+                    {intakeWriteRefusal ? (
+                      <p className="mt-2 text-[12px] text-[#e3c99a]">{intakeWriteRefusal}</p>
+                    ) : null}
+                    {item.reviewNeeded && !intakeWriteRefusal ? <CaseDocumentsPanel intakeCaseId={item.intakeCaseId} /> : null}
                   </article>
                 ))}
               </div>
@@ -1851,47 +1887,53 @@ export default function AdminShadowConsolePage() {
             <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">Data Intake Sources</p>
             <h3 className="mt-2 text-xl font-black text-[#e8d7c6]">External Sources</h3>
 
-            <div
-              className={`mt-4 space-y-2 rounded border-2 border-dashed p-3 transition ${
-                isDragOver ? 'border-[#e8d7c6] bg-[#3a2a1a]' : 'border-[#8b5a2b] bg-[#1a120a]'
-              }`}
-              onDragOver={(event) => {
-                event.preventDefault();
-                setIsDragOver(true);
-              }}
-              onDragLeave={() => setIsDragOver(false)}
-              onDrop={handleFileDrop}
-            >
-              <p className="text-[12px] font-mono uppercase tracking-[0.08em] text-[#d4a574]">
-                Drop PDF here or use the upload button
+            {intakeWriteRefusal ? (
+              <p className="mt-4 border-2 border-dashed border-[#8b5a2b] bg-[#1a120a] p-3 text-[13px] leading-6 text-[#e3c99a]">
+                {intakeWriteRefusal}
               </p>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,application/pdf"
-                onChange={handleFileUploadChange}
-                className="hidden"
-              />
-              <button
-                type="button"
-                onClick={handleUploadButtonClick}
-                disabled={isUploading}
-                className="h-11 w-full border-2 border-[#d4a574] bg-[#2a1a0a] px-3 text-[14px] font-mono text-[#d4a574] transition hover:border-[#e8d7c6] hover:bg-[#3a2a1a] hover:text-[#e8d7c6]"
+            ) : (
+              <div
+                className={`mt-4 space-y-2 rounded border-2 border-dashed p-3 transition ${
+                  isDragOver ? 'border-[#e8d7c6] bg-[#3a2a1a]' : 'border-[#8b5a2b] bg-[#1a120a]'
+                }`}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  setIsDragOver(true);
+                }}
+                onDragLeave={() => setIsDragOver(false)}
+                onDrop={handleFileDrop}
               >
-                {isUploading ? 'Processing PDF...' : 'Upload PDF'}
-              </button>
-              {uploadedFileName && <p className="text-[14px] text-[#d4a574]/80">Last staged file: {uploadedFileName}</p>}
-              {uploadError && <p className="text-[13px] text-[#f2c3c3]">{uploadError}</p>}
-              {lastIngestSummary && (
-                <div className="border border-[#8b5a2b] bg-[#21160d] p-2 text-[12px] text-[#e8d7c6]">
-                  <p>Intake Case: {lastIngestSummary.intake_case_id}</p>
-                  <p>Intake Document: {lastIngestSummary.intake_document_id}</p>
-                  <p>Classification: {lastIngestSummary.classification}</p>
-                  <p>Queue: {lastIngestSummary.routed_queue}</p>
-                  <p>Review Status: {lastIngestSummary.review_status}</p>
-                </div>
-              )}
-            </div>
+                <p className="text-[12px] font-mono uppercase tracking-[0.08em] text-[#d4a574]">
+                  Drop PDF here or use the upload button
+                </p>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  onChange={handleFileUploadChange}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={handleUploadButtonClick}
+                  disabled={isUploading}
+                  className="h-11 w-full border-2 border-[#d4a574] bg-[#2a1a0a] px-3 text-[14px] font-mono text-[#d4a574] transition hover:border-[#e8d7c6] hover:bg-[#3a2a1a] hover:text-[#e8d7c6]"
+                >
+                  {isUploading ? 'Processing PDF...' : 'Upload PDF'}
+                </button>
+                {uploadedFileName && <p className="text-[14px] text-[#d4a574]/80">Last staged file: {uploadedFileName}</p>}
+                {uploadError && <p className="text-[13px] text-[#f2c3c3]">{uploadError}</p>}
+                {lastIngestSummary && (
+                  <div className="border border-[#8b5a2b] bg-[#21160d] p-2 text-[12px] text-[#e8d7c6]">
+                    <p>Intake Case: {lastIngestSummary.intake_case_id}</p>
+                    <p>Intake Document: {lastIngestSummary.intake_document_id}</p>
+                    <p>Classification: {lastIngestSummary.classification}</p>
+                    <p>Queue: {lastIngestSummary.routed_queue}</p>
+                    <p>Review Status: {lastIngestSummary.review_status}</p>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="mt-4 border-t border-[#d4a574]/20 pt-3">
               <p className="text-[14px] font-mono text-[#d4a574]/80">Quick Add:</p>

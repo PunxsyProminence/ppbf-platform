@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   clearRoleSession,
-  createPersistentRoleSession,
+  persistAuthoritativeRoleSession,
   isRoleSessionAllowed,
   loadAuthoritativeRoleSession,
 } from './roleSession';
@@ -71,7 +71,7 @@ export default function RoleSessionGate({ allowedRoles, children }: RoleSessionG
           return;
         }
 
-        const session = createPersistentRoleSession(resolution.session.role);
+        const session = persistAuthoritativeRoleSession(resolution.session);
         if (!isRoleSessionAllowed(session, expectedRoles)) {
           router.replace(resolution.destination);
           return;

@@ -1,5 +1,13 @@
 # Platform audit 2026-07-31 — decisions that need the owner
 
+> **All 13 items below were decided by the owner on 2026-07-31.** What was
+> chosen, and why, is recorded in
+> [`PLATFORM_AUDIT_2026-07-31_DECISIONS_MADE.md`](PLATFORM_AUDIT_2026-07-31_DECISIONS_MADE.md).
+> This file is kept as the record of what was *asked* — the problem statements
+> and the options weighed. Read it for the reasoning behind a question; read
+> the other file for the answer.
+
+
 A full-platform audit (UI, usability, front-end wiring, backend, API
 consistency, repo hygiene) ran on 2026-07-31 against `main` at commit
 `7772250`. Seven finder agents produced 110 raw findings; duplicates were

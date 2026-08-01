@@ -1,5 +1,6 @@
-import Link from 'next/link';
-import { boardSeatConfigs } from './boardWorkspaceConfig';
+import BoardSeatDirectory from './BoardSeatDirectory';
+import { BOARD_AGGREGATE_BOUNDARY_STATEMENT } from './boardWorkspaceConfig';
+import BoardSummaryPanel from './BoardSummaryPanel';
 
 export default function BoardHubPage() {
   return (
@@ -18,60 +19,15 @@ export default function BoardHubPage() {
         <section className="mt-8 border-2 border-[#8b4444] bg-[#121212] p-5">
           <h2 className="text-lg font-black text-[#e8d7c6]">Aggregate boundary</h2>
           <p className="mt-3 max-w-4xl text-sm leading-6 text-[#cbb8a8]">
-            Board access is organization-level and aggregate-only. Small cohorts are suppressed, missing data remains unavailable, and athlete records, messages, notes, intake records, video, safety review, and administrative controls remain outside this role.
+            {BOARD_AGGREGATE_BOUNDARY_STATEMENT}
           </p>
         </section>
 
-        <section className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {boardSeatConfigs.map((seat) => (
-            <article key={seat.slug} className="border-2 border-[#8b4444] bg-[#0f0f0f]/80 p-5">
-              <p className="text-[12px] font-mono uppercase tracking-[0.2em] text-[#8f7f72]">Board Seat</p>
-              <h2 className="mt-2 text-2xl font-black text-[#e8d7c6]">{seat.seatLabel}</h2>
+        <div className="mt-8">
+          <BoardSummaryPanel variant="hub" heading="Board Hub Aggregate" />
+        </div>
 
-              <div className="mt-4 space-y-3">
-                <div>
-                  <p className="text-[12px] font-mono uppercase tracking-[0.15em] text-[#d4a574]">Role Description</p>
-                  <p className="mt-1 text-[15px] leading-6 text-[#cbb8a8]">{seat.roleDescription}</p>
-                </div>
-
-                <details className="border border-[#654535] bg-[#111111] p-2">
-                  <summary className="cursor-pointer text-[12px] font-mono uppercase tracking-[0.15em] text-[#d4a574]">Primary Responsibilities</summary>
-                  <ul className="mt-2 space-y-1 text-[14px] leading-6 text-[#cbb8a8]">
-                    {seat.primaryResponsibilities.map((responsibility) => (
-                      <li key={responsibility}>- {responsibility}</li>
-                    ))}
-                  </ul>
-                </details>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="border border-[#654535] bg-[#111111] p-2">
-                    <p className="text-[11px] font-mono uppercase tracking-[0.12em] text-[#8f7f72]">Board Actions Pending</p>
-                    <p className="mt-1 text-xl font-black text-[#e8d7c6]">{seat.openTasksCount}</p>
-                  </div>
-                  <div className="border border-[#654535] bg-[#111111] p-2">
-                    <p className="text-[11px] font-mono uppercase tracking-[0.12em] text-[#8f7f72]">Policy Reviews Due</p>
-                    <p className="mt-1 text-xl font-black text-[#e8d7c6]">{seat.pendingReviewsCount}</p>
-                  </div>
-                  <div className="border border-[#654535] bg-[#111111] p-2">
-                    <p className="text-[11px] font-mono uppercase tracking-[0.12em] text-[#8f7f72]">Compliance Calendar Events</p>
-                    <p className="mt-1 text-xl font-black text-[#e8d7c6]">{seat.meetingItemsCount}</p>
-                  </div>
-                  <div className="border border-[#654535] bg-[#111111] p-2">
-                    <p className="text-[11px] font-mono uppercase tracking-[0.12em] text-[#8f7f72]">Risk Review Items</p>
-                    <p className="mt-1 text-xl font-black text-[#e8d7c6]">{seat.complianceItemsCount}</p>
-                  </div>
-                </div>
-              </div>
-
-              <Link
-                href={`/board/${seat.slug}`}
-                className="mt-4 inline-flex min-h-[44px] items-center justify-center border-2 border-[#8b4444] bg-[#2f1717] px-4 text-sm font-mono font-bold uppercase tracking-[0.14em] text-[#e8d7c6] transition hover:border-[#d4a574] hover:text-[#d4a574]"
-              >
-                Open Governance Workspace
-              </Link>
-            </article>
-          ))}
-        </section>
+        <BoardSeatDirectory />
       </div>
     </main>
   );

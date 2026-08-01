@@ -100,10 +100,26 @@ describe('POST /api/pilot/admin/accounts/pin-reset', () => {
     expect(mockActivate).not.toHaveBeenCalled();
   });
 
-  test('allows the platform owner to activate an athlete PIN, still organization-scoped', async () => {
-    // The platform owner IS this gym's administrator; locking these routes to
-    // organization_admin only meant the person running the pilot could not
-    // manage athlete PINs at all (re-landed from PR #20, which went stale).
+  test('the legacy admin alias is still accepted', async () => {
+    mockRequireMicrosoftAuthenticatedPrincipal.mockResolvedValueOnce({
+      accountId: 'legacy-admin-1',
+      role: 'admin',
+      organizationId: 'org-1',
+      athleteId: null,
+      sessionToken: 'token',
+      authProvider: 'microsoft',
+    });
+
+    const response = await POST(makeRequest({ account_id: 'ath-account-3', pin: '123456', mode: 'reset' }));
+
+    expect(response.status).toBe(200);
+    expect(mockReset).toHaveBeenCalledWith('ath-account-3', '123456', 'org-1');
+  });
+
+  test.each(['activate', 'reset'])('refuses the platform owner: %s', async (mode) => {
+    // Athlete credentials are excluded from the platform owner tier, matching
+    // session revocation. Omega gathers data and supports organization admins;
+    // it does not hold an individual athlete's sign-in.
     mockRequireMicrosoftAuthenticatedPrincipal.mockResolvedValueOnce({
       accountId: 'owner@punxsyprominence.org',
       role: 'platform_owner',
@@ -113,10 +129,10 @@ describe('POST /api/pilot/admin/accounts/pin-reset', () => {
       authProvider: 'microsoft',
     });
 
-    const response = await POST(makeRequest({ account_id: 'ath-account-3', pin: '123456', mode: 'activate' }));
+    const response = await POST(makeRequest({ account_id: 'ath-account-3', pin: '123456', mode }));
 
-    expect(response.status).toBe(200);
-    expect(mockActivate).toHaveBeenCalledWith('ath-account-3', '123456', 'org-1');
+    expect(response.status).toBe(403);
+    expect(mockActivate).not.toHaveBeenCalled();
     expect(mockReset).not.toHaveBeenCalled();
   });
 });

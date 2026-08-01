@@ -46,8 +46,10 @@ npm run dev                  # start the app
 - `npm run typecheck` / `npm run lint` / `npm test` from the repo root run
   against the `web` workspace.
 - Data seeding: [SEED_GUIDE.md](SEED_GUIDE.md).
-- Database migrations are applied via controlled operator scripts under an
-  advisory lock (`npm run pilot:apply-*`), never from an HTTP route or CI.
+- Database migrations are applied only by the controlled operator scripts
+  (`npm run pilot:apply-*`), run either from an operator's shell or from the
+  manually dispatched `apply-migrations` workflow. No HTTP route changes the
+  schema, and no push, merge, or deploy applies a migration as a side effect.
 
 ## Status
 

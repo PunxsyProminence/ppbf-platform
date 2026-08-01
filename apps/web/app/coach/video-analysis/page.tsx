@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
+import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
 
 const ML_PLACEHOLDER = 'PLANNED | ML REQUIRED | NOT YET AUTOMATED';
@@ -44,10 +45,12 @@ function formatBytes(bytes: number): string {
 }
 
 export default function CoachVideoAnalysisPage() {
+  const session = usePilotSession();
   const [videos, setVideos] = useState<VideoSession[]>([]);
   const [videoError, setVideoError] = useState('');
   const [observations, setObservations] = useState<ShadowObservationItem[]>([]);
   const [observationError, setObservationError] = useState('');
+  const [releasingVideoId, setReleasingVideoId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadTitle, setUploadTitle] = useState('');
@@ -110,7 +113,7 @@ export default function CoachVideoAnalysisPage() {
         const err = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(err.error ?? `Upload failed (${res.status})`);
       }
-      setUploadStatus('Upload accepted and quarantined for security review.');
+      setUploadStatus('Upload accepted and held for review. Release it in the library below to make it playable.');
       setUploadTitle(''); setUploadNotes(''); setUploadAthleteId('');
       if (fileInputRef.current) fileInputRef.current.value = '';
       loadVideos();
@@ -118,6 +121,35 @@ export default function CoachVideoAnalysisPage() {
       setUploadStatus(err instanceof Error ? err.message : 'Upload failed.');
     } finally {
       setUploading(false);
+    }
+  };
+
+  // The uploading coach is the person who can attest that the footage is what
+  // it claims to be, so only they -- and organization admins -- are offered
+  // the control. The API enforces the same boundary.
+  const canRelease = (video: VideoSession): boolean => {
+    if (video.status !== 'quarantined') return false;
+    if (isOrganizationAdminSessionRole(session.role)) return true;
+    return session.accountId !== null && video.uploaded_by_account_id === session.accountId;
+  };
+
+  const releaseVideo = async (videoId: string) => {
+    setReleasingVideoId(videoId);
+    try {
+      const res = await fetch(`${apiBase()}/api/pilot/video/${videoId}/release`, {
+        credentials: 'include',
+        method: 'POST',
+      });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error ?? `Release failed (${res.status})`);
+      }
+      setVideoError('');
+      loadVideos();
+    } catch (err) {
+      setVideoError(err instanceof Error ? err.message : 'Release failed.');
+    } finally {
+      setReleasingVideoId(null);
     }
   };
 
@@ -142,7 +174,8 @@ export default function CoachVideoAnalysisPage() {
           <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">Video Analysis</p>
           <h1 className="mt-2 text-3xl font-black text-[#f2e7da]">Coach Video Console</h1>
           <p className="mt-2 text-sm leading-6 text-[#cfbfae]">
-            Upload session footage and review athlete film. AI/ML scoring features are planned and not yet active.
+            Upload session footage and review athlete film. An upload is held until you release it, and only then can it
+            be played. AI/ML scoring features are planned and not yet active.
           </p>
         </header>
 
@@ -216,10 +249,24 @@ export default function CoachVideoAnalysisPage() {
                       {v.athlete_id ? ` · Athlete: ${v.athlete_id}` : ''}
                     </p>
                     <p className="mt-0.5 text-xs text-[#7a6a5a]">{new Date(v.created_at).toLocaleString()}</p>
+                    {v.status === 'quarantined' ? (
+                      <p className="mt-1 text-xs text-[#cfbfae]">
+                        {canRelease(v)
+                          ? 'Held for review. Release it to make it playable for the athlete and their guardians.'
+                          : 'Held for review by the coach who uploaded it.'}
+                      </p>
+                    ) : null}
                   </div>
-                  <button onClick={() => { void openVideo(v.video_session_id); }} disabled={v.status !== 'ready' || loadingVideoId === v.video_session_id} className="ml-4 border border-[#8b4444] bg-[#2a1a1a] px-3 py-1 text-xs font-mono text-[#d4a574] disabled:opacity-50">
-                    {v.status !== 'ready' ? 'Security review' : loadingVideoId === v.video_session_id ? 'Loading...' : 'Play'}
-                  </button>
+                  <div className="ml-4 flex shrink-0 items-center gap-2">
+                    {canRelease(v) ? (
+                      <button onClick={() => { void releaseVideo(v.video_session_id); }} disabled={releasingVideoId === v.video_session_id} className="border border-[#8b4444] bg-[#2a1a1a] px-3 py-1 text-xs font-mono text-[#d4a574] disabled:opacity-50">
+                        {releasingVideoId === v.video_session_id ? 'Releasing...' : 'Release'}
+                      </button>
+                    ) : null}
+                    <button onClick={() => { void openVideo(v.video_session_id); }} disabled={v.status !== 'ready' || loadingVideoId === v.video_session_id} className="border border-[#8b4444] bg-[#2a1a1a] px-3 py-1 text-xs font-mono text-[#d4a574] disabled:opacity-50">
+                      {v.status !== 'ready' ? 'Not released' : loadingVideoId === v.video_session_id ? 'Loading...' : 'Play'}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

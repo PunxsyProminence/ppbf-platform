@@ -113,12 +113,18 @@ export default function ResearchQAChatPage() {
     }
   }
 
-  function handleSaveNote(e: React.SyntheticEvent<HTMLFormElement>) {
+  // The note goes into this page's message list and nowhere else. There is no
+  // notes table and no write, so the confirmation has to say so.
+  function handleAddNote(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!researchNotes.trim()) return;
+    const note = researchNotes.trim();
+    if (!note) return;
 
-    addMessage('user', `Saved note: ${researchNotes.substring(0, 50)}...`);
-    addMessage('research', `✓ Research note captured. ${researchNotes.length} characters logged.`);
+    addMessage('user', `Note: ${note}`);
+    addMessage(
+      'system',
+      'This note stays in this browser session only. It is not stored anywhere, and it is gone when you reload or leave the page.',
+    );
     setResearchNotes('');
   }
 
@@ -207,7 +213,8 @@ export default function ResearchQAChatPage() {
           {/* Research Notes */}
           <section className="border-4 border-[#d4a574] bg-[#0d0a08] p-4">
             <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">Notes</p>
-            <form onSubmit={handleSaveNote} className="mt-3 space-y-2">
+            <p className="mt-2 text-[10px] leading-4 text-[#b0a095]">Session scratchpad. Nothing typed here is stored.</p>
+            <form onSubmit={handleAddNote} className="mt-3 space-y-2">
               <textarea
                 value={researchNotes}
                 onChange={(e) => setResearchNotes(e.target.value)}
@@ -218,7 +225,7 @@ export default function ResearchQAChatPage() {
                 type="submit"
                 className="w-full border-2 border-[#d4a574] bg-[#1f1f1f] px-2 py-1 text-xs font-mono font-bold text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#3a3020] hover:text-[#e8d7c6]"
               >
-                Save Note
+                Add Note To Transcript
               </button>
             </form>
           </section>

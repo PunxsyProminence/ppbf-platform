@@ -71,6 +71,11 @@ export const OBSERVATION_KINDS = [
   'round_output',
   'focus_achieved',
   'body_weight',
+  // Athlete-reported safety signals. They are stored like any other
+  // observation and routed to coach review; no registered formula consumes
+  // them, so they carry no derived result.
+  'pain_report',
+  'recovery_notes',
   'numeric',
 ] as const;
 
@@ -78,6 +83,7 @@ export type ObservationKind = (typeof OBSERVATION_KINDS)[number];
 
 export const FORMULA_UNITS = [
   'rpe_0_10',
+  'severity_1_10',
   'minutes',
   'seconds',
   'count',
@@ -88,6 +94,10 @@ export const FORMULA_UNITS = [
   'kilograms',
   'pounds',
   'boolean_0_1',
+  // Presence marker for a free-text observation: the text itself lives in
+  // `dimensions`, never in `value`, because a numeric value must stay
+  // computable.
+  'text_present_0_1',
   'unitless',
 ] as const;
 

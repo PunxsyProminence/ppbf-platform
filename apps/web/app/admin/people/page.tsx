@@ -498,12 +498,24 @@ function PeopleConsoleContent() {
                 )}
               </p>
             </div>
-            <Link
-              href="/admin"
-              className="inline-flex min-h-[44px] items-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-5 text-sm font-bold uppercase tracking-[0.1em] transition hover:bg-[var(--canvas-tan)]"
-            >
-              Admin Home
-            </Link>
+            <div className="flex flex-wrap gap-2">
+              {/* Board members are appointed to a seat, not added to the gym
+                  roster, so the two surfaces are separate. Only an
+                  organization admin reaches this markup -- a platform owner is
+                  shown WrongRoleNotice before the console renders. */}
+              <Link
+                href="/admin/board-seats"
+                className="inline-flex min-h-[44px] items-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-5 text-sm font-bold uppercase tracking-[0.1em] transition hover:bg-[var(--canvas-tan)]"
+              >
+                Board Seats
+              </Link>
+              <Link
+                href="/admin"
+                className="inline-flex min-h-[44px] items-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-5 text-sm font-bold uppercase tracking-[0.1em] transition hover:bg-[var(--canvas-tan)]"
+              >
+                Admin Home
+              </Link>
+            </div>
           </div>
         </header>
 

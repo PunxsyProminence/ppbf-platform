@@ -6,6 +6,11 @@
 // surprise. Cadence comes from PPBF_SHADOW_WORKER_INTERVAL_SECONDS
 // (default 30, clamped 5-600).
 //
+// The loop's housekeeping slot carries the platform's retention work: purging
+// terminal job rows and archiving SHADOW chat audit rows out of Postgres. Both
+// are cheap and neither is urgent, so they ride the tick rather than a
+// schedule of their own; the archival sweep enforces its own daily floor.
+//
 // Everything is imported dynamically inside the nodejs-runtime branch:
 // instrumentation is also evaluated for the edge runtime, where pg and the
 // rest of the server stack must never be pulled into the bundle.
@@ -26,7 +31,9 @@ export async function register(): Promise<void> {
   const { processNextShadowJob } = await import('./src/server/pilot/shadowJobProcessor');
   const { purgeTerminalShadowJobs } = await import('./src/server/pilot/shadowJobQueue');
   const { sweepQuarantinedVideos } = await import('./src/server/pilot/videoScanSweep');
+  const { createShadowArchivalSweep } = await import('./src/server/pilot/shadowArchival');
   const intervalMs = resolveShadowWorkerIntervalMs();
+  const sweepShadowAudit = createShadowArchivalSweep();
   const handle = startShadowJobWorker({
     processOne: () => processNextShadowJob(),
     intervalMs,
@@ -44,6 +51,19 @@ export async function register(): Promise<void> {
       }
     },
     housekeeping: async () => {
+      // The archival sweep resolves its own failures, so it goes first: the
+      // job purge is the half that can throw, and audit retention must not
+      // depend on it succeeding.
+      const archival = await sweepShadowAudit();
+      if (archival.result?.success) {
+        console.log('SHADOW chat audit archival', {
+          archived: archival.result.archivedCount,
+          aggregatedMonths: archival.result.aggregatedMonths,
+        });
+      } else if (archival.result) {
+        console.error('SHADOW chat audit archival failed', { error: archival.result.error });
+      }
+
       const purged = await purgeTerminalShadowJobs();
       if (purged > 0) console.log('SHADOW job retention sweep', { purged });
     },

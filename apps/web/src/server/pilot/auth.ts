@@ -1,12 +1,25 @@
 import type { NextRequest } from 'next/server';
 import type { PoolClient } from 'pg';
 
+import { getPilotRoleDestination } from '@/src/shared/pilotRoleRouting';
+
 import type { PilotRole } from './contracts';
 import { getPilotDefaultOrganizationId, PILOT_SESSION_COOKIE } from './env';
 import { createOpaqueToken, hashPin, hashToken, verifyPin } from './security';
 import { computeSessionExpiry, parseRetentionDays } from './sessionPolicy';
 import { query, queryOne, withTransaction } from './db';
 import { DEFAULT_FIRST_LOGIN_PIN, assertChosenPinAllowed, validatePinPolicy } from './pinPolicy';
+
+/**
+ * The single Microsoft identity permitted to hold platform ownership.
+ *
+ * Both the sign-in path and the platform-owner bootstrap resolve the owner
+ * through here, so the address that bootstrap writes and the address sign-in
+ * accepts cannot drift apart.
+ */
+export function getPrimaryOwnerEmail(): string {
+  return (process.env.PPBF_PRIMARY_OWNER_EMAIL?.trim() || 'admin@punxsyprominence.org').toLowerCase();
+}
 
 export interface PilotPrincipal {
   accountId: string;
@@ -178,6 +191,17 @@ export async function loginWithMicrosoftEmail(emailOrUpn: string): Promise<{ pri
   const organizationId = data.organization_id || getPilotDefaultOrganizationId();
   if (!data.is_platform_owner && data.organization_status && data.organization_status !== 'active') {
     return null;
+  }
+
+  // Every reason this sign-in can be refused is decided before a token exists.
+  // A refusal that ran after the insert still wrote a pilot.session_tokens row
+  // for a session the user was never given.
+  if (!getPilotRoleDestination(data.role)) {
+    throw new Error('Forbidden: unsupported authenticated role');
+  }
+
+  if (data.role === 'platform_owner' && normalizedEmail !== getPrimaryOwnerEmail()) {
+    throw new Error('Forbidden: platform owner identity mismatch');
   }
 
   const token = createOpaqueToken();
@@ -969,14 +993,20 @@ export async function transferOrganizationAdmin(
   demoteRole: Exclude<PilotRole, 'platform_owner' | 'organization_admin'>,
 ): Promise<void> {
   await withTransaction(async (client) => {
+    // The promote used to match on account_id alone, so it both moved an
+    // account in from another organization and could strip platform ownership
+    // off the owner's own row. Both are structural refusals now: the WHERE
+    // pins the target to this organization, and the platform owner is excluded
+    // outright rather than demoted into an organization seat.
     const promotedRows = await client.query<{ account_id: string }>(
       `update pilot.accounts
        set role = 'organization_admin',
-           organization_id = $2,
            active_flag = true,
-           is_platform_owner = false,
            updated_at = now()
        where account_id = $1
+         and organization_id = $2
+         and is_platform_owner = false
+         and role <> 'platform_owner'
        returning account_id`,
       [toAccountId, organizationId],
     );

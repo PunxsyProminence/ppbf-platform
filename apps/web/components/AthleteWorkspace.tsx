@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import React, { type FormEvent, useCallback, useEffect, useState } from 'react';
+import AnnouncementBanner from './AnnouncementBanner';
 import { AthleteSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
 import { cx, ui } from './uiStyles';
@@ -83,6 +84,20 @@ interface PainLogEntry {
   type: PainType;
   severity: number;
   capturedAt: string;
+}
+
+/**
+ * The stored session a check-out updates. Held from check-in because
+ * /api/pilot/sessions/update replaces the whole record: every field below has
+ * to be sent back unchanged for the notes to be added to it.
+ */
+interface ActiveSessionRecord {
+  sessionId: string;
+  athleteId: string;
+  date: string;
+  rpe: number;
+  checkInNote: string;
+  createdAt: string;
 }
 
 function getReadinessLevel(readinessToTrain: number): ReadinessLevel {
@@ -278,6 +293,7 @@ export default function AthleteWorkspace() {
   const [sessionActive, setSessionActive] = useState(false);
   const [checkInTime, setCheckInTime] = useState<string | null>(null);
   const [checkInNotes, setCheckInNotes] = useState('');
+  const [activeSessionRecord, setActiveSessionRecord] = useState<ActiveSessionRecord | null>(null);
   const [lastWorkoutBuildNote, setLastWorkoutBuildNote] = useState<string | null>(null);
 
   const currentReadiness: ReadinessLevel = getReadinessLevel(readinessToTrain);
@@ -562,6 +578,8 @@ export default function AthleteWorkspace() {
     }
 
     const sessionId = `session_${Date.now()}`;
+    const sessionDate = now.toISOString().slice(0, 10);
+    const checkInNote = checkInNotes.trim() || `Auto check-in readiness ${readiness}`;
     const sessionResponse = await fetch(`${apiBase()}/api/pilot/sessions`, {
       method: 'POST',
       credentials: 'include',
@@ -569,9 +587,9 @@ export default function AthleteWorkspace() {
       body: JSON.stringify({
         session_id: sessionId,
         athlete_id: backendAthleteId,
-        date: now.toISOString().slice(0, 10),
+        date: sessionDate,
         rpe: readinessToTrain,
-        notes: checkInNotes || `Auto check-in readiness ${readiness}`,
+        notes: checkInNote,
         completed_flag: false,
         created_at: now.toISOString(),
         updated_at: now.toISOString(),
@@ -579,6 +597,14 @@ export default function AthleteWorkspace() {
     });
 
     if (sessionResponse.ok) {
+      setActiveSessionRecord({
+        sessionId,
+        athleteId: backendAthleteId,
+        date: sessionDate,
+        rpe: readinessToTrain,
+        checkInNote,
+        createdAt: now.toISOString(),
+      });
       setBackendSyncMessage('Session check-in persisted to pilot backend.');
     } else {
       const payload = (await sessionResponse.json().catch(() => ({ error: 'Session persistence failed' }))) as { error?: string };
@@ -596,19 +622,68 @@ export default function AthleteWorkspace() {
     });
   };
 
-  const handleCheckOut = () => {
-    if (checkInTime) {
-      const newSession = {
-        id: `sess_${Date.now()}`,
-        checkInTime: checkInTime,
-        checkOutTime: new Date().toLocaleString(),
-        notes: checkInNotes
-      };
-      setSessionLog([newSession, ...sessionLog]);
-      setSessionActive(false);
-      setCheckInTime(null);
-      setCheckInNotes('');
+  const handleCheckOut = async () => {
+    if (!checkInTime) {
+      return;
     }
+
+    const now = new Date();
+    const notes = checkInNotes.trim();
+    const newSession = {
+      id: `sess_${Date.now()}`,
+      checkInTime: checkInTime,
+      checkOutTime: now.toLocaleString(),
+      notes: checkInNotes
+    };
+
+    if (activeSessionRecord) {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/sessions/update`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            session_id: activeSessionRecord.sessionId,
+            athlete_id: activeSessionRecord.athleteId,
+            date: activeSessionRecord.date,
+            rpe: activeSessionRecord.rpe,
+            // The check-in note is the fallback because the session record
+            // requires a note and an empty box must not erase what check-in
+            // already stored.
+            notes: notes || activeSessionRecord.checkInNote,
+            completed_flag: true,
+            created_at: activeSessionRecord.createdAt,
+            updated_at: now.toISOString(),
+          }),
+        });
+
+        if (response.ok) {
+          setBackendSyncMessage(notes
+            ? 'Check-out saved. Your session notes are on the session record for your coach.'
+            : 'Check-out saved to pilot backend.');
+        } else {
+          const payload = (await response.json().catch(() => ({}))) as { error?: string };
+          setBackendSyncMessage(
+            `Check-out did not save and your session notes were not sent${payload.error ? `: ${payload.error}` : '.'} `
+            + 'Tell a coach anything they need to know.',
+          );
+        }
+      } catch (error) {
+        setBackendSyncMessage(
+          `Check-out did not save and your session notes were not sent${error instanceof Error ? `: ${error.message}` : '.'} `
+          + 'Tell a coach anything they need to know.',
+        );
+      }
+    } else {
+      setBackendSyncMessage('Check-out was not sent: this session was never stored on the backend. '
+        + 'Your notes went nowhere -- tell a coach anything they need to know.');
+    }
+
+    setSessionLog([newSession, ...sessionLog]);
+    setSessionActive(false);
+    setCheckInTime(null);
+    setCheckInNotes('');
+    setActiveSessionRecord(null);
   };
 
   const handleSavePainReport = async () => {
@@ -633,35 +708,47 @@ export default function AthleteWorkspace() {
       setInjuryFlag(true);
       setSoreness((current) => Math.max(current, currentPainSeverity));
 
-      if (backendAthleteId) {
-        const response = await fetch(`${apiBase()}/api/pilot/shadow/formulas/observations`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            athleteId: backendAthleteId,
-            contextId: newPainLogEntry.id,
-            kind: 'pain_report',
-            value: currentPainSeverity,
-            unit: 'severity_1_10',
-            dimensions: {
-              location: selectedPainLocation,
-              painType: currentPainType,
-              injuryFlag: true,
-            },
-            observedAt: now.toISOString(),
-            idempotencyKey: `${newPainLogEntry.id}-pain_report`,
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error('Pain report was saved locally but telemetry persistence failed.');
-        }
-
-        setPainSaveMessage('Pain report saved and shared with coaching telemetry.');
-      } else {
-        setPainSaveMessage('Pain report saved locally. Sign in again to sync with coaching telemetry.');
+      if (!backendAthleteId) {
+        // Nothing outside this browser tab holds a pain report, so a missing
+        // session means it reached no one at all.
+        setPainSaveMessage('Pain report was not saved and no coach was told. Sign in again and report it, '
+          + 'and tell a coach in person.');
+        return;
       }
+
+      const response = await fetch(`${apiBase()}/api/pilot/shadow/formulas/observations`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          athleteId: backendAthleteId,
+          contextId: newPainLogEntry.id,
+          kind: 'pain_report',
+          value: currentPainSeverity,
+          unit: 'severity_1_10',
+          dimensions: {
+            location: selectedPainLocation,
+            painType: currentPainType,
+            injuryFlag: true,
+          },
+          observedAt: now.toISOString(),
+          idempotencyKey: `${newPainLogEntry.id}-pain_report`,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Pain report was not saved and no coach was told. Report it again, '
+          + 'and tell a coach in person.');
+      }
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        painReport?: { coachNotified?: boolean };
+      };
+
+      setPainSaveMessage(payload.painReport?.coachNotified
+        ? 'Pain report saved and raised for coach review.'
+        : 'Pain report saved to your record. No coach review was raised for it -- '
+          + 'tell a coach in person.');
 
       setShowPainModal(false);
     } catch (error) {
@@ -740,6 +827,19 @@ export default function AthleteWorkspace() {
           </div>
         </div>
 
+        <AnnouncementBanner
+          placement="athlete_workspace"
+          kind="notice"
+          heading="Gym Notices"
+          className="border-2 border-[#8b4444] bg-[#e8d7c6] p-4"
+        />
+        <AnnouncementBanner
+          placement="athlete_workspace"
+          kind="motivation"
+          heading="From the Gym"
+          className="border-2 border-[#694838] bg-[#e8d7c6] p-4"
+        />
+
         <div className="border border-[#694838] bg-[#14100d] p-4">
           <p className="text-sm text-[#d4a574] font-semibold">Daily Reminder</p>
           <p className="mt-1 text-sm text-[#cfbfae]">Show up. Do the hard rounds. Own the details. Progress is earned through consistent grit and disciplined effort.</p>
@@ -789,7 +889,7 @@ export default function AthleteWorkspace() {
               { id: 'assessments', label: 'Assessments' },
               { id: 'bio-checkin', label: 'Bio Check-In' },
               { id: 'drill-library', label: 'Drills' },
-              { id: 'rabbit-holes', label: 'Learning' },
+              { id: 'rabbit-holes', label: 'Rabbit Holes' },
               { id: 'message-coach', label: 'Messages' },
               { id: 'schedule-session', label: 'Schedule' },
               { id: 'shadow', label: 'SHADOW Intel' }
@@ -962,10 +1062,10 @@ export default function AthleteWorkspace() {
                     <textarea
                       value={checkInNotes}
                       onChange={(e) => setCheckInNotes(e.target.value)}
-                      placeholder="Session notes..."
+                      placeholder="Session notes for your coach - sent when you check out..."
                       className="w-full h-20 px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none"
                     />
-                    <button onClick={handleCheckOut} className="w-full bg-red-700 hover:bg-red-800 text-white font-semibold py-2 px-4 transition">
+                    <button onClick={() => void handleCheckOut()} className="w-full bg-red-700 hover:bg-red-800 text-white font-semibold py-2 px-4 transition">
                       ⏹️ Check Out
                     </button>
                   </div>

@@ -1,18 +1,31 @@
 import { randomUUID } from 'node:crypto';
-import { query, withTransaction } from './db';
+import { query, queryOne, withTransaction } from './db';
+
+export type PublicationStatus =
+  | 'draft'
+  | 'pending_review'
+  | 'approved'
+  | 'published'
+  | 'rejected'
+  | 'archived';
+
+export type PublicationComplianceStatus = 'pending' | 'passed' | 'failed' | 'manual_review';
 
 export interface VideoPublication {
   publication_id: string;
   video_session_id: string;
   athlete_id: string;
+  // The coach who submitted the publication is the only non-admin who may
+  // publish it, so every surface that lists publications has to carry this.
+  submitted_by_account_id: string;
   publication_type: 'research_library' | 'public_coaching' | 'private_archive';
   title: string;
   description: string;
   tags: string[];
-  compliance_check_status: 'pending' | 'passed' | 'failed' | 'manual_review';
+  compliance_check_status: PublicationComplianceStatus;
   metadata_complete: boolean;
   visibility: 'private' | 'organization' | 'public' | 'research';
-  status: 'draft' | 'pending_review' | 'approved' | 'published' | 'rejected' | 'archived';
+  status: PublicationStatus;
   created_at: string;
 }
 
@@ -41,8 +54,9 @@ export async function createPublication(params: {
       publication_id, organization_id, video_session_id, athlete_id, submitted_by_account_id,
       publication_type, title, description, tags, status, compliance_check_status, metadata_complete
     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'draft', 'pending', false)
-    returning publication_id, video_session_id, athlete_id, publication_type, title, description, tags,
-             compliance_check_status, metadata_complete, visibility, status, created_at`,
+    returning publication_id, video_session_id, athlete_id, submitted_by_account_id, publication_type,
+             title, description, tags, compliance_check_status, metadata_complete, visibility, status,
+             created_at`,
     [
       publicationId,
       params.organizationId,
@@ -70,6 +84,7 @@ export async function updatePublicationStatus(
   publicationId: string,
   status: string,
   complianceStatus?: string,
+  approvedByAccountId?: string,
 ): Promise<boolean> {
   const now = new Date().toISOString();
 
@@ -78,13 +93,42 @@ export async function updatePublicationStatus(
      set status = $3,
          updated_at = $4,
          compliance_check_status = coalesce($5, compliance_check_status),
+         approved_by_account_id = coalesce($6, approved_by_account_id),
          published_at = case when $3 = 'published' then $4::timestamptz else published_at end
      where organization_id = $1 and publication_id = $2
      returning publication_id`,
-    [organizationId, publicationId, status, now, complianceStatus ?? null],
+    [organizationId, publicationId, status, now, complianceStatus ?? null, approvedByAccountId ?? null],
   );
 
   return result.length > 0;
+}
+
+export interface PublicationGateRecord {
+  publication_id: string;
+  video_session_id: string;
+  submitted_by_account_id: string;
+  title: string;
+  description: string;
+  tags: string[];
+  status: PublicationStatus;
+  compliance_check_status: PublicationComplianceStatus;
+}
+
+// Read before publishing so the caller can name the exact reason a publish was
+// refused. The row -- not the request body -- is the authority for who
+// submitted the publication, which video session it covers, and what goes onto
+// the library shelf.
+export async function getPublicationForPublish(
+  organizationId: string,
+  publicationId: string,
+): Promise<PublicationGateRecord | null> {
+  return queryOne<PublicationGateRecord>(
+    `select publication_id, video_session_id, submitted_by_account_id, title, description, tags,
+            status, compliance_check_status
+     from pilot.video_publications
+     where organization_id = $1 and publication_id = $2`,
+    [organizationId, publicationId],
+  );
 }
 
 export async function recordComplianceCheck(params: {
@@ -144,13 +188,21 @@ export async function publishToResearchLibrary(params: {
   // claiming the publication FOR THIS ORGANIZATION: no claim, no library row,
   // and the caller is told nothing was published rather than being handed a
   // library id for a row that mutated nobody's publication.
+  //
+  // The claim also carries the clearance predicate. A publication reaches the
+  // research library only from 'approved' with its compliance checks passed,
+  // and holding that here rather than only in the caller means a check that
+  // fails between the caller's read and this write cannot be outrun.
   return withTransaction(async (client) => {
     const claimed = await client.query<{ publication_id: string }>(
       `update pilot.video_publications
        set status = 'published',
            updated_at = now(),
            published_at = now()
-       where organization_id = $1 and publication_id = $2
+       where organization_id = $1
+         and publication_id = $2
+         and status = 'approved'
+         and compliance_check_status = 'passed'
        returning publication_id`,
       [params.organizationId, params.publicationId],
     );
@@ -216,8 +268,9 @@ export async function getOrganizationPublications(
   },
 ): Promise<VideoPublication[]> {
   let sql = `
-    select publication_id, video_session_id, athlete_id, publication_type, title, description, tags,
-           compliance_check_status, metadata_complete, visibility, status, created_at
+    select publication_id, video_session_id, athlete_id, submitted_by_account_id, publication_type,
+           title, description, tags, compliance_check_status, metadata_complete, visibility, status,
+           created_at
     from pilot.video_publications
     where organization_id = $1
   `;
