@@ -32,6 +32,26 @@ let liveAnnouncements: AnnouncementItem[] = [];
 let announcementsFail = false;
 let rabbitHolesByAnchor: Record<string, RabbitHoleLessonItem[]> = {};
 let rabbitHolesFail = false;
+let storedSessions: Array<Record<string, unknown>> = [];
+let sessionListFails = false;
+let sessionUpdateFails = false;
+
+// pilot.sessions stores date as `date` and rpe as `numeric`, so node-postgres
+// hands back a timestamp and a string. Both are sent straight back by
+// check-out, where the session validator rejects either shape.
+function openSessionRow(overrides: Record<string, unknown> = {}) {
+  return {
+    session_id: 'session_1754000000000',
+    athlete_id: 'ath_test',
+    date: '2026-08-01T00:00:00.000Z',
+    rpe: '8',
+    notes: 'Left hook felt slow all session, right shoulder tight.',
+    completed_flag: false,
+    created_at: '2026-08-01T17:05:00.000Z',
+    updated_at: '2026-08-01T17:05:00.000Z',
+    ...overrides,
+  };
+}
 
 function announcement(overrides: Partial<AnnouncementItem> = {}): AnnouncementItem {
   return {
@@ -78,6 +98,9 @@ beforeEach(() => {
   announcementsFail = false;
   rabbitHolesByAnchor = {};
   rabbitHolesFail = false;
+  storedSessions = [];
+  sessionListFails = false;
+  sessionUpdateFails = false;
 
   global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -105,6 +128,15 @@ beforeEach(() => {
     }
     if (url.includes('/api/pilot/auth/session')) {
       return jsonResponse(authenticated ? { authenticated: true, athlete_id: 'ath_test' } : { authenticated: false });
+    }
+    if (url.includes('/api/pilot/sessions/list')) {
+      if (sessionListFails) {
+        throw new Error('sessions offline');
+      }
+      return jsonResponse({ items: storedSessions });
+    }
+    if (url.includes('/api/pilot/sessions/update')) {
+      return jsonResponse(sessionUpdateFails ? { error: 'Internal server error' } : { ok: true }, !sessionUpdateFails);
     }
     if (url.includes('/api/pilot/goals/list')) {
       return jsonResponse({ items: [] });
@@ -237,7 +269,7 @@ describe('athlete safety reporting', () => {
   test('check-out puts the session notes on the session record', async () => {
     await renderWorkspace();
 
-    fireEvent.click(screen.getByRole('button', { name: '✅ Check In' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
     // Check-in sends the athlete to their floor plan; the session log they
     // check out from is back on the dashboard.
     openTab('Dashboard');
@@ -245,7 +277,7 @@ describe('athlete safety reporting', () => {
     await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
 
     fireEvent.change(notes, { target: { value: 'my wrist hurts' } });
-    fireEvent.click(screen.getByRole('button', { name: '⏹️ Check Out' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Check Out' }));
 
     await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
     const [checkIn] = postedTo('/api/pilot/sessions');
@@ -257,20 +289,114 @@ describe('athlete safety reporting', () => {
     }));
   });
 
-  test('check-out says the notes went nowhere when no session was stored', async () => {
+  // A check-in the app never stored has nothing to check out of, and a
+  // check-out button over it collects notes only to discard them at the moment
+  // the athlete tries to hand them over.
+  test('a check-in that was never stored offers no check-out at all', async () => {
     authenticated = false;
     await renderWorkspace();
 
-    fireEvent.click(screen.getByRole('button', { name: '✅ Check In' }));
-    // Check-in sends the athlete to their floor plan; the session log they
-    // check out from is back on the dashboard.
-    openTab('Dashboard');
-    const notes = await screen.findByPlaceholderText(/Session notes for your coach/);
-    fireEvent.change(notes, { target: { value: 'my wrist hurts' } });
-    fireEvent.click(screen.getByRole('button', { name: '⏹️ Check Out' }));
+    expect(await screen.findByText(/not signed in as an athlete/i)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Check Out' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Check In' })).toBeNull();
+    expect(screen.queryByPlaceholderText(/Session notes for your coach/)).toBeNull();
+  });
+});
 
-    await screen.findByText(/Your notes went nowhere/);
-    expect(postedTo('/api/pilot/sessions/update')).toHaveLength(0);
+// The session lived in React state alone, so a reload, a navigation, or the
+// shared gym tablet recycling its tab made the Check Out button vanish, left
+// the session row open forever, and threw away the notes written for a coach.
+// The open session is the server's now, and these cover what that has to buy.
+describe('an open session across a reload', () => {
+  test('the open session comes back, with the notes already written for the coach', async () => {
+    storedSessions = [openSessionRow()];
+    await renderWorkspace();
+
+    expect(await screen.findByRole('button', { name: 'Check Out' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Check In' })).toBeNull();
+
+    const notes = screen.getByPlaceholderText(/Session notes for your coach/) as HTMLTextAreaElement;
+    expect(notes.value).toBe('Left hook felt slow all session, right shoulder tight.');
+  });
+
+  test('check-out sends the rehydrated record in the shapes the session validator accepts', async () => {
+    storedSessions = [openSessionRow()];
+    await renderWorkspace();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Check Out' }));
+
+    await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
+    const [checkOut] = postedTo('/api/pilot/sessions/update');
+    expect(checkOut.body).toEqual(expect.objectContaining({
+      session_id: 'session_1754000000000',
+      completed_flag: true,
+      rpe: 8,
+      date: '2026-08-01',
+      created_at: '2026-08-01T17:05:00.000Z',
+      notes: 'Left hook felt slow all session, right shoulder tight.',
+    }));
+  });
+
+  // The check-in placeholder is stored because pilot.sessions requires a
+  // non-empty note. Handing it back into the athlete's own box would present a
+  // sentence the app wrote as one they wrote.
+  test('the automatic check-in note is not returned as the athlete own notes', async () => {
+    storedSessions = [openSessionRow({ notes: 'Auto check-in readiness GREEN' })];
+    await renderWorkspace();
+
+    await screen.findByRole('button', { name: 'Check Out' });
+    expect((screen.getByPlaceholderText(/Session notes for your coach/) as HTMLTextAreaElement).value).toBe('');
+  });
+
+  test('notes reach the session record before any check-out happens', async () => {
+    storedSessions = [openSessionRow({ notes: 'Auto check-in readiness GREEN' })];
+    await renderWorkspace();
+
+    const notes = await screen.findByPlaceholderText(/Session notes for your coach/);
+    fireEvent.change(notes, { target: { value: 'Head is ringing a bit after the last round.' } });
+
+    await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1), { timeout: 5000 });
+    const [draftSave] = postedTo('/api/pilot/sessions/update');
+    expect(draftSave.body).toEqual(expect.objectContaining({
+      notes: 'Head is ringing a bit after the last round.',
+      // Still open: this is a draft save, not an early check-out.
+      completed_flag: false,
+    }));
+    expect(await screen.findByText(/Saved to your session record/)).toBeTruthy();
+  });
+
+  test('a failed check-out leaves the session open and the notes on screen', async () => {
+    storedSessions = [openSessionRow()];
+    sessionUpdateFails = true;
+    await renderWorkspace();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Check Out' }));
+
+    expect(await screen.findByText(/still checked in/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Check Out' })).toBeTruthy();
+    expect((screen.getByPlaceholderText(/Session notes for your coach/) as HTMLTextAreaElement).value)
+      .toBe('Left hook felt slow all session, right shoulder tight.');
+  });
+
+  test('with no open session the screen says so and offers a check-in, not a check-out', async () => {
+    await renderWorkspace();
+
+    expect(await screen.findByText(/You are not checked in right now/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Check Out' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Check In' })).toBeTruthy();
+  });
+
+  // "No open session" and "could not ask" have different answers, and telling
+  // an athlete they are checked out when nobody knows is what leaves a session
+  // row open forever.
+  test('a session read that failed is reported as a failure, not as an empty history', async () => {
+    sessionListFails = true;
+    await renderWorkspace();
+
+    expect(await screen.findByText(/Your sessions could not be read/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Check Out' })).toBeNull();
+    expect(screen.queryByText(/You are not checked in right now/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Try Again' })).toBeTruthy();
   });
 });
 
@@ -319,7 +445,7 @@ describe('authored announcements on the athlete workspace', () => {
 
     expect(screen.queryByText('From the Gym')).toBeNull();
     expect(screen.getByText('Current Readiness')).toBeTruthy();
-    expect(screen.getByRole('button', { name: '✅ Check In' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Check In' })).toBeTruthy();
   });
 });
 
