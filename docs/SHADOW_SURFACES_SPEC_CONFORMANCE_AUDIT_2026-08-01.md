@@ -25,8 +25,8 @@ error-state references.
 
 | # | Finding | Verdict | Evidence |
 |---|---|---|---|
-| A1 | The growth-metrics fetch is the one silent failure left in the console: `if (!response.ok) return;` inside a `try/finally` with no `catch`, so a 403 or 500 leaves the SHADOW Intelligence tiles blank with no message, while every neighbouring panel would have explained itself | **DEFECT** (minor) | `app/admin/shadow/page.tsx:1082` |
-| A2 | The chat footer links "The Office" (`/admin/shadow`) unconditionally, so a coach, athlete, or parent is actively routed to a console whose every call will 403. The page already holds the viewer's tier in state (`ShadowChatMode` = `omega` / `master` / `scoped`, resolved from the capabilities endpoint), so the information needed to gate the link is present and unused | **DEFECT** (minor) | `app/shadow/page.tsx:1411`; mode at `:234`, `:236` |
+| A1 | **FIXED.** The growth-metrics fetch was the one silent failure left in the console: `if (!response.ok) return;` inside a `try/finally` with no `catch`, so a 403 or 500 leaves the SHADOW Intelligence tiles blank with no message, while every neighbouring panel would have explained itself | **DEFECT** (minor) | `app/admin/shadow/page.tsx:1082` |
+| A2 | ~~The chat footer links "The Office" unconditionally, so a non-admin is routed to a console whose every call will 403.~~ **WITHDRAWN — this finding was wrong.** Measured per role against the eight endpoints the console calls: `organization_admin` 8/8, `admin` 7/8, `platform_owner` 7/8, `coach` 5/8, `parent` 2/8, `athlete`/`volunteer`/`staff` 1/8. Every role reaches at least `telemetry`, and a coach reaches most of the console, so "every call will 403" is false and gating the link on the viewer's tier would hide a surface coaches legitimately use. The narrow real issue — an admin-only panel that could not explain its own refusal — is A1, now fixed | **WITHDRAWN** | role sets at `shadowRoleSets.ts`; per-route `requireRole` lists |
 | A3 | `/admin/shadow` has no client-side auth gate — 0 session checks in 2105 lines | **OK** | Server-side `requireRole` is enforced on every route it calls; the gate's absence costs clarity (A2), not access |
 | A4 | Credentials on every console fetch | **OK** | 16 of 16 carry `credentials: 'include'`; the #39 fix held and was extended to the seven fetches added since |
 | A5 | `/shadow/scout` renders a `cancelled` branch explaining expiry | **OK** | `app/shadow/scout/page.tsx:466-468` — the 2026-07-31 audit's B3 is fixed |
@@ -41,7 +41,7 @@ there first, then against the safety and rate-limit claims.
 
 | # | Finding | Verdict | Evidence |
 |---|---|---|---|
-| B1 | **Spec §3.1 specifies "10 Heavy Bag/hour per organization". No such limit exists.** There is no `heavy_bag` bucket, and no bucket is keyed by organization alone: `enforceShadowRateLimit` requires *both* `organizationId` and `accountId`, so every cap is per-account-within-org. A Heavy Bag turn is charged to the same generic `chat` (30/60s) and `chat_daily` (400/day) buckets a Quick Round consumes. An organization with N accounts therefore has an effective ceiling of N × 400 Heavy Bag turns/day and **no organization-level ceiling at all** — on the platform's most expensive inference path | **DEFECT** | `shadowRateLimit.ts:41-56` (five buckets, none for heavy bag), `:94-100` (org+account key); `chat/route.ts:545-553` (only `chat` and `chat_daily` applied) |
+| B1 | **FIXED** (owner decision 2026-08-01: 10/user/hour, administrative tier exempt). Spec §3.1 specified "10 Heavy Bag/hour per organization" and no such limit existed. There is no `heavy_bag` bucket, and no bucket is keyed by organization alone: `enforceShadowRateLimit` requires *both* `organizationId` and `accountId`, so every cap is per-account-within-org. A Heavy Bag turn is charged to the same generic `chat` (30/60s) and `chat_daily` (400/day) buckets a Quick Round consumes. An organization with N accounts therefore has an effective ceiling of N × 400 Heavy Bag turns/day and **no organization-level ceiling at all** — on the platform's most expensive inference path | **DEFECT** | `shadowRateLimit.ts:41-56` (five buckets, none for heavy bag), `:94-100` (org+account key); `chat/route.ts:545-553` (only `chat` and `chat_daily` applied) |
 | B2 | Spec §3.5 `GET /api/pilot/shadow/scout-reports` does not exist, and §5.5's Scout Report generation pipeline is gone (`generateScoutReport` deleted by the 2026-07-31 audit's B5; only a tombstone comment remains at `shadowHeavyBag.ts:261`). `/shadow/scout` is linked and titled for Scout Reports but reads the generic `jobs` list instead | **DESIGN-GAP** | route absent; `app/shadow/scout/page.tsx` fetches `shadow/jobs`, `shadow/chat`, `shadow/metrics` only |
 | B3 | Spec §3.1 specifies 100 requests/minute per user; actual chat limit is 30/60s | **STALE-SPEC** | Code is stricter than specified, and `shadowRateLimit.ts:42-44` explains why. The document is wrong, not the code |
 | B4 | Spec §3.7 `POST /api/pilot/shadow/migrate` does not exist | **STALE-SPEC** | Migrations now run through the manual `apply-migrations` workflow with a retype-the-target confirmation and an explicit "never applied as a side effect of merging" rule. Strictly safer than an HTTP migration endpoint; the spec predates it |
@@ -51,13 +51,16 @@ there first, then against the safety and rate-limit claims.
 
 ## What to do
 
-**B1 is the only finding with a cost consequence** and the only one worth doing promptly. It
-needs a decision rather than a patch: either add a `heavy_bag` bucket keyed by organization
-alone (which `enforceShadowRateLimit` cannot express today — it asserts both ids are
-non-empty), or accept per-account limiting and correct the spec. The current state is neither.
+**B1 and A1 are fixed.** B1 was resolved by owner decision rather than by following the spec:
+ten Heavy Bag rounds per *user* per hour with the administrative tier exempt, rather than the
+per-organization cap §3.1 describes. A shared organization pool was rejected deliberately —
+one member exhausting it would silently deny everyone else in the gym. The spec should be
+updated to match.
 
-A1 and A2 are both small and independent. A2 is the more user-visible of the two: it is the
-only place in the product that routes a non-admin to an admin-only console.
+**A2 is withdrawn.** It was checked before being implemented and did not survive: the claim
+that non-admins hit a console where every call 403s is false, and acting on it would have
+hidden the console from coaches who use five of its eight data sources. Recorded rather than
+deleted, because the measurement is the useful part.
 
 B2 is a product decision — build the Scout Report pipeline the spec describes, or retitle
 `/shadow/scout` to what it actually shows (a job list). Leaving a surface named for a feature
