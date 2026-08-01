@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import RoleSessionGate from '@/components/RoleSessionGate';
 import Link from "next/link";
 import { ThemeToggle, useThemeOptional } from "@/components/ThemeProvider";
 
@@ -15,18 +16,18 @@ function nowTime() {
   return d.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" });
 }
 
-export default function RetroLabPage() {
+function RetroLabPageContent() {
   const { isRetro } = useThemeOptional();
   const [ledger, setLedger] = useState<LedgerLine[]>([
     { id: "1", time: "14:01", text: "SYSTEM  READY  Continuity ledger online" },
-    { id: "2", time: "14:08", text: "COACH M.  OPENED  Case #47  Athlete: J. Rivera" },
+    { id: "2", time: "14:08", text: "SYSTEM  OPENED  Sample ticket  (no athlete)" },
   ]);
   const [caseStamp, setCaseStamp] = useState<"HOLD" | "CLEARED" | "RESTRICTED" | null>("HOLD");
   const [pin, setPin] = useState("");
   const [attendance, setAttendance] = useState<Record<string, string>>({
-    "J. Rivera": "",
-    "K. Lee": "PRESENT",
-    "A. Moss": "",
+    "Sample row A": "",
+    "Sample row B": "PRESENT",
+    "Sample row C": "",
   });
   const [roundActive, setRoundActive] = useState(false);
   const [punches, setPunches] = useState({ jab: 0, cross: 0, hook: 0 });
@@ -40,7 +41,7 @@ export default function RetroLabPage() {
 
   function stampCase(code: "CLEARED" | "HOLD" | "RESTRICTED") {
     setCaseStamp(code);
-    pushLedger(`COACH YOU  STAMPED ${code}  Case #47  Athlete: J. Rivera`);
+    pushLedger(`STAMPED ${code}  Sample ticket  (no athlete)`);
   }
 
   function stampAttendance(name: string, code: string) {
@@ -64,7 +65,7 @@ export default function RetroLabPage() {
         <header className="space-y-3 border-b-[3px] border-[var(--black)] pb-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="font-mono text-[10px] uppercase tracking-[0.35em]">PPBF · Live Test Surface</p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.35em]">PPBF · Design Lab (component samples, not records)</p>
               <h1 className="font-display text-3xl uppercase tracking-wide">Retro Lab</h1>
               <p className="mt-1 max-w-2xl text-sm text-[var(--gray-dark)]">
                 Toggle the theme, press stamps, and watch the ledger. Existing pages pick up the retro
@@ -95,16 +96,16 @@ export default function RetroLabPage() {
             {/* Review ticket */}
             <section className="paper-ticket">
               <div className="paper-ticket__head">
-                <span className="paper-ticket__id">Case #47</span>
+                <span className="paper-ticket__id">Sample ticket</span>
                 {caseStamp ? (
                   <span className={`stamp stamp--static stamp--${caseStamp.toLowerCase()}`}>
                     {caseStamp}
                   </span>
                 ) : null}
               </div>
-              <h2 className="font-display text-xl uppercase">J. Rivera · 14 · Sparring video</h2>
+              <h2 className="font-display text-xl uppercase">Sample review ticket (no athlete)</h2>
               <p className="font-mono text-xs uppercase tracking-wide text-[var(--gray-dark)]">
-                Submitted 14:08 · Coach M. · Ready for decision
+                Component sample — this ticket is not a record and decides nothing
               </p>
               <div className="paper-ticket__actions">
                 <button type="button" className="stamp stamp--cleared" onClick={() => stampCase("CLEARED")}>
@@ -178,7 +179,7 @@ export default function RetroLabPage() {
                   onClick={() => {
                     setRoundActive(true);
                     setPunches({ jab: 0, cross: 0, hook: 0 });
-                    pushLedger("COACH YOU  START ROUND  J. Rivera vs K. Lee");
+                    pushLedger("COACH YOU  START ROUND  Sample round");
                   }}
                 >
                   START ROUND
@@ -190,7 +191,7 @@ export default function RetroLabPage() {
                   onClick={() => {
                     setRoundActive(false);
                     pushLedger(
-                      `COACH YOU  END ROUND  J. Rivera vs K. Lee  J${punches.jab} C${punches.cross} H${punches.hook}`,
+                      `COACH YOU  END ROUND  Sample round  J${punches.jab} C${punches.cross} H${punches.hook}`,
                     );
                   }}
                 >
@@ -298,5 +299,13 @@ export default function RetroLabPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function RetroLabPage() {
+  return (
+    <RoleSessionGate allowedRoles={['admin', 'platform_owner']}>
+      <RetroLabPageContent />
+    </RoleSessionGate>
   );
 }

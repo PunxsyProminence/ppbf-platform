@@ -1,8 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import RabbitHole from '@/components/RabbitHole';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
+
+// Each rabbit hole carries its own top margin rather than sitting in a shared
+// wrapper: two anchors are read per gap and either may have nothing to show, so
+// there must be no container left behind when they do not.
+const GAP_RABBIT_HOLE_CLASS = 'mt-3 border-l-4 border-gray-900 bg-gray-50 p-3';
 
 interface ProgressionGap {
   gap_id: string;
@@ -220,6 +226,17 @@ export default function AthleteProgressionIntelligencePage() {
                         <StatusBadge status={gap.status} type="gap" />
                         <span>Identified {new Date(gap.created_at).toLocaleDateString()}</span>
                       </div>
+
+                      {/* Anchored to the two vocabulary terms this card already
+                          names, never to the card. */}
+                      <RabbitHole
+                        anchor={{ anchorType: 'gap_type', anchorKey: gap.gap_type }}
+                        className={GAP_RABBIT_HOLE_CLASS}
+                      />
+                      <RabbitHole
+                        anchor={{ anchorType: 'severity', anchorKey: gap.severity }}
+                        className={GAP_RABBIT_HOLE_CLASS}
+                      />
                     </div>
                   ))}
                 </div>

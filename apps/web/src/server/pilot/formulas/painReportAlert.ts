@@ -1,3 +1,4 @@
+import { query } from '../db';
 import { emitShadowEvent } from '../shadowEvents';
 import { flagNearMiss } from '../shadowNearMisses';
 import type { ShadowNearMissSeverity } from '../shadowNearMisses';
@@ -9,6 +10,26 @@ import type { ShadowNearMissSeverity } from '../shadowNearMisses';
  * null value is "no reading", so neither raises anything.
  */
 export const PAIN_REPORT_KIND = 'pain_report';
+
+/**
+ * The metadata marker every pain-report near miss is written with, and the only
+ * thing that distinguishes one from a hand-flagged near miss on read.
+ *
+ * It is a stored value, not a label: changing it orphans every report already
+ * in the database from the coach's alert, so the read path below and the write
+ * path further down share this constant rather than repeating the string.
+ */
+const PAIN_REPORT_TRIGGER = 'athlete_pain_report';
+
+/**
+ * How far back the coach's pain-report alert looks.
+ *
+ * A pain report is not dismissible -- ageing out of this window is the only
+ * thing that removes it from the coach's screen -- so the window is the whole
+ * retention decision, and callers surface it to the coach rather than writing
+ * the number into copy that can drift away from it.
+ */
+export const PAIN_REPORT_ALERT_WINDOW_DAYS = 7;
 
 export function isPainReport(kind: string, value: number | null): boolean {
   return kind === PAIN_REPORT_KIND && value !== null && value > 0;
@@ -95,7 +116,7 @@ export async function alertCoachToPainReport(input: {
     detectedByAccountId: input.actorAccountId,
     detectedByRole: input.actorRole,
     metadata: {
-      trigger: 'athlete_pain_report',
+      trigger: PAIN_REPORT_TRIGGER,
       severity_1_10: value,
       location: input.dimensions.location ?? null,
       pain_type: input.dimensions.painType ?? null,
@@ -125,4 +146,153 @@ export async function alertCoachToPainReport(input: {
   });
 
   return { raised: true, severity };
+}
+
+/**
+ * One athlete's pain report, shaped for the coach who is allowed to see it.
+ *
+ * Every optional field is optional because the athlete may not have supplied
+ * it, never because it was lost on the way here. A null is rendered as "not
+ * stated", never as a stand-in value: a body location the coach invents is
+ * worse than one they know they have to ask for.
+ *
+ * Carries exactly the fields the coach's screen shows and nothing more. This
+ * is a minor's health information leaving the server, so an unused field is
+ * not free.
+ */
+export interface CoachPainReport {
+  readonly nearMissId: string;
+  readonly athleteId: string;
+  /** Null only when the athlete row is gone; the caller names the id instead. */
+  readonly athleteName: string | null;
+  readonly severity: ShadowNearMissSeverity;
+  readonly painScore: number | null;
+  readonly location: string | null;
+  readonly painType: string | null;
+  /** When the athlete says it happened. */
+  readonly observedAt: string | null;
+  /** When the platform recorded it. */
+  readonly recordedAt: string | null;
+}
+
+export interface CoachPainReportPage {
+  readonly reports: readonly CoachPainReport[];
+  /** True when more reports matched than were returned, so the list is partial. */
+  readonly truncated: boolean;
+}
+
+interface CoachPainReportRow {
+  near_miss_id: string;
+  athlete_id: string;
+  athlete_name: string | null;
+  severity: ShadowNearMissSeverity;
+  metadata: Record<string, unknown> | null;
+  created_at: Date | string | null;
+}
+
+function metadataText(metadata: Record<string, unknown>, key: string): string | null {
+  const value = metadata[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function isoText(value: unknown): string | null {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function toCoachPainReport(row: CoachPainReportRow): CoachPainReport {
+  const metadata = row.metadata ?? {};
+  const score = metadata.severity_1_10;
+
+  return {
+    nearMissId: row.near_miss_id,
+    athleteId: row.athlete_id,
+    athleteName: typeof row.athlete_name === 'string' && row.athlete_name.trim().length > 0
+      ? row.athlete_name.trim()
+      : null,
+    severity: row.severity,
+    painScore: typeof score === 'number' && Number.isFinite(score) ? score : null,
+    location: metadataText(metadata, 'location'),
+    painType: metadataText(metadata, 'pain_type'),
+    observedAt: isoText(metadata.observed_at),
+    recordedAt: isoText(row.created_at),
+  };
+}
+
+/**
+ * The athletes with a pain report inside the alert window, before any
+ * authorization is applied.
+ *
+ * Deliberately returns identifiers only and nothing about the reports: the
+ * caller runs each id past access.ts and drops the ones it refuses, so an
+ * unauthorized coach never receives a field that would tell them a report
+ * exists. Bounded by the roster rather than by the report count.
+ */
+export async function listAthletesWithRecentPainReports(
+  organizationId: string,
+  windowDays: number = PAIN_REPORT_ALERT_WINDOW_DAYS,
+): Promise<string[]> {
+  const rows = await query<{ athlete_id: string }>(
+    `select distinct athlete_id
+     from pilot.shadow_near_misses
+     where organization_id = $1
+       and metadata->>'trigger' = $2
+       and created_at > now() - ($3 * interval '1 day')`,
+    [organizationId, PAIN_REPORT_TRIGGER, windowDays],
+  );
+
+  return rows.map((row) => row.athlete_id);
+}
+
+/**
+ * The pain reports for an already-authorized set of athletes.
+ *
+ * Severity-first, matching listRecentNearMisses, so a critical report is never
+ * pushed off the end of the list by newer moderate ones. One extra row is read
+ * beyond the limit purely to answer whether the list is complete -- a coach
+ * reading a capped list as the whole set is the same false-reassurance failure
+ * as an empty list after a failed read.
+ */
+export async function listPainReportsForAthletes(
+  organizationId: string,
+  athleteIds: readonly string[],
+  options: { windowDays?: number; limit: number },
+): Promise<CoachPainReportPage> {
+  if (athleteIds.length === 0) {
+    return { reports: [], truncated: false };
+  }
+
+  const windowDays = options.windowDays ?? PAIN_REPORT_ALERT_WINDOW_DAYS;
+  const rows = await query<CoachPainReportRow>(
+    `select n.near_miss_id,
+            n.athlete_id,
+            a.full_name as athlete_name,
+            n.severity,
+            n.metadata,
+            n.created_at
+     from pilot.shadow_near_misses n
+     left join pilot.athletes a
+       on a.organization_id = n.organization_id and a.athlete_id = n.athlete_id
+     where n.organization_id = $1
+       and n.athlete_id = any($2::text[])
+       and n.metadata->>'trigger' = $3
+       and n.created_at > now() - ($4 * interval '1 day')
+     order by
+       case n.severity
+         when 'critical' then 0
+         when 'high' then 1
+         when 'moderate' then 2
+         else 3
+       end asc,
+       n.created_at desc
+     limit $5`,
+    [organizationId, [...athleteIds], PAIN_REPORT_TRIGGER, windowDays, options.limit + 1],
+  );
+
+  return {
+    reports: rows.slice(0, options.limit).map(toCoachPainReport),
+    truncated: rows.length > options.limit,
+  };
 }

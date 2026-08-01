@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import React, { type FormEvent, useCallback, useEffect, useState } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
+import type { RabbitHoleLessonItem } from './RabbitHole';
+import { ANCHOR_KEY_OPTIONS, anchorLabel } from './rabbitHoleAnchorLabels';
 import { AthleteSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
 import { cx, ui } from './uiStyles';
@@ -67,7 +69,7 @@ interface Drill {
   category: string;
   focus: string;
   cues: string[];
-  minRank: string;
+  difficulty: string;
 }
 
 interface ShadowObservationItem {
@@ -98,6 +100,74 @@ interface ActiveSessionRecord {
   rpe: number;
   checkInNote: string;
   createdAt: string;
+}
+
+/** A row of pilot.sessions as GET /api/pilot/sessions/list returns it. */
+interface StoredSession {
+  sessionId: string;
+  athleteId: string;
+  date: string;
+  rpe: number;
+  notes: string;
+  completed: boolean;
+  createdAt: string;
+}
+
+type StoredSessionLoadState = 'loading' | 'loaded' | 'unavailable';
+type NotesSaveState = 'idle' | 'saving' | 'saved' | 'failed';
+type AthleteIdentityState = 'loading' | 'resolved' | 'unavailable';
+
+// How long the athlete stops typing before the draft is written to their open
+// session. Short enough that a tablet recycling the tab loses a phrase at
+// worst, long enough that ordinary typing is not one request per keystroke.
+const NOTES_DRAFT_SAVE_DELAY_MS = 1200;
+
+/**
+ * The note stored when the athlete typed nothing at check-in. pilot.sessions
+ * requires a non-empty note, so something has to be written; recognising that
+ * exact form on the way back is what keeps it out of the athlete's own notes
+ * box, where it would read as a sentence they wrote.
+ */
+function autoCheckInNote(readiness: ReadinessLevel): string {
+  return `Auto check-in readiness ${readiness}`;
+}
+
+const AUTO_CHECK_IN_NOTE_PATTERN = /^Auto check-in readiness (GREEN|YELLOW|RED)$/;
+
+/**
+ * pilot.sessions stores date as `date` and rpe as `numeric`, and node-postgres
+ * hands both back in shapes the session validator rejects on the way in: a
+ * timestamp for the first, a string for the second. A rehydrated record is
+ * sent straight back by check-out, so it is normalized on arrival. A row that
+ * cannot be normalized is dropped rather than half-trusted -- a session whose
+ * identity or timing is unreadable must not become the one the athlete is
+ * offered a check-out for.
+ */
+function normalizeStoredSession(row: unknown): StoredSession | null {
+  if (!row || typeof row !== 'object') {
+    return null;
+  }
+
+  const record = row as Record<string, unknown>;
+  const sessionId = typeof record.session_id === 'string' ? record.session_id.trim() : '';
+  const athleteId = typeof record.athlete_id === 'string' ? record.athlete_id.trim() : '';
+  const date = typeof record.date === 'string' ? record.date.slice(0, 10) : '';
+  const createdAt = typeof record.created_at === 'string' ? record.created_at : '';
+  const rpe = Number(record.rpe);
+
+  if (!sessionId || !athleteId || !date || !createdAt || !Number.isFinite(rpe)) {
+    return null;
+  }
+
+  return {
+    sessionId,
+    athleteId,
+    date,
+    rpe,
+    notes: typeof record.notes === 'string' ? record.notes : '',
+    completed: record.completed_flag === true,
+    createdAt,
+  };
 }
 
 function getReadinessLevel(readinessToTrain: number): ReadinessLevel {
@@ -228,9 +298,161 @@ async function submitFastTrackObservations(input: {
   })));
 }
 
+// The vocabularies this tab reads. A rabbit hole is stored against one stable
+// key, and the read takes one anchor at a time, so the tab asks for the terms
+// that describe an athlete's own development: every progression gap type and
+// every severity. Built from the shared vocabulary rather than retyped, so a
+// term added to either list is asked for here without another edit.
+const RABBIT_HOLE_TAB_ANCHORS: ReadonlyArray<{ anchorType: 'gap_type' | 'severity'; anchorKey: string }> = [
+  ...ANCHOR_KEY_OPTIONS.gap_type.map((option) => ({ anchorType: 'gap_type' as const, anchorKey: option.key })),
+  ...ANCHOR_KEY_OPTIONS.severity.map((option) => ({ anchorType: 'severity' as const, anchorKey: option.key })),
+];
+
+interface RabbitHoleTopic {
+  anchorType: string;
+  anchorKey: string;
+  lessons: RabbitHoleLessonItem[];
+}
+
+type RabbitHoleLoadState = 'loading' | 'loaded' | 'unavailable';
+
+/**
+ * The gym's authored lessons, as the athlete reads them.
+ *
+ * Every lesson here was written by a person at this gym. Nothing on this
+ * surface carries a SHADOW evidence tier -- PROVEN / EMERGING / EXPERIMENTAL /
+ * RESEARCH_NEEDED grade retrieved and cited material, and coaching written by
+ * hand cannot borrow that authority.
+ *
+ * A topic with no lesson is not drawn at all, and a read that did not complete
+ * is never reported as an empty library: "the gym has published nothing" is a
+ * claim about the coaches, not about the network.
+ */
+function AthleteRabbitHoleLibrary() {
+  const [topics, setTopics] = useState<RabbitHoleTopic[]>([]);
+  const [loadState, setLoadState] = useState<RabbitHoleLoadState>('loading');
+  const [isPartial, setIsPartial] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    void (async () => {
+      const results = await Promise.all(RABBIT_HOLE_TAB_ANCHORS.map(async (anchor) => {
+        try {
+          const response = await fetch(`${apiBase()}/api/pilot/rabbit-holes/get`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ anchor_type: anchor.anchorType, anchor_key: anchor.anchorKey }),
+            signal: controller.signal,
+          });
+
+          if (!response.ok) {
+            return { anchor, lessons: null };
+          }
+
+          const payload = (await response.json()) as { ok?: boolean; rabbit_holes?: RabbitHoleLessonItem[] };
+          if (payload.ok !== true || !Array.isArray(payload.rabbit_holes)) {
+            return { anchor, lessons: null };
+          }
+
+          return { anchor, lessons: payload.rabbit_holes };
+        } catch {
+          return { anchor, lessons: null };
+        }
+      }));
+
+      if (controller.signal.aborted) {
+        return;
+      }
+
+      const failures = results.filter((result) => result.lessons === null).length;
+      if (failures === results.length) {
+        setTopics([]);
+        setIsPartial(false);
+        setLoadState('unavailable');
+        return;
+      }
+
+      setTopics(
+        results
+          .filter((result) => result.lessons !== null && result.lessons.length > 0)
+          .map((result) => ({
+            anchorType: result.anchor.anchorType,
+            anchorKey: result.anchor.anchorKey,
+            lessons: result.lessons as RabbitHoleLessonItem[],
+          })),
+      );
+      setIsPartial(failures > 0);
+      setLoadState('loaded');
+    })();
+
+    return () => controller.abort();
+  }, []);
+
+  if (loadState === 'loading') {
+    return <p className="text-sm text-[color:var(--bone-400)]">Loading the gym&apos;s rabbit holes...</p>;
+  }
+
+  if (loadState === 'unavailable') {
+    return (
+      <p className="text-sm text-[color:var(--bone-400)]">
+        The gym&apos;s rabbit holes could not be loaded right now. That is a problem reaching the app, not a sign
+        that none have been written.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {isPartial ? (
+        <p className="text-sm text-[color:var(--bone-400)]">
+          Some topics could not be loaded, so what follows is not the full list.
+        </p>
+      ) : null}
+
+      {topics.length === 0 && !isPartial ? (
+        <p className="text-sm text-[color:var(--bone-400)]">
+          Your coaches have not published a rabbit hole yet. When they do, it appears here.
+        </p>
+      ) : null}
+
+      {topics.map((topic) => (
+        <div key={`${topic.anchorType}:${topic.anchorKey}`} className="space-y-3">
+          <h3 className="font-mono text-sm font-bold uppercase tracking-[0.1em] text-[color:var(--brass-300)]">
+            {anchorLabel(topic.anchorType, topic.anchorKey)}
+          </h3>
+          {topic.lessons.map((lesson) => (
+            <article key={lesson.rabbit_hole_id} className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4">
+              {/* Provenance before content: who is talking, and on what
+                  authority, before the claim itself. */}
+              <p className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-[color:var(--brass-300)]">
+                Gym coaching · Written by {lesson.author_display_name}
+              </p>
+              <h4 className="font-semibold text-lg">{lesson.title}</h4>
+              <p className="text-[color:var(--bone-400)]"><strong>Concept:</strong> {lesson.concept}</p>
+              {lesson.homework ? (
+                <div className="bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] p-4">
+                  <p className="text-sm text-[color:var(--bone-200)]"><strong>Homework:</strong> {lesson.homework}</p>
+                </div>
+              ) : null}
+              {lesson.citation ? (
+                <p className="text-xs text-[color:var(--bone-400)]">
+                  <strong>Library source:</strong> {lesson.citation.document_name}
+                </p>
+              ) : null}
+            </article>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function AthleteWorkspace() {
   const [activeTab, setActiveTab] = useState<TabID>('my-dashboard');
   const [backendAthleteId, setBackendAthleteId] = useState<string | null>(null);
+  const [athleteIdentityState, setAthleteIdentityState] = useState<AthleteIdentityState>('loading');
   const [backendSyncMessage, setBackendSyncMessage] = useState('');
 
   // Bio Check-In State
@@ -272,12 +494,10 @@ export default function AthleteWorkspace() {
   const [tasksLoading, setTasksLoading] = useState(true);
   const [tasksError, setTasksError] = useState<string | null>(null);
 
-  // Drills State
-  const [drills] = useState<Drill[]>([
-    { id: 'dl_1', name: 'Stance Width Stability', category: 'Footwork', focus: 'Maintains wide base during rapid forward and backward movement.', cues: ['Feet shoulder-width', 'Back heel lifted', 'Weight centered'], minRank: 'TIRO' },
-    { id: 'dl_2', name: 'Straight Jab Retraction Snap', category: 'Striking', focus: 'Quick fist return to protect chin and guard stance.', cues: ['Elbow tucked', 'Shoulder covers chin', 'Snap fist on contact'], minRank: 'TIRO' },
-    { id: 'dl_3', name: 'Slip and Lateral Pivot Step', category: 'Defense', focus: 'Move outside straight punch while generating lateral counter angles.', cues: ['Slip with head off-center', 'Step 45-degrees', 'Maintain guard width'], minRank: 'DISCIPULUS' }
-  ]);
+  // The gym's own drill library, written by its coaches.
+  const [drills, setDrills] = useState<Drill[]>([]);
+  const [drillsLoading, setDrillsLoading] = useState(true);
+  const [drillsError, setDrillsError] = useState<string | null>(null);
   const [completedDrills, setCompletedDrills] = useState<Record<string, boolean>>({});
 
   // Shadow State
@@ -288,15 +508,24 @@ export default function AthleteWorkspace() {
   const [isSendingCoachMessage, setIsSendingCoachMessage] = useState(false);
   const [coachMessageStatus, setCoachMessageStatus] = useState('');
 
-  // Session Log State
-  const [sessionLog, setSessionLog] = useState<Array<{id: string; checkInTime: string; checkOutTime?: string; notes: string}>>([]);
-  const [sessionActive, setSessionActive] = useState(false);
-  const [checkInTime, setCheckInTime] = useState<string | null>(null);
+  // Session Log State. The open session is the server's, not this tab's: a
+  // shared gym tablet recycles the tab without warning, and an athlete who
+  // came back to a check-in button had no way to close the session they were
+  // still inside.
+  const [storedSessions, setStoredSessions] = useState<StoredSession[]>([]);
+  const [storedSessionLoad, setStoredSessionLoad] = useState<StoredSessionLoadState>('loading');
   const [checkInNotes, setCheckInNotes] = useState('');
   const [activeSessionRecord, setActiveSessionRecord] = useState<ActiveSessionRecord | null>(null);
+  const [notesSaveState, setNotesSaveState] = useState<NotesSaveState>('idle');
+  const [isCheckingIn, setIsCheckingIn] = useState(false);
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [lastWorkoutBuildNote, setLastWorkoutBuildNote] = useState<string | null>(null);
 
   const currentReadiness: ReadinessLevel = getReadinessLevel(readinessToTrain);
+  const checkInTime = activeSessionRecord ? new Date(activeSessionRecord.createdAt).toLocaleString() : null;
+  const notesDraft = checkInNotes.trim();
+  const notesStored = notesDraft.length > 0 && notesDraft === activeSessionRecord?.checkInNote;
+  const recentSessions = storedSessions.filter((session) => session.completed).slice(0, 5);
   const tasksDue = floorTasks.filter(t => !t.completed).length;
   const goalsActive = smartGoals.filter(g => g.status === 'Active').length;
 
@@ -307,11 +536,64 @@ export default function AthleteWorkspace() {
         const payload = (await response.json()) as { authenticated?: boolean; athlete_id?: string };
         if (response.ok && payload.authenticated && payload.athlete_id) {
           setBackendAthleteId(payload.athlete_id);
+          setAthleteIdentityState('resolved');
+          return;
         }
+        setAthleteIdentityState('unavailable');
       } catch {
-        // Keep workspace usable in local-only mode when backend session is unavailable.
+        // Keep workspace usable in local-only mode when backend session is
+        // unavailable. Nothing about a session can be read or written in that
+        // state, so the session panel says so rather than offering buttons.
+        setAthleteIdentityState('unavailable');
       }
     })();
+  }, []);
+
+  // The drill library is gym-wide coaching content, so it loads once and does
+  // not depend on which athlete is signed in.
+  useEffect(() => {
+    const controller = new AbortController();
+
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/drills`, {
+          method: 'GET',
+          credentials: 'include',
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error('Drill library could not be loaded.');
+
+        const payload = (await response.json()) as {
+          drills?: Array<{
+            drill_id: string;
+            name: string;
+            category: string;
+            focus: string;
+            cues: string[];
+            difficulty: string;
+          }>;
+        };
+        if (controller.signal.aborted) return;
+
+        setDrills((payload.drills ?? []).map((drill) => ({
+          id: drill.drill_id,
+          name: drill.name,
+          category: drill.category,
+          focus: drill.focus,
+          cues: drill.cues ?? [],
+          difficulty: drill.difficulty,
+        })));
+        setDrillsError(null);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setDrills([]);
+        setDrillsError(error instanceof Error ? error.message : 'Drill library could not be loaded.');
+      } finally {
+        if (!controller.signal.aborted) setDrillsLoading(false);
+      }
+    })();
+
+    return () => controller.abort();
   }, []);
 
   // Fetch goals when athlete ID is set
@@ -452,6 +734,129 @@ export default function AthleteWorkspace() {
     void loadShadowObservations();
   }, [loadShadowObservations]);
 
+  /**
+   * Read this athlete's sessions and recover the one still open.
+   *
+   * pilot.sessions is the only durable record of a check-in, so it is also the
+   * only thing that can answer "am I still checked in" after a reload. The
+   * list route orders by date alone, which cannot separate two sessions on the
+   * same day, so ordering is redone here on created_at.
+   */
+  const loadStoredSessions = useCallback(async () => {
+    if (!backendAthleteId) {
+      return;
+    }
+
+    setStoredSessionLoad('loading');
+
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/sessions/list?athlete_id=${encodeURIComponent(backendAthleteId)}`,
+        { method: 'GET', credentials: 'include' },
+      );
+      if (!response.ok) throw new Error('Session history could not be read.');
+
+      const payload = (await response.json()) as { items?: unknown[] };
+      const sessions = (payload.items ?? [])
+        .map(normalizeStoredSession)
+        .filter((session): session is StoredSession => session !== null)
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+
+      const open = sessions.find((session) => !session.completed) ?? null;
+
+      setStoredSessions(sessions);
+      setActiveSessionRecord(open
+        ? {
+            sessionId: open.sessionId,
+            athleteId: open.athleteId,
+            date: open.date,
+            rpe: open.rpe,
+            checkInNote: open.notes,
+            createdAt: open.createdAt,
+          }
+        : null);
+
+      if (open && !AUTO_CHECK_IN_NOTE_PATTERN.test(open.notes)) {
+        // Put back what the athlete had written. A draft already in the box
+        // wins: this read also runs on a manual retry and after a check-out
+        // failure, where overwriting would destroy the notes it exists to
+        // protect.
+        setCheckInNotes((current) => current || open.notes);
+      }
+
+      setStoredSessionLoad('loaded');
+    } catch {
+      // "No open session" and "could not ask" have to stay distinguishable:
+      // the first offers a check-in, the second must not claim the athlete is
+      // checked out when nobody knows.
+      setStoredSessionLoad('unavailable');
+    }
+  }, [backendAthleteId]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadStoredSessions();
+  }, [loadStoredSessions]);
+
+  /**
+   * Write the notes box through to the open session while it is still open.
+   *
+   * Notes typed here used to exist only in this tab until check-out, so a
+   * reload, a navigation, or a tablet recycling the tab threw away everything
+   * the athlete had written for their coach. The session record is updated in
+   * place instead, which is also what makes those notes survive a check-out
+   * that never happens.
+   */
+  useEffect(() => {
+    const record = activeSessionRecord;
+    if (!record || isCheckingOut) {
+      return;
+    }
+
+    const draft = checkInNotes.trim();
+    // pilot.sessions requires a non-empty note, so an emptied box is not a
+    // write -- clearing it must not erase what was already stored.
+    if (!draft || draft === record.checkInNote) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      void (async () => {
+        setNotesSaveState('saving');
+        try {
+          const response = await fetch(`${apiBase()}/api/pilot/sessions/update`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              session_id: record.sessionId,
+              athlete_id: record.athleteId,
+              date: record.date,
+              rpe: record.rpe,
+              notes: draft,
+              completed_flag: false,
+              created_at: record.createdAt,
+              updated_at: new Date().toISOString(),
+            }),
+          });
+
+          if (!response.ok) throw new Error('Notes were not saved.');
+
+          setActiveSessionRecord((current) => (
+            current && current.sessionId === record.sessionId
+              ? { ...current, checkInNote: draft }
+              : current
+          ));
+          setNotesSaveState('saved');
+        } catch {
+          setNotesSaveState('failed');
+        }
+      })();
+    }, NOTES_DRAFT_SAVE_DELAY_MS);
+
+    return () => clearTimeout(timer);
+  }, [checkInNotes, activeSessionRecord, isCheckingOut]);
+
   const handleCreateGoal = async () => {
     if (isCreatingGoal) return;
     if (!newGoalTitle || !newGoalTargetDate || !newGoalSuccessMetric) return;
@@ -518,6 +923,12 @@ export default function AthleteWorkspace() {
   };
 
   const handleCheckIn = async () => {
+    // A second check-in over an open session would leave the first one open
+    // forever, which is the state this screen exists to get out of.
+    if (isCheckingIn || activeSessionRecord) {
+      return;
+    }
+
     const now = new Date();
     const readiness = getReadinessLevel(readinessToTrain);
     const activeGoal = smartGoals.find((goal) => goal.status === 'Active');
@@ -527,8 +938,7 @@ export default function AthleteWorkspace() {
       activeGoal,
     });
 
-    setSessionActive(true);
-    setCheckInTime(now.toLocaleString());
+    setIsCheckingIn(true);
     setFloorTasks((current) => {
       const keepCompleted = current.filter((task) => task.completed);
       return [...generatedTasks, ...keepCompleted];
@@ -553,7 +963,9 @@ export default function AthleteWorkspace() {
     setActiveTab('athlete-floor');
 
     if (!backendAthleteId) {
-      setBackendSyncMessage('Session generated locally. Backend athlete session not found.');
+      setIsCheckingIn(false);
+      setBackendSyncMessage('Session generated locally. Backend athlete session not found, '
+        + 'so nothing was stored and there is no session to check out of.');
       return;
     }
 
@@ -579,36 +991,49 @@ export default function AthleteWorkspace() {
 
     const sessionId = `session_${Date.now()}`;
     const sessionDate = now.toISOString().slice(0, 10);
-    const checkInNote = checkInNotes.trim() || `Auto check-in readiness ${readiness}`;
-    const sessionResponse = await fetch(`${apiBase()}/api/pilot/sessions`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        session_id: sessionId,
-        athlete_id: backendAthleteId,
-        date: sessionDate,
-        rpe: readinessToTrain,
-        notes: checkInNote,
-        completed_flag: false,
-        created_at: now.toISOString(),
-        updated_at: now.toISOString(),
-      }),
-    });
+    const checkInNote = checkInNotes.trim() || autoCheckInNote(readiness);
 
-    if (sessionResponse.ok) {
-      setActiveSessionRecord({
-        sessionId,
-        athleteId: backendAthleteId,
-        date: sessionDate,
-        rpe: readinessToTrain,
-        checkInNote,
-        createdAt: now.toISOString(),
+    try {
+      const sessionResponse = await fetch(`${apiBase()}/api/pilot/sessions`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sessionId,
+          athlete_id: backendAthleteId,
+          date: sessionDate,
+          rpe: readinessToTrain,
+          notes: checkInNote,
+          completed_flag: false,
+          created_at: now.toISOString(),
+          updated_at: now.toISOString(),
+        }),
       });
-      setBackendSyncMessage('Session check-in persisted to pilot backend.');
-    } else {
-      const payload = (await sessionResponse.json().catch(() => ({ error: 'Session persistence failed' }))) as { error?: string };
-      setBackendSyncMessage(payload.error || 'Session persistence failed');
+
+      if (sessionResponse.ok) {
+        // Only a stored session becomes the active one. An athlete offered a
+        // check-out for a session the app never wrote would lose everything
+        // they typed into it at the moment they tried to hand it over.
+        setActiveSessionRecord({
+          sessionId,
+          athleteId: backendAthleteId,
+          date: sessionDate,
+          rpe: readinessToTrain,
+          checkInNote,
+          createdAt: now.toISOString(),
+        });
+        setNotesSaveState(checkInNotes.trim() ? 'saved' : 'idle');
+        setBackendSyncMessage('Session check-in persisted to pilot backend.');
+      } else {
+        const payload = (await sessionResponse.json().catch(() => ({ error: 'Session persistence failed' }))) as { error?: string };
+        setBackendSyncMessage(`${payload.error || 'Session persistence failed'} `
+          + 'Nothing was stored, so there is no session to check out of. Tell a coach you are here.');
+      }
+    } catch (error) {
+      setBackendSyncMessage(`${error instanceof Error ? error.message : 'Session persistence failed'} `
+        + 'Nothing was stored, so there is no session to check out of. Tell a coach you are here.');
+    } finally {
+      setIsCheckingIn(false);
     }
 
     void submitFastTrackObservations({
@@ -623,67 +1048,64 @@ export default function AthleteWorkspace() {
   };
 
   const handleCheckOut = async () => {
-    if (!checkInTime) {
+    // Only ever reachable with a stored session behind it, so there is no
+    // longer a path where check-out is offered and the notes go nowhere.
+    if (!activeSessionRecord || isCheckingOut) {
       return;
     }
 
+    const record = activeSessionRecord;
     const now = new Date();
     const notes = checkInNotes.trim();
-    const newSession = {
-      id: `sess_${Date.now()}`,
-      checkInTime: checkInTime,
-      checkOutTime: now.toLocaleString(),
-      notes: checkInNotes
-    };
 
-    if (activeSessionRecord) {
-      try {
-        const response = await fetch(`${apiBase()}/api/pilot/sessions/update`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            session_id: activeSessionRecord.sessionId,
-            athlete_id: activeSessionRecord.athleteId,
-            date: activeSessionRecord.date,
-            rpe: activeSessionRecord.rpe,
-            // The check-in note is the fallback because the session record
-            // requires a note and an empty box must not erase what check-in
-            // already stored.
-            notes: notes || activeSessionRecord.checkInNote,
-            completed_flag: true,
-            created_at: activeSessionRecord.createdAt,
-            updated_at: now.toISOString(),
-          }),
-        });
+    setIsCheckingOut(true);
 
-        if (response.ok) {
-          setBackendSyncMessage(notes
-            ? 'Check-out saved. Your session notes are on the session record for your coach.'
-            : 'Check-out saved to pilot backend.');
-        } else {
-          const payload = (await response.json().catch(() => ({}))) as { error?: string };
-          setBackendSyncMessage(
-            `Check-out did not save and your session notes were not sent${payload.error ? `: ${payload.error}` : '.'} `
-            + 'Tell a coach anything they need to know.',
-          );
-        }
-      } catch (error) {
-        setBackendSyncMessage(
-          `Check-out did not save and your session notes were not sent${error instanceof Error ? `: ${error.message}` : '.'} `
-          + 'Tell a coach anything they need to know.',
-        );
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/sessions/update`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: record.sessionId,
+          athlete_id: record.athleteId,
+          date: record.date,
+          rpe: record.rpe,
+          // The check-in note is the fallback because the session record
+          // requires a note and an empty box must not erase what check-in
+          // already stored.
+          notes: notes || record.checkInNote,
+          completed_flag: true,
+          created_at: record.createdAt,
+          updated_at: now.toISOString(),
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(payload.error || '');
       }
-    } else {
-      setBackendSyncMessage('Check-out was not sent: this session was never stored on the backend. '
-        + 'Your notes went nowhere -- tell a coach anything they need to know.');
-    }
 
-    setSessionLog([newSession, ...sessionLog]);
-    setSessionActive(false);
-    setCheckInTime(null);
-    setCheckInNotes('');
-    setActiveSessionRecord(null);
+      setActiveSessionRecord(null);
+      setCheckInNotes('');
+      setNotesSaveState('idle');
+      setBackendSyncMessage(notes
+        ? 'Check-out saved. Your session notes are on the session record for your coach.'
+        : 'Check-out saved to pilot backend.');
+      // Re-read rather than trust the write: the recent list below and the
+      // "are you still checked in" question are both answered from the server.
+      await loadStoredSessions();
+    } catch (error) {
+      // Nothing is cleared on a failure. The session is still open and the
+      // notes are still in the box, so the athlete can try again instead of
+      // watching the screen empty itself.
+      const detail = error instanceof Error && error.message ? `: ${error.message}` : '.';
+      setBackendSyncMessage(
+        `Check-out did not save and you are still checked in${detail} `
+        + 'Try Check Out again, and tell a coach anything they need to know.',
+      );
+    } finally {
+      setIsCheckingOut(false);
+    }
   };
 
   const handleSavePainReport = async () => {
@@ -1049,27 +1471,99 @@ export default function AthleteWorkspace() {
                 </div>
               </div>
 
-              {/* Session Check-In/Out */}
-              <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6">
-                <h3 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)] mb-4">Session Log</h3>
-                {!sessionActive ? (
-                  <button onClick={handleCheckIn} className="w-full bg-[var(--brass-700)] hover:bg-[var(--rust-700)] text-white font-semibold py-2 px-4 transition">
-                    ✅ Check In
-                  </button>
-                ) : (
+              {/* Session Check-In/Out. The open session comes from the server
+                  on every load, so a reload, a new tab, or a different device
+                  all find the same session still open. */}
+              <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4">
+                <h3 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">Session Log</h3>
+
+                {athleteIdentityState === 'loading' ? (
+                  <p className="text-sm text-[color:var(--bone-400)]">Checking your sign-in...</p>
+                ) : athleteIdentityState === 'unavailable' ? (
+                  <p className="text-sm text-[color:var(--bone-400)]">
+                    You are not signed in as an athlete right now, so a session cannot be started or saved here.
+                    Sign in again, and tell a coach you are on the floor.
+                  </p>
+                ) : storedSessionLoad === 'loading' ? (
+                  <p className="text-sm text-[color:var(--bone-400)]">Checking whether you are still checked in...</p>
+                ) : storedSessionLoad === 'unavailable' ? (
+                  <div className="space-y-3">
+                    <p className="text-sm text-[color:var(--bone-400)]">
+                      Your sessions could not be read, so nobody can tell right now whether you are already checked in.
+                      That is a problem reaching the app, not a sign that you have no session open.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void loadStoredSessions()}
+                      className="w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] text-[color:var(--bone-200)] font-semibold py-2 px-4 transition hover:bg-[var(--rust-900)]"
+                    >
+                      Try Again
+                    </button>
+                  </div>
+                ) : activeSessionRecord ? (
                   <div className="space-y-3">
                     <p className="text-sm text-[color:var(--bone-400)]">Session active since {checkInTime}</p>
                     <textarea
                       value={checkInNotes}
                       onChange={(e) => setCheckInNotes(e.target.value)}
-                      placeholder="Session notes for your coach - sent when you check out..."
+                      placeholder="Session notes for your coach..."
+                      aria-label="Session notes for your coach"
                       className="w-full h-20 px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus:outline-none"
                     />
-                    <button onClick={() => void handleCheckOut()} className="w-full bg-red-700 hover:bg-red-800 text-white font-semibold py-2 px-4 transition">
-                      ⏹️ Check Out
+                    <p className="text-xs text-[color:var(--brass-300)]">
+                      {notesSaveState === 'failed'
+                        ? 'Your notes are not saved yet -- the app could not reach your session record. Keep this tab open and keep typing; it will try again.'
+                        : notesSaveState === 'saving'
+                          ? 'Saving your notes...'
+                          : notesStored
+                            ? 'Saved to your session record. Your notes survive closing this tab.'
+                            : notesDraft
+                              ? 'Not saved yet.'
+                              : 'Anything you write here is saved to your session record as you go.'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void handleCheckOut()}
+                      disabled={isCheckingOut}
+                      className="w-full bg-red-700 hover:bg-red-800 text-white font-semibold py-2 px-4 transition disabled:opacity-50"
+                    >
+                      {isCheckingOut ? 'Checking out...' : 'Check Out'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-sm text-[color:var(--bone-400)]">You are not checked in right now.</p>
+                    <button
+                      type="button"
+                      onClick={() => void handleCheckIn()}
+                      disabled={isCheckingIn}
+                      className="w-full bg-[var(--brass-700)] hover:bg-[var(--rust-700)] text-white font-semibold py-2 px-4 transition disabled:opacity-50"
+                    >
+                      {isCheckingIn ? 'Checking in...' : 'Check In'}
                     </button>
                   </div>
                 )}
+
+                {/* Read back from the server, so "my notes were saved" is
+                    something the athlete can see rather than be told. */}
+                {storedSessionLoad === 'loaded' && recentSessions.length > 0 ? (
+                  <div className="space-y-2 border-t border-[color:var(--hide-600)] pt-3">
+                    <p className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-[color:var(--brass-300)]">
+                      Your Last Sessions
+                    </p>
+                    <ul className="space-y-2">
+                      {recentSessions.map((session) => (
+                        <li key={session.sessionId} className="text-xs text-[color:var(--bone-300)]">
+                          <span className="font-mono text-[color:var(--bone-400)]">{session.date}</span>
+                          {' - '}
+                          {AUTO_CHECK_IN_NOTE_PATTERN.test(session.notes)
+                            ? 'No notes were written for this session.'
+                            : session.notes}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
               </div>
             </div>
           )}
@@ -1440,14 +1934,35 @@ export default function AthleteWorkspace() {
                   'Search by drill name or category',
                   'Review coaching cues before executing',
                   'Mark drills complete as you master them',
-                  'Progress through complexity levels'
+                  'Work up through the difficulty levels'
                 ]}
                 mistakes={[
                   'Skipping coaching cues',
-                  'Attempting drills above your rank',
+                  'Attempting drills above your level',
                   'Not practicing enough before marking complete'
                 ]}
               />
+
+              {drillsLoading && (
+                <p className="text-sm text-[color:var(--bone-400)]">Loading the drill library...</p>
+              )}
+
+              {!drillsLoading && drillsError && (
+                <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4">
+                  <p className="text-sm text-[color:var(--bone-200)]">{drillsError}</p>
+                  <p className="mt-1 text-xs text-[color:var(--bone-400)]">
+                    This is a failure to load, not an empty library.
+                  </p>
+                </div>
+              )}
+
+              {!drillsLoading && !drillsError && drills.length === 0 && (
+                <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 text-center">
+                  <p className="text-[color:var(--bone-400)]">
+                    Your coaches have not added any drills yet.
+                  </p>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {drills.map(drill => (
@@ -1457,7 +1972,7 @@ export default function AthleteWorkspace() {
                         <span className="inline-block text-xs font-mono font-bold bg-[var(--hide-600)] text-[color:var(--bone-400)] px-2 py-1 mb-2">{drill.category}</span>
                         <h4 className="text-base font-semibold">{drill.name}</h4>
                       </div>
-                      <span className="text-xs font-mono text-[color:var(--brass-300)]">{drill.minRank}</span>
+                      <span className="text-xs font-mono text-[color:var(--brass-300)]">{drill.difficulty}</span>
                     </div>
                     <p className="text-sm text-[color:var(--bone-400)]">{drill.focus}</p>
                     <div className="space-y-1">
@@ -1489,12 +2004,12 @@ export default function AthleteWorkspace() {
             <div className="space-y-6 animate-fadeIn">
               <HelpPanel
                 title="Rabbit Holes - Deep Learning"
-                description="Advanced research into biomechanics, neurology, and boxing theory with homework assignments."
+                description="Deep-dive lessons your coaches wrote, each one a concept to understand and something to go and do with it."
                 usage={[
                   'Read concept breakdowns carefully',
                   'Complete homework to internalize learning',
                   'Apply learnings to your training',
-                  'Ask Coach Jason for clarification'
+                  'Ask a coach for clarification'
                 ]}
                 mistakes={[
                   'Reading but not doing homework',
@@ -1502,13 +2017,15 @@ export default function AthleteWorkspace() {
                 ]}
               />
 
-              <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4 animate-fadeIn">
-                <h3 className="font-semibold text-lg">Biomechanics of Kinetic Force Transfer</h3>
-                <p className="text-[color:var(--bone-400)]"><strong>Concept:</strong> Power does not generate in the shoulders. Force begins with rear-foot ground rotation through hip rotation into target through clean wrist extension.</p>
-                <div className="bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] p-4">
-                  <p className="text-sm text-[color:var(--bone-200)]"><strong>Homework:</strong> Complete 30 slow shadowboxing crosses, holding full extension for 3 seconds to confirm your rear foot heel is rotated fully outward.</p>
-                </div>
-              </div>
+              {/* The honesty line the whole tab depends on. A rabbit hole is a
+                  person's coaching, so it makes no evidence claim and carries
+                  no SHADOW evidence tier. */}
+              <p className="text-sm text-[color:var(--bone-400)]">
+                Everything here is this gym&apos;s own coaching, written by a coach and published under their name. It
+                is not research and it is not SHADOW evidence.
+              </p>
+
+              <AthleteRabbitHoleLibrary />
             </div>
           )}
 

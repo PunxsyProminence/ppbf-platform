@@ -324,7 +324,12 @@ describe('video_sessions migration against real Postgres', () => {
       // Asserted rather than assumed: if the marker is ever renamed, this
       // fails loudly instead of quietly applying the WHOLE migration and
       // "passing" without testing the backfill at all.
-      const markerIndex = migrationSql.indexOf('-- ─── Scan bookkeeping');
+      //
+      // The marker is plain ASCII deliberately. A box-drawing divider here
+      // made the whole migration unapplicable to any Postgres not encoded
+      // UTF-8, which passed on CI and failed on every Windows developer
+      // machine. Do not decorate it.
+      const markerIndex = migrationSql.indexOf('-- Scan bookkeeping');
       expect(markerIndex).toBeGreaterThan(0);
       await client.query(migrationSql.slice(0, markerIndex));
       await client.query(UPLOAD_INSERT, UPLOAD_PARAMS);

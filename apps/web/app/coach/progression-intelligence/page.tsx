@@ -2,8 +2,17 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import RabbitHole from '@/components/RabbitHole';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
+
+// A rabbit hole renders its own light panel, so on this dark surface it keeps
+// that palette and takes only the rule colour and the spacing from the page.
+// Each carries its own top margin rather than sitting in a shared wrapper: two
+// anchors are read per gap and either may have nothing to show, so there must
+// be no container left behind when they do not.
+const GAP_RABBIT_HOLE_CLASS =
+  'mt-3 border-l-4 border-[#d4a574] bg-[var(--canvas-tan-light)] p-3';
 
 interface ProgressionGap {
   gap_id: string;
@@ -209,6 +218,17 @@ export default function CoachProgressionIntelligencePage() {
                           </div>
                         </div>
                       </div>
+
+                      {/* Anchored to the two vocabulary terms this card already
+                          names, never to the card. */}
+                      <RabbitHole
+                        anchor={{ anchorType: 'gap_type', anchorKey: gap.gap_type }}
+                        className={GAP_RABBIT_HOLE_CLASS}
+                      />
+                      <RabbitHole
+                        anchor={{ anchorType: 'severity', anchorKey: gap.severity }}
+                        className={GAP_RABBIT_HOLE_CLASS}
+                      />
                     </div>
                   ))
                 )}
@@ -248,6 +268,9 @@ export default function CoachProgressionIntelligencePage() {
         <div className="flex flex-wrap gap-3">
           <Link href="/coach/review-queue" className="border-2 border-[color:var(--brass-700)] bg-[#2a1a1a] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)]">
             Back to Coach Workspace
+          </Link>
+          <Link href="/rabbit-holes" className="border-2 border-[#8b4444] bg-[#2a1a1a] px-4 py-2 text-xs font-mono text-[#d4a574]">
+            Write a Rabbit Hole
           </Link>
         </div>
       </div>
