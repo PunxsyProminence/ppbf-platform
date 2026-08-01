@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import BoardSeatEvidence from './BoardSeatEvidence';
 import { useBoardSession } from './BoardRoleGate';
 import BoardSummaryPanel from '@/app/board/BoardSummaryPanel';
 import {
@@ -245,6 +246,8 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
                 ))}
               </div>
             </article>
+
+            <BoardSeatEvidence seat={seat.slug} />
 
             <article className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
               <h2 className="text-2xl font-black text-[var(--black)]">Board intelligence unavailable</h2>

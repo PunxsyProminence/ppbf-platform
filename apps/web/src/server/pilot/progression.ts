@@ -27,8 +27,23 @@ export interface DrillAssignment {
   assignment_id: string;
   gap_id: string;
   athlete_id: string;
+  // The drill this assignment anchors to, when it has one. Null on every
+  // assignment written before drills had identity, and on any assignment a
+  // coach still types out by hand.
+  drill_id: string | null;
+  // What the coach wrote on the day. This is the record of what was actually
+  // assigned and is never rewritten -- renaming the drill does not touch it.
   drill_name: string;
   drill_description: string;
+  // The drill as it stands now, for a surface to render. Falls back to the
+  // typed text when there is no anchor, so a reader never has to decide which
+  // field to draw and never draws an empty one.
+  drill_display_name: string;
+  drill_display_description: string;
+  // Null rather than empty when the assignment has no anchor: there is no
+  // drill to describe, so a reader renders nothing rather than an empty shell.
+  drill_category: string | null;
+  drill_cues: string[] | null;
   drill_difficulty: 'beginner' | 'intermediate' | 'advanced' | 'elite';
   rep_count: number | null;
   duration_minutes: number | null;
@@ -38,6 +53,21 @@ export interface DrillAssignment {
   completion_percentage: number;
   created_at: string;
 }
+
+// One projection for every assignment read, so the display fields cannot exist
+// on one surface and not another. The join is composite and organization-scoped
+// exactly like the foreign key -- a drill_id alone would reach another gym's
+// drill.
+const ASSIGNMENT_FIELDS = `a.assignment_id, a.gap_id, a.athlete_id, a.drill_id,
+           a.drill_name, a.drill_description,
+           coalesce(d.name, a.drill_name) as drill_display_name,
+           coalesce(nullif(d.focus, ''), a.drill_description) as drill_display_description,
+           d.category as drill_category, d.cues as drill_cues,
+           a.drill_difficulty, a.rep_count, a.duration_minutes, a.frequency_per_week,
+           a.due_date, a.status, a.completion_percentage, a.created_at`;
+
+const ASSIGNMENT_DRILL_JOIN = `left join pilot.drills d
+      on d.organization_id = a.organization_id and d.drill_id = a.drill_id`;
 
 export interface AssignmentCompletion {
   completion_id: string;
@@ -86,6 +116,16 @@ export async function createProgressionGap(params: {
   return result[0];
 }
 
+/**
+ * Records a drill assignment against a gap.
+ *
+ * drillName and drillDescription are always written, with or without an anchor:
+ * they are what was assigned that day, and a coach who typed their own wording
+ * over a drill from the library keeps that wording forever. drillId is the
+ * anchor, nullable because an assignment can still be typed out entirely by
+ * hand, and because every assignment written before drills had identity carries
+ * only the text.
+ */
 export async function assignDrill(params: {
   organizationId: string;
   gapId: string;
@@ -94,6 +134,7 @@ export async function assignDrill(params: {
   drillName: string;
   drillDescription: string;
   drillDifficulty: string;
+  drillId?: string | null;
   repCount?: number;
   durationMinutes?: number;
   frequencyPerWeek?: number;
@@ -106,14 +147,23 @@ export async function assignDrill(params: {
   // keeps showing up as unaddressed work, so the pair must commit together or
   // not at all.
   return withTransaction(async (client) => {
+    // The created row comes back through the same drill join every other read
+    // uses, so the caller gets the display fields immediately rather than
+    // having to fetch the assignment again to learn what to draw.
     const result = await client.query<DrillAssignment>(
-      `insert into pilot.drill_assignments (
-        assignment_id, organization_id, gap_id, athlete_id, assigned_by_account_id,
-        drill_name, drill_description, drill_difficulty, rep_count, duration_minutes,
-        frequency_per_week, due_date, status, completion_percentage
-      ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'assigned', 0)
-      returning assignment_id, gap_id, athlete_id, drill_name, drill_description, drill_difficulty,
-               rep_count, duration_minutes, frequency_per_week, due_date, status, completion_percentage, created_at`,
+      `with a as (
+        insert into pilot.drill_assignments (
+          assignment_id, organization_id, gap_id, athlete_id, assigned_by_account_id,
+          drill_name, drill_description, drill_difficulty, rep_count, duration_minutes,
+          frequency_per_week, due_date, drill_id, status, completion_percentage
+        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'assigned', 0)
+        returning assignment_id, organization_id, gap_id, athlete_id, drill_id, drill_name,
+                 drill_description, drill_difficulty, rep_count, duration_minutes,
+                 frequency_per_week, due_date, status, completion_percentage, created_at
+      )
+      select ${ASSIGNMENT_FIELDS}
+      from a
+      ${ASSIGNMENT_DRILL_JOIN}`,
       [
         assignmentId,
         params.organizationId,
@@ -127,6 +177,7 @@ export async function assignDrill(params: {
         params.durationMinutes || null,
         params.frequencyPerWeek || null,
         params.dueDate || null,
+        params.drillId || null,
       ],
     );
 
@@ -225,19 +276,19 @@ export async function getAthleteAssignments(
   status?: string,
 ): Promise<DrillAssignment[]> {
   let sql = `
-    select assignment_id, gap_id, athlete_id, drill_name, drill_description, drill_difficulty,
-           rep_count, duration_minutes, frequency_per_week, due_date, status, completion_percentage, created_at
-    from pilot.drill_assignments
-    where organization_id = $1 and athlete_id = $2
+    select ${ASSIGNMENT_FIELDS}
+    from pilot.drill_assignments a
+    ${ASSIGNMENT_DRILL_JOIN}
+    where a.organization_id = $1 and a.athlete_id = $2
   `;
   const params: unknown[] = [organizationId, athleteId];
 
   if (status) {
-    sql += ` and status = $${params.length + 1}`;
+    sql += ` and a.status = $${params.length + 1}`;
     params.push(status);
   }
 
-  sql += ` order by due_date asc nulls last, created_at desc`;
+  sql += ` order by a.due_date asc nulls last, a.created_at desc`;
 
   return query<DrillAssignment>(sql, params);
 }
@@ -247,10 +298,10 @@ export async function getDrillAssignmentById(
   assignmentId: string,
 ): Promise<DrillAssignment | null> {
   return queryOne<DrillAssignment>(
-    `select assignment_id, gap_id, athlete_id, drill_name, drill_description, drill_difficulty,
-            rep_count, duration_minutes, frequency_per_week, due_date, status, completion_percentage, created_at
-     from pilot.drill_assignments
-     where organization_id = $1 and assignment_id = $2`,
+    `select ${ASSIGNMENT_FIELDS}
+     from pilot.drill_assignments a
+     ${ASSIGNMENT_DRILL_JOIN}
+     where a.organization_id = $1 and a.assignment_id = $2`,
     [organizationId, assignmentId],
   );
 }

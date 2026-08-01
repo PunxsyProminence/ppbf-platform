@@ -188,30 +188,12 @@ const paymentIntegrations: PaymentIntegrationPlaceholder[] = [
   { provider: 'Microsoft / Power Platform Placeholder', status: 'Not Connected', connected: false, notes: 'Future Integration | Requires Backend | Requires Compliance Review', futureBackendRequired: true },
 ];
 
-const initialDonationRecords: DonationRecord[] = [
-  {
-    id: 'don_001',
-    donorName: 'Community Donor A',
-    amount: 250,
-    frequency: 'One-Time',
-    designation: 'Youth Program Support',
-    receiptNeeded: true,
-    status: 'Pledged',
-    notes: 'Awaiting receipt confirmation.',
-    createdAt: '2026-07-12',
-  },
-  {
-    id: 'don_002',
-    donorName: 'Sponsor Family B',
-    amount: 75,
-    frequency: 'Monthly',
-    designation: 'Scholarship Support',
-    receiptNeeded: true,
-    status: 'Active',
-    notes: 'Recurring pledge started.',
-    createdAt: '2026-07-11',
-  },
-];
+// No donation is recorded here, because this platform holds no financial
+// records: every payment integration below reads Not Connected, and the
+// payment capability is a reserved slot that is deliberately not built
+// (docs/PAYMENT_SERVICE_SLOT.md). A seeded donor with a real amount would be
+// read by a treasurer or a board member as money the gym actually received.
+const initialDonationRecords: DonationRecord[] = [];
 
 const tabs: Array<{ id: RevenueFundingTab; label: string }> = [
   { id: 'overview', label: 'Overview' },
@@ -696,6 +678,15 @@ export default function RevenueFundingCenter() {
             </div>
 
             <div className="space-y-3">
+              {donationRecords.length === 0 && (
+                <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
+                  <p className="text-base font-semibold">No donations are recorded.</p>
+                  <p className="mt-1 text-base">
+                    This platform holds no financial records. Donations, grants and fees live in the
+                    gym&apos;s own books until a payment processor is connected.
+                  </p>
+                </div>
+              )}
               {donationRecords.map((row) => (
                 <div key={row.id} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">

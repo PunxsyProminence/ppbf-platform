@@ -129,7 +129,7 @@ $$;
 alter table pilot.video_sessions
   alter column status set default 'quarantined';
 
--- ─── Scan bookkeeping (#49) ──────────────────────────────────────────────────
+-- Scan bookkeeping (#49)
 --
 -- The correction above made quarantine-on-upload WORK. It did not give the
 -- state an exit: no `update pilot.video_sessions` existed anywhere in the

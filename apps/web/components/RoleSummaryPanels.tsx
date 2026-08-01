@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { RabbitHole, type RabbitHoleAnchor } from './RabbitHole';
 import ShadowChatButton from './ShadowChatButton';
 
 interface AthleteSummaryPanelProps {
@@ -45,6 +46,10 @@ interface HelpPanelProps {
   // without one get a real link into live SHADOW chat instead of a dead
   // button -- this used to always be a plain button wired to a no-op.
   onAskShadow?: () => void;
+  // Optional: the vocabulary term this panel is about. Passing one renders any
+  // authored deep-dive lessons written against it. Optional because ~50 call
+  // sites predate it, and an anchor nobody has written about renders nothing.
+  anchor?: RabbitHoleAnchor;
 }
 
 interface RoleSpecificShadowProps {
@@ -262,7 +267,8 @@ export function HelpPanel({
   description,
   usage,
   mistakes,
-  onAskShadow
+  onAskShadow,
+  anchor
 }: Readonly<HelpPanelProps>) {
   const [expanded, setExpanded] = React.useState(false);
 
@@ -298,6 +304,7 @@ export function HelpPanel({
               ))}
             </ul>
           </div>
+          {anchor ? <RabbitHole anchor={anchor} /> : null}
           {onAskShadow ? (
             <button
               onClick={onAskShadow}
