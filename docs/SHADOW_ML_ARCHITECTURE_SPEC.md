@@ -640,8 +640,28 @@ interface AuditEntry {
 ```
 
 **Auth:** `requirePrincipal` (cookie-based session)  
-**Rate Limits:** 100 requests/minute per user, 10 Heavy Bag/hour per organization  
+**Rate Limits:** 30 requests/60s per user, 400/day per user, 10 Heavy Bag/hour per user
+(administrative tier exempt)  
 **Timeout:** Quick Round (2s), Standard (5s), Heavy Bag (0s, async)
+
+> **Two deliberate divergences from earlier drafts of this section.** Both were decided;
+> neither is drift.
+>
+> The per-minute cap is **30, not the 100 this document specified** — stricter, because the
+> limit exists to protect the connection pool and the provider from a double-submit or a
+> retry loop, not to ration a person. `shadowRateLimit.ts` carries the reasoning inline.
+>
+> The Heavy Bag cap is **per user, not per organization** (owner decision, 2026-08-01). A
+> shared organization pool was rejected on purpose: one member exhausting it would silently
+> deny everyone else in the gym, and a coach would have no way to tell a limit from a fault.
+> The administrative tier — `organization_admin`, `admin`, `platform_owner` — is exempt.
+> Note that this set is deliberately *not* the manual-override set, which includes `coach`:
+> being able to *choose* Heavy Bag and being able to run it *without limit* are separate
+> permissions and get separate lists.
+>
+> Every limit is overridable per deployment through `PPBF_SHADOW_RATE_LIMIT_<KEY>`. The
+> window is not — `chat_daily` means a day, so an override that changed it would make the
+> key a lie.
 
 ### 3.2 Feedback Endpoint
 
@@ -719,7 +739,18 @@ Claims and executes the next pending Heavy Bag job.
 }
 ```
 
-### 3.5 Scout Reports Endpoint
+### 3.5 Scout Reports Endpoint — **not implemented; awaiting a product decision**
+
+Recorded here as specified, but nothing below `GET /api/pilot/shadow/scout-reports` exists
+today, and the generation pipeline in §5.5 was deliberately deleted — `generateScoutReport`
+is gone and only a tombstone comment remains at `shadowHeavyBag.ts:261`.
+
+`/shadow/scout` is still linked and titled for Scout Reports while showing the generic job
+list. That is a live inconsistency with two honest resolutions — build the pipeline, or
+retitle the surface to what it shows — and it is an open owner decision, not drift to be
+quietly patched. **Do not treat this section as describing shipped behavior.**
+
+`POST /api/pilot/shadow/jobs` below **does** exist; it is the enqueue path that survived.
 
 **`POST /api/pilot/shadow/jobs`**  (enqueue Scout Report)
 
@@ -783,25 +814,24 @@ Auto-generates research requirements based on recommendation effectiveness gaps.
 }
 ```
 
-### 3.7 Migration Endpoint
+### 3.7 Migration Endpoint — **removed, do not rebuild**
 
-**`POST /api/pilot/shadow/migrate`**
+This section formerly specified `POST /api/pilot/shadow/migrate`, which ran idempotent DDL
+to create and verify the shadow tables. **No such endpoint exists, and none should.**
 
-Runs idempotent database migrations to create/verify shadow tables.
+Schema is applied by the manual `apply-migrations` workflow, which requires an operator to
+retype the target environment before it will run, and which is governed by an explicit rule
+that migrations are **never applied as a side effect of merging**. A workflow guard also
+fails the run if any `pilot:apply-*` script is missing from the `all` list, so a new
+migration cannot be silently left out of a rebuild.
 
-```typescript
-// Response
-{
-  ok: true;
-  migrations: [
-    {
-      name: string;
-      status: 'success' | 'failed';
-      message: string;
-    }
-  ]
-}
-```
+That is strictly safer than an HTTP route that could execute DDL against the production
+youth-data database on a single request — which is precisely the pattern deleted from this
+platform in the 2026-07-31 audit, and which README and MASTER_INDEX had always claimed did
+not exist.
+
+Anything that needs schema goes in a migration file under `infra/azure/` and a matching
+`pilot:apply-*` script. Nothing gets a DDL endpoint.
 
 ---
 
@@ -1019,7 +1049,16 @@ shadow:jobs:{job_id} → Job (JSON)
 
 **Fire-and-Forget:** Does not block feedback response
 
-### 5.5 Scout Report Generation Pipeline
+### 5.5 Scout Report Generation Pipeline — **deleted; see §3.5**
+
+The dedicated producer this section describes (`generateScoutReport`, `requestMode: 'profile'`,
+72h TTL) was **fully implemented and never gained a caller** — the live scout path has always
+been the chat route's `executeHeavyBagAsync` branch. It was deleted in the 2026-07-31 audit
+(finding B5) rather than kept plausible; git history holds it if a profile-mode scout is ever
+wanted.
+
+The flow below is retained as the design of record for whoever picks up that decision. It is
+**not** a description of running code.
 
 **Trigger:** User requests Scout Report OR admin processes pending job
 
