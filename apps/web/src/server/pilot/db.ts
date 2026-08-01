@@ -102,6 +102,21 @@ export async function closePool(): Promise<void> {
   }
 }
 
+// Borrows one pooled connection WITHOUT wrapping it in a transaction, and
+// always releases it. For callers that manage their own BEGIN/COMMIT (the
+// durable rate limiter takes `for update` locks inside its own transaction)
+// or that genuinely want autocommit. Prefer withTransaction when you want
+// all-or-nothing; this exists so such callers do not have to open a fresh
+// pg Client and pay a TCP+TLS handshake per call.
+export async function withPoolClient<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await getPool().connect();
+  try {
+    return await fn(client);
+  } finally {
+    client.release();
+  }
+}
+
 // Runs `fn` inside a single BEGIN/COMMIT transaction on one connection.
 // Any thrown error rolls the transaction back before rethrowing, so callers
 // that pair a sensitive mutation with a dependent side effect (e.g. changing

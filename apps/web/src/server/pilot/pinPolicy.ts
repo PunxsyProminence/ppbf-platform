@@ -42,6 +42,45 @@ export function assertChosenPinAllowed(pin: string): void {
   }
 }
 
+/**
+ * Trivially guessable shapes, rejected regardless of who is setting the PIN.
+ *
+ * Six digits is a million combinations only if they are chosen uniformly, and
+ * nobody chooses uniformly. The brute-force budget that matters is not 10^6,
+ * it is the few dozen patterns a person actually picks -- which is why this
+ * matters more than the digit count.
+ *
+ * DEFAULT_FIRST_LOGIN_PIN is deliberately NOT rejected here. The admin
+ * PIN-reset flow legitimately issues it, and validatePinPolicy sits on that
+ * path; refusing it would break the reset. What stops it being a way in is
+ * must_change_pin, plus assertChosenPinAllowed refusing it on the path where
+ * somebody CHOOSES their own -- the same split this file already draws.
+ */
+function isTriviallyGuessablePin(pin: string): boolean {
+  // All one digit: 000000, 111111, ...
+  if (/^(\d)\1+$/.test(pin)) return true;
+
+  // Ascending or descending runs, with wraparound: 123456, 654321, 890123.
+  const ascending = '01234567890123456789';
+  const descending = '98765432109876543210';
+  if (ascending.includes(pin) || descending.includes(pin)) return true;
+
+  // Short repeating cycles: 121212 (2), 123123 (3), 112233 is not a cycle but
+  // is caught by the pair rule below.
+  for (const size of [1, 2, 3]) {
+    const unit = pin.slice(0, size);
+    if (unit.repeat(DEFAULT_PIN_LENGTH / size) === pin) return true;
+  }
+
+  // Doubled digits: 112233, 445566.
+  if (/^(\d)\1(\d)\2(\d)\3$/.test(pin)) return true;
+
+  // Palindromes of the 123321 / 456654 shape.
+  if (pin === [...pin].reverse().join('')) return true;
+
+  return false;
+}
+
 export function validatePinPolicy(pin: string): void {
   const normalized = pin.trim();
   if (!normalized) {
@@ -54,5 +93,11 @@ export function validatePinPolicy(pin: string): void {
 
   if (normalized.length !== DEFAULT_PIN_LENGTH) {
     throw new Error(`PIN must be exactly ${DEFAULT_PIN_LENGTH} digits`);
+  }
+
+  // Checked after the shape rules so the message a caller sees is the most
+  // specific one, and skipped for the issued bootstrap PIN as described above.
+  if (normalized !== DEFAULT_FIRST_LOGIN_PIN && isTriviallyGuessablePin(normalized)) {
+    throw new Error('That PIN is too easy to guess. Avoid repeated digits, runs, and simple patterns.');
   }
 }
