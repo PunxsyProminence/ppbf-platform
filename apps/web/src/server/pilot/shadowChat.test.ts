@@ -467,7 +467,6 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
           const result = validateShadowResponse(response);
           expect(result.filtered).toBe(true);
         });
-
         // The subject alternation was second-person plus 'the athlete', so the
         // same claim in the third person passed clean. Measured 2026-07-31,
         // before the widening: 'The athlete has a rotator cuff injury.'
@@ -507,6 +506,46 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
         ])('still allows %s', (_label, response) => {
           const result = validateShadowResponse(response);
           expect(result.filtered).toBe(false);
+        });
+      });
+
+      describe('a roster count is not a sample size', () => {
+        // The count-noun branch read 'N athletes' as an evidence population
+        // wherever it appeared, so counting people into groups tripped the
+        // same rule as "94% of athletes improve". This failed the staging gate
+        // on 0f47b35: step 14 asks for a four-station circuit for a 60-minute
+        // youth class, and both the answer and its retry were withheld. The
+        // trigger was in the question, not the phrasing, so the one-retry
+        // policy could never clear it.
+        test.each([
+          ['a class split', 'Split the 12 athletes into four groups of three and rotate every eight minutes.'],
+          ['a per-station count', 'Put 3 athletes at each station so nobody waits for a bag.'],
+          ['a station roster', 'Station 1 (Jab mechanics): 4 athletes rotate through in pairs.'],
+          ['a group size', 'Run the circuit in groups of 3 athletes so each one gets a full round.'],
+          ['a participant count', 'With 8 participants you can run two stations in parallel.'],
+          ['a pairing instruction', 'Pair up the 10 athletes; 2 athletes per bag keeps the rotation tight.'],
+        ])('allows %s', (_label, response) => {
+          const result = validateShadowResponse(response, { allowedEvidenceIds: [] });
+          expect(result.filtered).toBe(false);
+        });
+
+        // The strip must not let an actual claim through uncited. An
+        // organizational rollup figure is the load-bearing case: "Alpha Boxing
+        // has 12 athletes" is a fact about the org and still needs its
+        // citation, which is why this is a strip of allocation speech rather
+        // than a narrowing of the trigger.
+        test.each([
+          ['an organizational rollup figure', 'Alpha Boxing has 12 athletes.'],
+          ['a plain population statement', 'There are 30 athletes enrolled this season.'],
+          ['a sample with an outcome', 'In our program 300 athletes improved their guard after this drill.'],
+          ['an out-of framing', '7 out of 10 athletes reported less shoulder soreness.'],
+          ['a participant outcome', '40 participants showed a measurable increase in punch speed.'],
+          ['a comparison population', 'This is best for 247 similar athletes.'],
+          ['a count of similar cases', 'We saw the same pattern in 12 similar cases.'],
+          ['a count of studies', 'Across 4 studies the effect held.'],
+        ])('still filters %s', (_label, response) => {
+          const result = validateShadowResponse(response, { allowedEvidenceIds: [] });
+          expect(result.filtered).toBe(true);
         });
       });
 
