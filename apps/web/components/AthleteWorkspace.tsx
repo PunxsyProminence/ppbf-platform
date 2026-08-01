@@ -69,7 +69,7 @@ interface Drill {
   category: string;
   focus: string;
   cues: string[];
-  minRank: string;
+  difficulty: string;
 }
 
 interface ShadowObservationItem {
@@ -425,12 +425,10 @@ export default function AthleteWorkspace() {
   const [tasksLoading, setTasksLoading] = useState(true);
   const [tasksError, setTasksError] = useState<string | null>(null);
 
-  // Drills State
-  const [drills] = useState<Drill[]>([
-    { id: 'dl_1', name: 'Stance Width Stability', category: 'Footwork', focus: 'Maintains wide base during rapid forward and backward movement.', cues: ['Feet shoulder-width', 'Back heel lifted', 'Weight centered'], minRank: 'TIRO' },
-    { id: 'dl_2', name: 'Straight Jab Retraction Snap', category: 'Striking', focus: 'Quick fist return to protect chin and guard stance.', cues: ['Elbow tucked', 'Shoulder covers chin', 'Snap fist on contact'], minRank: 'TIRO' },
-    { id: 'dl_3', name: 'Slip and Lateral Pivot Step', category: 'Defense', focus: 'Move outside straight punch while generating lateral counter angles.', cues: ['Slip with head off-center', 'Step 45-degrees', 'Maintain guard width'], minRank: 'DISCIPULUS' }
-  ]);
+  // The gym's own drill library, written by its coaches.
+  const [drills, setDrills] = useState<Drill[]>([]);
+  const [drillsLoading, setDrillsLoading] = useState(true);
+  const [drillsError, setDrillsError] = useState<string | null>(null);
   const [completedDrills, setCompletedDrills] = useState<Record<string, boolean>>({});
 
   // Shadow State
@@ -465,6 +463,53 @@ export default function AthleteWorkspace() {
         // Keep workspace usable in local-only mode when backend session is unavailable.
       }
     })();
+  }, []);
+
+  // The drill library is gym-wide coaching content, so it loads once and does
+  // not depend on which athlete is signed in.
+  useEffect(() => {
+    const controller = new AbortController();
+
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/drills`, {
+          method: 'GET',
+          credentials: 'include',
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error('Drill library could not be loaded.');
+
+        const payload = (await response.json()) as {
+          drills?: Array<{
+            drill_id: string;
+            name: string;
+            category: string;
+            focus: string;
+            cues: string[];
+            difficulty: string;
+          }>;
+        };
+        if (controller.signal.aborted) return;
+
+        setDrills((payload.drills ?? []).map((drill) => ({
+          id: drill.drill_id,
+          name: drill.name,
+          category: drill.category,
+          focus: drill.focus,
+          cues: drill.cues ?? [],
+          difficulty: drill.difficulty,
+        })));
+        setDrillsError(null);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setDrills([]);
+        setDrillsError(error instanceof Error ? error.message : 'Drill library could not be loaded.');
+      } finally {
+        if (!controller.signal.aborted) setDrillsLoading(false);
+      }
+    })();
+
+    return () => controller.abort();
   }, []);
 
   // Fetch goals when athlete ID is set
@@ -1593,14 +1638,35 @@ export default function AthleteWorkspace() {
                   'Search by drill name or category',
                   'Review coaching cues before executing',
                   'Mark drills complete as you master them',
-                  'Progress through complexity levels'
+                  'Work up through the difficulty levels'
                 ]}
                 mistakes={[
                   'Skipping coaching cues',
-                  'Attempting drills above your rank',
+                  'Attempting drills above your level',
                   'Not practicing enough before marking complete'
                 ]}
               />
+
+              {drillsLoading && (
+                <p className="text-sm text-[#b0a095]">Loading the drill library...</p>
+              )}
+
+              {!drillsLoading && drillsError && (
+                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
+                  <p className="text-sm text-[#e8d7c6]">{drillsError}</p>
+                  <p className="mt-1 text-xs text-[#b0a095]">
+                    This is a failure to load, not an empty library.
+                  </p>
+                </div>
+              )}
+
+              {!drillsLoading && !drillsError && drills.length === 0 && (
+                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 text-center">
+                  <p className="text-[#b0a095]">
+                    Your coaches have not added any drills yet.
+                  </p>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {drills.map(drill => (
@@ -1610,7 +1676,7 @@ export default function AthleteWorkspace() {
                         <span className="inline-block text-xs font-mono font-bold bg-[#4a4a4a] text-[#8a8a8a] px-2 py-1 mb-2">{drill.category}</span>
                         <h4 className="text-base font-semibold">{drill.name}</h4>
                       </div>
-                      <span className="text-xs font-mono text-[#d4a574]">{drill.minRank}</span>
+                      <span className="text-xs font-mono text-[#d4a574]">{drill.difficulty}</span>
                     </div>
                     <p className="text-sm text-[#b0a095]">{drill.focus}</p>
                     <div className="space-y-1">
