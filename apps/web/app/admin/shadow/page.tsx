@@ -461,6 +461,7 @@ function fromBackendStatus(status: 'pending_review' | 'approved' | 'rejected' | 
 function renderMetricsPanel(
   growthMetrics: OrgMetrics | null,
   metricsLoading: boolean,
+  metricsError: string,
 ) {
   return (
     <section className="col-span-full border-2 border-[#3f8b5b]/40 bg-[#0a1a0f] p-4">
@@ -486,6 +487,14 @@ function renderMetricsPanel(
             </div>
           ))}
         </div>
+      ) : metricsError ? (
+        // "Metrics unavailable" was shown for a failed load, a forbidden load
+        // and a genuinely empty organization alike, so the one panel that could
+        // not explain itself was also the one most likely to be refused: this
+        // endpoint is admin-only, while five of the console's other panels
+        // admit coaches. A coach saw an unexplained blank here and working
+        // panels beside it.
+        <p role="status" className="text-xs text-[#f2c3c3]">{metricsError}</p>
       ) : (
         <p className="text-xs text-[#c9f0d7]/40">Metrics unavailable</p>
       )}
@@ -1027,6 +1036,7 @@ export default function AdminShadowConsolePage() {
   // imported contract makes the next shape change a compile error here.
   const [growthMetrics, setGrowthMetrics] = useState<OrgMetrics | null>(null);
   const [metricsLoading, setMetricsLoading] = useState(false);
+  const [metricsError, setMetricsError] = useState('');
   const [feedbackSummary, setFeedbackSummary] = useState<ShadowFeedbackApiResponse['summary']>(null);
   const [feedbackReviewQueue, setFeedbackReviewQueue] = useState<ShadowFeedbackItem[]>([]);
   // Items whose review was recorded but whose learning promotion returned a
@@ -1075,13 +1085,23 @@ export default function AdminShadowConsolePage() {
     // Load growth metrics asynchronously
     const loadMetrics = async () => {
       setMetricsLoading(true);
+      setMetricsError('');
       try {
         const response = await fetch(`${apiBase()}/api/pilot/shadow/metrics?days=30`, {
           credentials: 'include',
         });
-        if (!response.ok) return;
+        if (!response.ok) {
+          setMetricsError(
+            response.status === 401 || response.status === 403
+              ? 'SHADOW Intelligence is limited to organization admins. The other panels on this page are unaffected.'
+              : 'SHADOW Intelligence could not be loaded. The other panels on this page are unaffected.',
+          );
+          return;
+        }
         const payload = (await response.json()) as { metrics?: OrgMetrics } | null;
         if (payload?.metrics?.growth) setGrowthMetrics(payload.metrics);
+      } catch {
+        setMetricsError('SHADOW Intelligence could not be reached. The other panels on this page are unaffected.');
       } finally {
         setMetricsLoading(false);
       }
@@ -1701,7 +1721,7 @@ export default function AdminShadowConsolePage() {
     <RoleStandaloneView roleLabel="SHADOW Admin Console" routeLabel="/admin/shadow" allowedRoles={['admin', 'platform_owner']} showShellHeader={false}>
       <main className="grid gap-6 xl:grid-cols-[1.25fr_0.95fr]">
         {/* ── SHADOW Growth Metrics ─────────────────────────────────── */}
-        {renderMetricsPanel(growthMetrics, metricsLoading)}
+        {renderMetricsPanel(growthMetrics, metricsLoading, metricsError)}
         {/* ── SHADOW Learning Review (human approval gate) ──────────── */}
         {renderFeedbackReviewPanel({
           summary: feedbackSummary,

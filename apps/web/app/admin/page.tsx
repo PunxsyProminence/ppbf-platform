@@ -299,27 +299,6 @@ const fallbackCapabilities: Capability[] = seedCapabilityBlueprints.map((item, i
   };
 });
 
-function mergeSeedCapabilities(existing: Capability[]): Capability[] {
-  const nowIso = new Date().toISOString();
-  const byCapabilityId = new Set(existing.map((capability) => capability.capabilityId));
-  const additions: Capability[] = [];
-
-  for (const seed of fallbackCapabilities) {
-    if (byCapabilityId.has(seed.capabilityId)) {
-      continue;
-    }
-
-    additions.push({
-      ...seed,
-      id: existing.length + additions.length + 1,
-      createdAt: nowIso,
-      updatedAt: nowIso,
-    });
-  }
-
-  return [...existing, ...additions];
-}
-
 function toCapabilityStatus(raw: unknown): CapabilityStatus {
   if (typeof raw !== 'string') return 'DRAFT';
   const statusCandidate = raw.toUpperCase();
@@ -523,8 +502,14 @@ export default function AdminCapabilitiesPage() {
 
         const payload = (await response.json()) as { capabilities?: Partial<Capability>[] };
         if (Array.isArray(payload.capabilities) && payload.capabilities.length > 0) {
-          const hydrated = payload.capabilities.map((item, index) => hydrateCapability(item, index));
-          setCapabilities(mergeSeedCapabilities(hydrated));
+          // A stored registry is authoritative and is shown exactly as stored.
+          // The seed blueprints used to be merged in here, which made archiving
+          // impossible: a capability an administrator removed was added back on
+          // the next load and then written to the registry by the save effect
+          // below, so the record drifted toward the template no matter what the
+          // gym decided. The seeds remain the starting point for a gym that has
+          // no registry yet -- that is the initial state at `useState`, not this.
+          setCapabilities(payload.capabilities.map((item, index) => hydrateCapability(item, index)));
         }
         setCapabilitiesHydrated(true);
       } catch (error) {

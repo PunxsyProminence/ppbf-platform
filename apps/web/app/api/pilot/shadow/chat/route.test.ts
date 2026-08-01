@@ -438,6 +438,49 @@ describe('POST /api/pilot/shadow/chat trust boundary', () => {
     }));
   });
 
+  // The Heavy Bag cap. Until it existed, the expensive path was charged only to
+  // the generic `chat` bucket a Quick Round uses, so the per-user ceiling the ML
+  // spec describes did not exist in any form.
+  test('charges a coach a Heavy Bag round against the hourly cap', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach' }));
+    mockClassifyRequest.mockReturnValueOnce({
+      tier: 'heavy_bag', complexity: 0.9, topic: 'general',
+    } as ReturnType<typeof classifyRequest>);
+
+    await POST(postRequest({ message: 'Deep review please', tier: 'heavy_bag' }));
+
+    expect(mockEnforceRateLimit).toHaveBeenCalledWith({
+      organizationId: 'org-session',
+      accountId: 'account-1',
+      endpointKey: 'heavy_bag',
+      limit: 10,
+      windowSeconds: 3_600,
+    });
+  });
+
+  test('does not charge an organization admin against the Heavy Bag cap', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin' }));
+    mockClassifyRequest.mockReturnValueOnce({
+      tier: 'heavy_bag', complexity: 0.9, topic: 'general',
+    } as ReturnType<typeof classifyRequest>);
+
+    await POST(postRequest({ message: 'Deep review please', tier: 'heavy_bag' }));
+
+    expect(mockEnforceRateLimit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ endpointKey: 'heavy_bag' }),
+    );
+  });
+
+  test('a Quick Round is never charged against the Heavy Bag cap', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach' }));
+
+    await POST(postRequest({ message: 'Quick question' }));
+
+    expect(mockEnforceRateLimit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ endpointKey: 'heavy_bag' }),
+    );
+  });
+
   test('passes only the authorized conversation history before the new user message', async () => {
     mockLoadConversationMessages.mockResolvedValueOnce([
       {

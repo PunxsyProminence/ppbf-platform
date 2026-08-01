@@ -48,6 +48,15 @@ const RATE_LIMIT_DEFAULTS = {
   // rather than a fault -- had stopped it.
   chat_daily: { limit: 400, windowSeconds: 86_400 },
   feedback: { limit: 60, windowSeconds: 60 },
+  // Heavy Bag is the expensive inference path, and until this existed it was
+  // charged to the same generic `chat` bucket a Quick Round uses -- so the
+  // per-organization cap the ML spec (§3.1) describes did not exist in any
+  // form. Owner decision 2026-08-01: ten rounds per user per hour, with the
+  // administrative tier exempt. The bucket is keyed (organization, account)
+  // like every other, which is what makes it per-user; there is deliberately
+  // no organization-wide ceiling, because one member exhausting a shared pool
+  // would silently deny everyone else in the gym.
+  heavy_bag: { limit: 10, windowSeconds: 3_600 },
   // Uploads cost storage rather than inference. Raised, but by less, since a
   // batch of session video is the one action here with an unbounded byte cost.
   shadow_upload: { limit: 40, windowSeconds: 3_600 },
