@@ -1,7 +1,14 @@
 /**
  * UI Styles Registry
  *
- * CSS Variables Reference (defined in global.css or tailwind config):
+ * Repeated Tailwind class strings, so tabs/mode buttons/panels aren't
+ * copy-pasted. This is a convenience layer, NOT a source of values — every
+ * variable below is a legacy alias defined in app/globals.css and pointed at
+ * design-system/ppbf.css, which is the single source of truth. New work should
+ * read the ppbf tokens directly (--hide-*, --brass-*, --t-*, --s*) rather than
+ * adding aliases here. See docs/FRONTEND_STYLE_CONTRACT.md.
+ *
+ * CSS Variables Reference (aliases defined in app/globals.css):
  * - --black: Primary text/borders
  * - --red-primary: Primary action color
  * - --canvas-tan: Background tone

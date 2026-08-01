@@ -2,8 +2,31 @@
 
 **Version:** 1.0  
 **Codename:** Poor Man's Sport  
-**Status:** P0 — Required before any implementation  
+**Status:** ⚠️ **SUPERSEDED — do not build from Section 1 or 2.**  
 **Companion docs:** `USABILITY_SPEC_RETRO.md`, `STAMP_AND_LEDGER_SCHEMA.md`, `FLOOR_FLOWS_SPARRING_ATTENDANCE.md`
+
+> **This was the proposal. [design-system/ppbf.css](../design-system/ppbf.css) is
+> what shipped**, and it is the single source of truth for every token, material,
+> and component class. This document's Section 1 tokens and Section 2 components are
+> superseded — the shipped values are different, and copying from here reintroduces
+> a palette the app no longer uses.
+>
+> Two specific things here are **wrong about the shipped app**:
+>
+> - Section 1 scopes its tokens to `[data-theme="retro"]` "so the existing tactical
+>   theme can coexist." There is deliberately **no second palette and no
+>   `[data-theme]` override** — one look, the golden-era one. What varies per surface
+>   is the *ground* (ink vs. warm canvas, Law 6), which is a material choice, not a
+>   user-facing theme toggle.
+> - Its `--stamp-*` and `--brass*` names survive in `globals.css` only as **aliases**
+>   pointed at design-system values. The hexes in this document are dead.
+>
+> Kept unarchived because the *thinking* — physical-object controls, the stamp
+> vocabulary, floor-use ergonomics — is what the Eight Laws were built from, and
+> because the three companion docs depend on it for that reasoning. Read it as
+> rationale, not as spec. For anything buildable, use
+> [design-system/README.md](../design-system/README.md) and
+> [FRONTEND_STYLE_CONTRACT.md](FRONTEND_STYLE_CONTRACT.md).
 
 This document defines the complete visual and component language for the 1930s–1950s neighborhood boxing gym interface.
 

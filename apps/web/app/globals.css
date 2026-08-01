@@ -47,6 +47,14 @@
   --status-critical: var(--locked);
   --status-inactive: var(--hide-600);
 
+  /* uiStyles.ts reads these two names, which nothing defined — so `statusDanger`,
+     `statusInfo`, `errorButton`, `errorContainer` and `errorText` all resolved to
+     an invalid colour and rendered white-on-transparent. --status-danger is an
+     alias of --status-critical (same rung, two names in the codebase); --monitor
+     is the ladder's blue, so info gets that rather than a new colour. */
+  --status-danger: var(--locked);
+  --status-info: var(--monitor);
+
   /* --font-stencil keeps its next/font wiring — --font-tactical-display is a
      real loaded face, where the design system's fallback chain is not. The
      design system's own --font-stencil stays available for previews. */
