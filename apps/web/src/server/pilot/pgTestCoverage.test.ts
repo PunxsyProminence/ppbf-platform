@@ -1,0 +1,94 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+
+/**
+ * Every .pg.test.ts file must be reachable from `npm run test:migrations`.
+ *
+ * These tests boot an embedded Postgres and apply real migration SQL, so they
+ * are deliberately excluded from the default `test` script
+ * (`--testPathIgnorePatterns=\.pg\.test\.ts$`). That exclusion means the *only*
+ * thing that runs them is the hand-maintained `test:migrations` chain -- and a
+ * hand-maintained list of 29 entries is a list that silently loses entries.
+ *
+ * It had lost seven. `complianceMigration`, `progressionMigration`,
+ * `publicationsMigration`, `drillsPersistence`, `guardianInviteLink`,
+ * `durableRateLimit` and `assistantMessageIdempotency` all existed, all passed,
+ * and none had ever run in CI. The migrations they guard looked covered to
+ * anyone counting test files, and were not covered at all.
+ *
+ * That is the failure this file exists to make impossible. Writing a .pg.test.ts
+ * and forgetting to wire it up is the natural mistake -- nothing fails, the file
+ * looks like every other test in the directory, and the gap is invisible until
+ * someone diffs the directory against the script by hand.
+ */
+
+const PILOT_DIR = __dirname;
+const PACKAGE_JSON = path.resolve(__dirname, '../../../package.json');
+
+function pgTestFiles(): string[] {
+  return readdirSync(PILOT_DIR)
+    .filter((file) => file.endsWith('.pg.test.ts'))
+    .sort();
+}
+
+function migrationChainScripts(): { chain: string; scripts: Record<string, string> } {
+  const parsed = JSON.parse(readFileSync(PACKAGE_JSON, 'utf8')) as {
+    scripts: Record<string, string>;
+  };
+  return { chain: parsed.scripts['test:migrations'] ?? '', scripts: parsed.scripts };
+}
+
+/**
+ * The set of .pg.test.ts filenames the chain actually executes: every
+ * `test:migrations:*` the chain names, resolved to the path its jest invocation
+ * runs. Deliberately follows the indirection rather than searching package.json
+ * for the filename -- a script that exists but is missing from the chain is
+ * exactly the bug here, and a naive text search would call that covered.
+ */
+function coveredPgTests(): Set<string> {
+  const { chain, scripts } = migrationChainScripts();
+  const covered = new Set<string>();
+
+  for (const scriptName of chain.match(/test:migrations:[a-z0-9-]+/g) ?? []) {
+    const command = scripts[scriptName];
+    if (!command) continue;
+
+    for (const match of command.matchAll(/--runTestsByPath\s+(\S+)/g)) {
+      covered.add(path.basename(match[1]));
+    }
+  }
+
+  return covered;
+}
+
+describe('pg test coverage', () => {
+  it('runs every .pg.test.ts file from the test:migrations chain', () => {
+    const orphaned = pgTestFiles().filter((file) => !coveredPgTests().has(file));
+
+    expect(orphaned).toEqual([]);
+  });
+
+  it('names only .pg.test.ts files that exist', () => {
+    const onDisk = new Set(pgTestFiles());
+    const missing = [...coveredPgTests()].filter((file) => !onDisk.has(file));
+
+    // A chain entry pointing at a deleted file fails the whole chain at that
+    // step, so this direction is loud rather than silent -- but it fails after
+    // however many minutes of embedded Postgres came before it, and it fails in
+    // a migrations job rather than in the fast suite. Better to catch it here.
+    expect(missing).toEqual([]);
+  });
+
+  it('detects an orphan when one exists', () => {
+    // Negative control. Both assertions above pass trivially if the helpers
+    // return empty sets -- a typo in the glob or the regex would make this file
+    // permanently green while covering nothing, which is precisely the class of
+    // failure it was written to catch.
+    const covered = coveredPgTests();
+    const pretendNewFile = 'somethingBrandNew.pg.test.ts';
+
+    expect(covered.size).toBeGreaterThan(0);
+    expect(pgTestFiles().length).toBeGreaterThan(0);
+    expect(covered.has(pretendNewFile)).toBe(false);
+  });
+});
