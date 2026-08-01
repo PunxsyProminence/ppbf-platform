@@ -10,19 +10,28 @@ export const runtime = 'nodejs';
 interface VideoSessionRow {
   video_session_id: string;
   status: string;
+  scan_state: string;
   athlete_id: string | null;
   uploaded_by_account_id: string;
 }
 
+// The two verdicts that hand the decision to a person. 'needs_human_review' is
+// the scanner saying it could not be sure; 'unconfigured' is an environment
+// with no gate to ask. Everything else the scanner reaches, it owns.
+const HUMAN_RELEASABLE_SCAN_STATES = new Set(['needs_human_review', 'unconfigured']);
+
 /**
  * Releases an uploaded video for playback.
  *
- * Uploads are born 'quarantined' and no automated scanner exists, so the
- * release is the human attestation that closes that state: the coach who
- * filmed the session says the footage is what it claims to be. The only
- * transition available here is quarantined -> ready. 'infected' and 'error'
- * are verdicts about the file itself and are never overridden by a person,
- * and a video that is already 'ready' has nothing left to release.
+ * Uploads are born 'quarantined'. The scan sweep promotes what it can clear on
+ * its own; this route is the human attestation for the footage it cannot --
+ * the coach who filmed the session saying it is what it claims to be.
+ *
+ * The only transition available here is quarantined -> ready, and only from a
+ * scan_state that defers to a person. A definite machine refusal is never
+ * reversible from this route: 'blocked' is the content screen declining
+ * footage of a minor, 'infected' is malware, and 'error' is a verdict about
+ * the file itself. A video already 'ready' has nothing left to release.
  */
 export async function POST(
   request: NextRequest,
@@ -34,7 +43,7 @@ export async function POST(
     const { videoId } = await params;
 
     const row = await queryOne<VideoSessionRow>(
-      `select video_session_id, status, athlete_id, uploaded_by_account_id
+      `select video_session_id, status, scan_state, athlete_id, uploaded_by_account_id
        from pilot.video_sessions
        where video_session_id = $1 and organization_id = $2`,
       [videoId, principal.organizationId],
@@ -63,6 +72,24 @@ export async function POST(
       );
     }
 
+    // A person resolves what the scan could not; a person never overturns what
+    // it refused. 'blocked' is the content screen declining footage of a minor,
+    // and a coach who filmed it is the last person who should be able to
+    // reverse that. 'pending' and 'scanning' are not refusals -- they are a
+    // verdict that has not arrived, and releasing ahead of it would make the
+    // gate optional for anyone willing to click first.
+    if (!HUMAN_RELEASABLE_SCAN_STATES.has(row.scan_state)) {
+      return NextResponse.json(
+        {
+          error: row.scan_state === 'blocked'
+            ? 'The content screen refused this video. It cannot be released here; ask an administrator to review it.'
+            : 'This video is still waiting on its content scan. It can be released by hand only if the scan cannot reach a verdict.',
+          scan_state: row.scan_state,
+        },
+        { status: 409 },
+      );
+    }
+
     // The state predicate is repeated on the write so a video that left
     // quarantine between the read and the write is never dragged back to
     // 'ready', and so two simultaneous releases produce one audit record.
@@ -70,8 +97,9 @@ export async function POST(
       `update pilot.video_sessions
        set status = 'ready', updated_at = now()
        where video_session_id = $1 and organization_id = $2 and status = 'quarantined'
+         and scan_state = any($3::text[])
        returning status`,
-      [videoId, principal.organizationId],
+      [videoId, principal.organizationId, [...HUMAN_RELEASABLE_SCAN_STATES]],
     );
 
     if (!released) {

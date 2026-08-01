@@ -43,6 +43,9 @@ function principal(overrides: Partial<PilotPrincipal>): PilotPrincipal {
 const videoRow = (overrides: Record<string, unknown> = {}) => ({
   video_session_id: 'vid-1',
   status: 'quarantined',
+  // The scan sweep promotes what it can clear itself, so the rows that reach
+  // this route are the ones it handed back to a person.
+  scan_state: 'needs_human_review',
   athlete_id: 'ath-1',
   uploaded_by_account_id: 'coach-1',
   ...overrides,
@@ -89,7 +92,7 @@ describe('POST /api/pilot/video/[videoId]/release', () => {
     const [updateSql, updateParams] = mockQueryOne.mock.calls[1];
     expect(updateSql).toContain("set status = 'ready'");
     expect(updateSql).toContain("status = 'quarantined'");
-    expect(updateParams).toEqual(['vid-1', 'org-1']);
+    expect(updateParams.slice(0, 2)).toEqual(['vid-1', 'org-1']);
 
     expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
       actor_account_id: 'coach-1',
@@ -110,7 +113,9 @@ describe('POST /api/pilot/video/[videoId]/release', () => {
     await call();
 
     expect(mockQueryOne.mock.calls[0][1]).toEqual(['vid-1', 'org-1']);
-    expect(mockQueryOne.mock.calls[1][1]).toEqual(['vid-1', 'org-1']);
+    // The write carries the releasable scan states as well, so the organization
+    // scope and the scan verdict are both re-checked at write time.
+    expect(mockQueryOne.mock.calls[1][1].slice(0, 2)).toEqual(['vid-1', 'org-1']);
   });
 
   test('a video from another organization returns hidden not-found', async () => {
@@ -182,5 +187,52 @@ describe('POST /api/pilot/video/[videoId]/release', () => {
 
     expect(res.status).toBe(409);
     expect(mockAudit).not.toHaveBeenCalled();
+  });
+});
+
+// The scan sweep and this route share one rule: a person resolves what the scan
+// could not, and never overturns what it refused.
+describe('the scan verdict outranks the coach', () => {
+  test.each([
+    ['blocked', 'content screen refused'],
+    ['pending', 'waiting on its content scan'],
+    ['scanning', 'waiting on its content scan'],
+  ])('a %s video cannot be released by hand', async (scanState, expectedMessage) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockQueryOne.mockResolvedValueOnce(videoRow({ scan_state: scanState }));
+
+    const res = await call();
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toContain(expectedMessage);
+    // One read, no write: the update must never have been attempted.
+    expect(mockQueryOne).toHaveBeenCalledTimes(1);
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('an environment with no scan gate still allows a human release', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockQueryOne
+      .mockResolvedValueOnce(videoRow({ scan_state: 'unconfigured' }))
+      .mockResolvedValueOnce({ status: 'ready' });
+
+    const res = await call();
+
+    expect(res.status).toBe(200);
+    expect(mockAudit).toHaveBeenCalledTimes(1);
+  });
+
+  test('the write repeats the scan-state predicate, not just the status', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockQueryOne
+      .mockResolvedValueOnce(videoRow())
+      .mockResolvedValueOnce({ status: 'ready' });
+
+    await call();
+
+    const [sql, params] = mockQueryOne.mock.calls[1];
+    expect(sql).toContain('scan_state = any(');
+    expect(params[2]).toEqual(expect.arrayContaining(['needs_human_review', 'unconfigured']));
+    expect(params[2]).not.toContain('blocked');
   });
 });
