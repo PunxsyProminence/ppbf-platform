@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   clearRoleSession,
-  createPersistentRoleSession,
+  persistAuthoritativeRoleSession,
   loadAuthoritativeRoleSession,
 } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
@@ -38,7 +38,7 @@ export default function DashboardEntryPage() {
           return;
         }
 
-        createPersistentRoleSession(resolution.session.role);
+        persistAuthoritativeRoleSession(resolution.session);
         router.replace(resolution.destination);
       } catch (error) {
         if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {

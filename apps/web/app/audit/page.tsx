@@ -1,55 +1,94 @@
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
 import FeatureSurface from '@/components/FeatureSurface';
+import RoleSessionGate from '@/components/RoleSessionGate';
+import { apiBase } from '@/lib/apiBase';
 
-const auditTimeline = [
-  {
-    timestamp: '2026-07-12T09:14:23Z',
-    user: 'Research Desk',
-    action: 'Research Submitted',
-    object: 'Southpaw Footwork Progression Concept',
-    reason: 'New training concept intake',
-    status: 'Recorded',
-  },
-  {
-    timestamp: '2026-07-12T10:22:09Z',
-    user: 'Coach Ramos',
-    action: 'Review Approved',
-    object: 'Shoulder load progression summary',
-    reason: 'Evidence aligned with objective',
-    status: 'Approved',
-  },
-  {
-    timestamp: '2026-07-12T11:01:47Z',
-    user: 'Admin',
-    action: 'Capability Modified',
-    object: 'CAP-014 load-monitor lane',
-    reason: 'Validation findings from simulator',
-    status: 'Logged',
-  },
-  {
-    timestamp: '2026-07-12T11:46:11Z',
-    user: 'Program Analyst',
-    action: 'Scenario Created',
-    object: 'Training Load what-if',
-    reason: 'Assess risk of intensity shift',
-    status: 'Tracked',
-  },
-  {
-    timestamp: '2026-07-12T12:05:58Z',
-    user: 'Governance Review',
-    action: 'Promotion Requested',
-    object: 'Draft guidance package v0.9',
-    reason: 'Ready for source-control promotion queue',
-    status: 'Pending',
-  },
-];
+interface AuditEvent {
+  audit_id: string | number;
+  event_type: string;
+  actor_account_id: string | null;
+  actor_role: string | null;
+  entity_type: string;
+  entity_id: string;
+  details: Record<string, unknown> | null;
+  created_at: string;
+}
 
-export default function AuditTracePage() {
+type LoadState = 'loading' | 'loaded' | 'failed';
+
+function formatDetails(details: Record<string, unknown> | null): string {
+  if (!details || Object.keys(details).length === 0) {
+    return 'None recorded';
+  }
+
+  try {
+    return JSON.stringify(details);
+  } catch {
+    return 'Not displayable';
+  }
+}
+
+function AuditTrace() {
+  const [events, setEvents] = useState<AuditEvent[]>([]);
+  const [loadState, setLoadState] = useState<LoadState>('loading');
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  const retry = useCallback(() => setReloadNonce((value) => value + 1), []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    void (async () => {
+      setLoadState('loading');
+
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/audit/get`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ limit: 50 }),
+          signal: controller.signal,
+        });
+
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        if (!response.ok) {
+          setEvents([]);
+          setLoadState('failed');
+          return;
+        }
+
+        const payload = (await response.json()) as { ok?: boolean; events?: AuditEvent[] };
+        if (payload.ok !== true) {
+          setEvents([]);
+          setLoadState('failed');
+          return;
+        }
+
+        setEvents(payload.events ?? []);
+        setLoadState('loaded');
+      } catch (error) {
+        if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
+          return;
+        }
+        setEvents([]);
+        setLoadState('failed');
+      }
+    })();
+
+    return () => controller.abort();
+  }, [reloadNonce]);
+
   return (
     <FeatureSurface
       eyebrow="Audit & Change Trace"
       title="Timeline visibility for governance and traceability"
       description="Track who changed what and why, then hand approved trace flows to Source Control for promotion."
-      status="ready"
+      status="Live | Organization audit log"
       currentStage="audit"
       primaryLinks={[
         { label: 'Source control', href: '/source-control' },
@@ -58,20 +97,51 @@ export default function AuditTracePage() {
       stats={[
         { label: 'Current Stage', value: 'Audit Trace' },
         { label: 'Next Stage', value: 'Source Control' },
-        { label: 'Mode', value: 'Timeline Review' },
-        { label: 'Visibility', value: 'Governance' },
+        { label: 'Source', value: 'pilot.audit_events' },
+        { label: 'Events Shown', value: loadState === 'loaded' ? String(events.length) : '--' },
       ]}
     >
       <div className="space-y-3">
-        {auditTimeline.map((event) => (
-          <article key={`${event.timestamp}-${event.action}`} className="border-2 border-[#8b4444] bg-[#1a1a1a]/60 p-4">
+        {loadState === 'loading' && (
+          <p className="text-[16px] leading-7 text-[#e8d7c6]">Loading the audit trail...</p>
+        )}
+
+        {/* A failed read and an empty trail must never look the same: one means
+            nothing has happened, the other means we do not know what has. */}
+        {loadState === 'failed' && (
+          <div className="border-2 border-[#8b4444] bg-[#1a1a1a]/60 p-4" role="alert">
+            <p className="text-[16px] leading-7 text-[#e8d7c6]">
+              The audit trail could not be loaded, so this is not a record of nothing happening -- it is a record of
+              nothing being read.
+            </p>
+            <button
+              type="button"
+              onClick={retry}
+              className="mt-3 min-h-[44px] border-2 border-[#d4a574] bg-[#1f1f1f] px-4 text-xs font-mono font-bold uppercase tracking-[0.14em] text-[#d4a574]"
+            >
+              Retry loading the audit trail
+            </button>
+          </div>
+        )}
+
+        {loadState === 'loaded' && events.length === 0 && (
+          <div className="border-2 border-[#8b4444] bg-[#1a1a1a]/60 p-4">
+            <p className="text-[16px] leading-7 text-[#e8d7c6]">
+              No audit events have been recorded for your organization yet.
+            </p>
+          </div>
+        )}
+
+        {loadState === 'loaded' && events.map((event) => (
+          <article key={String(event.audit_id)} className="border-2 border-[#8b4444] bg-[#1a1a1a]/60 p-4">
             <div className="grid gap-2 text-[14px] text-[#cfbfae] md:grid-cols-2">
-              <p><span className="font-semibold text-[#d4a574]">Timestamp:</span> {event.timestamp}</p>
-              <p><span className="font-semibold text-[#d4a574]">User:</span> {event.user}</p>
-              <p><span className="font-semibold text-[#d4a574]">Action:</span> {event.action}</p>
-              <p><span className="font-semibold text-[#d4a574]">Object:</span> {event.object}</p>
-              <p><span className="font-semibold text-[#d4a574]">Reason:</span> {event.reason}</p>
-              <p><span className="font-semibold text-[#d4a574]">Status:</span> {event.status}</p>
+              <p><span className="font-semibold text-[#d4a574]">Timestamp:</span> {event.created_at}</p>
+              <p><span className="font-semibold text-[#d4a574]">Actor:</span> {event.actor_account_id ?? 'Not recorded'}</p>
+              <p><span className="font-semibold text-[#d4a574]">Actor Role:</span> {event.actor_role ?? 'Not recorded'}</p>
+              <p><span className="font-semibold text-[#d4a574]">Event:</span> {event.event_type}</p>
+              <p><span className="font-semibold text-[#d4a574]">Entity:</span> {event.entity_type}</p>
+              <p><span className="font-semibold text-[#d4a574]">Entity ID:</span> {event.entity_id}</p>
+              <p className="md:col-span-2"><span className="font-semibold text-[#d4a574]">Details:</span> {formatDetails(event.details)}</p>
             </div>
           </article>
         ))}
@@ -82,5 +152,16 @@ export default function AuditTracePage() {
         </div>
       </div>
     </FeatureSurface>
+  );
+}
+
+export default function AuditTracePage() {
+  // Matches the gate on POST /api/pilot/audit/get, which admits the
+  // organization admin and coach roles only. A wider gate here would render a
+  // page whose only content is a 403.
+  return (
+    <RoleSessionGate allowedRoles={['admin', 'coach']}>
+      <AuditTrace />
+    </RoleSessionGate>
   );
 }

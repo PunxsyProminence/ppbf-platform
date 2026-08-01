@@ -73,10 +73,10 @@ describe('new sessions store expires_at', () => {
 
   test('loginWithMicrosoftEmail inserts a 24-hour expires_at', async () => {
     mockQueryOne.mockResolvedValueOnce({
-      account_id: 'owner-1',
-      role: 'platform_owner',
+      account_id: 'coach-ms-1',
+      role: 'coach',
       organization_id: 'org-1',
-      is_platform_owner: true,
+      is_platform_owner: false,
       athlete_id: null,
       auth_provider: 'microsoft',
       active_flag: true,
@@ -86,7 +86,7 @@ describe('new sessions store expires_at', () => {
     mockQuery.mockResolvedValueOnce([]);
 
     const before = Date.now();
-    const result = await loginWithMicrosoftEmail('owner@example.com');
+    const result = await loginWithMicrosoftEmail('coach@example.com');
     const after = Date.now();
 
     expect(result).not.toBeNull();

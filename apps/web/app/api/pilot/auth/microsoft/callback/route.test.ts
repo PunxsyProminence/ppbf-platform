@@ -2,12 +2,21 @@ import { NextRequest } from 'next/server';
 
 import { GET } from './route';
 import { loginWithMicrosoftEmail } from '@/src/server/pilot/auth';
+import { listSeatsForAccount } from '@/src/server/pilot/boardSeats';
 import { getMsOidcConfig } from '@/src/server/pilot/federatedAuth';
 import { SESSION_ABSOLUTE_LIFETIME_SECONDS } from '@/src/server/pilot/sessionPolicy';
 
 jest.mock('@/src/server/pilot/auth', () => ({
   loginWithMicrosoftEmail: jest.fn(),
 }));
+
+// A board member lands on the seat they hold, so the callback reads seats
+// before building the redirect. The real resolveLandingSeat is kept -- only
+// the database read is faked.
+jest.mock('@/src/server/pilot/boardSeats', () => {
+  const actual = jest.requireActual('@/src/server/pilot/boardSeats');
+  return { ...actual, listSeatsForAccount: jest.fn(async () => []) };
+});
 
 jest.mock('@/src/server/pilot/federatedAuth', () => ({
   getMsOidcConfig: jest.fn(() => ({
@@ -49,6 +58,7 @@ jest.mock('next/headers', () => ({
 }));
 
 const mockLogin = loginWithMicrosoftEmail as jest.Mock;
+const mockListSeatsForAccount = jest.mocked(listSeatsForAccount);
 const mockGetMsOidcConfig = jest.mocked(getMsOidcConfig);
 const originalPrimaryOwnerEmail = process.env.PPBF_PRIMARY_OWNER_EMAIL;
 
@@ -130,6 +140,8 @@ describe('GET /api/pilot/auth/microsoft/callback', () => {
     ['athlete', '/athlete/dashboard'],
     ['parent', '/parent/dashboard'],
     ['board', '/board'],
+    ['staff', '/workspace'],
+    ['volunteer', '/workspace'],
   ])('redirects authenticated %s from the server principal to %s', async (role, expectedPath) => {
     mockLogin.mockResolvedValueOnce(microsoftLogin(role));
 
@@ -139,6 +151,34 @@ describe('GET /api/pilot/auth/microsoft/callback', () => {
     expect(res.headers.get('location')).toBe(`https://ppbf.example${expectedPath}`);
     expect(res.headers.get('cache-control')).toBe('no-store');
     expect(res.cookies.get('ppbf_pilot_session')?.value).toBe(`${role}-token`);
+  });
+
+  // The seat is why board seats exist: a treasurer signing in should reach the
+  // treasurer workspace, not the shared hub they would have to navigate out of.
+  test('a seated board member lands on their own seat page', async () => {
+    mockLogin.mockResolvedValueOnce(microsoftLogin('board'));
+    mockListSeatsForAccount.mockResolvedValueOnce([{ seat: 'treasurer', is_primary: true }]);
+
+    const res = await GET(request());
+
+    expect(res.headers.get('location')).toBe('https://ppbf.example/board/treasurer');
+  });
+
+  test('a board member holding no seat still lands on the shared hub', async () => {
+    mockLogin.mockResolvedValueOnce(microsoftLogin('board'));
+    mockListSeatsForAccount.mockResolvedValueOnce([]);
+
+    const res = await GET(request());
+
+    expect(res.headers.get('location')).toBe('https://ppbf.example/board');
+  });
+
+  test('no seat lookup happens for a role that cannot hold one', async () => {
+    mockLogin.mockResolvedValueOnce(microsoftLogin('coach'));
+
+    await GET(request());
+
+    expect(mockListSeatsForAccount).not.toHaveBeenCalled();
   });
 
   test('ignores a configured catch-all post-login path and preserves role-derived routing', async () => {

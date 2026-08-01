@@ -16,9 +16,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid status parameter' }, { status: 400 });
     }
 
-    const summary = await getOrganizationViolationSummary(principal.organizationId, status || undefined);
+    // This endpoint serves the board principal and no other, so the aggregate
+    // floor is not an option the caller passes in.
+    const summary = await getOrganizationViolationSummary(principal.organizationId, {
+      audience: 'board',
+      status: status || undefined,
+    });
 
-    return NextResponse.json({ ok: true, summary, statusFilter: status || 'all' });
+    return NextResponse.json(
+      { ok: true, summary, statusFilter: status || 'all' },
+      { headers: { 'Cache-Control': 'private, no-store' } },
+    );
   } catch (error) {
     return jsonError(error);
   }

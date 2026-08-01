@@ -92,7 +92,7 @@ export default function AthleteVideoAnalysisPage() {
         <header className="border-2 border-[#8b4444] bg-[#111111] p-5">
           <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">Film Review</p>
           <h1 className="mt-2 text-3xl font-black text-[#f2e7da]">Athlete Film Lane</h1>
-          <p className="mt-2 text-sm text-[#cfbfae]">Watch footage your coach has uploaded for your sessions.</p>
+          <p className="mt-2 text-sm text-[#cfbfae]">Watch footage your coach has released for your sessions.</p>
         </header>
 
         {activeVideo ? (
@@ -111,7 +111,7 @@ export default function AthleteVideoAnalysisPage() {
           <h2 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Your Film Library</h2>
           {videoError ? <p className="mt-2 text-xs text-[#f0c4c4]">{videoError}</p> : null}
           {!videoError && videos.length === 0 ? (
-            <p className="mt-3 text-xs text-[#cfbfae]">No videos have been shared with you yet.</p>
+            <p className="mt-3 text-xs text-[#cfbfae]">No film yet. Footage appears here once your coach releases it.</p>
           ) : (
             <div className="mt-3 space-y-2">
               {videos.map((v) => (

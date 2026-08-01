@@ -1,8 +1,9 @@
-import { query, withTransaction } from './db';
+import { query, queryOne, withTransaction } from './db';
 import { updatePublicationStatus } from './publication';
 
 jest.mock('./db', () => ({
   query: jest.fn(),
+  queryOne: jest.fn(),
   // publishToResearchLibrary claims the publication and writes the library row
   // in one transaction, so both statements run on a transaction client. The
   // fake returns the pg Result shape ({ rows }) that a real client returns,
@@ -11,6 +12,7 @@ jest.mock('./db', () => ({
 }));
 
 const mockQuery = query as jest.Mock;
+const mockQueryOne = queryOne as jest.Mock;
 const mockWithTransaction = withTransaction as jest.Mock;
 
 beforeEach(() => {
@@ -19,6 +21,9 @@ beforeEach(() => {
       query: jest.fn(async (...args: unknown[]) => ({ rows: (await mockQuery(...args)) ?? [] })) as jest.Mock,
     }),
   );
+  // Mirrors the real module: queryOne is query's first row, so a test can queue
+  // its rows on mockQuery and assert on one call log either way.
+  mockQueryOne.mockImplementation(async (...args: unknown[]) => (await mockQuery(...args))?.[0] ?? null);
 });
 
 afterEach(() => {
@@ -40,7 +45,20 @@ describe('updatePublicationStatus', () => {
     expect(sql).toMatch(/\$3/);
     expect(sql).toMatch(/\$4/);
     expect(sql).toMatch(/\$5/);
-    expect(params).toEqual(['org-1', 'pub-1', 'published', expect.any(String), 'passed']);
+    expect(params).toEqual(['org-1', 'pub-1', 'published', expect.any(String), 'passed', null]);
+  });
+
+  test('the approving account is recorded, and left untouched when none is supplied', async () => {
+    mockQuery
+      .mockResolvedValueOnce([{ publication_id: 'pub-1' }])
+      .mockResolvedValueOnce([{ publication_id: 'pub-1' }]);
+
+    await updatePublicationStatus('org-1', 'pub-1', 'approved', 'passed', 'admin-1');
+    await updatePublicationStatus('org-1', 'pub-1', 'pending_review', 'manual_review');
+
+    expect(mockQuery.mock.calls[0][1][5]).toBe('admin-1');
+    expect(mockQuery.mock.calls[0][0]).toMatch(/approved_by_account_id = coalesce\(\$6, approved_by_account_id\)/);
+    expect(mockQuery.mock.calls[1][1][5]).toBeNull();
   });
 
   test('a status value containing a single quote cannot alter the query structure', async () => {
@@ -62,7 +80,7 @@ describe('updatePublicationStatus', () => {
     await updatePublicationStatus('org-1', 'pub-1', 'pending_review');
 
     const [, params] = mockQuery.mock.calls[0];
-    expect(params).toEqual(['org-1', 'pub-1', 'pending_review', expect.any(String), null]);
+    expect(params).toEqual(['org-1', 'pub-1', 'pending_review', expect.any(String), null, null]);
   });
 
   test('the update is scoped to the acting organization and reports a miss', async () => {
@@ -210,5 +228,59 @@ describe('publishing is refused when the publication belongs to another gym', ()
     expect(claimSql).toContain('organization_id = $1');
     expect(claimParams).toEqual(['org-1', 'pub-1']);
     expect(mockQuery.mock.calls[1][0]).toContain('insert into pilot.research_library');
+  });
+});
+
+// A draft reaching the research library is the failure this guards: the claim
+// is the last gate a publish passes, so the clearance predicate has to live in
+// the same statement that flips the row to 'published'.
+describe('the claim will not publish a publication that is not cleared', () => {
+  test('the claim demands approved status and passed compliance checks', async () => {
+    mockQuery
+      .mockResolvedValueOnce([{ publication_id: 'pub-1' }])
+      .mockResolvedValueOnce([]);
+
+    const { publishToResearchLibrary } = await import('./publication');
+    await publishToResearchLibrary({
+      organizationId: 'org-1',
+      publicationId: 'pub-1',
+      videoSessionId: 'vid-1',
+      title: 'Jab mechanics',
+      description: '',
+    });
+
+    const [claimSql] = mockQuery.mock.calls[0];
+    expect(claimSql).toMatch(/status = 'approved'/);
+    expect(claimSql).toMatch(/compliance_check_status = 'passed'/);
+  });
+
+  test('an uncleared publication writes no library row and returns no library id', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+
+    const { publishToResearchLibrary } = await import('./publication');
+    const libraryId = await publishToResearchLibrary({
+      organizationId: 'org-1',
+      publicationId: 'pub-still-a-draft',
+      videoSessionId: 'vid-1',
+      title: 'Jab mechanics',
+      description: '',
+    });
+
+    expect(libraryId).toBeNull();
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('getPublicationForPublish', () => {
+  test('reads the row scoped to the acting organization', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+
+    const { getPublicationForPublish } = await import('./publication');
+    const row = await getPublicationForPublish('org-1', 'pub-from-another-gym');
+
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql).toMatch(/where organization_id = \$1 and publication_id = \$2/);
+    expect(params).toEqual(['org-1', 'pub-from-another-gym']);
+    expect(row).toBeNull();
   });
 });

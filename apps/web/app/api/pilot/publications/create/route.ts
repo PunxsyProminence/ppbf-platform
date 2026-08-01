@@ -59,6 +59,20 @@ export async function POST(request: NextRequest) {
       return hiddenNotFound();
     }
 
+    // Footage nobody has released is footage nobody has looked at. A
+    // publication drafted from it would carry a quarantined -- or infected --
+    // file all the way to a passing compliance check, since every later step
+    // reads the publication row rather than the video.
+    if (videoSession.status !== 'ready') {
+      return NextResponse.json(
+        {
+          error: 'That video has not been released for playback yet. Release it first, then create the publication.',
+          video_status: videoSession.status,
+        },
+        { status: 409 },
+      );
+    }
+
     const publication = await createPublication({
       organizationId: principal.organizationId,
       videoSessionId: body.video_session_id,

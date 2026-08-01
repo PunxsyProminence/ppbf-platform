@@ -118,6 +118,31 @@ describe('drain loop', () => {
     expect(onError).toHaveBeenCalledTimes(3);
   });
 
+  test('a failing housekeeping run is reported and job processing continues', async () => {
+    // Retention work rides the drain loop, so a broken sweep must cost the
+    // sweep and nothing else -- jobs keep draining on the following ticks.
+    const onError = jest.fn();
+    const processOne = jest.fn(async () => ({ processed: false }));
+    const housekeeping = jest.fn(async () => {
+      throw new Error('retention target unreachable');
+    });
+
+    handle = startShadowJobWorker({
+      processOne,
+      intervalMs: 1_000,
+      onError,
+      housekeeping,
+      housekeepingIntervalTicks: 1,
+    });
+
+    await jest.advanceTimersByTimeAsync(1_000);
+    expect(housekeeping).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledTimes(1);
+
+    await jest.advanceTimersByTimeAsync(2_000);
+    expect(processOne).toHaveBeenCalledTimes(3);
+  });
+
   test('a tick drains until the queue reports empty', async () => {
     const results = [
       { processed: true, jobId: 'a' },

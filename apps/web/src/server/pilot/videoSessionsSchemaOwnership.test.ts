@@ -11,10 +11,6 @@ const runnerPath = path.join(
   repositoryRoot,
   'apps/web/scripts/pilot-apply-video-sessions-migration.mjs',
 );
-const routeDdlPath = path.join(
-  repositoryRoot,
-  'apps/web/app/api/pilot/admin/migrate-multiorg/route.ts',
-);
 const workflowPath = path.join(
   repositoryRoot,
   '.github/workflows/apply-migrations.yml',
@@ -40,7 +36,6 @@ function tableColumns(sql: string, table: string): string[] {
 describe('video_sessions schema ownership', () => {
   const migration = fs.readFileSync(migrationPath, 'utf8');
   const runner = fs.readFileSync(runnerPath, 'utf8');
-  const routeDdl = fs.readFileSync(routeDdlPath, 'utf8');
   const workflow = fs.readFileSync(workflowPath, 'utf8');
   const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
 
@@ -55,16 +50,14 @@ describe('video_sessions schema ownership', () => {
     expect(migration).toMatch(/create index if not exists idx_video_sessions_athlete/i);
   });
 
-  // Applying this to a live environment is safe because the COLUMNS match the
-  // route's DDL exactly, so this compares them one by one rather than trusting
-  // a hand-copied list. The status CHECK is the single deliberate divergence,
-  // asserted separately below.
-  test('the columns match the route DDL exactly', () => {
+  // `create table if not exists` cannot reconcile a column difference, so an
+  // environment where the table already exists silently keeps whatever shape
+  // it has. The column list is therefore pinned here one by one: the migration
+  // may only ever describe the shape those environments already carry. The
+  // status CHECK is the single deliberate divergence, asserted separately.
+  test('the column list is pinned exactly', () => {
     const fromMigration = tableColumns(migration, 'pilot\\.video_sessions');
-    const fromRoute = tableColumns(routeDdl, 'pilot\\.video_sessions');
 
-    expect(fromRoute.length).toBeGreaterThan(0);
-    expect(fromMigration).toEqual(fromRoute);
     expect(fromMigration).toEqual([
       'video_session_id',
       'organization_id',

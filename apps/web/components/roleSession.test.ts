@@ -7,10 +7,12 @@ import {
   isRoleSessionAllowed,
   loadAuthoritativeRoleSession,
   mapPilotRoleToClubRole,
+  persistAuthoritativeRoleSession,
   readRoleSession,
   resolveAuthoritativeRoleSession,
 } from './roleSession';
 import type { ClubRole } from './roleRoutes';
+import { boardSeatConfigs } from '@/app/board/boardWorkspaceConfig';
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -144,12 +146,34 @@ describe('authoritative server role resolution', () => {
     ['athlete', 'athlete', '/athlete/dashboard'],
     ['parent', 'parent', '/parent/dashboard'],
     ['board', 'board', '/board'],
+    ['staff', 'staff', '/workspace'],
+    ['volunteer', 'volunteer', '/workspace'],
   ])('maps supported server role %s explicitly', (serverRole, expectedRole, expectedDestination) => {
     expect(mapPilotRoleToClubRole(serverRole)).toBe(expectedRole);
     expect(getPilotRoleDestination(serverRole)).toBe(expectedDestination);
   });
 
-  test.each(['', 'unknown', 'staff', 'volunteer', null, undefined])(
+  // An invited staff member or volunteer authenticates successfully and has no
+  // PIN fallback, so an unroutable role here is the difference between a
+  // working account and one that can never enter the app.
+  test.each(['staff', 'volunteer'])('a %s session survives storage and lands on its own workspace', (serverRole) => {
+    const storage = new MemoryStorage();
+    installWindow(storage);
+
+    const resolution = resolveAuthoritativeRoleSession({
+      authenticated: true,
+      role: serverRole,
+      auth_provider: 'microsoft',
+    });
+
+    expect(resolution).toMatchObject({ ok: true, destination: '/workspace' });
+    if (resolution.ok) {
+      createPersistentRoleSession(resolution.session.role);
+    }
+    expect(readRoleSession()?.role).toBe(serverRole);
+  });
+
+  test.each(['', 'unknown', null, undefined])(
     'never defaults an unsupported server role to admin: %p',
     (role) => {
       expect(mapPilotRoleToClubRole(role)).toBeNull();
@@ -263,6 +287,18 @@ describe('authoritative server role resolution', () => {
     });
   });
 
+  test('a seat cannot make an unroutable role routable', async () => {
+    // The seat refines where a board member lands. It is not an authority, so
+    // it must never be the thing that lets an unknown role into the app.
+    expect(resolveAuthoritativeRoleSession({
+      authenticated: true,
+      role: 'future_board_admin',
+      auth_provider: 'microsoft',
+      board_seat: 'president',
+    })).toEqual({ ok: false, reason: 'unsupported_role' });
+    expect(getPilotRoleDestination('future_board_admin', 'president')).toBeNull();
+  });
+
   test('distinguishes a retryable server failure from an expired session', async () => {
     const serverErrorFetcher = jest.fn(async () => ({
       ok: false,
@@ -279,5 +315,156 @@ describe('authoritative server role resolution', () => {
       .resolves.toEqual({ ok: false, reason: 'server_error' });
     await expect(loadAuthoritativeRoleSession('/session', { fetcher: expiredFetcher }))
       .resolves.toEqual({ ok: false, reason: 'unauthenticated' });
+  });
+});
+
+describe('the board seat routes a member to their own page', () => {
+  test.each(boardSeatConfigs.map((seat) => seat.slug))(
+    'a member holding the %s seat lands on it',
+    (seat) => {
+      expect(getPilotRoleDestination('board', seat)).toBe(`/board/${seat}`);
+    },
+  );
+
+  test.each([undefined, null, '', 'vice-president', 'president ', 'BOARD', 42])(
+    'a board member with no seat the app can open lands on the shared board workspace: %p',
+    (seat) => {
+      expect(getPilotRoleDestination('board', seat)).toBe('/board');
+    },
+  );
+
+  test('a seat changes nothing for any other role', () => {
+    expect(getPilotRoleDestination('coach', 'treasurer')).toBe('/coach/review-queue');
+    expect(getPilotRoleDestination('organization_admin', 'president')).toBe('/admin');
+    expect(getPilotRoleDestination('athlete', 'president')).toBe('/athlete/dashboard');
+  });
+
+  test('the server-reported seat decides the destination, and the role stays board', () => {
+    const resolution = resolveAuthoritativeRoleSession({
+      authenticated: true,
+      role: 'board',
+      auth_provider: 'microsoft',
+      board_seat: 'treasurer',
+    });
+
+    expect(resolution).toMatchObject({
+      ok: true,
+      destination: '/board/treasurer',
+      session: { role: 'board', boardSeat: 'treasurer' },
+    });
+  });
+
+  // The seat is identity, not authority: every page guard keeps asking for
+  // 'board', and a seat holder must satisfy it exactly as a seatless one does.
+  test('a seated session is still an ordinary board session to every page guard', () => {
+    const resolution = resolveAuthoritativeRoleSession({
+      authenticated: true,
+      role: 'board',
+      auth_provider: 'microsoft',
+      board_seat: 'president',
+    });
+
+    expect(resolution.ok).toBe(true);
+    if (!resolution.ok) return;
+    expect(isRoleSessionAllowed(resolution.session, ['board'])).toBe(true);
+    expect(isRoleSessionAllowed(resolution.session, ['admin'])).toBe(false);
+    expect(mapPilotRoleToClubRole('board')).toBe('board');
+  });
+
+  test('a board member with no seat still lands on the shared board workspace', () => {
+    const resolution = resolveAuthoritativeRoleSession({
+      authenticated: true,
+      role: 'board',
+      auth_provider: 'microsoft',
+    });
+
+    expect(resolution).toMatchObject({ ok: true, destination: '/board' });
+    if (resolution.ok) {
+      expect(resolution.session.boardSeat).toBeUndefined();
+    }
+  });
+
+  test('a seat claimed by a non-board session is ignored entirely', () => {
+    const resolution = resolveAuthoritativeRoleSession({
+      authenticated: true,
+      role: 'coach',
+      auth_provider: 'microsoft',
+      board_seat: 'president',
+    });
+
+    expect(resolution).toMatchObject({ ok: true, destination: '/coach/review-queue' });
+    if (resolution.ok) {
+      expect(resolution.session.boardSeat).toBeUndefined();
+    }
+  });
+});
+
+describe('the seat survives the display cache', () => {
+  test('a stored board session carries its seat back out', () => {
+    const storage = new MemoryStorage();
+    installWindow(storage);
+
+    createPersistentRoleSession('board', 'treasurer');
+
+    expect(readRoleSession()).toMatchObject({ role: 'board', boardSeat: 'treasurer' });
+  });
+
+  test('a resolved session round-trips its seat without the caller unpacking it', () => {
+    const storage = new MemoryStorage();
+    installWindow(storage);
+
+    const resolution = resolveAuthoritativeRoleSession({
+      authenticated: true,
+      role: 'board',
+      auth_provider: 'microsoft',
+      board_seat: 'safety-director',
+    });
+
+    expect(resolution.ok).toBe(true);
+    if (!resolution.ok) return;
+    persistAuthoritativeRoleSession(resolution.session);
+
+    expect(readRoleSession()).toMatchObject({ role: 'board', boardSeat: 'safety-director' });
+  });
+
+  test.each(['admin', 'coach', 'athlete', 'platform_owner'] as ClubRole[])(
+    'no seat is stored for a %s session even if one is offered',
+    (role) => {
+      const storage = new MemoryStorage();
+      installWindow(storage);
+
+      createPersistentRoleSession(role, 'president');
+      const stored = JSON.parse(storage.getItem(ROLE_SESSION_KEY) ?? '{}') as Record<string, unknown>;
+
+      expect(Object.keys(stored).sort()).toEqual(['expiresAt', 'role']);
+      expect(readRoleSession()?.boardSeat).toBeUndefined();
+    },
+  );
+
+  test('a seatless board session stores no seat key at all', () => {
+    const storage = new MemoryStorage();
+    installWindow(storage);
+
+    createPersistentRoleSession('board');
+    const stored = JSON.parse(storage.getItem(ROLE_SESSION_KEY) ?? '{}') as Record<string, unknown>;
+
+    expect(Object.keys(stored).sort()).toEqual(['expiresAt', 'role']);
+  });
+
+  // Dropping an unusable seat rather than the whole cache: a seat the app
+  // cannot render is worth nothing, but signing a valid board member out over
+  // it costs them the workspace they are authenticated for.
+  test('an unrecognized stored seat is discarded and the session survives', () => {
+    const storage = new MemoryStorage();
+    installWindow(storage);
+    storage.setItem(ROLE_SESSION_KEY, JSON.stringify({
+      role: 'board',
+      expiresAt: Date.now() + ROLE_SESSION_TTL_MS,
+      boardSeat: 'vice-president',
+    }));
+
+    expect(readRoleSession()).toMatchObject({ role: 'board' });
+    expect(readRoleSession()?.boardSeat).toBeUndefined();
+    expect(storage.getItem(ROLE_SESSION_KEY)).not.toBeNull();
   });
 });

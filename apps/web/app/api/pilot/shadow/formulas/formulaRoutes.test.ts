@@ -11,6 +11,8 @@ import {
   runStoredMvpFormula,
 } from '@/src/server/pilot/formulas/runner';
 import { requirePrincipal } from '@/src/server/pilot/http';
+import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
+import { flagNearMiss } from '@/src/server/pilot/shadowNearMisses';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import { POST as postObservation } from './observations/route';
 import { GET as getResults, POST as postResults } from './results/route';
@@ -26,6 +28,8 @@ jest.mock('@/src/server/pilot/access', () => {
 jest.mock('@/src/server/pilot/shadowReadiness', () => ({
   assertShadowRuntimeReadiness: jest.fn(),
 }));
+jest.mock('@/src/server/pilot/shadowNearMisses', () => ({ flagNearMiss: jest.fn() }));
+jest.mock('@/src/server/pilot/shadowEvents', () => ({ emitShadowEvent: jest.fn() }));
 jest.mock('@/src/server/pilot/formulas/repository', () => {
   const actual = jest.requireActual('@/src/server/pilot/formulas/repository');
   return {
@@ -50,6 +54,8 @@ const mockSaveObservation = jest.mocked(saveFormulaObservation);
 const mockListResults = jest.mocked(listActiveFormulaResults);
 const mockRunFormula = jest.mocked(runStoredMvpFormula);
 const mockRecalculate = jest.mocked(recalculateForSupersededObservation);
+const mockFlagNearMiss = jest.mocked(flagNearMiss);
+const mockEmitShadowEvent = jest.mocked(emitShadowEvent);
 
 function principal(overrides: Partial<PilotPrincipal> = {}): PilotPrincipal {
   return {
@@ -96,6 +102,19 @@ describe('formula API access and trust boundaries', () => {
     mockRecalculate.mockResolvedValue([]);
     mockRunFormula.mockResolvedValue({ results: [] });
     mockListResults.mockResolvedValue([]);
+    mockFlagNearMiss.mockResolvedValue({
+      near_miss_id: 'near-miss-1',
+      organization_id: 'org-1',
+      athlete_id: 'athlete-1',
+      decision_id: null,
+      description: 'recorded',
+      severity: 'high',
+      detected_by: 'system',
+      detected_by_account_id: 'account-1',
+      metadata: {},
+      created_at: '2026-07-31T10:00:00.000Z',
+    });
+    mockEmitShadowEvent.mockResolvedValue(undefined);
   });
 
   test('derives observation tenant and provenance from the authenticated principal', async () => {
@@ -138,6 +157,86 @@ describe('formula API access and trust boundaries', () => {
     ));
     expect(response.status).toBe(403);
     expect(mockSaveObservation).not.toHaveBeenCalled();
+  });
+
+  test('stores an athlete pain report and raises it where a coach reads it', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'athlete', athleteId: 'athlete-1' }));
+
+    const response = await postObservation(jsonRequest(
+      '/api/pilot/shadow/formulas/observations',
+      {
+        ...validObservationBody,
+        kind: 'pain_report',
+        value: 7,
+        unit: 'severity_1_10',
+        dimensions: { location: 'Lower back', painType: 'Sharp', injuryFlag: true },
+        idempotencyKey: 'pain-1',
+      },
+    ));
+
+    expect(response.status).toBe(200);
+    expect(mockSaveObservation).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'pain_report',
+      unit: 'severity_1_10',
+      value: 7,
+    }));
+    expect(mockFlagNearMiss).toHaveBeenCalledWith(expect.objectContaining({
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      severity: 'critical',
+      detectedBy: 'system',
+    }));
+    expect(mockEmitShadowEvent).toHaveBeenCalledWith(expect.objectContaining({
+      organizationId: 'org-1',
+      eventName: 'SHADOW_ATHLETE_PAIN_REPORT_PENDING_REVIEW',
+      entityType: 'athlete',
+      entityId: 'athlete-1',
+    }));
+    await expect(response.json()).resolves.toEqual(expect.objectContaining({
+      painReport: { coachNotified: true, severity: 'critical' },
+    }));
+  });
+
+  test('keeps no pain report the coach surfaces were never told about', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'athlete', athleteId: 'athlete-1' }));
+    mockFlagNearMiss.mockRejectedValueOnce(new Error('near miss store unavailable'));
+
+    const response = await postObservation(jsonRequest(
+      '/api/pilot/shadow/formulas/observations',
+      {
+        ...validObservationBody,
+        kind: 'pain_report',
+        value: 4,
+        unit: 'severity_1_10',
+        idempotencyKey: 'pain-2',
+      },
+    ));
+
+    expect(response.status).toBe(500);
+    expect(mockSaveObservation).not.toHaveBeenCalled();
+  });
+
+  test('accepts the sparring recovery note the Deep-Track form submits', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'athlete', athleteId: 'athlete-1' }));
+
+    const response = await postObservation(jsonRequest(
+      '/api/pilot/shadow/formulas/observations',
+      {
+        ...validObservationBody,
+        kind: 'recovery_notes',
+        value: 1,
+        unit: 'text_present_0_1',
+        dimensions: { notes: 'Right wrist sore after the last two rounds.' },
+        idempotencyKey: 'sparring-1-recovery_notes',
+      },
+    ));
+
+    expect(response.status).toBe(200);
+    expect(mockSaveObservation).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'recovery_notes',
+      unit: 'text_present_0_1',
+      dimensions: expect.objectContaining({ notes: 'Right wrist sore after the last two rounds.' }),
+    }));
   });
 
   test('runs formulas only from stored observation ids in authenticated scope', async () => {

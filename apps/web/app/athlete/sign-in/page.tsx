@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import {
-  createPersistentRoleSession,
+  persistAuthoritativeRoleSession,
   loadAuthoritativeRoleSession,
 } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
@@ -68,7 +68,7 @@ export default function AthletePinSignInPage() {
         throw new Error('The athlete session could not be verified. Please sign in again.');
       }
 
-      createPersistentRoleSession(resolution.session.role);
+      persistAuthoritativeRoleSession(resolution.session);
       router.replace(resolution.destination);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Sign in failed.');

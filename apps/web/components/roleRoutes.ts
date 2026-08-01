@@ -10,6 +10,8 @@ export type ClubRole =
   // Omega rendered pages whose API then refused it, and an organization_admin
   // was locked out of pages its API allows.
   | 'platform_owner'
+  | 'staff'
+  | 'volunteer'
   | 'board'
   | 'board-president'
   | 'board-chair'
@@ -53,6 +55,18 @@ export const roleRoutes: RoleRoute[] = [
     label: 'Admin',
     description: 'Opens platform capability and governance controls.',
     href: '/admin',
+  },
+  {
+    role: 'staff',
+    label: 'Staff',
+    description: 'Opens the staff and volunteer workspace.',
+    href: '/workspace',
+  },
+  {
+    role: 'volunteer',
+    label: 'Volunteer',
+    description: 'Opens the staff and volunteer workspace.',
+    href: '/workspace',
   },
   {
     role: 'board',

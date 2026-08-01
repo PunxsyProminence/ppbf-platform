@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import AnnouncementBanner from './AnnouncementBanner';
 import { CoachSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
 import { cx, ui } from './uiStyles';
@@ -542,6 +543,19 @@ export default function CoachWorkspace() {
             </button>
           </div>
         </div>
+
+        <AnnouncementBanner
+          placement="coach_workspace"
+          kind="notice"
+          heading="Gym Notices"
+          className="border-2 border-[#8b4444] bg-[#e8d7c6] p-4"
+        />
+        <AnnouncementBanner
+          placement="coach_workspace"
+          kind="motivation"
+          heading="From the Gym"
+          className="border-2 border-[#694838] bg-[#e8d7c6] p-4"
+        />
 
         <div className="border border-[#694838] bg-[#14100d] p-4">
           <p className="text-sm text-[#d4a574] font-semibold">Coach Standard</p>

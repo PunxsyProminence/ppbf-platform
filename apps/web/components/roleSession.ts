@@ -1,7 +1,8 @@
 import { roleRoutes, type ClubRole } from './roleRoutes';
-import { getPilotRoleDestination } from '@/src/shared/pilotRoleRouting';
+import { getPilotRoleDestination, isBoardSeatSlug } from '@/src/shared/pilotRoleRouting';
+import type { BoardSeatSlug } from '@/app/board/boardWorkspaceConfig';
 
-export { getPilotRoleDestination } from '@/src/shared/pilotRoleRouting';
+export { getPilotRoleDestination, isBoardSeatSlug } from '@/src/shared/pilotRoleRouting';
 
 export const ROLE_SESSION_KEY = 'ppbf-role-session';
 export const ROLE_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
@@ -19,6 +20,17 @@ let cachedRoleSessionValue: RoleSession | null = null;
 export interface RoleSession {
   role: ClubRole;
   expiresAt: number;
+  /**
+   * The governing-board seat this session holds, when it holds one.
+   *
+   * A seat is additional identity carried alongside the role, never a role of
+   * its own: the authoritative client role for every board member stays
+   * 'board', and every page guard keeps asking exactly that. The seat decides
+   * which page the member lands on and lets a board surface address the holder
+   * by their office. Present only for board sessions that hold a seat, so a
+   * cached session for any other role stores nothing extra.
+   */
+  boardSeat?: BoardSeatSlug;
 }
 
 export interface AuthoritativePilotSessionPayload {
@@ -26,6 +38,10 @@ export interface AuthoritativePilotSessionPayload {
   role?: unknown;
   auth_provider?: unknown;
   must_change_pin?: unknown;
+  // The one seat a board session lands on, and every seat it holds -- a small
+  // board doubles up. Both are absent for every other role.
+  board_seat?: unknown;
+  board_seats?: unknown;
 }
 
 export type AuthoritativeRoleSessionResolution =
@@ -84,7 +100,14 @@ function parseRoleSession(raw: string | null): RoleSession | null {
       return null;
     }
 
-    return { role: parsed.role, expiresAt: parsed.expiresAt };
+    // An unrecognized seat is dropped rather than rejecting the session. The
+    // seat is display identity layered on the role; discarding the whole
+    // cache over it would sign a legitimately authenticated board member out.
+    return {
+      role: parsed.role,
+      expiresAt: parsed.expiresAt,
+      ...(isBoardSeatSlug(parsed.boardSeat) ? { boardSeat: parsed.boardSeat } : {}),
+    };
   } catch {
     return null;
   }
@@ -110,10 +133,13 @@ export function readRoleSession(): RoleSession | null {
   return session;
 }
 
-export function createPersistentRoleSession(role: ClubRole): RoleSession {
+export function createPersistentRoleSession(role: ClubRole, boardSeat?: unknown): RoleSession {
   const session: RoleSession = {
     role,
     expiresAt: Date.now() + ROLE_SESSION_TTL_MS,
+    // Only a board session that actually holds a seat stores one. Every other
+    // role's cache keeps exactly the two keys it has always had.
+    ...(role === 'board' && isBoardSeatSlug(boardSeat) ? { boardSeat } : {}),
   };
   const raw = JSON.stringify(session);
 
@@ -219,7 +245,14 @@ export function mapPilotRoleToClubRole(role: unknown): ClubRole | null {
     return 'admin';
   }
 
-  if (role === 'coach' || role === 'athlete' || role === 'parent' || role === 'board') {
+  if (
+    role === 'coach'
+    || role === 'athlete'
+    || role === 'parent'
+    || role === 'board'
+    || role === 'staff'
+    || role === 'volunteer'
+  ) {
     return role;
   }
 
@@ -234,7 +267,10 @@ export function resolveAuthoritativeRoleSession(
   }
 
   const role = mapPilotRoleToClubRole(payload.role);
-  const destination = getPilotRoleDestination(payload.role);
+  // The seat only ever refines where a board member lands. It cannot make an
+  // unroutable role routable, and it is never mapped to a role of its own.
+  const boardSeat = role === 'board' && isBoardSeatSlug(payload.board_seat) ? payload.board_seat : null;
+  const destination = getPilotRoleDestination(payload.role, boardSeat);
   if (!role || !destination) {
     return { ok: false, reason: 'unsupported_role' };
   }
@@ -261,9 +297,18 @@ export function resolveAuthoritativeRoleSession(
     session: {
       role,
       expiresAt: Date.now() + ROLE_SESSION_TTL_MS,
+      ...(boardSeat ? { boardSeat } : {}),
     },
     destination,
   };
+}
+
+// Stores a session the server just authorized, seat included. Callers that
+// only have a role can keep calling createPersistentRoleSession directly; this
+// exists so a caller holding the whole resolved session does not have to know
+// which of its fields are worth persisting.
+export function persistAuthoritativeRoleSession(session: RoleSession): RoleSession {
+  return createPersistentRoleSession(session.role, session.boardSeat);
 }
 
 export async function loadAuthoritativeRoleSession(

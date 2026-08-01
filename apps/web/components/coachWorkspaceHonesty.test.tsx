@@ -4,12 +4,30 @@
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
+import type { AnnouncementItem } from './AnnouncementBanner';
 import CoachWorkspace from './CoachWorkspace';
 
 interface RouteResponses {
   floorPlans?: () => Promise<Response>;
   reviewProjection?: () => Promise<Response>;
   coachReviews?: () => Promise<Response>;
+  announcements?: () => Promise<Response>;
+}
+
+function announcement(overrides: Partial<AnnouncementItem> = {}): AnnouncementItem {
+  return {
+    announcement_id: 'ann_1',
+    message: 'Lock the room in before the first bell.',
+    author_name: 'Coach J.',
+    author_role: 'coach',
+    created_at: '2026-07-30T12:00:00.000Z',
+    placement: 'coach_workspace',
+    kind: 'motivation',
+    active: true,
+    starts_at: null,
+    ends_at: null,
+    ...overrides,
+  };
 }
 
 function jsonResponse(body: unknown, init?: { ok?: boolean; status?: number }): Response {
@@ -41,6 +59,9 @@ function installFetch(routes: RouteResponses = {}): jest.Mock {
     }
     if (url.includes('/api/pilot/coach-reviews')) {
       return routes.coachReviews ? routes.coachReviews() : jsonResponse({ ok: true });
+    }
+    if (url.includes('/api/pilot/announcements/get')) {
+      return routes.announcements ? routes.announcements() : jsonResponse({ ok: true, announcements: [] });
     }
 
     throw new Error(`Unexpected fetch: ${url}`);
@@ -182,5 +203,57 @@ describe('coach review submission', () => {
       fireEvent.click(screen.getByRole('button', { name: /Save Coach Review/i }));
     });
     expect(reviewCalls()).toBe(2);
+  });
+});
+
+// Authored notices and motivational copy are data, so the workspace has to ask
+// for its own surface and has to survive the answer -- including no answer at
+// all.
+describe('authored announcements on the coach workspace', () => {
+  function announcementRequests(fetchMock: jest.Mock): Array<Record<string, unknown>> {
+    return fetchMock.mock.calls
+      .filter((call) => String(call[0]).includes('/api/pilot/announcements/get'))
+      .map((call) => JSON.parse(String((call[1] as RequestInit | undefined)?.body ?? '{}')) as Record<string, unknown>);
+  }
+
+  test('the workspace asks for its own placement, for both kinds', async () => {
+    const fetchMock = await renderWorkspace();
+
+    expect(announcementRequests(fetchMock)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ placement: 'coach_workspace', kind: 'notice' }),
+        expect.objectContaining({ placement: 'coach_workspace', kind: 'motivation' }),
+      ]),
+    );
+  });
+
+  test('live motivational copy is drawn where the coach will see it', async () => {
+    await renderWorkspace({
+      announcements: async () => jsonResponse({ ok: true, announcements: [announcement()] }),
+    });
+
+    expect(screen.queryByText('Lock the room in before the first bell.')).not.toBeNull();
+    expect(screen.queryByText('From the Gym')).not.toBeNull();
+  });
+
+  test('nothing live leaves no heading and no empty box behind', async () => {
+    await renderWorkspace();
+
+    expect(screen.queryByText('From the Gym')).toBeNull();
+    expect(screen.queryByText('Gym Notices')).toBeNull();
+  });
+
+  test('a failed announcements read leaves the rest of the workspace working', async () => {
+    await renderWorkspace({
+      announcements: async () => {
+        throw new Error('announcements offline');
+      },
+    });
+
+    expect(screen.queryByText('From the Gym')).toBeNull();
+    expect(screen.queryByText('Live Session Management')).not.toBeNull();
+
+    openTab('Floor');
+    expect(screen.queryByText(/Session Workout Plan/i)).not.toBeNull();
   });
 });

@@ -105,7 +105,7 @@ describe('POST /api/pilot/publications/create', () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
     mockQueryOne
       .mockResolvedValueOnce({ athlete_id: 'ath-1' })
-      .mockResolvedValueOnce({ video_session_id: 'vid-1', organization_id: 'org-1', athlete_id: 'ath-1' });
+      .mockResolvedValueOnce({ video_session_id: 'vid-1', organization_id: 'org-1', athlete_id: 'ath-1', status: 'ready' });
     mockQuery.mockResolvedValueOnce([{ publication_id: 'pub-1' }]);
 
     const res = await POST(
@@ -118,5 +118,28 @@ describe('POST /api/pilot/publications/create', () => {
     );
 
     expect(res.status).toBe(201);
+  });
+
+  // A publication drafted from unreleased footage would carry a quarantined --
+  // or infected -- file all the way to a passing compliance check, because
+  // every later step reads the publication row rather than the video.
+  test('a video that has not been released cannot be drafted into a publication', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+    mockQueryOne
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' })
+      .mockResolvedValueOnce({ video_session_id: 'vid-1', organization_id: 'org-1', athlete_id: 'ath-1', status: 'quarantined' });
+
+    const res = await POST(
+      postRequest({
+        video_session_id: 'vid-1',
+        athlete_id: 'ath-1',
+        publication_type: 'research_library',
+        title: 'Jab mechanics',
+      }),
+    );
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).video_status).toBe('quarantined');
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 });

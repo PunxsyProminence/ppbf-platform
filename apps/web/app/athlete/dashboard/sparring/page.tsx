@@ -8,6 +8,8 @@ type PunchType = 'Jab' | 'Cross' | 'Hook' | 'Uppercut' | 'Body' | 'Other';
 
 const PUNCH_TYPES: PunchType[] = ['Jab', 'Cross', 'Hook', 'Uppercut', 'Body', 'Other'];
 
+const RECOVERY_NOTES_MAX_LENGTH = 300;
+
 // Deep-Track: the rich data-entry path for athletes/coaches willing to take
 // the time to log a full sparring session, in exchange for the formula
 // engine actually being able to compute Accuracy, Connect Differential,
@@ -66,7 +68,9 @@ async function submitDeepTrackObservations(input: {
       kind: 'recovery_notes',
       value: 1,
       unit: 'text_present_0_1',
-      dimensions: { notes: notes.slice(0, 500) },
+      // The observations API rejects any dimension string over 300 characters
+      // outright, so the note is bounded to what the record can hold.
+      dimensions: { notes: notes.slice(0, RECOVERY_NOTES_MAX_LENGTH) },
     });
   }
 
@@ -342,6 +346,7 @@ export default function SparringTelemetryPage() {
                 id="recoveryNotes"
                 value={recoveryNotes}
                 onChange={(event) => setRecoveryNotes(event.target.value)}
+                maxLength={RECOVERY_NOTES_MAX_LENGTH}
                 placeholder="How the athlete felt afterward, recovery plan, anything the coach should know..."
                 className="w-full h-20 border-2 border-[#8b4444] bg-[#0f0f0f] px-3.5 py-3 text-[#e8d7c6] outline-none transition focus:border-[#d4a574] placeholder-[#6a5a4a]"
               />

@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { listSeatsForAccount, resolveLandingSeat } from '@/src/server/pilot/boardSeats';
 import { getPilotRoleDestination } from '@/src/shared/pilotRoleRouting';
 import { loginWithMicrosoftEmail } from '@/src/server/pilot/auth';
 import { PILOT_SESSION_COOKIE } from '@/src/server/pilot/env';
@@ -144,7 +145,6 @@ export async function GET(request: NextRequest) {
   });
 
   try {
-    const primaryOwnerEmail = (process.env.PPBF_PRIMARY_OWNER_EMAIL?.trim() || 'admin@punxsyprominence.org').toLowerCase();
     const queryState = request.nextUrl.searchParams.get('state')?.trim() || '';
     const code = request.nextUrl.searchParams.get('code')?.trim() || '';
 
@@ -177,11 +177,18 @@ export async function GET(request: NextRequest) {
       return redirectToLogin(publicOrigin, 'not-invited');
     }
 
-    if (loginResult.principal.role === 'platform_owner' && identityEmail !== primaryOwnerEmail) {
-      throw new Error('Forbidden: platform owner identity mismatch');
-    }
+    // A board member lands on the seat they hold rather than the shared hub,
+    // so the seat has to be resolved before the redirect is built. Everyone
+    // else routes on role alone.
+    const landingSeat = loginResult.principal.role === 'board'
+      ? resolveLandingSeat(
+        await listSeatsForAccount(loginResult.principal.organizationId, loginResult.principal.accountId),
+      )
+      : null;
 
-    const destinationPath = getPilotRoleDestination(loginResult.principal.role);
+    // loginWithMicrosoftEmail refuses an unroutable role before it mints a
+    // token, so this always resolves; it is read here for the redirect path.
+    const destinationPath = getPilotRoleDestination(loginResult.principal.role, landingSeat);
     if (!destinationPath) {
       throw new Error('Forbidden: unsupported authenticated role');
     }

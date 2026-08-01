@@ -60,7 +60,12 @@ function safeCount(value: unknown): number {
   return count;
 }
 
-function aggregateStatus(
+// The single k-anonymity decision for every board-facing aggregate. An empty
+// period and a suppressed cohort are different facts and stay distinguishable
+// all the way to the screen, so neither can be read as a measured zero.
+// Exported so any other board aggregate holds this same floor rather than
+// inventing a second, weaker one.
+export function boardAggregateStatus(
   recordCount: number,
   participantCount: number,
 ): BoardAggregateStatus {
@@ -69,13 +74,13 @@ function aggregateStatus(
   return 'available';
 }
 
-function countMetric(
+export function boardCountMetric(
   recordCountInput: unknown,
   participantCountInput: unknown,
 ): BoardCountMetric {
   const recordCount = safeCount(recordCountInput);
   const participantCount = safeCount(participantCountInput);
-  const status = aggregateStatus(recordCount, participantCount);
+  const status = boardAggregateStatus(recordCount, participantCount);
   return {
     status,
     count: status === 'available' ? recordCount : null,
@@ -93,7 +98,7 @@ function rateMetric(
   if (completedCount > recordCount) {
     throw new Error('BOARD_SUMMARY_INVALID_AGGREGATE');
   }
-  const status = aggregateStatus(recordCount, participantCount);
+  const status = boardAggregateStatus(recordCount, participantCount);
   if (status !== 'available') {
     return {
       status,
@@ -137,22 +142,22 @@ export function buildBoardSummary(
     scope: 'organization_aggregate',
     minimumCohortSize: BOARD_MINIMUM_COHORT_SIZE,
     generatedAt,
-    activeAthletes: countMetric(activeAthleteCount, activeAthleteCount),
+    activeAthletes: boardCountMetric(activeAthleteCount, activeAthleteCount),
     trainingSessions30Days: rateMetric(
       row.session_count,
       row.session_athlete_count,
       row.completed_session_count,
     ),
     goalStatusBuckets: {
-      active: countMetric(
+      active: boardCountMetric(
         row.active_goal_count,
         row.active_goal_athlete_count,
       ),
-      completed: countMetric(
+      completed: boardCountMetric(
         row.completed_goal_count,
         row.completed_goal_athlete_count,
       ),
-      other: countMetric(
+      other: boardCountMetric(
         row.other_goal_count,
         row.other_goal_athlete_count,
       ),
