@@ -19,10 +19,20 @@ export interface ShadowUserProfileRow {
   last_interaction_at: string | null;
   recent_topics: string[];             // Last 10 topic areas discussed
   athlete_ids_discussed: string[];     // Coaches: athletes discussed recently
-  open_questions: string[];            // Unresolved questions this user has raised
+  // open_questions and shadow_notes are still selected and still on the row so
+  // the type matches the table, but nothing writes them and nothing reads them
+  // into a prompt any more. Both were advertised profile factors with no
+  // production writer: profiles are born empty/null and stayed that way, so the
+  // prompt sections they fed ("Unresolved Questions", "Unresolved Items",
+  // "Open Questions to Address When Relevant", "Context Notes") rendered for
+  // nobody, and the tier/completeness scores that counted them were capped
+  // below their advertised maximum. The columns are kept so building the
+  // feature later needs no migration -- but a writer has to arrive with its
+  // reader, not before it.
+  open_questions: string[];            // Retained column; no writer, no reader
   remembered_facts: RememberedFact[];  // Key-value intelligence about this user
   communication_style: CommunicationStyle; // How this user prefers responses
-  shadow_notes: string | null;         // Free-form accumulated observations
+  shadow_notes: string | null;         // Retained column; no writer, no reader
   created_at: string;
   updated_at: string;
 }
@@ -114,8 +124,6 @@ export async function updateShadowUserProfile(
   update: {
     topicAdded?: string;
     athleteIdDiscussed?: string;
-    questionRaised?: string;
-    questionResolved?: string;
   },
 ): Promise<void> {
   // Append topic to recent_topics (keep last 10)
@@ -170,27 +178,6 @@ export async function updateShadowUserProfile(
     );
   }
 
-  // Track open question
-  if (update.questionRaised) {
-    await query(
-      `UPDATE pilot.shadow_user_profiles
-       SET open_questions = array_append(open_questions, $3),
-           updated_at = NOW()
-       WHERE account_id = $1 AND organization_id = $2`,
-      [accountId, organizationId, update.questionRaised],
-    );
-  }
-
-  // Remove resolved question
-  if (update.questionResolved) {
-    await query(
-      `UPDATE pilot.shadow_user_profiles
-       SET open_questions = array_remove(open_questions, $3),
-           updated_at = NOW()
-       WHERE account_id = $1 AND organization_id = $2`,
-      [accountId, organizationId, update.questionResolved],
-    );
-  }
 }
 
 // buildUserShadowContext and getShadowUserContext lived here: a complete
