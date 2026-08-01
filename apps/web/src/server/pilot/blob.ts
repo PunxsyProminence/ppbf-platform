@@ -68,6 +68,33 @@ export async function downloadPilotVideoFile(
   });
 }
 
+/**
+ * Read one video blob's index tags.
+ *
+ * This is how the malware verdict reaches the platform (#49). Microsoft
+ * Defender for Storage, when malware scanning is enabled on the account,
+ * writes its result back onto the blob as an index tag after the upload lands.
+ * Nothing here performs a scan -- it reads a verdict a real scanner produced,
+ * which is the whole point: the platform must never be the thing that decides
+ * a file is clean.
+ *
+ * Returns an empty map rather than throwing when tags cannot be read, because
+ * the caller distinguishes "no verdict yet" from "clean" and treats both
+ * non-verdicts as grounds to keep the video quarantined. A throw here would
+ * turn a storage hiccup into a failed job; an empty map turns it into a retry.
+ */
+export async function getPilotVideoBlobTags(blobPath: string): Promise<Record<string, string>> {
+  const serviceClient = getBlobServiceClient();
+  const containerClient = serviceClient.getContainerClient(getPilotVideoContainerName());
+  const blobClientForPath = containerClient.getBlockBlobClient(blobPath);
+  try {
+    const response = await blobClientForPath.getTags();
+    return response.tags ?? {};
+  } catch {
+    return {};
+  }
+}
+
 function getReadOnlySasUrl(containerName: string, blobPath: string, expiryMinutes: number): string {
   const connStr = getAzureStorageConnectionString();
   const accountNameMatch = /AccountName=([^;]+)/.exec(connStr);

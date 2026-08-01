@@ -128,3 +128,94 @@ $$;
 -- because the create-table default above does not reach an existing table.
 alter table pilot.video_sessions
   alter column status set default 'quarantined';
+
+-- ─── Scan bookkeeping (#49) ──────────────────────────────────────────────────
+--
+-- The correction above made quarantine-on-upload WORK. It did not give the
+-- state an exit: no `update pilot.video_sessions` existed anywhere in the
+-- repository -- verified across app/, src/, scripts/ and infra/*.sql -- so a
+-- video that uploaded successfully entered a state nothing could leave, and
+-- the Film Study chain (#126 acceptance gate, #128 executor) had no reachable
+-- input. Measured 2026-08-01, immediately after the owner proved upload works.
+--
+-- These columns are what the scan sweep claims, records into, and settles.
+-- They live on this migration rather than a new one because they describe the
+-- same table and this file is already registered in apply-migrations.yml and
+-- npm scripts; a separate migration would have added a third registration
+-- surface for one ALTER.
+--
+-- `add column if not exists` is real PostgreSQL (unlike ADD CONSTRAINT IF NOT
+-- EXISTS -- guardrails section 7), so these are plainly idempotent. Existing
+-- rows land on scan_state 'pending' with scan_next_attempt_at now(), which is
+-- exactly right: every video quarantined before this migration becomes
+-- eligible for its first scan the next time the sweep runs.
+alter table pilot.video_sessions
+  add column if not exists scan_state text not null default 'pending';
+
+-- Verdicts and gate names only. The content screen's prose about the footage
+-- is never written here (videoScanSweep.ts), so this column cannot become a
+-- description of a minor's video sitting in the database.
+alter table pilot.video_sessions
+  add column if not exists scan_detail jsonb not null default '{}'::jsonb;
+
+alter table pilot.video_sessions
+  add column if not exists scan_attempts integer not null default 0;
+
+-- Set at claim, cleared at settle. A claim older than the sweep's staleness
+-- window is taken over, so a worker that dies mid-scan cannot strand a video
+-- in 'scanning' forever -- the failure mode the job queue's lease tokens
+-- already guard against for jobs.
+alter table pilot.video_sessions
+  add column if not exists scan_claimed_at timestamptz null;
+
+-- Retry backoff. Defender for Storage writes its verdict asynchronously and
+-- takes its time; without this the attempt budget would be spent at worker
+-- cadence within minutes and every upload would reach human review before the
+-- scanner had answered.
+alter table pilot.video_sessions
+  add column if not exists scan_next_attempt_at timestamptz not null default now();
+
+-- Set once, when a verdict is reached. Distinct from updated_at, which moves
+-- on every retry.
+alter table pilot.video_sessions
+  add column if not exists scanned_at timestamptz null;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conrelid = 'pilot.video_sessions'::regclass
+      and conname = 'video_sessions_scan_state_check'
+  ) then
+    alter table pilot.video_sessions
+      add constraint video_sessions_scan_state_check
+      check (scan_state in (
+        -- Eligible for a scan attempt (also where a retry returns to).
+        'pending',
+        -- Claimed by a worker.
+        'scanning',
+        -- Every enabled gate passed; status is 'ready'.
+        'passed',
+        -- A real scanner returned a malware hit; status is 'infected'.
+        'infected',
+        -- The content screen refused; status stays 'quarantined'.
+        'blocked',
+        -- Uncertain, or no verdict ever arrived; status stays 'quarantined'.
+        'needs_human_review',
+        -- No gate is configured in this environment, so no verdict is
+        -- possible. Recorded rather than retried, so an unconfigured
+        -- environment does not spin attempts against a scan that cannot run.
+        'unconfigured'
+      ));
+  end if;
+end
+$$;
+
+-- The sweep's claim query, and nothing else, drives this index: due rows
+-- among the quarantined. Partial on status so it stays small -- promoted and
+-- archived videos are the overwhelming majority once the platform has been
+-- running, and none of them are ever scan candidates.
+create index if not exists idx_video_sessions_scan_queue
+  on pilot.video_sessions(scan_state, scan_next_attempt_at)
+  where status = 'quarantined';

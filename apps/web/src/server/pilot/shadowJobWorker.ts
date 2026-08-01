@@ -53,6 +53,12 @@ interface StartOptions {
   // housekeepingIntervalTicks ticks -- retention does not need 30s cadence.
   housekeeping?: () => Promise<void>;
   housekeepingIntervalTicks?: number;
+  // Work that is not queue-driven but must run at queue cadence. The video
+  // scan sweep (#49) is the only user: an uploaded video is quarantined until
+  // a scanner clears it, and an hour of housekeeping cadence would mean an
+  // hour before a coach's upload became watchable. Runs AFTER job processing
+  // so a scan's blob download and vision call cannot starve the queue.
+  sweep?: () => Promise<void>;
 }
 
 const DEFAULT_HOUSEKEEPING_INTERVAL_TICKS = 120; // ~1 hour at the 30s default
@@ -99,6 +105,9 @@ export function startShadowJobWorker(options: StartOptions): ShadowJobWorkerHand
         if (stopped) return;
         const result = await options.processOne();
         if (!result.processed) break;
+      }
+      if (options.sweep) {
+        await options.sweep();
       }
       if (options.housekeeping) {
         ticksSinceHousekeeping += 1;

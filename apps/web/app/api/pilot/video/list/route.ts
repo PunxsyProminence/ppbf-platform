@@ -14,6 +14,11 @@ interface VideoSessionRow {
   file_size_bytes: number;
   mime_type: string;
   status: string;
+  // Why a video is still quarantined (#49). 'pending'/'scanning' while the
+  // scan is in flight, 'needs_human_review' or 'blocked' when it will not
+  // clear on its own. Without this a coach could only ever see 'quarantined'
+  // and had no way to tell a scan in progress from one that gave up.
+  scan_state: string;
   athlete_id: string | null;
   uploaded_by_account_id: string;
   created_at: string;
@@ -38,7 +43,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ items: [] });
       }
       rows = await query<VideoSessionRow>(
-        `select video_session_id, title, notes, file_name, file_size_bytes, mime_type, status, athlete_id, uploaded_by_account_id, created_at
+        `select video_session_id, title, notes, file_name, file_size_bytes, mime_type, status, scan_state, athlete_id, uploaded_by_account_id, created_at
          from pilot.video_sessions
          where organization_id = $1
            and athlete_id = $2
@@ -52,7 +57,7 @@ export async function GET(request: NextRequest) {
       }
       await assertActorCanAccessAthlete(principal, athleteId);
       rows = await query<VideoSessionRow>(
-        `select video_session_id, title, notes, file_name, file_size_bytes, mime_type, status, athlete_id, uploaded_by_account_id, created_at
+        `select video_session_id, title, notes, file_name, file_size_bytes, mime_type, status, scan_state, athlete_id, uploaded_by_account_id, created_at
          from pilot.video_sessions
          where organization_id = $1 and athlete_id = $2 and status = 'ready'
          order by created_at desc limit $3`,
@@ -62,7 +67,7 @@ export async function GET(request: NextRequest) {
       if (athleteId) {
         await assertActorCanAccessAthlete(principal, athleteId);
         rows = await query<VideoSessionRow>(
-          `select video_session_id, title, notes, file_name, file_size_bytes, mime_type, status, athlete_id, uploaded_by_account_id, created_at
+          `select video_session_id, title, notes, file_name, file_size_bytes, mime_type, status, scan_state, athlete_id, uploaded_by_account_id, created_at
            from pilot.video_sessions
            where organization_id = $1 and athlete_id = $2
            order by created_at desc limit $3`,
@@ -70,7 +75,7 @@ export async function GET(request: NextRequest) {
         );
       } else {
         rows = await query<VideoSessionRow>(
-          `select video_session_id, title, notes, file_name, file_size_bytes, mime_type, status, athlete_id, uploaded_by_account_id, created_at
+          `select video_session_id, title, notes, file_name, file_size_bytes, mime_type, status, scan_state, athlete_id, uploaded_by_account_id, created_at
            from pilot.video_sessions
            where organization_id = $1
              and (athlete_id is null or athlete_id in (
@@ -88,7 +93,7 @@ export async function GET(request: NextRequest) {
         athleteFilter = `and athlete_id = $${params.length}`;
       }
       rows = await query<VideoSessionRow>(
-        `select video_session_id, title, notes, file_name, file_size_bytes, mime_type, status, athlete_id, uploaded_by_account_id, created_at
+        `select video_session_id, title, notes, file_name, file_size_bytes, mime_type, status, scan_state, athlete_id, uploaded_by_account_id, created_at
          from pilot.video_sessions
          where organization_id = $1 ${athleteFilter}
          order by created_at desc limit $2`,

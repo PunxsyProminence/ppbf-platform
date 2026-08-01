@@ -63,6 +63,61 @@ describe('drain loop', () => {
     expect(housekeeping).toHaveBeenCalledTimes(2);
   });
 
+  test('the sweep runs every tick, unlike housekeeping', async () => {
+    // The video scan sweep (#49) rides this hook. It has to be per-tick: an
+    // upload that waits for the ~1-hour housekeeping cadence is an upload the
+    // coach believes is broken.
+    const processOne = jest.fn(async () => ({ processed: false }));
+    const sweep = jest.fn(async () => {});
+    const housekeeping = jest.fn(async () => {});
+
+    handle = startShadowJobWorker({
+      processOne,
+      intervalMs: 1_000,
+      sweep,
+      housekeeping,
+      housekeepingIntervalTicks: 10,
+    });
+
+    await jest.advanceTimersByTimeAsync(3_000);
+    expect(sweep).toHaveBeenCalledTimes(3);
+    expect(housekeeping).not.toHaveBeenCalled();
+  });
+
+  test('the sweep runs after job processing, never before', async () => {
+    // Ordering matters: a scan does a blob download and a vision call, so
+    // running it first would delay every queued job behind it.
+    const order: string[] = [];
+    const processOne = jest.fn(async () => {
+      order.push('job');
+      return { processed: false };
+    });
+    const sweep = jest.fn(async () => {
+      order.push('sweep');
+    });
+
+    handle = startShadowJobWorker({ processOne, intervalMs: 1_000, sweep });
+
+    await jest.advanceTimersByTimeAsync(1_000);
+    expect(order).toEqual(['job', 'sweep']);
+  });
+
+  test('a sweep that throws is reported and does not kill the loop', async () => {
+    const processOne = jest.fn(async () => ({ processed: false }));
+    const sweep = jest.fn(async () => {
+      throw new Error('storage unavailable');
+    });
+    const onError = jest.fn();
+
+    handle = startShadowJobWorker({ processOne, intervalMs: 1_000, sweep, onError });
+
+    await jest.advanceTimersByTimeAsync(3_000);
+    // Still ticking after the first failure -- a scanner outage must not stop
+    // the job queue from draining.
+    expect(sweep).toHaveBeenCalledTimes(3);
+    expect(onError).toHaveBeenCalledTimes(3);
+  });
+
   test('a tick drains until the queue reports empty', async () => {
     const results = [
       { processed: true, jobId: 'a' },
