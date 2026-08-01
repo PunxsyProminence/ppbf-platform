@@ -1,8 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
+import { getRoleSessionSnapshot } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
 import { DEFAULT_PIN_LENGTH } from '@/src/server/pilot/pinPolicy';
 
@@ -341,10 +343,52 @@ function PinManagementPageContent() {
   );
 }
 
+/**
+ * Shown to a platform owner who reaches this console. Every route behind it is
+ * organization-scoped and refuses that role by design -- athlete credentials
+ * belong to the gym's own administrator. Without this they would see a console
+ * whose every request failed, which is the pattern this codebase keeps having
+ * to remove.
+ */
+function WrongRoleNotice() {
+  return (
+    <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
+      <div className="mx-auto max-w-xl space-y-5 text-center">
+        <p className="text-xs font-mono uppercase tracking-[0.3em] text-[var(--red-primary)]">Different Console</p>
+        <h1 className="font-display text-3xl font-black">Athlete PINs are managed per gym</h1>
+        <p className="text-sm leading-7 text-[var(--gray-dark)]">
+          This console issues and resets the credentials of individual athletes, which belongs to that
+          gym&apos;s administrator. As platform owner you create organizations and appoint their admins.
+        </p>
+        <Link
+          href="/admin/platform"
+          className="inline-flex min-h-[44px] items-center rounded-full border-2 border-[var(--black)] bg-white px-5 text-sm font-bold uppercase tracking-[0.1em]"
+        >
+          Platform console
+        </Link>
+      </div>
+    </main>
+  );
+}
+
+// RoleSessionGate admits both admin flavours; this narrows to the one whose
+// APIs will actually answer.
+function PinConsoleRoleSwitch({ children }: Readonly<{ children: React.ReactNode }>) {
+  const session = getRoleSessionSnapshot();
+
+  if (session?.role === 'platform_owner') {
+    return <WrongRoleNotice />;
+  }
+
+  return <>{children}</>;
+}
+
 export default function PinManagementPage() {
   return (
     <RoleSessionGate allowedRoles={['admin', 'platform_owner']}>
+      <PinConsoleRoleSwitch>
       <PinManagementPageContent />
+      </PinConsoleRoleSwitch>
     </RoleSessionGate>
   );
 }

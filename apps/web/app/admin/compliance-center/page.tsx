@@ -169,10 +169,10 @@ export default function AdminComplianceCenterPage() {
       showShellHeader={false}
     >
       <div className="space-y-6">
-        <header className="border-2 border-[#8b4444] bg-[#111111] p-5">
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">Compliance Management</p>
-          <h1 className="mt-2 text-3xl font-black text-[#f2e7da]">Compliance Center</h1>
-          <p className="mt-2 text-sm text-[#cfbfae]">Review, manage, and escalate athlete compliance violations.</p>
+        <header className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-5">
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--brass-300)]">Compliance Management</p>
+          <h1 className="mt-2 text-3xl font-black text-[color:var(--bone-100)]">Compliance Center</h1>
+          <p className="mt-2 text-sm text-[color:var(--bone-300)]">Review, manage, and escalate athlete compliance violations.</p>
           {errorMessage ? <p className="mt-2 text-xs text-[#f0c4c4]">{errorMessage}</p> : null}
           {!errorMessage && !isLoading && !dataAuthoritative ? (
             <p className="mt-2 text-xs text-[#f0c4c4]">Compliance metrics are unavailable and intentionally not shown as zero.</p>
@@ -181,29 +181,29 @@ export default function AdminComplianceCenterPage() {
 
         {/* Metrics Dashboard */}
         <section className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-          <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-3 text-center">
-            <p className="text-xs text-[#cfbfae]">Total</p>
-            <p className="text-2xl font-bold text-[#f2e7da]">{metricValue(metrics.total)}</p>
+          <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-3 text-center">
+            <p className="text-xs text-[color:var(--bone-300)]">Total</p>
+            <p className="text-2xl font-bold text-[color:var(--bone-100)]">{metricValue(metrics.total)}</p>
           </div>
-          <div className="border-2 border-[#fce8e6] bg-[#1a1a1a] p-3 text-center">
+          <div className="border-2 border-[#fce8e6] bg-[var(--hide-900)] p-3 text-center">
             <p className="text-xs text-[#d32f2f]">Critical</p>
-            <p className="text-2xl font-bold text-[#f2e7da]">{metricValue(metrics.critical)}</p>
+            <p className="text-2xl font-bold text-[color:var(--bone-100)]">{metricValue(metrics.critical)}</p>
           </div>
-          <div className="border-2 border-[#fff3cd] bg-[#1a1a1a] p-3 text-center">
+          <div className="border-2 border-[#fff3cd] bg-[var(--hide-900)] p-3 text-center">
             <p className="text-xs text-[#f57c00]">High</p>
-            <p className="text-2xl font-bold text-[#f2e7da]">{metricValue(metrics.high)}</p>
+            <p className="text-2xl font-bold text-[color:var(--bone-100)]">{metricValue(metrics.high)}</p>
           </div>
-          <div className="border-2 border-[#e3f2fd] bg-[#1a1a1a] p-3 text-center">
+          <div className="border-2 border-[#e3f2fd] bg-[var(--hide-900)] p-3 text-center">
             <p className="text-xs text-[#1976d2]">Medium</p>
-            <p className="text-2xl font-bold text-[#f2e7da]">{metricValue(metrics.medium)}</p>
+            <p className="text-2xl font-bold text-[color:var(--bone-100)]">{metricValue(metrics.medium)}</p>
           </div>
-          <div className="border-2 border-[#f1f8e9] bg-[#1a1a1a] p-3 text-center">
+          <div className="border-2 border-[#f1f8e9] bg-[var(--hide-900)] p-3 text-center">
             <p className="text-xs text-[#388e3c]">Low</p>
-            <p className="text-2xl font-bold text-[#f2e7da]">{metricValue(metrics.low)}</p>
+            <p className="text-2xl font-bold text-[color:var(--bone-100)]">{metricValue(metrics.low)}</p>
           </div>
         </section>
 
-        <section className="flex flex-wrap items-center gap-3 border border-[#5a4a3a] bg-[#121212] p-3">
+        <section className="flex flex-wrap items-center gap-3 border border-[color:var(--hide-600)] bg-[#121212] p-3">
           <div className="flex flex-wrap gap-2">
             {['all', 'new', 'acknowledged', 'escalated', 'resolved'].map((status) => (
               <button
@@ -211,8 +211,8 @@ export default function AdminComplianceCenterPage() {
                 onClick={() => setStatusFilter(status)}
                 className={`border-2 px-3 py-1 text-xs font-bold uppercase ${
                   statusFilter === status
-                    ? 'border-[#d4a574] bg-[#2a1a1a] text-[#d4a574]'
-                    : 'border-[#5a4a3a] bg-[#101010] text-[#8b7355]'
+                    ? 'border-[color:var(--brass-300)] bg-[#2a1a1a] text-[color:var(--brass-300)]'
+                    : 'border-[color:var(--hide-600)] bg-[var(--hide-950)] text-[#8b7355]'
                 }`}
               >
                 {status}
@@ -220,11 +220,11 @@ export default function AdminComplianceCenterPage() {
             ))}
           </div>
           <div className="flex items-center gap-3">
-            <label htmlFor="severity-filter" className="text-xs font-bold text-[#d4a574]">Severity:</label>
+            <label htmlFor="severity-filter" className="text-xs font-bold text-[color:var(--brass-300)]">Severity:</label>
             <select id="severity-filter"
               value={severityFilter}
               onChange={(e) => setSeverityFilter(e.target.value)}
-              className="border border-[#5a4a3a] bg-[#101010] px-3 py-1 text-xs text-[#e8d7c6]"
+              className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-1 text-xs text-[color:var(--bone-200)]"
             >
               <option value="all">All</option>
               <option value="critical">Critical</option>
@@ -240,31 +240,31 @@ export default function AdminComplianceCenterPage() {
 
         {/* Violations List */}
         <section>
-          <h2 className="mb-4 text-lg font-bold text-[#f2e7da]">
+          <h2 className="mb-4 text-lg font-bold text-[color:var(--bone-100)]">
             Violations ({filteredViolations.length} of {violations.length})
           </h2>
           <div className="space-y-3">
             {filteredViolations.length === 0 ? (
-              <div className="border border-[#5a4a3a] bg-[#111111] px-4 py-5 text-sm text-[#9a8a7a]">
+              <div className="border border-[color:var(--hide-600)] bg-[var(--hide-900)] px-4 py-5 text-sm text-[#9a8a7a]">
                 No violations match the current filters. Try setting Status to &quot;all&quot; and Severity to &quot;all&quot;.
               </div>
             ) : (
               filteredViolations.map((v) => (
                 <div
                   key={v.violation_id}
-                  className={`border-2 border-[#8b4444] p-4 ${getSeverityColor(v.severity)}`}
+                  className={`border-2 border-[color:var(--brass-700)] p-4 ${getSeverityColor(v.severity)}`}
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
                       <div className="mb-2 flex gap-2">
-                        <span className="font-mono text-xs font-bold uppercase text-[#111111]">
+                        <span className="font-mono text-xs font-bold uppercase text-[color:var(--hide-900)]">
                           {v.severity}
                         </span>
                         <span className={`font-mono text-xs font-bold uppercase ${getStatusColor(v.status)}`}>
                           {v.status}
                         </span>
                       </div>
-                      <p className="text-sm font-semibold text-[#111111]">Athlete: {v.athlete_id}</p>
+                      <p className="text-sm font-semibold text-[color:var(--hide-900)]">Athlete: {v.athlete_id}</p>
                       <p className="text-xs text-[#333333]">Rule: {v.rule_id}</p>
                       <p className="mt-1 text-xs text-[#444444]">
                         {new Date(v.created_at).toLocaleString()}
@@ -274,7 +274,7 @@ export default function AdminComplianceCenterPage() {
                     {v.status === 'new' || v.status === 'acknowledged' ? (
                       <button
                         onClick={() => setSelectedViolation(v)}
-                        className="border-2 border-[#111111] bg-[#fce8e6] px-3 py-2 text-xs font-bold text-[#111111]"
+                        className="border-2 border-[color:var(--hide-900)] bg-[#fce8e6] px-3 py-2 text-xs font-bold text-[color:var(--hide-900)]"
                       >
                         Escalate
                       </button>
@@ -289,17 +289,17 @@ export default function AdminComplianceCenterPage() {
         {/* Escalation Modal */}
         {selectedViolation && (
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4">
-            <div className="border-2 border-[#8b4444] bg-[#111111] p-6 max-w-sm">
-              <h3 className="mb-4 text-lg font-bold text-[#f2e7da]">Escalate Violation</h3>
-              <p className="mb-4 text-sm text-[#cfbfae]">
-                Athlete: <span className="font-semibold text-[#e8d7c6]">{selectedViolation.athlete_id}</span>
+            <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 max-w-sm">
+              <h3 className="mb-4 text-lg font-bold text-[color:var(--bone-100)]">Escalate Violation</h3>
+              <p className="mb-4 text-sm text-[color:var(--bone-300)]">
+                Athlete: <span className="font-semibold text-[color:var(--bone-200)]">{selectedViolation.athlete_id}</span>
               </p>
               <div className="mb-4">
-                <label htmlFor="escalate-to-select" className="block text-xs font-bold uppercase text-[#d4a574]">Escalate To</label>
+                <label htmlFor="escalate-to-select" className="block text-xs font-bold uppercase text-[color:var(--brass-300)]">Escalate To</label>
                 <select id="escalate-to-select"
                   value={escalateToRole}
                   onChange={(e) => setEscalateToRole(e.target.value)}
-                  className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-[#e8d7c6]"
+                  className="mt-1 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-2 text-[color:var(--bone-200)]"
                 >
                   <option value="organization_admin">Organization Admin</option>
                   <option value="admin">Platform Admin</option>
@@ -308,13 +308,13 @@ export default function AdminComplianceCenterPage() {
               <div className="flex gap-3">
                 <button
                   onClick={handleEscalate}
-                  className="flex-1 border-2 border-[#8b4444] bg-[#2a1a1a] py-2 text-xs font-bold text-[#d4a574]"
+                  className="flex-1 border-2 border-[color:var(--brass-700)] bg-[#2a1a1a] py-2 text-xs font-bold text-[color:var(--brass-300)]"
                 >
                   Escalate
                 </button>
                 <button
                   onClick={() => setSelectedViolation(null)}
-                  className="flex-1 border-2 border-[#5a4a3a] bg-[#101010] py-2 text-xs font-bold text-[#8b7355]"
+                  className="flex-1 border-2 border-[color:var(--hide-600)] bg-[var(--hide-950)] py-2 text-xs font-bold text-[#8b7355]"
                 >
                   Cancel
                 </button>
@@ -324,7 +324,7 @@ export default function AdminComplianceCenterPage() {
         )}
 
         <div className="flex flex-wrap gap-3">
-          <Link href="/admin" className="border-2 border-[#8b4444] bg-[#2a1a1a] px-4 py-2 text-xs font-mono text-[#d4a574]">
+          <Link href="/admin" className="border-2 border-[color:var(--brass-700)] bg-[#2a1a1a] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)]">
             Back to Admin
           </Link>
         </div>

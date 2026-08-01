@@ -121,6 +121,42 @@ it('saves the capability registry for a platform owner', async () => {
   expect(screen.queryByRole('alert')).toBeNull();
 });
 
+// The console used to merge its seed blueprints into whatever the registry
+// returned, then immediately save the merged list back. That made deletion
+// impossible: an archived capability came back on the next load and was written
+// to the registry again, so the stored governance record drifted toward the
+// template no matter what an administrator did to it.
+it('does not resurrect capabilities an administrator archived', async () => {
+  const stored = {
+    id: 1,
+    capabilityId: 'CAP-001',
+    name: 'Safety Gate',
+    group: 'Safety',
+    status: 'ACTIVE',
+    owner: 'Operations',
+    assignedRoles: ['coach'],
+    description: 'The one capability this gym kept.',
+  };
+
+  const fetchMock = jest.fn(async (url: string) => {
+    if (String(url).includes('/api/pilot/admin/capabilities')) {
+      return jsonResponse({ ok: true, capabilities: [stored] });
+    }
+    return jsonResponse({ ok: true });
+  });
+
+  await renderPage(fetchMock);
+
+  await waitFor(() => expect(callsTo(fetchMock, '/api/pilot/admin/capabilities', 'POST')).toHaveLength(1));
+
+  const [, init] = callsTo(fetchMock, '/api/pilot/admin/capabilities', 'POST')[0];
+  const saved = JSON.parse(String((init as RequestInit).body)) as { capabilities: Array<{ capabilityId: string }> };
+
+  // What the gym stored is what gets written back -- not the template.
+  expect(saved.capabilities.map((item) => item.capabilityId)).toEqual(['CAP-001']);
+  expect(saved.capabilities).toHaveLength(1);
+});
+
 it('hides the compliance center from a platform owner and keeps it for a gym admin', async () => {
   const fetchMock = jest.fn(async () => jsonResponse({ ok: true, capabilities: [] }));
 

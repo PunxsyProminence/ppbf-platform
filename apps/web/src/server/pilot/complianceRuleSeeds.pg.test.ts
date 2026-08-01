@@ -32,7 +32,9 @@ import readline from 'node:readline';
 import type { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 
-import { Client } from 'pg';
+import { Client, type PoolClient } from 'pg';
+
+import { seedDefaultComplianceRules } from './complianceRuleSeeds';
 
 jest.setTimeout(180_000);
 
@@ -455,10 +457,15 @@ describe('compliance rule seeds against real Postgres', () => {
     }
   });
 
-  test('an organization created after the migration has no rules until it runs again', async () => {
-    // Documented limitation, asserted rather than assumed: this migration
-    // seeds the organizations that exist when it runs. Organization creation
-    // does not seed.
+  test('an organization inserted directly after the migration has no rules until it runs again', async () => {
+    // Documented limitation, asserted rather than assumed: this migration seeds
+    // the organizations that exist when it runs.
+    //
+    // Still true, and deliberately so: nothing intercepts a raw INSERT. The
+    // application path is what changed -- createOrganization now seeds inside its
+    // own transaction (see below) -- so the remaining exposure is an organization
+    // written straight to the table by a migration or by hand, which is an
+    // operator action with an operator's remedy: re-run the seeds.
     const client = await freshDatabase('ppbf_test_seeds_late_org');
     try {
       await applyMigrationTransaction(client, seedsSql);
@@ -474,6 +481,30 @@ describe('compliance rule seeds against real Postgres', () => {
 
       await applyMigrationTransaction(client, seedsSql);
       expect(await rulesFor(client, 'org-seed-late')).toHaveLength(DEFAULT_RULES.length);
+    } finally {
+      await client.end();
+    }
+  });
+
+  // The other half of the fix: a gym created through the application gets its
+  // rules at creation, not at the next migration run.
+  test('seeding a newly created organization gives it all five defaults', async () => {
+    const client = await freshDatabase('ppbf_test_seeds_new_org');
+    try {
+      await applyMigrationTransaction(client, seedsSql);
+      await client.query(
+        `insert into pilot.organizations (organization_id, organization_name, status)
+         values ('org-brand-new', 'Brand New Gym', 'active')`,
+      );
+      expect(await rulesFor(client, 'org-brand-new')).toHaveLength(0);
+
+      await seedDefaultComplianceRules('org-brand-new', client as unknown as PoolClient);
+      expect(await rulesFor(client, 'org-brand-new')).toHaveLength(DEFAULT_RULES.length);
+
+      // Idempotent against a gym the migration already covered, so the two paths
+      // cannot double-seed the same gym.
+      await seedDefaultComplianceRules('org-brand-new', client as unknown as PoolClient);
+      expect(await rulesFor(client, 'org-brand-new')).toHaveLength(DEFAULT_RULES.length);
     } finally {
       await client.end();
     }

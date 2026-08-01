@@ -116,9 +116,9 @@ export default function BoardRoleGate({
 
   if (gate.status !== 'authorized') {
     return (
-      <main className="grid min-h-screen place-items-center bg-[#0a0a0a] px-6 text-[#e8d7c6]">
+      <main className="grid min-h-screen place-items-center bg-[var(--hide-950)] px-6 text-[color:var(--bone-200)]">
         <div className="text-center">
-          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[#d4a574]">
+          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[color:var(--brass-300)]">
             Board Session
           </p>
           <h1 className="mt-3 text-3xl font-black tracking-tight">
@@ -128,7 +128,7 @@ export default function BoardRoleGate({
             <button
               type="button"
               onClick={() => setRetryNonce((value) => value + 1)}
-              className="mt-5 min-h-[44px] border-2 border-[#8b4444] bg-[#2f1717] px-5 text-sm font-mono font-bold uppercase tracking-[0.12em] text-[#e8d7c6]"
+              className="mt-5 min-h-[44px] border-2 border-[color:var(--brass-700)] bg-[#2f1717] px-5 text-sm font-mono font-bold uppercase tracking-[0.12em] text-[color:var(--bone-200)]"
             >
               Retry
             </button>

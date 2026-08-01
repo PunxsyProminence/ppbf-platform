@@ -3,6 +3,7 @@ import type { PoolClient } from 'pg';
 
 import { getPilotRoleDestination } from '@/src/shared/pilotRoleRouting';
 
+import { seedDefaultComplianceRules } from './complianceRuleSeeds';
 import type { PilotRole } from './contracts';
 import { getPilotDefaultOrganizationId, PILOT_SESSION_COOKIE } from './env';
 import { createOpaqueToken, hashPin, hashToken, verifyPin } from './security';
@@ -814,15 +815,25 @@ export async function createOrRotateAdminAccount(
 }
 
 export async function createOrganization(organizationId: string, organizationName: string, createdBy: string): Promise<void> {
-  await query(
-    `insert into pilot.organizations (organization_id, organization_name, status, created_by_account_id)
-     values ($1, $2, 'active', $3)
-     on conflict (organization_id) do update
-       set organization_name = excluded.organization_name,
-           status = 'active',
-           updated_at = now()`,
-    [organizationId, organizationName, createdBy],
-  );
+  // Organization and compliance rules are created together, in one transaction.
+  // The seed migration only reaches organizations that existed when an operator
+  // ran it, so a gym created afterwards through this route started with an empty
+  // rule set and compliance monitoring that silently checked nothing. Seeding
+  // here rather than leaving it to the next migration run means a gym cannot
+  // exist in that state, and the transaction means it cannot half-exist either.
+  await withTransaction(async (client) => {
+    await client.query(
+      `insert into pilot.organizations (organization_id, organization_name, status, created_by_account_id)
+       values ($1, $2, 'active', $3)
+       on conflict (organization_id) do update
+         set organization_name = excluded.organization_name,
+             status = 'active',
+             updated_at = now()`,
+      [organizationId, organizationName, createdBy],
+    );
+
+    await seedDefaultComplianceRules(organizationId, client);
+  });
 }
 
 export async function createOrUpdateMicrosoftPlatformOwnerAccount(params: {

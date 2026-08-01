@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import React, { type FormEvent, useCallback, useEffect, useState } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
+import type { RabbitHoleLessonItem } from './RabbitHole';
+import { ANCHOR_KEY_OPTIONS, anchorLabel } from './rabbitHoleAnchorLabels';
 import { AthleteSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
 import { cx, ui } from './uiStyles';
@@ -67,7 +69,7 @@ interface Drill {
   category: string;
   focus: string;
   cues: string[];
-  minRank: string;
+  difficulty: string;
 }
 
 interface ShadowObservationItem {
@@ -98,6 +100,74 @@ interface ActiveSessionRecord {
   rpe: number;
   checkInNote: string;
   createdAt: string;
+}
+
+/** A row of pilot.sessions as GET /api/pilot/sessions/list returns it. */
+interface StoredSession {
+  sessionId: string;
+  athleteId: string;
+  date: string;
+  rpe: number;
+  notes: string;
+  completed: boolean;
+  createdAt: string;
+}
+
+type StoredSessionLoadState = 'loading' | 'loaded' | 'unavailable';
+type NotesSaveState = 'idle' | 'saving' | 'saved' | 'failed';
+type AthleteIdentityState = 'loading' | 'resolved' | 'unavailable';
+
+// How long the athlete stops typing before the draft is written to their open
+// session. Short enough that a tablet recycling the tab loses a phrase at
+// worst, long enough that ordinary typing is not one request per keystroke.
+const NOTES_DRAFT_SAVE_DELAY_MS = 1200;
+
+/**
+ * The note stored when the athlete typed nothing at check-in. pilot.sessions
+ * requires a non-empty note, so something has to be written; recognising that
+ * exact form on the way back is what keeps it out of the athlete's own notes
+ * box, where it would read as a sentence they wrote.
+ */
+function autoCheckInNote(readiness: ReadinessLevel): string {
+  return `Auto check-in readiness ${readiness}`;
+}
+
+const AUTO_CHECK_IN_NOTE_PATTERN = /^Auto check-in readiness (GREEN|YELLOW|RED)$/;
+
+/**
+ * pilot.sessions stores date as `date` and rpe as `numeric`, and node-postgres
+ * hands both back in shapes the session validator rejects on the way in: a
+ * timestamp for the first, a string for the second. A rehydrated record is
+ * sent straight back by check-out, so it is normalized on arrival. A row that
+ * cannot be normalized is dropped rather than half-trusted -- a session whose
+ * identity or timing is unreadable must not become the one the athlete is
+ * offered a check-out for.
+ */
+function normalizeStoredSession(row: unknown): StoredSession | null {
+  if (!row || typeof row !== 'object') {
+    return null;
+  }
+
+  const record = row as Record<string, unknown>;
+  const sessionId = typeof record.session_id === 'string' ? record.session_id.trim() : '';
+  const athleteId = typeof record.athlete_id === 'string' ? record.athlete_id.trim() : '';
+  const date = typeof record.date === 'string' ? record.date.slice(0, 10) : '';
+  const createdAt = typeof record.created_at === 'string' ? record.created_at : '';
+  const rpe = Number(record.rpe);
+
+  if (!sessionId || !athleteId || !date || !createdAt || !Number.isFinite(rpe)) {
+    return null;
+  }
+
+  return {
+    sessionId,
+    athleteId,
+    date,
+    rpe,
+    notes: typeof record.notes === 'string' ? record.notes : '',
+    completed: record.completed_flag === true,
+    createdAt,
+  };
 }
 
 function getReadinessLevel(readinessToTrain: number): ReadinessLevel {
@@ -228,9 +298,161 @@ async function submitFastTrackObservations(input: {
   })));
 }
 
+// The vocabularies this tab reads. A rabbit hole is stored against one stable
+// key, and the read takes one anchor at a time, so the tab asks for the terms
+// that describe an athlete's own development: every progression gap type and
+// every severity. Built from the shared vocabulary rather than retyped, so a
+// term added to either list is asked for here without another edit.
+const RABBIT_HOLE_TAB_ANCHORS: ReadonlyArray<{ anchorType: 'gap_type' | 'severity'; anchorKey: string }> = [
+  ...ANCHOR_KEY_OPTIONS.gap_type.map((option) => ({ anchorType: 'gap_type' as const, anchorKey: option.key })),
+  ...ANCHOR_KEY_OPTIONS.severity.map((option) => ({ anchorType: 'severity' as const, anchorKey: option.key })),
+];
+
+interface RabbitHoleTopic {
+  anchorType: string;
+  anchorKey: string;
+  lessons: RabbitHoleLessonItem[];
+}
+
+type RabbitHoleLoadState = 'loading' | 'loaded' | 'unavailable';
+
+/**
+ * The gym's authored lessons, as the athlete reads them.
+ *
+ * Every lesson here was written by a person at this gym. Nothing on this
+ * surface carries a SHADOW evidence tier -- PROVEN / EMERGING / EXPERIMENTAL /
+ * RESEARCH_NEEDED grade retrieved and cited material, and coaching written by
+ * hand cannot borrow that authority.
+ *
+ * A topic with no lesson is not drawn at all, and a read that did not complete
+ * is never reported as an empty library: "the gym has published nothing" is a
+ * claim about the coaches, not about the network.
+ */
+function AthleteRabbitHoleLibrary() {
+  const [topics, setTopics] = useState<RabbitHoleTopic[]>([]);
+  const [loadState, setLoadState] = useState<RabbitHoleLoadState>('loading');
+  const [isPartial, setIsPartial] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    void (async () => {
+      const results = await Promise.all(RABBIT_HOLE_TAB_ANCHORS.map(async (anchor) => {
+        try {
+          const response = await fetch(`${apiBase()}/api/pilot/rabbit-holes/get`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ anchor_type: anchor.anchorType, anchor_key: anchor.anchorKey }),
+            signal: controller.signal,
+          });
+
+          if (!response.ok) {
+            return { anchor, lessons: null };
+          }
+
+          const payload = (await response.json()) as { ok?: boolean; rabbit_holes?: RabbitHoleLessonItem[] };
+          if (payload.ok !== true || !Array.isArray(payload.rabbit_holes)) {
+            return { anchor, lessons: null };
+          }
+
+          return { anchor, lessons: payload.rabbit_holes };
+        } catch {
+          return { anchor, lessons: null };
+        }
+      }));
+
+      if (controller.signal.aborted) {
+        return;
+      }
+
+      const failures = results.filter((result) => result.lessons === null).length;
+      if (failures === results.length) {
+        setTopics([]);
+        setIsPartial(false);
+        setLoadState('unavailable');
+        return;
+      }
+
+      setTopics(
+        results
+          .filter((result) => result.lessons !== null && result.lessons.length > 0)
+          .map((result) => ({
+            anchorType: result.anchor.anchorType,
+            anchorKey: result.anchor.anchorKey,
+            lessons: result.lessons as RabbitHoleLessonItem[],
+          })),
+      );
+      setIsPartial(failures > 0);
+      setLoadState('loaded');
+    })();
+
+    return () => controller.abort();
+  }, []);
+
+  if (loadState === 'loading') {
+    return <p className="text-sm text-[color:var(--bone-400)]">Loading the gym&apos;s rabbit holes...</p>;
+  }
+
+  if (loadState === 'unavailable') {
+    return (
+      <p className="text-sm text-[color:var(--bone-400)]">
+        The gym&apos;s rabbit holes could not be loaded right now. That is a problem reaching the app, not a sign
+        that none have been written.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {isPartial ? (
+        <p className="text-sm text-[color:var(--bone-400)]">
+          Some topics could not be loaded, so what follows is not the full list.
+        </p>
+      ) : null}
+
+      {topics.length === 0 && !isPartial ? (
+        <p className="text-sm text-[color:var(--bone-400)]">
+          Your coaches have not published a rabbit hole yet. When they do, it appears here.
+        </p>
+      ) : null}
+
+      {topics.map((topic) => (
+        <div key={`${topic.anchorType}:${topic.anchorKey}`} className="space-y-3">
+          <h3 className="font-mono text-sm font-bold uppercase tracking-[0.1em] text-[color:var(--brass-300)]">
+            {anchorLabel(topic.anchorType, topic.anchorKey)}
+          </h3>
+          {topic.lessons.map((lesson) => (
+            <article key={lesson.rabbit_hole_id} className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4">
+              {/* Provenance before content: who is talking, and on what
+                  authority, before the claim itself. */}
+              <p className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-[color:var(--brass-300)]">
+                Gym coaching · Written by {lesson.author_display_name}
+              </p>
+              <h4 className="font-semibold text-lg">{lesson.title}</h4>
+              <p className="text-[color:var(--bone-400)]"><strong>Concept:</strong> {lesson.concept}</p>
+              {lesson.homework ? (
+                <div className="bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] p-4">
+                  <p className="text-sm text-[color:var(--bone-200)]"><strong>Homework:</strong> {lesson.homework}</p>
+                </div>
+              ) : null}
+              {lesson.citation ? (
+                <p className="text-xs text-[color:var(--bone-400)]">
+                  <strong>Library source:</strong> {lesson.citation.document_name}
+                </p>
+              ) : null}
+            </article>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function AthleteWorkspace() {
   const [activeTab, setActiveTab] = useState<TabID>('my-dashboard');
   const [backendAthleteId, setBackendAthleteId] = useState<string | null>(null);
+  const [athleteIdentityState, setAthleteIdentityState] = useState<AthleteIdentityState>('loading');
   const [backendSyncMessage, setBackendSyncMessage] = useState('');
 
   // Bio Check-In State
@@ -272,12 +494,10 @@ export default function AthleteWorkspace() {
   const [tasksLoading, setTasksLoading] = useState(true);
   const [tasksError, setTasksError] = useState<string | null>(null);
 
-  // Drills State
-  const [drills] = useState<Drill[]>([
-    { id: 'dl_1', name: 'Stance Width Stability', category: 'Footwork', focus: 'Maintains wide base during rapid forward and backward movement.', cues: ['Feet shoulder-width', 'Back heel lifted', 'Weight centered'], minRank: 'TIRO' },
-    { id: 'dl_2', name: 'Straight Jab Retraction Snap', category: 'Striking', focus: 'Quick fist return to protect chin and guard stance.', cues: ['Elbow tucked', 'Shoulder covers chin', 'Snap fist on contact'], minRank: 'TIRO' },
-    { id: 'dl_3', name: 'Slip and Lateral Pivot Step', category: 'Defense', focus: 'Move outside straight punch while generating lateral counter angles.', cues: ['Slip with head off-center', 'Step 45-degrees', 'Maintain guard width'], minRank: 'DISCIPULUS' }
-  ]);
+  // The gym's own drill library, written by its coaches.
+  const [drills, setDrills] = useState<Drill[]>([]);
+  const [drillsLoading, setDrillsLoading] = useState(true);
+  const [drillsError, setDrillsError] = useState<string | null>(null);
   const [completedDrills, setCompletedDrills] = useState<Record<string, boolean>>({});
 
   // Shadow State
@@ -288,15 +508,24 @@ export default function AthleteWorkspace() {
   const [isSendingCoachMessage, setIsSendingCoachMessage] = useState(false);
   const [coachMessageStatus, setCoachMessageStatus] = useState('');
 
-  // Session Log State
-  const [sessionLog, setSessionLog] = useState<Array<{id: string; checkInTime: string; checkOutTime?: string; notes: string}>>([]);
-  const [sessionActive, setSessionActive] = useState(false);
-  const [checkInTime, setCheckInTime] = useState<string | null>(null);
+  // Session Log State. The open session is the server's, not this tab's: a
+  // shared gym tablet recycles the tab without warning, and an athlete who
+  // came back to a check-in button had no way to close the session they were
+  // still inside.
+  const [storedSessions, setStoredSessions] = useState<StoredSession[]>([]);
+  const [storedSessionLoad, setStoredSessionLoad] = useState<StoredSessionLoadState>('loading');
   const [checkInNotes, setCheckInNotes] = useState('');
   const [activeSessionRecord, setActiveSessionRecord] = useState<ActiveSessionRecord | null>(null);
+  const [notesSaveState, setNotesSaveState] = useState<NotesSaveState>('idle');
+  const [isCheckingIn, setIsCheckingIn] = useState(false);
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [lastWorkoutBuildNote, setLastWorkoutBuildNote] = useState<string | null>(null);
 
   const currentReadiness: ReadinessLevel = getReadinessLevel(readinessToTrain);
+  const checkInTime = activeSessionRecord ? new Date(activeSessionRecord.createdAt).toLocaleString() : null;
+  const notesDraft = checkInNotes.trim();
+  const notesStored = notesDraft.length > 0 && notesDraft === activeSessionRecord?.checkInNote;
+  const recentSessions = storedSessions.filter((session) => session.completed).slice(0, 5);
   const tasksDue = floorTasks.filter(t => !t.completed).length;
   const goalsActive = smartGoals.filter(g => g.status === 'Active').length;
 
@@ -307,11 +536,64 @@ export default function AthleteWorkspace() {
         const payload = (await response.json()) as { authenticated?: boolean; athlete_id?: string };
         if (response.ok && payload.authenticated && payload.athlete_id) {
           setBackendAthleteId(payload.athlete_id);
+          setAthleteIdentityState('resolved');
+          return;
         }
+        setAthleteIdentityState('unavailable');
       } catch {
-        // Keep workspace usable in local-only mode when backend session is unavailable.
+        // Keep workspace usable in local-only mode when backend session is
+        // unavailable. Nothing about a session can be read or written in that
+        // state, so the session panel says so rather than offering buttons.
+        setAthleteIdentityState('unavailable');
       }
     })();
+  }, []);
+
+  // The drill library is gym-wide coaching content, so it loads once and does
+  // not depend on which athlete is signed in.
+  useEffect(() => {
+    const controller = new AbortController();
+
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/drills`, {
+          method: 'GET',
+          credentials: 'include',
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error('Drill library could not be loaded.');
+
+        const payload = (await response.json()) as {
+          drills?: Array<{
+            drill_id: string;
+            name: string;
+            category: string;
+            focus: string;
+            cues: string[];
+            difficulty: string;
+          }>;
+        };
+        if (controller.signal.aborted) return;
+
+        setDrills((payload.drills ?? []).map((drill) => ({
+          id: drill.drill_id,
+          name: drill.name,
+          category: drill.category,
+          focus: drill.focus,
+          cues: drill.cues ?? [],
+          difficulty: drill.difficulty,
+        })));
+        setDrillsError(null);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setDrills([]);
+        setDrillsError(error instanceof Error ? error.message : 'Drill library could not be loaded.');
+      } finally {
+        if (!controller.signal.aborted) setDrillsLoading(false);
+      }
+    })();
+
+    return () => controller.abort();
   }, []);
 
   // Fetch goals when athlete ID is set
@@ -452,6 +734,129 @@ export default function AthleteWorkspace() {
     void loadShadowObservations();
   }, [loadShadowObservations]);
 
+  /**
+   * Read this athlete's sessions and recover the one still open.
+   *
+   * pilot.sessions is the only durable record of a check-in, so it is also the
+   * only thing that can answer "am I still checked in" after a reload. The
+   * list route orders by date alone, which cannot separate two sessions on the
+   * same day, so ordering is redone here on created_at.
+   */
+  const loadStoredSessions = useCallback(async () => {
+    if (!backendAthleteId) {
+      return;
+    }
+
+    setStoredSessionLoad('loading');
+
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/sessions/list?athlete_id=${encodeURIComponent(backendAthleteId)}`,
+        { method: 'GET', credentials: 'include' },
+      );
+      if (!response.ok) throw new Error('Session history could not be read.');
+
+      const payload = (await response.json()) as { items?: unknown[] };
+      const sessions = (payload.items ?? [])
+        .map(normalizeStoredSession)
+        .filter((session): session is StoredSession => session !== null)
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+
+      const open = sessions.find((session) => !session.completed) ?? null;
+
+      setStoredSessions(sessions);
+      setActiveSessionRecord(open
+        ? {
+            sessionId: open.sessionId,
+            athleteId: open.athleteId,
+            date: open.date,
+            rpe: open.rpe,
+            checkInNote: open.notes,
+            createdAt: open.createdAt,
+          }
+        : null);
+
+      if (open && !AUTO_CHECK_IN_NOTE_PATTERN.test(open.notes)) {
+        // Put back what the athlete had written. A draft already in the box
+        // wins: this read also runs on a manual retry and after a check-out
+        // failure, where overwriting would destroy the notes it exists to
+        // protect.
+        setCheckInNotes((current) => current || open.notes);
+      }
+
+      setStoredSessionLoad('loaded');
+    } catch {
+      // "No open session" and "could not ask" have to stay distinguishable:
+      // the first offers a check-in, the second must not claim the athlete is
+      // checked out when nobody knows.
+      setStoredSessionLoad('unavailable');
+    }
+  }, [backendAthleteId]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadStoredSessions();
+  }, [loadStoredSessions]);
+
+  /**
+   * Write the notes box through to the open session while it is still open.
+   *
+   * Notes typed here used to exist only in this tab until check-out, so a
+   * reload, a navigation, or a tablet recycling the tab threw away everything
+   * the athlete had written for their coach. The session record is updated in
+   * place instead, which is also what makes those notes survive a check-out
+   * that never happens.
+   */
+  useEffect(() => {
+    const record = activeSessionRecord;
+    if (!record || isCheckingOut) {
+      return;
+    }
+
+    const draft = checkInNotes.trim();
+    // pilot.sessions requires a non-empty note, so an emptied box is not a
+    // write -- clearing it must not erase what was already stored.
+    if (!draft || draft === record.checkInNote) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      void (async () => {
+        setNotesSaveState('saving');
+        try {
+          const response = await fetch(`${apiBase()}/api/pilot/sessions/update`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              session_id: record.sessionId,
+              athlete_id: record.athleteId,
+              date: record.date,
+              rpe: record.rpe,
+              notes: draft,
+              completed_flag: false,
+              created_at: record.createdAt,
+              updated_at: new Date().toISOString(),
+            }),
+          });
+
+          if (!response.ok) throw new Error('Notes were not saved.');
+
+          setActiveSessionRecord((current) => (
+            current && current.sessionId === record.sessionId
+              ? { ...current, checkInNote: draft }
+              : current
+          ));
+          setNotesSaveState('saved');
+        } catch {
+          setNotesSaveState('failed');
+        }
+      })();
+    }, NOTES_DRAFT_SAVE_DELAY_MS);
+
+    return () => clearTimeout(timer);
+  }, [checkInNotes, activeSessionRecord, isCheckingOut]);
+
   const handleCreateGoal = async () => {
     if (isCreatingGoal) return;
     if (!newGoalTitle || !newGoalTargetDate || !newGoalSuccessMetric) return;
@@ -518,6 +923,12 @@ export default function AthleteWorkspace() {
   };
 
   const handleCheckIn = async () => {
+    // A second check-in over an open session would leave the first one open
+    // forever, which is the state this screen exists to get out of.
+    if (isCheckingIn || activeSessionRecord) {
+      return;
+    }
+
     const now = new Date();
     const readiness = getReadinessLevel(readinessToTrain);
     const activeGoal = smartGoals.find((goal) => goal.status === 'Active');
@@ -527,8 +938,7 @@ export default function AthleteWorkspace() {
       activeGoal,
     });
 
-    setSessionActive(true);
-    setCheckInTime(now.toLocaleString());
+    setIsCheckingIn(true);
     setFloorTasks((current) => {
       const keepCompleted = current.filter((task) => task.completed);
       return [...generatedTasks, ...keepCompleted];
@@ -553,7 +963,9 @@ export default function AthleteWorkspace() {
     setActiveTab('athlete-floor');
 
     if (!backendAthleteId) {
-      setBackendSyncMessage('Session generated locally. Backend athlete session not found.');
+      setIsCheckingIn(false);
+      setBackendSyncMessage('Session generated locally. Backend athlete session not found, '
+        + 'so nothing was stored and there is no session to check out of.');
       return;
     }
 
@@ -579,36 +991,49 @@ export default function AthleteWorkspace() {
 
     const sessionId = `session_${Date.now()}`;
     const sessionDate = now.toISOString().slice(0, 10);
-    const checkInNote = checkInNotes.trim() || `Auto check-in readiness ${readiness}`;
-    const sessionResponse = await fetch(`${apiBase()}/api/pilot/sessions`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        session_id: sessionId,
-        athlete_id: backendAthleteId,
-        date: sessionDate,
-        rpe: readinessToTrain,
-        notes: checkInNote,
-        completed_flag: false,
-        created_at: now.toISOString(),
-        updated_at: now.toISOString(),
-      }),
-    });
+    const checkInNote = checkInNotes.trim() || autoCheckInNote(readiness);
 
-    if (sessionResponse.ok) {
-      setActiveSessionRecord({
-        sessionId,
-        athleteId: backendAthleteId,
-        date: sessionDate,
-        rpe: readinessToTrain,
-        checkInNote,
-        createdAt: now.toISOString(),
+    try {
+      const sessionResponse = await fetch(`${apiBase()}/api/pilot/sessions`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sessionId,
+          athlete_id: backendAthleteId,
+          date: sessionDate,
+          rpe: readinessToTrain,
+          notes: checkInNote,
+          completed_flag: false,
+          created_at: now.toISOString(),
+          updated_at: now.toISOString(),
+        }),
       });
-      setBackendSyncMessage('Session check-in persisted to pilot backend.');
-    } else {
-      const payload = (await sessionResponse.json().catch(() => ({ error: 'Session persistence failed' }))) as { error?: string };
-      setBackendSyncMessage(payload.error || 'Session persistence failed');
+
+      if (sessionResponse.ok) {
+        // Only a stored session becomes the active one. An athlete offered a
+        // check-out for a session the app never wrote would lose everything
+        // they typed into it at the moment they tried to hand it over.
+        setActiveSessionRecord({
+          sessionId,
+          athleteId: backendAthleteId,
+          date: sessionDate,
+          rpe: readinessToTrain,
+          checkInNote,
+          createdAt: now.toISOString(),
+        });
+        setNotesSaveState(checkInNotes.trim() ? 'saved' : 'idle');
+        setBackendSyncMessage('Session check-in persisted to pilot backend.');
+      } else {
+        const payload = (await sessionResponse.json().catch(() => ({ error: 'Session persistence failed' }))) as { error?: string };
+        setBackendSyncMessage(`${payload.error || 'Session persistence failed'} `
+          + 'Nothing was stored, so there is no session to check out of. Tell a coach you are here.');
+      }
+    } catch (error) {
+      setBackendSyncMessage(`${error instanceof Error ? error.message : 'Session persistence failed'} `
+        + 'Nothing was stored, so there is no session to check out of. Tell a coach you are here.');
+    } finally {
+      setIsCheckingIn(false);
     }
 
     void submitFastTrackObservations({
@@ -623,67 +1048,64 @@ export default function AthleteWorkspace() {
   };
 
   const handleCheckOut = async () => {
-    if (!checkInTime) {
+    // Only ever reachable with a stored session behind it, so there is no
+    // longer a path where check-out is offered and the notes go nowhere.
+    if (!activeSessionRecord || isCheckingOut) {
       return;
     }
 
+    const record = activeSessionRecord;
     const now = new Date();
     const notes = checkInNotes.trim();
-    const newSession = {
-      id: `sess_${Date.now()}`,
-      checkInTime: checkInTime,
-      checkOutTime: now.toLocaleString(),
-      notes: checkInNotes
-    };
 
-    if (activeSessionRecord) {
-      try {
-        const response = await fetch(`${apiBase()}/api/pilot/sessions/update`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            session_id: activeSessionRecord.sessionId,
-            athlete_id: activeSessionRecord.athleteId,
-            date: activeSessionRecord.date,
-            rpe: activeSessionRecord.rpe,
-            // The check-in note is the fallback because the session record
-            // requires a note and an empty box must not erase what check-in
-            // already stored.
-            notes: notes || activeSessionRecord.checkInNote,
-            completed_flag: true,
-            created_at: activeSessionRecord.createdAt,
-            updated_at: now.toISOString(),
-          }),
-        });
+    setIsCheckingOut(true);
 
-        if (response.ok) {
-          setBackendSyncMessage(notes
-            ? 'Check-out saved. Your session notes are on the session record for your coach.'
-            : 'Check-out saved to pilot backend.');
-        } else {
-          const payload = (await response.json().catch(() => ({}))) as { error?: string };
-          setBackendSyncMessage(
-            `Check-out did not save and your session notes were not sent${payload.error ? `: ${payload.error}` : '.'} `
-            + 'Tell a coach anything they need to know.',
-          );
-        }
-      } catch (error) {
-        setBackendSyncMessage(
-          `Check-out did not save and your session notes were not sent${error instanceof Error ? `: ${error.message}` : '.'} `
-          + 'Tell a coach anything they need to know.',
-        );
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/sessions/update`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: record.sessionId,
+          athlete_id: record.athleteId,
+          date: record.date,
+          rpe: record.rpe,
+          // The check-in note is the fallback because the session record
+          // requires a note and an empty box must not erase what check-in
+          // already stored.
+          notes: notes || record.checkInNote,
+          completed_flag: true,
+          created_at: record.createdAt,
+          updated_at: now.toISOString(),
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(payload.error || '');
       }
-    } else {
-      setBackendSyncMessage('Check-out was not sent: this session was never stored on the backend. '
-        + 'Your notes went nowhere -- tell a coach anything they need to know.');
-    }
 
-    setSessionLog([newSession, ...sessionLog]);
-    setSessionActive(false);
-    setCheckInTime(null);
-    setCheckInNotes('');
-    setActiveSessionRecord(null);
+      setActiveSessionRecord(null);
+      setCheckInNotes('');
+      setNotesSaveState('idle');
+      setBackendSyncMessage(notes
+        ? 'Check-out saved. Your session notes are on the session record for your coach.'
+        : 'Check-out saved to pilot backend.');
+      // Re-read rather than trust the write: the recent list below and the
+      // "are you still checked in" question are both answered from the server.
+      await loadStoredSessions();
+    } catch (error) {
+      // Nothing is cleared on a failure. The session is still open and the
+      // notes are still in the box, so the athlete can try again instead of
+      // watching the screen empty itself.
+      const detail = error instanceof Error && error.message ? `: ${error.message}` : '.';
+      setBackendSyncMessage(
+        `Check-out did not save and you are still checked in${detail} `
+        + 'Try Check Out again, and tell a coach anything they need to know.',
+      );
+    } finally {
+      setIsCheckingOut(false);
+    }
   };
 
   const handleSavePainReport = async () => {
@@ -815,15 +1237,15 @@ export default function AthleteWorkspace() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-[#e8d7c6] font-sans">
+    <div className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)] font-sans">
       <div className="max-w-7xl mx-auto p-4 space-y-8">
         {/* HEADER */}
-        <div className="border-b-2 border-[#8b4444] pb-6 space-y-4">
+        <div className="border-b-2 border-[color:var(--brass-700)] pb-6 space-y-4">
           <div>
-            <p className="text-xs font-mono uppercase tracking-[0.15em] text-[#d4a574]">Athlete Development Workspace</p>
+            <p className="text-xs font-mono uppercase tracking-[0.15em] text-[color:var(--brass-300)]">Athlete Development Workspace</p>
             <h1 className="text-3xl md:text-4xl font-black mt-2">My Training Dashboard</h1>
-            <p className="text-base text-[#b0a095] mt-2">Track readiness, execute daily work, develop your boxing skills, and achieve SMART goals.</p>
-            <p className="text-sm font-mono uppercase tracking-[0.14em] text-[#cfbfae] mt-2">Old Gauze | Sweat | Grit | Grind | Dedication | Motivation</p>
+            <p className="text-base text-[color:var(--bone-400)] mt-2">Track readiness, execute daily work, develop your boxing skills, and achieve SMART goals.</p>
+            <p className="text-sm font-mono uppercase tracking-[0.14em] text-[color:var(--bone-300)] mt-2">Old Gauze | Sweat | Grit | Grind | Dedication | Motivation</p>
           </div>
         </div>
 
@@ -831,19 +1253,19 @@ export default function AthleteWorkspace() {
           placement="athlete_workspace"
           kind="notice"
           heading="Gym Notices"
-          className="border-2 border-[#8b4444] bg-[#e8d7c6] p-4"
+          className="border-2 border-[color:var(--brass-700)] bg-[var(--bone-200)] p-4"
         />
         <AnnouncementBanner
           placement="athlete_workspace"
           kind="motivation"
           heading="From the Gym"
-          className="border-2 border-[#694838] bg-[#e8d7c6] p-4"
+          className="border-2 border-[color:var(--hide-500)] bg-[var(--bone-200)] p-4"
         />
 
-        <div className="border border-[#694838] bg-[#14100d] p-4">
-          <p className="text-sm text-[#d4a574] font-semibold">Daily Reminder</p>
-          <p className="mt-1 text-sm text-[#cfbfae]">Show up. Do the hard rounds. Own the details. Progress is earned through consistent grit and disciplined effort.</p>
-          {backendSyncMessage ? <p className="mt-2 text-xs text-[#d4a574]">Backend Sync: {backendSyncMessage}</p> : null}
+        <div className="border border-[color:var(--hide-500)] bg-[var(--hide-950)] p-4">
+          <p className="text-sm text-[color:var(--brass-300)] font-semibold">Daily Reminder</p>
+          <p className="mt-1 text-sm text-[color:var(--bone-300)]">Show up. Do the hard rounds. Own the details. Progress is earned through consistent grit and disciplined effort.</p>
+          {backendSyncMessage ? <p className="mt-2 text-xs text-[color:var(--brass-300)]">Backend Sync: {backendSyncMessage}</p> : null}
         </div>
 
         {/* ROLE SUMMARY PANEL */}
@@ -858,20 +1280,20 @@ export default function AthleteWorkspace() {
           unreadMessages={0}
         />
 
-        <details className="border-2 border-[#8b4444] bg-[#111111] p-4">
-          <summary className="cursor-pointer text-xs font-mono uppercase tracking-[0.12em] text-[#d4a574]">Critical Capability Surfaces</summary>
+        <details className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4">
+          <summary className="cursor-pointer text-xs font-mono uppercase tracking-[0.12em] text-[color:var(--brass-300)]">Critical Capability Surfaces</summary>
           <div className="mt-3 grid gap-3 md:grid-cols-2">
-            <article className="border border-[#5a4a3a] bg-[#101010] p-3">
-              <p className="text-sm font-semibold text-[#e8d7c6]">AI/ML Video Analysis - Planned</p>
-              <p className="mt-1 text-xs text-[#cfbfae]">Video feedback and comparison are front-end placeholders only.</p>
-              <Link href="/athlete/video-analysis" className="mt-2 inline-flex border border-[#8b4444] bg-[#2a1414] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[#e8d7c6]">
+            <article className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-3">
+              <p className="text-sm font-semibold text-[color:var(--bone-200)]">AI/ML Video Analysis - Planned</p>
+              <p className="mt-1 text-xs text-[color:var(--bone-300)]">Video feedback and comparison are front-end placeholders only.</p>
+              <Link href="/athlete/video-analysis" className="mt-2 inline-flex border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[color:var(--bone-200)]">
                 Open Athlete Video Surface
               </Link>
             </article>
-            <article className="border border-[#5a4a3a] bg-[#101010] p-3">
-              <p className="text-sm font-semibold text-[#e8d7c6]">Closed-Loop Progression Intelligence - Planned</p>
-              <p className="mt-1 text-xs text-[#cfbfae]">Recommendation and scoring logic are not automated in this pass.</p>
-              <Link href="/athlete/progression-intelligence" className="mt-2 inline-flex border border-[#8b4444] bg-[#2a1414] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[#e8d7c6]">
+            <article className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-3">
+              <p className="text-sm font-semibold text-[color:var(--bone-200)]">Closed-Loop Progression Intelligence - Planned</p>
+              <p className="mt-1 text-xs text-[color:var(--bone-300)]">Recommendation and scoring logic are not automated in this pass.</p>
+              <Link href="/athlete/progression-intelligence" className="mt-2 inline-flex border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[color:var(--bone-200)]">
                 Open Progression Intelligence
               </Link>
             </article>
@@ -913,40 +1335,40 @@ export default function AthleteWorkspace() {
           {/* MY DASHBOARD */}
           {activeTab === 'my-dashboard' && (
             <div className="space-y-6 animate-fadeIn">
-              <section className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
-                <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Quick Actions</h3>
+              <section className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4">
+                <h3 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">Quick Actions</h3>
                 <div className="mt-3 grid gap-2 md:grid-cols-2 lg:grid-cols-4">
                   <Link
                     href="/schedule"
-                    className="min-h-[44px] border border-[#8b4444] bg-[#2a1414] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#e8d7c6] transition hover:bg-[#3a1a1a] inline-flex items-center justify-center"
+                    className="min-h-[44px] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[color:var(--bone-200)] transition hover:bg-[var(--rust-900)] inline-flex items-center justify-center"
                   >
                     Open Scheduler
                   </Link>
                   <button
                     type="button"
                     onClick={() => setActiveTab('bio-checkin')}
-                    className="min-h-[44px] border border-[#8b4444] bg-[#2a1414] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#e8d7c6] transition hover:bg-[#3a1a1a]"
+                    className="min-h-[44px] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[color:var(--bone-200)] transition hover:bg-[var(--rust-900)]"
                   >
                     Complete Check-In
                   </button>
                   <button
                     type="button"
                     onClick={() => setActiveTab('athlete-floor')}
-                    className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#cfbfae] transition hover:border-[#8b4444]"
+                    className="min-h-[44px] border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)]"
                   >
                     Open Floor Tasks
                   </button>
                   <button
                     type="button"
                     onClick={() => setActiveTab('smart-goals')}
-                    className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#cfbfae] transition hover:border-[#8b4444]"
+                    className="min-h-[44px] border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)]"
                   >
                     Update Goals
                   </button>
                   <button
                     type="button"
                     onClick={() => setActiveTab('shadow')}
-                    className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#cfbfae] transition hover:border-[#8b4444]"
+                    className="min-h-[44px] border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)]"
                   >
                     Ask SHADOW
                   </button>
@@ -974,25 +1396,25 @@ export default function AthleteWorkspace() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Readiness Card */}
                 <div className={ui.panel}>
-                  <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574] mb-4">Current Readiness</h3>
+                  <h3 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)] mb-4">Current Readiness</h3>
                   <div className="space-y-4">
                     <div>
-                      <label className="text-sm text-[#b0a095] block mb-2" htmlFor="readiness-sleep-hours">Sleep (hours)</label>
-                      <input id="readiness-sleep-hours" type="range" min="4" max="12" value={sleepHours} onChange={(e) => setSleepHours(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
-                      <p className="text-xs text-[#8a8a8a] mt-1">{sleepHours} hours</p>
+                      <label className="text-sm text-[color:var(--bone-400)] block mb-2" htmlFor="readiness-sleep-hours">Sleep (hours)</label>
+                      <input id="readiness-sleep-hours" type="range" min="4" max="12" value={sleepHours} onChange={(e) => setSleepHours(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[var(--hide-600)] accent-[var(--brass-300)]" />
+                      <p className="text-xs text-[color:var(--bone-400)] mt-1">{sleepHours} hours</p>
                     </div>
                     <div>
-                      <label className="text-sm text-[#b0a095] block mb-2" htmlFor="readiness-energy-level">Energy Level (1-10)</label>
-                      <input id="readiness-energy-level" type="range" min="1" max="10" value={energyLevel} onChange={(e) => setEnergyLevel(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
-                      <p className="text-xs text-[#8a8a8a] mt-1">{energyLevel}/10</p>
+                      <label className="text-sm text-[color:var(--bone-400)] block mb-2" htmlFor="readiness-energy-level">Energy Level (1-10)</label>
+                      <input id="readiness-energy-level" type="range" min="1" max="10" value={energyLevel} onChange={(e) => setEnergyLevel(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[var(--hide-600)] accent-[var(--brass-300)]" />
+                      <p className="text-xs text-[color:var(--bone-400)] mt-1">{energyLevel}/10</p>
                     </div>
                     <div>
-                      <label className="text-sm text-[#b0a095] block mb-2" htmlFor="readiness-train">Readiness to Train (1-10)</label>
-                      <input id="readiness-train" type="range" min="1" max="10" value={readinessToTrain} onChange={(e) => setReadinessToTrain(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
-                      <p className="text-xs text-[#8a8a8a] mt-1">{readinessToTrain}/10</p>
+                      <label className="text-sm text-[color:var(--bone-400)] block mb-2" htmlFor="readiness-train">Readiness to Train (1-10)</label>
+                      <input id="readiness-train" type="range" min="1" max="10" value={readinessToTrain} onChange={(e) => setReadinessToTrain(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[var(--hide-600)] accent-[var(--brass-300)]" />
+                      <p className="text-xs text-[color:var(--bone-400)] mt-1">{readinessToTrain}/10</p>
                     </div>
                     <div>
-                      <label className="text-sm text-[#b0a095] block mb-2" htmlFor="session-duration">Session Duration (minutes)</label>
+                      <label className="text-sm text-[color:var(--bone-400)] block mb-2" htmlFor="session-duration">Session Duration (minutes)</label>
                       <input
                         id="session-duration"
                         type="number"
@@ -1000,7 +1422,7 @@ export default function AthleteWorkspace() {
                         max={480}
                         value={sessionDurationMinutes}
                         onChange={(e) => setSessionDurationMinutes(Math.max(1, Number.parseInt(e.target.value, 10) || 0))}
-                        className="w-full h-9 px-3 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none"
+                        className="w-full h-9 px-3 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus:outline-none"
                       />
                     </div>
                     <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -1012,16 +1434,16 @@ export default function AthleteWorkspace() {
 
                 {/* Pain/Injury Card */}
                 <div className={ui.panel}>
-                  <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574] mb-4">Pain/Soreness Report</h3>
+                  <h3 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)] mb-4">Pain/Soreness Report</h3>
                   <div className="space-y-3">
                     <label className="flex items-center gap-2 text-sm cursor-pointer">
                       <input type="checkbox" checked={injuryFlag} onChange={(e) => setInjuryFlag(e.target.checked)} className="w-4 h-4" />
                       <span>Injury or Pain Flag</span>
                     </label>
                     <div>
-                      <label className="text-sm text-[#b0a095] block mb-2" htmlFor="readiness-soreness">Soreness Level (1-10)</label>
-                      <input id="readiness-soreness" type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
-                      <p className="text-xs text-[#8a8a8a] mt-1">{soreness}/10</p>
+                      <label className="text-sm text-[color:var(--bone-400)] block mb-2" htmlFor="readiness-soreness">Soreness Level (1-10)</label>
+                      <input id="readiness-soreness" type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[var(--hide-600)] accent-[var(--brass-300)]" />
+                      <p className="text-xs text-[color:var(--bone-400)] mt-1">{soreness}/10</p>
                     </div>
                     <div className="grid grid-cols-3 gap-2 pt-2">
                       {painLocations.slice(0, 3).map(loc => (
@@ -1031,17 +1453,17 @@ export default function AthleteWorkspace() {
                             setSelectedPainLocation(loc);
                             setShowPainModal(true);
                           }}
-                          className="text-xs px-2 py-1 border-2 border-[#8b4444] bg-[#0f0f0f] text-[#b0a095] hover:text-[#e8d7c6] transition"
+                          className="text-xs px-2 py-1 border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] text-[color:var(--bone-400)] hover:text-[color:var(--bone-200)] transition"
                         >
                           {loc}
                         </button>
                       ))}
                     </div>
                     {painSaveMessage ? (
-                      <p className="text-xs text-[#d4a574]">{painSaveMessage}</p>
+                      <p className="text-xs text-[color:var(--brass-300)]">{painSaveMessage}</p>
                     ) : null}
                     {painLog[0] ? (
-                      <p className="text-xs text-[#8a8a8a]">
+                      <p className="text-xs text-[color:var(--bone-400)]">
                         Last report: {painLog[0].location} ({painLog[0].type}, {painLog[0].severity}/10)
                       </p>
                     ) : null}
@@ -1049,27 +1471,99 @@ export default function AthleteWorkspace() {
                 </div>
               </div>
 
-              {/* Session Check-In/Out */}
-              <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6">
-                <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574] mb-4">Session Log</h3>
-                {!sessionActive ? (
-                  <button onClick={handleCheckIn} className="w-full bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold py-2 px-4 transition">
-                    ✅ Check In
-                  </button>
-                ) : (
+              {/* Session Check-In/Out. The open session comes from the server
+                  on every load, so a reload, a new tab, or a different device
+                  all find the same session still open. */}
+              <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4">
+                <h3 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">Session Log</h3>
+
+                {athleteIdentityState === 'loading' ? (
+                  <p className="text-sm text-[color:var(--bone-400)]">Checking your sign-in...</p>
+                ) : athleteIdentityState === 'unavailable' ? (
+                  <p className="text-sm text-[color:var(--bone-400)]">
+                    You are not signed in as an athlete right now, so a session cannot be started or saved here.
+                    Sign in again, and tell a coach you are on the floor.
+                  </p>
+                ) : storedSessionLoad === 'loading' ? (
+                  <p className="text-sm text-[color:var(--bone-400)]">Checking whether you are still checked in...</p>
+                ) : storedSessionLoad === 'unavailable' ? (
                   <div className="space-y-3">
-                    <p className="text-sm text-[#b0a095]">Session active since {checkInTime}</p>
+                    <p className="text-sm text-[color:var(--bone-400)]">
+                      Your sessions could not be read, so nobody can tell right now whether you are already checked in.
+                      That is a problem reaching the app, not a sign that you have no session open.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void loadStoredSessions()}
+                      className="w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] text-[color:var(--bone-200)] font-semibold py-2 px-4 transition hover:bg-[var(--rust-900)]"
+                    >
+                      Try Again
+                    </button>
+                  </div>
+                ) : activeSessionRecord ? (
+                  <div className="space-y-3">
+                    <p className="text-sm text-[color:var(--bone-400)]">Session active since {checkInTime}</p>
                     <textarea
                       value={checkInNotes}
                       onChange={(e) => setCheckInNotes(e.target.value)}
-                      placeholder="Session notes for your coach - sent when you check out..."
-                      className="w-full h-20 px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none"
+                      placeholder="Session notes for your coach..."
+                      aria-label="Session notes for your coach"
+                      className="w-full h-20 px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus:outline-none"
                     />
-                    <button onClick={() => void handleCheckOut()} className="w-full bg-red-700 hover:bg-red-800 text-white font-semibold py-2 px-4 transition">
-                      ⏹️ Check Out
+                    <p className="text-xs text-[color:var(--brass-300)]">
+                      {notesSaveState === 'failed'
+                        ? 'Your notes are not saved yet -- the app could not reach your session record. Keep this tab open and keep typing; it will try again.'
+                        : notesSaveState === 'saving'
+                          ? 'Saving your notes...'
+                          : notesStored
+                            ? 'Saved to your session record. Your notes survive closing this tab.'
+                            : notesDraft
+                              ? 'Not saved yet.'
+                              : 'Anything you write here is saved to your session record as you go.'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void handleCheckOut()}
+                      disabled={isCheckingOut}
+                      className="w-full bg-red-700 hover:bg-red-800 text-white font-semibold py-2 px-4 transition disabled:opacity-50"
+                    >
+                      {isCheckingOut ? 'Checking out...' : 'Check Out'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-sm text-[color:var(--bone-400)]">You are not checked in right now.</p>
+                    <button
+                      type="button"
+                      onClick={() => void handleCheckIn()}
+                      disabled={isCheckingIn}
+                      className="w-full bg-[var(--brass-700)] hover:bg-[var(--rust-700)] text-white font-semibold py-2 px-4 transition disabled:opacity-50"
+                    >
+                      {isCheckingIn ? 'Checking in...' : 'Check In'}
                     </button>
                   </div>
                 )}
+
+                {/* Read back from the server, so "my notes were saved" is
+                    something the athlete can see rather than be told. */}
+                {storedSessionLoad === 'loaded' && recentSessions.length > 0 ? (
+                  <div className="space-y-2 border-t border-[color:var(--hide-600)] pt-3">
+                    <p className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-[color:var(--brass-300)]">
+                      Your Last Sessions
+                    </p>
+                    <ul className="space-y-2">
+                      {recentSessions.map((session) => (
+                        <li key={session.sessionId} className="text-xs text-[color:var(--bone-300)]">
+                          <span className="font-mono text-[color:var(--bone-400)]">{session.date}</span>
+                          {' - '}
+                          {AUTO_CHECK_IN_NOTE_PATTERN.test(session.notes)
+                            ? 'No notes were written for this session.'
+                            : session.notes}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
               </div>
             </div>
           )}
@@ -1078,9 +1572,9 @@ export default function AthleteWorkspace() {
           {activeTab === 'athlete-floor' && (
             <div className="space-y-6 animate-fadeIn">
               {lastWorkoutBuildNote && (
-                <div className="border border-[#694838] bg-[#14100d] p-3">
-                  <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Workout Wiring</p>
-                  <p className="mt-1 text-sm text-[#cfbfae]">{lastWorkoutBuildNote}</p>
+                <div className="border border-[color:var(--hide-500)] bg-[var(--hide-950)] p-3">
+                  <p className="text-xs font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Workout Wiring</p>
+                  <p className="mt-1 text-sm text-[color:var(--bone-300)]">{lastWorkoutBuildNote}</p>
                 </div>
               )}
               <HelpPanel
@@ -1100,10 +1594,10 @@ export default function AthleteWorkspace() {
               />
 
               {tasksLoading && (
-                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-8 text-center">
-                  <p className="text-[#b0a095]">Loading your tasks...</p>
+                <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-8 text-center">
+                  <p className="text-[color:var(--bone-400)]">Loading your tasks...</p>
                   <div className="mt-4 flex justify-center">
-                    <div className="animate-spin h-6 w-6 border-2 border-[#d4a574] border-t-transparent rounded-full"></div>
+                    <div className="animate-spin h-6 w-6 border-2 border-[color:var(--brass-300)] border-t-transparent rounded-full"></div>
                   </div>
                 </div>
               )}
@@ -1133,13 +1627,13 @@ export default function AthleteWorkspace() {
                     key={task.id}
                     className={`border-2 p-4 rounded ${
                       task.completed
-                        ? 'bg-[#0a2a0a] border-[#4a9a4a]'
-                        : 'bg-[#1a1a1a] border-[#8b4444]'
+                        ? 'bg-[var(--patina-900)] border-[color:var(--cleared)]'
+                        : 'bg-[var(--hide-900)] border-[color:var(--brass-700)]'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3 mb-3">
                       <div>
-                        <span className="inline-block text-xs font-mono font-bold bg-[#4a4a4a] text-[#8a8a8a] px-2 py-1 mb-2">{task.category}</span>
+                        <span className="inline-block text-xs font-mono font-bold bg-[var(--hide-600)] text-[color:var(--bone-400)] px-2 py-1 mb-2">{task.category}</span>
                         <h4 className="text-base font-semibold">{task.title}</h4>
                       </div>
                       <input
@@ -1151,8 +1645,8 @@ export default function AthleteWorkspace() {
                         className="w-5 h-5 cursor-pointer"
                       />
                     </div>
-                    <p className="text-sm text-[#b0a095] mb-3">{task.description}</p>
-                    <div className="flex items-center justify-between text-xs text-[#8a8a8a]">
+                    <p className="text-sm text-[color:var(--bone-400)] mb-3">{task.description}</p>
+                    <div className="flex items-center justify-between text-xs text-[color:var(--bone-400)]">
                       <span>⏰ {task.dueDate}</span>
                       <span className={`font-semibold ${task.priority === 'High' ? 'text-red-400' : 'text-yellow-600'}`}>
                         {task.priority}
@@ -1163,8 +1657,8 @@ export default function AthleteWorkspace() {
               </div>
 
               {!tasksLoading && !tasksError && floorTasks.length === 0 && (
-                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 text-center">
-                  <p className="text-[#b0a095]">No backend floor tasks are available for this athlete yet.</p>
+                <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 text-center">
+                  <p className="text-[color:var(--bone-400)]">No backend floor tasks are available for this athlete yet.</p>
                 </div>
               )}
             </div>
@@ -1193,26 +1687,26 @@ export default function AthleteWorkspace() {
 
               <button
                 onClick={() => setShowGoalForm(!showGoalForm)}
-                className="px-4 py-2 bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold transition"
+                className="px-4 py-2 bg-[var(--brass-700)] hover:bg-[var(--rust-700)] text-white font-semibold transition"
               >
                 + New SMART Goal
               </button>
 
               {showGoalForm && (
-                <div className="border-2 border-[#d4a574] bg-[#1a1a1a] p-6 space-y-4">
-                  <h3 className="font-mono font-bold text-[#d4a574]">Create SMART Goal</h3>
+                <div className="border-2 border-[color:var(--brass-300)] bg-[var(--hide-900)] p-6 space-y-4">
+                  <h3 className="font-mono font-bold text-[color:var(--brass-300)]">Create SMART Goal</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <input
                       type="text"
                       value={newGoalTitle}
                       onChange={(e) => setNewGoalTitle(e.target.value)}
                       placeholder="Goal title"
-                      className="px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none"
+                      className="px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus:outline-none"
                     />
                     <select
                       value={newGoalCategory}
                       onChange={(e) => setNewGoalCategory(e.target.value as SMARTCategory)}
-                      className="px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none"
+                      className="px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus:outline-none"
                     >
                       {(['Boxing', 'Fitness', 'Weight Loss', 'Weight Gain', 'Academics', 'Attendance', 'Recovery', 'Lifestyle', 'Leadership'] as SMARTCategory[]).map(cat => (
                         <option key={cat} value={cat}>{cat}</option>
@@ -1222,27 +1716,27 @@ export default function AthleteWorkspace() {
                       type="date"
                       value={newGoalTargetDate}
                       onChange={(e) => setNewGoalTargetDate(e.target.value)}
-                      className="px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none"
+                      className="px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus:outline-none"
                     />
                     <input
                       type="text"
                       value={newGoalSuccessMetric}
                       onChange={(e) => setNewGoalSuccessMetric(e.target.value)}
                       placeholder="Success metric"
-                      className="px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none"
+                      className="px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus:outline-none"
                     />
                   </div>
                   <div className="flex gap-2">
                     <button
                       onClick={handleCreateGoal}
                       disabled={isCreatingGoal}
-                      className="flex-1 bg-[#8b4444] hover:bg-[#5a2a2a] disabled:bg-[#4a4a4a] text-white font-semibold py-2 transition"
+                      className="flex-1 bg-[var(--brass-700)] hover:bg-[var(--rust-700)] disabled:bg-[var(--hide-600)] text-white font-semibold py-2 transition"
                     >
                       {isCreatingGoal ? 'Creating...' : 'Create Goal'}
                     </button>
                     <button
                       onClick={() => setShowGoalForm(false)}
-                      className="flex-1 bg-[#4a4a4a] hover:bg-[#5a5a5a] text-white font-semibold py-2 transition"
+                      className="flex-1 bg-[var(--hide-600)] hover:bg-[var(--hide-500)] text-white font-semibold py-2 transition"
                     >
                       Cancel
                     </button>
@@ -1251,10 +1745,10 @@ export default function AthleteWorkspace() {
               )}
 
               {goalsLoading && (
-                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-8 text-center">
-                  <p className="text-[#b0a095]">Loading your goals...</p>
+                <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-8 text-center">
+                  <p className="text-[color:var(--bone-400)]">Loading your goals...</p>
                   <div className="mt-4 flex justify-center">
-                    <div className="animate-spin h-6 w-6 border-2 border-[#d4a574] border-t-transparent rounded-full"></div>
+                    <div className="animate-spin h-6 w-6 border-2 border-[color:var(--brass-300)] border-t-transparent rounded-full"></div>
                   </div>
                 </div>
               )}
@@ -1279,17 +1773,17 @@ export default function AthleteWorkspace() {
               )}
 
               {!goalsLoading && smartGoals.length === 0 && !goalsError && (
-                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-8 text-center">
-                  <p className="text-[#b0a095]">No goals yet. Create one to get started!</p>
+                <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-8 text-center">
+                  <p className="text-[color:var(--bone-400)]">No goals yet. Create one to get started!</p>
                 </div>
               )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {smartGoals.map(goal => (
-                  <div key={goal.id} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 space-y-3">
+                  <div key={goal.id} className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4 space-y-3">
                     <div className="flex justify-between items-start">
                       <div>
-                        <span className="inline-block text-xs font-mono font-bold bg-[#4a4a4a] text-[#8a8a8a] px-2 py-1 mb-2">{goal.category}</span>
+                        <span className="inline-block text-xs font-mono font-bold bg-[var(--hide-600)] text-[color:var(--bone-400)] px-2 py-1 mb-2">{goal.category}</span>
                         <h4 className="text-base font-semibold">{goal.title}</h4>
                       </div>
                       <span className={`text-xs font-semibold px-2 py-1 rounded ${getGoalStatusTone(goal.status)}`}>
@@ -1298,15 +1792,15 @@ export default function AthleteWorkspace() {
                     </div>
                     <div className="space-y-2">
                       <div className="flex justify-between text-sm">
-                        <span className="text-[#b0a095]">Progress</span>
+                        <span className="text-[color:var(--bone-400)]">Progress</span>
                         <span className="font-semibold">{goal.progressPercent}%</span>
                       </div>
-                      <div className="w-full bg-[#4a4a4a] h-2">
-                        <div className="bg-[#d4a574] h-2" style={{width: `${goal.progressPercent}%`}}></div>
+                      <div className="w-full bg-[var(--hide-600)] h-2">
+                        <div className="bg-[var(--brass-300)] h-2" style={{width: `${goal.progressPercent}%`}}></div>
                       </div>
                     </div>
-                    <p className="text-sm text-[#b0a095]">Target: {goal.targetDate}</p>
-                    <p className="text-xs text-[#8a8a8a]">{goal.successMetric}</p>
+                    <p className="text-sm text-[color:var(--bone-400)]">Target: {goal.targetDate}</p>
+                    <p className="text-xs text-[color:var(--bone-400)]">{goal.successMetric}</p>
                   </div>
                 ))}
               </div>
@@ -1315,9 +1809,9 @@ export default function AthleteWorkspace() {
 
           {/* TRACKS - Placeholder */}
           {activeTab === 'tracks' && (
-            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
-              <h3 className="font-mono font-bold text-[#d4a574] uppercase">Track Management</h3>
-              <p className="text-[#b0a095]">View current track assignment and request upgrades as you progress.</p>
+            <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4 animate-fadeIn">
+              <h3 className="font-mono font-bold text-[color:var(--brass-300)] uppercase">Track Management</h3>
+              <p className="text-[color:var(--bone-400)]">View current track assignment and request upgrades as you progress.</p>
               {/* Track assignment, membership, scholarship, and support status
                   have no backing column anywhere in the schema -- the track
                   itself would come from pilot.admin_track_assignments, which
@@ -1327,33 +1821,33 @@ export default function AthleteWorkspace() {
                   eligibility-adjacent misstatement, not a placeholder. Show
                   unavailable honestly until real fields exist. Mirrors the same
                   correction already applied in ParentHub.tsx. */}
-              <div className="bg-[#0f0f0f] border-2 border-[#8b4444] p-4 space-y-1">
-                <p className="text-sm"><strong>Current Track:</strong> <span className="text-[#8a8a8a]">Unavailable - not yet tracked</span></p>
-                <p className="text-sm mt-2 text-[#b0a095]"><strong>Program Membership:</strong> <span className="text-[#8a8a8a]">Unavailable - not yet tracked</span></p>
-                <p className="text-sm text-[#b0a095]"><strong>Participation Status:</strong> <span className="text-[#8a8a8a]">Unavailable - not yet tracked</span></p>
-                <p className="text-sm text-[#b0a095]"><strong>Support Status:</strong> <span className="text-[#8a8a8a]">Unavailable - not yet tracked</span></p>
-                <p className="text-sm text-[#b0a095]"><strong>Community Service Credits:</strong> <span className="text-[#8a8a8a]">Unavailable - not yet tracked</span></p>
+              <div className="bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] p-4 space-y-1">
+                <p className="text-sm"><strong>Current Track:</strong> <span className="text-[color:var(--bone-400)]">Unavailable - not yet tracked</span></p>
+                <p className="text-sm mt-2 text-[color:var(--bone-400)]"><strong>Program Membership:</strong> <span className="text-[color:var(--bone-400)]">Unavailable - not yet tracked</span></p>
+                <p className="text-sm text-[color:var(--bone-400)]"><strong>Participation Status:</strong> <span className="text-[color:var(--bone-400)]">Unavailable - not yet tracked</span></p>
+                <p className="text-sm text-[color:var(--bone-400)]"><strong>Support Status:</strong> <span className="text-[color:var(--bone-400)]">Unavailable - not yet tracked</span></p>
+                <p className="text-sm text-[color:var(--bone-400)]"><strong>Community Service Credits:</strong> <span className="text-[color:var(--bone-400)]">Unavailable - not yet tracked</span></p>
               </div>
             </div>
           )}
 
           {/* ASSESSMENTS - Placeholder */}
           {activeTab === 'assessments' && (
-            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
-              <h3 className="font-mono font-bold text-[#d4a574] uppercase">Assessments</h3>
-              <p className="text-[#b0a095]">Complete personality tests, surveys, and skill assessments.</p>
-              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+            <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4 animate-fadeIn">
+              <h3 className="font-mono font-bold text-[color:var(--brass-300)] uppercase">Assessments</h3>
+              <p className="text-[color:var(--bone-400)]">Complete personality tests, surveys, and skill assessments.</p>
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked)]">
                 PLANNED | NOT YET IMPLEMENTED -- there is no assessment engine behind this tab, so nothing can
                 be started or scored from here yet.
               </p>
               <div className="space-y-3">
-                <div className="border-2 border-[#8b4444] bg-[#0f0f0f] p-4">
+                <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-4">
                   <p className="font-semibold">MBTI Personality Test</p>
-                  <p className="text-sm text-[#b0a095] mt-1">Discover your personality type and learning style.</p>
+                  <p className="text-sm text-[color:var(--bone-400)] mt-1">Discover your personality type and learning style.</p>
                   <button
                     type="button"
                     disabled
-                    className="mt-3 px-3 py-1 bg-[#4a4a4a] text-[#8a8a8a] text-sm cursor-not-allowed"
+                    className="mt-3 px-3 py-1 bg-[var(--hide-600)] text-[color:var(--bone-400)] text-sm cursor-not-allowed"
                   >
                     Start Assessment
                   </button>
@@ -1381,43 +1875,43 @@ export default function AthleteWorkspace() {
                 ]}
               />
 
-              <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-6">
-                <h3 className="font-mono font-bold text-[#d4a574] uppercase">Daily Biological Check-In</h3>
+              <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-6">
+                <h3 className="font-mono font-bold text-[color:var(--brass-300)] uppercase">Daily Biological Check-In</h3>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-sm font-semibold text-[#b0a095] block mb-2" htmlFor="bio-sleep-hours">Sleep (4-12 hours)</label>
-                    <input id="bio-sleep-hours" type="range" min="4" max="12" step="0.5" value={sleepHours} onChange={(e) => setSleepHours(Number.parseFloat(e.target.value))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
-                    <p className="text-xs text-[#8a8a8a] mt-1">{sleepHours} hours</p>
+                    <label className="text-sm font-semibold text-[color:var(--bone-400)] block mb-2" htmlFor="bio-sleep-hours">Sleep (4-12 hours)</label>
+                    <input id="bio-sleep-hours" type="range" min="4" max="12" step="0.5" value={sleepHours} onChange={(e) => setSleepHours(Number.parseFloat(e.target.value))} className="w-full h-2 bg-[var(--hide-600)] accent-[var(--brass-300)]" />
+                    <p className="text-xs text-[color:var(--bone-400)] mt-1">{sleepHours} hours</p>
                   </div>
                   <div>
-                    <label className="text-sm font-semibold text-[#b0a095] block mb-2" htmlFor="bio-hydration">Hydration (1-10)</label>
-                    <input id="bio-hydration" type="range" min="1" max="10" value={hydrationStatus} onChange={(e) => setHydrationStatus(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
-                    <p className="text-xs text-[#8a8a8a] mt-1">{hydrationStatus}/10</p>
+                    <label className="text-sm font-semibold text-[color:var(--bone-400)] block mb-2" htmlFor="bio-hydration">Hydration (1-10)</label>
+                    <input id="bio-hydration" type="range" min="1" max="10" value={hydrationStatus} onChange={(e) => setHydrationStatus(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[var(--hide-600)] accent-[var(--brass-300)]" />
+                    <p className="text-xs text-[color:var(--bone-400)] mt-1">{hydrationStatus}/10</p>
                   </div>
                   <div>
-                    <label className="text-sm font-semibold text-[#b0a095] block mb-2" htmlFor="bio-motivation">Motivation (1-10)</label>
-                    <input id="bio-motivation" type="range" min="1" max="10" value={motivation} onChange={(e) => setMotivation(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
-                    <p className="text-xs text-[#8a8a8a] mt-1">{motivation}/10</p>
+                    <label className="text-sm font-semibold text-[color:var(--bone-400)] block mb-2" htmlFor="bio-motivation">Motivation (1-10)</label>
+                    <input id="bio-motivation" type="range" min="1" max="10" value={motivation} onChange={(e) => setMotivation(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[var(--hide-600)] accent-[var(--brass-300)]" />
+                    <p className="text-xs text-[color:var(--bone-400)] mt-1">{motivation}/10</p>
                   </div>
                   <div>
-                    <label className="text-sm font-semibold text-[#b0a095] block mb-2" htmlFor="bio-soreness">Soreness (0-10)</label>
-                    <input id="bio-soreness" type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
-                    <p className="text-xs text-[#8a8a8a] mt-1">{soreness}/10</p>
+                    <label className="text-sm font-semibold text-[color:var(--bone-400)] block mb-2" htmlFor="bio-soreness">Soreness (0-10)</label>
+                    <input id="bio-soreness" type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[var(--hide-600)] accent-[var(--brass-300)]" />
+                    <p className="text-xs text-[color:var(--bone-400)] mt-1">{soreness}/10</p>
                   </div>
                 </div>
 
                 <button
                   onClick={() => setExpandedCheckIn(!expandedCheckIn)}
-                  className="w-full px-4 py-2 bg-[#4a4a4a] hover:bg-[#5a5a5a] text-[#e8d7c6] font-semibold transition"
+                  className="w-full px-4 py-2 bg-[var(--hide-600)] hover:bg-[var(--hide-500)] text-[color:var(--bone-200)] font-semibold transition"
                 >
                   {expandedCheckIn ? '− Collapse' : '+ Expand to Maximum Check-In'}
                 </button>
 
                 {expandedCheckIn && (
-                  <div className="space-y-4 pt-4 border-t-2 border-[#8b4444]">
-                    <p className="text-sm text-[#b0a095]">Additional detailed metrics available below...</p>
-                    <div className="text-xs text-[#8a8a8a]">
+                  <div className="space-y-4 pt-4 border-t-2 border-[color:var(--brass-700)]">
+                    <p className="text-sm text-[color:var(--bone-400)]">Additional detailed metrics available below...</p>
+                    <div className="text-xs text-[color:var(--bone-400)]">
                       <p>• Resting Heart Rate, HRV, Blood Pressure</p>
                       <p>• Upper/Lower Body Soreness by location</p>
                       <p>• Mental clarity, focus, stress levels</p>
@@ -1440,31 +1934,52 @@ export default function AthleteWorkspace() {
                   'Search by drill name or category',
                   'Review coaching cues before executing',
                   'Mark drills complete as you master them',
-                  'Progress through complexity levels'
+                  'Work up through the difficulty levels'
                 ]}
                 mistakes={[
                   'Skipping coaching cues',
-                  'Attempting drills above your rank',
+                  'Attempting drills above your level',
                   'Not practicing enough before marking complete'
                 ]}
               />
 
+              {drillsLoading && (
+                <p className="text-sm text-[color:var(--bone-400)]">Loading the drill library...</p>
+              )}
+
+              {!drillsLoading && drillsError && (
+                <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4">
+                  <p className="text-sm text-[color:var(--bone-200)]">{drillsError}</p>
+                  <p className="mt-1 text-xs text-[color:var(--bone-400)]">
+                    This is a failure to load, not an empty library.
+                  </p>
+                </div>
+              )}
+
+              {!drillsLoading && !drillsError && drills.length === 0 && (
+                <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 text-center">
+                  <p className="text-[color:var(--bone-400)]">
+                    Your coaches have not added any drills yet.
+                  </p>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {drills.map(drill => (
-                  <div key={drill.id} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 space-y-3">
+                  <div key={drill.id} className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4 space-y-3">
                     <div className="flex justify-between items-start">
                       <div>
-                        <span className="inline-block text-xs font-mono font-bold bg-[#4a4a4a] text-[#8a8a8a] px-2 py-1 mb-2">{drill.category}</span>
+                        <span className="inline-block text-xs font-mono font-bold bg-[var(--hide-600)] text-[color:var(--bone-400)] px-2 py-1 mb-2">{drill.category}</span>
                         <h4 className="text-base font-semibold">{drill.name}</h4>
                       </div>
-                      <span className="text-xs font-mono text-[#d4a574]">{drill.minRank}</span>
+                      <span className="text-xs font-mono text-[color:var(--brass-300)]">{drill.difficulty}</span>
                     </div>
-                    <p className="text-sm text-[#b0a095]">{drill.focus}</p>
+                    <p className="text-sm text-[color:var(--bone-400)]">{drill.focus}</p>
                     <div className="space-y-1">
-                      <p className="text-xs font-semibold text-[#d4a574]">Coaching Cues:</p>
+                      <p className="text-xs font-semibold text-[color:var(--brass-300)]">Coaching Cues:</p>
                       <div className="flex flex-wrap gap-1">
                         {drill.cues.map((cue) => (
-                          <span key={`${drill.id}-${cue}`} className="text-xs bg-[#4a4a4a] text-[#8a8a8a] px-2 py-1">⚡ {cue}</span>
+                          <span key={`${drill.id}-${cue}`} className="text-xs bg-[var(--hide-600)] text-[color:var(--bone-400)] px-2 py-1">⚡ {cue}</span>
                         ))}
                       </div>
                     </div>
@@ -1472,8 +1987,8 @@ export default function AthleteWorkspace() {
                       onClick={() => setCompletedDrills({...completedDrills, [drill.id]: !completedDrills[drill.id]})}
                       className={`w-full py-2 rounded font-semibold transition ${
                         completedDrills[drill.id]
-                          ? 'bg-[#4a9a4a] text-white'
-                          : 'bg-[#4a4a4a] hover:bg-[#5a5a5a] text-[#b0a095]'
+                          ? 'bg-[var(--cleared)] text-white'
+                          : 'bg-[var(--hide-600)] hover:bg-[var(--hide-500)] text-[color:var(--bone-400)]'
                       }`}
                     >
                       {completedDrills[drill.id] ? '✅ Drill Complete' : 'Mark Complete'}
@@ -1489,12 +2004,12 @@ export default function AthleteWorkspace() {
             <div className="space-y-6 animate-fadeIn">
               <HelpPanel
                 title="Rabbit Holes - Deep Learning"
-                description="Advanced research into biomechanics, neurology, and boxing theory with homework assignments."
+                description="Deep-dive lessons your coaches wrote, each one a concept to understand and something to go and do with it."
                 usage={[
                   'Read concept breakdowns carefully',
                   'Complete homework to internalize learning',
                   'Apply learnings to your training',
-                  'Ask Coach Jason for clarification'
+                  'Ask a coach for clarification'
                 ]}
                 mistakes={[
                   'Reading but not doing homework',
@@ -1502,13 +2017,15 @@ export default function AthleteWorkspace() {
                 ]}
               />
 
-              <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
-                <h3 className="font-semibold text-lg">Biomechanics of Kinetic Force Transfer</h3>
-                <p className="text-[#b0a095]"><strong>Concept:</strong> Power does not generate in the shoulders. Force begins with rear-foot ground rotation through hip rotation into target through clean wrist extension.</p>
-                <div className="bg-[#0f0f0f] border-2 border-[#8b4444] p-4">
-                  <p className="text-sm text-[#e8d7c6]"><strong>Homework:</strong> Complete 30 slow shadowboxing crosses, holding full extension for 3 seconds to confirm your rear foot heel is rotated fully outward.</p>
-                </div>
-              </div>
+              {/* The honesty line the whole tab depends on. A rabbit hole is a
+                  person's coaching, so it makes no evidence claim and carries
+                  no SHADOW evidence tier. */}
+              <p className="text-sm text-[color:var(--bone-400)]">
+                Everything here is this gym&apos;s own coaching, written by a coach and published under their name. It
+                is not research and it is not SHADOW evidence.
+              </p>
+
+              <AthleteRabbitHoleLibrary />
             </div>
           )}
 
@@ -1534,14 +2051,14 @@ export default function AthleteWorkspace() {
                   no recipient, address, or delivery step is stored or sent --
                   so this surface cannot claim parent CC is in force. */}
               <div className="border-2 border-red-600 bg-red-900/20 p-4 space-y-2">
-                <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked)]">
                   PLANNED | NOT YET IMPLEMENTED
                 </p>
                 <p className="text-sm text-red-200">🔒 <strong>SafeSport:</strong> messages sent here are logged, but automatic parent carbon copy is not built yet and no coach is notified. Tell a coach or trusted adult in person about anything urgent or unsafe.</p>
               </div>
 
-              <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4">
-                <h3 className="font-mono font-bold text-[#d4a574]">Send Message to Coach</h3>
+              <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4">
+                <h3 className="font-mono font-bold text-[color:var(--brass-300)]">Send Message to Coach</h3>
                 <form onSubmit={handleSendCoachMessage} className="space-y-4">
                   <div>
                     <label className="block text-sm font-semibold mb-2" htmlFor="message-coach-select">Coach</label>
@@ -1549,7 +2066,7 @@ export default function AthleteWorkspace() {
                       id="message-coach-select"
                       value={selectedCoach}
                       onChange={(event) => setSelectedCoach(event.target.value)}
-                      className="w-full px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none"
+                      className="w-full px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus:outline-none"
                     >
                       <option>Coach Jason (Head Coach)</option>
                       <option>Coach Danielle (Fitness Director)</option>
@@ -1562,14 +2079,14 @@ export default function AthleteWorkspace() {
                       value={coachMessageBody}
                       onChange={(event) => setCoachMessageBody(event.target.value)}
                       placeholder="Type your message..."
-                      className="w-full h-24 px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none resize-none"
+                      className="w-full h-24 px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus:outline-none resize-none"
                     />
                   </div>
-                  {coachMessageStatus ? <p className="text-xs text-[#d4a574]">{coachMessageStatus}</p> : null}
+                  {coachMessageStatus ? <p className="text-xs text-[color:var(--brass-300)]">{coachMessageStatus}</p> : null}
                   <button
                     type="submit"
                     disabled={isSendingCoachMessage}
-                    className="w-full bg-[#8b4444] hover:bg-[#5a2a2a] disabled:bg-[#4a4a4a] text-white font-semibold py-2 transition"
+                    className="w-full bg-[var(--brass-700)] hover:bg-[var(--rust-700)] disabled:bg-[var(--hide-600)] text-white font-semibold py-2 transition"
                   >
                     {isSendingCoachMessage ? 'Sending...' : 'Send Message'}
                   </button>
@@ -1584,7 +2101,7 @@ export default function AthleteWorkspace() {
               <div className="flex flex-wrap gap-2">
                 <Link
                   href="/schedule"
-                  className="inline-flex min-h-[40px] items-center border-2 border-[#8b4444] bg-[#2a1414] px-3 text-xs font-mono font-bold uppercase tracking-[0.1em] text-[#e8d7c6] transition hover:bg-[#3a1a1a]"
+                  className="inline-flex min-h-[40px] items-center border-2 border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 text-xs font-mono font-bold uppercase tracking-[0.1em] text-[color:var(--bone-200)] transition hover:bg-[var(--rust-900)]"
                 >
                   Open Unified Scheduler
                 </Link>
@@ -1603,7 +2120,7 @@ export default function AthleteWorkspace() {
                 ]}
               />
 
-              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked)]">
                 PLANNED | NOT YET IMPLEMENTED -- this tab cannot read the gym&apos;s classes or register you
                 for one. Open the unified scheduler above for live classes and real registration.
               </p>
@@ -1627,10 +2144,10 @@ export default function AthleteWorkspace() {
                   their own conversation, and a control that cannot send must not
                   look like one. Route to the real chat instead; see the same
                   correction in RoleSummaryPanels.tsx. */}
-              <div className="border-2 border-[#d4a574] bg-[#0f0f0f] p-6 space-y-4">
+              <div className="border-2 border-[color:var(--brass-300)] bg-[var(--hide-950)] p-6 space-y-4">
                 <div>
-                  <p className="text-sm font-semibold text-[#d4a574]">SHADOW Chat</p>
-                  <p className="mt-1 text-sm text-[#b0a095]">
+                  <p className="text-sm font-semibold text-[color:var(--brass-300)]">SHADOW Chat</p>
+                  <p className="mt-1 text-sm text-[color:var(--bone-400)]">
                     In-workspace chat is not available here yet. Open the full SHADOW chat to ask a
                     question and get a real response.
                   </p>
@@ -1638,11 +2155,11 @@ export default function AthleteWorkspace() {
 
                 <ShadowChatButton context="Athlete Workspace" />
 
-                <div className="space-y-2 border-t-2 border-[#d4a574] pt-4">
-                  <p className="text-sm font-semibold text-[#d4a574]">Things you can ask SHADOW:</p>
+                <div className="space-y-2 border-t-2 border-[color:var(--brass-300)] pt-4">
+                  <p className="text-sm font-semibold text-[color:var(--brass-300)]">Things you can ask SHADOW:</p>
                   <ul className="list-disc space-y-1 pl-5">
                     {suggestedQuestions.map((q) => (
-                      <li key={q} className="text-sm text-[#b0a095]">{q}</li>
+                      <li key={q} className="text-sm text-[color:var(--bone-400)]">{q}</li>
                     ))}
                   </ul>
                 </div>
@@ -1652,8 +2169,8 @@ export default function AthleteWorkspace() {
                 <p className="text-yellow-200"><strong>Note:</strong> SHADOW cannot answer questions about other athletes, board operations, financial data, or provide medical/legal advice.</p>
               </div>
 
-              <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
-                <h3 className="font-mono text-xs font-bold uppercase tracking-[0.08em] text-[#d4a574]">SHADOW Observation Projection</h3>
+              <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4">
+                <h3 className="font-mono text-xs font-bold uppercase tracking-[0.08em] text-[color:var(--brass-300)]">SHADOW Observation Projection</h3>
                 {shadowObservationError ? (
                   <div className="mt-2 border border-red-600 bg-red-900/20 p-2 rounded flex items-center justify-between">
                     <p className="text-xs text-red-400 flex-1">{shadowObservationError}</p>
@@ -1670,12 +2187,12 @@ export default function AthleteWorkspace() {
                   </div>
                 ) : null}
                 {!shadowObservationError && shadowObservations.length === 0 ? (
-                  <p className="mt-2 text-xs text-[#b0a095]">No SHADOW observations available yet.</p>
+                  <p className="mt-2 text-xs text-[color:var(--bone-400)]">No SHADOW observations available yet.</p>
                 ) : null}
                 <div className="mt-2 space-y-2">
                   {shadowObservations.slice(0, 6).map((item) => (
-                    <div key={item.id} className="border border-[#5a4a3a] bg-[#101010] p-2 text-xs text-[#cfbfae]">
-                      <p className="font-semibold text-[#e8d7c6]">{item.label}</p>
+                    <div key={item.id} className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-2 text-xs text-[color:var(--bone-300)]">
+                      <p className="font-semibold text-[color:var(--bone-200)]">{item.label}</p>
                       <p>Source: {item.source}</p>
                       <p>State: {item.review_state}</p>
                     </div>
@@ -1688,13 +2205,13 @@ export default function AthleteWorkspace() {
 
         {/* PAIN MODAL */}
         {showPainModal && selectedPainLocation && (
-          <div className="fixed inset-0 bg-[#0a0a0a]/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-6 max-w-md w-full space-y-4">
+          <div className="fixed inset-0 bg-[var(--hide-950)]/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] p-6 max-w-md w-full space-y-4">
               <h3 className="text-lg font-bold">Soreness Details: {selectedPainLocation}</h3>
               <div className="space-y-3">
                 <div>
                   <label className="block text-sm font-semibold mb-2" htmlFor="pain-type-select">Pain Type</label>
-                  <select id="pain-type-select" value={currentPainType} onChange={(e) => setCurrentPainType(e.target.value as PainType)} className="w-full px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none">
+                  <select id="pain-type-select" value={currentPainType} onChange={(e) => setCurrentPainType(e.target.value as PainType)} className="w-full px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus:outline-none">
                     {(['Sharp', 'Dull', 'Burning', 'Tight', 'Pulling', 'Throbbing', 'Swollen', 'Numbness/Tingling', 'Instability', 'Other'] as PainType[]).map(t => (
                       <option key={t} value={t}>{t}</option>
                     ))}
@@ -1702,19 +2219,19 @@ export default function AthleteWorkspace() {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold mb-2" htmlFor="pain-severity-range">Severity (1-10)</label>
-                  <input id="pain-severity-range" type="range" min="1" max="10" value={currentPainSeverity} onChange={(e) => setCurrentPainSeverity(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
-                  <p className="text-xs text-[#8a8a8a] mt-1">{currentPainSeverity}/10</p>
+                  <input id="pain-severity-range" type="range" min="1" max="10" value={currentPainSeverity} onChange={(e) => setCurrentPainSeverity(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[var(--hide-600)] accent-[var(--brass-300)]" />
+                  <p className="text-xs text-[color:var(--bone-400)] mt-1">{currentPainSeverity}/10</p>
                 </div>
               </div>
               <div className="flex gap-2">
                 <button
                   onClick={() => void handleSavePainReport()}
                   disabled={isSavingPain}
-                  className="flex-1 bg-[#8b4444] hover:bg-[#5a2a2a] disabled:bg-[#4a4a4a] text-white font-semibold py-2 transition"
+                  className="flex-1 bg-[var(--brass-700)] hover:bg-[var(--rust-700)] disabled:bg-[var(--hide-600)] text-white font-semibold py-2 transition"
                 >
                   {isSavingPain ? 'Saving...' : 'Save'}
                 </button>
-                <button onClick={() => setShowPainModal(false)} className="flex-1 bg-[#4a4a4a] hover:bg-[#5a5a5a] text-white font-semibold py-2 transition">Cancel</button>
+                <button onClick={() => setShowPainModal(false)} className="flex-1 bg-[var(--hide-600)] hover:bg-[var(--hide-500)] text-white font-semibold py-2 transition">Cancel</button>
               </div>
             </div>
           </div>

@@ -41,6 +41,29 @@ gates are `npm run typecheck` / `lint` / `test`.
   BUILT: the payment capability's scope (donations, recurring giving, class
   fees, B2B wholesale) and the names the future build must use
 
+## Design
+
+- [design-system/README.md](design-system/README.md) — the eight laws and the token
+  system; `design-system/ppbf.css` is the source of truth for tokens and proportion
+- [docs/RETRO_DESIGN_SYSTEM.md](docs/RETRO_DESIGN_SYSTEM.md) — component vocabulary
+  (stamp, brass plate, paper ticket, ledger tape, passbook) and floor ergonomics
+- [docs/USABILITY_SPEC_RETRO.md](docs/USABILITY_SPEC_RETRO.md) — role density matrix,
+  floor-use constraints, accessibility checklist
+- [docs/FLOOR_FLOWS_SPARRING_ATTENDANCE.md](docs/FLOOR_FLOWS_SPARRING_ATTENDANCE.md) —
+  the two highest-frequency gym-floor flows, specced but not built
+- [docs/STAMP_AND_LEDGER_SCHEMA.md](docs/STAMP_AND_LEDGER_SCHEMA.md) — canonical stamp
+  vocabulary; every status change writes a ledger event
+- [docs/PASSBOOK_V1_BUILD_PROMPT_FOR_VS.md](docs/PASSBOOK_V1_BUILD_PROMPT_FOR_VS.md) —
+  build directive: promote the passbook from a component to the platform's organizing
+  object
+- [apps/web/src/design/PAGE_MAP.md](apps/web/src/design/PAGE_MAP.md) — route inventory
+  by shape and ground; stale, see the passbook prompt §8
+
+Note: [docs/FRONTEND_STYLE_CONTRACT.md](docs/FRONTEND_STYLE_CONTRACT.md) and
+[docs/BRAND_DESIGN_BRIEF.md](docs/BRAND_DESIGN_BRIEF.md) are historical — both describe
+palettes the app no longer ships. The brief is still useful for the org profile and for
+briefing external image tools; its colour table is not.
+
 ## SHADOW
 
 - [docs/archive/SHADOW_SPECIFICATION.md](docs/archive/SHADOW_SPECIFICATION.md) — archived vision doc; do not build from it

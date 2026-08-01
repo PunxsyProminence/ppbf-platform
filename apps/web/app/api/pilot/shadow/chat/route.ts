@@ -418,6 +418,15 @@ export const runtime = 'nodejs';
 // the divergence hazard that file's header warns about: a copy that drifts is
 // invisible in review.
 const MANUAL_OVERRIDE_ROLES = new Set<PilotRole>(MANUAL_OVERRIDE_ROLE_LIST);
+// Exempt from the Heavy Bag hourly cap. Deliberately NOT MANUAL_OVERRIDE_ROLES:
+// that set includes coach, and a coach is exactly who the cap is for. Being
+// able to choose Heavy Bag and being able to run it without limit are separate
+// permissions, so they get separate lists.
+const HEAVY_BAG_UNCAPPED_ROLES = new Set<PilotRole>([
+  'organization_admin',
+  'admin',
+  'platform_owner',
+]);
 const SESSION_TYPE_OVERRIDES = new Set<import('@/src/server/pilot/shadowRouter').ShadowSessionType>([
   'quick_round',
   'heavy_bag',
@@ -588,6 +597,22 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // mapping round-trips, so only an honored override changes anything. Async
     // and refused session types have no tier and keep the classifier's.
     const effectiveTier = sessionTypeToTier(sessionType) ?? classification.tier;
+
+    // The Heavy Bag cap is enforced here rather than beside the `chat` limits
+    // above because it depends on sessionType, which is not known until the
+    // classifier and any honored override have both run. A refused session
+    // type never reaches this line, so a rejected request is not charged.
+    //
+    // The administrative tier is exempt by owner decision: an admin
+    // demonstrating SHADOW across a squad is the case the cap would break, and
+    // they are also the accounts that carry the organization's cost anyway.
+    if (sessionType === 'heavy_bag' && !HEAVY_BAG_UNCAPPED_ROLES.has(userRole as PilotRole)) {
+      await enforceShadowRateLimit({
+        organizationId,
+        accountId: userId,
+        ...resolveShadowRateLimit('heavy_bag'),
+      });
+    }
 
     if (sessionType === 'film_study' || sessionType === 'recovery_round') {
       return NextResponse.json(

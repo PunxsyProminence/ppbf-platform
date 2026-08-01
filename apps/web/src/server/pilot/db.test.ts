@@ -2,12 +2,22 @@ const mockConnect = jest.fn();
 const mockPoolEnd = jest.fn().mockResolvedValue(undefined);
 const mockOn = jest.fn();
 
+// Captured in a plain Map rather than a jest.fn: setTypeParser runs once when
+// the module is imported, and the suite's clearAllMocks would erase the record
+// before any test could read it.
+const mockRegisteredTypeParsers = new Map<number, (value: string) => string>();
+
 jest.mock('pg', () => ({
   Pool: jest.fn().mockImplementation(() => ({
     connect: mockConnect,
     end: mockPoolEnd,
     on: mockOn,
   })),
+  types: {
+    setTypeParser: (oid: number, parser: (value: string) => string) => {
+      mockRegisteredTypeParsers.set(oid, parser);
+    },
+  },
 }));
 
 jest.mock('./env', () => ({
@@ -313,4 +323,18 @@ describe('the registered pool error listener logs a sanitized payload', () => {
       consoleErrorSpy.mockRestore();
     }
   });
+});
+
+// A `date` column is a calendar day. Parsed into a JS Date it becomes an
+// instant at the server's local midnight, and serializing that to JSON moves
+// the day backwards for any server east of UTC -- so a date of birth read on
+// one host and written back from another would silently walk.
+test('DATE columns are handed through as calendar days, not parsed into instants', () => {
+  const dateOid = 1082;
+  const parser = mockRegisteredTypeParsers.get(dateOid);
+
+  expect(parser).toBeDefined();
+  expect(parser?.('2008-03-15')).toBe('2008-03-15');
+  // Timestamps keep their own parsing.
+  expect(mockRegisteredTypeParsers.has(1114)).toBe(false);
 });

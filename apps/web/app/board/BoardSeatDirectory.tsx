@@ -26,18 +26,18 @@ export default function BoardSeatDirectory() {
         });
 
         return (
-          <article key={seat.slug} className="border-2 border-[#8b4444] bg-[#0f0f0f]/80 p-5">
+          <article key={seat.slug} className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)]/80 p-5">
             <p className="text-[12px] font-mono uppercase tracking-[0.2em] text-[#8f7f72]">Board Seat</p>
-            <h2 className="mt-2 text-2xl font-black text-[#e8d7c6]">{seat.seatLabel}</h2>
+            <h2 className="mt-2 text-2xl font-black text-[color:var(--bone-200)]">{seat.seatLabel}</h2>
 
             <div className="mt-4 space-y-3">
               <div>
-                <p className="text-[12px] font-mono uppercase tracking-[0.15em] text-[#d4a574]">Role Description</p>
+                <p className="text-[12px] font-mono uppercase tracking-[0.15em] text-[color:var(--brass-300)]">Role Description</p>
                 <p className="mt-1 text-[15px] leading-6 text-[#cbb8a8]">{seat.roleDescription}</p>
               </div>
 
               <div>
-                <p className="text-[12px] font-mono uppercase tracking-[0.15em] text-[#d4a574]">Primary Responsibilities</p>
+                <p className="text-[12px] font-mono uppercase tracking-[0.15em] text-[color:var(--brass-300)]">Primary Responsibilities</p>
                 <ul className="mt-1 space-y-1">
                   {seat.primaryResponsibilities.map((item) => (
                     <li key={item} className="text-[15px] leading-6 text-[#cbb8a8]">{item}</li>
@@ -49,7 +49,7 @@ export default function BoardSeatDirectory() {
             {access.allowed ? (
               <Link
                 href={`/board/${seat.slug}`}
-                className="mt-4 inline-flex min-h-[44px] items-center justify-center border-2 border-[#8b4444] bg-[#2f1717] px-4 text-sm font-mono font-bold uppercase tracking-[0.14em] text-[#e8d7c6] transition hover:border-[#d4a574] hover:text-[#d4a574]"
+                className="mt-4 inline-flex min-h-[44px] items-center justify-center border-2 border-[color:var(--brass-700)] bg-[#2f1717] px-4 text-sm font-mono font-bold uppercase tracking-[0.14em] text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-300)] hover:text-[color:var(--brass-300)]"
               >
                 {access.mode === 'seat-holder' ? 'Open Your Workspace' : 'Open Governance Workspace'}
               </Link>
