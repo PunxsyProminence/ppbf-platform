@@ -862,7 +862,7 @@ export default function AdminCapabilitiesPage() {
         </header>
 
         <section className="border-b border-[#4a4a4a] bg-[#111111] px-6 py-3 text-[14px] text-[#b0a095]">
-          All actions remain local to this front-end console. Jason approval required for production changes.
+          Capability, assignment, and gym feature changes are saved to your gym&apos;s record as you make them, when your role may write to it &mdash; a platform-owner session cannot yet save capability edits here. Jason approval is still required for platform-wide changes.
         </section>
 
         <div className="mx-auto max-w-[1500px] space-y-8 px-6 py-8">

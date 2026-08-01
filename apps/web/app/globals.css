@@ -649,8 +649,18 @@ h6 {
   border-radius: 0 !important;
   border: 3px solid var(--black) !important;
   background: var(--canvas-tan-light) !important;
+  /* The forced paper background must carry its own text colour. Dark-surface
+     pages (SHADOW chat, scheduler, the coach/athlete workspaces) style their
+     fields with cream text, which was invisible on this background. */
+  color: var(--black) !important;
   box-shadow: inset 2px 2px 0 rgba(0,0,0,0.08);
   font-family: var(--font-mono);
+}
+
+[data-theme="retro"] input::placeholder,
+[data-theme="retro"] textarea::placeholder {
+  color: var(--gray-dark);
+  opacity: 1;
 }
 
 [data-theme="retro"] input:focus,

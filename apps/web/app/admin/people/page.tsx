@@ -729,8 +729,8 @@ function PeopleConsoleContent() {
             <div>
               <h2 className="text-lg font-black">Add an athlete</h2>
               <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
-                This puts the athlete in your gym and immediately gives you a one-time activation code to hand them.
-                They choose their own PIN — you never see it.
+                This puts the athlete in your gym and gives you a sign-in ID to hand them, along with the starting PIN
+                every new athlete gets. They have to choose their own PIN the first time they sign in — you never see it.
               </p>
             </div>
 

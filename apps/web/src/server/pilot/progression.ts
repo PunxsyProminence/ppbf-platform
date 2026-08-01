@@ -1,5 +1,17 @@
-import { query, queryOne } from './db';
+import { query, queryOne, withTransaction } from './db';
 import { randomUUID } from 'node:crypto';
+
+// severity is a text column, so `order by severity desc` sorts alphabetically
+// and puts 'medium' above 'critical'. Rank the vocabulary explicitly instead.
+// Anything outside it sorts last rather than silently displacing a real
+// severity.
+const SEVERITY_RANK_SQL = `case severity
+      when 'critical' then 1
+      when 'high' then 2
+      when 'medium' then 3
+      when 'low' then 4
+      else 5
+    end`;
 
 export interface ProgressionGap {
   gap_id: string;
@@ -34,6 +46,7 @@ export interface AssignmentCompletion {
   reps_completed: number | null;
   notes: string;
   verification_status: 'pending' | 'verified' | 'disputed';
+  verified_at: string | null;
 }
 
 export async function createProgressionGap(params: {
@@ -89,38 +102,43 @@ export async function assignDrill(params: {
   // Using crypto.randomUUID for secure randomness
   const assignmentId = `assignment_${Date.now()}_${randomUUID().substring(0, 8)}`;
 
-  const result = await query<DrillAssignment>(
-    `insert into pilot.drill_assignments (
-      assignment_id, organization_id, gap_id, athlete_id, assigned_by_account_id,
-      drill_name, drill_description, drill_difficulty, rep_count, duration_minutes,
-      frequency_per_week, due_date, status, completion_percentage
-    ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'assigned', 0)
-    returning assignment_id, gap_id, athlete_id, drill_name, drill_description, drill_difficulty,
-             rep_count, duration_minutes, frequency_per_week, due_date, status, completion_percentage, created_at`,
-    [
-      assignmentId,
-      params.organizationId,
-      params.gapId,
-      params.athleteId,
-      params.assignedByAccountId,
-      params.drillName,
-      params.drillDescription,
-      params.drillDifficulty,
-      params.repCount || null,
-      params.durationMinutes || null,
-      params.frequencyPerWeek || null,
-      params.dueDate || null,
-    ],
-  );
+  // One transaction: a drill assigned against a gap still marked 'identified'
+  // keeps showing up as unaddressed work, so the pair must commit together or
+  // not at all.
+  return withTransaction(async (client) => {
+    const result = await client.query<DrillAssignment>(
+      `insert into pilot.drill_assignments (
+        assignment_id, organization_id, gap_id, athlete_id, assigned_by_account_id,
+        drill_name, drill_description, drill_difficulty, rep_count, duration_minutes,
+        frequency_per_week, due_date, status, completion_percentage
+      ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'assigned', 0)
+      returning assignment_id, gap_id, athlete_id, drill_name, drill_description, drill_difficulty,
+               rep_count, duration_minutes, frequency_per_week, due_date, status, completion_percentage, created_at`,
+      [
+        assignmentId,
+        params.organizationId,
+        params.gapId,
+        params.athleteId,
+        params.assignedByAccountId,
+        params.drillName,
+        params.drillDescription,
+        params.drillDifficulty,
+        params.repCount || null,
+        params.durationMinutes || null,
+        params.frequencyPerWeek || null,
+        params.dueDate || null,
+      ],
+    );
 
-  // Update gap status to assigned. Scoped by organization_id so a gap_id
-  // from another organization can never be mutated by this call.
-  await query(
-    `update pilot.progression_gaps set status = 'assigned' where gap_id = $1 and organization_id = $2`,
-    [params.gapId, params.organizationId],
-  );
+    // Update gap status to assigned. Scoped by organization_id so a gap_id
+    // from another organization can never be mutated by this call.
+    await client.query(
+      `update pilot.progression_gaps set status = 'assigned' where gap_id = $1 and organization_id = $2`,
+      [params.gapId, params.organizationId],
+    );
 
-  return result[0];
+    return result.rows[0];
+  });
 }
 
 export async function recordCompletion(params: {
@@ -138,7 +156,7 @@ export async function recordCompletion(params: {
     `insert into pilot.assignment_completions (
       completion_id, organization_id, assignment_id, athlete_id, completed_at, reps_completed, notes, verification_status
     ) values ($1, $2, $3, $4, $5, $6, $7, 'pending')
-    returning completion_id, assignment_id, completed_at, reps_completed, notes, verification_status`,
+    returning completion_id, assignment_id, completed_at, reps_completed, notes, verification_status, verified_at`,
     [
       completionId,
       params.organizationId,
@@ -184,7 +202,7 @@ export async function getAthleteGaps(
     params.push(status);
   }
 
-  sql += ` order by severity desc, created_at desc`;
+  sql += ` order by ${SEVERITY_RANK_SQL}, created_at desc`;
 
   return query<ProgressionGap>(sql, params);
 }
@@ -242,7 +260,7 @@ export async function getAssignmentCompletions(
   assignmentId: string,
 ): Promise<AssignmentCompletion[]> {
   return query<AssignmentCompletion>(
-    `select completion_id, assignment_id, completed_at, reps_completed, notes, verification_status
+    `select completion_id, assignment_id, completed_at, reps_completed, notes, verification_status, verified_at
      from pilot.assignment_completions
      where organization_id = $1 and assignment_id = $2
      order by completed_at desc`,

@@ -18,6 +18,7 @@ jest.mock('./security', () => ({
 }));
 
 import { activateAccountPin, resetAccountPin } from './auth';
+import { jsonError } from './http';
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -63,7 +64,7 @@ describe('resetAccountPin', () => {
     currentClient.query.mockResolvedValueOnce({ rows: [] }); // update ... returning finds nothing
 
     await expect(resetAccountPin('acct-1', '123456', 'org-other')).rejects.toThrow(
-      'Account not found or cannot be reset',
+      'Not found: no such account, or it cannot be reset',
     );
 
     // Only the update was attempted; the revoke step was never reached, so
@@ -76,10 +77,26 @@ describe('resetAccountPin', () => {
     currentClient.query.mockResolvedValueOnce({ rows: [] });
 
     await expect(resetAccountPin('coach-1', '123456', 'org-1')).rejects.toThrow(
-      'Account not found or cannot be reset',
+      'Not found: no such account, or it cannot be reset',
     );
 
     expect(currentClient.query).toHaveBeenCalledTimes(1);
+  });
+
+  // jsonError maps by message prefix, so a refusal worded any other way comes
+  // back to the admin UI as a 500 "Internal server error" with no indication
+  // that the account_id was simply wrong.
+  test('the refusal reaches the admin as a 404, not a masked 500', async () => {
+    currentClient = fakeClient();
+    currentClient.query.mockResolvedValueOnce({ rows: [] });
+
+    const refusal = await resetAccountPin('acct-1', '123456', 'org-other').catch((error) => error);
+
+    const response = jsonError(refusal);
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({
+      error: 'Not found: no such account, or it cannot be reset',
+    });
   });
 
   test('does not report success when the revoke step fails after the PIN update', async () => {
@@ -128,7 +145,7 @@ describe('activateAccountPin', () => {
     currentClient.query.mockResolvedValueOnce({ rows: [] });
 
     await expect(activateAccountPin('ath-acct-1', '123456', 'org-2')).rejects.toThrow(
-      'Account not found or cannot be activated',
+      'Not found: no such account, or it cannot be activated',
     );
     expect(currentClient.query).toHaveBeenCalledTimes(1);
   });

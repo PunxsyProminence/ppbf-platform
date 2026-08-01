@@ -162,16 +162,6 @@ export async function setSchedulerClassCover(organizationId: string, classId: st
   );
 }
 
-export async function setSchedulerClassStatus(organizationId: string, classId: string, status: SchedulerClass['status'], updatedAt: string): Promise<void> {
-  await query(
-    `update pilot.scheduler_classes
-     set status = $3,
-         updated_at = $4
-     where organization_id = $1 and class_id = $2`,
-    [organizationId, classId, status, updatedAt],
-  );
-}
-
 export async function getSchedulerRegistrationById(
   organizationId: string,
   registrationId: string,
@@ -186,79 +176,19 @@ export async function getSchedulerRegistrationById(
   );
 }
 
-export async function getActiveSchedulerRegistration(
-  organizationId: string,
-  classId: string,
-  athleteId: string,
-): Promise<SchedulerRegistration | null> {
-  return queryOne<SchedulerRegistration>(
-    `select registration_id, class_id, athlete_id, requested_by_role, requested_by_account_id,
-            parent_reviewed, parent_reviewed_at::text, parent_reviewer_account_id,
-            status, created_at::text, updated_at::text
-     from pilot.scheduler_registrations
-     where organization_id = $1 and class_id = $2 and athlete_id = $3 and status <> 'cancelled'
-     order by created_at desc
-     limit 1`,
-    [organizationId, classId, athleteId],
-  );
-}
-
-export async function countRegisteredForClass(organizationId: string, classId: string): Promise<number> {
-  const row = await queryOne<{ count: string }>(
-    `select count(*)::text as count
-     from pilot.scheduler_registrations
-     where organization_id = $1 and class_id = $2 and status = 'registered'`,
-    [organizationId, classId],
-  );
-
-  return Number.parseInt(row?.count ?? '0', 10);
-}
-
-export async function createSchedulerRegistration(organizationId: string, item: SchedulerRegistration): Promise<void> {
-  await query(
-    `insert into pilot.scheduler_registrations (
-       organization_id, registration_id, class_id, athlete_id,
-       requested_by_role, requested_by_account_id,
-       parent_reviewed, parent_reviewed_at, parent_reviewer_account_id,
-       status, created_at, updated_at
-     ) values (
-       $1,$2,$3,$4,
-       $5,$6,
-       $7,$8,$9,
-       $10,$11,$12
-     )`,
-    [
-      organizationId,
-      item.registration_id,
-      item.class_id,
-      item.athlete_id,
-      item.requested_by_role,
-      item.requested_by_account_id,
-      item.parent_reviewed,
-      item.parent_reviewed_at ?? null,
-      item.parent_reviewer_account_id ?? null,
-      item.status,
-      item.created_at,
-      item.updated_at,
-    ],
-  );
-}
-
 export type RegisterForClassOutcome =
   | { outcome: 'class_not_found' }
   | { outcome: 'already_registered' }
   | { outcome: 'registered' | 'waitlisted'; registrationId: string };
 
-// Replaces the old check-then-insert sequence (getActiveSchedulerRegistration
-// + countRegisteredForClass + createSchedulerRegistration as three separate,
-// unlocked round trips), which raced under concurrent requests: two
-// simultaneous registrations for the same athlete/class could both pass the
-// "not already registered" check, and near a class's capacity limit,
-// concurrent registrations could all read the same pre-insert count and all
-// be marked 'registered' instead of correctly waitlisting the ones over
-// capacity. Locking the class row with `for update` first serializes every
-// concurrent registration attempt against that class -- regardless of which
-// athlete -- so both races close. A partial unique index on
+// Registration must not be a check-then-insert sequence: an unlocked
+// lookup/count/insert races under concurrent requests, letting two
+// simultaneous registrations for the same athlete/class both pass the "not
+// already registered" check, and letting registrations near a capacity limit
+// all read the same pre-insert count and all be marked 'registered' instead
+// of waitlisting the ones over capacity. Locking the class row with `for
+// update` first serializes every concurrent attempt against that class --
+// regardless of which athlete -- so both races close. A partial unique index on
 // (organization_id, class_id, athlete_id) where status <> 'cancelled' backs
 // this up at the database level independent of this function.
 export async function registerForClassTransactionally(

@@ -1,5 +1,4 @@
 import {
-  SHADOW_FORMULA_REGISTRY,
   calculateAccuracyByPunchType,
   calculateConnectDifferential,
   calculateContactExposure,
@@ -12,10 +11,13 @@ import {
   calculateSevenDayWeightChange,
   calculateSessionLoad,
   calculateWorkRateConsistency,
+} from './engine';
+import { SHADOW_FORMULA_REGISTRY } from './registry';
+import {
   type FormulaUnit,
   type NumericObservation,
   type ObservationKind,
-} from './index';
+} from './types';
 
 const COMPUTED_AT = '2026-07-28T13:00:00.000Z';
 

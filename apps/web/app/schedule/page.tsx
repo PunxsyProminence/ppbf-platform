@@ -116,6 +116,10 @@ export default function SchedulerPage() {
     return map;
   }, [athletes]);
 
+  // Default selections are applied functionally rather than read out of a
+  // closure so this loader keeps a stable identity: depending on the current
+  // selection would re-run the whole fetch, and blank the page behind
+  // "Loading scheduler...", every time a dropdown changes.
   const loadSchedulerState = useCallback(async () => {
     setLoading(true);
     setErrorMessage('');
@@ -141,8 +145,9 @@ export default function SchedulerPage() {
       setCoachingRequests(scheduler.coaching_requests || []);
       setAttendance(scheduler.attendance || []);
 
-      if (scheduler.classes.length > 0 && !selectedClassId) {
-        setSelectedClassId(scheduler.classes[0].class_id);
+      if (scheduler.classes.length > 0) {
+        const firstClassId = scheduler.classes[0].class_id;
+        setSelectedClassId((current) => current || firstClassId);
       }
 
       if (auth.role === 'parent' || auth.role === 'coach' || auth.role === 'admin' || auth.role === 'organization_admin') {
@@ -153,8 +158,9 @@ export default function SchedulerPage() {
         }
         const rows = athletesPayload.items || [];
         setAthletes(rows);
-        if (rows.length > 0 && !selectedAthleteId) {
-          setSelectedAthleteId(rows[0].athlete_id);
+        if (rows.length > 0) {
+          const firstAthleteId = rows[0].athlete_id;
+          setSelectedAthleteId((current) => current || firstAthleteId);
         }
       } else {
         setAthletes([]);
@@ -164,7 +170,7 @@ export default function SchedulerPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedClassId, selectedAthleteId]);
+  }, []);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -300,18 +306,30 @@ export default function SchedulerPage() {
                       className="w-full border border-[#5a4a3a] bg-[#0f0f0f] px-3 py-2 text-sm"
                     />
                     <div className="grid gap-2 md:grid-cols-2">
-                      <input
-                        type="datetime-local"
-                        value={newClassStartAt}
-                        onChange={(e) => setNewClassStartAt(e.target.value)}
-                        className="w-full border border-[#5a4a3a] bg-[#0f0f0f] px-3 py-2 text-sm"
-                      />
-                      <input
-                        type="datetime-local"
-                        value={newClassEndAt}
-                        onChange={(e) => setNewClassEndAt(e.target.value)}
-                        className="w-full border border-[#5a4a3a] bg-[#0f0f0f] px-3 py-2 text-sm"
-                      />
+                      <div>
+                        <label htmlFor="new-class-start-at" className="block text-xs font-mono uppercase tracking-[0.1em] text-[#d4a574]">
+                          Class starts
+                        </label>
+                        <input
+                          id="new-class-start-at"
+                          type="datetime-local"
+                          value={newClassStartAt}
+                          onChange={(e) => setNewClassStartAt(e.target.value)}
+                          className="mt-1 w-full border border-[#5a4a3a] bg-[#0f0f0f] px-3 py-2 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="new-class-end-at" className="block text-xs font-mono uppercase tracking-[0.1em] text-[#d4a574]">
+                          Class ends
+                        </label>
+                        <input
+                          id="new-class-end-at"
+                          type="datetime-local"
+                          value={newClassEndAt}
+                          onChange={(e) => setNewClassEndAt(e.target.value)}
+                          className="mt-1 w-full border border-[#5a4a3a] bg-[#0f0f0f] px-3 py-2 text-sm"
+                        />
+                      </div>
                     </div>
                     <div className="grid gap-2 md:grid-cols-2">
                       <input
@@ -369,12 +387,18 @@ export default function SchedulerPage() {
                     </select>
                   ) : null}
 
-                  <input
-                    type="datetime-local"
-                    value={coachingPreferredAt}
-                    onChange={(e) => setCoachingPreferredAt(e.target.value)}
-                    className="w-full border border-[#5a4a3a] bg-[#0f0f0f] px-3 py-2 text-sm"
-                  />
+                  <div>
+                    <label htmlFor="coaching-preferred-at" className="block text-xs font-mono uppercase tracking-[0.1em] text-[#d4a574]">
+                      Preferred coaching time
+                    </label>
+                    <input
+                      id="coaching-preferred-at"
+                      type="datetime-local"
+                      value={coachingPreferredAt}
+                      onChange={(e) => setCoachingPreferredAt(e.target.value)}
+                      className="mt-1 w-full border border-[#5a4a3a] bg-[#0f0f0f] px-3 py-2 text-sm"
+                    />
+                  </div>
                   <textarea
                     value={coachingGoals}
                     onChange={(e) => setCoachingGoals(e.target.value)}

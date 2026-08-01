@@ -6,6 +6,7 @@ import type { PilotRole } from './contracts';
 import type { ShadowUserProfileRow } from './shadowUserProfile';
 import type { ShadowContextOutput } from './shadowContextBuilder';
 import type { ShadowClassification } from './shadowClassifier';
+import { buildAzureAiChatCompletionsUrl, getAzureAiRuntimeConfig } from './azureAiRuntime';
 import { routeRequest, type ShadowSessionType, type RoutingDecision } from './shadowRouter';
 import { enqueueJob } from './shadowJobQueue';
 import type { ProfileTierResult } from './shadowProfiling';
@@ -81,7 +82,22 @@ export async function executeHeavyBagSync(
 
   const systemPrompt = buildHeavyBagSystemPrompt(input, routing);
 
-  const url = `${azureEndpoint.replace(/\/$/, '')}/openai/deployments/${routing.model.deploymentName}/chat/completions?api-version=${process.env.AZURE_AI_API_VERSION ?? '2024-12-01-preview'}`;
+  // Heavy Bag picks its deployment per request, so the routed model overrides
+  // AZURE_AI_DEPLOYMENT_NAME. Everything else -- endpoint normalization and the
+  // api-version default -- comes from the shared runtime helpers, so this call
+  // site cannot drift from the chat route and the job processor.
+  const runtime = getAzureAiRuntimeConfig({
+    ...process.env,
+    AZURE_AI_ENDPOINT: azureEndpoint,
+    AZURE_AI_KEY: azureApiKey,
+    AZURE_AI_DEPLOYMENT_NAME: routing.model.deploymentName,
+  });
+
+  if (!runtime.config) {
+    throw new Error(`Heavy Bag has no usable Azure AI configuration: ${runtime.missing.join(', ')}`);
+  }
+
+  const url = buildAzureAiChatCompletionsUrl(runtime.config);
 
   const apiResponse = await fetch(url, {
     method: 'POST',

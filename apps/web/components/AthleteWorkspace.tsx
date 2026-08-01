@@ -246,6 +246,7 @@ export default function AthleteWorkspace() {
   const [goalsError, setGoalsError] = useState<string | null>(null);
 
   const [showGoalForm, setShowGoalForm] = useState(false);
+  const [isCreatingGoal, setIsCreatingGoal] = useState(false);
   const [newGoalTitle, setNewGoalTitle] = useState('');
   const [newGoalCategory, setNewGoalCategory] = useState<SMARTCategory>('Boxing');
   const [newGoalTargetDate, setNewGoalTargetDate] = useState('');
@@ -307,7 +308,7 @@ export default function AthleteWorkspace() {
       setGoalsLoading(true);
       setGoalsError(null);
       const response = await fetch(
-        `/api/pilot/goals/list?athlete_id=${encodeURIComponent(backendAthleteId)}`,
+        `${apiBase()}/api/pilot/goals/list?athlete_id=${encodeURIComponent(backendAthleteId)}`,
         { method: 'GET', credentials: 'include' }
       );
       if (!response.ok) throw new Error('Failed to load goals');
@@ -436,57 +437,68 @@ export default function AthleteWorkspace() {
   }, [loadShadowObservations]);
 
   const handleCreateGoal = async () => {
+    if (isCreatingGoal) return;
     if (!newGoalTitle || !newGoalTargetDate || !newGoalSuccessMetric) return;
     if (!backendAthleteId) {
-      setBackendSyncMessage('Goal saved locally. Backend athlete session not found.');
+      // There is no local goal store -- goals exist only in pilot.goals -- so
+      // without a backend session nothing is written anywhere.
+      setBackendSyncMessage('Goal was not saved. Backend athlete session not found - sign in again and retry.');
       return;
     }
 
     const now = new Date().toISOString();
     const goalId = `goal_${Date.now()}`;
 
-    const response = await fetch(`${apiBase()}/api/pilot/goals`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        goal_id: goalId,
-        athlete_id: backendAthleteId,
+    setIsCreatingGoal(true);
+
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/goals`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          goal_id: goalId,
+          athlete_id: backendAthleteId,
+          title: newGoalTitle,
+          target_date: newGoalTargetDate,
+          metric: newGoalSuccessMetric,
+          status: 'active',
+          created_at: now,
+          updated_at: now,
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({ error: 'Goal persistence failed' }))) as { error?: string };
+        setBackendSyncMessage(payload.error || 'Goal persistence failed');
+        return;
+      }
+
+      const newGoal: SMARTGoal = {
+        id: goalId,
         title: newGoalTitle,
-        target_date: newGoalTargetDate,
-        metric: newGoalSuccessMetric,
-        status: 'active',
-        created_at: now,
-        updated_at: now,
-      }),
-    });
-
-    if (!response.ok) {
-      const payload = (await response.json().catch(() => ({ error: 'Goal persistence failed' }))) as { error?: string };
-      setBackendSyncMessage(payload.error || 'Goal persistence failed');
-      return;
+        category: newGoalCategory,
+        targetDate: newGoalTargetDate,
+        successMetric: newGoalSuccessMetric,
+        progressPercent: 0,
+        status: 'Active',
+        specific: '',
+        measurable: '',
+        achievable: '',
+        relevant: '',
+        timeBound: ''
+      };
+      setSmartGoals([...smartGoals, newGoal]);
+      setNewGoalTitle('');
+      setNewGoalTargetDate('');
+      setNewGoalSuccessMetric('');
+      setShowGoalForm(false);
+      setBackendSyncMessage('Goal persisted to pilot backend.');
+    } catch (error) {
+      setBackendSyncMessage(error instanceof Error ? error.message : 'Goal persistence failed');
+    } finally {
+      setIsCreatingGoal(false);
     }
-
-    const newGoal: SMARTGoal = {
-      id: goalId,
-      title: newGoalTitle,
-      category: newGoalCategory,
-      targetDate: newGoalTargetDate,
-      successMetric: newGoalSuccessMetric,
-      progressPercent: 0,
-      status: 'Active',
-      specific: '',
-      measurable: '',
-      achievable: '',
-      relevant: '',
-      timeBound: ''
-    };
-    setSmartGoals([...smartGoals, newGoal]);
-    setNewGoalTitle('');
-    setNewGoalTargetDate('');
-    setNewGoalSuccessMetric('');
-    setShowGoalForm(false);
-    setBackendSyncMessage('Goal persisted to pilot backend.');
   };
 
   const handleCheckIn = async () => {
@@ -735,11 +747,14 @@ export default function AthleteWorkspace() {
         </div>
 
         {/* ROLE SUMMARY PANEL */}
+        {/* Class times and registrations live behind the unified scheduler;
+            this workspace has no feed for the athlete's next class, so the
+            tile must not name one. */}
         <AthleteSummaryPanel
           readiness={currentReadiness}
           tasksDue={tasksDue}
           goalsActive={goalsActive}
-          upcomingSession="Youth Class 4:00 PM"
+          upcomingSession="Unavailable - not yet tracked"
           unreadMessages={0}
         />
 
@@ -1120,9 +1135,10 @@ export default function AthleteWorkspace() {
                   <div className="flex gap-2">
                     <button
                       onClick={handleCreateGoal}
-                      className="flex-1 bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold py-2 transition"
+                      disabled={isCreatingGoal}
+                      className="flex-1 bg-[#8b4444] hover:bg-[#5a2a2a] disabled:bg-[#4a4a4a] text-white font-semibold py-2 transition"
                     >
-                      Create Goal
+                      {isCreatingGoal ? 'Creating...' : 'Create Goal'}
                     </button>
                     <button
                       onClick={() => setShowGoalForm(false)}
@@ -1226,11 +1242,21 @@ export default function AthleteWorkspace() {
             <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
               <h3 className="font-mono font-bold text-[#d4a574] uppercase">Assessments</h3>
               <p className="text-[#b0a095]">Complete personality tests, surveys, and skill assessments.</p>
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                PLANNED | NOT YET IMPLEMENTED -- there is no assessment engine behind this tab, so nothing can
+                be started or scored from here yet.
+              </p>
               <div className="space-y-3">
                 <div className="border-2 border-[#8b4444] bg-[#0f0f0f] p-4">
                   <p className="font-semibold">MBTI Personality Test</p>
                   <p className="text-sm text-[#b0a095] mt-1">Discover your personality type and learning style.</p>
-                  <button className="mt-3 px-3 py-1 bg-[#8b4444] hover:bg-[#5a2a2a] text-white text-sm transition">Start Assessment</button>
+                  <button
+                    type="button"
+                    disabled
+                    className="mt-3 px-3 py-1 bg-[#4a4a4a] text-[#8a8a8a] text-sm cursor-not-allowed"
+                  >
+                    Start Assessment
+                  </button>
                 </div>
               </div>
             </div>
@@ -1391,21 +1417,27 @@ export default function AthleteWorkspace() {
             <div className="space-y-6 animate-fadeIn">
               <HelpPanel
                 title="Message Coach"
-                description="SafeSport-compliant messaging portal with automatic parent carbon copy for minor athletes."
+                description="Write a question for your coach. It is recorded in your own SHADOW conversation and answered by SHADOW -- it is not delivered to the coach."
                 usage={[
                   'Be clear and specific in questions',
-                  'Parent emails are automatically CC\'d for safety',
                   'Messages are logged for accountability',
-                  'Coach responds within 24 hours'
+                  'Open SHADOW Chat to read the response',
+                  'Speak to a coach in person for anything urgent'
                 ]}
                 mistakes={[
                   'Vague questions without context',
-                  'Expecting immediate responses'
+                  'Assuming a coach has read what you sent here'
                 ]}
               />
 
-              <div className="border-2 border-red-600 bg-red-900/20 p-4">
-                <p className="text-sm text-red-200">🔒 <strong>SafeSport Policy:</strong> All messages are logged and parent CC is active for all minor athletes.</p>
+              {/* No parent notification exists anywhere in the messaging path --
+                  no recipient, address, or delivery step is stored or sent --
+                  so this surface cannot claim parent CC is in force. */}
+              <div className="border-2 border-red-600 bg-red-900/20 p-4 space-y-2">
+                <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                  PLANNED | NOT YET IMPLEMENTED
+                </p>
+                <p className="text-sm text-red-200">🔒 <strong>SafeSport:</strong> messages sent here are logged, but automatic parent carbon copy is not built yet and no coach is notified. Tell a coach or trusted adult in person about anything urgent or unsafe.</p>
               </div>
 
               <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4">
@@ -1459,12 +1491,11 @@ export default function AthleteWorkspace() {
               </div>
               <HelpPanel
                 title="Schedule Session"
-                description="Book training sessions and coaching appointments from our weekly curriculum schedule."
+                description="Booking happens in the unified scheduler; this tab is a placeholder until it can read the gym's classes."
                 usage={[
+                  'Open the unified scheduler to see live classes',
                   'Check your academic status first',
-                  'Book early for preferred time slots',
-                  'Readiness RED may limit contact work',
-                  '24-hour cancellation notice required'
+                  'Readiness RED may limit contact work'
                 ]}
                 mistakes={[
                   'Booking while on academic hold',
@@ -1472,16 +1503,10 @@ export default function AthleteWorkspace() {
                 ]}
               />
 
-              <div className="space-y-4">
-                {['Mon-Thu 4:00 PM Youth Class', 'Mon-Thu 5:00 PM Intermediate', 'MWF 5:45 PM Adult Fitness'].map((session) => (
-                  <div key={session} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 flex justify-between items-center">
-                    <p className="font-semibold">{session}</p>
-                    <button className="px-4 py-2 bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold transition">
-                      Book
-                    </button>
-                  </div>
-                ))}
-              </div>
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                PLANNED | NOT YET IMPLEMENTED -- this tab cannot read the gym&apos;s classes or register you
+                for one. Open the unified scheduler above for live classes and real registration.
+              </p>
             </div>
           )}
 

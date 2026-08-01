@@ -1,6 +1,6 @@
 import type { NextRequest } from 'next/server';
 
-import { requirePrincipal, requirePrincipalAllowingPinChange } from './http';
+import { jsonError, requirePrincipal, requirePrincipalAllowingPinChange } from './http';
 import { resolvePrincipal } from './auth';
 import { DEFAULT_FIRST_LOGIN_PIN, assertChosenPinAllowed, validatePinPolicy } from './pinPolicy';
 import { resolveAuthoritativeRoleSession } from '../../../components/roleSession';
@@ -47,7 +47,25 @@ describe('the starting PIN can be issued but never chosen', () => {
 
   test('choosing it is refused', () => {
     expect(() => assertChosenPinAllowed(DEFAULT_FIRST_LOGIN_PIN))
-      .toThrow('That is the starting PIN everyone is given. Choose a different one.');
+      .toThrow('PIN cannot be the starting PIN everyone is given. Choose a different one.');
+  });
+
+  // The refusal is only useful if the athlete sees it. jsonError maps by
+  // message prefix, so a message that does not begin with "PIN" comes back as
+  // a 500 "Internal server error" with the reason stripped out.
+  test('the refusal reaches the athlete as a 400 carrying the reason', async () => {
+    let refusal: unknown;
+    try {
+      assertChosenPinAllowed(DEFAULT_FIRST_LOGIN_PIN);
+    } catch (error) {
+      refusal = error;
+    }
+
+    const response = jsonError(refusal);
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: 'PIN cannot be the starting PIN everyone is given. Choose a different one.',
+    });
   });
 
   test('surrounding whitespace does not sneak it past', () => {

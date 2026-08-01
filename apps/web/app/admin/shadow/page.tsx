@@ -1740,7 +1740,7 @@ export default function AdminShadowConsolePage() {
               ))}
             </div>
             <p className="mb-3 font-mono text-[12px] text-[#d4a574]/80">
-              Shortcuts: C classify, S stage, A approve, R reject, I import on selected item.
+              Shortcuts: V view, A approve, R reject, I import on selected item.
             </p>
             <form onSubmit={handleCommandSubmit} className="flex flex-wrap gap-3">
               <input
@@ -1756,7 +1756,7 @@ export default function AdminShadowConsolePage() {
                     }
                   }
                 }}
-                placeholder="merge | status | list | clear | summarize | classify | stage | approve | reject"
+                placeholder="merge | status | list | clear | summarize | approve | reject"
                 className="h-11 min-w-[280px] flex-1 border-2 border-[#8b4444] bg-[#1a1a1a] px-4 font-mono text-[15px] text-[#e8d7c6] placeholder-[#d4a574] outline-none transition focus:border-[#d4a574]"
               />
               <button

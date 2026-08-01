@@ -3,19 +3,19 @@ import { Client } from 'pg';
 
 import { getAzurePostgresConnectionString } from '@/src/server/pilot/env';
 import { jsonError } from '@/src/server/pilot/http';
+import { bootstrapKeyMatches } from '@/src/server/pilot/security';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
     const bootstrapKey = process.env.PPBF_PILOT_BOOTSTRAP_KEY?.trim() || '';
-    const providedKey = request.headers.get('x-ppbf-bootstrap-key')?.trim() || '';
 
     if (!bootstrapKey) {
       throw new Error('Missing PPBF_PILOT_BOOTSTRAP_KEY');
     }
 
-    if (!providedKey || providedKey !== bootstrapKey) {
+    if (!bootstrapKeyMatches(request.headers, bootstrapKey)) {
       throw new Error('Forbidden: invalid bootstrap key');
     }
 

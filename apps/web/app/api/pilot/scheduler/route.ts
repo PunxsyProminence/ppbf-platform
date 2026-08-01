@@ -327,7 +327,11 @@ export async function POST(request: NextRequest) {
         athlete_id: athleteId,
         requested_by_role: actorRole,
         requested_by_account_id: actor.accountId,
-        parent_reviewed: actor.role !== 'parent',
+        // true means "a parent has reviewed this registration" (see
+        // markSchedulerRegistrationReviewed). Only a parent registering their
+        // own child satisfies that at insert time; an athlete self-registering
+        // is exactly the case the review step exists for.
+        parent_reviewed: actor.role === 'parent',
         parent_reviewed_at: actor.role === 'parent' ? now : undefined,
         parent_reviewer_account_id: actor.role === 'parent' ? actor.accountId : undefined,
         created_at: now,
@@ -337,8 +341,14 @@ export async function POST(request: NextRequest) {
       if (result.outcome === 'class_not_found') {
         throw new Error('Missing class record');
       }
+      // A duplicate registration is a caller-visible conflict, not a server
+      // fault: thrown here it would carry no jsonError prefix and be masked
+      // as a 500, leaving the parent no way to tell they are already signed up.
       if (result.outcome === 'already_registered') {
-        throw new Error('Athlete already registered for this class');
+        return NextResponse.json(
+          { error: 'Athlete already registered for this class' },
+          { status: 409 },
+        );
       }
 
       return NextResponse.json({

@@ -167,6 +167,13 @@ jobs:
       # MAX_COMPLETION_TOKENS_CEILING in the chat route -- so this aligns the two
       # environments rather than inventing a third number. Headroom is not
       # billed: charges follow tokens produced, not the budget.
+      #
+      # PPBF_SHADOW_PROVIDER_TIMEOUT_MS matches staging's 120000, which is also
+      # DEFAULT_PROVIDER_TIMEOUT_MS in the chat route. Declaring it changes
+      # nothing on an app that has never carried the variable -- it exists so a
+      # stale value already set on the production app cannot survive a deploy,
+      # which is the same reason every other variable here is stated.
+      #
       # PPBF_SHADOW_WORKER_ENABLED is stated explicitly (set-env-vars cannot
       # unset, so every variable is declared). It was deliberately false until
       # staging demonstrated a full enqueue -> drain -> render cycle through
@@ -209,6 +216,7 @@ jobs:
               AZURE_AI_API_VERSION=secretref:azure-ai-api-version \
               AZURE_AI_KEY=secretref:azure-ai-key \
               PPBF_SHADOW_MAX_COMPLETION_TOKENS=8192 \
+              PPBF_SHADOW_PROVIDER_TIMEOUT_MS=120000 \
               PPBF_SHADOW_WORKER_ENABLED=true \
               PPBF_INTAKE_PROMOTION_ENABLED=false \
               AZURE_AI_EMBEDDING_DEPLOYMENT_NAME=text-embedding-3-small \

@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { recordComplianceCheck, updatePublicationStatus } from '@/src/server/pilot/publication';
-import { requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
+import { hiddenNotFound, requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
 
@@ -30,6 +30,12 @@ export async function POST(request: NextRequest) {
       checkedByAccountId: principal.accountId,
     });
 
+    // A publication_id from another organization records nothing, and must be
+    // indistinguishable from one that does not exist.
+    if (!check) {
+      return hiddenNotFound();
+    }
+
     // Update publication compliance status based on check result
     let complianceStatus = 'pending';
     if (body.check_status === 'passed') {
@@ -40,7 +46,12 @@ export async function POST(request: NextRequest) {
       complianceStatus = 'manual_review';
     }
 
-    await updatePublicationStatus(body.publication_id, 'pending_review', complianceStatus);
+    await updatePublicationStatus(
+      principal.organizationId,
+      body.publication_id,
+      'pending_review',
+      complianceStatus,
+    );
 
     return NextResponse.json(check, { status: 201 });
   } catch (error) {

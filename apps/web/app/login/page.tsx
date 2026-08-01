@@ -73,7 +73,17 @@ function LoginPageContent() {
     }
 
     if (error === 'auth-forbidden') {
-      return 'This Microsoft account is not allowed to sign in as platform owner.';
+      return 'This account signed in, but its role has no workspace yet. Ask your organization admin to finish setting it up.';
+    }
+
+    // RoleSessionGate emits these two; without a case they fell through to the
+    // Microsoft message even when the user had signed in with a PIN.
+    if (error === 'privileged_auth_required') {
+      return 'That area requires a Microsoft sign-in. Please continue with Microsoft.';
+    }
+
+    if (error === 'unsupported_role') {
+      return 'Your account role cannot open that area.';
     }
 
     return 'Microsoft sign-in failed. Please try again.';
@@ -282,6 +292,15 @@ function LoginPageContent() {
           </div>
 
           <div className="space-y-6 px-8 py-8">
+            {/* Sign-in failures arrive as a full-page redirect, which resets the
+                tab to PIN. While this banner lived inside the Microsoft panel a
+                rejected user saw an empty PIN form and no reason at all. */}
+            {authErrorMessage && (
+              <div className="rounded-lg border border-[var(--red-primary)] bg-[rgba(184,59,52,0.05)] p-3" role="alert">
+                <p className="text-sm text-[var(--red-primary)]">⚠️ {authErrorMessage}</p>
+              </div>
+            )}
+
             <div className="grid gap-3 rounded-[24px] border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-md)]">
               <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--black)]">Choose Sign-In Method</p>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -336,11 +355,6 @@ function LoginPageContent() {
                     Click below to sign in securely with your Microsoft account. Your organization admin manages who can access the platform.
                   </p>
                 </div>
-                {authErrorMessage && (
-                  <div className="rounded-lg border border-[var(--red-primary)] bg-[rgba(184,59,52,0.05)] p-3">
-                    <p className="text-sm text-[var(--red-primary)]">⚠️ {authErrorMessage}</p>
-                  </div>
-                )}
                 <button
                   type="button"
                   onClick={microsoftSignIn}

@@ -101,6 +101,13 @@ export async function GET(request: NextRequest) {
             trackAssignmentCount,
           };
         } catch (error) {
+          // The raw message can carry SQL, connection, or upstream-provider
+          // detail, so it stays in the server log and the row reports a fixed
+          // string.
+          console.error('platform-overview-gym-summary-failed', {
+            organizationId: org.organization_id,
+            message: error instanceof Error ? error.message : String(error),
+          });
           return {
             organizationId: org.organization_id,
             organizationName: org.organization_name,
@@ -109,7 +116,7 @@ export async function GET(request: NextRequest) {
             growth: null,
             capabilityCount,
             trackAssignmentCount,
-            error: error instanceof Error ? error.message : 'Failed to load summary',
+            error: 'Failed to load summary',
           };
         }
       }),

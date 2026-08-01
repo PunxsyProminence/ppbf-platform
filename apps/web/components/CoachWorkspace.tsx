@@ -41,11 +41,13 @@ interface Athlete {
   attendance: 'Present' | 'Late' | 'Excused' | 'Absent' | 'Unknown';
 }
 
+// A block template only. There is no live-session backend, so a block has no
+// runtime status. Do not add a status field or a progress bar without a feed
+// behind it: hardcoded values here read as a real running session.
 interface WorkoutBlock {
   id: string;
   title: string;
   duration: number;
-  status: 'Not Started' | 'In Progress' | 'Completed' | 'Skipped';
   objective: string;
   trainingItems: string[];
   coachingCues: string[];
@@ -106,18 +108,6 @@ function taskStatusTone(status: CoachTask['status']): string {
   return 'bg-[#4a4a6b] text-[#a4a4d4]';
 }
 
-function blockCardTone(status: WorkoutBlock['status']): string {
-  if (status === 'Completed') return 'bg-green-900/20 border-green-700';
-  if (status === 'In Progress') return 'bg-yellow-900/20 border-yellow-700';
-  return 'bg-[#0f0f0f] border-[#8b4444]';
-}
-
-function blockStatusTone(status: WorkoutBlock['status']): string {
-  if (status === 'Completed') return 'bg-green-900 text-green-200';
-  if (status === 'In Progress') return 'bg-yellow-900 text-yellow-200';
-  return 'bg-[#4a4a4a] text-[#8a8a8a]';
-}
-
 function readinessBadgeTone(readiness: Athlete['readiness']): string {
   if (readiness === 'GREEN') return 'bg-green-900 text-green-200';
   if (readiness === 'YELLOW') return 'bg-yellow-900 text-yellow-200';
@@ -129,14 +119,17 @@ export default function CoachWorkspace() {
   const [activeTab, setActiveTab] = useState<TabID>('dashboard');
   const [sessionMode, setSessionMode] = useState<SessionMode>('Group');
   const [athleteFloorPlans, setAthleteFloorPlans] = useState<CoachAthleteFloorPlan[]>([]);
+  const [floorPlansError, setFloorPlansError] = useState<string | null>(null);
   const [coachAccountId, setCoachAccountId] = useState('');
   const [reviewSessionId, setReviewSessionId] = useState('');
   const [reviewDecision, setReviewDecision] = useState('approved');
   const [reviewNotes, setReviewNotes] = useState('');
   const [reviewSyncMessage, setReviewSyncMessage] = useState('');
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [shadowQueue, setShadowQueue] = useState<ShadowReviewQueueItem[]>([]);
   const [shadowObservations, setShadowObservations] = useState<ShadowObservationItem[]>([]);
   const [shadowReadError, setShadowReadError] = useState('');
+  const [shadowQueueUnavailable, setShadowQueueUnavailable] = useState(false);
 
   // Dashboard data - Real API
   const [athletes, setAthletes] = useState<Athlete[]>([]);
@@ -152,7 +145,6 @@ export default function CoachWorkspace() {
           id: 'wb_1',
           title: 'Individual Warmup + Movement Prep',
           duration: 10,
-          status: 'Completed',
           objective: 'Prime mechanics and movement quality before technical rounds.',
           trainingItems: [
             '2 rounds jump rope x 2:00 with 0:30 reset',
@@ -165,7 +157,6 @@ export default function CoachWorkspace() {
           id: 'wb_2',
           title: 'Footwork and Angle Entry',
           duration: 15,
-          status: 'In Progress',
           objective: 'Build clean entries and exits from jab range.',
           trainingItems: [
             '4 x 2:00 ladder step + pivot (inside/outside)',
@@ -178,7 +169,6 @@ export default function CoachWorkspace() {
           id: 'wb_3',
           title: 'Targeted Technical Rounds',
           duration: 15,
-          status: 'Not Started',
           objective: 'Refine high-value combinations with defensive responsibility.',
           trainingItems: [
             'Pad rounds: 3 x 3:00 (jab-cross-slip-cross focus)',
@@ -191,7 +181,6 @@ export default function CoachWorkspace() {
           id: 'wb_4',
           title: 'Conditioning Micro-Block',
           duration: 10,
-          status: 'Not Started',
           objective: 'Support repeat power without technique breakdown.',
           trainingItems: [
             'Battle rope intervals 6 x 30:30',
@@ -204,7 +193,6 @@ export default function CoachWorkspace() {
           id: 'wb_5',
           title: 'Cooldown + Review',
           duration: 5,
-          status: 'Not Started',
           objective: 'Recover and lock one technical takeaway.',
           trainingItems: ['Breath downshift x 2 minutes', 'Stretch reset x 3 minutes'],
           coachingCues: ['Identify one repeatable win from session'],
@@ -217,7 +205,6 @@ export default function CoachWorkspace() {
         id: 'wb_1',
         title: 'Group Warmup Flow',
         duration: 10,
-        status: 'Completed',
         objective: 'Raise heart rate and establish class rhythm safely.',
         trainingItems: [
           'Jump rope cadence ladder: 3 x 90s',
@@ -230,7 +217,6 @@ export default function CoachWorkspace() {
         id: 'wb_2',
         title: 'Footwork Pods',
         duration: 15,
-        status: 'In Progress',
         objective: 'Install directional movement under control and spacing.',
         trainingItems: [
           'Station A: forward/backward step-and-stop x 3 sets',
@@ -243,7 +229,6 @@ export default function CoachWorkspace() {
         id: 'wb_3',
         title: 'Defense + Combo Circuit',
         duration: 15,
-        status: 'Not Started',
         objective: 'Connect defensive reactions to simple scoring combinations.',
         trainingItems: [
           'Slip line: jab-slip-jab x 3 rounds',
@@ -256,7 +241,6 @@ export default function CoachWorkspace() {
         id: 'wb_4',
         title: 'Group Conditioning',
         duration: 15,
-        status: 'Not Started',
         objective: 'Build engine while preserving technical form standards.',
         trainingItems: [
           'Bag intervals 5 x 2:00 (45s active recovery)',
@@ -269,7 +253,6 @@ export default function CoachWorkspace() {
         id: 'wb_5',
         title: 'Cooldown + Team Debrief',
         duration: 5,
-        status: 'Not Started',
         objective: 'Return to baseline and reinforce key class lesson.',
         trainingItems: ['Guided breathing x 2 minutes', 'Mobility reset x 2 minutes', 'Team takeaway x 1 minute'],
         coachingCues: ['Name one technical habit to repeat next session'],
@@ -320,26 +303,32 @@ export default function CoachWorkspace() {
   const reviewsNeeded = coachTasks.filter(t => t.status === 'Open' && t.title.includes('Review')).length;
   const assignmentsDue = coachTasks.filter(t => t.status === 'Open').length;
 
-  useEffect(() => {
-    const loadPlans = async () => {
-      try {
-        const response = await fetch(`${apiBase()}/api/pilot/floor-plans?limit=50`, {
-          method: 'GET',
-          credentials: 'include',
-        });
-        if (!response.ok) {
-          throw new Error('Failed to load athlete floor plans');
-        }
-
-        const payload = (await response.json()) as { items?: CoachAthleteFloorPlan[] };
-        setAthleteFloorPlans(payload.items || []);
-      } catch {
-        setAthleteFloorPlans([]);
+  const loadFloorPlans = useCallback(async () => {
+    try {
+      setFloorPlansError(null);
+      const response = await fetch(`${apiBase()}/api/pilot/floor-plans?limit=50`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error('Failed to load athlete floor plans');
       }
-    };
 
-    void loadPlans();
+      const payload = (await response.json()) as { items?: CoachAthleteFloorPlan[] };
+      setAthleteFloorPlans(payload.items || []);
+    } catch (error) {
+      // A read failure must not fall through to the empty state: "no plans
+      // received yet" is a claim about the athletes, and a coach reading it
+      // after a failed fetch would skip plans that do exist.
+      setFloorPlansError(error instanceof Error ? error.message : 'Failed to load athlete floor plans');
+      setAthleteFloorPlans([]);
+    }
   }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadFloorPlans();
+  }, [loadFloorPlans]);
 
   useEffect(() => {
     void (async () => {
@@ -445,6 +434,12 @@ export default function CoachWorkspace() {
           observationError = 'observation projection';
         }
 
+        // Tracked apart from the combined message because the task board is
+        // built from the review projection alone: an observation-projection
+        // failure must not flag the board, and a queue failure must, wherever
+        // that board is rendered.
+        setShadowQueueUnavailable(Boolean(queueError));
+
         if (queueError || observationError) {
           const failed = [queueError, observationError].filter(Boolean).join(' and ');
           setShadowReadError(`Unable to load SHADOW ${failed}.`);
@@ -452,6 +447,7 @@ export default function CoachWorkspace() {
           setShadowReadError('');
         }
       } catch (error) {
+        setShadowQueueUnavailable(true);
         setShadowReadError(error instanceof Error ? error.message : 'Unable to load SHADOW read models.');
       }
   }, []);
@@ -462,6 +458,13 @@ export default function CoachWorkspace() {
   }, [loadShadowData]);
 
   async function submitCoachReview() {
+    // The endpoint writes a new row per review_id and review_id is minted here
+    // per call, so a second submit while the first is in flight persists a
+    // duplicate review rather than being deduplicated server-side.
+    if (reviewSubmitting) {
+      return;
+    }
+
     setReviewSyncMessage('');
 
     if (!reviewSessionId.trim()) {
@@ -477,35 +480,40 @@ export default function CoachWorkspace() {
     const now = new Date().toISOString();
     const reviewId = `review_${Date.now()}`;
 
-    let response: Response;
+    setReviewSubmitting(true);
     try {
-      response = await fetch(`${apiBase()}/api/pilot/coach-reviews`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          review_id: reviewId,
-          session_id: reviewSessionId.trim(),
-          coach_id: coachAccountId,
-          decision: reviewDecision,
-          notes: reviewNotes || 'Coach review from Coach Workspace',
-          approved_flag: reviewDecision === 'approved',
-          created_at: now,
-          updated_at: now,
-        }),
-      });
-    } catch {
-      setReviewSyncMessage('Network error -- coach review was not saved. Please try again.');
-      return;
-    }
+      let response: Response;
+      try {
+        response = await fetch(`${apiBase()}/api/pilot/coach-reviews`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            review_id: reviewId,
+            session_id: reviewSessionId.trim(),
+            coach_id: coachAccountId,
+            decision: reviewDecision,
+            notes: reviewNotes || 'Coach review from Coach Workspace',
+            approved_flag: reviewDecision === 'approved',
+            created_at: now,
+            updated_at: now,
+          }),
+        });
+      } catch {
+        setReviewSyncMessage('Network error -- coach review was not saved. Please try again.');
+        return;
+      }
 
-    if (!response.ok) {
-      const payload = (await response.json().catch(() => ({ error: 'Coach review persistence failed' }))) as { error?: string };
-      setReviewSyncMessage(payload.error || 'Coach review persistence failed');
-      return;
-    }
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({ error: 'Coach review persistence failed' }))) as { error?: string };
+        setReviewSyncMessage(payload.error || 'Coach review persistence failed');
+        return;
+      }
 
-    setReviewSyncMessage(`Coach review persisted (${reviewId}).`);
+      setReviewSyncMessage(`Coach review persisted (${reviewId}).`);
+    } finally {
+      setReviewSubmitting(false);
+    }
   }
 
   return (
@@ -839,7 +847,22 @@ export default function CoachWorkspace() {
                 ]}
               />
 
-              {athleteFloorPlans.length === 0 ? (
+              {floorPlansError ? (
+                <div className="border-2 border-red-600 bg-red-900/20 p-3 rounded">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-red-400 text-sm font-semibold">Error loading athlete floor plans</p>
+                    <button
+                      onClick={() => void loadFloorPlans()}
+                      className="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition"
+                      aria-label="Retry loading athlete floor plans"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                  <p className="text-red-300 text-xs">{floorPlansError}</p>
+                  <p className="text-red-300 text-xs mt-1">Plans may exist that are not shown here. Do not read this as an empty queue.</p>
+                </div>
+              ) : athleteFloorPlans.length === 0 ? (
                 <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6">
                   <p className="text-sm text-[#d4a574] font-semibold">No athlete floor plans received yet.</p>
                   <p className="mt-2 text-sm text-[#b0a095]">Once an athlete checks in and their floor plan auto-generates, it will appear here as an individual coach review tab.</p>
@@ -902,23 +925,28 @@ export default function CoachWorkspace() {
 
               <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4">
                 <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Session Workout Plan</h3>
+                <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                  PLANNED | NOT YET IMPLEMENTED
+                </p>
+                <p className="text-xs text-[#b0a095]">
+                  This is the standard {sessionMode} block template, not a running session. Block
+                  completion and session progress are not tracked yet. Track the live session on the
+                  floor until this is wired up.
+                </p>
 
                 <div className="space-y-2">
                   {workoutBlocks.map((block) => (
-                    <div key={block.id} className={`border-2 p-3 rounded ${blockCardTone(block.status)} `}>
+                    <div key={block.id} className="border-2 border-[#8b4444] bg-[#0f0f0f] p-3 rounded">
                       <div className="flex justify-between items-center">
                         <div>
                           <p className="font-semibold">{block.title}</p>
                           <p className="text-xs text-[#b0a095]">{block.duration} minutes</p>
                           <p className="text-xs text-[#d4a574] mt-1">{block.objective}</p>
                         </div>
-                        <span className={`text-xs px-2 py-1 rounded font-semibold ${blockStatusTone(block.status)}`}>
-                          {block.status}
-                        </span>
                       </div>
                       <div className="mt-3 grid gap-2 md:grid-cols-2">
                         <div className="border border-[#694838] bg-[#111111] p-2">
-                          <p className="text-[11px] font-mono uppercase tracking-[0.08em] text-[#d4a574]">Actual Training</p>
+                          <p className="text-[11px] font-mono uppercase tracking-[0.08em] text-[#d4a574]">Planned Training</p>
                           <ul className="mt-1 space-y-1 text-xs text-[#cfbfae]">
                             {block.trainingItems.map((item) => (
                               <li key={item}>- {item}</li>
@@ -936,13 +964,6 @@ export default function CoachWorkspace() {
                       </div>
                     </div>
                   ))}
-                </div>
-
-                <div className="bg-[#0f0f0f] border-2 border-[#8b4444] p-4">
-                  <p className="text-xs text-[#8a8a8a]">Session Progress: 40%</p>
-                  <div className="w-full bg-[#2a2a2a] h-2 mt-2">
-                    <div className="bg-[#d4a574] h-2" style={{width: '40%'}}></div>
-                  </div>
                 </div>
               </div>
             </div>
@@ -971,21 +992,26 @@ export default function CoachWorkspace() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4">
                   <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Current Certifications</h3>
-                  <div className="space-y-3">
-                    <div className="bg-[#0f0f0f] p-3 border-2 border-[#8b4444]">
-                      <p className="font-semibold">Bronze Certification</p>
-                      <p className="text-xs text-[#8a8a8a] mt-1">Expires: 2026-12-31</p>
-                    </div>
-                    <div className="bg-[#0f0f0f] p-3 border-2 border-[#8b4444]">
-                      <p className="font-semibold">USA Boxing Coach License</p>
-                      <p className="text-xs text-[#8a8a8a] mt-1">Expires: 2027-06-30</p>
-                    </div>
-                  </div>
+                  <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                    PLANNED | NOT YET IMPLEMENTED
+                  </p>
+                  <p className="text-sm text-[#b0a095]">
+                    There is no backend feed for coach certifications yet, so this platform holds no record
+                    of your credentials or their expiry dates and cannot tell you whether a license is
+                    current. Check with your certifying body until this is wired up.
+                  </p>
                 </div>
 
                 <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4">
                   <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Development Topics</h3>
-                  <div className="space-y-2">
+                  <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                    PLANNED | NOT YET IMPLEMENTED
+                  </p>
+                  <p className="text-sm text-[#b0a095]">
+                    Reference list of the coach development curriculum. There is no backend store for
+                    completion yet, so progress through these topics cannot be recorded here.
+                  </p>
+                  <ul className="space-y-2">
                     {[
                       'Boxing Technique Instruction',
                       'Youth Development Psychology',
@@ -993,12 +1019,11 @@ export default function CoachWorkspace() {
                       'Class Management Skills',
                       'Adaptive Coaching'
                     ].map((topic) => (
-                      <label key={topic} className="flex items-center gap-2 cursor-pointer p-2 border-2 border-[#8b4444] bg-[#0f0f0f] hover:bg-[#1a1a1a]">
-                        <input type="checkbox" className="w-4 h-4" />
-                        <span className="text-sm">{topic}</span>
-                      </label>
+                      <li key={topic} className="p-2 border-2 border-[#8b4444] bg-[#0f0f0f] text-sm">
+                        {topic}
+                      </li>
                     ))}
-                  </div>
+                  </ul>
                 </div>
               </div>
             </div>
@@ -1056,7 +1081,9 @@ export default function CoachWorkspace() {
             <div className="space-y-6 animate-fadeIn">
               <HelpPanel
                 title="Coach Tasks"
-                description="Live work items derived from the SHADOW review queue — nothing here is invented, and an empty board means the queue is clear."
+                description={shadowQueueUnavailable
+                  ? 'Live work items derived from the SHADOW review queue — the queue could not be read, so this board is incomplete and an empty board does NOT mean the queue is clear.'
+                  : 'Live work items derived from the SHADOW review queue — nothing here is invented, and an empty board means the queue is clear.'}
                 usage={[
                   'Work HIGH priority items first',
                   'Items clear automatically when the underlying review is resolved',
@@ -1068,8 +1095,24 @@ export default function CoachWorkspace() {
                 ]}
               />
 
+              {shadowQueueUnavailable && (
+                <div className="border-2 border-red-600 bg-red-900/20 p-3 rounded">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-red-400 text-sm font-semibold">Unable to load the SHADOW review queue</p>
+                    <button
+                      onClick={() => void loadShadowData()}
+                      className="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition flex-shrink-0"
+                      aria-label="Retry loading the SHADOW review queue"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                  <p className="text-red-300 text-xs">This board is incomplete. Open review items may exist that are not listed below.</p>
+                </div>
+              )}
+
               <div className="space-y-3">
-                {coachTasks.length === 0 && (
+                {coachTasks.length === 0 && !shadowQueueUnavailable && (
                   <p className="text-sm text-[#b0a095]">No open tasks. Items appear here from the SHADOW review queue.</p>
                 )}
                 {coachTasks.map(task => (
@@ -1227,9 +1270,10 @@ export default function CoachWorkspace() {
                 <button
                   type="button"
                   onClick={() => void submitCoachReview()}
-                  className="h-11 border-2 border-[#8b4444] bg-[#2a1414] px-4 text-xs font-mono font-bold uppercase tracking-[0.08em] text-[#e8d7c6] transition hover:border-[#d4a574]"
+                  disabled={reviewSubmitting}
+                  className="h-11 border-2 border-[#8b4444] bg-[#2a1414] px-4 text-xs font-mono font-bold uppercase tracking-[0.08em] text-[#e8d7c6] transition hover:border-[#d4a574] disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Save Coach Review
+                  {reviewSubmitting ? 'Saving...' : 'Save Coach Review'}
                 </button>
                 {reviewSyncMessage ? <p className="text-xs text-[#d4a574]">{reviewSyncMessage}</p> : null}
               </div>

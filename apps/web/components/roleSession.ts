@@ -6,7 +6,12 @@ export { getPilotRoleDestination } from '@/src/shared/pilotRoleRouting';
 export const ROLE_SESSION_KEY = 'ppbf-role-session';
 export const ROLE_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const ROLE_SESSION_CHANGE_EVENT = 'ppbf-role-session-change';
-const clubRoles = new Set<ClubRole>(roleRoutes.map((item) => item.role));
+// roleRoutes lists the roles that get a self-service landing card; it has no
+// platform_owner entry by design. But mapPilotRoleToClubRole legitimately
+// returns 'platform_owner' and createPersistentRoleSession stores it, so the
+// parse set must accept it too -- otherwise the very next read rejected the
+// owner's own session and erased it, blanking the global header.
+const clubRoles = new Set<ClubRole>([...roleRoutes.map((item) => item.role), 'platform_owner']);
 
 let cachedRoleSessionRaw: string | null | undefined;
 let cachedRoleSessionValue: RoleSession | null = null;

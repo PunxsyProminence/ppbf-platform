@@ -1,5 +1,19 @@
 import { randomUUID } from 'node:crypto';
-import { query, queryOne } from './db';
+import { query, queryOne, withTransaction } from './db';
+
+const COMPLIANCE_SEVERITIES = ['critical', 'high', 'medium', 'low'] as const;
+
+// severity is a text column, so `order by severity desc` sorts alphabetically
+// and puts 'medium' above 'critical'. Rank the vocabulary explicitly instead.
+// Anything outside it sorts last rather than silently displacing a real
+// severity.
+const SEVERITY_RANK_SQL = `case severity
+      when 'critical' then 1
+      when 'high' then 2
+      when 'medium' then 3
+      when 'low' then 4
+      else 5
+    end`;
 
 export interface ComplianceRule {
   rule_id: string;
@@ -48,6 +62,14 @@ export async function createComplianceViolation(params: {
   details: Record<string, unknown>;
   evidencePath?: string;
 }): Promise<ComplianceViolation> {
+  // pilot.compliance_violations.severity carries no check constraint, unlike
+  // the rules table it is filed against. Free text written here is invisible to
+  // getOrganizationViolationSummary, which counts only these four buckets, and
+  // sorts last everywhere severity is ranked.
+  if (!(COMPLIANCE_SEVERITIES as readonly string[]).includes(params.severity)) {
+    throw new Error(`Unsupported severity: must be one of ${COMPLIANCE_SEVERITIES.join(', ')}`);
+  }
+
   const violationId = `violation_${Date.now()}_${randomUUID().split('-')[0]}`;
   const now = new Date().toISOString();
 
@@ -84,30 +106,35 @@ export async function escalateViolation(params: {
 }): Promise<void> {
   const escalationId = `escalation_${Date.now()}_${randomUUID().split('-')[0]}`;
 
-  await query(
-    `insert into pilot.violation_escalations (
-      escalation_id, organization_id, violation_id, escalated_by_account_id,
-      escalated_to_role, escalation_reason, action_required
-    ) values ($1, $2, $3, $4, $5, $6, $7)`,
-    [
-      escalationId,
-      params.organizationId,
-      params.violationId,
-      params.escalatedByAccountId,
-      params.escalatedToRole,
-      params.escalationReason,
-      params.actionRequired || null,
-    ],
-  );
+  // One transaction: an escalation row whose violation is still sitting at
+  // status 'new' reads as an unescalated violation everywhere the compliance
+  // centre looks, so the pair must commit together or not at all.
+  await withTransaction(async (client) => {
+    await client.query(
+      `insert into pilot.violation_escalations (
+        escalation_id, organization_id, violation_id, escalated_by_account_id,
+        escalated_to_role, escalation_reason, action_required
+      ) values ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        escalationId,
+        params.organizationId,
+        params.violationId,
+        params.escalatedByAccountId,
+        params.escalatedToRole,
+        params.escalationReason,
+        params.actionRequired || null,
+      ],
+    );
 
-  // Update violation status. Scoped by organization_id so a violation_id
-  // from another organization can never be mutated by this call.
-  await query(
-    `update pilot.compliance_violations
-     set status = 'escalated', escalation_status = 'in_progress'
-     where violation_id = $1 and organization_id = $2`,
-    [params.violationId, params.organizationId],
-  );
+    // Update violation status. Scoped by organization_id so a violation_id
+    // from another organization can never be mutated by this call.
+    await client.query(
+      `update pilot.compliance_violations
+       set status = 'escalated', escalation_status = 'in_progress'
+       where violation_id = $1 and organization_id = $2`,
+      [params.violationId, params.organizationId],
+    );
+  });
 }
 
 export async function getComplianceViolationById(
@@ -193,7 +220,7 @@ export async function getComplianceRulesByCategory(
     params.push(category);
   }
 
-  sql += ` order by severity desc`;
+  sql += ` order by ${SEVERITY_RANK_SQL}, rule_name asc`;
 
   return query<ComplianceRule>(sql, params);
 }
