@@ -47,7 +47,7 @@ every one of them touches files later items also touch.
 
 | Id | PR | State | Owner | Action |
 |---|---|---|---|---|
-| 0.1 | [#150](https://github.com/PunxsyProminence/ppbf-platform/pull/150) — reviewer video access, `blocked` administrator | **draft**, unfinished | Remote | Finish or close. It is the oldest open branch and it is not green-and-waiting, it is incomplete |
+| 0.1 | [#150](https://github.com/PunxsyProminence/ppbf-platform/pull/150) — reviewer video access, `blocked` administrator | draft, **green, and complete** | VS Code | **Undraft and review.** My first pass called this "unfinished" from its draft flag alone, which was wrong: 851 lines across 7 files, 16 route tests, 6 pg tests, mutation-verified, CI green since 04:39. It is the oldest open branch and it is ready. It also closes a dead end — a video the content screen `blocked` had no exit anywhere in the platform |
 | 0.2 | [#151](https://github.com/PunxsyProminence/ppbf-platform/pull/151) — Law 5 tap floor, design laws rewrite | **ready**, clean | VS Code | Needs a human read on the *laws rewrite*, not the tap fixes. The tap fixes are verified in-browser and are a real accessibility defect (`Engage Medical Lock` rendered at 38px). The laws rewrite has had no audit and says so |
 | 0.3 | [#154](https://github.com/PunxsyProminence/ppbf-platform/pull/154) — Heavy Bag cap, metrics panel error | draft, green | VS Code | Undraft → merge → **deploy**. This is the only item in the queue that changes what a user is charged for |
 | 0.4 | [#153](https://github.com/PunxsyProminence/ppbf-platform/pull/153) — SHADOW surfaces/spec audit | draft, green | Either | Docs only. Merge whenever; blocks nothing |
@@ -62,7 +62,21 @@ The owner's standing instruction from the 2026-07-31 audit: *"fake data will nee
 removed when we start taking real athletes."* Treat these as release blockers for onboarding
 real families. The 07-31 sweep fixed `/audit` and Mission Control. It missed this one.
 
-### 1.1 — The capability console invents governance rows and does not mark them `[REMOTE]`
+### 1.1 — ✅ **DONE — [#158](https://github.com/PunxsyProminence/ppbf-platform/pull/158)**, and it was worse than filed
+
+Filed as "invented rows shown unmarked." Tracing it before writing code showed the display
+problem was the least of it: the save effect fires on *any* `capabilities` change once
+hydrated — **including the hydration merge itself** — so the merged list was POSTed straight
+back. The registry is one JSONB blob per organization replaced wholesale, so **archiving a
+capability could not stick**: the removal saved, and the next page load added it back and
+rewrote it, attributed to whoever merely opened the page.
+
+Original filing kept below, because the gap between what it said and what was true is the
+useful part.
+
+---
+
+### 1.1 (as originally filed) — The capability console invents governance rows and does not mark them `[REMOTE]`
 
 `apps/web/app/admin/page.tsx:302-321`. `mergeSeedCapabilities()` appends every
 `seedCapabilityBlueprints` entry the server did not return, straight onto the server's list,
@@ -103,7 +117,17 @@ Two clean outcomes, and this needs VS Code because it needs to look at the actua
 Confirm which by querying production for row counts before deciding. Note `shadow_chat_audit`
 (singular, SHADOW's own) is a *different, live, correctly-migrated* table — do not touch it.
 
-### 2.2 — New organizations do not get the five default compliance rules `[REMOTE]`
+### 2.2 — ✅ **DONE — [#159](https://github.com/PunxsyProminence/ppbf-platform/pull/159)**. My hedge below was wrong: it is reachable
+
+`POST /api/pilot/platform/organizations` creates one at runtime. My scoping grep missed it
+because the `insert` lives inside `createOrganization` in a server module, not inline in the
+route — so "possibly organizations are only created by migration" was false and the gap was
+live. `createOrganization` now seeds inside the same transaction, guarded against drift from
+the SQL by a test that matches every field of every rule.
+
+---
+
+### 2.2 (as originally filed) — New organizations do not get the five default compliance rules `[REMOTE]`
 
 Carried over from 07-31's "deliberately not decided." The `compliance-rule-seeds` migration
 seeds existing gyms; gym creation does not seed new ones, so a gym set up the documented way
@@ -119,7 +143,16 @@ migration today, which would make this a non-issue and worth closing rather than
 
 From the 2026-08-01 surfaces/conformance audit. All three were left open deliberately.
 
-### 3.1 — Spec corrections `[REMOTE]` — documentation only, do this first, it is 20 minutes
+### 3.1 — ✅ **DONE — folded into [#154](https://github.com/PunxsyProminence/ppbf-platform/pull/154)**
+
+Put on #154's branch rather than raced off `main`: the per-user Heavy Bag claim only becomes
+true when #154 lands, so shipping the doc separately would have made the spec wrong in a new
+way for however long the two sat apart. §3.5 and §5.5 were additionally marked
+**not-implemented** rather than resolved — that is 3.2's decision to make, not mine.
+
+---
+
+### 3.1 (as originally filed) — Spec corrections `[REMOTE]` — documentation only, do this first, it is 20 minutes
 
 `docs/SHADOW_ML_ARCHITECTURE_SPEC.md` diverges from shipped code in three places, and in all
 three **the code is the better version**:
@@ -218,11 +251,46 @@ Carried from 07-31 and not yet decided. Listed for completeness, not queued:
 
 ---
 
-## Suggested order
+## Status — 2026-08-01, after the first Remote pass
 
-**Remote:** 3.1 (fast, unblocks the spec) → 1.1 (the real defect) → 0.1 (finish or close #150) → 2.2 (scope it, may close)
+**Every Remote item in this queue is done.** Four PRs, all green:
 
-**VS Code:** 0.3 merge + deploy → 4.3 (watch what you just shipped) → 0.2 review → 2.1 (needs the database) → 4.1, 4.2
+| Item | PR | What |
+|---|---|---|
+| 3.1 | #154 | Spec corrections, folded into the code change they describe |
+| 1.1 | #158 | Capability console no longer resurrects archived capabilities |
+| 2.2 | #159 | A gym created through the app gets its five compliance rules |
+| — | #157 | This queue |
 
-**Owner:** 3.2 Scout Reports, 4.4 board seat data. Both are "which product do we want," and
-both stall an agent that reaches them.
+Two of the four were **mis-filed in the original queue and got worse on inspection**: 1.1 was
+a display complaint that turned out to make archiving impossible, and 2.2 carried a hedge that
+it might not be reachable, which was wrong. 0.1 went the other way — I called #150 unfinished
+from its draft flag, and it is complete and has been green since 04:39.
+
+That is three of my own entries corrected by checking them. Worth remembering when reading the
+rest of this file: **the unchecked entries below are the ones most likely to be wrong.**
+
+### What is left, and who it belongs to
+
+**VS Code — everything remaining is yours, because it needs a runtime or a database:**
+
+0.3 merge + deploy #154 → 4.3 (watch the rate limiter you just shipped) → 0.1 undraft #150 →
+0.2 review #151 → merge #157, #158, #159 → **2.1** (needs the database: four tables with no
+DDL) → 4.1, 4.2 (runtime verification Remote structurally cannot do).
+
+**Owner — two decisions that stall whoever reaches them:**
+
+- **3.2 Scout Reports** — build the deleted pipeline, or retitle `/shadow/scout`.
+- **4.4 Board seat data** — ~30 tiles reading "Unavailable"; Program & Safety Director and
+  Secretary are the two seats whose data already exists.
+
+**Also unowned and not queued:** 3.3 (response validator — wants a curated list or a
+classifier, not a regex), team-wide video publishing, athlete goal category and progress.
+
+### One thing Remote cannot pick up
+
+Seeding real data from the share drives is **not available to this agent**. Nothing is mounted
+(`/mnt` holds only harness directories) and this container carries no database credentials by
+design — the same asymmetry that puts Band 4 on VS Code. Any bulk seeding of real athlete or
+gym data is VS Code's, and per the owner's standing instruction it should land only after the
+remaining placeholder content is out.
