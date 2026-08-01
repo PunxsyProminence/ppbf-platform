@@ -72,13 +72,6 @@ function buildQuickRoundContext(input: ShadowContextBuilderInput): string {
     ? [`## Recent Discussion Topics`, `- ${profile.recent_topics.slice(-5).join(', ')}`]
     : [];
 
-  const questionsSection = profile.open_questions && profile.open_questions.length > 0
-    ? [
-        `## Unresolved Questions`,
-        `Context from previous sessions: ${profile.open_questions.slice(0, 2).join('; ')}`,
-      ]
-    : [];
-
   const sections = [
     ...userProfileSection,
     '',
@@ -86,7 +79,6 @@ function buildQuickRoundContext(input: ShadowContextBuilderInput): string {
     ...(communicationSection.length > 0 ? [''] : []),
     ...topicsSection,
     ...(topicsSection.length > 0 ? [''] : []),
-    ...questionsSection,
   ];
 
   return sections.join('\n');
@@ -117,11 +109,9 @@ function buildHeavyBagSections(profile: ShadowUserProfileRow, input: ShadowConte
   const communicationSection = buildCommunicationSection(profile);
   const factsSection = buildFactsSection(profile);
   const topicsSection = buildTopicsSection(profile);
-  const questionsSection = buildQuestionsSection(profile);
   const athleteSection = buildAthleteSection(profile, input);
   const querySection = buildQuerySection(queryType);
   const authoritySection = buildAuthoritySection(input.userRole);
-  const notesSection = profile.shadow_notes ? [`## Context Notes`, profile.shadow_notes] : [];
 
   return [
     ...userContextSection,
@@ -132,15 +122,12 @@ function buildHeavyBagSections(profile: ShadowUserProfileRow, input: ShadowConte
     ...(factsSection.length > 0 ? [''] : []),
     ...topicsSection,
     ...(topicsSection.length > 0 ? [''] : []),
-    ...questionsSection,
-    ...(questionsSection.length > 0 ? [''] : []),
     ...athleteSection,
     ...(athleteSection.length > 0 ? [''] : []),
     ...querySection,
     '',
     ...authoritySection,
     '',
-    ...notesSection,
   ];
 }
 
@@ -166,15 +153,6 @@ function buildFactsSection(profile: ShadowUserProfileRow): string[] {
 function buildTopicsSection(profile: ShadowUserProfileRow): string[] {
   return profile.recent_topics && profile.recent_topics.length > 0
     ? [`## Discussion Topics`, `- Recent topics: ${profile.recent_topics.slice(0, 10).join(', ')}`]
-    : [];
-}
-
-function buildQuestionsSection(profile: ShadowUserProfileRow): string[] {
-  return profile.open_questions && profile.open_questions.length > 0
-    ? [
-        `## Unresolved Items`,
-        ...profile.open_questions.slice(0, 5).map((q: string) => `- ${q}`),
-      ]
     : [];
 }
 

@@ -104,13 +104,19 @@ describe('SHADOW Context Builder', () => {
       expect(result.context).toContain('new-5');
     });
 
-    test('includes open questions in Quick Round', () => {
-      const result = buildShadowContext({
-        ...baseInput,
-        tier: 'quick_round',
-      });
+    // This asserted the opposite until the open_questions path was removed. The
+    // fixture below sets open_questions by hand, but no production code ever
+    // did: the column had no writer, so profiles were born empty and stayed
+    // that way, and the section this test proved never rendered for a real
+    // user. The test passed on a fixture the product could not produce.
+    test('emits no open-questions or context-notes section, in either tier', () => {
+      for (const tier of ['quick_round', 'heavy_bag'] as const) {
+        const result = buildShadowContext({ ...baseInput, tier });
 
-      expect(result.context).toContain('Unresolved Questions');
+        expect(result.context).not.toContain('Unresolved Questions');
+        expect(result.context).not.toContain('Unresolved Items');
+        expect(result.context).not.toContain('Context Notes');
+      }
     });
 
     test('does NOT include athlete data in Quick Round', () => {
