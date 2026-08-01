@@ -8,12 +8,18 @@ type PunchType = 'Jab' | 'Cross' | 'Hook' | 'Uppercut' | 'Body' | 'Other';
 
 const PUNCH_TYPES: PunchType[] = ['Jab', 'Cross', 'Hook', 'Uppercut', 'Body', 'Other'];
 
+const RECOVERY_NOTES_MAX_LENGTH = 300;
+
 // Deep-Track: the rich data-entry path for athletes/coaches willing to take
 // the time to log a full sparring session, in exchange for the formula
 // engine actually being able to compute Accuracy, Connect Differential,
 // Contact Exposure, Focus Attainment, and 7-Day Weight Change from it.
 interface DeepTrackResult {
   ok: boolean;
+  // How many observations the server actually accepted. Zero means nothing was
+  // recorded at all, which the athlete must be told to re-enter; anything above
+  // zero is a kept record they must not submit a second time.
+  savedCount: number;
   // Set when the server raised a safety review because contact was logged for an
   // athlete with no current medical clearance. The submission still succeeded --
   // the record is kept deliberately -- but the athlete should be told, not left
@@ -62,7 +68,9 @@ async function submitDeepTrackObservations(input: {
       kind: 'recovery_notes',
       value: 1,
       unit: 'text_present_0_1',
-      dimensions: { notes: notes.slice(0, 500) },
+      // The observations API rejects any dimension string over 300 characters
+      // outright, so the note is bounded to what the record can hold.
+      dimensions: { notes: notes.slice(0, RECOVERY_NOTES_MAX_LENGTH) },
     });
   }
 
@@ -90,9 +98,11 @@ async function submitDeepTrackObservations(input: {
   }));
 
   const fulfilled = results.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
+  const savedCount = fulfilled.filter((value) => value.ok).length;
 
   return {
-    ok: fulfilled.length === results.length && fulfilled.every((value) => value.ok),
+    ok: savedCount === results.length,
+    savedCount,
     // Any one of the contact observations tripping the gate is enough; they all
     // concern the same session.
     safetyReviewRaised: fulfilled.some((value) => value.safetyReviewRaised),
@@ -146,7 +156,7 @@ export default function SparringTelemetryPage() {
     const observedAt = new Date().toISOString();
 
     try {
-      const { ok, safetyReviewRaised } = await submitDeepTrackObservations({
+      const { ok, savedCount, safetyReviewRaised } = await submitDeepTrackObservations({
         athleteId,
         contextId,
         observedAt,
@@ -161,6 +171,12 @@ export default function SparringTelemetryPage() {
         bodyWeightKg: bodyWeightKg.trim() ? Number(bodyWeightKg) : null,
         opponentStance,
       });
+
+      if (savedCount === 0) {
+        setStatusMessage('Nothing was saved. No part of this session reached the SHADOW formula engine -- '
+          + 'check your connection and log it again.');
+        return;
+      }
 
       const timestamp = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
       setLastSubmitted(timestamp);
@@ -330,6 +346,7 @@ export default function SparringTelemetryPage() {
                 id="recoveryNotes"
                 value={recoveryNotes}
                 onChange={(event) => setRecoveryNotes(event.target.value)}
+                maxLength={RECOVERY_NOTES_MAX_LENGTH}
                 placeholder="How the athlete felt afterward, recovery plan, anything the coach should know..."
                 className="w-full h-20 border-2 border-[#8b4444] bg-[#0f0f0f] px-3.5 py-3 text-[#e8d7c6] outline-none transition focus:border-[#d4a574] placeholder-[#6a5a4a]"
               />

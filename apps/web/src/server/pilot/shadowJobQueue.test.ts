@@ -9,6 +9,8 @@ import {
   getJobStatusForActor,
   normalizeJobPriority,
   normalizeJobTtlHours,
+  purgeTerminalShadowJobs,
+  TERMINAL_JOB_RETENTION_DAYS,
 } from './shadowJobQueue';
 
 jest.mock('./db', () => ({
@@ -110,7 +112,10 @@ describe('SHADOW job queue safeguards', () => {
     expect(sql).toContain("error_message = 'SHADOW_JOB_LEASE_EXPIRED'");
     expect(sql).toContain('lease_expires_at IS NULL OR lease_expires_at <= NOW()');
     expect(sql).toContain('lease_token = gen_random_uuid()');
-    expect(params).toEqual(['heavy_bag_session', 120]);
+    // 300, not 120: the lease must exceed the 120s provider ceiling plus
+    // persistence overhead, or completion throws on its own expired lease and
+    // the re-claim duplicates an already-appended answer.
+    expect(params).toEqual(['heavy_bag_session', 300]);
   });
 
   test('does not reveal another account job within the same tenant', async () => {
@@ -241,5 +246,20 @@ describe('SHADOW job queue safeguards', () => {
 
     const [sql] = mockQuery.mock.calls[0];
     expect(sql).toContain("job_type NOT IN ('heavy_bag_session', 'scout_report')");
+  });
+
+  test('the retention sweep deletes only terminal rows past the window', async () => {
+    mockQuery.mockResolvedValueOnce([{ job_id: 'a' }, { job_id: 'b' }]);
+
+    const purged = await purgeTerminalShadowJobs();
+
+    expect(purged).toBe(2);
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql).toContain("status IN ('completed', 'failed', 'cancelled')");
+    expect(sql).toContain("COALESCE(completed_at, updated_at, created_at)");
+    expect(params).toEqual([TERMINAL_JOB_RETENTION_DAYS]);
+    // Pending and running rows are never retention targets.
+    expect(sql).not.toContain("'pending'");
+    expect(sql).not.toContain("'running'");
   });
 });

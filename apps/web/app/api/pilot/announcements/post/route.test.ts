@@ -12,6 +12,8 @@ jest.mock('@/src/server/pilot/auth', () => ({
 jest.mock('@/src/server/pilot/announcements', () => ({
   createAnnouncement: jest.fn(),
   isAllowedAnnouncementRole: jest.requireActual('@/src/server/pilot/announcements').isAllowedAnnouncementRole,
+  isAnnouncementPlacement: jest.requireActual('@/src/server/pilot/announcements').isAnnouncementPlacement,
+  isAnnouncementKind: jest.requireActual('@/src/server/pilot/announcements').isAnnouncementKind,
 }));
 
 jest.mock('@/src/server/pilot/audit', () => ({
@@ -54,6 +56,11 @@ beforeEach(() => {
     author_name: 'Coach',
     author_role: 'coach',
     created_at: '2026-07-26T00:00:00.000Z',
+    placement: 'gym_notices',
+    kind: 'notice',
+    active: true,
+    starts_at: null,
+    ends_at: null,
   });
 });
 
@@ -129,6 +136,64 @@ describe('POST /api/pilot/announcements/post', () => {
     expect(mockCreateAnnouncement).not.toHaveBeenCalled();
   });
 
+  test('a coach may place and schedule an item, not just post to the sign-in page', async () => {
+    mockResolvePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+
+    const res = await POST(request({
+      message: 'Hands up, chin down.',
+      author_name: 'Coach',
+      placement: 'athlete_workspace',
+      kind: 'motivation',
+      starts_at: '2026-08-01T00:00:00.000Z',
+      ends_at: '2026-08-08T00:00:00.000Z',
+    }));
+
+    expect(res.status).toBe(200);
+    expect(mockCreateAnnouncement).toHaveBeenCalledWith(expect.objectContaining({
+      placement: 'athlete_workspace',
+      kind: 'motivation',
+      startsAt: '2026-08-01T00:00:00.000Z',
+      endsAt: '2026-08-08T00:00:00.000Z',
+    }));
+  });
+
+  test('an unset schedule bound stays null rather than being backdated to now', async () => {
+    mockResolvePrincipal.mockResolvedValueOnce(principal());
+
+    const res = await POST(request({ message: 'Hello', author_name: 'Coach', starts_at: '', ends_at: null }));
+
+    expect(res.status).toBe(200);
+    expect(mockCreateAnnouncement).toHaveBeenCalledWith(expect.objectContaining({
+      startsAt: null,
+      endsAt: null,
+      placement: 'gym_notices',
+      kind: 'notice',
+    }));
+  });
+
+  test('refuses a placement outside the vocabulary the database will accept', async () => {
+    mockResolvePrincipal.mockResolvedValueOnce(principal());
+
+    const res = await POST(request({ message: 'Hello', author_name: 'Coach', placement: 'billboard' }));
+
+    expect(res.status).toBe(400);
+    expect(mockCreateAnnouncement).not.toHaveBeenCalled();
+  });
+
+  test('refuses a window that closes before it opens, which would render nowhere', async () => {
+    mockResolvePrincipal.mockResolvedValueOnce(principal());
+
+    const res = await POST(request({
+      message: 'Hello',
+      author_name: 'Coach',
+      starts_at: '2026-08-08T00:00:00.000Z',
+      ends_at: '2026-08-01T00:00:00.000Z',
+    }));
+
+    expect(res.status).toBe(400);
+    expect(mockCreateAnnouncement).not.toHaveBeenCalled();
+  });
+
   test('records the real actor in the audit event without copying the announcement body', async () => {
     mockResolvePrincipal.mockResolvedValueOnce(principal());
 
@@ -142,6 +207,8 @@ describe('POST /api/pilot/announcements/post', () => {
       details: {
         author_name: 'Coach',
         author_role: 'coach',
+        placement: 'gym_notices',
+        kind: 'notice',
       },
     }));
     expect(JSON.stringify(mockWritePilotAuditEvent.mock.calls[0]?.[0])).not.toContain('Hello');

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
+import { usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
 import type { OrgMetrics } from '@/app/api/pilot/shadow/metrics/route';
 import {
@@ -194,6 +195,14 @@ const QUICK_ADD_OPTIONS: Array<{ label: DataType; source: string; destination: I
   { label: 'Incident Note', source: 'Safety', destination: 'Incident / Safety Log', route: '/audit' },
   { label: 'Assessment Result', source: 'Program Team', destination: 'Evidence Library', route: '/evidence' },
 ];
+
+// Upload, case review-action, document review, and feedback promotion are all
+// organization-scoped writes whose routes admit only an organization admin or
+// coach. A platform owner gathers data here and reads every projection, so the
+// refusal is stated on the control instead of arriving as a 403 that reads like
+// a bug.
+const INTAKE_WRITE_REFUSAL =
+  'Read-only in a platform-owner session: SHADOW intake and review actions belong to gym admins and coaches.';
 
 function newId(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -466,7 +475,7 @@ function renderMetricsPanel(
             ['Filter Rate', growthMetrics.growth.filterRate != null ? `${(growthMetrics.growth.filterRate * 100).toFixed(1)}%` : '—'],
             ['Avg Satisfaction', growthMetrics.growth.avgSatisfaction != null ? growthMetrics.growth.avgSatisfaction.toFixed(2) : '—'],
             ['Effectiveness %', growthMetrics.effectiveness.avgRecommendationScore != null ? String(growthMetrics.effectiveness.avgRecommendationScore) : '—'],
-            ['Recommendations', growthMetrics.growth.recommendationsMade],
+            ['Reviewed Outcomes', growthMetrics.growth.reviewedOutcomes],
             ['Research Created', growthMetrics.growth.researchRequirementsCreated],
             ['Research Closed', growthMetrics.growth.researchRequirementsClosed],
             ['New Patterns', growthMetrics.growth.newLibraryPatterns],
@@ -493,6 +502,26 @@ function renderMetricsPanel(
  * `processLearningSignal` (profile facts, communication style, effectiveness
  * metrics, research requirements). Without this panel the queue has no exit.
  */
+type ActivationModeValue = 'disabled' | 'observation' | 'enabled';
+
+interface UnlockThresholdRow {
+  featureKey: string;
+  metricKey: string;
+  minValue: number;
+  activationMode: ActivationModeValue;
+  description: string;
+}
+
+interface UnlockStatusRow {
+  unlocked: boolean;
+  activationMode: ActivationModeValue;
+  satisfied: boolean;
+  currentValue: number;
+  thresholdValue: number;
+}
+
+type UnlockAdminRow = UnlockThresholdRow & { status: UnlockStatusRow | null };
+
 interface LibraryReviewFlag {
   flag_id: string;
   topic: string;
@@ -626,6 +655,197 @@ function LibraryReviewFlagsPanel() {
   );
 }
 
+// Feature unlock thresholds (audit E1). The GET/POST endpoint has existed and
+// worked for months with ZERO client callers, so activation mode was
+// unreachable: three of the four features ship in observation/disabled, which
+// means `unlocked = activationMode === 'enabled' && satisfied` can never be
+// true for them no matter how high the counter climbs. #123 stopped the UI
+// promising those unlocks; this is the other half -- the surface that can
+// actually grant one.
+//
+// The panel states the REASON a feature is locked, because "counter not met"
+// and "cannot ever unlock in this mode" are different facts and conflating
+// them is what made the old banners dishonest.
+function FeatureUnlockPanel() {
+  const [rows, setRows] = useState<UnlockAdminRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyFeatureKey, setBusyFeatureKey] = useState('');
+  const [error, setError] = useState('');
+  const [drafts, setDrafts] = useState<Record<string, { minValue: string; activationMode: ActivationModeValue }>>({});
+
+  const loadThresholds = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/shadow/unlocks`, {
+        credentials: 'include',
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.error || 'Failed to load feature thresholds');
+      }
+      const thresholds = (payload.thresholds ?? []) as UnlockThresholdRow[];
+      const features = (payload.state?.features ?? {}) as Record<string, UnlockStatusRow>;
+      const merged: UnlockAdminRow[] = thresholds.map((threshold) => ({
+        ...threshold,
+        status: features[threshold.featureKey] ?? null,
+      }));
+      setRows(merged);
+      setDrafts(Object.fromEntries(merged.map((row) => [
+        row.featureKey,
+        { minValue: String(row.minValue), activationMode: row.activationMode },
+      ])));
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Failed to load feature thresholds');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadThresholds();
+  }, [loadThresholds]);
+
+  async function handleSave(row: UnlockAdminRow) {
+    const draft = drafts[row.featureKey];
+    if (!draft) return;
+    const parsedMinValue = Number.parseInt(draft.minValue, 10);
+    if (!Number.isFinite(parsedMinValue) || parsedMinValue < 0) {
+      setError(`Threshold for ${row.featureKey} must be a whole number of 0 or more.`);
+      return;
+    }
+
+    setBusyFeatureKey(row.featureKey);
+    setError('');
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/shadow/unlocks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          featureKey: row.featureKey,
+          metricKey: row.metricKey,
+          minValue: parsedMinValue,
+          activationMode: draft.activationMode,
+          description: row.description,
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.error || 'Failed to save threshold');
+      }
+      await loadThresholds();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Failed to save threshold');
+    } finally {
+      setBusyFeatureKey('');
+    }
+  }
+
+  return (
+    <section className="border-4 border-[#d4a574] bg-[#0a0a0a]/70 p-4">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">Capability Governance</p>
+          <h3 className="mt-1 text-xl font-black text-[#e8d7c6]">Feature Unlock Thresholds</h3>
+        </div>
+        <button
+          type="button"
+          onClick={() => void loadThresholds()}
+          className="h-9 border-2 border-[#8b4444] bg-[#141414] px-3 text-[12px] font-bold text-[#d4a574] transition hover:border-[#d4a574]"
+        >
+          Refresh
+        </button>
+      </div>
+      <p className="mt-1 text-[12px] text-[#d4a574]/70">
+        A feature unlocks only when its activation mode is <span className="font-mono">enabled</span> AND its counter has reached the threshold. In <span className="font-mono">observation</span> or <span className="font-mono">disabled</span>, the counter is tracked but the feature can never unlock — raising it changes nothing.
+      </p>
+      <div className="mt-3 space-y-2">
+        {loading ? <p className="text-[13px] text-[#d4a574]/80">Loading thresholds…</p> : null}
+        {error ? <p className="text-[13px] text-[#f0c9c9]">{error}</p> : null}
+        {rows.map((row) => {
+          const busy = busyFeatureKey === row.featureKey;
+          const draft = drafts[row.featureKey] ?? { minValue: String(row.minValue), activationMode: row.activationMode };
+          const status = row.status;
+          const dirty = draft.minValue !== String(row.minValue) || draft.activationMode !== row.activationMode;
+          // Why it is locked, stated separately: a counter that is met but
+          // gated by mode is a different fact from one that is not met.
+          const lockReason = status?.unlocked
+            ? null
+            : row.activationMode !== 'enabled'
+              ? `Cannot unlock: activation mode is '${row.activationMode}'.`
+              : 'Counter has not reached the threshold.';
+
+          return (
+            <div key={row.featureKey} className="border border-[#8b4444]/60 bg-[#141414] p-3 text-[13px] text-[#e8d7c6]">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-bold">{row.featureKey}</span>
+                <span className={`border px-2 py-0.5 font-mono text-[11px] uppercase ${
+                  status?.unlocked
+                    ? 'border-[#3f8b5b] text-[#c9f0d7]'
+                    : 'border-[#8b4444] text-[#f0c9c9]'
+                }`}>
+                  {status?.unlocked ? 'unlocked' : 'locked'}
+                </span>
+                <span className="font-mono text-[11px] text-[#d4a574]/70">
+                  {row.metricKey}: {status?.currentValue ?? 0} / {row.minValue}
+                </span>
+              </div>
+              <p className="mt-2 text-[12px] text-[#b0a095]">{row.description}</p>
+              {lockReason ? (
+                <p className="mt-1 text-[12px] text-[#f0c9c9]">{lockReason}</p>
+              ) : null}
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-1 text-[12px] text-[#d4a574]/80">
+                  Mode
+                  <select
+                    value={draft.activationMode}
+                    onChange={(event) => setDrafts((previous) => ({
+                      ...previous,
+                      [row.featureKey]: { ...draft, activationMode: event.target.value as ActivationModeValue },
+                    }))}
+                    className="h-9 border-2 border-[#8b4444] bg-[#0a0a0a] px-2 text-[12px] text-[#e8d7c6]"
+                  >
+                    <option value="disabled">disabled</option>
+                    <option value="observation">observation</option>
+                    <option value="enabled">enabled</option>
+                  </select>
+                </label>
+                <label className="flex items-center gap-1 text-[12px] text-[#d4a574]/80">
+                  Threshold
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={draft.minValue}
+                    onChange={(event) => setDrafts((previous) => ({
+                      ...previous,
+                      [row.featureKey]: { ...draft, minValue: event.target.value },
+                    }))}
+                    className="h-9 w-24 border-2 border-[#8b4444] bg-[#0a0a0a] px-2 text-[12px] text-[#e8d7c6]"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => void handleSave(row)}
+                  disabled={busy || !dirty}
+                  className="h-9 border-2 border-[#3f8b5b] bg-[#162a1d] px-3 text-[12px] font-bold text-[#c9f0d7] transition hover:border-[#d4a574] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {busy ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+        {!loading && !error && rows.length === 0 ? (
+          <p className="text-[13px] text-[#d4a574]/80">No feature thresholds returned.</p>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 function renderFeedbackReviewPanel(props: {
   summary: ShadowFeedbackApiResponse['summary'];
   reviewQueue: ShadowFeedbackItem[];
@@ -633,14 +853,16 @@ function renderFeedbackReviewPanel(props: {
   loading: boolean;
   error: string;
   pendingFeedbackId: number | null;
+  reviewRefusal: string;
   onReview: (item: ShadowFeedbackItem, decision: 'approve' | 'reject') => void;
   onRefresh: () => void;
 }) {
-  const { summary, reviewQueue, retryQueue, loading, error, pendingFeedbackId, onReview, onRefresh } = props;
+  const { summary, reviewQueue, retryQueue, loading, error, pendingFeedbackId, reviewRefusal, onReview, onRefresh } = props;
 
   const renderItem = (item: ShadowFeedbackItem, mode: 'review' | 'retry') => {
     const busy = pendingFeedbackId === item.feedback_id;
     const resolvable = isShadowFeedbackResolvable(item);
+    const reviewable = resolvable && !reviewRefusal;
 
     return (
       <article key={`${mode}-${item.feedback_id}`} className="border border-[#3f8b5b]/30 bg-[#0f1f14] p-3">
@@ -677,7 +899,7 @@ function renderFeedbackReviewPanel(props: {
         <div className="mt-3 flex flex-wrap gap-2">
           <button
             type="button"
-            disabled={busy || !resolvable}
+            disabled={busy || !reviewable}
             onClick={() => onReview(item, 'approve')}
             className="border border-[#3f8b5b] px-3 py-1 font-mono text-[11px] uppercase tracking-[0.14em] text-[#c9f0d7] transition hover:bg-[#3f8b5b]/25 disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -686,7 +908,7 @@ function renderFeedbackReviewPanel(props: {
           {mode === 'review' && (
             <button
               type="button"
-              disabled={busy || !resolvable}
+              disabled={busy || !reviewable}
               onClick={() => onReview(item, 'reject')}
               className="border border-[#8b4444] px-3 py-1 font-mono text-[11px] uppercase tracking-[0.14em] text-[#e8d7c6] transition hover:bg-[#8b4444]/25 disabled:cursor-not-allowed disabled:opacity-40"
             >
@@ -708,6 +930,9 @@ function renderFeedbackReviewPanel(props: {
           <p className="mt-1 text-[13px] leading-6 text-[#c9f0d7]/70">
             Nothing SHADOW learns from user feedback is applied until it is approved here.
           </p>
+          {reviewRefusal && (
+            <p className="mt-1 text-[13px] leading-6 text-[#e3c99a]">{reviewRefusal}</p>
+          )}
         </div>
         <div className="flex items-center gap-3">
           {loading && <span className="text-xs text-[#c9f0d7]/40">Loading…</span>}
@@ -768,6 +993,8 @@ function renderFeedbackReviewPanel(props: {
 }
 
 export default function AdminShadowConsolePage() {
+  const pilotSession = usePilotSession();
+  const intakeWriteRefusal = pilotSession.role === 'platform_owner' ? INTAKE_WRITE_REFUSAL : '';
   const [consoleLogs, setConsoleLogs] = useState<ConsoleLogEntry[]>([
     {
       id: newId(),
@@ -1168,6 +1395,19 @@ export default function AdminShadowConsolePage() {
       return;
     }
 
+    // Also covers the command bar and the A/R/I shortcuts, which reach the same
+    // refused routes as the buttons.
+    if (intakeWriteRefusal) {
+      appendConsoleLog({
+        source: 'SHADOW',
+        dataType: item.dataType,
+        status: 'Blocked',
+        message: intakeWriteRefusal,
+        destination: 'SHADOW Local State',
+      });
+      return;
+    }
+
     if (action === 'APPROVE' || action === 'REJECT') {
       await handleReviewAction(item, action);
       return;
@@ -1458,7 +1698,7 @@ export default function AdminShadowConsolePage() {
   const commandHints = ['merge', 'status', 'list', 'clear', 'summarize', 'approve', 'reject'];
 
   return (
-    <RoleStandaloneView roleLabel="SHADOW Admin Console" routeLabel="/admin/shadow" allowedRoles={['admin']} showShellHeader={false}>
+    <RoleStandaloneView roleLabel="SHADOW Admin Console" routeLabel="/admin/shadow" allowedRoles={['admin', 'platform_owner']} showShellHeader={false}>
       <main className="grid gap-6 xl:grid-cols-[1.25fr_0.95fr]">
         {/* ── SHADOW Growth Metrics ─────────────────────────────────── */}
         {renderMetricsPanel(growthMetrics, metricsLoading)}
@@ -1470,6 +1710,7 @@ export default function AdminShadowConsolePage() {
           loading: feedbackLoading,
           error: feedbackError,
           pendingFeedbackId: feedbackPendingId,
+          reviewRefusal: intakeWriteRefusal,
           onReview: (item, decision) => {
             void handleFeedbackReview(item, decision);
           },
@@ -1483,6 +1724,8 @@ export default function AdminShadowConsolePage() {
         })}
         {/* ── Library Review Flags (negative-outcome verdicts) ─────── */}
         <LibraryReviewFlagsPanel />
+
+        <FeatureUnlockPanel />
         <section className="space-y-6 border-4 border-[#8b4444] bg-[#0a0a0a]/70 p-6">
           <div className="mb-6 border-b border-[#8b4444]/20 pb-4">
             <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">AI/ML Telemetry Scout</p>
@@ -1527,7 +1770,7 @@ export default function AdminShadowConsolePage() {
               ))}
             </div>
             <p className="mb-3 font-mono text-[12px] text-[#d4a574]/80">
-              Shortcuts: C classify, S stage, A approve, R reject, I import on selected item.
+              Shortcuts: V view, A approve, R reject, I import on selected item.
             </p>
             <form onSubmit={handleCommandSubmit} className="flex flex-wrap gap-3">
               <input
@@ -1543,7 +1786,7 @@ export default function AdminShadowConsolePage() {
                     }
                   }
                 }}
-                placeholder="merge | status | list | clear | summarize | classify | stage | approve | reject"
+                placeholder="merge | status | list | clear | summarize | approve | reject"
                 className="h-11 min-w-[280px] flex-1 border-2 border-[#8b4444] bg-[#1a1a1a] px-4 font-mono text-[15px] text-[#e8d7c6] placeholder-[#d4a574] outline-none transition focus:border-[#d4a574]"
               />
               <button
@@ -1618,14 +1861,20 @@ export default function AdminShadowConsolePage() {
                           key={action}
                           type="button"
                           onClick={() => void handleItemAction(item.id, action)}
-                          disabled={action === 'IMPORT' && item.status !== 'Approved'}
+                          disabled={
+                            (action !== 'VIEW' && Boolean(intakeWriteRefusal))
+                            || (action === 'IMPORT' && item.status !== 'Approved')
+                          }
                           className="h-11 border-2 border-[#8b4444] bg-[#2a1414] px-3 text-[13px] font-bold text-[#e8d7c6] transition hover:border-[#d4a574] disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           {action}
                         </button>
                       ))}
                     </div>
-                    {item.reviewNeeded ? <CaseDocumentsPanel intakeCaseId={item.intakeCaseId} /> : null}
+                    {intakeWriteRefusal ? (
+                      <p className="mt-2 text-[12px] text-[#e3c99a]">{intakeWriteRefusal}</p>
+                    ) : null}
+                    {item.reviewNeeded && !intakeWriteRefusal ? <CaseDocumentsPanel intakeCaseId={item.intakeCaseId} /> : null}
                   </article>
                 ))}
               </div>
@@ -1638,47 +1887,53 @@ export default function AdminShadowConsolePage() {
             <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">Data Intake Sources</p>
             <h3 className="mt-2 text-xl font-black text-[#e8d7c6]">External Sources</h3>
 
-            <div
-              className={`mt-4 space-y-2 rounded border-2 border-dashed p-3 transition ${
-                isDragOver ? 'border-[#e8d7c6] bg-[#3a2a1a]' : 'border-[#8b5a2b] bg-[#1a120a]'
-              }`}
-              onDragOver={(event) => {
-                event.preventDefault();
-                setIsDragOver(true);
-              }}
-              onDragLeave={() => setIsDragOver(false)}
-              onDrop={handleFileDrop}
-            >
-              <p className="text-[12px] font-mono uppercase tracking-[0.08em] text-[#d4a574]">
-                Drop PDF here or use the upload button
+            {intakeWriteRefusal ? (
+              <p className="mt-4 border-2 border-dashed border-[#8b5a2b] bg-[#1a120a] p-3 text-[13px] leading-6 text-[#e3c99a]">
+                {intakeWriteRefusal}
               </p>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,application/pdf"
-                onChange={handleFileUploadChange}
-                className="hidden"
-              />
-              <button
-                type="button"
-                onClick={handleUploadButtonClick}
-                disabled={isUploading}
-                className="h-11 w-full border-2 border-[#d4a574] bg-[#2a1a0a] px-3 text-[14px] font-mono text-[#d4a574] transition hover:border-[#e8d7c6] hover:bg-[#3a2a1a] hover:text-[#e8d7c6]"
+            ) : (
+              <div
+                className={`mt-4 space-y-2 rounded border-2 border-dashed p-3 transition ${
+                  isDragOver ? 'border-[#e8d7c6] bg-[#3a2a1a]' : 'border-[#8b5a2b] bg-[#1a120a]'
+                }`}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  setIsDragOver(true);
+                }}
+                onDragLeave={() => setIsDragOver(false)}
+                onDrop={handleFileDrop}
               >
-                {isUploading ? 'Processing PDF...' : 'Upload PDF'}
-              </button>
-              {uploadedFileName && <p className="text-[14px] text-[#d4a574]/80">Last staged file: {uploadedFileName}</p>}
-              {uploadError && <p className="text-[13px] text-[#f2c3c3]">{uploadError}</p>}
-              {lastIngestSummary && (
-                <div className="border border-[#8b5a2b] bg-[#21160d] p-2 text-[12px] text-[#e8d7c6]">
-                  <p>Intake Case: {lastIngestSummary.intake_case_id}</p>
-                  <p>Intake Document: {lastIngestSummary.intake_document_id}</p>
-                  <p>Classification: {lastIngestSummary.classification}</p>
-                  <p>Queue: {lastIngestSummary.routed_queue}</p>
-                  <p>Review Status: {lastIngestSummary.review_status}</p>
-                </div>
-              )}
-            </div>
+                <p className="text-[12px] font-mono uppercase tracking-[0.08em] text-[#d4a574]">
+                  Drop PDF here or use the upload button
+                </p>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  onChange={handleFileUploadChange}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={handleUploadButtonClick}
+                  disabled={isUploading}
+                  className="h-11 w-full border-2 border-[#d4a574] bg-[#2a1a0a] px-3 text-[14px] font-mono text-[#d4a574] transition hover:border-[#e8d7c6] hover:bg-[#3a2a1a] hover:text-[#e8d7c6]"
+                >
+                  {isUploading ? 'Processing PDF...' : 'Upload PDF'}
+                </button>
+                {uploadedFileName && <p className="text-[14px] text-[#d4a574]/80">Last staged file: {uploadedFileName}</p>}
+                {uploadError && <p className="text-[13px] text-[#f2c3c3]">{uploadError}</p>}
+                {lastIngestSummary && (
+                  <div className="border border-[#8b5a2b] bg-[#21160d] p-2 text-[12px] text-[#e8d7c6]">
+                    <p>Intake Case: {lastIngestSummary.intake_case_id}</p>
+                    <p>Intake Document: {lastIngestSummary.intake_document_id}</p>
+                    <p>Classification: {lastIngestSummary.classification}</p>
+                    <p>Queue: {lastIngestSummary.routed_queue}</p>
+                    <p>Review Status: {lastIngestSummary.review_status}</p>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="mt-4 border-t border-[#d4a574]/20 pt-3">
               <p className="text-[14px] font-mono text-[#d4a574]/80">Quick Add:</p>

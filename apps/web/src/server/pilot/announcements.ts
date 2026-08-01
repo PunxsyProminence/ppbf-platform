@@ -27,6 +27,23 @@ const ALLOWED_AUTHOR_ROLES: AnnouncementAuthorRole[] = [
   'board-at-large',
 ];
 
+// Closed vocabularies, mirroring the check constraints in
+// infra/azure/pilot_slice_postgres_announcement_placements_migration.sql. A
+// placement names a surface that exists; an unrecognized one would render
+// nowhere at all, so the write is refused rather than stored.
+export const ANNOUNCEMENT_PLACEMENTS = [
+  'gym_notices',
+  'athlete_workspace',
+  'coach_workspace',
+  'everywhere',
+] as const;
+
+export type AnnouncementPlacement = (typeof ANNOUNCEMENT_PLACEMENTS)[number];
+
+export const ANNOUNCEMENT_KINDS = ['notice', 'motivation'] as const;
+
+export type AnnouncementKind = (typeof ANNOUNCEMENT_KINDS)[number];
+
 export interface PilotAnnouncement {
   announcement_id: string;
   organization_id: string;
@@ -34,7 +51,15 @@ export interface PilotAnnouncement {
   author_name: string;
   author_role: string;
   created_at: string;
+  placement: AnnouncementPlacement;
+  kind: AnnouncementKind;
+  active: boolean;
+  starts_at: string | null;
+  ends_at: string | null;
 }
+
+const ANNOUNCEMENT_FIELDS =
+  'announcement_id, organization_id, message, author_name, author_role, created_at, placement, kind, active, starts_at, ends_at';
 
 // pilot.announcements is owned by
 // infra/azure/pilot_slice_postgres_announcements_migration.sql, applied through
@@ -53,10 +78,26 @@ export function isAllowedAnnouncementRole(role: string): role is AnnouncementAut
   return ALLOWED_AUTHOR_ROLES.includes(role as AnnouncementAuthorRole);
 }
 
+export function isAnnouncementPlacement(value: unknown): value is AnnouncementPlacement {
+  return ANNOUNCEMENT_PLACEMENTS.includes(value as AnnouncementPlacement);
+}
+
+export function isAnnouncementKind(value: unknown): value is AnnouncementKind {
+  return ANNOUNCEMENT_KINDS.includes(value as AnnouncementKind);
+}
+
+function clampLimit(limit: number | undefined): number {
+  return Number.isFinite(limit) ? Math.max(1, Math.min(limit as number, 25)) : 8;
+}
+
+// Everything one organization has ever posted, newest first, including items
+// that are retired, expired, or not yet in their window. Only the authoring
+// surface should read this -- a reader that draws announcements must use
+// listLiveAnnouncements so a scheduled or retired item cannot reach a member.
 export async function listAnnouncements(organizationId: string, limit = 8): Promise<PilotAnnouncement[]> {
-  const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(limit, 25)) : 8;
+  const safeLimit = clampLimit(limit);
   return query<PilotAnnouncement>(
-    `select announcement_id, organization_id, message, author_name, author_role, created_at
+    `select ${ANNOUNCEMENT_FIELDS}
      from pilot.announcements
      where organization_id = $1
      order by created_at desc
@@ -65,22 +106,59 @@ export async function listAnnouncements(organizationId: string, limit = 8): Prom
   );
 }
 
+// What a member may actually see on one surface right now. 'everywhere' is
+// included in every placement's read by definition. A null bound is an unset
+// bound, not a closed one, so it reads as always-on in that direction.
+export async function listLiveAnnouncements(
+  organizationId: string,
+  params: { placement: AnnouncementPlacement; kind: AnnouncementKind; limit?: number },
+): Promise<PilotAnnouncement[]> {
+  const safeLimit = clampLimit(params.limit);
+  return query<PilotAnnouncement>(
+    `select ${ANNOUNCEMENT_FIELDS}
+     from pilot.announcements
+     where organization_id = $1
+       and active
+       and (placement = $2 or placement = 'everywhere')
+       and kind = $3
+       and (starts_at is null or starts_at <= now())
+       and (ends_at is null or ends_at > now())
+     order by created_at desc
+     limit ${safeLimit}`,
+    [organizationId, params.placement, params.kind],
+  );
+}
+
 export async function createAnnouncement(params: {
   organizationId: string;
   message: string;
   authorName: string;
   authorRole: AnnouncementAuthorRole;
+  placement?: AnnouncementPlacement;
+  kind?: AnnouncementKind;
+  startsAt?: string | null;
+  endsAt?: string | null;
 }): Promise<PilotAnnouncement> {
   const announcementId = randomUUID();
   await query(
     `insert into pilot.announcements
-     (organization_id, announcement_id, message, author_name, author_role)
-     values ($1,$2,$3,$4,$5)`,
-    [params.organizationId, announcementId, params.message, params.authorName, params.authorRole],
+     (organization_id, announcement_id, message, author_name, author_role, placement, kind, starts_at, ends_at)
+     values ($1,$2,$3,$4,$5,$6,$7,$8::timestamptz,$9::timestamptz)`,
+    [
+      params.organizationId,
+      announcementId,
+      params.message,
+      params.authorName,
+      params.authorRole,
+      params.placement ?? 'gym_notices',
+      params.kind ?? 'notice',
+      params.startsAt ?? null,
+      params.endsAt ?? null,
+    ],
   );
 
   const rows = await query<PilotAnnouncement>(
-    `select announcement_id, organization_id, message, author_name, author_role, created_at
+    `select ${ANNOUNCEMENT_FIELDS}
      from pilot.announcements
      where organization_id = $1 and announcement_id = $2`,
     [params.organizationId, announcementId],
@@ -91,4 +169,24 @@ export async function createAnnouncement(params: {
   }
 
   return rows[0];
+}
+
+// Retiring keeps the record and its authorship; there is no delete path,
+// because a notice that was live is part of what the gym told people.
+// Returns null when no row in this organization carries that id, so the
+// caller can report "nothing changed" rather than a silent success.
+export async function setAnnouncementActive(params: {
+  organizationId: string;
+  announcementId: string;
+  active: boolean;
+}): Promise<PilotAnnouncement | null> {
+  const rows = await query<PilotAnnouncement>(
+    `update pilot.announcements
+     set active = $3, updated_at = now()
+     where organization_id = $1 and announcement_id = $2
+     returning ${ANNOUNCEMENT_FIELDS}`,
+    [params.organizationId, params.announcementId, params.active],
+  );
+
+  return rows[0] ?? null;
 }

@@ -171,8 +171,13 @@ export async function POST(request: NextRequest) {
     let learningAccepted = false;
     let learningReason = correlation.reason;
     if (!recordedFeedback.created) {
+      // A pending rating now absorbs the user's corrected values (owner
+      // decision 2026-07-31), so the pending case reports an update rather
+      // than pretending the resubmission was ignored. The review-flag queue
+      // reads the row at approval time, so the correction flows through
+      // without re-signaling learning here.
       learningReason = recordedFeedback.humanReviewRequired
-        ? 'FEEDBACK_ALREADY_RECORDED'
+        ? 'FEEDBACK_UPDATED_PENDING_REVIEW'
         : 'FEEDBACK_ALREADY_RESOLVED';
     } else if (correlation.learningEligible && correlation.correlationId) {
       try {
@@ -263,6 +268,19 @@ export async function PATCH(request: NextRequest) {
       reviewerAccountId: principal.accountId,
       decision: body.decision,
     });
+    if (reviewed === 'reject_only') {
+      // Feedback on a filtered answer (or a deleted conversation) must be
+      // clearable from the queue, but never promotable -- learning from a
+      // filtered answer is exactly what the review gate exists to prevent.
+      return NextResponse.json(
+        {
+          ok: false,
+          rejectOnly: true,
+          error: 'This feedback can only be rejected: its answer was filtered or its conversation was deleted, so it is not eligible to train on.',
+        },
+        { status: 409 },
+      );
+    }
     if (!reviewed) {
       return hiddenNotFound();
     }

@@ -196,10 +196,9 @@ export default function AthleteProgressionIntelligencePage() {
             <div className="flex justify-center py-12">
               <div className="text-gray-500">Loading your progression data...</div>
             </div>
-          ) : null}
-        {gaps.length === 0 ? (
-          <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
-            <p className="text-gray-600 text-lg">No progression gaps assigned</p>
+          ) : gaps.length === 0 ? (
+            <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
+              <p className="text-gray-600 text-lg">No progression gaps assigned</p>
               <p className="text-gray-500 mt-2">Your coaches will identify gaps and assign drills to help you improve</p>
             </div>
           ) : (

@@ -37,6 +37,9 @@ gates are `npm run typecheck` / `lint` / `test`.
 - [ORGANIZATION_ADMIN_WORKFLOW.md](ORGANIZATION_ADMIN_WORKFLOW.md) — org
   lifecycle workflow, tracks closely to real functions in
   [apps/web/src/server/pilot/auth.ts](apps/web/src/server/pilot/auth.ts)
+- [docs/PAYMENT_SERVICE_SLOT.md](docs/PAYMENT_SERVICE_SLOT.md) — RESERVED, NOT
+  BUILT: the payment capability's scope (donations, recurring giving, class
+  fees, B2B wholesale) and the names the future build must use
 
 ## SHADOW
 
@@ -64,8 +67,10 @@ Point-in-time, but not archived — these describe issues that may still be open
 - [docs/governance-rules.md](docs/governance-rules.md)
 - [scripts/README.md](scripts/README.md)
 
-Database migrations are applied by a controlled operator script under an
-advisory lock, never from an HTTP route and never from CI.
+Database migrations are applied only by the controlled operator scripts, run
+either from an operator's shell or from the manually dispatched
+`apply-migrations` workflow. No HTTP route changes the schema, and no push,
+merge, or deploy applies a migration as a side effect.
 
 ## Code
 

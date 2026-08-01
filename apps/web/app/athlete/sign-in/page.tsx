@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import {
-  createPersistentRoleSession,
+  persistAuthoritativeRoleSession,
   loadAuthoritativeRoleSession,
 } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
@@ -56,11 +56,19 @@ export default function AthletePinSignInPage() {
       }
 
       const resolution = await loadAuthoritativeRoleSession(`${apiBase()}/api/pilot/auth/session`);
+      // Every athlete starts on the gym-issued PIN with must_change_pin set, so
+      // this is the FIRST sign-in of every account, not an error. /login and
+      // RoleSessionGate both send this state to /change-pin; without the same
+      // branch here the athlete looped on "please sign in again" forever.
+      if (!resolution.ok && resolution.reason === 'pin_change_required') {
+        router.replace('/change-pin');
+        return;
+      }
       if (!resolution.ok || resolution.session.role !== 'athlete') {
         throw new Error('The athlete session could not be verified. Please sign in again.');
       }
 
-      createPersistentRoleSession(resolution.session.role);
+      persistAuthoritativeRoleSession(resolution.session);
       router.replace(resolution.destination);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Sign in failed.');

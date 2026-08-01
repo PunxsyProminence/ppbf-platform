@@ -5,37 +5,25 @@
 // demand, or an external scheduler in an environment where the in-process
 // worker is not enabled. Claims and executes at most one job per invocation.
 //
-// Protected: the operator key in PPBF_PILOT_BOOTSTRAP_KEY (compared in
-// constant time), or an interactive platform_owner session. Note the limited
+// Protected: the operator key in PPBF_PILOT_BOOTSTRAP_KEY (read from either
+// accepted header name and compared in constant time by bootstrapKeyMatches),
+// or an interactive platform_owner session. Note the limited
 // blast radius by design: even with the key, a caller can only cause work
 // already enqueued by authenticated users to be processed under the
 // enqueuer's re-validated authority -- the processor grants the caller
 // nothing of its own.
-import { timingSafeEqual } from 'node:crypto';
-
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { jsonError } from '@/src/server/pilot/http';
+import { bootstrapKeyMatches } from '@/src/server/pilot/security';
 import { isValidJobType, processNextShadowJob } from '@/src/server/pilot/shadowJobProcessor';
 import type { JobType } from '@/src/server/pilot/shadowJobQueue';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60; // Allow up to 60s for heavy reasoning tasks
 
-function operatorKeyMatches(provided: string | null, expected: string | undefined): boolean {
-  if (!provided || !expected) {
-    return false;
-  }
-  const providedBuffer = Buffer.from(provided, 'utf8');
-  const expectedBuffer = Buffer.from(expected, 'utf8');
-  if (providedBuffer.length !== expectedBuffer.length) {
-    return false;
-  }
-  return timingSafeEqual(providedBuffer, expectedBuffer);
-}
-
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  if (!operatorKeyMatches(request.headers.get('x-bootstrap-key'), process.env.PPBF_PILOT_BOOTSTRAP_KEY)) {
+  if (!bootstrapKeyMatches(request.headers, process.env.PPBF_PILOT_BOOTSTRAP_KEY)) {
     // Session fallback for interactive operations.
     try {
       const { requirePrincipal } = await import('@/src/server/pilot/http');

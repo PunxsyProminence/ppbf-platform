@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import React, { useState, useEffect } from 'react';
+import AnnouncementBanner from './AnnouncementBanner';
 import { ParentSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
 import { cx, ui } from './uiStyles';
@@ -150,9 +151,10 @@ export default function ParentHub() {
         });
         
         setChildren(childList);
-        if (childList.length > 0 && !activeChildId) {
-          setActiveChildId(childList[0].id);
-        }
+        // Functional update so the default selection does not read activeChildId
+        // here: depending on it would refetch the whole roster and re-show the
+        // loading spinner every time the parent switches child.
+        setActiveChildId((current) => current || childList[0]?.id || current);
       } catch (error) {
         setChildrenError(error instanceof Error ? error.message : 'Failed to load children');
         setChildren([]);
@@ -160,7 +162,7 @@ export default function ParentHub() {
         setChildrenLoading(false);
       }
     })();
-  }, [activeChildId, childrenRetryNonce]);
+  }, [childrenRetryNonce]);
 
   const activeChild = children.find(c => c.id === activeChildId);
   const tasksDue = homeAssignments.filter(a => a.status !== 'Completed').length;
@@ -207,6 +209,23 @@ export default function ParentHub() {
             </button>
           </div>
         </div>
+
+        {/* The placement vocabulary names no parent surface, so this hub asks
+            for 'everywhere' and draws only gym-wide items. An author who wants
+            parents to read something has to post it everywhere; nothing placed
+            on the athlete or coach workspace reaches this page. */}
+        <AnnouncementBanner
+          placement="everywhere"
+          kind="notice"
+          heading="Gym Notices"
+          className="border-2 border-[#8b4444] bg-[#e8d7c6] p-4"
+        />
+        <AnnouncementBanner
+          placement="everywhere"
+          kind="motivation"
+          heading="From the Gym"
+          className="border-2 border-[#694838] bg-[#e8d7c6] p-4"
+        />
 
         <div className="border border-[#694838] bg-[#14100d] p-4">
           <p className="text-sm text-[#d4a574] font-semibold">Family Commitment</p>

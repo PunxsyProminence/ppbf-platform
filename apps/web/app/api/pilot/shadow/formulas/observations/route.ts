@@ -6,6 +6,9 @@ import {
   deterministicKey,
 } from '@/src/server/pilot/formulas/identity';
 import {
+  alertCoachToPainReport,
+} from '@/src/server/pilot/formulas/painReportAlert';
+import {
   FormulaRepositoryError,
   saveFormulaObservation,
 } from '@/src/server/pilot/formulas/repository';
@@ -130,6 +133,21 @@ export async function POST(request: NextRequest) {
       observedAt: new Date(body.observedAt).toISOString(),
     });
 
+    // Same ordering and the same reason as the clearance gate above: a stored
+    // pain report nobody was told about is worse than a request that fails
+    // loudly, so the coach-visible record is written first.
+    const painAlert = await alertCoachToPainReport({
+      organizationId: principal.organizationId,
+      athleteId: body.athleteId,
+      kind: body.kind,
+      value: body.value as number | null,
+      dimensions,
+      actorAccountId: principal.accountId,
+      actorRole: principal.role,
+      contextId: body.contextId.trim(),
+      observedAt: new Date(body.observedAt).toISOString(),
+    });
+
     const sourceType = principal.role === 'athlete'
       ? 'manual'
       : principal.role === 'coach'
@@ -181,6 +199,16 @@ export async function POST(request: NextRequest) {
               reason: 'contact_without_medical_clearance',
               medicalStatus: clearance.medicalStatus,
               severity: clearance.severity,
+            },
+          }
+        : {}),
+      // The athlete who reported the pain is told, in the same response, that
+      // it reached a coach -- so the workspace never has to guess.
+      ...(painAlert.raised
+        ? {
+            painReport: {
+              coachNotified: true,
+              severity: painAlert.severity,
             },
           }
         : {}),

@@ -4,7 +4,15 @@ import { loginWithAccountIdAndPin } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { PILOT_SESSION_COOKIE } from '@/src/server/pilot/env';
 import { jsonError } from '@/src/server/pilot/http';
-import { getClientIp, checkRateLimit, recordFailedAttempt, clearRateLimit } from '@/src/server/pilot/rateLimit';
+import {
+  getClientIp,
+  checkRateLimit,
+  checkDurableRateLimit,
+  recordFailedAttempt,
+  recordDurableFailedAttempt,
+  clearRateLimit,
+  clearDurableRateLimit,
+} from '@/src/server/pilot/rateLimit';
 import { SESSION_ABSOLUTE_LIFETIME_SECONDS } from '@/src/server/pilot/sessionPolicy';
 
 export const runtime = 'nodejs';
@@ -24,8 +32,29 @@ export async function POST(request: NextRequest) {
     const accountKey = `pin_account:${accountId}`;
     const ipKey = `pin_ip:${clientIp}`;
 
+    // Volatile AND durable, the way /auth/activate already does it. The
+    // in-memory limiter alone was the only brake on a 6-digit athlete PIN,
+    // and it is per-process: N container replicas meant N independent attempt
+    // budgets against the same child's account, and every deploy reset every
+    // lockout to zero. pilot.accounts has no failed-attempt column, so
+    // nothing else survived a restart.
+    //
+    // Either limiter saying "limited" is enough. A durable lookup that cannot
+    // reach the database returns not-limited rather than throwing, so a blip
+    // degrades to the volatile limiter instead of locking every athlete out
+    // -- failing this check closed would be a worse outage than the brute
+    // force it guards against.
     const accountLimitCheck = checkRateLimit(accountKey);
     const ipLimitCheck = checkRateLimit(ipKey);
+    const durableAccountCheck = await checkDurableRateLimit(accountKey);
+    const durableIpCheck = await checkDurableRateLimit(ipKey);
+
+    if (durableAccountCheck.isLimited || durableIpCheck.isLimited) {
+      return NextResponse.json(
+        { error: 'Too many login attempts. Please try again later.' },
+        { status: 429 }
+      );
+    }
 
     if (accountLimitCheck.isLimited) {
       return NextResponse.json(
@@ -45,16 +74,19 @@ export async function POST(request: NextRequest) {
     const loginResult = await loginWithAccountIdAndPin(accountId, pin);
 
     if (!loginResult) {
-      // Failed login: record failed attempt for rate limiting
-      recordFailedAttempt(accountKey);
-      recordFailedAttempt(ipKey);
+      // Both records: the durable helpers write the volatile entry too, so
+      // these two calls cover both stores.
+      await recordDurableFailedAttempt(accountKey);
+      await recordDurableFailedAttempt(ipKey);
 
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 
-    // Successful login: clear rate limits
-    clearRateLimit(accountKey);
-    clearRateLimit(ipKey);
+    // Successful login: clear both stores, so a legitimate athlete who
+    // fat-fingered their PIN a few times is not still throttled by a durable
+    // row after they get it right.
+    await clearDurableRateLimit(accountKey);
+    await clearDurableRateLimit(ipKey);
 
     // Use the authenticated role from the database, never override it
     const finalRole = loginResult.principal.role;

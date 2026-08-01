@@ -220,6 +220,20 @@ describe('PATCH /api/pilot/shadow/feedback human review', () => {
     expect(mockProcessLearning).not.toHaveBeenCalled();
   });
 
+  test('approve on a reject-only item returns an honest 409, not a 404', async () => {
+    mockResolveReview.mockResolvedValueOnce('reject_only');
+
+    const response = await PATCH(patchRequest({ feedbackId: 41, decision: 'approve' }));
+    const payload = await response.json();
+
+    // Feedback on a filtered answer must be clearable but never promotable.
+    // The old behavior 404ed both buttons and wedged the queue.
+    expect(response.status).toBe(409);
+    expect(payload).toMatchObject({ ok: false, rejectOnly: true });
+    expect(payload.error).toContain('can only be rejected');
+    expect(mockProcessLearning).not.toHaveBeenCalled();
+  });
+
   test('returns an already-durable approval without replaying learning', async () => {
     mockResolveReview.mockResolvedValueOnce({
       ...durableReview,
@@ -336,7 +350,7 @@ describe('POST /api/pilot/shadow/feedback idempotency', () => {
     expect(payload.learning).toMatchObject({
       accepted: false,
       humanReviewRequired: true,
-      reason: 'FEEDBACK_ALREADY_RECORDED',
+      reason: 'FEEDBACK_UPDATED_PENDING_REVIEW',
     });
   });
 

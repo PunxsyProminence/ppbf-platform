@@ -289,6 +289,28 @@ export function tierToSessionType(tier: ShadowTier): ShadowSessionType {
 }
 
 /**
+ * The inverse, for the one case that needs it: an explicit session-type
+ * override.
+ *
+ * The chat route picks the MODEL from sessionType but the context depth and
+ * the displayed badge from the classifier's tier, so overriding sessionType
+ * alone decoupled all three -- `{sessionType:'heavy_bag'}` with no tier ran
+ * the Heavy Bag model against a Quick Round context and told the user it was
+ * a Quick Round (audit F1). Deriving the tier back from an honored override
+ * keeps the three in agreement.
+ *
+ * Only the two synchronous conversational types map to a tier. The async and
+ * refused types (scout_report, board_summary, film_study, recovery_round)
+ * never reach the tier-dependent path, so they return null rather than being
+ * forced into a tier that would mean nothing.
+ */
+export function sessionTypeToTier(sessionType: ShadowSessionType): ShadowTier | null {
+  if (sessionType === 'heavy_bag') return 'heavy_bag';
+  if (sessionType === 'quick_round') return 'quick_round';
+  return null;
+}
+
+/**
  * Human-readable label for the deployment that actually answered. Falls back
  * to the raw deployment name so an env-configured deployment outside the
  * registry is still reported truthfully rather than as the router's

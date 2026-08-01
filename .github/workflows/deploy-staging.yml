@@ -42,9 +42,36 @@ jobs:
           EXPECTED_SHA: ${{ inputs.expected_sha }}
           SCHEMA_MIGRATIONS_COMPLETE: ${{ inputs.schema_migrations_complete }}
         run: |
+          # Both checks below used to be bare `test`, so a failure produced
+          # nothing but "exit code 1" and the operator had to read the step's
+          # env block to learn which one tripped. Run 30668081838 lost real
+          # time to exactly that: it was a RE-RUN, and GitHub does not
+          # re-supply workflow_dispatch inputs on a re-run, so expected_sha
+          # arrived empty and the gate refused a commit that was in fact
+          # correct. The refusal was right; the silence was not.
           ACTUAL_SHA="$(git rev-parse HEAD)"
-          test "$ACTUAL_SHA" = "$EXPECTED_SHA"
-          test "$SCHEMA_MIGRATIONS_COMPLETE" = "CONFIRMED"
+
+          if [ -z "$EXPECTED_SHA" ]; then
+            echo "expected_sha was empty."
+            echo "Re-running a previous run does NOT re-supply workflow_dispatch inputs."
+            echo "Dispatch a fresh run instead, with expected_sha=$ACTUAL_SHA"
+            exit 1
+          fi
+
+          if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+            echo "Refusing to deploy a commit other than the one you named."
+            echo "  checked out: $ACTUAL_SHA"
+            echo "  expected:    $EXPECTED_SHA"
+            echo "Pass the FULL 40-character SHA -- an abbreviated one never matches."
+            exit 1
+          fi
+
+          if [ "$SCHEMA_MIGRATIONS_COMPLETE" != "CONFIRMED" ]; then
+            echo "schema_migrations_complete is '$SCHEMA_MIGRATIONS_COMPLETE', not CONFIRMED."
+            echo "Apply this commit's migrations first (apply-migrations, target=staging),"
+            echo "then dispatch again and attest CONFIRMED."
+            exit 1
+          fi
 
       - name: Authenticate via Azure OIDC
         uses: azure/login@v2
@@ -104,10 +131,13 @@ jobs:
             gpt-5.6-luna-shadow|gpt-5-mini-shadow) ;;
             *) echo "AZURE_AI_DEPLOYMENT_NAME '$AZURE_AI_DEPLOYMENT_NAME' is not a known SHADOW quick-tier deployment."; exit 1 ;;
           esac
-          test "$AZURE_AI_API_VERSION" = "2024-12-01-preview"
+          if [ "$AZURE_AI_API_VERSION" != "2024-12-01-preview" ]; then
+            echo "AZURE_AI_API_VERSION is '$AZURE_AI_API_VERSION', expected '2024-12-01-preview'."
+            exit 1
+          fi
           case "$AZURE_AI_ENDPOINT" in
             https://shadow-ai.cognitiveservices.azure.com|https://shadow-ai.cognitiveservices.azure.com/) ;;
-            *) exit 1 ;;
+            *) echo "AZURE_AI_ENDPOINT '$AZURE_AI_ENDPOINT' is not the approved SHADOW endpoint."; exit 1 ;;
           esac
 
       # PPBF_SHADOW_MAX_COMPLETION_TOKENS was 1024, which is below what a reasoning
@@ -149,6 +179,41 @@ jobs:
       # disabled state -- it gains an explicit false (and eventually true)
       # only through its own workflow change once staging has proven the
       # promotion path through this gate.
+      #
+      # AZURE_AI_VISION_DEPLOYMENT_NAME names the vision deployment for Film
+      # Study (#103); owner-verified to exist on the shadow-ai resource
+      # 2026-07-30. Staging-only while the feature is pre-executor: setting it
+      # here powers the measurement diagnostic below, and film_study jobs
+      # remain SHADOW_JOB_TYPE_UNAVAILABLE until the executor ships on
+      # measured numbers. A deployment NAME, not a secret, like the embedding
+      # line above.
+      #
+      # PPBF_FILM_STUDY_DIAGNOSTIC_ENABLED exposes the admin-only measurement
+      # probe (synthesize test clip -> extract frames -> one timed vision
+      # call) that gate step 15 records. It is #103's required
+      # measured-facts source: in-container ffmpeg timing and real vision
+      # latency/token spend. Staging only; production leaves it unset until
+      # Film Study is a real feature.
+      #
+      # PPBF_VIDEO_CONTENT_SCAN turns on the video scan sweep's content gate
+      # (#49) -- the thing that can finally move an upload off 'quarantined'.
+      # Until this exists, uploaded videos are stranded: every reader requires
+      # status 'ready' and nothing in the platform ever wrote it. Staging
+      # first, like every flag; production leaves it unset (= no gate, no
+      # promotion, videos stay quarantined) until staging has promoted a real
+      # upload and a human has looked at the result.
+      #
+      # PPBF_VIDEO_MALWARE_SCAN is deliberately NOT set, here or in
+      # production. It reads a verdict Microsoft Defender for Storage writes
+      # onto the blob as an index tag; whether malware scanning is enabled on
+      # the storage account is an Azure setting this repository cannot see or
+      # turn on. Enabling the gate without the scanner behind it would leave
+      # every upload retrying until it timed out into human review -- worse
+      # than not enabling it, and it would put "malware scanned" in
+      # scan_detail for videos nothing scanned. Set it to
+      # defender_index_tags only after confirming Defender for Storage
+      # malware scanning is on for the account behind
+      # AZURE_STORAGE_CONNECTION_STRING.
       - name: Deploy to Azure Container App
         env:
           AZURE_AI_ENDPOINT: ${{ vars.AZURE_AI_ENDPOINT }}
@@ -160,8 +225,6 @@ jobs:
             --resource-group "$RESOURCE_GROUP" \
             --image "${ACR_LOGIN_SERVER}/ppbf-frontend@${{ steps.build-image.outputs.digest }}" \
             --set-env-vars \
-              PPBF_ONBOARDING_LIVE_SAVE=false \
-              PPBF_AUTH_PROVIDER_WIRED=false \
               AZURE_POSTGRES_CONNECTION_STRING=secretref:azure-postgres-connection-string \
               AZURE_STORAGE_CONNECTION_STRING=secretref:azure-storage-connection-string \
               PPBF_MS_TENANT_ID=secretref:ppbf-ms-tenant-id \
@@ -178,6 +241,9 @@ jobs:
               PPBF_SHADOW_WORKER_ENABLED=true \
               PPBF_INTAKE_PROMOTION_ENABLED=true \
               AZURE_AI_EMBEDDING_DEPLOYMENT_NAME=text-embedding-3-small \
+              AZURE_AI_VISION_DEPLOYMENT_NAME=gpt-5-vision-shadow \
+              PPBF_FILM_STUDY_DIAGNOSTIC_ENABLED=true \
+              PPBF_VIDEO_CONTENT_SCAN=vision \
               PPBF_PILOT_BOOTSTRAP_KEY=secretref:ppbf-pilot-bootstrap-key \
               PPBF_PILOT_DEFAULT_ORG_ID=secretref:ppbf-pilot-default-org-id \
               PPBF_PILOT_SHADOW_CONTAINER=secretref:ppbf-pilot-shadow-container \
@@ -190,7 +256,11 @@ jobs:
             --resource-group "$RESOURCE_GROUP" \
             --query "properties.template.containers[0].env[?name=='AZURE_AI_KEY'].secretRef | [0]" \
             -o tsv)"
-          test "$AI_KEY_REF" = "azure-ai-key"
+          if [ "$AI_KEY_REF" != "azure-ai-key" ]; then
+            echo "AZURE_AI_KEY resolved to secretRef '$AI_KEY_REF', expected 'azure-ai-key'."
+            echo "The deployed revision would read the wrong secret, so this run stops here."
+            exit 1
+          fi
 
       # `az containerapp update` returns when the new revision is CREATED, not
       # when it is serving. Run 30503641552 chatted with the app ~60s after the

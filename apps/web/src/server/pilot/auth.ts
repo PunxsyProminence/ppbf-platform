@@ -1,12 +1,25 @@
 import type { NextRequest } from 'next/server';
 import type { PoolClient } from 'pg';
 
+import { getPilotRoleDestination } from '@/src/shared/pilotRoleRouting';
+
 import type { PilotRole } from './contracts';
 import { getPilotDefaultOrganizationId, PILOT_SESSION_COOKIE } from './env';
 import { createOpaqueToken, hashPin, hashToken, verifyPin } from './security';
 import { computeSessionExpiry, parseRetentionDays } from './sessionPolicy';
 import { query, queryOne, withTransaction } from './db';
 import { DEFAULT_FIRST_LOGIN_PIN, assertChosenPinAllowed, validatePinPolicy } from './pinPolicy';
+
+/**
+ * The single Microsoft identity permitted to hold platform ownership.
+ *
+ * Both the sign-in path and the platform-owner bootstrap resolve the owner
+ * through here, so the address that bootstrap writes and the address sign-in
+ * accepts cannot drift apart.
+ */
+export function getPrimaryOwnerEmail(): string {
+  return (process.env.PPBF_PRIMARY_OWNER_EMAIL?.trim() || 'admin@punxsyprominence.org').toLowerCase();
+}
 
 export interface PilotPrincipal {
   accountId: string;
@@ -180,6 +193,17 @@ export async function loginWithMicrosoftEmail(emailOrUpn: string): Promise<{ pri
     return null;
   }
 
+  // Every reason this sign-in can be refused is decided before a token exists.
+  // A refusal that ran after the insert still wrote a pilot.session_tokens row
+  // for a session the user was never given.
+  if (!getPilotRoleDestination(data.role)) {
+    throw new Error('Forbidden: unsupported authenticated role');
+  }
+
+  if (data.role === 'platform_owner' && normalizedEmail !== getPrimaryOwnerEmail()) {
+    throw new Error('Forbidden: platform owner identity mismatch');
+  }
+
   const token = createOpaqueToken();
   const tokenHash = hashToken(token);
   const expiresAt = computeSessionExpiry();
@@ -287,10 +311,6 @@ export async function logoutWithToken(token: string): Promise<void> {
   await query('update pilot.session_tokens set revoked_at = now() where token_hash = $1 and revoked_at is null', [tokenHash]);
 }
 
-export async function revokeAllSessionsForAccount(accountId: string): Promise<void> {
-  await query('update pilot.session_tokens set revoked_at = now() where account_id = $1 and revoked_at is null', [accountId]);
-}
-
 // Used by organization-admin-triggered revocation. Authorizes the target
 // through an ACTIVE pilot.organization_memberships row for this specific
 // (account, organization) pair -- not the account's single denormalized
@@ -377,12 +397,61 @@ export async function resetAccountPin(accountId: string, pin: string, organizati
       [pinHash, accountId, organizationId],
     );
 
+    // Leads with "Not found:" because jsonError maps by message prefix: any
+    // other wording is masked as a 500 "Internal server error", which tells the
+    // admin their reset broke the server rather than that they picked an
+    // account this reset cannot apply to.
     if (result.rows.length === 0) {
-      throw new Error('Account not found or cannot be reset');
+      throw new Error('Not found: no such account, or it cannot be reset');
     }
 
     await revokeAllSessionsForAccountTx(client, accountId);
   });
+}
+
+/**
+ * Repair one account stranded by the pre-#46 guardian provisioning defect:
+ * a non-athlete row on auth_provider 'ppbf_local' has NO working login path
+ * (PIN login is athlete-only, Microsoft login matches only provider
+ * 'microsoft', and resolvePrincipal revokes non-athlete local sessions on
+ * sight). Flipping the provider makes the row matchable by the Microsoft
+ * callback's lower(login_email) lookup — which is why a login email is
+ * required — and clears the useless pin_hash the old path wrote.
+ *
+ * Deliberately per-account, never bulk: the stranded-guardians check
+ * (pilot-check-stranded-guardians.mjs / check-database.yml) prescribes an
+ * explicit operator decision per row, and the WHERE below makes every guard
+ * structural — wrong org, athlete rows, already-microsoft rows, inactive
+ * rows, and rows with no login email all refuse rather than half-repair.
+ */
+export async function repairStrandedGuardianAuthProvider(
+  accountId: string,
+  organizationId: string,
+): Promise<{ account_id: string; role: PilotRole; login_email: string }> {
+  const repaired = await queryOne<{ account_id: string; role: PilotRole; login_email: string }>(
+    `update pilot.accounts
+     set auth_provider = 'microsoft',
+         pin_hash = null,
+         must_change_pin = false,
+         updated_at = now()
+     where account_id = $1
+       and organization_id = $2
+       and auth_provider = 'ppbf_local'
+       and role <> 'athlete'
+       and is_platform_owner = false
+       and active_flag = true
+       and login_email is not null
+       and login_email <> ''
+     returning account_id, role, login_email`,
+    [accountId, organizationId],
+  );
+  if (!repaired) {
+    throw new Error(
+      'Not found: no active, stranded (ppbf_local) non-athlete account with a login email '
+      + 'matches that account_id in this organization',
+    );
+  }
+  return repaired;
 }
 
 export async function activateAccountPin(accountId: string, pin: string, organizationId: string): Promise<void> {
@@ -404,7 +473,7 @@ export async function activateAccountPin(accountId: string, pin: string, organiz
     );
 
     if (result.rows.length === 0) {
-      throw new Error('Account not found or cannot be activated');
+      throw new Error('Not found: no such account, or it cannot be activated');
     }
 
     await client.query(
@@ -822,10 +891,19 @@ export async function setOrganizationStatus(
   status: 'active' | 'inactive' | 'suspended' | 'pending',
 ): Promise<void> {
   await withTransaction(async (client) => {
-    await client.query(
-      'update pilot.organizations set status = $2, updated_at = now() where organization_id = $1',
+    const rows = await client.query<{ organization_id: string }>(
+      `update pilot.organizations
+       set status = $2,
+           updated_at = now()
+       where organization_id = $1
+       returning organization_id`,
       [organizationId, status],
     );
+
+    // A suspension that matched no organization must not report success.
+    if (rows.rows.length === 0) {
+      throw new Error('Not found: no such organization');
+    }
 
     if (status !== 'active') {
       // Revoke every session scoped to this organization so members can't
@@ -915,14 +993,20 @@ export async function transferOrganizationAdmin(
   demoteRole: Exclude<PilotRole, 'platform_owner' | 'organization_admin'>,
 ): Promise<void> {
   await withTransaction(async (client) => {
+    // The promote used to match on account_id alone, so it both moved an
+    // account in from another organization and could strip platform ownership
+    // off the owner's own row. Both are structural refusals now: the WHERE
+    // pins the target to this organization, and the platform owner is excluded
+    // outright rather than demoted into an organization seat.
     const promotedRows = await client.query<{ account_id: string }>(
       `update pilot.accounts
        set role = 'organization_admin',
-           organization_id = $2,
            active_flag = true,
-           is_platform_owner = false,
            updated_at = now()
        where account_id = $1
+         and organization_id = $2
+         and is_platform_owner = false
+         and role <> 'platform_owner'
        returning account_id`,
       [toAccountId, organizationId],
     );

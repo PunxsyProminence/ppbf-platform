@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import React, { type FormEvent, useCallback, useEffect, useState } from 'react';
+import AnnouncementBanner from './AnnouncementBanner';
 import { AthleteSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
 import { cx, ui } from './uiStyles';
@@ -83,6 +84,20 @@ interface PainLogEntry {
   type: PainType;
   severity: number;
   capturedAt: string;
+}
+
+/**
+ * The stored session a check-out updates. Held from check-in because
+ * /api/pilot/sessions/update replaces the whole record: every field below has
+ * to be sent back unchanged for the notes to be added to it.
+ */
+interface ActiveSessionRecord {
+  sessionId: string;
+  athleteId: string;
+  date: string;
+  rpe: number;
+  checkInNote: string;
+  createdAt: string;
 }
 
 function getReadinessLevel(readinessToTrain: number): ReadinessLevel {
@@ -246,6 +261,7 @@ export default function AthleteWorkspace() {
   const [goalsError, setGoalsError] = useState<string | null>(null);
 
   const [showGoalForm, setShowGoalForm] = useState(false);
+  const [isCreatingGoal, setIsCreatingGoal] = useState(false);
   const [newGoalTitle, setNewGoalTitle] = useState('');
   const [newGoalCategory, setNewGoalCategory] = useState<SMARTCategory>('Boxing');
   const [newGoalTargetDate, setNewGoalTargetDate] = useState('');
@@ -277,6 +293,7 @@ export default function AthleteWorkspace() {
   const [sessionActive, setSessionActive] = useState(false);
   const [checkInTime, setCheckInTime] = useState<string | null>(null);
   const [checkInNotes, setCheckInNotes] = useState('');
+  const [activeSessionRecord, setActiveSessionRecord] = useState<ActiveSessionRecord | null>(null);
   const [lastWorkoutBuildNote, setLastWorkoutBuildNote] = useState<string | null>(null);
 
   const currentReadiness: ReadinessLevel = getReadinessLevel(readinessToTrain);
@@ -307,7 +324,7 @@ export default function AthleteWorkspace() {
       setGoalsLoading(true);
       setGoalsError(null);
       const response = await fetch(
-        `/api/pilot/goals/list?athlete_id=${encodeURIComponent(backendAthleteId)}`,
+        `${apiBase()}/api/pilot/goals/list?athlete_id=${encodeURIComponent(backendAthleteId)}`,
         { method: 'GET', credentials: 'include' }
       );
       if (!response.ok) throw new Error('Failed to load goals');
@@ -436,57 +453,68 @@ export default function AthleteWorkspace() {
   }, [loadShadowObservations]);
 
   const handleCreateGoal = async () => {
+    if (isCreatingGoal) return;
     if (!newGoalTitle || !newGoalTargetDate || !newGoalSuccessMetric) return;
     if (!backendAthleteId) {
-      setBackendSyncMessage('Goal saved locally. Backend athlete session not found.');
+      // There is no local goal store -- goals exist only in pilot.goals -- so
+      // without a backend session nothing is written anywhere.
+      setBackendSyncMessage('Goal was not saved. Backend athlete session not found - sign in again and retry.');
       return;
     }
 
     const now = new Date().toISOString();
     const goalId = `goal_${Date.now()}`;
 
-    const response = await fetch(`${apiBase()}/api/pilot/goals`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        goal_id: goalId,
-        athlete_id: backendAthleteId,
+    setIsCreatingGoal(true);
+
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/goals`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          goal_id: goalId,
+          athlete_id: backendAthleteId,
+          title: newGoalTitle,
+          target_date: newGoalTargetDate,
+          metric: newGoalSuccessMetric,
+          status: 'active',
+          created_at: now,
+          updated_at: now,
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({ error: 'Goal persistence failed' }))) as { error?: string };
+        setBackendSyncMessage(payload.error || 'Goal persistence failed');
+        return;
+      }
+
+      const newGoal: SMARTGoal = {
+        id: goalId,
         title: newGoalTitle,
-        target_date: newGoalTargetDate,
-        metric: newGoalSuccessMetric,
-        status: 'active',
-        created_at: now,
-        updated_at: now,
-      }),
-    });
-
-    if (!response.ok) {
-      const payload = (await response.json().catch(() => ({ error: 'Goal persistence failed' }))) as { error?: string };
-      setBackendSyncMessage(payload.error || 'Goal persistence failed');
-      return;
+        category: newGoalCategory,
+        targetDate: newGoalTargetDate,
+        successMetric: newGoalSuccessMetric,
+        progressPercent: 0,
+        status: 'Active',
+        specific: '',
+        measurable: '',
+        achievable: '',
+        relevant: '',
+        timeBound: ''
+      };
+      setSmartGoals([...smartGoals, newGoal]);
+      setNewGoalTitle('');
+      setNewGoalTargetDate('');
+      setNewGoalSuccessMetric('');
+      setShowGoalForm(false);
+      setBackendSyncMessage('Goal persisted to pilot backend.');
+    } catch (error) {
+      setBackendSyncMessage(error instanceof Error ? error.message : 'Goal persistence failed');
+    } finally {
+      setIsCreatingGoal(false);
     }
-
-    const newGoal: SMARTGoal = {
-      id: goalId,
-      title: newGoalTitle,
-      category: newGoalCategory,
-      targetDate: newGoalTargetDate,
-      successMetric: newGoalSuccessMetric,
-      progressPercent: 0,
-      status: 'Active',
-      specific: '',
-      measurable: '',
-      achievable: '',
-      relevant: '',
-      timeBound: ''
-    };
-    setSmartGoals([...smartGoals, newGoal]);
-    setNewGoalTitle('');
-    setNewGoalTargetDate('');
-    setNewGoalSuccessMetric('');
-    setShowGoalForm(false);
-    setBackendSyncMessage('Goal persisted to pilot backend.');
   };
 
   const handleCheckIn = async () => {
@@ -550,6 +578,8 @@ export default function AthleteWorkspace() {
     }
 
     const sessionId = `session_${Date.now()}`;
+    const sessionDate = now.toISOString().slice(0, 10);
+    const checkInNote = checkInNotes.trim() || `Auto check-in readiness ${readiness}`;
     const sessionResponse = await fetch(`${apiBase()}/api/pilot/sessions`, {
       method: 'POST',
       credentials: 'include',
@@ -557,9 +587,9 @@ export default function AthleteWorkspace() {
       body: JSON.stringify({
         session_id: sessionId,
         athlete_id: backendAthleteId,
-        date: now.toISOString().slice(0, 10),
+        date: sessionDate,
         rpe: readinessToTrain,
-        notes: checkInNotes || `Auto check-in readiness ${readiness}`,
+        notes: checkInNote,
         completed_flag: false,
         created_at: now.toISOString(),
         updated_at: now.toISOString(),
@@ -567,6 +597,14 @@ export default function AthleteWorkspace() {
     });
 
     if (sessionResponse.ok) {
+      setActiveSessionRecord({
+        sessionId,
+        athleteId: backendAthleteId,
+        date: sessionDate,
+        rpe: readinessToTrain,
+        checkInNote,
+        createdAt: now.toISOString(),
+      });
       setBackendSyncMessage('Session check-in persisted to pilot backend.');
     } else {
       const payload = (await sessionResponse.json().catch(() => ({ error: 'Session persistence failed' }))) as { error?: string };
@@ -584,19 +622,68 @@ export default function AthleteWorkspace() {
     });
   };
 
-  const handleCheckOut = () => {
-    if (checkInTime) {
-      const newSession = {
-        id: `sess_${Date.now()}`,
-        checkInTime: checkInTime,
-        checkOutTime: new Date().toLocaleString(),
-        notes: checkInNotes
-      };
-      setSessionLog([newSession, ...sessionLog]);
-      setSessionActive(false);
-      setCheckInTime(null);
-      setCheckInNotes('');
+  const handleCheckOut = async () => {
+    if (!checkInTime) {
+      return;
     }
+
+    const now = new Date();
+    const notes = checkInNotes.trim();
+    const newSession = {
+      id: `sess_${Date.now()}`,
+      checkInTime: checkInTime,
+      checkOutTime: now.toLocaleString(),
+      notes: checkInNotes
+    };
+
+    if (activeSessionRecord) {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/sessions/update`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            session_id: activeSessionRecord.sessionId,
+            athlete_id: activeSessionRecord.athleteId,
+            date: activeSessionRecord.date,
+            rpe: activeSessionRecord.rpe,
+            // The check-in note is the fallback because the session record
+            // requires a note and an empty box must not erase what check-in
+            // already stored.
+            notes: notes || activeSessionRecord.checkInNote,
+            completed_flag: true,
+            created_at: activeSessionRecord.createdAt,
+            updated_at: now.toISOString(),
+          }),
+        });
+
+        if (response.ok) {
+          setBackendSyncMessage(notes
+            ? 'Check-out saved. Your session notes are on the session record for your coach.'
+            : 'Check-out saved to pilot backend.');
+        } else {
+          const payload = (await response.json().catch(() => ({}))) as { error?: string };
+          setBackendSyncMessage(
+            `Check-out did not save and your session notes were not sent${payload.error ? `: ${payload.error}` : '.'} `
+            + 'Tell a coach anything they need to know.',
+          );
+        }
+      } catch (error) {
+        setBackendSyncMessage(
+          `Check-out did not save and your session notes were not sent${error instanceof Error ? `: ${error.message}` : '.'} `
+          + 'Tell a coach anything they need to know.',
+        );
+      }
+    } else {
+      setBackendSyncMessage('Check-out was not sent: this session was never stored on the backend. '
+        + 'Your notes went nowhere -- tell a coach anything they need to know.');
+    }
+
+    setSessionLog([newSession, ...sessionLog]);
+    setSessionActive(false);
+    setCheckInTime(null);
+    setCheckInNotes('');
+    setActiveSessionRecord(null);
   };
 
   const handleSavePainReport = async () => {
@@ -621,35 +708,47 @@ export default function AthleteWorkspace() {
       setInjuryFlag(true);
       setSoreness((current) => Math.max(current, currentPainSeverity));
 
-      if (backendAthleteId) {
-        const response = await fetch(`${apiBase()}/api/pilot/shadow/formulas/observations`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            athleteId: backendAthleteId,
-            contextId: newPainLogEntry.id,
-            kind: 'pain_report',
-            value: currentPainSeverity,
-            unit: 'severity_1_10',
-            dimensions: {
-              location: selectedPainLocation,
-              painType: currentPainType,
-              injuryFlag: true,
-            },
-            observedAt: now.toISOString(),
-            idempotencyKey: `${newPainLogEntry.id}-pain_report`,
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error('Pain report was saved locally but telemetry persistence failed.');
-        }
-
-        setPainSaveMessage('Pain report saved and shared with coaching telemetry.');
-      } else {
-        setPainSaveMessage('Pain report saved locally. Sign in again to sync with coaching telemetry.');
+      if (!backendAthleteId) {
+        // Nothing outside this browser tab holds a pain report, so a missing
+        // session means it reached no one at all.
+        setPainSaveMessage('Pain report was not saved and no coach was told. Sign in again and report it, '
+          + 'and tell a coach in person.');
+        return;
       }
+
+      const response = await fetch(`${apiBase()}/api/pilot/shadow/formulas/observations`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          athleteId: backendAthleteId,
+          contextId: newPainLogEntry.id,
+          kind: 'pain_report',
+          value: currentPainSeverity,
+          unit: 'severity_1_10',
+          dimensions: {
+            location: selectedPainLocation,
+            painType: currentPainType,
+            injuryFlag: true,
+          },
+          observedAt: now.toISOString(),
+          idempotencyKey: `${newPainLogEntry.id}-pain_report`,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Pain report was not saved and no coach was told. Report it again, '
+          + 'and tell a coach in person.');
+      }
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        painReport?: { coachNotified?: boolean };
+      };
+
+      setPainSaveMessage(payload.painReport?.coachNotified
+        ? 'Pain report saved and raised for coach review.'
+        : 'Pain report saved to your record. No coach review was raised for it -- '
+          + 'tell a coach in person.');
 
       setShowPainModal(false);
     } catch (error) {
@@ -728,6 +827,19 @@ export default function AthleteWorkspace() {
           </div>
         </div>
 
+        <AnnouncementBanner
+          placement="athlete_workspace"
+          kind="notice"
+          heading="Gym Notices"
+          className="border-2 border-[#8b4444] bg-[#e8d7c6] p-4"
+        />
+        <AnnouncementBanner
+          placement="athlete_workspace"
+          kind="motivation"
+          heading="From the Gym"
+          className="border-2 border-[#694838] bg-[#e8d7c6] p-4"
+        />
+
         <div className="border border-[#694838] bg-[#14100d] p-4">
           <p className="text-sm text-[#d4a574] font-semibold">Daily Reminder</p>
           <p className="mt-1 text-sm text-[#cfbfae]">Show up. Do the hard rounds. Own the details. Progress is earned through consistent grit and disciplined effort.</p>
@@ -735,11 +847,14 @@ export default function AthleteWorkspace() {
         </div>
 
         {/* ROLE SUMMARY PANEL */}
+        {/* Class times and registrations live behind the unified scheduler;
+            this workspace has no feed for the athlete's next class, so the
+            tile must not name one. */}
         <AthleteSummaryPanel
           readiness={currentReadiness}
           tasksDue={tasksDue}
           goalsActive={goalsActive}
-          upcomingSession="Youth Class 4:00 PM"
+          upcomingSession="Unavailable - not yet tracked"
           unreadMessages={0}
         />
 
@@ -774,7 +889,7 @@ export default function AthleteWorkspace() {
               { id: 'assessments', label: 'Assessments' },
               { id: 'bio-checkin', label: 'Bio Check-In' },
               { id: 'drill-library', label: 'Drills' },
-              { id: 'rabbit-holes', label: 'Learning' },
+              { id: 'rabbit-holes', label: 'Rabbit Holes' },
               { id: 'message-coach', label: 'Messages' },
               { id: 'schedule-session', label: 'Schedule' },
               { id: 'shadow', label: 'SHADOW Intel' }
@@ -947,10 +1062,10 @@ export default function AthleteWorkspace() {
                     <textarea
                       value={checkInNotes}
                       onChange={(e) => setCheckInNotes(e.target.value)}
-                      placeholder="Session notes..."
+                      placeholder="Session notes for your coach - sent when you check out..."
                       className="w-full h-20 px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none"
                     />
-                    <button onClick={handleCheckOut} className="w-full bg-red-700 hover:bg-red-800 text-white font-semibold py-2 px-4 transition">
+                    <button onClick={() => void handleCheckOut()} className="w-full bg-red-700 hover:bg-red-800 text-white font-semibold py-2 px-4 transition">
                       ⏹️ Check Out
                     </button>
                   </div>
@@ -1120,9 +1235,10 @@ export default function AthleteWorkspace() {
                   <div className="flex gap-2">
                     <button
                       onClick={handleCreateGoal}
-                      className="flex-1 bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold py-2 transition"
+                      disabled={isCreatingGoal}
+                      className="flex-1 bg-[#8b4444] hover:bg-[#5a2a2a] disabled:bg-[#4a4a4a] text-white font-semibold py-2 transition"
                     >
-                      Create Goal
+                      {isCreatingGoal ? 'Creating...' : 'Create Goal'}
                     </button>
                     <button
                       onClick={() => setShowGoalForm(false)}
@@ -1226,11 +1342,21 @@ export default function AthleteWorkspace() {
             <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
               <h3 className="font-mono font-bold text-[#d4a574] uppercase">Assessments</h3>
               <p className="text-[#b0a095]">Complete personality tests, surveys, and skill assessments.</p>
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                PLANNED | NOT YET IMPLEMENTED -- there is no assessment engine behind this tab, so nothing can
+                be started or scored from here yet.
+              </p>
               <div className="space-y-3">
                 <div className="border-2 border-[#8b4444] bg-[#0f0f0f] p-4">
                   <p className="font-semibold">MBTI Personality Test</p>
                   <p className="text-sm text-[#b0a095] mt-1">Discover your personality type and learning style.</p>
-                  <button className="mt-3 px-3 py-1 bg-[#8b4444] hover:bg-[#5a2a2a] text-white text-sm transition">Start Assessment</button>
+                  <button
+                    type="button"
+                    disabled
+                    className="mt-3 px-3 py-1 bg-[#4a4a4a] text-[#8a8a8a] text-sm cursor-not-allowed"
+                  >
+                    Start Assessment
+                  </button>
                 </div>
               </div>
             </div>
@@ -1391,21 +1517,27 @@ export default function AthleteWorkspace() {
             <div className="space-y-6 animate-fadeIn">
               <HelpPanel
                 title="Message Coach"
-                description="SafeSport-compliant messaging portal with automatic parent carbon copy for minor athletes."
+                description="Write a question for your coach. It is recorded in your own SHADOW conversation and answered by SHADOW -- it is not delivered to the coach."
                 usage={[
                   'Be clear and specific in questions',
-                  'Parent emails are automatically CC\'d for safety',
                   'Messages are logged for accountability',
-                  'Coach responds within 24 hours'
+                  'Open SHADOW Chat to read the response',
+                  'Speak to a coach in person for anything urgent'
                 ]}
                 mistakes={[
                   'Vague questions without context',
-                  'Expecting immediate responses'
+                  'Assuming a coach has read what you sent here'
                 ]}
               />
 
-              <div className="border-2 border-red-600 bg-red-900/20 p-4">
-                <p className="text-sm text-red-200">🔒 <strong>SafeSport Policy:</strong> All messages are logged and parent CC is active for all minor athletes.</p>
+              {/* No parent notification exists anywhere in the messaging path --
+                  no recipient, address, or delivery step is stored or sent --
+                  so this surface cannot claim parent CC is in force. */}
+              <div className="border-2 border-red-600 bg-red-900/20 p-4 space-y-2">
+                <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                  PLANNED | NOT YET IMPLEMENTED
+                </p>
+                <p className="text-sm text-red-200">🔒 <strong>SafeSport:</strong> messages sent here are logged, but automatic parent carbon copy is not built yet and no coach is notified. Tell a coach or trusted adult in person about anything urgent or unsafe.</p>
               </div>
 
               <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4">
@@ -1459,12 +1591,11 @@ export default function AthleteWorkspace() {
               </div>
               <HelpPanel
                 title="Schedule Session"
-                description="Book training sessions and coaching appointments from our weekly curriculum schedule."
+                description="Booking happens in the unified scheduler; this tab is a placeholder until it can read the gym's classes."
                 usage={[
+                  'Open the unified scheduler to see live classes',
                   'Check your academic status first',
-                  'Book early for preferred time slots',
-                  'Readiness RED may limit contact work',
-                  '24-hour cancellation notice required'
+                  'Readiness RED may limit contact work'
                 ]}
                 mistakes={[
                   'Booking while on academic hold',
@@ -1472,16 +1603,10 @@ export default function AthleteWorkspace() {
                 ]}
               />
 
-              <div className="space-y-4">
-                {['Mon-Thu 4:00 PM Youth Class', 'Mon-Thu 5:00 PM Intermediate', 'MWF 5:45 PM Adult Fitness'].map((session) => (
-                  <div key={session} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 flex justify-between items-center">
-                    <p className="font-semibold">{session}</p>
-                    <button className="px-4 py-2 bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold transition">
-                      Book
-                    </button>
-                  </div>
-                ))}
-              </div>
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+                PLANNED | NOT YET IMPLEMENTED -- this tab cannot read the gym&apos;s classes or register you
+                for one. Open the unified scheduler above for live classes and real registration.
+              </p>
             </div>
           )}
 

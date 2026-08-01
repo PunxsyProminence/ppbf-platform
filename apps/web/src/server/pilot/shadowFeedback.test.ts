@@ -103,7 +103,11 @@ describe('SHADOW feedback correlation', () => {
     const [sql, params] = mockQueryOne.mock.calls[0];
     expect(sql).toContain('verification_state');
     expect(sql).toContain('human_review_required');
-    expect(sql).toContain('feedback_id = pilot.shadow_feedback.feedback_id');
+    // The conflict arm updates rating fields only while the row still awaits
+    // review -- never the identity or verification columns, and nothing once
+    // a decision is recorded.
+    expect(sql).toContain("pilot.shadow_feedback.human_review_required = true");
+    expect(sql).not.toContain('verification_state = EXCLUDED.verification_state');
     expect(sql).toContain('(xmax = 0) AS created');
     expect(params).toContain('durable_client');
     expect(params).toContain(true);
@@ -148,6 +152,44 @@ describe('SHADOW feedback correlation', () => {
       outcomeSignal: 'thumbs_up',
       comment: 'Original reviewed note',
     });
+  });
+
+  test('a pending rating absorbs the corrected values; a resolved one never does', async () => {
+    // Owner decision 2026-07-31: editable until reviewed. The old upsert was
+    // a literal no-op (SET feedback_id = feedback_id), so flipping a
+    // thumbs-down to thumbs-up silently changed nothing while the route
+    // reported ok:true.
+    mockQueryOne.mockResolvedValueOnce({
+      feedback_id: '41',
+      created: false,
+      verification_state: 'durable_client',
+      human_review_required: true,
+      outcome_signal: 'thumbs_up',
+      comment: 'Corrected: this actually helped.',
+    });
+
+    const recorded = await recordShadowFeedback({
+      organizationId: 'org-1',
+      accountId: 'athlete-account-1',
+      role: 'athlete',
+      helpful: true,
+      outcomeSignal: 'thumbs_up',
+      comment: 'Corrected: this actually helped.',
+      correlationType: 'shadow_message',
+      correlationId: 'message-1',
+      recommendationRef: 'message-1',
+      verificationState: 'durable_client',
+      humanReviewRequired: true,
+    });
+
+    expect(recorded).toMatchObject({ created: false, outcomeSignal: 'thumbs_up' });
+    const [sql] = mockQueryOne.mock.calls[0];
+    // The update is gated on still-awaiting-review, field by field, and the
+    // no-op assignment is gone.
+    expect(sql).toContain('THEN EXCLUDED.helpful');
+    expect(sql).toContain('THEN EXCLUDED.outcome_signal');
+    expect(sql).toContain("pilot.shadow_feedback.verification_state = 'durable_client'");
+    expect(sql).not.toContain('feedback_id = pilot.shadow_feedback.feedback_id');
   });
 
   test('resolves approval from the organization-scoped durable feedback and message records', async () => {
@@ -203,6 +245,71 @@ describe('SHADOW feedback correlation', () => {
       feedbackId: 41,
       reviewerAccountId: 'admin-other',
       decision: 'reject',
+    })).resolves.toBeNull();
+  });
+
+  test('reject remains reachable for items the approve gate refuses', async () => {
+    // Feedback on a filtered answer or a deleted session used to match
+    // NOTHING -- the eligibility conditions lived in the joins, so Approve
+    // and Reject both 404ed and the item wedged the review queue forever.
+    // Eligibility is now an approve-only gate.
+    mockQueryOne.mockResolvedValueOnce({
+      feedback_id: '41',
+      organization_id: 'org-1',
+      account_id: 'athlete-account-1',
+      role: 'athlete',
+      message_id: '00000000-0000-4000-8000-000000000041',
+      topic: 'defense',
+      session_type: 'heavy_bag',
+      outcome_signal: 'thumbs_down',
+      user_note: null,
+      already_resolved: false,
+    });
+
+    const review = await resolveShadowFeedbackReview({
+      organizationId: 'org-1',
+      feedbackId: 41,
+      reviewerAccountId: 'admin-1',
+      decision: 'reject',
+    });
+
+    expect(review).toMatchObject({ feedbackId: 41, decision: 'reject' });
+    const [sql] = mockQueryOne.mock.calls[0];
+    expect(sql).toContain("($3 = 'reject' OR scoped.learning_eligible)");
+    expect(sql).toContain("(m.response_state = 'ok' AND s.deleted_at IS NULL) AS learning_eligible");
+    // The joins themselves must NOT filter on state or liveness anymore.
+    expect(sql).not.toContain("AND m.response_state = 'ok'\n");
+    expect(sql).not.toContain('AND s.deleted_at IS NULL\n');
+  });
+
+  test('approve on a reject-only item reports reject_only instead of vanishing', async () => {
+    mockQueryOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ present: true });
+
+    const review = await resolveShadowFeedbackReview({
+      organizationId: 'org-1',
+      feedbackId: 41,
+      reviewerAccountId: 'admin-1',
+      decision: 'approve',
+    });
+
+    expect(review).toBe('reject_only');
+    const [fallbackSql, fallbackParams] = mockQueryOne.mock.calls[1];
+    expect(fallbackSql).toContain("m.response_state IS DISTINCT FROM 'ok' OR s.deleted_at IS NOT NULL");
+    expect(fallbackParams).toEqual([41, 'org-1']);
+  });
+
+  test('approve on a genuinely missing item still resolves to null', async () => {
+    mockQueryOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+
+    await expect(resolveShadowFeedbackReview({
+      organizationId: 'org-1',
+      feedbackId: 999,
+      reviewerAccountId: 'admin-1',
+      decision: 'approve',
     })).resolves.toBeNull();
   });
 

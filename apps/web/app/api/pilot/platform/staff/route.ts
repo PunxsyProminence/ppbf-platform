@@ -4,6 +4,7 @@ import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { jsonError, requireMicrosoftAuthenticatedPrincipal, requireRole } from '@/src/server/pilot/http';
 import {
   createOrUpdateMicrosoftStaffAccount,
+  INVITABLE_STAFF_ROLES,
   isInvitableStaffRole,
   listOrganizationMembers,
 } from '@/src/server/pilot/staffProvisioning';
@@ -69,6 +70,12 @@ export async function POST(request: NextRequest) {
       organizationId,
       role,
       accountIdHint: body.account_id?.trim() || undefined,
+      // This route is platform-owner only and provisions every invitable role,
+      // including the organization_admin and board seats an org admin may not
+      // touch. Stating that authority is required: the peer-protection guard
+      // defaults to the org-admin set, which would refuse the owner a re-role
+      // of the very accounts only this route can create.
+      callerInvitableRoles: INVITABLE_STAFF_ROLES,
     });
 
     await writePilotAuditEvent({

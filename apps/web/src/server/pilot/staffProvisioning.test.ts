@@ -11,6 +11,7 @@ jest.mock('./db', () => ({
 }));
 
 import {
+  INVITABLE_STAFF_ROLES,
   ORG_ADMIN_INVITABLE_ROLES,
   createOrUpdateMicrosoftStaffAccount,
   isInvitableStaffRole,
@@ -186,6 +187,74 @@ describe('takeover and escalation guards', () => {
         role: 'coach',
       }),
     ).rejects.toThrow('Forbidden: this email is already used by a PIN-based athlete account');
+  });
+
+  test.each(['organization_admin', 'admin', 'board'])(
+    'refuses to re-role an existing %s through an organization admin invite',
+    async (existingRole) => {
+      stubLookups({
+        existingByEmail: {
+          account_id: 'peer-1',
+          organization_id: 'org-1',
+          role: existingRole,
+          auth_provider: 'microsoft',
+          is_platform_owner: false,
+        },
+      });
+
+      await expect(
+        createOrUpdateMicrosoftStaffAccount({
+          loginEmail: 'peer@example.com',
+          organizationId: 'org-1',
+          role: 'volunteer',
+        }),
+      ).rejects.toThrow('Forbidden: this account holds a role you cannot assign');
+      expect(currentClient.query).not.toHaveBeenCalled();
+    },
+  );
+
+  test('re-inviting an existing board member at the same role is not a role change', async () => {
+    stubLookups({
+      existingByEmail: {
+        account_id: 'board-1',
+        organization_id: 'org-1',
+        role: 'board',
+        auth_provider: 'microsoft',
+        is_platform_owner: false,
+      },
+    });
+
+    const result = await createOrUpdateMicrosoftStaffAccount({
+      loginEmail: 'board@example.com',
+      organizationId: 'org-1',
+      role: 'board',
+      callerInvitableRoles: INVITABLE_STAFF_ROLES,
+    });
+
+    expect(result.role).toBe('board');
+    expect(accountUpsertCalls()).toHaveLength(1);
+  });
+
+  test('a caller holding the wider set may still re-role a board member', async () => {
+    stubLookups({
+      existingByEmail: {
+        account_id: 'board-1',
+        organization_id: 'org-1',
+        role: 'board',
+        auth_provider: 'microsoft',
+        is_platform_owner: false,
+      },
+    });
+
+    const result = await createOrUpdateMicrosoftStaffAccount({
+      loginEmail: 'board@example.com',
+      organizationId: 'org-1',
+      role: 'coach',
+      callerInvitableRoles: INVITABLE_STAFF_ROLES,
+    });
+
+    expect(result.role).toBe('coach');
+    expect(revokeCalls()).toHaveLength(1);
   });
 
   test('refuses an account_id hint that belongs to a different identity', async () => {

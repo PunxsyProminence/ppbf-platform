@@ -498,12 +498,24 @@ function PeopleConsoleContent() {
                 )}
               </p>
             </div>
-            <Link
-              href="/admin"
-              className="inline-flex min-h-[44px] items-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-5 text-sm font-bold uppercase tracking-[0.1em] transition hover:bg-[var(--canvas-tan)]"
-            >
-              Admin Home
-            </Link>
+            <div className="flex flex-wrap gap-2">
+              {/* Board members are appointed to a seat, not added to the gym
+                  roster, so the two surfaces are separate. Only an
+                  organization admin reaches this markup -- a platform owner is
+                  shown WrongRoleNotice before the console renders. */}
+              <Link
+                href="/admin/board-seats"
+                className="inline-flex min-h-[44px] items-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-5 text-sm font-bold uppercase tracking-[0.1em] transition hover:bg-[var(--canvas-tan)]"
+              >
+                Board Seats
+              </Link>
+              <Link
+                href="/admin"
+                className="inline-flex min-h-[44px] items-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-5 text-sm font-bold uppercase tracking-[0.1em] transition hover:bg-[var(--canvas-tan)]"
+              >
+                Admin Home
+              </Link>
+            </div>
           </div>
         </header>
 
@@ -729,8 +741,8 @@ function PeopleConsoleContent() {
             <div>
               <h2 className="text-lg font-black">Add an athlete</h2>
               <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
-                This puts the athlete in your gym and immediately gives you a one-time activation code to hand them.
-                They choose their own PIN — you never see it.
+                This puts the athlete in your gym and gives you a sign-in ID to hand them, along with the starting PIN
+                every new athlete gets. They have to choose their own PIN the first time they sign in — you never see it.
               </p>
             </div>
 
@@ -1041,7 +1053,7 @@ function PeopleConsoleRoleSwitch() {
 
 export default function PeopleConsolePage() {
   return (
-    <RoleSessionGate allowedRoles={['admin']}>
+    <RoleSessionGate allowedRoles={['admin', 'platform_owner']}>
       <PeopleConsoleRoleSwitch />
     </RoleSessionGate>
   );

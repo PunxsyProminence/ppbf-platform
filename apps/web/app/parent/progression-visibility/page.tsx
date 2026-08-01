@@ -100,9 +100,6 @@ export default function ParentProgressionVisibilityPage() {
           <Link href="/parent/dashboard" className="border-2 border-[#8b4444] bg-[#2a1a1a] px-4 py-2 text-xs font-mono text-[#d4a574]">
             Back to Parent Hub
           </Link>
-          <Link href="/athlete/progression-intelligence" className="border-2 border-[#4a4a4a] bg-[#1a1a1a] px-4 py-2 text-xs font-mono text-[#b0b0b0]">
-            Athlete Progression Surface
-          </Link>
         </div>
       </div>
     </RoleStandaloneView>

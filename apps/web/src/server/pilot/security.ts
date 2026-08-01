@@ -31,6 +31,42 @@ export async function verifyPin(pin: string, encodedHash: string): Promise<boole
   return timingSafeEqual(derived, stored);
 }
 
+// Both header names are in live use -- the admin bootstrap/migration routes
+// and their deploy tooling send x-ppbf-bootstrap-key, the SHADOW job drain
+// sends x-bootstrap-key -- so both must keep being accepted.
+const BOOTSTRAP_KEY_HEADERS = ['x-ppbf-bootstrap-key', 'x-bootstrap-key'];
+
+export function readBootstrapKeyHeader(headers: Headers): string {
+  for (const header of BOOTSTRAP_KEY_HEADERS) {
+    const value = headers.get(header)?.trim();
+    if (value) {
+      return value;
+    }
+  }
+
+  return '';
+}
+
+// Compares the operator key in constant time: a length-independent byte
+// comparison would leak the expected key one character at a time to a caller
+// that can time the response.
+export function bootstrapKeyMatches(headers: Headers, expectedKey: string | undefined): boolean {
+  const provided = readBootstrapKeyHeader(headers);
+  const expected = expectedKey?.trim() || '';
+
+  if (!provided || !expected) {
+    return false;
+  }
+
+  const providedBuffer = Buffer.from(provided, 'utf8');
+  const expectedBuffer = Buffer.from(expected, 'utf8');
+  if (providedBuffer.length !== expectedBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(providedBuffer, expectedBuffer);
+}
+
 export function createOpaqueToken(): string {
   return randomBytes(32).toString('hex');
 }

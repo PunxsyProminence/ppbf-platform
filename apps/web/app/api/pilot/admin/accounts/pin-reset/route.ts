@@ -10,8 +10,11 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   try {
     const principal = await requireMicrosoftAuthenticatedPrincipal(request);
-    requireRole(principal, ['organization_admin', 'platform_owner']);
-    if (!isOrganizationAdminRole(principal.role) && principal.role !== 'platform_owner') {
+    // Athlete credentials sit outside the platform owner tier: Omega's job is
+    // to gather data and support organization admins, not to hold the keys to
+    // an individual athlete's account. Same boundary as session revocation.
+    requireRole(principal, ['organization_admin']);
+    if (!isOrganizationAdminRole(principal.role)) {
       throw new Error('Forbidden: role not allowed');
     }
 

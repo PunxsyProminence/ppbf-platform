@@ -6,7 +6,9 @@
  * This in-memory implementation is suitable for development and single-instance deployments.
  */
 
-import { Client } from 'pg';
+import type { PoolClient } from 'pg';
+
+import { withPoolClient } from './db';
 
 interface RateLimitEntry {
   count: number;
@@ -32,28 +34,36 @@ function durableRateLimitEnabled(): boolean {
   return process.env.PPBF_DURABLE_RATE_LIMIT === 'true';
 }
 
-async function withDurableClient<T>(work: (client: Client) => Promise<T>): Promise<T | null> {
-  const connectionString = process.env.AZURE_POSTGRES_CONNECTION_STRING?.trim();
-  if (!connectionString || !durableRateLimitEnabled()) {
+/**
+ * Runs durable rate-limit work on the SHARED POOL, and never throws.
+ *
+ * Two problems with what this used to do. It opened a brand-new pg Client
+ * per call -- acceptable for activation, which is rare, but a fresh TCP+TLS
+ * handshake on every athlete sign-in once login started using it. And
+ * `client.connect()` sat OUTSIDE the try/catch, so a database blip threw out
+ * of this helper instead of degrading.
+ *
+ * That second point is the important one. Rate limiting is a guard, not the
+ * operation: if the durable store cannot be reached, the honest fallback is
+ * the in-memory limiter, NOT locking every athlete out of the platform. A
+ * null return means "durable store unavailable or disabled" and every caller
+ * below treats it as "fall back to volatile", never as "deny".
+ */
+async function withDurableClient<T>(work: (client: PoolClient) => Promise<T>): Promise<T | null> {
+  if (!durableRateLimitEnabled() || !process.env.AZURE_POSTGRES_CONNECTION_STRING?.trim()) {
     return null;
   }
 
-  const client = new Client({
-    connectionString,
-    ssl: { rejectUnauthorized: true },
-  });
-
-  await client.connect();
   try {
-    return await work(client);
+    return await withPoolClient(work);
   } catch {
+    // Includes connection acquisition, which the previous implementation let
+    // escape. Nothing a rate-limit lookup does is worth failing a login for.
     return null;
-  } finally {
-    await client.end().catch(() => {});
   }
 }
 
-async function ensureDurableRateLimitTable(client: Client): Promise<void> {
+async function ensureDurableRateLimitTable(client: PoolClient): Promise<void> {
   if (durableTableInitialized) {
     return;
   }
@@ -103,11 +113,16 @@ export function getClientIp(request: Request): string {
       .map((ip) => normalizeIp(ip))
       .filter((ip) => ip && ip !== 'unknown');
 
-    if (ips.length > 0) {
-      // Trust only the configured number of right-most proxy hops.
-      // Anything further left is treated as client-originated chain data.
-      const index = Math.max(0, ips.length - 1 - trustedProxyCount());
-      return ips[index] || ips[0] || 'unknown';
+    const hops = trustedProxyCount();
+    // Zero trusted hops means nothing appended this header on our side, so
+    // every entry is client-written and none of it may key a rate-limit bucket.
+    if (ips.length > 0 && hops > 0) {
+      // Each trusted hop APPENDS its peer's address, so with N trusted hops the
+      // real client sits at ips.length - N. Taking one position further left
+      // returned attacker-controlled chain data, letting a client rotate a
+      // fabricated X-Forwarded-For to get a fresh per-IP bucket every request.
+      const index = Math.max(0, ips.length - hops);
+      return ips[index] || ips[ips.length - 1] || 'unknown';
     }
   }
 

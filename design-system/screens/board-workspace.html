@@ -1,4 +1,4 @@
-<!-- @dsCard group="Screens" name="Board Workspace" subtitle="Role binder rail, governance metrics, k-anonymity redaction in context" -->
+<!-- @dsCard group="Screens" name="Board Workspace" subtitle="Seat binder rail, governance metrics, k-anonymity suppression in context" -->
 <link rel="stylesheet" href="../ppbf.css">
 <style>
   body.ppbf { min-height: 100vh; display: flex; }
@@ -44,18 +44,25 @@
   .gov-text span { font-size: 12px; color: var(--bone-400); }
 
   .cohort-note { font-size: var(--t-sm); line-height: 1.72; margin: var(--s4) 0 0; max-width: 62ch; }
-  .redacted-inline { background-color: #0C0906; background-image: var(--grain-fine); background-blend-mode: overlay;
-                      color: transparent; border-radius: 2px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.8); padding: 0 4px; }
+
+  /* No inline-redaction style is offered here on purpose. A board surface
+     suppresses a figure server-side before it is sent; anything a stylesheet
+     hides is still in the DOM, readable by view-source, select-and-copy, and
+     every screen reader. */
 </style>
 
 <body class="ppbf">
+  <!-- The eight governing seats, in the order the board itself lists them. -->
   <nav class="rail">
-    <div class="rail-title">Board Roles</div>
-    <a class="role-tag" href="#" aria-current="page">Chair</a>
-    <a class="role-tag" href="#">Vice-Chair</a>
+    <div class="rail-title">Board Seats</div>
     <a class="role-tag" href="#">President</a>
-    <a class="role-tag" href="#">Secretary</a>
+    <a class="role-tag" href="#" aria-current="page">Chair</a>
+    <a class="role-tag" href="#">Vice Chair</a>
     <a class="role-tag" href="#">Treasurer</a>
+    <a class="role-tag" href="#">Secretary</a>
+    <a class="role-tag" href="#">Program &amp; Safety</a>
+    <a class="role-tag" href="#">Community &amp; Dev</a>
+    <a class="role-tag" href="#">Director-at-Large</a>
   </nav>
 
   <main>
@@ -104,25 +111,30 @@
     </div>
 
     <div class="layout">
-      <!-- COHORT DETAIL WITH REDACTION -->
+      <!-- COHORT DETAIL UNDER SUPPRESSION.
+           No participant name appears in this markup, and none may be added to
+           it. The board report is counts and rates about a cohort; the people
+           in the cohort are never named to the board, so a name has nothing to
+           be styled out of here. -->
       <div class="panel mat-paper" style="color:#33291B">
         <h2 style="font-family: var(--font-stencil); text-transform: uppercase; font-size: var(--t-md); letter-spacing:.05em; margin:0 0 var(--s3); color:#241B12">
           Cohort Detail — Adaptive Program
         </h2>
         <p class="cohort-note" style="color:#4A3B26">
-          Four participants enrolled this quarter. Individual outcomes for
-          <span class="redacted-inline">Marcus D.</span>, <span class="redacted-inline">Priya S.</span> and
-          <span class="redacted-inline">two further participants</span> are withheld from this board report.
+          This program's cohort is below the anonymity threshold, so its count is
+          withheld from the board report entirely — the figure is suppressed
+          before it is sent, not hidden after it arrives.
         </p>
         <div style="margin-top: var(--s5); display:flex; align-items:center; gap: var(--s5); flex-wrap:wrap">
-          <span class="stamp stamp--lg">Redacted — k&nbsp;&lt;&nbsp;5</span>
+          <span class="stamp stamp--lg">Suppressed — k&nbsp;&lt;&nbsp;5</span>
           <span style="font: var(--t-xs)/1.6 var(--font-data); color:#6E5B3E; letter-spacing:.05em">
             LAYER 17 · GRANT REPORTING<br>COHORT BELOW ANONYMITY THRESHOLD
           </span>
         </div>
         <p class="cohort-note" style="color:#6E5B3E; font-size: 12.5px; margin-top: var(--s5)">
-          Aggregate figures above remain reportable. Named outcomes unlock automatically once
-          cohort size reaches five.
+          Organization-wide aggregates above remain reportable. A suppressed count
+          returns once its cohort reaches five — as a count. Participant names are
+          never released to the board at any cohort size.
         </p>
       </div>
 

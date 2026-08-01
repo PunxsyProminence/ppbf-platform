@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import BoardMemberDashboard from '@/components/BoardMemberDashboard';
-import { boardOverviewStrip, boardSeatMap, type BoardSeatSlug } from './boardWorkspaceConfig';
+import { boardSeatMap, type BoardSeatSlug } from './boardWorkspaceConfig';
 
 interface BoardSeatWorkspaceProps {
   member: BoardSeatSlug;
@@ -16,8 +16,6 @@ export default function BoardSeatWorkspace({ member }: BoardSeatWorkspaceProps) 
   return (
     <BoardMemberDashboard
       seat={seat}
-      overviewMetrics={boardOverviewStrip}
-      allowedRoles={['board']}
       links={[
         { label: 'Board hub', href: '/board' },
       ]}

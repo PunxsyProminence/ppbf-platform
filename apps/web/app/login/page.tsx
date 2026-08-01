@@ -3,47 +3,14 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { type ClubRole } from '@/components/roleRoutes';
+import AnnouncementBanner from '@/components/AnnouncementBanner';
 import { apiBase } from '@/lib/apiBase';
 import {
   clearRoleSession,
-  createPersistentRoleSession,
+  persistAuthoritativeRoleSession,
   loadAuthoritativeRoleSession,
 } from '@/components/roleSession';
 import { createMicrosoftSignInHandler } from '@/src/client/loginPageHelpers';
-
-interface LoginAnnouncement {
-  id: string;
-  message: string;
-  authorName: string;
-  authorRole: ClubRole | 'system' | string;
-  createdAt: string;
-}
-
-const DEFAULT_ANNOUNCEMENT: LoginAnnouncement = {
-  id: 'system-default',
-  message: 'Welcome to PPBF. Check in with your coach before floor activity. Safety first. Kids first.',
-  authorName: 'System',
-  authorRole: 'system',
-  createdAt: 'Operational Baseline',
-};
-
-function formatAnnouncementTime(value: string): string {
-  const parsed = Date.parse(value);
-  if (Number.isNaN(parsed)) {
-    return value;
-  }
-  try {
-    return new Date(parsed).toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return value;
-  }
-}
 
 type LoginMethod = 'microsoft' | 'pin';
 
@@ -55,8 +22,6 @@ function LoginPageContent() {
   const [loginPin, setLoginPin] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState('');
-  const [gymNotices, setGymNotices] = useState<LoginAnnouncement[]>([DEFAULT_ANNOUNCEMENT]);
-  const [noticesLoading, setNoticesLoading] = useState(true);
 
   const authErrorMessage = (() => {
     const error = searchParams.get('error');
@@ -73,68 +38,21 @@ function LoginPageContent() {
     }
 
     if (error === 'auth-forbidden') {
-      return 'This Microsoft account is not allowed to sign in as platform owner.';
+      return 'This account signed in, but its role has no workspace yet. Ask your organization admin to finish setting it up.';
+    }
+
+    // RoleSessionGate emits these two; without a case they fell through to the
+    // Microsoft message even when the user had signed in with a PIN.
+    if (error === 'privileged_auth_required') {
+      return 'That area requires a Microsoft sign-in. Please continue with Microsoft.';
+    }
+
+    if (error === 'unsupported_role') {
+      return 'Your account role cannot open that area.';
     }
 
     return 'Microsoft sign-in failed. Please try again.';
   })();
-
-  useEffect(() => {
-    const controller = new AbortController();
-
-    void (async () => {
-      try {
-        const response = await fetch(`${apiBase()}/api/pilot/announcements/public?limit=3`, {
-          method: 'GET',
-          credentials: 'include',
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          setGymNotices([DEFAULT_ANNOUNCEMENT]);
-          return;
-        }
-
-        const payload = (await response.json()) as {
-          ok?: boolean;
-          announcements?: Array<{
-            announcement_id: string;
-            message: string;
-            author_name: string;
-            author_role: string;
-            created_at: string;
-          }>;
-        };
-
-        const rows = payload.announcements ?? [];
-        if (!payload.ok || rows.length === 0) {
-          setGymNotices([DEFAULT_ANNOUNCEMENT]);
-          return;
-        }
-
-        setGymNotices(
-          rows.map((row) => ({
-            id: row.announcement_id,
-            message: row.message,
-            authorName: row.author_name,
-            authorRole: row.author_role,
-            createdAt: formatAnnouncementTime(row.created_at),
-          })),
-        );
-      } catch (error) {
-        if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
-          return;
-        }
-        setGymNotices([DEFAULT_ANNOUNCEMENT]);
-      } finally {
-        if (!controller.signal.aborted) {
-          setNoticesLoading(false);
-        }
-      }
-    })();
-
-    return () => controller.abort();
-  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
@@ -172,7 +90,7 @@ function LoginPageContent() {
           return;
         }
 
-        createPersistentRoleSession(resolution.session.role);
+        persistAuthoritativeRoleSession(resolution.session);
         router.replace(resolution.destination);
       } catch (error) {
         if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
@@ -242,7 +160,7 @@ function LoginPageContent() {
         return;
       }
 
-      createPersistentRoleSession(resolution.session.role);
+      persistAuthoritativeRoleSession(resolution.session);
       router.replace(resolution.destination);
     } catch (error) {
       if (error instanceof Error) {
@@ -282,6 +200,15 @@ function LoginPageContent() {
           </div>
 
           <div className="space-y-6 px-8 py-8">
+            {/* Sign-in failures arrive as a full-page redirect, which resets the
+                tab to PIN. While this banner lived inside the Microsoft panel a
+                rejected user saw an empty PIN form and no reason at all. */}
+            {authErrorMessage && (
+              <div className="rounded-lg border border-[var(--red-primary)] bg-[rgba(184,59,52,0.05)] p-3" role="alert">
+                <p className="text-sm text-[var(--red-primary)]">⚠️ {authErrorMessage}</p>
+              </div>
+            )}
+
             <div className="grid gap-3 rounded-[24px] border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-md)]">
               <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--black)]">Choose Sign-In Method</p>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -336,11 +263,6 @@ function LoginPageContent() {
                     Click below to sign in securely with your Microsoft account. Your organization admin manages who can access the platform.
                   </p>
                 </div>
-                {authErrorMessage && (
-                  <div className="rounded-lg border border-[var(--red-primary)] bg-[rgba(184,59,52,0.05)] p-3">
-                    <p className="text-sm text-[var(--red-primary)]">⚠️ {authErrorMessage}</p>
-                  </div>
-                )}
                 <button
                   type="button"
                   onClick={microsoftSignIn}
@@ -442,23 +364,7 @@ function LoginPageContent() {
                     Open Simple Athlete PIN Sign-In
                   </Link>
                 </div>
-                <div className="rounded-lg border border-[rgba(0,0,0,0.12)] bg-white p-3">
-                  <p className="mb-2 text-xs font-semibold text-[var(--black)]">📢 Gym Notice</p>
-                  {noticesLoading ? (
-                    <p className="text-sm text-[var(--gray-medium)]">Loading notices…</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {gymNotices.map((item) => (
-                        <article key={item.id} className="rounded-2xl border border-[rgba(0,0,0,0.12)] bg-white px-4 py-3 shadow-[var(--shadow-sm)]">
-                          <p className="text-sm leading-6 text-[var(--black)]">{item.message}</p>
-                          <p className="mt-2 text-[11px] font-mono uppercase tracking-[0.08em] text-[var(--gray-medium)]">
-                            By {item.authorName} ({item.authorRole}) - {item.createdAt}
-                          </p>
-                        </article>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <AnnouncementBanner placement="gym_notices" source="public" heading="📢 Gym Notice" limit={3} />
               </div>
             </div>
           </div>

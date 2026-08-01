@@ -9,7 +9,8 @@ This document defines the production backend contract for auth and role discover
 - Current logout route: `POST /api/pilot/auth/logout`
 - Current server token strategy: opaque session token stored in an HTTP-only cookie and hashed in `pilot.session_tokens`
 - Current auth record source: `pilot.accounts`
-- Current role set in the app: `athlete`, `coach`, `parent`, `admin`, `board-president`, `board-chair`, `board-vice-chair`, `board-treasurer`, `board-secretary`, `board-safety-director`, `board-community-director`, `board-at-large`
+- Current authorization role set (`PilotRole`, the type `requireRole` enforces against): `platform_owner`, `organization_admin`, `admin`, `coach`, `athlete`, `parent`, `board`, `volunteer`, `staff`
+- Current client route model (`ClubRole`) additionally splits the board seat into `board-president`, `board-chair`, `board-vice-chair`, `board-treasurer`, `board-secretary`, `board-safety-director`, `board-community-director`, `board-at-large`. Those seats select a landing page; they are not authorization roles and the server never issues one.
 
 Relevant source files:
 
@@ -17,6 +18,7 @@ Relevant source files:
 - [apps/web/app/api/pilot/auth/logout/route.ts](apps/web/app/api/pilot/auth/logout/route.ts)
 - [apps/web/app/api/pilot/auth/session/route.ts](apps/web/app/api/pilot/auth/session/route.ts)
 - [apps/web/src/server/pilot/auth.ts](apps/web/src/server/pilot/auth.ts)
+- [apps/web/src/server/pilot/contracts.ts](apps/web/src/server/pilot/contracts.ts)
 - [apps/web/components/roleRoutes.ts](apps/web/components/roleRoutes.ts)
 
 ## Endpoint Contract

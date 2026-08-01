@@ -128,6 +128,28 @@ describe('POST /api/pilot/video/upload', () => {
     }));
   });
 
+  test('the upload response says whether anything will actually scan the video', async () => {
+    // Before #49 nothing in the platform could move a video off 'quarantined',
+    // yet this response reported it accepted for security review. The claim
+    // has to track the environment.
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockQuery.mockResolvedValueOnce([]);
+    const withoutScanner = await (await POST(uploadRequest({ file: videoFile() }))).json();
+    expect(withoutScanner.scan_pending).toBe(false);
+    expect(withoutScanner.message).toMatch(/no video scanner is configured/i);
+
+    process.env.PPBF_VIDEO_CONTENT_SCAN = 'vision';
+    try {
+      mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+      mockQuery.mockResolvedValueOnce([]);
+      const withScanner = await (await POST(uploadRequest({ file: videoFile() }))).json();
+      expect(withScanner.scan_pending).toBe(true);
+      expect(withScanner.message).toMatch(/until an automated scan clears it/i);
+    } finally {
+      delete process.env.PPBF_VIDEO_CONTENT_SCAN;
+    }
+  });
+
   test('202 when coach uploads an unattributed (team) video with no athlete_id', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({}));
     mockQuery.mockResolvedValueOnce([]);

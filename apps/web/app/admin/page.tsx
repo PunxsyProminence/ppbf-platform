@@ -175,7 +175,7 @@ const seedCapabilityBlueprints: Array<{ capabilityId: string; name: string; grou
     status: 'BLOCKED',
     owner: 'Admin Control',
     roles: ['Admin', 'Board'],
-    description: 'Reserved payment capability lane pending backend and compliance sign-off.',
+    description: 'Reserved payment lane covering donations, recurring giving, class fees, and B2B wholesale invoicing — scope and integration contract in docs/PAYMENT_SERVICE_SLOT.md; blocked pending backend and compliance sign-off.',
   },
   {
     capabilityId: 'CAP-013',
@@ -378,6 +378,15 @@ function hydrateCapability(source: Partial<Capability>, index: number): Capabili
   };
 }
 
+async function readResponseError(response: Response, fallback: string): Promise<string> {
+  const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+  return payload?.error || fallback;
+}
+
+function toErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
 function formatDateLabel(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -393,6 +402,10 @@ export default function AdminCapabilitiesPage() {
   // 403 from it is worse than not showing it at all -- they get Organization
   // Provisioning instead, which is the surface that actually does their job.
   const canManagePeople = isOrganizationAdminSessionRole(pilotSession.role);
+  // Same boundary as the People console: every compliance route is
+  // organization-scoped and refuses a platform owner, so the entry point would
+  // only lead to a 403.
+  const canOpenComplianceCenter = isOrganizationAdminSessionRole(pilotSession.role);
   const [capabilities, setCapabilities] = useState<Capability[]>(fallbackCapabilities);
   const [capabilitiesHydrated, setCapabilitiesHydrated] = useState(false);
   const [trackAssignmentsHydrated, setTrackAssignmentsHydrated] = useState(false);
@@ -436,6 +449,8 @@ export default function AdminCapabilitiesPage() {
   const [showTelemetry, setShowTelemetry] = useState(false);
   const [showIntegrationStubs, setShowIntegrationStubs] = useState(false);
   const [gymCapabilityAccess, setGymCapabilityAccess] = useState<Record<string, boolean>>({});
+  const [capabilityStoreError, setCapabilityStoreError] = useState('');
+  const [gymCapabilityStoreError, setGymCapabilityStoreError] = useState('');
 
   function logTrace(action: string, detail: string) {
     const trace: EventTrace = {
@@ -488,6 +503,9 @@ export default function AdminCapabilitiesPage() {
     });
   }, [trackAssignments, trackAssignmentsHydrated]);
 
+  // The hydrated flags are what release the save effects below, so they stay
+  // false whenever a load fails: saving the on-screen seed over a record that
+  // was never read would destroy the stored registry.
   useEffect(() => {
     void (async () => {
       try {
@@ -497,7 +515,9 @@ export default function AdminCapabilitiesPage() {
         });
 
         if (!response.ok) {
-          setCapabilitiesHydrated(true);
+          setCapabilityStoreError(
+            `${await readResponseError(response, 'Capability registry could not be loaded')}. The list below is a starting template and capability edits are not being saved.`,
+          );
           return;
         }
 
@@ -506,10 +526,11 @@ export default function AdminCapabilitiesPage() {
           const hydrated = payload.capabilities.map((item, index) => hydrateCapability(item, index));
           setCapabilities(mergeSeedCapabilities(hydrated));
         }
-      } catch {
-        // Keep fallback capability set if backend load fails.
-      } finally {
         setCapabilitiesHydrated(true);
+      } catch (error) {
+        setCapabilityStoreError(
+          `${toErrorMessage(error, 'Capability registry could not be loaded')}. The list below is a starting template and capability edits are not being saved.`,
+        );
       }
     })();
   }, []);
@@ -519,12 +540,29 @@ export default function AdminCapabilitiesPage() {
       return;
     }
 
-    void fetch(`${apiBase()}/api/pilot/admin/capabilities`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ capabilities }),
-    });
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/admin/capabilities`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ capabilities }),
+        });
+
+        if (!response.ok) {
+          setCapabilityStoreError(
+            `${await readResponseError(response, 'Capability registry could not be saved')}. This change is not saved and will be lost on reload.`,
+          );
+          return;
+        }
+
+        setCapabilityStoreError('');
+      } catch (error) {
+        setCapabilityStoreError(
+          `${toErrorMessage(error, 'Capability registry could not be saved')}. This change is not saved and will be lost on reload.`,
+        );
+      }
+    })();
   }, [capabilities, capabilitiesHydrated]);
 
   useEffect(() => {
@@ -536,16 +574,19 @@ export default function AdminCapabilitiesPage() {
         });
 
         if (!response.ok) {
-          setGymCapabilityHydrated(true);
+          setGymCapabilityStoreError(
+            `${await readResponseError(response, 'Gym capability access could not be loaded')}. Gym admin access changes are not being saved.`,
+          );
           return;
         }
 
         const payload = (await response.json()) as { capabilityAccess?: Record<string, boolean> };
         setGymCapabilityAccess(payload.capabilityAccess || {});
-      } catch {
-        // Keep default gym capability access if backend load fails.
-      } finally {
         setGymCapabilityHydrated(true);
+      } catch (error) {
+        setGymCapabilityStoreError(
+          `${toErrorMessage(error, 'Gym capability access could not be loaded')}. Gym admin access changes are not being saved.`,
+        );
       }
     })();
   }, []);
@@ -555,12 +596,29 @@ export default function AdminCapabilitiesPage() {
       return;
     }
 
-    void fetch(`${apiBase()}/api/pilot/admin/gym-capabilities`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ capabilityAccess: gymCapabilityAccess }),
-    });
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/admin/gym-capabilities`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ capabilityAccess: gymCapabilityAccess }),
+        });
+
+        if (!response.ok) {
+          setGymCapabilityStoreError(
+            `${await readResponseError(response, 'Gym capability access could not be saved')}. This change is not saved and will be lost on reload.`,
+          );
+          return;
+        }
+
+        setGymCapabilityStoreError('');
+      } catch (error) {
+        setGymCapabilityStoreError(
+          `${toErrorMessage(error, 'Gym capability access could not be saved')}. This change is not saved and will be lost on reload.`,
+        );
+      }
+    })();
   }, [gymCapabilityAccess, gymCapabilityHydrated]);
 
   const categoryOptions = useMemo(
@@ -805,7 +863,7 @@ export default function AdminCapabilitiesPage() {
   }
 
   return (
-    <RoleSessionGate allowedRoles={['admin']}>
+    <RoleSessionGate allowedRoles={['admin', 'platform_owner']}>
       <main className="min-h-screen bg-[#0a0a0a] text-[#e8d7c6]">
         <header className="border-b-4 border-[#8b4444] bg-[#1a1a1a] px-6 py-4">
           <div className="flex flex-wrap items-center justify-between gap-4">
@@ -832,18 +890,39 @@ export default function AdminCapabilitiesPage() {
               >
                 SHADOW
               </Link>
+              {/*
+                Video upload lives on a COACH page, and an organization_admin
+                lands here -- so the only surface that calls
+                POST /api/pilot/video/upload had no entry point for a role its
+                own API admits. The owner found it the only way anyone would:
+                by trying to upload a video and not finding a button.
+                Gated on the same organization-admin check as PEOPLE, because
+                platform_owner is refused by that API (access.ts bars Omega
+                from athlete-scoped records) and a link that 403s is worse
+                than no link.
+              */}
+              {canManagePeople && (
+                <Link
+                  href="/coach/video-analysis"
+                  className="inline-flex h-11 items-center border border-[#8b4444] bg-[#1a1a1a] px-4 text-[14px] font-bold text-[#f2e7da] transition hover:bg-[#2a1a1a]"
+                >
+                  VIDEO UPLOAD
+                </Link>
+              )}
               <Link
                 href="/operations"
                 className="inline-flex h-11 items-center border border-[#5a4a3a] bg-[#111111] px-4 text-[14px] font-bold text-[#cfbfae] transition hover:border-[#8b4444]"
               >
                 MISSION CONTROL
               </Link>
-              <Link
-                href="/admin/compliance-center"
-                className="inline-flex h-11 items-center border border-[#8b4444] bg-[#1a1a1a] px-4 text-[14px] font-bold text-[#d4a574] transition hover:bg-[#2a1a1a]"
-              >
-                COMPLIANCE CENTER (PLANNED)
-              </Link>
+              {canOpenComplianceCenter && (
+                <Link
+                  href="/admin/compliance-center"
+                  className="inline-flex h-11 items-center border border-[#8b4444] bg-[#1a1a1a] px-4 text-[14px] font-bold text-[#d4a574] transition hover:bg-[#2a1a1a]"
+                >
+                  COMPLIANCE CENTER (PLANNED)
+                </Link>
+              )}
               <Link
                 href="/admin/organizations"
                 className="inline-flex h-11 items-center border border-[#8b4444] bg-[#1a1a1a] px-4 text-[14px] font-bold text-[#f2e7da] transition hover:bg-[#2a1a1a]"
@@ -862,8 +941,15 @@ export default function AdminCapabilitiesPage() {
         </header>
 
         <section className="border-b border-[#4a4a4a] bg-[#111111] px-6 py-3 text-[14px] text-[#b0a095]">
-          All actions remain local to this front-end console. Jason approval required for production changes.
+          Capability, assignment, and gym feature changes are saved to your organization&apos;s record as you make them. Jason approval is still required for platform-wide changes.
         </section>
+
+        {(capabilityStoreError || gymCapabilityStoreError) && (
+          <section role="alert" className="border-b border-[#8b4444] bg-[#2a1414] px-6 py-3 text-[14px] text-[#f0c9c9]">
+            {capabilityStoreError && <p>{capabilityStoreError}</p>}
+            {gymCapabilityStoreError && <p className={capabilityStoreError ? 'mt-1' : undefined}>{gymCapabilityStoreError}</p>}
+          </section>
+        )}
 
         <div className="mx-auto max-w-[1500px] space-y-8 px-6 py-8">
           <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
@@ -977,9 +1063,11 @@ export default function AdminCapabilitiesPage() {
                   <Link href="/login" className="inline-flex min-h-[44px] items-center border border-[#8b4444] bg-[#1a1a1a] px-3 text-[13px] font-bold text-[#f2e7da] transition hover:bg-[#2a1a1a]">
                     Manage Login Announcements
                   </Link>
-                  <Link href="/admin/compliance-center" className="inline-flex min-h-[44px] items-center border border-[#8b4444] bg-[#1a1a1a] px-3 text-[13px] font-bold text-[#f2e7da] transition hover:bg-[#2a1a1a]">
-                    Automated Compliance Monitoring Surface
-                  </Link>
+                  {canOpenComplianceCenter && (
+                    <Link href="/admin/compliance-center" className="inline-flex min-h-[44px] items-center border border-[#8b4444] bg-[#1a1a1a] px-3 text-[13px] font-bold text-[#f2e7da] transition hover:bg-[#2a1a1a]">
+                      Automated Compliance Monitoring Surface
+                    </Link>
+                  )}
                   <Link href="/source-control/publication-workflow" className="inline-flex min-h-[44px] items-center border border-[#8b4444] bg-[#1a1a1a] px-3 text-[13px] font-bold text-[#f2e7da] transition hover:bg-[#2a1a1a]">
                     Automated Publication Workflow Surface
                   </Link>

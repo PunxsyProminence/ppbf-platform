@@ -1,27 +1,30 @@
 import {
-  FORMULA_IDS,
-  SHADOW_FORMULA_REGISTRY,
-  acuteChronicWorkloadRatio,
   calculateAcuteChronicWorkloadRatio,
   calculateAttendanceRate,
   calculateEwmaLoad,
   calculateRollingLoad,
   calculateSessionLoad,
+  unsupportedFormulaResult,
+} from './engine';
+import {
+  acuteChronicWorkloadRatio,
   ewma,
-  getFormulaDefinition,
   mean,
   rollingMean,
   sampleStandardDeviation,
   smallestWorthwhileChangeBetweenAthletes,
   smallestWorthwhileChangeWithinAthlete,
   standardizedChange,
-  unsupportedFormulaResult,
+} from './primitives';
+import { SHADOW_FORMULA_REGISTRY, getFormulaDefinition } from './registry';
+import {
+  FORMULA_IDS,
   type FormulaUnit,
   type NumericObservation,
   type ObservationKind,
   type ObservationSourceType,
   type SourceQuality,
-} from './index';
+} from './types';
 
 const COMPUTED_AT = '2026-07-23T12:00:00.000Z';
 

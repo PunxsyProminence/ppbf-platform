@@ -85,16 +85,25 @@ function normalizeEmail(raw: string): string {
  * Provisioning a row here does NOT by itself let someone in: the Microsoft
  * token must still carry the configured tenant claim, so the invitee must
  * also exist in the PPBF Entra tenant (as a member or a B2B guest).
+ *
+ * `callerInvitableRoles` is the set of roles the caller is authorized to
+ * assign. It bounds re-roling as well as creation: an invite may not change
+ * the role of an account that currently holds a role the caller could not
+ * have assigned in the first place. It defaults to the narrowest caller
+ * (ORG_ADMIN_INVITABLE_ROLES) so a caller that forgets to state its authority
+ * gets the least of it, never the most.
  */
 export async function createOrUpdateMicrosoftStaffAccount(params: {
   loginEmail: string;
   organizationId: string;
   role: InvitableStaffRole;
   accountIdHint?: string;
+  callerInvitableRoles?: readonly InvitableStaffRole[];
 }): Promise<StaffProvisionResult> {
   const loginEmail = normalizeEmail(params.loginEmail);
   const organizationId = params.organizationId.trim();
   const role = params.role;
+  const callerInvitableRoles: readonly string[] = params.callerInvitableRoles ?? ORG_ADMIN_INVITABLE_ROLES;
 
   if (!organizationId) {
     throw new Error('Missing organization_id');
@@ -149,6 +158,15 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
     // instead of mutating it as a side effect of an invite.
     if (existing.role === 'athlete' || existing.auth_provider === 'ppbf_local') {
       throw new Error('Forbidden: this email is already used by a PIN-based athlete account');
+    }
+
+    // Peer protection. Re-inviting an address is how a role gets changed, and
+    // without this an invite could silently demote a sitting organization
+    // admin or board member -- roles the inviting admin cannot grant and
+    // therefore must not be able to take away. Re-inviting at the SAME role
+    // stays allowed: that only reactivates the account.
+    if (existing.role !== role && !callerInvitableRoles.includes(existing.role)) {
+      throw new Error('Forbidden: this account holds a role you cannot assign, so its role cannot be changed by an invite');
     }
   }
 

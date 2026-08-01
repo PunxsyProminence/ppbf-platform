@@ -16,3 +16,8 @@ build/
 # was tracked once and nothing reads it, so keep it from coming back.
 .tmp/
 .build-output.txt
+
+# Cornerstone Library corpus: licensed/internal content staged locally for
+# seed:shadow:library via PILOT_LIBRARY_MANIFEST. Never committed -- the
+# repository is public and the Library ingests via API, not via git.
+punxsy-corpus/

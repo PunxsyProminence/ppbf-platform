@@ -50,7 +50,7 @@ function growth(totalInteractions: number) {
     totalInteractions,
     avgSatisfaction: null,
     avgEffectiveness: null,
-    recommendationsMade: 0,
+    reviewedOutcomes: 0,
     researchRequirementsCreated: 0,
     researchRequirementsClosed: 0,
     newLibraryPatterns: 0,

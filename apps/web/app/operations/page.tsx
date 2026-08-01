@@ -1,7 +1,8 @@
 import Link from 'next/link';
+import AnnouncementBanner from '@/components/AnnouncementBanner';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import ShadowChatButton from '@/components/ShadowChatButton';
-import { roleRoutes } from '@/components/roleRoutes';
+import { roleRoutes, type ClubRole } from '@/components/roleRoutes';
 
 const roleSelector = [
   { role: 'Athlete', href: '/athlete/dashboard', status: 'Ready' },
@@ -71,12 +72,6 @@ const workspaces = [
   },
 ];
 
-const shadowOperationalAlerts = [
-  '2 athlete readiness flags are below safe threshold.',
-  '1 governance deadline enters risk window in 48 hours.',
-  'Continuity Ledger capture rate remains at 100% for today.',
-];
-
 const developmentLab = [
   { label: 'Research Intake', href: '/research' },
   { label: 'Evidence Review', href: '/evidence' },
@@ -92,6 +87,7 @@ const developmentLab = [
 
 const utilityLinks = [
   { label: 'The Bell', href: '/login' },
+  { label: 'Notices & Motivation', href: '/notices' },
   { label: 'Entry Point', href: '/dashboard' },
   { label: 'Revenue Center', href: '/admin?tab=revenue' },
   { label: 'The Office', href: '/admin/shadow' },
@@ -117,7 +113,7 @@ const capabilityRadar: Array<{ name: string; state: CapabilityState; href?: stri
   { name: 'Grant Compliance Intelligence', state: 'PLACEHOLDER', href: '/board/compliance-monitoring', notes: 'Planned board/admin compliance watch surfaces. FRONT-END PLACEHOLDER, NOT YET AUTOMATED, BACKEND REQUIRED.' },
   { name: 'Closed-Loop Progression Intelligence', state: 'PLACEHOLDER', href: '/athlete/progression-intelligence', notes: 'Planned progression intelligence surfaces for athlete/coach/parent visibility.' },
   { name: 'Sports Medicine', state: 'PLACEHOLDER', href: '/coach/sports-medicine', notes: 'Front-end scaffold only. Planned capability and not yet implemented.' },
-  { name: 'Volunteer Management', state: 'PLACEHOLDER', href: '/admin/volunteer-management', notes: 'Front-end scaffold only. Planned capability and not yet implemented.' },
+  { name: 'Volunteer Management', state: 'EXISTS', href: '/admin/volunteer-management', notes: 'Volunteer roster, status, and availability are backed by persistent records.' },
   { name: 'Wrestling League Management', state: 'PLACEHOLDER', href: '/operations/wrestling-league', notes: 'Front-end scaffold only. Planned capability and not yet implemented.' },
   { name: 'External Competition Platform', state: 'PLACEHOLDER', href: '/operations/external-competition', notes: 'Front-end scaffold only. Planned capability and not yet implemented.' },
   { name: 'Publication Workflow Automation', state: 'PLACEHOLDER', href: '/source-control/publication-workflow', notes: 'Planned publication workflow surface is now visible as front-end placeholder. Not yet automated.' },
@@ -174,9 +170,13 @@ function capabilityTone(state: CapabilityState): string {
   return 'border-[var(--gray-medium)] bg-[var(--canvas-tan)] text-[var(--black)]';
 }
 
+// Navigation only, with no athlete-scoped data on the page, so the platform
+// owner belongs here alongside every gym role.
+const operationsRoles: ClubRole[] = [...roleRoutes.map((route) => route.role), 'platform_owner'];
+
 export default function OperationsHubPage() {
   return (
-    <RoleSessionGate allowedRoles={roleRoutes.map((route) => route.role)}>
+    <RoleSessionGate allowedRoles={operationsRoles}>
       <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
         <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-8 px-6 py-10 lg:px-10">
           <header className="space-y-5 border-b-[3px] border-[var(--black)] pb-8">
@@ -187,6 +187,12 @@ export default function OperationsHubPage() {
             </p>
             <ShadowChatButton context="Mission Control" />
           </header>
+
+          <AnnouncementBanner
+            placement="everywhere"
+            heading="Gym-wide notice"
+            className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-5 shadow-[var(--shadow-sm)]"
+          />
 
           <section className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-5 shadow-[var(--shadow-sm)]">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -384,16 +390,11 @@ export default function OperationsHubPage() {
 
               <section className="space-y-4 border-[3px] border-[var(--black)] bg-[var(--red-primary)] px-6 py-6 text-[var(--white)] shadow-[var(--shadow-sm)]">
                 <h2 className="font-display text-2xl font-bold tracking-tight text-[var(--white)]">SHADOW COMMAND NODE</h2>
+                <p className="text-sm font-mono uppercase tracking-[0.14em] text-[var(--white)]">PLANNED | NOT YET IMPLEMENTED</p>
                 <p className="text-sm leading-6 text-[var(--white-off)]">
-                  Operational alert stream only. No chat layer. No narrative assistant mode.
+                  No operational alert feed reaches this panel. An empty panel here means nothing is being watched
+                  from this screen, not that the floor is clear. Open SHADOW Ops for what the system can report today.
                 </p>
-                <div className="grid gap-2">
-                  {shadowOperationalAlerts.map((alert) => (
-                    <div key={alert} className="border-2 border-[var(--black)] bg-[var(--red-blood)] px-4 py-3 text-sm leading-6 text-[var(--white)]">
-                      {alert}
-                    </div>
-                  ))}
-                </div>
                 <Link
                   href="/admin/shadow"
                   className="inline-flex min-h-[44px] items-center justify-center border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-2 text-xs font-mono font-bold uppercase tracking-[0.14em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"

@@ -14,6 +14,7 @@ import {
   ShadowRateLimitExceeded,
 } from '@/src/server/pilot/shadowRateLimit';
 import { writeShadowTelemetryEvent } from '@/src/server/pilot/shadowTelemetry';
+import { isVideoScanConfigured, resolveVideoScanConfig } from '@/src/server/pilot/videoScanPolicy';
 import {
   describeVideoUpload,
   validateVideoUploadSignature,
@@ -124,12 +125,24 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Say whether anything will actually review it. Until #49 the answer was
+    // "no" in every environment -- nothing in the platform could move a video
+    // off 'quarantined' -- while this response still reported it as accepted
+    // for security review. The scan sweep is the reviewer now, but it is off
+    // unless a gate is configured, so the uploader is told which case they are
+    // in rather than being left to infer it from a video that never appears.
+    const scanConfigured = isVideoScanConfigured(resolveVideoScanConfig());
+
     return NextResponse.json(
       {
         video_session_id: videoSessionId,
         title,
         status: 'quarantined',
         accepted_for_security_review: true,
+        scan_pending: scanConfigured,
+        message: scanConfigured
+          ? 'Uploaded. The video stays quarantined until an automated scan clears it.'
+          : 'Uploaded. No video scanner is configured in this environment, so this video will stay quarantined until an administrator enables one.',
       },
       { status: 202 },
     );

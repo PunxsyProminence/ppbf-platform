@@ -70,6 +70,7 @@ export async function archiveOldData(config: ArchiveConfig): Promise<ArchiveResu
     if (config.blobConnectionString && oldRecords.length > 0) {
       const blobClient = BlobServiceClient.fromConnectionString(config.blobConnectionString);
       const containerClient = blobClient.getContainerClient(config.containerName);
+      await containerClient.createIfNotExists();
 
       const archiveFileName = `shadow_audit_${cutoffDateStr}.json.gz`;
       const jsonData = JSON.stringify(oldRecords);
@@ -147,6 +148,89 @@ export async function archiveOldData(config: ArchiveConfig): Promise<ArchiveResu
 // Scheduled job hook for daily archival (to be called by your job scheduler)
 export async function runDailyArchival(config: ArchiveConfig): Promise<ArchiveResult> {
   return archiveOldData(config);
+}
+
+export const ARCHIVE_HOT_DAYS = 90;
+export const ARCHIVE_COLD_DAYS = 365;
+export const ARCHIVAL_MIN_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_ARCHIVE_CONTAINER = 'ppbf-pilot-shadow-archive';
+
+// Archival removes rows from the hot table, so it is only configured when the
+// destination it writes them to is. Without a storage connection string the
+// rows would leave Postgres with nothing written anywhere, and this is minors'
+// conversation history: no destination means no archival rather than a delete.
+export function resolveArchiveConfig(
+  env: Record<string, string | undefined> = process.env,
+): ArchiveConfig | null {
+  const blobConnectionString = env.AZURE_STORAGE_CONNECTION_STRING?.trim() || '';
+  if (!blobConnectionString) {
+    return null;
+  }
+
+  return {
+    hotDays: ARCHIVE_HOT_DAYS,
+    coldDays: ARCHIVE_COLD_DAYS,
+    blobConnectionString,
+    containerName: env.PPBF_PILOT_SHADOW_ARCHIVE_CONTAINER?.trim() || DEFAULT_ARCHIVE_CONTAINER,
+  };
+}
+
+export interface ArchivalSweepOutcome {
+  ran: boolean;
+  skipped?: 'not_due' | 'not_configured';
+  result?: ArchiveResult;
+}
+
+interface SweepDependencies {
+  env?: Record<string, string | undefined>;
+  archive?: (config: ArchiveConfig) => Promise<ArchiveResult>;
+  now?: () => number;
+}
+
+// The sweep carries its own daily floor rather than trusting the cadence of
+// whatever calls it: the caller's interval is deploy-configurable, and each run
+// reads, uploads, and deletes every audit row past the cutoff. The stamp is
+// per-process, so a restart re-arms it -- at worst a second pass over the same
+// cutoff date, which finds nothing left to archive.
+//
+// It also never throws. It rides the same tick as job processing, so a storage
+// outage or an unreachable database must degrade to a logged failure rather
+// than surface as a worker error.
+export function createShadowArchivalSweep(
+  dependencies: SweepDependencies = {},
+): () => Promise<ArchivalSweepOutcome> {
+  const archive = dependencies.archive ?? runDailyArchival;
+  const now = dependencies.now ?? Date.now;
+  let lastRunMs: number | null = null;
+
+  return async () => {
+    const startedAt = now();
+
+    if (lastRunMs !== null && startedAt - lastRunMs < ARCHIVAL_MIN_INTERVAL_MS) {
+      return { ran: false, skipped: 'not_due' };
+    }
+
+    const config = resolveArchiveConfig(dependencies.env ?? process.env);
+    if (!config) {
+      return { ran: false, skipped: 'not_configured' };
+    }
+
+    lastRunMs = startedAt;
+
+    try {
+      return { ran: true, result: await archive(config) };
+    } catch (error) {
+      return {
+        ran: true,
+        result: {
+          success: false,
+          archivedCount: 0,
+          aggregatedMonths: 0,
+          error: `Archive failed: ${error instanceof Error ? error.message : String(error)}`,
+        },
+      };
+    }
+  };
 }
 
 // Verify archival integrity

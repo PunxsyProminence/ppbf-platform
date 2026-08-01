@@ -462,6 +462,12 @@ export default function ScoutReportPage() {
                   {selectedJob?.jobId === job.jobId && job.status === 'failed' ? (
                     <p className="mt-2 text-[10px] font-mono text-[#dc2626]">Error: {job.error}</p>
                   ) : null}
+
+                  {selectedJob?.jobId === job.jobId && job.status === 'cancelled' ? (
+                    <p className="mt-2 text-[10px] font-mono text-[#d4a574]">
+                      Cancelled{job.error ? `: ${job.error}` : ''} — usually the request expired before the worker reached it. Re-run it if you still need the report.
+                    </p>
+                  ) : null}
                 </button>
               ))}
             </div>

@@ -3,28 +3,49 @@ import { NextResponse, type NextRequest } from 'next/server';
 import {
   createOrUpdateMicrosoftPlatformOwnerAccount,
   createOrganization,
+  getPrimaryOwnerEmail,
 } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getPilotDefaultOrganizationId } from '@/src/server/pilot/env';
 import { jsonError } from '@/src/server/pilot/http';
+import { getClientIp, checkRateLimit, recordFailedAttempt, clearRateLimit } from '@/src/server/pilot/rateLimit';
+import { bootstrapKeyMatches } from '@/src/server/pilot/security';
 
 export const runtime = 'nodejs';
 
-const PRIMARY_OWNER_EMAIL = 'Admin@punxsyprominence.org';
 const ROOT_ORG_NAME = 'PPBF Root Platform Organization';
 
 export async function POST(request: NextRequest) {
   try {
+    // The owner identity this route provisions is the same one sign-in
+    // accepts, so a bootstrap can never mint an account that cannot log in.
+    const primaryOwnerEmail = getPrimaryOwnerEmail();
     const bootstrapKey = process.env.PPBF_PILOT_BOOTSTRAP_KEY?.trim() || '';
-    const providedKey = request.headers.get('x-ppbf-bootstrap-key')?.trim() || '';
 
     if (!bootstrapKey) {
       throw new Error('Missing PPBF_PILOT_BOOTSTRAP_KEY');
     }
 
-    if (!providedKey || providedKey !== bootstrapKey) {
+    // Shares one per-IP bucket with /api/pilot/admin/bootstrap: both gates
+    // guard the same key, so guessing attempts must not get a fresh budget by
+    // switching endpoint.
+    const clientIp = getClientIp(request);
+    const ipKey = `pin_bootstrap:${clientIp}`;
+
+    const ipLimitCheck = checkRateLimit(ipKey);
+    if (ipLimitCheck.isLimited) {
+      return NextResponse.json(
+        { error: 'Too many attempts. Please try again later.' },
+        { status: 429 }
+      );
+    }
+
+    if (!bootstrapKeyMatches(request.headers, bootstrapKey)) {
+      recordFailedAttempt(ipKey);
       throw new Error('Forbidden: invalid bootstrap key');
     }
+
+    clearRateLimit(ipKey);
 
     const body = (await request.json().catch(() => ({}))) as {
       organization_id?: string;
@@ -34,12 +55,12 @@ export async function POST(request: NextRequest) {
     const organizationId = body.organization_id?.trim() || getPilotDefaultOrganizationId();
     const organizationName = body.organization_name?.trim() || ROOT_ORG_NAME;
 
-    await createOrganization(organizationId, organizationName, PRIMARY_OWNER_EMAIL.toLowerCase());
+    await createOrganization(organizationId, organizationName, primaryOwnerEmail);
 
     const result = await createOrUpdateMicrosoftPlatformOwnerAccount({
-      loginEmail: PRIMARY_OWNER_EMAIL,
+      loginEmail: primaryOwnerEmail,
       organizationId,
-      accountIdHint: PRIMARY_OWNER_EMAIL.toLowerCase(),
+      accountIdHint: primaryOwnerEmail,
     });
 
     await writePilotAuditEvent({
@@ -51,7 +72,7 @@ export async function POST(request: NextRequest) {
       entity_id: result.accountId,
       details: {
         action: 'bootstrap_platform_owner_microsoft',
-        login_email: PRIMARY_OWNER_EMAIL,
+        login_email: primaryOwnerEmail,
         auth_provider: 'microsoft',
         pin_hash: null,
       },
@@ -61,7 +82,7 @@ export async function POST(request: NextRequest) {
       ok: true,
       action: result.created ? 'created' : 'updated',
       account_id: result.accountId,
-      login_email: PRIMARY_OWNER_EMAIL,
+      login_email: primaryOwnerEmail,
       auth_provider: 'microsoft',
       role: 'platform_owner',
       organization_id: organizationId,

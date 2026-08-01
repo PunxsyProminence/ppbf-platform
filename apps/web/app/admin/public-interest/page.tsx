@@ -84,7 +84,7 @@ export default function PublicInterestReviewPage() {
     <RoleStandaloneView
       roleLabel="Public Interest Review"
       routeLabel="/admin/public-interest"
-      allowedRoles={['admin']}
+      allowedRoles={['admin', 'platform_owner']}
     >
       <div className="space-y-6">
         <header className="border-2 border-[#8b4444] bg-[#111] p-5">

@@ -421,6 +421,20 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
         expect(result.filtered).toBe(false);
       });
 
+      test('deliberately allows a bare unevidenced coaching directive', () => {
+        // DECIDED (owner, 2026-07-31): bare should-directives with no
+        // statistic, no "proven", and no medical or weight-cut trigger pass
+        // without a citation. Requiring one would filter ordinary coaching
+        // speech ("you should keep your guard up"), and the dangerous shapes
+        // -- medical directives, quantified claims, weight cutting -- are
+        // covered by their own gates above. This pins the decision so a
+        // future validator change that flips it does so knowingly.
+        // (Originally Test 11 of the retired shadowChat.test.ts.disabled.)
+        const result = validateShadowResponse('You should do X because it is best.');
+        expect(result.filtered).toBe(false);
+        expect(result.reasons).toEqual([]);
+      });
+
       describe('coaching speech that was withheld as a false positive', () => {
         // Measured live 2026-07-30 against the staging deployment: only 2 of 6
         // benign warm-up answers were deliverable. The three offenders below
@@ -452,6 +466,47 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
         ])('still filters %s', (_label, response) => {
           const result = validateShadowResponse(response);
           expect(result.filtered).toBe(true);
+        });
+
+        // The subject alternation was second-person plus 'the athlete', so the
+        // same claim in the third person passed clean. Measured 2026-07-31,
+        // before the widening: 'The athlete has a rotator cuff injury.'
+        // filtered, 'He has a concussion.' did not. It became load-bearing
+        // with Film Study (#128) -- a vision model describing a child in
+        // frames writes 'he' and 'she' by default, so the surface most likely
+        // to produce a diagnosis was the one the filter did not read.
+        test.each([
+          ['he', 'He has a concussion.'],
+          ['she', 'She has a fracture in the left wrist.'],
+          ['they', 'They have a shoulder injury.'],
+          ['the boxer', 'The boxer has a concussion.'],
+          ['the fighter', 'The fighter has a rotator cuff injury.'],
+          ['the kid', 'The kid has a wrist fracture.'],
+          ['a third-person symptom assertion', 'His symptoms confirm a concussion.'],
+        ])('filters a diagnosis asserted about %s', (_label, response) => {
+          const result = validateShadowResponse(response);
+          expect(result.filtered).toBe(true);
+        });
+
+        // The other direction, and the reason the widening is subject-only:
+        // third-person pronouns are ordinary coaching speech. These are the
+        // shapes a Film Study observation actually takes.
+        test.each([
+          ['a third-person strength', 'He has a strong jab and good balance on the pivot.'],
+          ['a third-person skill note', 'She has excellent footwork in the later rounds.'],
+          ['a third-person tendency', 'They have a tendency to drop the rear hand when tired.'],
+          ['third-person conditional deferral', 'If he has any pain in the shoulder, stop and get him cleared by a medical professional.'],
+          ['a frame observation', 'The lead hand returns below the chin after the jab in the later frames. Stance stays square through the combination.'],
+          ['a guard observation', 'Guard is high in the first two frames. By the fourth frame the rear hand has drifted away from the cheek.'],
+          ['a footwork observation', 'Footwork shows the rear foot crossing behind the lead on the pivot. Weight looks settled on the back foot.'],
+          ['an unclear-frames refusal', 'The frames are too blurred to support an observation about hand position.'],
+          ['a centerline observation', 'The athlete steps in with the jab and the head stays on the centerline. The rear elbow flares on the cross.'],
+          ['a rotation observation', 'Shoulders rotate well on the cross. There is no visible change in guard height between frames three and six.'],
+          ['a coaching handoff', 'The lead shoulder does not rise to protect the chin during the jab. Consider reviewing this with the athlete.'],
+          ['an honest limitation', 'Hand speed cannot be assessed from still frames.'],
+        ])('still allows %s', (_label, response) => {
+          const result = validateShadowResponse(response);
+          expect(result.filtered).toBe(false);
         });
       });
 

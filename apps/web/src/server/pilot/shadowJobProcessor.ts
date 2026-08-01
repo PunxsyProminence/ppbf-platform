@@ -18,13 +18,26 @@
 // Any drift fails the job closed. A leaked drain trigger can therefore cause
 // nothing but the processing of work already authorized by a signed-in user.
 
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+
 import { assertActorCanAccessAthlete, type ActorIdentity } from './access';
+import { downloadPilotVideoFile } from './blob';
+import {
+  analyzeFramesWithVision,
+  extractFrames,
+  getVisionDeploymentName,
+  isFilmStudyVisionConfigured,
+} from './shadowFilmStudy';
+import { createFilmStudyProposal } from './shadowFilmStudyProposals';
 import type { PilotRole } from './contracts';
 import { queryOne } from './db';
 import { claimNextJob, completeJob, failJob, type JobType } from './shadowJobQueue';
 import { composeShadowSystemPrompt, SHADOW_SYSTEM_PROMPT, validateShadowResponse } from './shadowChat';
 import { appendAssistantMessage, queueHumanReview } from './shadowConversations';
 import { deriveEvidenceTier } from './shadowEvidenceTier';
+import { resolveHandoff } from './shadowHandoff';
 import { buildAzureAiChatCompletionsUrl, getAzureAiRuntimeConfig } from './azureAiRuntime';
 
 export interface JobProcessorResult {
@@ -35,13 +48,13 @@ export interface JobProcessorResult {
   error?: string;
 }
 
-// Only job types the product can actually enqueue (the chat route's
-// scout/board and background-Heavy-Bag branches), plus film_study which is
-// kept solely so a stray row fails terminally with its honest unavailable
-// code. learning_loop and library_update had executor arms here but no
-// producer anywhere -- learning signals are processed synchronously by the
-// feedback review path, and library updates go through the admin upload
-// pipeline -- so their arms are gone rather than pretending to be a queue.
+// Only job types the product can actually enqueue: the chat route's
+// scout/board and background-Heavy-Bag branches, plus film_study, whose
+// producer is the video-analysis route. learning_loop and library_update had
+// executor arms here but no producer anywhere -- learning signals are
+// processed synchronously by the feedback review path, and library updates go
+// through the admin upload pipeline -- so their arms are gone rather than
+// pretending to be a queue.
 const JOB_TYPES = new Set<JobType>([
   'heavy_bag_session',
   'scout_report',
@@ -49,14 +62,17 @@ const JOB_TYPES = new Set<JobType>([
   'film_study',
 ]);
 
-// Only Film Study remains gated: it hard-requires multimodal input and the
-// vision pipeline genuinely does not exist yet. Scout reports and board
-// summaries were held in this set until a worker existed to drain the queue
-// -- enqueueing them would have stranded requests in a queue nothing read.
-// The worker is real now, so their executors below are live.
-const UNAVAILABLE_JOB_TYPES = new Set<JobType>([
-  'film_study',
-]);
+// Empty, and that is the point: a job type listed here is one the product can
+// enqueue but not execute, which strands the request. film_study was the last
+// entry and left it when the vision pipeline became real (#103) -- deployment
+// verified, ffmpeg in the runner image and measured, sampling policy pinned,
+// and the human acceptance gate shipped BEFORE this executor so a proposal
+// lands somewhere a coach can actually clear it.
+//
+// Film Study still cannot run where the vision deployment is unset: the
+// executor fails closed on SHADOW_FILM_VISION_UNCONFIGURED rather than
+// inventing an observation.
+const UNAVAILABLE_JOB_TYPES = new Set<JobType>([]);
 
 const SHADOW_JOB_ACTOR_ROLES = new Set<PilotRole>([
   'admin',
@@ -170,32 +186,61 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
       : null;
     let outputForCompletion: Record<string, unknown> = rawOutput;
     let bindingFiltered = false;
+    let bindingRequiresHumanReview = false;
     if (binding) {
       const decision = validateShadowResponse(
         typeof rawOutput.response === 'string' ? rawOutput.response : '',
         { allowedEvidenceIds: binding.allowedEvidenceIds },
       );
       bindingFiltered = !decision.valid || decision.filtered;
+      // Sync parity: the synchronous path queues human review on
+      // requiresHumanReview even when the answer is not filtered. Hoisted so
+      // the review-queue condition below can see it.
+      bindingRequiresHumanReview = decision.requiresHumanReview;
       const allowedIdSet = new Set(binding.allowedEvidenceIds);
       const citationIds = decision.citationIds.filter((id) => allowedIdSet.has(id));
+      // The allowlist admits near-miss and platform-rollup ids so the model
+      // is not punished for citing context it was handed, but those are not
+      // library evidence and must not be persisted against the library
+      // bundle -- the citation insert resolves ids from shadow_evidence_items
+      // and THROWS on anything else, which aborted the append and lost the
+      // user's answer. The catalog holds exactly the bundle's own ids, so it
+      // is the persistence filter, same as the synchronous path's
+      // nonBundleEvidenceIdSet strip.
+      const catalogIdSet = new Set(binding.citationCatalog.map((item) => item.evidenceId));
+      const bundleCitationIds = citationIds.filter((citationId) => catalogIdSet.has(citationId));
       const evidenceTier = deriveEvidenceTier({
         isAnsweredState: !bindingFiltered,
         evidenceAvailability: binding.availability,
         citationCount: citationIds.length,
       });
+      // Same banner the synchronous path stores: the response's own topic
+      // wins (a benign question can draw an answer that volunteers weight-cut
+      // guidance), and a review-worthy answer never persists without one.
+      const handoff = resolveHandoff({
+        requiresHumanReview: bindingFiltered || bindingRequiresHumanReview,
+        topic: decision.topic,
+      });
       const assistantMessageId = await appendAssistantMessage({
         actor: currentActor,
+        // Audit B1's remaining half. This append happens BEFORE completeJob
+        // below, so a worker that dies between the two leaves an appended
+        // answer on an uncompleted job: the lease expires, the job is
+        // re-claimed, and the same answer is appended a second time. Keying
+        // the message id on the job makes the retry a no-op instead.
+        idempotencyKey: job.jobId,
         conversationId: binding.conversationId,
         content: decision.message,
         topic: payloadToText(job.inputPayload.topic, 'general'),
         sessionType: 'heavy_bag',
         responseState: bindingFiltered ? 'filtered' : 'ok',
         evidenceTier,
+        handoff,
         evidence: binding.bundleId
           ? {
               bundleId: binding.bundleId,
               availability: binding.availability,
-              citationIds,
+              citationIds: bundleCitationIds,
             }
           : undefined,
       });
@@ -206,7 +251,8 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
         assistantMessageId,
         evidenceTier,
         responseState: bindingFiltered ? 'filtered' : 'ok',
-        citations: binding.citationCatalog.filter((item) => citationIds.includes(item.evidenceId)),
+        handoff,
+        citations: binding.citationCatalog.filter((item) => bundleCitationIds.includes(item.evidenceId)),
       };
     }
 
@@ -215,21 +261,42 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
     });
     const finalSafetyStatus = bindingFiltered ? 'filtered' as const : checkedOutput.safetyStatus;
     await completeJob(job, checkedOutput.output, finalSafetyStatus);
-    if (finalSafetyStatus === 'filtered') {
-      await queueHumanReview({
+    // Sync parity: the synchronous path queues review on filtered OR
+    // requiresHumanReview; this queued only on filtered, so a background
+    // answer that tripped reasons without the filter displayed to the user
+    // and no reviewer ever saw it.
+    if (finalSafetyStatus === 'filtered' || bindingRequiresHumanReview) {
+      const reviewTicket = {
         organizationId: job.organizationId,
         accountId: job.accountId,
         category: 'async_response_safety',
-        severity: 'high',
-        summary: 'A generated SHADOW background result was replaced by the post-generation safety boundary.',
+        severity: 'high' as const,
+        summary: finalSafetyStatus === 'filtered'
+          ? 'A generated SHADOW background result was replaced by the post-generation safety boundary.'
+          : 'A generated SHADOW background result requires human review.',
         metadata: {
           jobId: job.jobId,
           jobType: job.jobType,
           subjectScoped: Boolean(job.subjectId),
         },
-      }).catch(() => {
-        console.error('SHADOW async human-review queue write failed');
-      });
+      };
+      // The job is already completed above, so a throw here would route to
+      // failJob against a completed row -- retry once, then log loudly. (The
+      // synchronous path can fail its request closed; this path cannot
+      // without reordering completion, which would let a re-claim duplicate
+      // the already-appended answer.)
+      try {
+        await queueHumanReview(reviewTicket);
+      } catch {
+        try {
+          await queueHumanReview(reviewTicket);
+        } catch {
+          console.error('SHADOW async human-review queue write failed twice', {
+            jobId: job.jobId,
+            jobType: job.jobType,
+          });
+        }
+      }
     }
 
     return {
@@ -265,7 +332,7 @@ async function executeJob(
     case 'board_summary':
       return executeBoardSummaryJob(payload);
     case 'film_study':
-      throw new Error('SHADOW_JOB_TYPE_UNAVAILABLE');
+      return executeFilmStudyJob(payload);
     default:
       throw new Error(`Unknown job type: ${jobType}`);
   }
@@ -324,6 +391,13 @@ function jobFailureCode(error: unknown): string {
   return 'SHADOW_JOB_EXECUTION_FAILED';
 }
 
+// Platform-assigned enum labels, not model prose. The safety sweep must not
+// validate these: the evidence-tier label 'PROVEN' matches the validator's
+// own \bproven\b evidence-claim trigger, so every answer that earned the top
+// tier (2+ authorized citations) had its entire job output replaced by the
+// safe-filtered text -- the better the evidence, the surer the self-filter.
+const OUTPUT_LABEL_KEYS = new Set(['evidenceTier', 'responseState', 'resultStatus', 'safetyStatus']);
+
 function collectOutputStrings(value: unknown, strings: string[], depth = 0): void {
   if (depth > 8 || strings.length >= 100) return;
   if (typeof value === 'string') {
@@ -335,7 +409,8 @@ function collectOutputStrings(value: unknown, strings: string[], depth = 0): voi
     return;
   }
   if (value && typeof value === 'object') {
-    for (const item of Object.values(value as Record<string, unknown>)) {
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      if (OUTPUT_LABEL_KEYS.has(key)) continue;
       collectOutputStrings(item, strings, depth + 1);
     }
   }
@@ -662,6 +737,155 @@ Format your response as valid JSON matching this structure:
     generatedAt: new Date().toISOString(),
     profileTier: payloadToText(payload.profileTier, 'gold'),
   };
+}
+
+// Boxing observation prompt for Film Study. Doctrine (#103, and the same
+// boundary the chat validator enforces): describe what is visible, never
+// diagnose, prescribe, or clear. The output is a PROPOSAL a coach must accept
+// before it means anything, and the prompt says so -- a model told its output
+// is provisional writes more carefully than one told it is advice.
+const FILM_STUDY_SYSTEM_PROMPT = `You are reviewing frames sampled from a youth boxing training session.
+
+Report ONLY what is visible in the frames. Describe stance, guard position,
+footwork, and hand return. Note what changes between frames.
+
+Absolute limits:
+- No diagnosis, no injury assessment, no medical language, no clearance to
+  train or compete.
+- No invented measurements, counts, percentages, angles, or speeds. If you did
+  not see it, do not state it.
+- No claims about the athlete as a person, their potential, or their character.
+- If the frames are too unclear to support an observation, say exactly that.
+
+Write 2-4 sentences of plain observation for a coach. Do not write evidence
+citation tokens: a frame observation cites nothing, and there is no authorized
+citation catalog for this task. Your output is a PROPOSAL: a human coach
+reviews it and decides whether it is accurate before it is attached to any
+athlete record.`;
+
+interface FilmStudyJobContext {
+  videoSessionId: string;
+  athleteId: string;
+  blobPath: string;
+  jobId: string | null;
+}
+
+function parseFilmStudyContext(payload: Record<string, unknown>): FilmStudyJobContext {
+  const videoSessionId = payload.videoSessionId;
+  const athleteId = payload.athleteId;
+  const blobPath = payload.blobPath;
+  const jobId = payload.jobId;
+
+  if (
+    typeof videoSessionId !== 'string' || !videoSessionId.trim()
+    || typeof athleteId !== 'string' || !athleteId.trim()
+    || typeof blobPath !== 'string' || !blobPath.trim()
+  ) {
+    throw new Error('SHADOW_JOB_CONTEXT_INVALID');
+  }
+
+  return {
+    videoSessionId,
+    athleteId,
+    blobPath,
+    jobId: typeof jobId === 'string' && jobId.trim() ? jobId : null,
+  };
+}
+
+/**
+ * Film Study: frames -> vision -> a PROPOSED observation awaiting a coach.
+ *
+ * Retention (#103, non-negotiable): the video is read into a per-job temp
+ * directory, frames are written there, and the whole directory is removed in
+ * a finally block -- success, failure, or throw. Frames of a minor never
+ * outlive the inference that needed them, and there is no schema column that
+ * could hold one.
+ *
+ * Nothing here touches an athlete record. The only durable output is a row in
+ * pilot.shadow_film_study_proposals with review_state 'pending_review'.
+ */
+async function executeFilmStudyJob(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const context = parseFilmStudyContext(payload);
+  const trust = requireAsyncTrustContext(payload);
+  if (!['coach', 'organization_admin', 'admin'].includes(trust.role)) {
+    throw new Error('SHADOW_JOB_SCOPE_FORBIDDEN');
+  }
+  if (!isFilmStudyVisionConfigured()) {
+    // Fail closed rather than degrade: an "observation" produced without the
+    // vision model would be invention about a real child.
+    throw new Error('SHADOW_FILM_VISION_UNCONFIGURED');
+  }
+
+  const organizationId = payloadToText(payload.organizationId, '');
+  if (!organizationId) {
+    throw new Error('SHADOW_JOB_CONTEXT_INVALID');
+  }
+
+  const workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ppbf-film-job-'));
+  try {
+    const videoBytes = await downloadPilotVideoFile(context.blobPath);
+    const clipPath = path.join(workDir, 'source-clip');
+    await fs.writeFile(clipPath, videoBytes);
+
+    const extraction = await extractFrames({ clipPath, directory: workDir });
+    const frames = await Promise.all(
+      extraction.framePaths.map((framePath) => fs.readFile(framePath)),
+    );
+
+    const analysis = await analyzeFramesWithVision({
+      frames,
+      prompt: FILM_STUDY_SYSTEM_PROMPT,
+    });
+
+    // Validate BEFORE persisting. The job-level sweep below runs after the
+    // executor returns, which is too late for this job type: the proposals
+    // route reads the row directly, so an observation that failed the safety
+    // boundary would already be sitting in front of a coach while the job
+    // output beside it said 'filtered'. Nothing citable is authorized for a
+    // frame observation, so the allowlist is empty on purpose.
+    const observationCheck = validateShadowResponse(analysis.content, {
+      allowedEvidenceIds: [],
+    });
+    if (!observationCheck.valid || observationCheck.filtered) {
+      throw new Error('SHADOW_FILM_OBSERVATION_FILTERED');
+    }
+
+    const proposal = await createFilmStudyProposal({
+      organizationId,
+      athleteId: context.athleteId,
+      videoSessionId: context.videoSessionId,
+      jobId: context.jobId,
+      observationText: analysis.content,
+      modelDeployment: getVisionDeploymentName(),
+      framesAnalyzed: frames.length,
+    });
+
+    return {
+      proposalId: proposal.proposal_id,
+      videoSessionId: context.videoSessionId,
+      athleteId: context.athleteId,
+      // The proposal text rides in the output so the job's own safety sweep
+      // re-checks it as a second layer. The gate that actually protects the
+      // coach is the pre-persist check above; this one can only ever agree
+      // with it, because the row is already written by the time it runs.
+      observation: analysis.content,
+      // Provenance, not a citation: which video this observation came from.
+      // The validator's allowlist accepts UUIDs only, so this id can never
+      // authorize an [E:...] token -- see the prompt's citation prohibition.
+      evidenceId: proposal.evidence_id,
+      framesAnalyzed: frames.length,
+      modelDeployment: proposal.model_deployment,
+      reviewState: proposal.review_state,
+      extractionMs: extraction.extractMs,
+      visionLatencyMs: analysis.latencyMs,
+      processedAt: new Date().toISOString(),
+    };
+  } finally {
+    // The retention rule, enforced on every path out of this function.
+    await fs.rm(workDir, { recursive: true, force: true }).catch(() => {
+      console.error('SHADOW film-study temp cleanup failed');
+    });
+  }
 }
 
 async function executeBoardSummaryJob(payload: Record<string, unknown>): Promise<Record<string, unknown>> {

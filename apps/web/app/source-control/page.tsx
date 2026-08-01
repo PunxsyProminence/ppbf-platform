@@ -1,7 +1,9 @@
 import Link from 'next/link';
 import FeatureSurface from '@/components/FeatureSurface';
 
-const stateLanes: Array<{
+const capabilityStatus = 'PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED';
+
+const sampleStateLanes: Array<{
   state: 'Draft' | 'Review' | 'Approved' | 'Published' | 'Archived';
   items: Array<{ title: string; version: string; canonical: string }>;
 }> = [
@@ -40,7 +42,7 @@ const publishDestinations = [
   { label: 'Development Library', status: 'Published' },
 ];
 
-const versionHistory = [
+const sampleVersionHistory = [
   { version: 'v2.1', note: 'Current approved version', date: '2026-07-12' },
   { version: 'v2.0', note: 'Promotion queue release', date: '2026-07-05' },
   { version: 'v1.9', note: 'Pre-validation snapshot', date: '2026-06-28' },
@@ -66,8 +68,8 @@ export default function SourceControlPage() {
     <FeatureSurface
       eyebrow="Source Control"
       title="Promotion pipeline and publication lane"
-      description="Visualize cards moving through Draft, Review, Approved, Published, and Archived states before ecosystem release."
-      status="ready"
+      description="Shows how cards would move through Draft, Review, Approved, Published, and Archived states before ecosystem release. Every card, version, and count on this page is a sample, not live promotion state."
+      status={capabilityStatus}
       currentStage="source-control"
       primaryLinks={[
         { label: 'Audit trace', href: '/audit' },
@@ -77,15 +79,16 @@ export default function SourceControlPage() {
       stats={[
         { label: 'Current Stage', value: 'Source Control' },
         { label: 'Next Stage', value: 'Publish to Ecosystem' },
-        { label: 'Promotion Queue', value: '7 items' },
-        { label: 'Canonical Source', value: 'v2.1' },
+        { label: 'Promotion Queue', value: 'BACKEND REQUIRED' },
+        { label: 'Canonical Source', value: 'BACKEND REQUIRED' },
       ]}
     >
       <div className="space-y-4">
         <section className="border-2 border-[#8b4444] bg-[#151515] p-4">
           <p className="text-[12px] font-mono uppercase tracking-[0.16em] text-[#d4a574]">Promotion State Lanes</p>
+          <p className="mt-1 text-[11px] font-mono uppercase tracking-[0.09em] text-[#d4a574]">{capabilityStatus}</p>
           <div className="mt-3 grid gap-3 xl:grid-cols-5">
-            {stateLanes.map((lane) => (
+            {sampleStateLanes.map((lane) => (
               <article key={lane.state} className="border border-[#5a4a3a] bg-[#101010] p-3">
                 <p className="font-mono text-[12px] uppercase tracking-[0.12em] text-[#d4a574]">{lane.state}</p>
                 <div className="mt-2 space-y-2">
@@ -105,8 +108,9 @@ export default function SourceControlPage() {
         <section className="grid gap-4 lg:grid-cols-2">
           <article className="border-2 border-[#8b4444] bg-[#1a1a1a]/60 p-4">
             <p className="text-[12px] font-mono uppercase tracking-[0.16em] text-[#d4a574]">Version History</p>
+            <p className="mt-1 text-[11px] font-mono uppercase tracking-[0.09em] text-[#d4a574]">{capabilityStatus}</p>
             <div className="mt-3 space-y-2">
-              {versionHistory.map((entry) => (
+              {sampleVersionHistory.map((entry) => (
                 <div key={entry.version} className="border border-[#5a4a3a] bg-[#101010] p-3 text-[14px] text-[#cfbfae]">
                   <p className="font-semibold text-[#e8d7c6]">{entry.version}</p>
                   <p>{entry.note}</p>
@@ -118,6 +122,7 @@ export default function SourceControlPage() {
 
           <article className="border-2 border-[#8b4444] bg-[#1a1a1a]/60 p-4">
             <p className="text-[12px] font-mono uppercase tracking-[0.16em] text-[#d4a574]">Current Approved Version</p>
+            <p className="mt-1 text-[11px] font-mono uppercase tracking-[0.09em] text-[#d4a574]">{capabilityStatus}</p>
             <div className="mt-3 border border-[#5a4a3a] bg-[#101010] p-3">
               <p className="text-[16px] font-bold text-[#e8d7c6]">v2.1 Readiness warmup protocol</p>
               <p className="mt-1 text-[14px] text-[#cfbfae]">Canonical Source: PPBF Development Library / v2.1</p>
@@ -139,9 +144,7 @@ export default function SourceControlPage() {
             {automationWorkflowPanels.map((panel) => (
               <article key={panel} className="border border-[#5a4a3a] bg-[#101010] p-3">
                 <p className="text-[14px] font-semibold text-[#e8d7c6]">{panel}</p>
-                <p className="mt-1 text-[11px] font-mono uppercase tracking-[0.09em] text-[#d4a574]">
-                  PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED
-                </p>
+                <p className="mt-1 text-[11px] font-mono uppercase tracking-[0.09em] text-[#d4a574]">{capabilityStatus}</p>
               </article>
             ))}
           </div>
