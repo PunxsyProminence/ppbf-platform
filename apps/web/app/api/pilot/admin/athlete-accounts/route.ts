@@ -10,8 +10,13 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   try {
     const principal = await requireMicrosoftAuthenticatedPrincipal(request);
-    requireRole(principal, ['organization_admin', 'platform_owner']);
-    if (!isOrganizationAdminRole(principal.role) && principal.role !== 'platform_owner') {
+    // Athlete credentials sit outside the platform-owner tier, the same
+    // boundary session revocation and PIN reset hold: Omega gathers data and
+    // supports organization admins rather than holding the keys to a child's
+    // account. This route returns every athlete's name in the organization,
+    // which is precisely what access.ts refuses that role everywhere else.
+    requireRole(principal, ['organization_admin']);
+    if (!isOrganizationAdminRole(principal.role)) {
       throw new Error('Forbidden: role not allowed');
     }
 

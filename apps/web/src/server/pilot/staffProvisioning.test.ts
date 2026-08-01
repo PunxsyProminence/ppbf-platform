@@ -1,5 +1,15 @@
-function fakeClient() {
-  return { query: jest.fn().mockResolvedValue({ rows: [] }) };
+interface FakeResult {
+  rows: unknown[];
+  rowCount: number;
+}
+
+// The guardian writes read rows back inside the transaction (does this athlete
+// exist, does this account already hold a guardian record), so the fake client
+// answers per statement rather than returning one fixed empty result.
+function fakeClient(responder?: (sql: string, params?: unknown[]) => FakeResult | undefined) {
+  return {
+    query: jest.fn(async (sql: string, params?: unknown[]) => responder?.(sql, params) ?? { rows: [], rowCount: 0 }),
+  };
 }
 
 let currentClient: ReturnType<typeof fakeClient>;
@@ -15,7 +25,10 @@ import {
   ORG_ADMIN_INVITABLE_ROLES,
   createOrUpdateMicrosoftStaffAccount,
   isInvitableStaffRole,
+  listOrganizationGuardianLinks,
   listOrganizationMembers,
+  removeGuardianLink,
+  requireGuardianLinkForParentInvite,
 } from './staffProvisioning';
 import { query, queryOne } from './db';
 
@@ -53,6 +66,40 @@ function revokeCalls() {
   return currentClient.query.mock.calls.filter(
     ([sql]) => sql.includes('pilot.session_tokens') && sql.includes('revoked_at'),
   );
+}
+
+function parentUpsertCalls() {
+  return currentClient.query.mock.calls.filter(
+    ([sql]) => sql.includes('insert into pilot.parents'),
+  );
+}
+
+function guardianLinkInsertCalls() {
+  return currentClient.query.mock.calls.filter(
+    ([sql]) => sql.includes('insert into pilot.guardian_links'),
+  );
+}
+
+const GUARDIAN = { athleteId: 'ath-1', fullName: 'Dana Johnson', relationshipToAthlete: 'mother' };
+
+// Programs the in-transaction reads the guardian branch performs. Defaults are
+// the healthy case: the athlete exists, and the account holds no guardian
+// record yet.
+function guardianClient(options: {
+  athleteRows?: Array<{ athlete_id: string }>;
+  parentRows?: Array<{ parent_id: string; account_id: string | null }>;
+} = {}) {
+  return fakeClient((sql) => {
+    if (sql.includes('from pilot.athletes')) {
+      const rows = options.athleteRows ?? [{ athlete_id: 'ath-1' }];
+      return { rows, rowCount: rows.length };
+    }
+    if (sql.includes('from pilot.parents')) {
+      const rows = options.parentRows ?? [];
+      return { rows, rowCount: rows.length };
+    }
+    return { rows: [], rowCount: 0 };
+  });
 }
 
 beforeEach(() => {
@@ -341,6 +388,271 @@ describe('listOrganizationMembers', () => {
     const [sql, params] = mockQuery.mock.calls[0];
     expect(sql).toContain('(a.pin_hash is not null) as has_pin');
     expect(sql).not.toMatch(/select[\s\S]*a\.pin_hash\s*,/);
+    expect(params).toEqual(['org-1']);
+  });
+});
+
+describe('requireGuardianLinkForParentInvite', () => {
+  test('refuses a parent invite that names no athlete', () => {
+    expect(() => requireGuardianLinkForParentInvite('parent', undefined)).toThrow(
+      /Missing guardian link/,
+    );
+  });
+
+  test('allows a parent invite that names one', () => {
+    expect(() => requireGuardianLinkForParentInvite('parent', GUARDIAN)).not.toThrow();
+  });
+
+  test('refuses a guardian link attached to a role that cannot use one', () => {
+    expect(() => requireGuardianLinkForParentInvite('coach', GUARDIAN)).toThrow(
+      'Forbidden: a guardian link belongs only to the parent role',
+    );
+  });
+
+  test('leaves every other role alone', () => {
+    for (const role of ['coach', 'staff', 'volunteer', 'board', 'organization_admin'] as const) {
+      expect(() => requireGuardianLinkForParentInvite(role, undefined)).not.toThrow();
+    }
+  });
+});
+
+describe('guardian link provisioning', () => {
+  test('writes the account, the guardian record and the link on one transaction client', async () => {
+    currentClient = guardianClient();
+    stubLookups({});
+
+    const result = await createOrUpdateMicrosoftStaffAccount({
+      loginEmail: 'dana@example.com',
+      organizationId: 'org-1',
+      role: 'parent',
+      guardian: GUARDIAN,
+    });
+
+    // Same client object means the same BEGIN/COMMIT: an account can never be
+    // committed without the link that makes it resolve a child.
+    expect(accountUpsertCalls()).toHaveLength(1);
+    expect(parentUpsertCalls()).toHaveLength(1);
+    expect(guardianLinkInsertCalls()).toHaveLength(1);
+
+    expect(parentUpsertCalls()[0][1]).toEqual([
+      'org-1',
+      'par-dana@example.com',
+      'dana@example.com',
+      'Dana Johnson',
+      'dana@example.com',
+    ]);
+    expect(guardianLinkInsertCalls()[0][1]).toEqual(['org-1', 'par-dana@example.com', 'ath-1', 'mother']);
+    expect(result.guardianLink).toEqual({ parentId: 'par-dana@example.com', athleteId: 'ath-1' });
+  });
+
+  test('refuses an athlete that is not in the organization, and writes no link', async () => {
+    currentClient = guardianClient({ athleteRows: [] });
+    stubLookups({});
+
+    await expect(
+      createOrUpdateMicrosoftStaffAccount({
+        loginEmail: 'dana@example.com',
+        organizationId: 'org-1',
+        role: 'parent',
+        guardian: { ...GUARDIAN, athleteId: 'ath-typo' },
+      }),
+    ).rejects.toThrow('Missing athlete_id: no athlete record "ath-typo" in this organization');
+
+    expect(guardianLinkInsertCalls()).toHaveLength(0);
+    expect(parentUpsertCalls()).toHaveLength(0);
+  });
+
+  test('reuses the guardian record this account already holds, so a second child adds a link', async () => {
+    currentClient = guardianClient({ parentRows: [{ parent_id: 'par-7', account_id: 'dana@example.com' }] });
+    stubLookups({
+      existingByEmail: {
+        account_id: 'dana@example.com',
+        organization_id: 'org-1',
+        role: 'parent',
+        auth_provider: 'microsoft',
+        is_platform_owner: false,
+      },
+    });
+
+    const result = await createOrUpdateMicrosoftStaffAccount({
+      loginEmail: 'dana@example.com',
+      organizationId: 'org-1',
+      role: 'parent',
+      guardian: { ...GUARDIAN, athleteId: 'ath-2' },
+    });
+
+    expect(result.guardianLink).toEqual({ parentId: 'par-7', athleteId: 'ath-2' });
+    expect(guardianLinkInsertCalls()[0][1]).toEqual(['org-1', 'par-7', 'ath-2', 'mother']);
+  });
+
+  test('refuses to adopt a guardian record that belongs to someone else', async () => {
+    currentClient = guardianClient({ parentRows: [{ parent_id: 'par-dana@example.com', account_id: 'other@example.com' }] });
+    stubLookups({});
+
+    await expect(
+      createOrUpdateMicrosoftStaffAccount({
+        loginEmail: 'dana@example.com',
+        organizationId: 'org-1',
+        role: 'parent',
+        guardian: GUARDIAN,
+      }),
+    ).rejects.toThrow('Forbidden: guardian record id is already in use by another guardian');
+
+    expect(guardianLinkInsertCalls()).toHaveLength(0);
+  });
+
+  test('rejects a guardian link on a role that has no read path for it', async () => {
+    await expect(
+      createOrUpdateMicrosoftStaffAccount({
+        loginEmail: 'coach@example.com',
+        organizationId: 'org-1',
+        role: 'coach',
+        guardian: GUARDIAN,
+      }),
+    ).rejects.toThrow('Forbidden: a guardian link belongs only to the parent role');
+  });
+
+  test.each([
+    ['athleteId', { ...GUARDIAN, athleteId: '  ' }, /Missing athlete_id/],
+    ['fullName', { ...GUARDIAN, fullName: '  ' }, /Missing guardian full_name/],
+    ['relationshipToAthlete', { ...GUARDIAN, relationshipToAthlete: '' }, /Missing relationship_to_athlete/],
+  ])('refuses a parent invite with a blank %s', async (_field, guardian, expected) => {
+    currentClient = guardianClient();
+    stubLookups({});
+
+    await expect(
+      createOrUpdateMicrosoftStaffAccount({
+        loginEmail: 'dana@example.com',
+        organizationId: 'org-1',
+        role: 'parent',
+        guardian,
+      }),
+    ).rejects.toThrow(expected);
+
+    expect(currentClient.query).not.toHaveBeenCalled();
+  });
+
+  test('a non-parent invite writes no guardian rows at all', async () => {
+    currentClient = guardianClient();
+    stubLookups({});
+
+    const result = await createOrUpdateMicrosoftStaffAccount({
+      loginEmail: 'coach@example.com',
+      organizationId: 'org-1',
+      role: 'coach',
+    });
+
+    expect(result.guardianLink).toBeNull();
+    expect(parentUpsertCalls()).toHaveLength(0);
+    expect(guardianLinkInsertCalls()).toHaveLength(0);
+  });
+});
+
+function unlinkClient(options: {
+  parentRows?: Array<{ parent_id: string }>;
+  linkRows?: Array<{ parent_id: string; athlete_id: string }>;
+}) {
+  return fakeClient((sql) => {
+    if (sql.startsWith('delete from')) {
+      return { rows: [], rowCount: 1 };
+    }
+    if (sql.includes('from pilot.parents')) {
+      const rows = options.parentRows ?? [];
+      return { rows, rowCount: rows.length };
+    }
+    if (sql.includes('from pilot.guardian_links')) {
+      const rows = options.linkRows ?? [];
+      return { rows, rowCount: rows.length };
+    }
+    return { rows: [], rowCount: 0 };
+  });
+}
+
+function deleteCalls() {
+  return currentClient.query.mock.calls.filter(([sql]) => sql.startsWith('delete from pilot.guardian_links'));
+}
+
+describe('removeGuardianLink', () => {
+  test('removes one link when the guardian still has another', async () => {
+    currentClient = unlinkClient({
+      parentRows: [{ parent_id: 'par-1' }],
+      linkRows: [
+        { parent_id: 'par-1', athlete_id: 'ath-1' },
+        { parent_id: 'par-1', athlete_id: 'ath-2' },
+      ],
+    });
+
+    const result = await removeGuardianLink({
+      organizationId: 'org-1',
+      accountId: 'dana@example.com',
+      athleteId: 'ath-2',
+    });
+
+    expect(result).toEqual({ parentId: 'par-1', athleteId: 'ath-2' });
+    expect(deleteCalls()).toHaveLength(1);
+    expect(deleteCalls()[0][1]).toEqual(['org-1', 'par-1', 'ath-2']);
+  });
+
+  // The negative control for the whole feature: removing the last link is the
+  // one action that could recreate a guardian who signs in and sees nothing.
+  test('refuses to remove the only link a guardian holds', async () => {
+    currentClient = unlinkClient({
+      parentRows: [{ parent_id: 'par-1' }],
+      linkRows: [{ parent_id: 'par-1', athlete_id: 'ath-1' }],
+    });
+
+    await expect(
+      removeGuardianLink({ organizationId: 'org-1', accountId: 'dana@example.com', athleteId: 'ath-1' }),
+    ).rejects.toThrow('Forbidden: this is the only athlete this guardian is linked to');
+
+    expect(deleteCalls()).toHaveLength(0);
+  });
+
+  test('reports an account that holds no guardian record', async () => {
+    currentClient = unlinkClient({ parentRows: [] });
+
+    await expect(
+      removeGuardianLink({ organizationId: 'org-1', accountId: 'nobody@example.com', athleteId: 'ath-1' }),
+    ).rejects.toThrow('Not found: this account holds no guardian record');
+
+    expect(deleteCalls()).toHaveLength(0);
+  });
+
+  test('reports an athlete this guardian is not linked to', async () => {
+    currentClient = unlinkClient({
+      parentRows: [{ parent_id: 'par-1' }],
+      linkRows: [
+        { parent_id: 'par-1', athlete_id: 'ath-1' },
+        { parent_id: 'par-1', athlete_id: 'ath-2' },
+      ],
+    });
+
+    await expect(
+      removeGuardianLink({ organizationId: 'org-1', accountId: 'dana@example.com', athleteId: 'ath-9' }),
+    ).rejects.toThrow('Not found: that athlete is not linked to this guardian');
+
+    expect(deleteCalls()).toHaveLength(0);
+  });
+
+  test('requires every identifier before touching the database', async () => {
+    currentClient = unlinkClient({});
+
+    await expect(
+      removeGuardianLink({ organizationId: 'org-1', accountId: '  ', athleteId: 'ath-1' }),
+    ).rejects.toThrow('Missing organization_id, account_id, or athlete_id');
+
+    expect(currentClient.query).not.toHaveBeenCalled();
+  });
+});
+
+describe('listOrganizationGuardianLinks', () => {
+  test('scopes to the organization and skips guardians who have no login', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+    await listOrganizationGuardianLinks('org-1');
+
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql).toContain('p.account_id is not null');
+    expect(sql).toContain('gl.organization_id = $1');
     expect(params).toEqual(['org-1']);
   });
 });

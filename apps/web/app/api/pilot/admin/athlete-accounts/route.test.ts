@@ -72,7 +72,10 @@ describe('POST /api/pilot/admin/athlete-accounts', () => {
     });
   });
 
-  test('allows the platform owner to create a pending athlete account in their organization', async () => {
+  // Athlete credentials sit outside the platform-owner tier, the same boundary
+  // session revocation and PIN reset hold. Creating a child's account is the
+  // gym administrator's act, and this route returns and mints athlete identity.
+  test('refuses the platform owner, whose role holds no athlete credentials', async () => {
     mockRequireMicrosoftAuthenticatedPrincipal.mockResolvedValueOnce({
       accountId: 'owner@punxsyprominence.org',
       role: 'platform_owner',
@@ -84,7 +87,7 @@ describe('POST /api/pilot/admin/athlete-accounts', () => {
 
     const response = await POST(makeRequest({ account_id: 'ath-account-2', athlete_id: 'ath-2' }));
 
-    expect(response.status).toBe(200);
-    expect(mockCreateAthleteAccount).toHaveBeenCalledWith('ath-account-2', 'ath-2', 'org-1');
+    expect(response.status).toBe(403);
+    expect(mockCreateAthleteAccount).not.toHaveBeenCalled();
   });
 });

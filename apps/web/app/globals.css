@@ -1,38 +1,101 @@
 @import "tailwindcss";
 
+/* The PPBF "Leather & Brass" design system is the single source of truth for
+   every token below. It is imported, not copied, so the sheet the Claude
+   Design previews render against and the sheet the app ships are the same
+   file — a value can never drift between them.
+
+   Everything in the :root block that follows is an ALIAS. The app's ~61 pages
+   style themselves with Tailwind arbitrary values reading these legacy names
+   (`bg-[var(--canvas-tan)]`, `text-[var(--red-primary)]`), so pointing the old
+   names at design-system values re-themes the whole app without editing a
+   single page. Add new work against the ppbf tokens directly (--hide-*,
+   --brass-*, --t-*, --s*); the aliases exist to carry the pages that predate
+   the design system, not as a second vocabulary. */
+@import "../../../design-system/ppbf.css";
+
 :root {
-  --canvas-tan: #d4c4a8;
-  --canvas-tan-light: #e5d9c3;
-  --canvas-tan-dark: #8b7355;
+  /* --- Ground ------------------------------------------------------------
+     Was #d4c4a8, a flat tan with no relationship to the rest of the palette.
+     Now the design system's warm canvas — aged paper, the golden-era ground.
 
-  --olive-dark: #3d3d2e;
-  --black: #1a1a1a;
-  --gray-dark: #2a2a2a;
-  --gray-medium: #4a4a4a;
-  --white: #f5f5f5;
-  --white-off: #e8e8e8;
+     Note this is the ONLY theme. There is deliberately no second palette and
+     no [data-theme] override: one look, the golden-era one. Law 6's ink ground
+     is still available per-screen via ppbf.css's .mat-leather / .on-canvas
+     materials, but that is a per-surface material choice, not a user toggle. */
+  --canvas-tan: var(--canvas-warm);
+  --canvas-tan-light: var(--paper);
+  --canvas-tan-dark: var(--hide-600);
 
-  --red-primary: #8b0000;
-  --red-highlight: #a52a2a;
-  --red-blood: #660000;
+  --olive-dark: var(--patina-900);
+  --black: var(--hide-950);
+  --gray-dark: var(--hide-800);
+  --gray-medium: var(--hide-600);
+  --white: var(--bone-100);
+  --white-off: var(--bone-200);
 
-  --status-ready: #4a5d23;
-  --status-warning: #8b6914;
-  --status-critical: var(--red-primary);
-  --status-inactive: var(--gray-medium);
+  /* --- Danger ------------------------------------------------------------
+     Was #8b0000, a pure-red that sat badly against brass. Now the Layer 11
+     locked rung, which was chosen to stay separable from a gold bezel. */
+  --red-primary: var(--locked);
+  --red-highlight: var(--restricted);
+  --red-blood: var(--rust-900);
 
+  /* --- Status ladder (Law 2: saturated colour means safety, nothing else) - */
+  --status-ready: var(--cleared);
+  --status-warning: var(--restricted);
+  --status-critical: var(--locked);
+  --status-inactive: var(--hide-600);
+
+  /* uiStyles.ts has always asked for these two names, and neither existed in
+     this sheet or in ppbf.css — flagged in BRAND_DESIGN_BRIEF.md §8 and never
+     closed. Anything reaching for them got an invalid substitution, so a badge
+     rendered white text on a transparent background: invisible on the warm
+     ground. Latent only because the affected exports were unused. */
+  --status-danger: var(--locked);
+  --status-info: var(--monitor);
+
+  /* SkeletonLoader carried its own #e0e0e0 fallback, a cold grey with no
+     relationship to anything else on the page. Loading is paper that has not
+     been written on yet. */
+  --skeleton-bg: var(--paper-2);
+
+  /* --- Chrome accent ------------------------------------------------------
+     The app spent the safety red on ordinary furniture: --red-primary aliases
+     to --locked, and 322 call sites across 33 files use it for active tabs,
+     KPI labels and panel borders. That is precisely what Law 2 exists to stop
+     — when the gate's red is also the tab highlight, a locked athlete stops
+     being unmissable.
+
+     So chrome gets its own accent, and it is brass. A selected tab is a
+     control in the "on" position: chassis state, not a claim about a person.
+     Law 1 still holds — brass is what the platform is built from, and it
+     reports nothing about anyone's safety. The red stays for exactly two
+     things: safety state, and destructive actions. */
+  --accent: var(--brass-600);
+  --accent-strong: var(--brass-500);
+  --accent-ink: var(--hide-950);
+  --accent-quiet: var(--brass-800);
+
+  /* --font-stencil keeps its next/font wiring — --font-tactical-display is a
+     real loaded face, where the design system's fallback chain is not. The
+     design system's own --font-stencil stays available for previews. */
   --font-stencil: var(--font-tactical-display), "Impact", "Arial Black", sans-serif;
   --font-body: var(--font-tactical-body), "Segoe UI", "Arial Narrow", Arial, sans-serif;
   --font-mono: var(--font-geist-mono), "Courier New", "Courier", monospace;
 
-  --text-xs: 11px;
-  --text-sm: 12px;
-  --text-base: 15px;
-  --text-lg: 16px;
-  --text-xl: 18px;
-  --text-2xl: 24px;
-  --text-3xl: 32px;
-  --text-4xl: 48px;
+  /* --- Type: was an eyeballed 11/12/15/16/18/24/32/48 ladder with no ratio.
+     Now the √φ ladder (Law 8). --text-sm climbing 12px→15px and --text-lg
+     16px→19.1px are the two visible jumps; 19.1px is the kiosk floor (Law 5),
+     which the old 16px silently violated on the gym floor. */
+  --text-xs: var(--t-xs);
+  --text-sm: var(--t-sm);
+  --text-base: var(--t-sm);
+  --text-lg: var(--t-md);
+  --text-xl: var(--t-lg);
+  --text-2xl: var(--t-xl);
+  --text-3xl: var(--t-2xl);
+  --text-4xl: var(--t-3xl);
 
   --leading-tight: 1.2;
   --leading-normal: 1.5;
@@ -41,18 +104,21 @@
   --tracking-wide: 1px;
   --tracking-wider: 2px;
 
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
+  /* --- Space: was a 4px grid. Now Fibonacci, which converges on φ (Law 8). */
+  --space-1: var(--s1);
+  --space-2: var(--s2);
+  --space-3: var(--s3);
+  --space-4: var(--s4);
+  --space-5: var(--s5);
+  --space-6: var(--s6);
+  --space-8: var(--s7);
 
   --border-thin: 1px;
   --border-medium: 2px;
   --border-thick: 3px;
 
+  /* Hard-offset shadows: no design-system equivalent, so these stay. The
+     system's own panels carry their depth in their material gradients. */
   --shadow-sm: 2px 2px 0 rgba(0, 0, 0, 0.3);
   --shadow-md: 4px 4px 0 rgba(0, 0, 0, 0.4);
   --shadow-lg: 6px 6px 0 rgba(0, 0, 0, 0.5);
@@ -60,62 +126,17 @@
   --background: var(--canvas-tan);
   --foreground: var(--black);
 
-  /* Retro stamp palette (available in both themes) */
-  --stamp-cleared: #4a5c2e;
-  --stamp-hold: #a67c2d;
-  --stamp-restricted: #8b0000;
-  --stamp-present: #2e4a3e;
-  --stamp-neutral: #4a3c2e;
-  --brass: #b08d57;
-  --brass-light: #d4af77;
-  --brass-dark: #8a6a3c;
-  --leather: #3b2415;
-  --paper: #e8d9c0;
-}
-
-/* =========================================================
-   RETRO GOLDEN-ERA THEME ("Poor Man's Sport")
-   Toggle with data-theme="retro" on <html>
-   See docs/RETRO_DESIGN_SYSTEM.md
-   ========================================================= */
-[data-theme="retro"] {
-  --canvas-tan: #e8d9c0;
-  --canvas-tan-light: #f3e8d4;
-  --canvas-tan-dark: #5c3a24;
-
-  --olive-dark: #2c1810;
-  --black: #1a120b;
-  --gray-dark: #3d2e22;
-  --gray-medium: #5c4a3a;
-  --white: #f5e6c8;
-  --white-off: #ebe0c8;
-
-  --red-primary: #8b0000;
-  --red-highlight: #a52a2a;
-  --red-blood: #5c0000;
-
-  --status-ready: #4a5c2e;
-  --status-warning: #a67c2d;
-  --status-critical: #8b0000;
-  --status-inactive: #5c4a3a;
-
-  --shadow-sm: 3px 3px 0 #1a120b;
-  --shadow-md: 4px 4px 0 #1a120b;
-  --shadow-lg: 6px 6px 0 #1a120b;
-
-  --background: var(--canvas-tan);
-  --foreground: var(--black);
-
-  --paper: #e8d9c0;
-  --leather: #3b2415;
-  --brass: #b08d57;
-  --brass-light: #d4af77;
-  --brass-dark: #8a6a3c;
-}
-
-[data-theme="retro"] body::before {
-  opacity: 0.9;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='noise'><feTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3'/></filter><rect width='180' height='180' filter='url(%23noise)' opacity='0.09'/></svg>");
+  /* Retro stamp palette — remapped onto the real status ladder so a stamp and
+     a badge reporting the same state can no longer disagree on its colour. */
+  --stamp-cleared: var(--cleared);
+  --stamp-hold: var(--restricted);
+  --stamp-restricted: var(--locked);
+  --stamp-present: var(--monitor);
+  --stamp-neutral: var(--patina-700);
+  --brass: var(--brass-500);
+  --brass-light: var(--brass-300);
+  --brass-dark: var(--brass-800);
+  --leather: var(--hide-800);
 }
 
 .font-display {
@@ -589,91 +610,3 @@ h6 {
   }
 }
 
-/* =========================================================
-   DEEP RETRO IMMERSION (closes gap to design mockups)
-   Applied only when data-theme="retro". Forces hard edges,
-   paper surfaces, and mechanical feel on modern Tailwind
-   utility classes so pages that still use rounded-* still
-   read as 1930s–50s gym desk.
-   ========================================================= */
-[data-theme="retro"] {
-  --radius-none: 0;
-}
-
-[data-theme="retro"] .rounded-\[28px\],
-[data-theme="retro"] .rounded-\[24px\],
-[data-theme="retro"] .rounded-2xl,
-[data-theme="retro"] .rounded-xl,
-[data-theme="retro"] .rounded-lg,
-[data-theme="retro"] .rounded-full,
-[data-theme="retro"] [class*="rounded-"] {
-  border-radius: 0 !important;
-}
-
-[data-theme="retro"] .shadow-sm,
-[data-theme="retro"] .shadow-md,
-[data-theme="retro"] .shadow-lg {
-  box-shadow: var(--shadow-md) !important;
-}
-
-/* Cards / panels → paper tickets */
-[data-theme="retro"] .bg-white {
-  background-color: var(--paper) !important;
-  border-color: var(--black) !important;
-}
-
-/* Stronger paper grain on retro body */
-[data-theme="retro"] body::before {
-  opacity: 1;
-  background-image:
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='noise'><feTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3'/></filter><rect width='180' height='180' filter='url(%23noise)' opacity='0.12'/></svg>"),
-    linear-gradient(180deg, rgba(92,58,36,0.04), transparent 40%);
-  mix-blend-mode: multiply;
-}
-
-/* Buttons that aren't already .stamp / .brass-plate get hard desk feel */
-[data-theme="retro"] button:not(.stamp):not(.brass-plate):not(.leather-tag) {
-  border-radius: 0 !important;
-  box-shadow: var(--shadow-sm);
-  border-width: 2px;
-  border-style: solid;
-  border-color: var(--black);
-  font-family: var(--font-mono);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-[data-theme="retro"] input,
-[data-theme="retro"] select,
-[data-theme="retro"] textarea {
-  border-radius: 0 !important;
-  border: 3px solid var(--black) !important;
-  background: var(--canvas-tan-light) !important;
-  /* The forced paper background must carry its own text colour. Dark-surface
-     pages (SHADOW chat, scheduler, the coach/athlete workspaces) style their
-     fields with cream text, which was invisible on this background. */
-  color: var(--black) !important;
-  box-shadow: inset 2px 2px 0 rgba(0,0,0,0.08);
-  font-family: var(--font-mono);
-}
-
-[data-theme="retro"] input::placeholder,
-[data-theme="retro"] textarea::placeholder {
-  color: var(--gray-dark);
-  opacity: 1;
-}
-
-[data-theme="retro"] input:focus,
-[data-theme="retro"] select:focus,
-[data-theme="retro"] textarea:focus {
-  outline: none;
-  border-color: var(--red-primary) !important;
-  box-shadow: inset 2px 2px 0 rgba(0,0,0,0.08), 0 0 0 2px rgba(139,0,0,0.2);
-}
-
-/* Header already good; ensure brass-ish feel */
-[data-theme="retro"] header.sticky {
-  background: linear-gradient(180deg, var(--brass-light), var(--brass), var(--brass-dark)) !important;
-  border-bottom: 3px solid var(--black) !important;
-  box-shadow: var(--shadow-md) !important;
-}

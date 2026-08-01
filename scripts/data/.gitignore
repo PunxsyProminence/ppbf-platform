@@ -1,0 +1,9 @@
+# This folder is where the seed guide tells an operator to put a roster, so it
+# is where a real one will eventually land. A real roster is a list of children:
+# names, dates of birth, and who to call in an emergency. It must never become a
+# commit, and "we remembered not to add it" is not a control.
+#
+# Everything here is ignored except the templates and this file.
+*
+!.gitignore
+!*.example.csv
