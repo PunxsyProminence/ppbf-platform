@@ -100,7 +100,31 @@ initial state alongside a `capabilitiesHydrated` flag. That use is fine and shou
 
 ## Band 2 — schema and operations debt
 
-### 2.1 — Four tables exist in production with no DDL anywhere `[VS CODE]`
+### 2.1 — ✅ **CLOSED — the premise was false. They are not in production**
+
+Checked against production on 2026-08-01 with `npm run pilot:check-orphan-chat-audit`, a
+read-only script written for this and kept for the next person who wonders.
+
+All four are **ABSENT** — not in `pilot`, and not in any other schema. The script also swept
+every table matching `%chat_audit%` in the entire database and found exactly one:
+`pilot.shadow_chat_audit`, SHADOW's own live table, which is correctly migrated and expected.
+
+So there is nothing to drop and no migration to write. Both the 07-31 audit and this queue
+asserted these tables "exist in production"; neither had looked. The deleted DDL file was
+real, but it either never ran against this database or was reversed long ago.
+
+Two things worth keeping from the exercise:
+
+- **The widened sweep is the part that made it conclusive.** The first pass only checked
+  `pilot.` and reported four ABSENT, which would have been a weaker claim — the deleted DDL
+  ran over HTTP against whatever `search_path` that request had, so "absent from `pilot`" did
+  not rule out "present somewhere else."
+- **The check is now a script, not a one-off.** Staging has not been checked. If it holds
+  them, that is a genuinely different finding, and the command is the same one.
+
+---
+
+### 2.1 (as originally filed) — Four tables exist in production with no DDL anywhere `[VS CODE]`
 
 `pilot.athlete_chat_audit`, `board_chat_audit`, `coach_chat_audit`, `individual_chat_audit`.
 

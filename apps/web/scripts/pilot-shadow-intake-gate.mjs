@@ -348,9 +348,16 @@ async function runBackgroundHeavyBagOnce(admin) {
 async function assertBackgroundHeavyBagRendered(admin, queued, job) {
   const output = job.output ?? {};
   if (output.responseState !== 'ok') {
+    // Print the boundary that fired. Without it the log said only 'filtered',
+    // and the reason had to be re-derived by reading the validator against a
+    // guessed answer -- for a gate whose whole job is to tell you what broke.
+    const reasons = Array.isArray(output.safetyReasons) && output.safetyReasons.length > 0
+      ? output.safetyReasons.join('; ')
+      : 'no reasons recorded on the job output';
     throw new Error(
       `Background Heavy Bag completed but its answer was '${output.responseState}': `
-      + 'two consecutive filtered answers mean real users are seeing withheld answers too.',
+      + 'two consecutive filtered answers mean real users are seeing withheld answers too. '
+      + `Safety reasons: ${reasons}`,
     );
   }
   if (typeof output.response !== 'string' || output.response.trim().length < 40) {
