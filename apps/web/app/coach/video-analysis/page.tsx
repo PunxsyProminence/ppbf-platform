@@ -170,20 +170,20 @@ export default function CoachVideoAnalysisPage() {
   return (
     <RoleStandaloneView roleLabel="Coach Workspace" routeLabel="/coach/video-analysis" allowedRoles={['coach', 'admin']} showShellHeader={false}>
       <div className="space-y-6">
-        <header className="border-2 border-[#8b4444] bg-[#111111] p-5">
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">Video Analysis</p>
-          <h1 className="mt-2 text-3xl font-black text-[#f2e7da]">Coach Video Console</h1>
-          <p className="mt-2 text-sm leading-6 text-[#cfbfae]">
+        <header className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-5">
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--brass-300)]">Video Analysis</p>
+          <h1 className="mt-2 text-3xl font-black text-[color:var(--bone-100)]">Coach Video Console</h1>
+          <p className="mt-2 text-sm leading-6 text-[color:var(--bone-300)]">
             Upload session footage and review athlete film. An upload is held until you release it, and only then can it
             be played. AI/ML scoring features are planned and not yet active.
           </p>
         </header>
 
         {activeVideo ? (
-          <section className="border-2 border-[#8b4444] bg-[#0d0d0d] p-4">
+          <section className="border-2 border-[color:var(--brass-700)] bg-[#0d0d0d] p-4">
             <div className="flex items-center justify-between">
-              <h2 className="font-mono text-sm font-bold uppercase text-[#d4a574]">{activeVideo.title}</h2>
-              <button onClick={() => setActiveVideo(null)} className="text-xs font-mono text-[#cfbfae] underline">Close</button>
+              <h2 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">{activeVideo.title}</h2>
+              <button onClick={() => setActiveVideo(null)} className="text-xs font-mono text-[color:var(--bone-300)] underline">Close</button>
             </div>
             <video className="mt-3 w-full max-h-[480px] bg-black" src={activeVideo.url} controls>
               <track kind="captions" />
@@ -192,65 +192,65 @@ export default function CoachVideoAnalysisPage() {
         ) : null}
 
         <div className="grid gap-6 lg:grid-cols-2">
-          <section className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
-            <h2 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Upload Session Footage</h2>
+          <section className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4">
+            <h2 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">Upload Session Footage</h2>
             <form onSubmit={(e) => { void handleUpload(e); }} className="mt-3 space-y-3">
               <div>
-                <label htmlFor="video-file" className="block text-xs font-mono uppercase text-[#cfbfae]">Video File (MP4, MOV, AVI, WebM, MPEG — interim max 50 MB)</label>
-                <input id="video-file" ref={fileInputRef} type="file" accept="video/*" className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-xs text-[#e8d7c6] file:border-0 file:bg-[#2a1a1a] file:text-[#d4a574] file:font-mono file:text-xs" />
+                <label htmlFor="video-file" className="block text-xs font-mono uppercase text-[color:var(--bone-300)]">Video File (MP4, MOV, AVI, WebM, MPEG — interim max 50 MB)</label>
+                <input id="video-file" ref={fileInputRef} type="file" accept="video/*" className="mt-1 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-2 text-xs text-[color:var(--bone-200)] file:border-0 file:bg-[#2a1a1a] file:text-[color:var(--brass-300)] file:font-mono file:text-xs" />
               </div>
               <div>
-                <label htmlFor="upload-title" className="block text-xs font-mono uppercase text-[#cfbfae]">Title</label>
-                <input id="upload-title" type="text" value={uploadTitle} onChange={(e) => setUploadTitle(e.target.value)} placeholder="e.g. Sparring Round 3 — July 16" className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-xs text-[#e8d7c6] placeholder-[#7a6a5a]" />
+                <label htmlFor="upload-title" className="block text-xs font-mono uppercase text-[color:var(--bone-300)]">Title</label>
+                <input id="upload-title" type="text" value={uploadTitle} onChange={(e) => setUploadTitle(e.target.value)} placeholder="e.g. Sparring Round 3 — July 16" className="mt-1 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-2 text-xs text-[color:var(--bone-200)] placeholder-[#7a6a5a]" />
               </div>
               <div>
-                <label htmlFor="upload-athlete" className="block text-xs font-mono uppercase text-[#cfbfae]">Athlete ID (optional)</label>
-                <input id="upload-athlete" type="text" value={uploadAthleteId} onChange={(e) => setUploadAthleteId(e.target.value)} placeholder="Link to specific athlete" className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-xs text-[#e8d7c6] placeholder-[#7a6a5a]" />
+                <label htmlFor="upload-athlete" className="block text-xs font-mono uppercase text-[color:var(--bone-300)]">Athlete ID (optional)</label>
+                <input id="upload-athlete" type="text" value={uploadAthleteId} onChange={(e) => setUploadAthleteId(e.target.value)} placeholder="Link to specific athlete" className="mt-1 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-2 text-xs text-[color:var(--bone-200)] placeholder-[#7a6a5a]" />
               </div>
               <div>
-                <label htmlFor="upload-notes" className="block text-xs font-mono uppercase text-[#cfbfae]">Notes</label>
-                <textarea id="upload-notes" value={uploadNotes} onChange={(e) => setUploadNotes(e.target.value)} rows={2} placeholder="Coaching context, drill type, focus area..." className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-xs text-[#e8d7c6] placeholder-[#7a6a5a]" />
+                <label htmlFor="upload-notes" className="block text-xs font-mono uppercase text-[color:var(--bone-300)]">Notes</label>
+                <textarea id="upload-notes" value={uploadNotes} onChange={(e) => setUploadNotes(e.target.value)} rows={2} placeholder="Coaching context, drill type, focus area..." className="mt-1 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-2 text-xs text-[color:var(--bone-200)] placeholder-[#7a6a5a]" />
               </div>
-              <button type="submit" disabled={uploading} className="border-2 border-[#8b4444] bg-[#2a1a1a] px-4 py-2 text-xs font-mono font-bold uppercase text-[#d4a574] disabled:opacity-50">
+              <button type="submit" disabled={uploading} className="border-2 border-[color:var(--brass-700)] bg-[#2a1a1a] px-4 py-2 text-xs font-mono font-bold uppercase text-[color:var(--brass-300)] disabled:opacity-50">
                 {uploading ? 'Uploading...' : 'Upload Video'}
               </button>
-              {uploadStatus ? <p className="text-xs font-mono text-[#cfbfae]">{uploadStatus}</p> : null}
+              {uploadStatus ? <p className="text-xs font-mono text-[color:var(--bone-300)]">{uploadStatus}</p> : null}
             </form>
           </section>
 
-          <section className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
-            <h2 className="font-mono text-sm font-bold uppercase text-[#d4a574]">SHADOW Observation Stream</h2>
+          <section className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4">
+            <h2 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">SHADOW Observation Stream</h2>
             <div className="mt-3 space-y-2 max-h-72 overflow-y-auto">
               {observationError ? <p className="text-xs text-[#f0c4c4]">{observationError}</p> : null}
-              {!observationError && observations.length === 0 ? <p className="text-xs text-[#cfbfae]">No observations available.</p> : null}
+              {!observationError && observations.length === 0 ? <p className="text-xs text-[color:var(--bone-300)]">No observations available.</p> : null}
               {observations.slice(0, 8).map((item) => (
-                <div key={item.id} className="border border-[#5a4a3a] bg-[#101010] p-2">
-                  <p className="text-xs font-semibold text-[#e8d7c6]">{item.label}</p>
-                  <p className="text-xs text-[#cfbfae]">Source: {item.source} · {item.review_state}</p>
+                <div key={item.id} className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-2">
+                  <p className="text-xs font-semibold text-[color:var(--bone-200)]">{item.label}</p>
+                  <p className="text-xs text-[color:var(--bone-300)]">Source: {item.source} · {item.review_state}</p>
                 </div>
               ))}
             </div>
           </section>
         </div>
 
-        <section className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
-          <h2 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Video Library</h2>
+        <section className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4">
+          <h2 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">Video Library</h2>
           {videoError ? <p className="mt-2 text-xs text-[#f0c4c4]">{videoError}</p> : null}
           {!videoError && videos.length === 0 ? (
-            <p className="mt-3 text-xs text-[#cfbfae]">No videos uploaded yet.</p>
+            <p className="mt-3 text-xs text-[color:var(--bone-300)]">No videos uploaded yet.</p>
           ) : (
             <div className="mt-3 space-y-2">
               {videos.map((v) => (
-                <div key={v.video_session_id} className="flex items-center justify-between border border-[#5a4a3a] bg-[#101010] p-3">
+                <div key={v.video_session_id} className="flex items-center justify-between border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-3">
                   <div>
-                    <p className="text-sm font-semibold text-[#e8d7c6]">{v.title}</p>
-                    <p className="mt-0.5 text-xs text-[#cfbfae]">
+                    <p className="text-sm font-semibold text-[color:var(--bone-200)]">{v.title}</p>
+                    <p className="mt-0.5 text-xs text-[color:var(--bone-300)]">
                       {v.file_name} · {formatBytes(v.file_size_bytes)} · {v.status}
                       {v.athlete_id ? ` · Athlete: ${v.athlete_id}` : ''}
                     </p>
                     <p className="mt-0.5 text-xs text-[#7a6a5a]">{new Date(v.created_at).toLocaleString()}</p>
                     {v.status === 'quarantined' ? (
-                      <p className="mt-1 text-xs text-[#cfbfae]">
+                      <p className="mt-1 text-xs text-[color:var(--bone-300)]">
                         {canRelease(v)
                           ? 'Held for review. Release it to make it playable for the athlete and their guardians.'
                           : 'Held for review by the coach who uploaded it.'}
@@ -259,11 +259,11 @@ export default function CoachVideoAnalysisPage() {
                   </div>
                   <div className="ml-4 flex shrink-0 items-center gap-2">
                     {canRelease(v) ? (
-                      <button onClick={() => { void releaseVideo(v.video_session_id); }} disabled={releasingVideoId === v.video_session_id} className="border border-[#8b4444] bg-[#2a1a1a] px-3 py-1 text-xs font-mono text-[#d4a574] disabled:opacity-50">
+                      <button onClick={() => { void releaseVideo(v.video_session_id); }} disabled={releasingVideoId === v.video_session_id} className="border border-[color:var(--brass-700)] bg-[#2a1a1a] px-3 py-1 text-xs font-mono text-[color:var(--brass-300)] disabled:opacity-50">
                         {releasingVideoId === v.video_session_id ? 'Releasing...' : 'Release'}
                       </button>
                     ) : null}
-                    <button onClick={() => { void openVideo(v.video_session_id); }} disabled={v.status !== 'ready' || loadingVideoId === v.video_session_id} className="border border-[#8b4444] bg-[#2a1a1a] px-3 py-1 text-xs font-mono text-[#d4a574] disabled:opacity-50">
+                    <button onClick={() => { void openVideo(v.video_session_id); }} disabled={v.status !== 'ready' || loadingVideoId === v.video_session_id} className="border border-[color:var(--brass-700)] bg-[#2a1a1a] px-3 py-1 text-xs font-mono text-[color:var(--brass-300)] disabled:opacity-50">
                       {v.status !== 'ready' ? 'Not released' : loadingVideoId === v.video_session_id ? 'Loading...' : 'Play'}
                     </button>
                   </div>
@@ -273,23 +273,23 @@ export default function CoachVideoAnalysisPage() {
           )}
         </section>
 
-        <section className="border-2 border-[#4a4a4a] bg-[#141414] p-4">
+        <section className="border-2 border-[color:var(--hide-600)] bg-[#141414] p-4">
           <h2 className="font-mono text-sm font-bold uppercase text-[#7a7a7a]">AI/ML Analysis — Planned Features</h2>
           <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {mlPanels.map((p) => (
-              <div key={p.title} className="border border-[#3a3a3a] bg-[#0d0d0d] p-3">
-                <p className="text-xs font-semibold text-[#8a8a8a]">{p.title}</p>
-                <p className="mt-1 text-xs font-mono uppercase tracking-[0.07em] text-[#5a5a5a]">{p.detail}</p>
+              <div key={p.title} className="border border-[color:var(--hide-700)] bg-[#0d0d0d] p-3">
+                <p className="text-xs font-semibold text-[color:var(--bone-400)]">{p.title}</p>
+                <p className="mt-1 text-xs font-mono uppercase tracking-[0.07em] text-[color:var(--hide-500)]">{p.detail}</p>
               </div>
             ))}
           </div>
         </section>
 
         <div className="flex flex-wrap gap-3">
-          <Link href="/coach/review-queue" className="border-2 border-[#8b4444] bg-[#2a1a1a] px-4 py-2 text-xs font-mono text-[#d4a574]">
+          <Link href="/coach/review-queue" className="border-2 border-[color:var(--brass-700)] bg-[#2a1a1a] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)]">
             Back to Coach Workspace
           </Link>
-          <Link href="/operations" className="border-2 border-[#4a4a4a] bg-[#1a1a1a] px-4 py-2 text-xs font-mono text-[#b0b0b0]">
+          <Link href="/operations" className="border-2 border-[color:var(--hide-600)] bg-[var(--hide-900)] px-4 py-2 text-xs font-mono text-[#b0b0b0]">
             Mission Control
           </Link>
         </div>
