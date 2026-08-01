@@ -6,6 +6,39 @@ import { useSyncExternalStore } from "react";
 import { clearRoleSession, getRoleSessionSnapshot, subscribeRoleSession } from "./roleSession";
 import { apiBase } from '@/lib/apiBase';
 
+/* The session bar is chassis, so it is built from chassis materials: a leather
+   ground under a brass rule, framing the warm paper the pages sit on. Every
+   value below comes off the design system's scales -- type from the root-phi
+   ladder, space from Fibonacci -- rather than being picked by eye.
+
+   Two things here are corrections, not restyling:
+
+   - Targets were px-3 py-1, about 26px tall. That is under the 44px WCAG floor
+     on a bar that ships on every route including phones. They are now --tap.
+   - The role badge was --red-primary, which aliases to --locked: the safety
+     gate's "this athlete may not participate" red. Law 2 reserves saturated
+     colour for safety state, and a job title is not one. Role is identity, so
+     it wears patina brass and the red goes back to meaning only what it should.
+
+   Note the text-[length:...] / text-[color:...] hints below. Tailwind v4 cannot
+   tell whether text-[var(--x)] is a font size or a colour, so it silently emits
+   nothing for either -- the class lands in the DOM and no rule backs it. The
+   hints are what make these resolve. */
+const SHELL =
+  "mat-leather sticky top-0 z-50 border-b-2 border-[var(--brass-700)] shadow-[0_3px_10px_rgba(0,0,0,.45)]";
+const BAR =
+  "mx-auto flex w-full max-w-[1600px] flex-wrap items-center justify-between gap-[var(--s4)] px-[var(--s5)] py-[var(--s3)]";
+const EYEBROW =
+  "font-mono text-[length:var(--t-xs)] uppercase tracking-[0.32em] text-[color:var(--bone-400)]";
+
+/* Shared geometry for every control on the bar: --tap tall, on the type scale,
+   and a focus ring that is visible against leather. */
+const CONTROL =
+  "inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-sm)] border px-[var(--s4)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.14em] transition " +
+  "focus-visible:outline-none focus-visible:shadow-[var(--focus)]";
+const CONTROL_QUIET = `${CONTROL} border-[color:rgba(212,175,74,.32)] bg-[rgba(0,0,0,.26)] text-[color:var(--bone-200)] hover:border-[color:var(--brass-400)] hover:text-[color:var(--bone-100)]`;
+const CONTROL_EXIT = `${CONTROL} border-[color:var(--rust-500)] bg-[rgba(0,0,0,.26)] text-[color:var(--bone-300)] hover:border-[color:var(--locked)] hover:text-[color:var(--bone-100)]`;
+
 export default function GlobalRoleHeader() {
   const router = useRouter();
   const pathname = usePathname();
@@ -14,11 +47,9 @@ export default function GlobalRoleHeader() {
   // Minimal bar pre-auth and on login
   if (!session || pathname === "/login") {
     return (
-      <header className="sticky top-0 z-50 border-b-[3px] border-[var(--black)] bg-[var(--canvas-tan-dark)] shadow-[var(--shadow-sm)]">
-        <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-4 px-6 py-3">
-          <span className="text-[10px] font-mono uppercase tracking-[0.35em] text-[var(--black)]">
-            PPBF
-          </span>
+      <header className={SHELL}>
+        <div className={BAR}>
+          <span className={EYEBROW}>PPBF</span>
         </div>
       </header>
     );
@@ -34,33 +65,23 @@ export default function GlobalRoleHeader() {
   }
 
   return (
-    <header className="sticky top-0 z-50 border-b-[3px] border-[var(--black)] bg-[var(--canvas-tan-dark)] shadow-[var(--shadow-sm)]">
-      <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-4 px-6 py-3">
-        <div className="flex items-center gap-3">
-          <span className="text-[10px] font-mono uppercase tracking-[0.35em] text-[var(--black)]">Session Active</span>
-          <span className="border-2 border-[var(--black)] bg-[var(--red-primary)] px-2.5 py-1 text-[11px] font-mono uppercase text-[var(--white)]">
+    <header className={SHELL}>
+      <div className={BAR}>
+        <div className="flex items-center gap-[var(--s4)]">
+          <span className={EYEBROW}>Session active</span>
+          <span className="mat-brass--patina inline-flex min-h-[var(--s6)] items-center rounded-[var(--r-sm)] px-[var(--s4)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.14em] text-[color:var(--hide-950)]">
             {session.role}
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Link
-            href="/operations"
-            className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-1 text-[11px] font-mono text-[var(--black)] transition hover:bg-[var(--olive-dark)] hover:text-[var(--white)]"
-          >
+        <div className="flex flex-wrap items-center gap-[var(--s3)]">
+          <Link href="/operations" className={CONTROL_QUIET}>
             Operations
           </Link>
-          <Link
-            href="/dashboard"
-            className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-1 text-[11px] font-mono text-[var(--black)] transition hover:bg-[var(--canvas-tan)]"
-          >
+          <Link href="/dashboard" className={CONTROL_QUIET}>
             Bell
           </Link>
-          <button
-            type="button"
-            onClick={signOut}
-            className="border-2 border-[var(--black)] bg-[var(--red-primary)] px-3 py-1 text-[11px] font-mono text-[var(--white)] transition hover:bg-[var(--red-highlight)]"
-          >
+          <button type="button" onClick={signOut} className={CONTROL_EXIT}>
             Logout
           </button>
         </div>
