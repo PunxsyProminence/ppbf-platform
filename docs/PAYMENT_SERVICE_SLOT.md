@@ -7,8 +7,9 @@ code, routes, tables, or processor accounts exist in this repository, and none
 should be inferred from this file. The capability stays `BLOCKED` in the admin
 console until the owner's compliance sign-off — that gate is the point.
 
-Owner decision recorded 2026-07-31: the slot must cover four revenue lanes, and
-build is deliberately deferred.
+Owner decisions recorded 2026-07-31: the slot must cover four revenue lanes;
+those lanes settle into **two separate Stripe accounts**, giving and program;
+and build is deliberately deferred.
 
 ## The four lanes
 
@@ -24,13 +25,27 @@ build is deliberately deferred.
 1. **Hosted checkout only.** Card data never touches PPBF servers or this
    repository. That holds PCI scope at SAQ-A and is non-negotiable for a youth
    organization running on a volunteer-scale ops team.
-2. **One processor for all four lanes** unless a real constraint forces a
-   split. Stripe covers all four (Checkout for one-time, Billing for
-   recurring, Payment Links/Checkout for class fees, Invoicing for B2B net
-   terms) and has 501(c)(3) nonprofit pricing; nonprofit-native options
-   (e.g. donor-covered-fee platforms) cover the giving lanes but not B2B
-   invoicing. Verify current pricing at decision time — do not trust this
-   file's age.
+2. **One processor — Stripe — but TWO separate Stripe accounts** (owner
+   decision 2026-07-31, superseding the original single-account posture).
+   Stripe covers all four lanes (Checkout for one-time, Billing for recurring,
+   Payment Links/Checkout for class fees, Invoicing for B2B net terms) and has
+   501(c)(3) nonprofit pricing. The split is by lane, not by processor:
+
+   | Account | Lanes | Why it is separate |
+   |---|---|---|
+   | **Giving** | Donations, recurring giving | Charitable gifts. Tax-deductible, receipted with the no-goods-or-services language the IRS requires, and eligible for Stripe's nonprofit rate. |
+   | **Program** | Class fees, B2B wholesale | Earned revenue in exchange for goods and services. NOT tax-deductible, different receipt language, ordinary commercial pricing. |
+
+   The reason is accounting, not technology. A gift and a class fee are
+   different things to the IRS, to an auditor, and on a Form 990 — one is
+   contribution revenue, the other is program-service revenue. Keeping them in
+   one account means separating them by metadata forever, and every year-end
+   acknowledgment letter, restricted-fund question, and reconciliation
+   inherits that. Two accounts make the boundary structural: a payout lands in
+   one book or the other, and no query can silently mix them.
+
+   Verify current pricing and nonprofit-rate eligibility at decision time — do
+   not trust this file's age.
 3. **Webhook-driven ledger, read-only mirror.** The processor is the source of
    truth for money; the platform keeps an org-scoped mirror table for
    reporting (grant reporting is capability #17 and will want it). The
@@ -63,19 +78,34 @@ Reserving names now prevents the later build from colliding with five
 months of other people's naming choices:
 
 - Capability: `CAP-012` (admin console), capability `#19` (PPBF_CAPABILITIES.json)
-- Env vars: `PPBF_PAYMENTS_ENABLED`, `PPBF_PAYMENT_PROVIDER`,
-  `PAYMENT_PROVIDER_SECRET_KEY` (Container App secret: `payment-provider-secret-key`),
-  `PAYMENT_PROVIDER_WEBHOOK_SECRET` (secret: `payment-provider-webhook-secret`)
-- Routes: `app/api/pilot/payments/**` (checkout-session, webhook, portal)
+- Env vars, **one set per account** — the two-account split has to be visible
+  in configuration, or the wrong key eventually signs the wrong charge:
+  - Shared: `PPBF_PAYMENTS_ENABLED`, `PPBF_PAYMENT_PROVIDER`
+  - Giving: `PAYMENT_GIVING_SECRET_KEY` (Container App secret:
+    `payment-giving-secret-key`), `PAYMENT_GIVING_WEBHOOK_SECRET`
+    (secret: `payment-giving-webhook-secret`)
+  - Program: `PAYMENT_PROGRAM_SECRET_KEY` (secret: `payment-program-secret-key`),
+    `PAYMENT_PROGRAM_WEBHOOK_SECRET` (secret: `payment-program-webhook-secret`)
+- Routes: `app/api/pilot/payments/**` (checkout-session, webhook, portal). The
+  webhook route takes the account as part of its path
+  (`webhook/giving`, `webhook/program`) rather than guessing from the payload —
+  each account signs with its own secret, and a single endpoint verifying
+  against two secrets in turn is how a forged event eventually gets accepted.
 - Tables: `pilot.payment_transactions`, `pilot.payment_subscriptions`
   (migration named `pilot_slice_postgres_payments_migration.sql`, added to the
-  apply-migrations `all` list per its list-check rule)
-- Audit events: `payment_*` vocabulary in the standing audit-event registry
+  apply-migrations `all` list per its list-check rule). Every row carries a
+  non-null `payment_account` (`giving` | `program`) alongside
+  `organization_id`, so the lane a payment belongs to is a column and not an
+  inference from its amount or its metadata.
+- Audit events: `payment_*` vocabulary in the standing audit-event registry,
+  each event recording which account it came from
 
 ## What flipping the slot requires, in order
 
-1. Owner picks the processor and opens the account (nonprofit verification
-   for the giving lanes; wholesale/B2B account linkage).
+1. Owner opens BOTH Stripe accounts — the giving account with 501(c)(3)
+   verification and nonprofit rate applied, the program account for class fees
+   and wholesale/B2B invoicing. Two accounts means two onboarding flows, two
+   sets of keys, and two webhook endpoints to register.
 2. Compliance sign-off recorded — the same explicit human gate the capability
    description names today.
 3. The thin backend lane: checkout-session route, webhook route with
