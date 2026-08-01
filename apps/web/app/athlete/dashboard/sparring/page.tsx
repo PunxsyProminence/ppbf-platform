@@ -262,7 +262,7 @@ export default function SparringTelemetryPage() {
                   step={1}
                   value={contactLevel}
                   onChange={(event) => setContactLevel(Number(event.target.value))}
-                  style={{ accentColor: '#d4a574', flex: '1 1 260px' }}
+                  style={{ accentColor: 'var(--brass-400)', flex: '1 1 260px' }}
                 />
                 <span className="min-w-[122px] border-2 border-[color:var(--brass-700)] bg-[#3d2817] px-3 py-2 text-center text-sm text-[color:var(--bone-200)]">
                   {contactLevel}/3 {contactLevelLabel}

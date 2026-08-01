@@ -249,9 +249,9 @@ export default function ScoutReportPage() {
                 <p className="text-xs font-mono text-[color:var(--bone-400)] mb-2">Effectiveness Metrics</p>
                 <div className="space-y-2">
                   {[
-                    { label: 'Positive Outcome Rate', value: scoreboard.growth.positiveOutcomeRate == null ? 'Unavailable' : `${Math.round(scoreboard.growth.positiveOutcomeRate * 100)}%`, color: '#4a8a4a' },
-                    { label: 'Reviewed Recommendation Score', value: scoreboard.effectiveness.avgRecommendationScore == null ? 'Unavailable' : `${scoreboard.effectiveness.avgRecommendationScore}%`, color: '#d4a574' },
-                    { label: 'Human Escalations', value: scoreboard.safety.escalationsToHuman, color: '#dc2626' },
+                    { label: 'Positive Outcome Rate', value: scoreboard.growth.positiveOutcomeRate == null ? 'Unavailable' : `${Math.round(scoreboard.growth.positiveOutcomeRate * 100)}%`, color: 'var(--cleared)' },
+                    { label: 'Reviewed Recommendation Score', value: scoreboard.effectiveness.avgRecommendationScore == null ? 'Unavailable' : `${scoreboard.effectiveness.avgRecommendationScore}%`, color: 'var(--brass-300)' },
+                    { label: 'Human Escalations', value: scoreboard.safety.escalationsToHuman, color: 'var(--locked)' },
                   ].map(({ label, value, color }) => (
                     <div key={label} className="flex justify-between border border-[#3a2a2a] bg-[var(--hide-950)] px-3 py-2">
                       <span className="text-[9px] text-[color:var(--bone-400)]">{label}</span>
