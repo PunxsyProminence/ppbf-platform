@@ -14,6 +14,7 @@
     "typecheck": "npm --workspace web run typecheck",
     "test": "npm --workspace web run test --",
     "test:migrations": "npm --workspace web run test:migrations --",
+    "design:manifest": "node design-system/build-manifest.mjs",
     "deep:audit": "powershell -ExecutionPolicy Bypass -File ./scripts/deep-audit.ps1",
     "seed:data": "npx ts-node scripts/seed-data.ts",
     "seed:data:dry": "npx ts-node scripts/seed-data.ts --dry-run"

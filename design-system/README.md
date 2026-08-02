@@ -340,7 +340,51 @@ Swapping the display voice is one token in `ppbf.css`.
 
 ---
 
-## Sync
+## Pulling this system from anywhere
 
-This folder is the source. It pushes to the **PPBF Platform** design-system project on
-claude.ai/design one component at a time — never as a wholesale replace. Edit here first.
+**This folder is the canonical source, and the repository is public**, so any tool or agent
+can read it directly over HTTPS — no auth, no export step, no build.
+
+Start with **`manifest.json`**. One fetch gives you every preview and what it covers, all 93
+tokens with their values, the six rooms, the type stack, and the entry points — so nothing has
+to crawl 17 HTML files and infer the system.
+
+```
+https://raw.githubusercontent.com/PunxsyProminence/ppbf-platform/main/design-system/manifest.json
+```
+
+Swap `main` for a branch or a commit SHA to pin a version. Everything else hangs off the same
+directory:
+
+| What | Path |
+|---|---|
+| Machine-readable index | `design-system/manifest.json` |
+| The stylesheet (the whole system) | `design-system/ppbf.css` |
+| Self-hosted faces | `design-system/fonts.css` + `design-system/fonts/*.woff2` |
+| Synthesized sound | `design-system/ppbf-sound.js` |
+| Preview gallery | `design-system/index.html` |
+
+**The folder is portable.** Every reference is relative — previews point at `../ppbf.css`, the
+stylesheet imports `./fonts.css`, and that imports `fonts/*.woff2`. There are no absolute paths
+and nothing is fetched from a CDN, so the directory works unchanged from disk (`file://`), from a
+static server, or copied wholesale into another project. Both were verified.
+
+`manifest.json` is **generated, never hand-edited** — a hand-maintained index drifts the first
+time someone adds a preview and forgets, and a stale index is worse than none because it gets
+believed. Regenerate after touching previews or tokens:
+
+```
+npm run design:manifest
+```
+
+It exits non-zero if any preview is missing its first-line `<!-- @dsCard … -->` marker, so a
+preview that would be invisible in a gallery fails the build instead of shipping quietly.
+
+### claude.ai/design specifically
+
+Claude Design does **not** pull from a repository — its sync API pushes files *into* a Design
+project, which is the opposite direction. To get this folder in there, either use Design's
+**"Send to Claude Code Web"** (which seeds the project into a workspace where the sync tool can
+run), or run `/design-login` in an interactive local Claude Code terminal and sync from there.
+Neither is possible from a headless web session. Push one component at a time — never a
+wholesale replace — and edit here first regardless.
