@@ -14,7 +14,7 @@ export default function PassbookCheckPage() {
         </header>
 
         <div className="grid gap-5 px-10 py-7">
-          <p className="max-w-[640px] font-mono text-xs font-bold uppercase tracking-[0.14em] text-[color:var(--locked)]">
+          <p className="max-w-[640px] font-mono text-xs font-bold uppercase tracking-[0.14em] text-[color:var(--locked-ink)]">
             PLANNED | NOT YET IMPLEMENTED
           </p>
           <p className="max-w-[640px] text-sm leading-6 text-[color:var(--bone-400)]">

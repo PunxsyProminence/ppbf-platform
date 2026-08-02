@@ -1836,7 +1836,7 @@ export default function AthleteWorkspace() {
             <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4 animate-fadeIn">
               <h3 className="font-mono font-bold text-[color:var(--brass-300)] uppercase">Assessments</h3>
               <p className="text-[color:var(--bone-400)]">Complete personality tests, surveys, and skill assessments.</p>
-              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked)]">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked-ink)]">
                 PLANNED | NOT YET IMPLEMENTED -- there is no assessment engine behind this tab, so nothing can
                 be started or scored from here yet.
               </p>
@@ -2051,7 +2051,7 @@ export default function AthleteWorkspace() {
                   no recipient, address, or delivery step is stored or sent --
                   so this surface cannot claim parent CC is in force. */}
               <div className="border-2 border-red-600 bg-red-900/20 p-4 space-y-2">
-                <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked)]">
+                <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked-ink)]">
                   PLANNED | NOT YET IMPLEMENTED
                 </p>
                 <p className="text-sm text-red-200">🔒 <strong>SafeSport:</strong> messages sent here are logged, but automatic parent carbon copy is not built yet and no coach is notified. Tell a coach or trusted adult in person about anything urgent or unsafe.</p>
@@ -2120,7 +2120,7 @@ export default function AthleteWorkspace() {
                 ]}
               />
 
-              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked)]">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked-ink)]">
                 PLANNED | NOT YET IMPLEMENTED -- this tab cannot read the gym&apos;s classes or register you
                 for one. Open the unified scheduler above for live classes and real registration.
               </p>

@@ -488,7 +488,7 @@ export default function ParentHub() {
 
               <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4">
                 <h3 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">This Week&apos;s Parent Support Tasks</h3>
-                <p className="max-w-[520px] font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked)]">
+                <p className="max-w-[520px] font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked-ink)]">
                   PLANNED | NOT YET IMPLEMENTED
                 </p>
                 <p className="text-sm text-[color:var(--bone-400)]">
@@ -520,7 +520,7 @@ export default function ParentHub() {
                 ]}
               />
 
-              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked)]">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked-ink)]">
                 PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for home assignments yet, so this
                 list is always empty.
               </p>
@@ -561,7 +561,7 @@ export default function ParentHub() {
                 ]}
               />
 
-              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked)]">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked-ink)]">
                 PLANNED | NOT YET IMPLEMENTED -- there is no backend feed or entry form for parent observations
                 yet, so this section is always empty.
               </p>
@@ -607,7 +607,7 @@ export default function ParentHub() {
                 ]}
               />
 
-              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked)]">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked-ink)]">
                 PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for family goals yet, so this section
                 is always empty.
               </p>
@@ -654,7 +654,7 @@ export default function ParentHub() {
                 ]}
               />
 
-              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked)]">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked-ink)]">
                 PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for coach messages yet, so this list
                 is always empty.
               </p>
@@ -674,7 +674,7 @@ export default function ParentHub() {
 
               <div className="border-2 border-[color:var(--brass-300)] bg-[var(--hide-950)] p-4 space-y-3">
                 <h4 className="font-semibold text-[color:var(--brass-300)]">Reply to Coach</h4>
-                <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked)]">
+                <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked-ink)]">
                   PLANNED | NOT YET IMPLEMENTED
                 </p>
                 <p className="text-xs text-[color:var(--bone-400)]">
@@ -704,7 +704,7 @@ export default function ParentHub() {
             <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4 animate-fadeIn">
               <h3 className="font-mono font-bold text-[color:var(--brass-300)] uppercase">Attendance Tracking</h3>
               <p className="text-[color:var(--bone-400)]">View attendance history and upcoming sessions.</p>
-              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked)]">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked-ink)]">
                 PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for attendance history or upcoming
                 sessions yet, so these lists are always empty.
               </p>
@@ -748,7 +748,7 @@ export default function ParentHub() {
                 </Link>
               </details>
 
-              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked)]">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked-ink)]">
                 PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for progress milestones yet, so this
                 list is always empty.
               </p>
@@ -780,7 +780,7 @@ export default function ParentHub() {
             <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4 animate-fadeIn">
               <h3 className="font-mono font-bold text-[color:var(--brass-300)] uppercase">Parent Support Resources</h3>
               <p className="text-[color:var(--bone-400)]">Guides, videos, and tips for supporting young athletes.</p>
-              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked)]">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked-ink)]">
                 PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for parent resources yet, so this
                 list is always empty.
               </p>

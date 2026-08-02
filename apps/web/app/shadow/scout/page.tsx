@@ -185,7 +185,7 @@ export default function ScoutReportPage() {
       <header className="border-b-4 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 py-4 md:px-8">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
           <div>
-            <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-[color:var(--locked)]">SHADOW Intelligence</p>
+            <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-[color:var(--locked-ink)]">SHADOW Intelligence</p>
             <h1 className="font-display text-2xl font-black tracking-tight text-[color:var(--bone-200)]">Scout Reports</h1>
             <p className="mt-1 text-xs text-[color:var(--bone-400)]">Profile intelligence, Recovery Round jobs, and The Scorecard</p>
           </div>
@@ -210,7 +210,7 @@ export default function ScoutReportPage() {
 
       <div className="mx-auto max-w-5xl p-4 md:p-8 space-y-6">
         {error ? (
-          <p className="border border-[color:var(--locked)] bg-[#1a0a0a] px-4 py-2 text-xs font-mono text-[color:var(--locked)]">{error}</p>
+          <p className="border border-[color:var(--locked)] bg-[#1a0a0a] px-4 py-2 text-xs font-mono text-[color:var(--locked-ink)]">{error}</p>
         ) : null}
 
         {/* METRICS DASHBOARD */}
@@ -249,9 +249,9 @@ export default function ScoutReportPage() {
                 <p className="text-xs font-mono text-[color:var(--bone-400)] mb-2">Effectiveness Metrics</p>
                 <div className="space-y-2">
                   {[
-                    { label: 'Positive Outcome Rate', value: scoreboard.growth.positiveOutcomeRate == null ? 'Unavailable' : `${Math.round(scoreboard.growth.positiveOutcomeRate * 100)}%`, color: 'var(--cleared)' },
+                    { label: 'Positive Outcome Rate', value: scoreboard.growth.positiveOutcomeRate == null ? 'Unavailable' : `${Math.round(scoreboard.growth.positiveOutcomeRate * 100)}%`, color: 'var(--cleared-ink)' },
                     { label: 'Reviewed Recommendation Score', value: scoreboard.effectiveness.avgRecommendationScore == null ? 'Unavailable' : `${scoreboard.effectiveness.avgRecommendationScore}%`, color: 'var(--brass-300)' },
-                    { label: 'Human Escalations', value: scoreboard.safety.escalationsToHuman, color: 'var(--locked)' },
+                    { label: 'Human Escalations', value: scoreboard.safety.escalationsToHuman, color: 'var(--locked-ink)' },
                   ].map(({ label, value, color }) => (
                     <div key={label} className="flex justify-between border border-[#3a2a2a] bg-[var(--hide-950)] px-3 py-2">
                       <span className="text-[9px] text-[color:var(--bone-400)]">{label}</span>
@@ -358,7 +358,7 @@ export default function ScoutReportPage() {
                 type="button"
                 onClick={() => void requestGeneration('scout_report')}
                 disabled={generateBusy}
-                className="border-2 border-[color:var(--brass-700)] bg-[#2a1a1a] px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-[0.12em] text-[color:var(--locked)] transition hover:border-[color:var(--locked)] disabled:opacity-50"
+                className="border-2 border-[color:var(--brass-700)] bg-[#2a1a1a] px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-[0.12em] text-[color:var(--locked-ink)] transition hover:border-[color:var(--locked)] disabled:opacity-50"
               >
                 {generateBusy ? 'Queuing…' : 'Generate scout report'}
               </button>
@@ -374,7 +374,7 @@ export default function ScoutReportPage() {
               ) : null}
             </div>
             {generateNotice ? <p role="status" className="mt-2 text-xs text-[color:var(--brass-300)]">{generateNotice}</p> : null}
-            {generateError ? <p role="alert" className="mt-2 text-xs text-[color:var(--locked)]">{generateError}</p> : null}
+            {generateError ? <p role="alert" className="mt-2 text-xs text-[color:var(--locked-ink)]">{generateError}</p> : null}
           </div>
 
           {loadingJobs ? (
@@ -460,7 +460,7 @@ export default function ScoutReportPage() {
                   ) : null}
 
                   {selectedJob?.jobId === job.jobId && job.status === 'failed' ? (
-                    <p className="mt-2 text-[10px] font-mono text-[color:var(--locked)]">Error: {job.error}</p>
+                    <p className="mt-2 text-[10px] font-mono text-[color:var(--locked-ink)]">Error: {job.error}</p>
                   ) : null}
 
                   {selectedJob?.jobId === job.jobId && job.status === 'cancelled' ? (
@@ -535,7 +535,7 @@ function StatusBadge({ status }: { readonly status: JobStatusResult['status'] })
     pending:   'text-[color:var(--bone-400)] border-[color:var(--hide-600)]',
     running:   'text-[color:var(--brass-300)] border-[color:var(--brass-300)]',
     completed: 'text-[#4a8a4a] border-[#4a8a4a]',
-    failed:    'text-[color:var(--locked)] border-[color:var(--locked)]',
+    failed:    'text-[color:var(--locked-ink)] border-[color:var(--locked)]',
     cancelled: 'text-[#6a5a4a] border-[color:var(--hide-600)]',
   };
   return (

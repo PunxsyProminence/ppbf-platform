@@ -265,8 +265,13 @@ function ActivatePageContent() {
                 className={PIN_INPUT}
               />
               {confirmPin.length > 0 && !pinsMatch && (
-                <p className="mt-[var(--s3)] flex items-center gap-[var(--s2)] text-[length:var(--t-sm)] font-semibold text-[color:var(--restricted)]">
-                  <span aria-hidden="true">▲</span> These do not match yet.
+                /* --restricted on paper is 3.74:1 — under the 4.5:1 AA floor for
+                   body text, though comfortably over the 3:1 non-text floor. So
+                   the words take dark ink and the ▲ keeps the caution hue: the
+                   glyph is the second channel Law 3 asks for, and it is the part
+                   the 3:1 rule actually governs. */
+                <p className="mt-[var(--s3)] flex items-center gap-[var(--s2)] text-[length:var(--t-sm)] font-semibold text-[color:var(--hide-900)]">
+                  <span aria-hidden="true" className="text-[color:var(--restricted)]">▲</span> These do not match yet.
                 </p>
               )}
             </div>
