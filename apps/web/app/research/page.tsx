@@ -267,32 +267,32 @@ export default function ResearchIntakePage() {
               <input
                 value={requirementDraft.sourceEventName}
                 onChange={(event) => setRequirementDraft((current) => ({ ...current, sourceEventName: event.target.value }))}
-                className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] outline-none"
+                className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
                 placeholder="Source event name"
               />
               <input
                 value={requirementDraft.sourceEntityType}
                 onChange={(event) => setRequirementDraft((current) => ({ ...current, sourceEntityType: event.target.value }))}
-                className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] outline-none"
+                className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
                 placeholder="Source entity type"
               />
             </div>
             <input
               value={requirementDraft.sourceEntityId}
               onChange={(event) => setRequirementDraft((current) => ({ ...current, sourceEntityId: event.target.value }))}
-              className="w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] outline-none"
+              className="w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
               placeholder="Source entity id"
             />
             <textarea
               value={requirementDraft.researchRequirement}
               onChange={(event) => setRequirementDraft((current) => ({ ...current, researchRequirement: event.target.value }))}
-              className="h-24 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] outline-none"
+              className="h-24 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
               placeholder="Research requirement"
             />
             <textarea
               value={requirementDraft.knowledgeGap}
               onChange={(event) => setRequirementDraft((current) => ({ ...current, knowledgeGap: event.target.value }))}
-              className="h-20 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] outline-none"
+              className="h-20 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
               placeholder="Knowledge gap"
             />
             <div className="flex flex-wrap items-center gap-3">

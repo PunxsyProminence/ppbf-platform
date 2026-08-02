@@ -1422,7 +1422,7 @@ export default function AthleteWorkspace() {
                         max={480}
                         value={sessionDurationMinutes}
                         onChange={(e) => setSessionDurationMinutes(Math.max(1, Number.parseInt(e.target.value, 10) || 0))}
-                        className="w-full h-9 px-3 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus:outline-none"
+                        className="w-full h-9 px-3 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
                       />
                     </div>
                     <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -1508,7 +1508,7 @@ export default function AthleteWorkspace() {
                       onChange={(e) => setCheckInNotes(e.target.value)}
                       placeholder="Session notes for your coach..."
                       aria-label="Session notes for your coach"
-                      className="w-full h-20 px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus:outline-none"
+                      className="w-full h-20 px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
                     />
                     <p className="text-xs text-[color:var(--brass-300)]">
                       {notesSaveState === 'failed'
@@ -1701,12 +1701,12 @@ export default function AthleteWorkspace() {
                       value={newGoalTitle}
                       onChange={(e) => setNewGoalTitle(e.target.value)}
                       placeholder="Goal title"
-                      className="px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus:outline-none"
+                      className="px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
                     />
                     <select
                       value={newGoalCategory}
                       onChange={(e) => setNewGoalCategory(e.target.value as SMARTCategory)}
-                      className="px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus:outline-none"
+                      className="px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
                     >
                       {(['Boxing', 'Fitness', 'Weight Loss', 'Weight Gain', 'Academics', 'Attendance', 'Recovery', 'Lifestyle', 'Leadership'] as SMARTCategory[]).map(cat => (
                         <option key={cat} value={cat}>{cat}</option>
@@ -1716,14 +1716,14 @@ export default function AthleteWorkspace() {
                       type="date"
                       value={newGoalTargetDate}
                       onChange={(e) => setNewGoalTargetDate(e.target.value)}
-                      className="px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus:outline-none"
+                      className="px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
                     />
                     <input
                       type="text"
                       value={newGoalSuccessMetric}
                       onChange={(e) => setNewGoalSuccessMetric(e.target.value)}
                       placeholder="Success metric"
-                      className="px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus:outline-none"
+                      className="px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
                     />
                   </div>
                   <div className="flex gap-2">
@@ -2066,7 +2066,7 @@ export default function AthleteWorkspace() {
                       id="message-coach-select"
                       value={selectedCoach}
                       onChange={(event) => setSelectedCoach(event.target.value)}
-                      className="w-full px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus:outline-none"
+                      className="w-full px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
                     >
                       <option>Coach Jason (Head Coach)</option>
                       <option>Coach Danielle (Fitness Director)</option>
@@ -2079,7 +2079,7 @@ export default function AthleteWorkspace() {
                       value={coachMessageBody}
                       onChange={(event) => setCoachMessageBody(event.target.value)}
                       placeholder="Type your message..."
-                      className="w-full h-24 px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus:outline-none resize-none"
+                      className="w-full h-24 px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)] resize-none"
                     />
                   </div>
                   {coachMessageStatus ? <p className="text-xs text-[color:var(--brass-300)]">{coachMessageStatus}</p> : null}
@@ -2211,7 +2211,7 @@ export default function AthleteWorkspace() {
               <div className="space-y-3">
                 <div>
                   <label className="block text-sm font-semibold mb-2" htmlFor="pain-type-select">Pain Type</label>
-                  <select id="pain-type-select" value={currentPainType} onChange={(e) => setCurrentPainType(e.target.value as PainType)} className="w-full px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus:outline-none">
+                  <select id="pain-type-select" value={currentPainType} onChange={(e) => setCurrentPainType(e.target.value as PainType)} className="w-full px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]">
                     {(['Sharp', 'Dull', 'Burning', 'Tight', 'Pulling', 'Throbbing', 'Swollen', 'Numbness/Tingling', 'Instability', 'Other'] as PainType[]).map(t => (
                       <option key={t} value={t}>{t}</option>
                     ))}

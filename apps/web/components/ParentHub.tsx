@@ -686,7 +686,7 @@ export default function ParentHub() {
                   onChange={(e) => setNewMessage(e.target.value)}
                   placeholder="Messaging is not yet available."
                   disabled
-                  className="w-full h-20 px-3 py-2 bg-[var(--hide-900)] border-2 border-[color:var(--hide-600)] text-[color:var(--bone-400)] focus:outline-none resize-none cursor-not-allowed"
+                  className="w-full h-20 px-3 py-2 bg-[var(--hide-900)] border-2 border-[color:var(--hide-600)] text-[color:var(--bone-400)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)] resize-none cursor-not-allowed"
                 />
                 <button
                   type="button"
