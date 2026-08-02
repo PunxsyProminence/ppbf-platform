@@ -144,7 +144,7 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
       onClick={toggleTheme}
       className={
         className ||
-        "border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-1 text-[11px] font-mono uppercase text-[var(--black)] transition hover:bg-[var(--olive-dark)] hover:text-[var(--white)]"
+        "border border-[color:color-mix(in_srgb,currentColor_26%,transparent)]  px-3 py-1 text-[11px] font-mono uppercase  transition hover:bg-[var(--olive-dark)] hover:"
       }
       aria-pressed={isRetro}
       title={isRetro ? "Switch to tactical theme" : "Switch to retro golden-era theme"}
