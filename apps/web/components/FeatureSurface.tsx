@@ -31,15 +31,15 @@ export default function FeatureSurface({
   ].filter((link, index, all) => all.findIndex((item) => item.href === link.href) === index);
 
   return (
-    <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
+    <main className="on-canvas min-h-screen">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-10 lg:px-10">
-        <header className="flex flex-col gap-4 border-b-[3px] border-[var(--black)] pb-6 md:flex-row md:items-end md:justify-between">
+        <header className="flex flex-col gap-[var(--s4)] border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)] md:flex-row md:items-end md:justify-between">
           <div className="space-y-3">
-            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--red-primary)]">{eyebrow}</p>
-            <h1 className="font-display text-4xl tracking-tight text-[var(--black)] md:text-5xl">{title}</h1>
-            <p className="max-w-3xl text-sm leading-6 text-[var(--gray-dark)] md:text-base">{description}</p>
+            <p className="t-eyebrow tracking-[0.35em]">{eyebrow}</p>
+            <h1 className="t-command">{title}</h1>
+            <p className="t-body max-w-[72ch]">{description}</p>
           </div>
-          <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 py-3 text-xs font-mono text-[var(--black)] shadow-[var(--shadow-sm)]">
+          <div className="rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.28)] px-[var(--s4)] py-[var(--s3)] t-data">
             Status: {status}
           </div>
         </header>
@@ -51,24 +51,24 @@ export default function FeatureSurface({
         )}
 
         <section className="mt-8 grid gap-6 lg:grid-cols-[1.35fr_0.85fr]">
-          <div className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-md)]">
+          <div className="rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.28)] p-[var(--s5)]">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               {stats.map((item) => (
-                <div key={item.label} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-                  <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-[var(--gray-medium)]">{item.label}</p>
-                  <p className="mt-2 text-xl font-black text-[var(--black)]">{item.value}</p>
+                <div key={item.label} className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.24)] p-[var(--s4)]">
+                  <p className="t-label">{item.label}</p>
+                  <p className="t-command mt-[var(--s3)]">{item.value}</p>
                 </div>
               ))}
             </div>
 
-            <div className="mt-6 border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-5">
+            <div className="mt-[var(--s5)] rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.24)] p-[var(--s5)]">
               {children}
             </div>
           </div>
 
           <aside className="grid gap-6">
-            <section className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-md)]">
-              <h2 className="font-display text-lg tracking-tight text-[var(--black)]">Quick links</h2>
+            <section className="rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.28)] p-[var(--s5)]">
+              <h2 className="t-command">Quick links</h2>
               <div className="mt-3">
                 <ShadowChatButton context={`${eyebrow} ${title}`} />
               </div>
@@ -77,7 +77,7 @@ export default function FeatureSurface({
                   <Link
                     key={item.href}
                     href={item.href}
-                    className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-sm text-[var(--black)] transition hover:bg-[var(--olive-dark)] hover:text-[var(--white)]"
+                    className="btn btn--ghost w-full justify-start text-left"
                   >
                     {item.label}
                   </Link>
@@ -85,9 +85,9 @@ export default function FeatureSurface({
               </div>
             </section>
 
-            <section className="border-[3px] border-[var(--black)] bg-[var(--red-primary)] p-6 text-sm text-[var(--white)] shadow-[var(--shadow-md)]">
-              <h2 className="font-display text-lg tracking-tight text-[var(--white)]">Front-end status</h2>
-              <p className="mt-3 leading-6 text-[var(--white-off)]">
+            <section className="rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.28)] p-[var(--s5)]">
+              <h2 className="t-command">Front-end status</h2>
+              <p className="t-body mt-[var(--s3)]">
                 This route is a live scaffold for one of the missing capability surfaces. It is intentionally simple,
                 production-safe, and ready for richer workflows later.
               </p>
