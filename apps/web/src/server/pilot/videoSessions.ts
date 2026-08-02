@@ -36,6 +36,10 @@ export interface VideoSessionReviewRecord extends VideoSessionRecord {
   file_name: string;
   scan_state: string;
   scan_detail: Record<string, unknown>;
+  // Needed by the review authorization: a coach may only act on footage they
+  // uploaded, matching video/[videoId]/release. Without this column the
+  // review surfaces were wider than the release gate they serve.
+  uploaded_by_account_id: string;
 }
 
 /**
@@ -51,7 +55,7 @@ export async function getVideoSessionForReview(
 ): Promise<VideoSessionReviewRecord | null> {
   return queryOne<VideoSessionReviewRecord>(
     `select video_session_id, organization_id, athlete_id, blob_path, status,
-            title, file_name, scan_state, scan_detail
+            title, file_name, scan_state, scan_detail, uploaded_by_account_id
      from pilot.video_sessions
      where organization_id = $1 and video_session_id = $2`,
     [organizationId, videoSessionId],
@@ -104,7 +108,7 @@ export async function reviewVideoSessionScan(params: {
        and video_session_id = $2
        and status = 'quarantined'
      returning video_session_id, organization_id, athlete_id, blob_path, status,
-               title, file_name, scan_state, scan_detail`,
+               title, file_name, scan_state, scan_detail, uploaded_by_account_id`,
     [
       params.organizationId,
       params.videoSessionId,

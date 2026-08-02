@@ -61,6 +61,7 @@ function video(overrides: Record<string, unknown> = {}) {
     file_name: 'tape.mp4',
     scan_state: 'needs_human_review',
     scan_detail: { decision: 'needs_human_review' },
+    uploaded_by_account_id: 'coach-1',
     ...overrides,
   };
 }
@@ -164,15 +165,45 @@ describe('POST /api/pilot/video/scan-review', () => {
     expect(mockAssertAthlete).toHaveBeenCalledWith(expect.anything(), 'ath-real');
   });
 
-  test('a reviewer without access to the athlete is refused', async () => {
+  test('a reviewer without access to the athlete gets 404, not 403', async () => {
+    // Issue #8's disclosure rule: "exists but forbidden" must be
+    // indistinguishable from "does not exist", or this route becomes a way to
+    // confirm a video_session_id is real. Raised in review of #150.
     mockRequirePrincipal.mockResolvedValue(principal());
     mockGetVideo.mockResolvedValue(video());
     mockAssertAthlete.mockRejectedValueOnce(new Error('Forbidden: athlete not assigned'));
 
     const res = await POST(req({ video_session_id: 'vs-1', decision: 'approve' }));
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toMatchObject({ reason: 'VIDEO_SESSION_NOT_FOUND' });
     expect(mockReview).not.toHaveBeenCalled();
+  });
+
+  test('an unknown id and a forbidden one are the same response', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGetVideo.mockResolvedValue(null);
+    const unknown = await POST(req({ video_session_id: 'vs-nope', decision: 'approve' }));
+
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGetVideo.mockResolvedValue(video());
+    mockAssertAthlete.mockRejectedValueOnce(new Error('Forbidden'));
+    const forbidden = await POST(req({ video_session_id: 'vs-1', decision: 'approve' }));
+
+    expect(unknown.status).toBe(forbidden.status);
+    expect(await unknown.json()).toEqual(await forbidden.json());
+  });
+
+  test('rejects an unrecognized decision with a message that says so', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGetVideo.mockResolvedValue(video());
+
+    const missing = await POST(req({ video_session_id: 'vs-1' }));
+    expect((await missing.json()).error).toMatch(/^Missing decision/);
+
+    const invalid = await POST(req({ video_session_id: 'vs-1', decision: 'aprove' }));
+    expect(invalid.status).toBe(400);
+    expect((await invalid.json()).error).toMatch(/^Unsupported decision/);
   });
 
   test('platform_owner cannot release an athlete video', async () => {
@@ -267,6 +298,48 @@ describe('POST /api/pilot/video/review-link', () => {
     const decide = await POST(req({ video_session_id: 'vs-1', decision: 'approve' }));
     expect(decide.status).toBe(403);
     expect(mockReview).not.toHaveBeenCalled();
+  });
+
+  test('a coach cannot mint a link for another coach\'s upload', async () => {
+    // review-link must not be wider than video/[videoId]/release, which
+    // requires a non-admin caller to be the uploader. Without this it was an
+    // alternate playback path around "held until released". Raised in review
+    // of #150.
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach', accountId: 'coach-2' }));
+    mockGetVideo.mockResolvedValue(video({ uploaded_by_account_id: 'coach-1' }));
+
+    const res = await REVIEW_LINK(req({ video_session_id: 'vs-1' }, 'review-link'));
+
+    expect(res.status).toBe(404);
+    expect(mockSas).not.toHaveBeenCalled();
+  });
+
+  test('unattributed team video is not open to every coach in the org', async () => {
+    // The sharper half of the same hole: with athlete_id null the athlete
+    // check simply does not run, so before the uploader rule ANY coach could
+    // mint a SAS for any quarantined team clip.
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach', accountId: 'coach-2' }));
+    mockGetVideo.mockResolvedValue(video({ athlete_id: null, uploaded_by_account_id: 'coach-1' }));
+
+    const res = await REVIEW_LINK(req({ video_session_id: 'vs-1' }, 'review-link'));
+
+    expect(res.status).toBe(404);
+    expect(mockAssertAthlete).not.toHaveBeenCalled();
+    expect(mockSas).not.toHaveBeenCalled();
+  });
+
+  test('the uploading coach can still watch their own quarantined upload', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach', accountId: 'coach-1' }));
+    mockGetVideo.mockResolvedValue(video({ uploaded_by_account_id: 'coach-1' }));
+
+    expect((await REVIEW_LINK(req({ video_session_id: 'vs-1' }, 'review-link'))).status).toBe(200);
+  });
+
+  test('an organization admin is exempt from the uploader rule', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin', accountId: 'admin-1' }));
+    mockGetVideo.mockResolvedValue(video({ uploaded_by_account_id: 'someone-else' }));
+
+    expect((await REVIEW_LINK(req({ video_session_id: 'vs-1' }, 'review-link'))).status).toBe(200);
   });
 
   test('neither surface admits a role outside the review path', async () => {

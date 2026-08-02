@@ -42,15 +42,31 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json().catch(() => ({}));
     const videoSessionId = typeof body.video_session_id === 'string' ? body.video_session_id.trim() : '';
-    const decision = body.decision as VideoScanReviewDecision;
+    // Kept as unknown until it has been checked. Casting to the union first
+    // would make "was it absent or was it misspelled" unaskable -- the
+    // comparison the narrowed type forbids is exactly the one the caller needs
+    // answered.
+    const rawDecision: unknown = body.decision;
     const notes = typeof body.notes === 'string' ? body.notes.slice(0, 2_000) : undefined;
 
     if (!videoSessionId) {
       throw new Error('Missing video_session_id');
     }
-    if (!DECISIONS.has(decision)) {
-      throw new Error('Missing decision: expected "approve" or "block"');
+    if (!DECISIONS.has(rawDecision as VideoScanReviewDecision)) {
+      // Distinguishes absent from unrecognized: "Missing" on a value that was
+      // present but misspelled sends a client author looking in the wrong
+      // place. "Unsupported" rather than "Invalid" because jsonError maps
+      // status by message PREFIX -- Missing/Unsupported/Request body/PIN are
+      // the 400s, and anything else falls through to a 500 that replaces the
+      // text with "Internal server error", which would tell the caller less
+      // than the wording it replaced. Matches the evidence review route.
+      throw new Error(
+        rawDecision === undefined || rawDecision === null || rawDecision === ''
+          ? 'Missing decision: expected "approve" or "block"'
+          : 'Unsupported decision: expected "approve" or "block"',
+      );
     }
+    const decision = rawDecision as VideoScanReviewDecision;
 
     const video = await authorizeVideoScanReview(principal, videoSessionId);
 
