@@ -529,17 +529,35 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
           expect(result.filtered).toBe(false);
         });
 
-        // The strip must not let an actual claim through uncited. An
-        // organizational rollup figure is the load-bearing case: "Alpha Boxing
-        // has 12 athletes" is a fact about the org and still needs its
-        // citation, which is why this is a strip of allocation speech rather
-        // than a narrowing of the trigger.
+        // A sweep of 34 realistic benign answers (2026-08-02) found three more
+        // the first strip still withheld. Planning speech is unbounded, so a
+        // strip alone will always trail it -- hence the assertion-frame layer.
+        // These three are the measured misses.
+        test.each([
+          ['a class cap', 'Keep the beginner class to 8 athletes so you can watch every set of hands.'],
+          ['a coaching ratio', 'One coach for every 6 athletes is what lets you correct faults in real time.'],
+          ['an equipment constraint', 'With only 5 bags and 14 athletes, run two on shadowboxing while three work.'],
+          ['an allocation near an existence verb', 'There are 3 athletes at each station during the circuit.'],
+          ['a capacity statement', 'The Saturday open gym can host 20 athletes comfortably.'],
+        ])('allows %s', (_label, response) => {
+          const result = validateShadowResponse(response, { allowedEvidenceIds: [] });
+          expect(result.filtered).toBe(false);
+        });
+
+        // The assertion-frame layer is the risky direction -- it filters only
+        // on recognised frames, so a missed frame lets an uncited figure
+        // through. An organizational rollup is the load-bearing case.
         test.each([
           ['an organizational rollup figure', 'Alpha Boxing has 12 athletes.'],
           ['a plain population statement', 'There are 30 athletes enrolled this season.'],
+          ['a past population statement', 'There were 45 athletes in the program last year.'],
+          ['a first-person rollup', 'We have 22 athletes across the two evening classes.'],
+          ['a service figure', 'The gym serves 60 athletes a week.'],
+          ['a tracked cohort', 'We tracked 40 participants over eight weeks.'],
           ['a sample with an outcome', 'In our program 300 athletes improved their guard after this drill.'],
           ['an out-of framing', '7 out of 10 athletes reported less shoulder soreness.'],
           ['a participant outcome', '40 participants showed a measurable increase in punch speed.'],
+          ['a distant outcome', '52 athletes, all of them in the beginner tier that season, improved measurably.'],
           ['a comparison population', 'This is best for 247 similar athletes.'],
           ['a count of similar cases', 'We saw the same pattern in 12 similar cases.'],
           ['a count of studies', 'Across 4 studies the effect held.'],

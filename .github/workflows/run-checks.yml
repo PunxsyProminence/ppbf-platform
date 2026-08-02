@@ -1,0 +1,188 @@
+# ─────────────────────────────────────────────────────────────────────────
+# Read-only database checks -- manual only.
+#
+# The `pilot:check-*` scripts answer questions about a live database:
+# whether orphaned rows exist, whether guardians are stranded, whether the
+# tables an audit claimed are really there. Until this existed the only way
+# to run one was from someone's laptop with a connection string in their
+# shell -- the same gap apply-migrations.yml closed for schema changes.
+#
+# The cost of that gap is visible in the record. #162 checked the four
+# orphan chat-audit tables against PRODUCTION and closed the question there,
+# but says in its own description: "Staging has not been checked. If it
+# holds these tables that is a genuinely different finding, and the command
+# is the same one." The command was the same one; the access was not.
+#
+# SAFETY PROPERTIES
+#   * workflow_dispatch only, like apply-migrations. Nothing runs on push.
+#   * Every one of these scripts wraps its statements in an explicit
+#     BEGIN TRANSACTION READ ONLY, so Postgres itself refuses any write --
+#     safe by construction rather than by intent.
+#   * `environment:` is the target name, so a protection rule on production
+#     gates this the same way it gates migrations and deploys.
+#   * The connection string is fetched from a target-NAMED Container App, so
+#     you cannot ask for staging and receive production's secret.
+#
+# WHY THERE IS NO confirm_target HERE
+#   apply-migrations requires it because a wrong dropdown there WRITES to the
+#   wrong database. These scripts cannot write. The cost of a wrong target is
+#   a wasted run and a confusing answer, not a damaged database, so the extra
+#   confirmation would be ceremony rather than a guard. The target still
+#   appears in the run summary so the answer is never read against the wrong
+#   environment by accident.
+# ─────────────────────────────────────────────────────────────────────────
+
+name: run-checks
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Which environment's database to check
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      check:
+        description: Which check to run ("all" runs every one in order)
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - orphan-chat-audit
+          - multiorg-orphans
+          - stranded-guardians
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  # Read-only, so concurrent runs cannot corrupt anything -- but two runs
+  # against one target produce two answers to the same question at two
+  # moments, which is how a stale answer gets quoted. Serialize per target.
+  group: run-checks-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    environment: ${{ inputs.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RESOURCE_GROUP: rg-ppbf-enterprise-staging
+      CONTAINER_APP_NAME: ${{ inputs.target == 'production' && 'app-ppbf-production' || 'app-ppbf-staging' }}
+    steps:
+      - name: Name The Target In The Summary
+        env:
+          TARGET: ${{ inputs.target }}
+          CHECK: ${{ inputs.check }}
+        run: |
+          {
+            echo "### Read-only check"
+            echo ''
+            echo "- target: \`$TARGET\` ($CONTAINER_APP_NAME)"
+            echo "- check: \`$CHECK\`"
+            echo ''
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Locked Dependencies
+        run: npm ci
+
+      - name: Authenticate via Azure OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Same resolution apply-migrations uses, and for the same reason: the
+      # expected host/db are derived from the fetched string with the runner's
+      # own parse, so a derived value cannot disagree with what the script
+      # reads. Repo variables override when an independent check is wanted.
+      - name: Resolve Database Connection
+        env:
+          OVERRIDE_HOST: ${{ vars.PPBF_EXPECTED_POSTGRES_HOSTNAME }}
+          OVERRIDE_DB: ${{ vars.PPBF_EXPECTED_POSTGRES_DATABASE }}
+        run: |
+          CONN="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-postgres-connection-string \
+            --query value -o tsv)"
+          test -n "$CONN"
+          echo "::add-mask::$CONN"
+          echo "AZURE_POSTGRES_CONNECTION_STRING=$CONN" >> "$GITHUB_ENV"
+
+          DERIVED="$(CONN="$CONN" node -e '
+            const u = new URL(process.env.CONN);
+            const host = u.hostname.toLowerCase();
+            const db = decodeURIComponent(u.pathname.replace(/^\/+/, ""));
+            if (!host || !db) { process.exit(2); }
+            process.stdout.write(host + "\n" + db);
+          ')"
+          HOST="$(printf '%s' "$DERIVED" | sed -n 1p)"
+          DB="$(printf '%s' "$DERIVED" | sed -n 2p)"
+          test -n "$HOST"
+          test -n "$DB"
+
+          echo "PPBF_EXPECTED_POSTGRES_HOSTNAME=${OVERRIDE_HOST:-$HOST}" >> "$GITHUB_ENV"
+          echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
+          echo "Checking host ${OVERRIDE_HOST:-$HOST} / db ${OVERRIDE_DB:-$DB}."
+
+      # Each script exits non-zero only when a human still has to decide
+      # something, so a red run here is a finding, not a broken workflow. With
+      # `all`, every check runs even if an earlier one reports -- one finding
+      # must not hide the next -- and the job fails at the end if any did.
+      - name: Run Check
+        env:
+          CHECK: ${{ inputs.check }}
+        run: |
+          set -uo pipefail
+          FAILED=''
+
+          run_one() {
+            local name="$1" script="$2"
+            echo "::group::$name"
+            if npm --prefix apps/web run "$script"; then
+              echo "$name: no action needed"
+              echo "- \`$name\`: no action needed" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "$name: REPORTED -- a human needs to look at this"
+              echo "- \`$name\`: **reported** -- see the log" >> "$GITHUB_STEP_SUMMARY"
+              FAILED="$FAILED $name"
+            fi
+            echo "::endgroup::"
+          }
+
+          case "$CHECK" in
+            all)
+              run_one orphan-chat-audit   pilot:check-orphan-chat-audit
+              run_one multiorg-orphans    pilot:check-multiorg-orphans
+              run_one stranded-guardians  pilot:check-stranded-guardians
+              ;;
+            orphan-chat-audit)  run_one orphan-chat-audit   pilot:check-orphan-chat-audit ;;
+            multiorg-orphans)   run_one multiorg-orphans    pilot:check-multiorg-orphans ;;
+            stranded-guardians) run_one stranded-guardians  pilot:check-stranded-guardians ;;
+            *)
+              echo "::error::Unknown check '$CHECK'."
+              exit 1
+              ;;
+          esac
+
+          if [ -n "$FAILED" ]; then
+            echo "::error::Checks reporting findings:$FAILED"
+            exit 1
+          fi
+          echo "All requested checks came back clean."
