@@ -58,19 +58,17 @@ jobs:
       - name: Run board governance E2E
         run: npm --workspace web run test:e2e:board
 
-      # The public entry points, plus the only pixel baseline in the repo. This
-      # spec existed and ran nowhere, so nothing checked that the homepage stays
-      # reachable signed-out, that no password field creeps onto it, or that
-      # protected routes still redirect.
+      # The public entry points. This spec existed and ran nowhere, so nothing
+      # checked that the homepage stays reachable signed-out, that no password
+      # field creeps onto it, or that protected routes still redirect.
       #
-      # The baseline is portable because ppbf.css's faces are all self-hosted
-      # now. It was not on the first attempt: text set in a system font wraps at
-      # machine-dependent widths, which made the same page 412x3620 here and
-      # 412x3680 on this runner. If this step ever fails on image DIMENSIONS
-      # rather than pixels, that is the signal something reintroduced a font the
-      # repo does not ship — the tolerance in playwright.config.ts covers
-      # rasterisation between Chromium revisions and is not consulted at all
-      # when the sizes differ.
+      # Its pixel baseline is NOT part of this run. This runner renders the
+      # homepage 60px taller than the container the baseline was recorded in,
+      # deterministically, and two attempts to explain that were wrong — most
+      # recently self-hosting ppbf.css's remaining font stacks, which was a real
+      # bug and moved the number not at all. The spec prints a one-line
+      # [layout-diagnostic] here so the next run says which section grows;
+      # PPBF_VISUAL_BASELINE=1 turns the assertion back on once it does.
       - name: Run public homepage E2E
         run: npm --workspace web run test:e2e:homepage
 
