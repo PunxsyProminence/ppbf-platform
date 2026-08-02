@@ -149,7 +149,7 @@ function WorkspaceContent() {
               type="button"
               onClick={() => void handleSignOut()}
               disabled={signingOut}
-              className="min-h-[40px] border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)] disabled:opacity-50"
+              className="min-h-[44px] border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)] disabled:opacity-50"
             >
               {signingOut ? 'Signing out...' : 'Sign out'}
             </button>

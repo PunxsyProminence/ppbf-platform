@@ -188,7 +188,7 @@ function LoginPageContent() {
               <p className="text-[10px] font-mono uppercase tracking-[0.4em] text-[var(--gray-dark)]">Member Access</p>
               <Link
                 href="/public"
-                className="inline-flex min-h-[34px] items-center justify-center gap-3 rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-3 text-[10px] font-mono font-bold uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]"
+                className="inline-flex min-h-[44px] items-center justify-center gap-3 rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-3 text-[10px] font-mono font-bold uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]"
               >
                 Public Page
               </Link>
@@ -359,7 +359,7 @@ function LoginPageContent() {
                   </p>
                   <Link
                     href="/athlete/sign-in"
-                    className="mt-3 inline-flex min-h-[40px] items-center rounded-lg border border-[var(--red-primary)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--red-primary)]"
+                    className="mt-3 inline-flex min-h-[44px] items-center rounded-lg border border-[var(--red-primary)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--red-primary)]"
                   >
                     Open Simple Athlete PIN Sign-In
                   </Link>

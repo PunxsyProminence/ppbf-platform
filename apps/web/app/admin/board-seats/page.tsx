@@ -428,7 +428,7 @@ function BoardSeatsConsole() {
                                 type="button"
                                 disabled={busy}
                                 onClick={() => void handOver(config.slug, holder.account_id, true)}
-                                className="min-h-[40px] rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-xs font-bold uppercase tracking-[0.1em] disabled:opacity-50"
+                                className="min-h-[44px] rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-xs font-bold uppercase tracking-[0.1em] disabled:opacity-50"
                               >
                                 {primary ? 'Hand Seat Over' : 'Give The Seat'}
                               </button>
@@ -436,7 +436,7 @@ function BoardSeatsConsole() {
                                 type="button"
                                 disabled={busy}
                                 onClick={() => void remove(config.slug, holder.account_id)}
-                                className="min-h-[40px] rounded-xl border border-[var(--red-primary)] bg-white px-3 text-xs font-bold uppercase tracking-[0.1em] text-[var(--red-primary)] disabled:opacity-50"
+                                className="min-h-[44px] rounded-xl border border-[var(--red-primary)] bg-white px-3 text-xs font-bold uppercase tracking-[0.1em] text-[var(--red-primary)] disabled:opacity-50"
                               >
                                 Remove
                               </button>

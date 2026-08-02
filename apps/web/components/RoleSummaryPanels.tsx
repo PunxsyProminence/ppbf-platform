@@ -61,7 +61,7 @@ interface RoleSpecificShadowProps {
 function getAttendanceColor(attendancePercent: number): string {
   if (attendancePercent >= 90) return 'bg-[color-mix(in_srgb,var(--cleared)_16%,var(--canvas-tan-light))] border-[var(--status-ready)]';
   if (attendancePercent >= 75) return 'bg-[color-mix(in_srgb,var(--restricted)_16%,var(--canvas-tan-light))] border-[var(--status-warning)]';
-  return 'bg-[color-mix(in_srgb,var(--locked)_16%,var(--canvas-tan-light))] border-[var(--red-primary)]';
+  return 'bg-[color-mix(in_srgb,var(--locked)_16%,var(--canvas-tan-light))] border-[color:var(--locked)]';
 }
 
 // ATHLETE SUMMARY PANEL
@@ -75,7 +75,7 @@ export function AthleteSummaryPanel({
   const readinessColor = {
     GREEN: 'bg-[color-mix(in_srgb,var(--cleared)_16%,var(--canvas-tan-light))] border-[var(--status-ready)]',
     YELLOW: 'bg-[color-mix(in_srgb,var(--restricted)_16%,var(--canvas-tan-light))] border-[var(--status-warning)]',
-    RED: 'bg-[color-mix(in_srgb,var(--locked)_16%,var(--canvas-tan-light))] border-[var(--red-primary)]'
+    RED: 'bg-[color-mix(in_srgb,var(--locked)_16%,var(--canvas-tan-light))] border-[color:var(--locked)]'
   }[readiness];
 
   const readinessText = {
@@ -127,7 +127,7 @@ export function CoachSummaryPanel({
   reviewsNeeded,
   assignmentsDue
 }: Readonly<CoachSummaryPanelProps>) {
-  const injuryAlert = injuryFlags > 0 ? 'bg-[color-mix(in_srgb,var(--locked)_16%,var(--canvas-tan-light))] border-[var(--red-primary)]' : 'border-[var(--black)] bg-[var(--canvas-tan-light)]';
+  const injuryAlert = injuryFlags > 0 ? 'bg-[color-mix(in_srgb,var(--locked)_16%,var(--canvas-tan-light))] border-[color:var(--locked)]' : 'border-[var(--black)] bg-[var(--canvas-tan-light)]';
 
   return (
     <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-5">
@@ -223,7 +223,7 @@ export function AdminSummaryPanel({
   complianceItems,
   pendingReviews
 }: Readonly<AdminSummaryPanelProps>) {
-  const programAlert = programAlerts > 0 ? 'bg-[color-mix(in_srgb,var(--locked)_16%,var(--canvas-tan-light))] border-[var(--red-primary)]' : 'border-[var(--black)] bg-[var(--canvas-tan-light)]';
+  const programAlert = programAlerts > 0 ? 'bg-[color-mix(in_srgb,var(--locked)_16%,var(--canvas-tan-light))] border-[color:var(--locked)]' : 'border-[var(--black)] bg-[var(--canvas-tan-light)]';
   const boardAlert = boardAlerts > 0 ? 'bg-[color-mix(in_srgb,var(--restricted)_16%,var(--canvas-tan-light))] border-[var(--status-warning)]' : 'border-[var(--black)] bg-[var(--canvas-tan-light)]';
 
   return (

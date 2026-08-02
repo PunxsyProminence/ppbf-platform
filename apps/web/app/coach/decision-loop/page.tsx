@@ -674,7 +674,7 @@ export default function DecisionLoopReviewPage() {
           <div className="mt-8">
             <Link
               href="/coach/review-queue"
-              className="inline-flex min-h-[42px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.08em]"
+              className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.08em]"
             >
               Back to Coach Workspace
             </Link>

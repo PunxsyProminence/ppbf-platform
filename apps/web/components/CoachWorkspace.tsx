@@ -613,7 +613,7 @@ export default function CoachWorkspace() {
             <button
               type="button"
               onClick={() => setActiveTab('shadow')}
-              className="min-h-[40px] border-2 border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)]"
+              className="min-h-[44px] border-2 border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)]"
             >
               Open SHADOW Intel Tab
             </button>
@@ -632,7 +632,7 @@ export default function CoachWorkspace() {
             <button
               type="button"
               onClick={() => void loadPainReports()}
-              className="min-h-[32px] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 text-[11px] font-mono font-bold uppercase tracking-[0.08em] text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-300)]"
+              className="min-h-[44px] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 text-[11px] font-mono font-bold uppercase tracking-[0.08em] text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-300)]"
               aria-label="Refresh athlete pain reports"
             >
               Refresh
@@ -722,7 +722,7 @@ export default function CoachWorkspace() {
               <div className="flex flex-wrap items-center gap-3">
                 <Link
                   href="/coach/decision-loop"
-                  className="min-h-[36px] inline-flex items-center border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 text-[11px] font-mono font-bold uppercase tracking-[0.08em] text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-300)]"
+                  className="min-h-[44px] inline-flex items-center border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 text-[11px] font-mono font-bold uppercase tracking-[0.08em] text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-300)]"
                 >
                   Record What You Did
                 </Link>

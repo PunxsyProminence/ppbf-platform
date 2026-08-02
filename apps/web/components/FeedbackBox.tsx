@@ -119,7 +119,7 @@ export default function FeedbackBox() {
               <button
                 type="button"
                 onClick={() => setAcknowledgement('')}
-                className="min-h-[40px] w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--black)]"
+                className="min-h-[44px] w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--black)]"
               >
                 Say something else
               </button>
@@ -160,7 +160,7 @@ export default function FeedbackBox() {
                 type="button"
                 disabled={isSending || !text.trim()}
                 onClick={() => void send()}
-                className="min-h-[42px] w-full border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[var(--white)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="min-h-[44px] w-full border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[var(--white)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isSending ? 'Sending...' : 'Send'}
               </button>

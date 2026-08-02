@@ -203,7 +203,7 @@ export default function ParentHub() {
             <button
               type="button"
               onClick={() => setActiveTab('shadow')}
-              className="min-h-[40px] border-2 border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)]"
+              className="min-h-[44px] border-2 border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)]"
             >
               Open SHADOW Intel Tab
             </button>

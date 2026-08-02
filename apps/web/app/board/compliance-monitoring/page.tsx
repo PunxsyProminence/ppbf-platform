@@ -246,7 +246,7 @@ export default function BoardComplianceMonitoringPage() {
           </section>
 
           <div className="mt-8 flex flex-wrap gap-3">
-            <Link href="/board" className="inline-flex min-h-[42px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.08em]">
+            <Link href="/board" className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.08em]">
               Back to Board Hub
             </Link>
           </div>

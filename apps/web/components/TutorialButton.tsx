@@ -37,7 +37,7 @@ export default function TutorialButton({ anchor, label = 'HOW THIS WORKS', class
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-label="Toggle tutorial quick panel"
-        className={`inline-flex min-h-[40px] items-center justify-center gap-2 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)] ${className ?? ''}`.trim()}
+        className={`inline-flex min-h-[44px] items-center justify-center gap-2 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)] ${className ?? ''}`.trim()}
       >
         <span>{label}</span>
         <span aria-hidden="true">{open ? '[-]' : '[+]'}</span>
@@ -54,14 +54,14 @@ export default function TutorialButton({ anchor, label = 'HOW THIS WORKS', class
             <Link
               href={href}
               onClick={() => setOpen(false)}
-              className="inline-flex min-h-[36px] items-center justify-center border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-xs font-mono font-bold uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"
+              className="inline-flex min-h-[44px] items-center justify-center border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-xs font-mono font-bold uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"
             >
               Open Full Tutorial
             </Link>
             <button
               type="button"
               onClick={() => setOpen(false)}
-              className="inline-flex min-h-[36px] items-center justify-center border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-xs font-mono font-bold uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"
+              className="inline-flex min-h-[44px] items-center justify-center border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-xs font-mono font-bold uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"
             >
               Close
             </button>

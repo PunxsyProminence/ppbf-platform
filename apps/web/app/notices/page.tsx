@@ -410,7 +410,7 @@ function NoticesAuthoringPage() {
         <div className="mt-8">
           <Link
             href="/operations"
-            className="inline-flex min-h-[42px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.08em]"
+            className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.08em]"
           >
             Back to Mission Control
           </Link>
