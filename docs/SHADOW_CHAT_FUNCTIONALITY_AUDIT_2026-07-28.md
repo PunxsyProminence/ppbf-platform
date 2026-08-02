@@ -604,7 +604,14 @@ highest-value ones. Current state:
   `shadowLibrary.ts` functions is in that section)
 - **§2.5 and §2.6** upgraded from [U] to [V]
 
-**Still not audited. No conclusions should be drawn about these:**
+**All four remaining dimensions are now covered.** jobs-feedback-unlocks and
+classification-routing-evidence were completed in
+`SHADOW_JOBS_ROUTING_EVIDENCE_AUDIT_2026-07-31.md`; sibling-chat-surfaces and
+spec-vs-implementation were completed in
+`SHADOW_SURFACES_SPEC_CONFORMANCE_AUDIT_2026-08-01.md`. The list below is kept for
+the record of what was outstanding at the time of writing:
+
+**Was not audited at publication:**
 - **jobs-feedback-unlocks** — partially covered by §3.1, §3.0 and §4, but the
   `verifyShadowFeedbackCorrelation` path and the `shadowMetrics` read side were never traced
   end to end
