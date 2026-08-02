@@ -727,7 +727,7 @@ body.ppbf.on-canvas {
 /* ============================================================= LAYOUT ==== */
 .motto {
   font-family: var(--font-stencil); text-transform: uppercase;
-  font-size: clamp(24px, 4vw, 40px); letter-spacing: .06em;
+  font-size: clamp(var(--t-lg), 4vw, var(--t-2xl)); letter-spacing: .06em;
   color: var(--bone-100); text-align: center;
   text-shadow: 0 3px 0 rgba(0,0,0,.6), 0 0 26px rgba(232,206,122,.16);
 }
