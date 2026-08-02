@@ -1847,6 +1847,195 @@ body.ppbf.on-canvas {
 .commands-key { font-family: var(--font-data); font-weight: 650; color: var(--brass-300); letter-spacing: .02em; }
 .commands-desc { color: var(--bone-400); text-align: left; }
 
+/* ================================================================ CORRIDOR ===
+   Law 6 made every screen a room; the corridor is the hallway they open onto.
+   It moves you between rooms and says which one you are standing in — the job
+   a breadcrumb usually does badly. Each room block wears its own .room--*
+   ground, so the hallway is a set of doorways you can see through. */
+.corridor-root { position: relative; display: inline-flex; }
+
+.corridor-trigger {
+  display: inline-flex; align-items: center; gap: var(--s3);
+  min-height: 34px; padding: 0 var(--s4); cursor: pointer;
+  border: 1px solid var(--brass-700); border-radius: var(--r-sm);
+  background-image: linear-gradient(180deg, rgba(92,70,50,.9), rgba(30,23,18,.95));
+  color: var(--bone-200); font: 650 11px/1 var(--font-ui);
+  letter-spacing: .08em; text-transform: uppercase;
+  transition: border-color var(--m-quick) var(--e-stamp),
+              background-image var(--m-base) var(--e-lever);
+}
+.corridor-trigger:hover, .corridor-trigger.is-open {
+  border-color: var(--brass-400); color: var(--bone-100);
+  background-image: linear-gradient(180deg, rgba(110,84,60,.95), rgba(42,31,24,.98));
+}
+.corridor-trigger-glyph { color: var(--brass-300); font-size: 13px; }
+.corridor-trigger-here {
+  font: 400 10.5px/1 var(--font-data); letter-spacing: .04em;
+  text-transform: none; color: var(--bone-400);
+  padding-left: var(--s3); border-left: 1px solid rgba(212,175,74,.24);
+}
+
+.corridor-panel {
+  position: absolute; top: calc(100% + var(--s3)); left: 0; z-index: 180;
+  width: min(92vw, 720px); max-height: min(74vh, 620px); overflow-y: auto;
+  border: 1px solid var(--brass-700); border-radius: var(--r-lg);
+  background-color: var(--hide-950);
+  background-image: var(--grain), linear-gradient(168deg, #241B14, #14100D);
+  background-blend-mode: overlay, normal;
+  box-shadow: 0 21px 55px rgba(0,0,0,.72), inset 0 1px 0 rgba(232,206,122,.12);
+  animation: corridor-in var(--m-settle) var(--e-settle);
+}
+@keyframes corridor-in { from { opacity: 0; translate: 0 -6px; } }
+
+.corridor-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--s4);
+  padding: var(--s4) var(--s5); border-bottom: 1px solid rgba(212,175,74,.2);
+}
+.corridor-head b { font-family: var(--font-display); text-transform: uppercase;
+                   letter-spacing: .05em; font-size: 13px; color: var(--bone-100); }
+.corridor-head span { font: 400 10.5px/1 var(--font-data); color: var(--bone-400); }
+
+.corridor-rooms { display: grid; gap: 1px; background: rgba(212,175,74,.14); }
+/* The corridor does NOT wear the rooms' walls.
+   Tempting, and wrong: a wall is an opaque background-image, and two of the six
+   (cork, cabinetry) are LIGHT materials that also flip their own text colour to
+   dark. Dropped into a nav list whose labels are bone, the File Room's blurb
+   went light-on-light and vanished. A hallway is a working surface, not a
+   showcase, so every block stays on the dark ground and the room is identified
+   by an accent edge that reads identically in all six.
+   The attribute selector outranks the bare .room--* rules without !important. */
+.corridor-room { padding: var(--s4) var(--s5) var(--s5); position: relative; }
+.corridor-room[class*="room--"] {
+  background-color: var(--hide-950);
+  background-image: var(--grain);
+  background-blend-mode: overlay;
+  color: var(--bone-200);
+  box-shadow: inset 3px 0 0 var(--room-accent, transparent);
+}
+.corridor-room.room--office { --room-accent: var(--wood-500); }
+.corridor-room.room--floor  { --room-accent: var(--brick-500); }
+.corridor-room.room--board  { --room-accent: var(--wood-300); }
+.corridor-room.room--file   { --room-accent: var(--cork); }
+.corridor-room.room--clinic { --room-accent: #4E6B52; }
+.corridor-room.room--night  { --room-accent: var(--hide-500); }
+/* The room you are standing in takes the brass edge and lifts off the ground. */
+.corridor-room.is-here[class*="room--"] {
+  box-shadow: inset 3px 0 0 var(--brass-400);
+  background-color: #1B1409;
+}
+
+.corridor-room-hd { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--s3);
+                    margin-bottom: var(--s4); position: relative; z-index: 1; }
+.corridor-room-hd b { font-family: var(--font-display); text-transform: uppercase;
+                      font-size: 12px; letter-spacing: .07em; color: var(--brass-200); }
+.corridor-room-blurb { font-size: 10.5px; color: var(--bone-400); }
+.corridor-youarehere {
+  font: 650 9px/1.6 var(--font-data); letter-spacing: .12em; text-transform: uppercase;
+  color: var(--hide-950); background: var(--brass-400);
+  padding: 1px 6px; border-radius: 2px;
+}
+
+.corridor-doors { list-style: none; margin: 0; padding: 0; position: relative; z-index: 1;
+                  display: flex; flex-wrap: wrap; gap: var(--s3); }
+.corridor-door {
+  display: inline-block; padding: var(--s2) var(--s4); text-decoration: none;
+  border: 1px solid rgba(212,175,74,.26); border-radius: var(--r-sm);
+  background: rgba(12,9,6,.55); color: var(--bone-200);
+  font: 500 12px/1.5 var(--font-ui);
+  transition: border-color var(--m-quick) var(--e-stamp),
+              background var(--m-quick) var(--e-stamp),
+              translate var(--m-quick) var(--e-stamp);
+}
+.corridor-door:hover { border-color: var(--brass-400); color: var(--bone-100);
+                       background: rgba(0,0,0,.34); translate: 0 -1px; }
+.corridor-door.is-current { border-color: var(--brass-300); color: var(--hide-950);
+                            background-image: linear-gradient(180deg, var(--brass-200), var(--brass-500));
+                            font-weight: 650; }
+
+.corridor-foot { padding: var(--s3) var(--s5) var(--s4); font-size: 10.5px; color: var(--bone-400);
+                 border-top: 1px solid rgba(212,175,74,.14); }
+.corridor-foot kbd, .catalog-foot kbd, .catalog-kbd {
+  font: 650 9.5px/1.5 var(--font-data); padding: 1px 5px; border-radius: 3px;
+  background: rgba(0,0,0,.5); border: 1px solid rgba(212,175,74,.3);
+  color: var(--brass-200);
+}
+
+/* ============================================================ CARD CATALOG ===
+   The file room is cork and a gooseneck; a drawer of index cards is the object
+   that belongs in it. ⌘K, or "/" anywhere that is not a field. */
+.catalog {
+  border: 1px solid var(--brass-600); border-radius: var(--r-lg);
+  background-color: var(--hide-950);
+  background-image: var(--grain), linear-gradient(168deg, #2A2018, #14100D);
+  background-blend-mode: overlay, normal;
+  box-shadow: 0 34px 89px rgba(0,0,0,.8), inset 0 1px 0 rgba(232,206,122,.14);
+  overflow: hidden;
+  animation: catalog-in var(--m-settle) var(--e-settle);
+}
+@keyframes catalog-in { from { opacity: 0; translate: 0 -13px; scale: .985; } }
+
+.catalog-field { display: flex; align-items: center; gap: var(--s4);
+                 padding: var(--s4) var(--s5); border-bottom: 1px solid rgba(212,175,74,.24); }
+.catalog-glyph { font-size: 19px; color: var(--brass-400); }
+.catalog-field input {
+  flex: 1; min-width: 0; background: transparent; border: 0; outline: 0;
+  color: var(--bone-100); font: 400 var(--t-md)/1.4 var(--font-ui);
+}
+.catalog-field input::placeholder { color: var(--bone-400); opacity: .8; }
+
+.catalog-list { list-style: none; margin: 0; padding: var(--s2) 0; max-height: 48vh; overflow-y: auto; }
+.catalog-group {
+  font: 650 9.5px/1 var(--font-data); letter-spacing: .14em; text-transform: uppercase;
+  color: var(--brass-400); padding: var(--s4) var(--s5) var(--s2);
+}
+.catalog-row {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s5);
+  padding: var(--s3) var(--s5); cursor: pointer;
+  border-left: 3px solid transparent;
+}
+.catalog-row.is-active {
+  background: linear-gradient(90deg, rgba(212,175,74,.16), transparent 78%);
+  border-left-color: var(--brass-400);
+}
+.catalog-row-main { min-width: 0; }
+.catalog-row-main b { display: block; font: 650 13.5px/1.35 var(--font-ui); color: var(--bone-100); }
+.catalog-row-hint { display: block; font-size: 11px; color: var(--bone-400); line-height: 1.4; }
+.catalog-row-meta { display: flex; align-items: center; gap: var(--s3); flex-shrink: 0; }
+.catalog-row-meta code { font: 400 10.5px/1 var(--font-data); color: var(--bone-400); }
+.catalog-room-tag {
+  font: 650 9px/1.7 var(--font-data); letter-spacing: .1em; text-transform: uppercase;
+  color: var(--brass-200); background: rgba(212,175,74,.14);
+  border: 1px solid rgba(212,175,74,.26); padding: 0 6px; border-radius: 2px; white-space: nowrap;
+}
+
+.catalog-empty { padding: var(--s7) var(--s5); text-align: center; }
+.catalog-empty-glyph { font-size: 34px; opacity: .4; margin-bottom: var(--s3); }
+.catalog-empty b { display: block; font: 650 13px/1.4 var(--font-ui); color: var(--bone-200);
+                   margin-bottom: var(--s2); }
+.catalog-empty span { font-size: 11.5px; color: var(--bone-400); line-height: 1.55; }
+
+.catalog-foot { display: flex; align-items: center; gap: var(--s4); flex-wrap: wrap;
+                padding: var(--s3) var(--s5); border-top: 1px solid rgba(212,175,74,.18);
+                font-size: 10.5px; color: var(--bone-400); }
+.catalog-count { margin-left: auto; font-family: var(--font-data); }
+
+/* A shortcut nobody knows about is not a feature, so the trigger is always
+   visible — quiet, out of the way, and clickable for anyone who never learns
+   the chord. */
+.catalog-hint {
+  display: inline-flex; align-items: center; gap: var(--s2);
+  min-height: 30px; padding: 0 var(--s3); cursor: pointer;
+  border: 1px solid rgba(212,175,74,.3); border-radius: var(--r-sm);
+  background: rgba(12,9,6,.5); color: var(--bone-300);
+  font: 650 10px/1 var(--font-ui); letter-spacing: .1em; text-transform: uppercase;
+  transition: border-color var(--m-quick) var(--e-stamp), color var(--m-quick) var(--e-stamp);
+}
+.catalog-hint:hover { border-color: var(--brass-400); color: var(--bone-100); }
+.catalog-hint kbd { font: 650 9.5px/1.5 var(--font-data); padding: 1px 5px; border-radius: 3px;
+                    background: rgba(0,0,0,.5); border: 1px solid rgba(212,175,74,.3);
+                    color: var(--brass-200); }
+@media (max-width: 620px) { .catalog-hint-lbl { display: none; } }
+
 /* ============================================================== IN PROGRESS ===
    The system could say "empty" and "done" but had no word for "working on it",
    so a submitted form looked identical to an ignored one and the honest user

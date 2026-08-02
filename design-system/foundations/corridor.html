@@ -1,0 +1,263 @@
+<!-- @dsCard group="Foundations" name="Corridor & Card Catalog" subtitle="How you walk a building of 63 surfaces: room-level navigation, and a ⌘K drawer of index cards" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Corridor &amp; Card Catalog — PPBF</title>
+<link rel="stylesheet" href="../ppbf.css">
+<style>
+  body.ppbf { padding: var(--s6); max-width: 1180px; margin: 0 auto; }
+  h1 { font-family: var(--font-display); font-size: var(--t-2xl); color: var(--bone-100);
+       text-shadow: 0 2px 0 rgba(0,0,0,.6); margin: 0 0 var(--s3); text-transform: uppercase; }
+  h2.sect { font-family: var(--font-display); font-size: var(--t-lg); color: var(--brass-300);
+            margin: var(--s7) 0 var(--s3); padding-bottom: var(--s3); text-transform: uppercase;
+            border-bottom: 1px solid rgba(212,175,74,.28); }
+  .note { color: var(--bone-300); font-size: var(--t-sm); line-height: 1.65; max-width: 76ch; margin: 0 0 var(--s5); }
+  .note b { color: var(--bone-100); }
+  code { font-family: var(--font-data); font-size: .92em; color: var(--brass-200); }
+  .stage { border: 1px solid rgba(212,175,74,.18); border-radius: var(--r-lg); padding: var(--s6);
+           background: linear-gradient(135deg, rgba(42,31,24,.5), rgba(30,23,18,.66));
+           margin-bottom: var(--s5); }
+  .stage--tall { min-height: 520px; position: relative; }
+  .cap { font: 650 10px/1 var(--font-data); letter-spacing: .12em; text-transform: uppercase;
+         color: var(--brass-400); margin: 0 0 var(--s4); }
+  .before-after { display: grid; gap: var(--s5); grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .ba { border: 1px solid rgba(212,175,74,.16); border-radius: var(--r-md); padding: var(--s5); }
+  .ba h3 { margin: 0 0 var(--s3); font: 650 12px/1 var(--font-data); letter-spacing: .1em;
+           text-transform: uppercase; }
+  .ba--before h3 { color: var(--locked-ink); }
+  .ba--after h3 { color: var(--cleared-ink); }
+  .ba p { margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--bone-300); }
+  .big { font-family: var(--font-display); font-size: var(--t-2xl); color: var(--bone-100); line-height: 1; }
+  .big small { display: block; font-family: var(--font-data); font-size: 11px; letter-spacing: .1em;
+               text-transform: uppercase; color: var(--bone-400); margin-top: var(--s2); font-weight: 400; }
+</style>
+</head>
+<body class="ppbf room--file light-at--tl light--gooseneck">
+
+<h1>Corridor &amp; Card Catalog</h1>
+<p class="note">
+  Law 6 made every screen a room. Nothing let you <em>walk</em> between them: the platform has
+  <b>63 routes and the global header linked to two of them</b>, so the other 61 were reachable
+  only by typing a URL. These are the two objects that fix that — a hallway, and a drawer of
+  index cards.
+</p>
+
+<div class="before-after" style="margin-bottom:var(--s7)">
+  <div class="ba ba--before">
+    <h3>Before</h3>
+    <div class="big">2<small>of 63 routes linked</small></div>
+    <p style="margin-top:var(--s4)">
+      No global navigation, no search, no site map. Keyboard handling existed on exactly one page.
+      Wayfinding was tribal knowledge.
+    </p>
+  </div>
+  <div class="ba ba--after">
+    <h3>After</h3>
+    <div class="big">63<small>reachable, role-filtered</small></div>
+    <p style="margin-top:var(--s4)">
+      Every surface sits in a room, every room opens off the corridor, and <code>⌘K</code> jumps
+      straight to any of them by name, keyword or abbreviation.
+    </p>
+  </div>
+</div>
+
+<!-- =========================================================== CORRIDOR -->
+<h2 class="sect">1 &middot; The corridor</h2>
+<p class="note">
+  A hallway does two jobs at once, and the second is the one breadcrumbs do badly: it
+  <b>moves</b> you, and it says <b>where you are standing</b>. Each room block wears its own
+  <code>.room--*</code> ground, so the corridor reads as a row of doorways you can see through
+  rather than a list of links. The room you are in is marked, and so is the surface.
+</p>
+
+<div class="stage">
+  <p class="cap">Closed — it names the room you are in, not just &ldquo;Menu&rdquo;</p>
+  <button class="corridor-trigger" type="button">
+    <span class="corridor-trigger-glyph" aria-hidden="true">▤</span>
+    <span class="corridor-trigger-lbl">Gym Floor</span>
+    <span class="corridor-trigger-here">Review Queue</span>
+  </button>
+</div>
+
+<div class="stage">
+  <p class="cap">Open — a coach session. The board room is absent because a coach cannot enter it.</p>
+  <div class="corridor-panel" style="position:relative;top:0;animation:none;max-height:none">
+    <div class="corridor-head">
+      <b>The building</b>
+      <span>19 surfaces open to coach</span>
+    </div>
+    <div class="corridor-rooms">
+      <section class="corridor-room room--floor is-here">
+        <header class="corridor-room-hd">
+          <b>Gym Floor</b>
+          <span class="corridor-youarehere">you are here</span>
+          <span class="corridor-room-blurb">Training, schedule, queues, film.</span>
+        </header>
+        <ul class="corridor-doors">
+          <li><a class="corridor-door is-current" href="#" aria-current="page">Review Queue</a></li>
+          <li><a class="corridor-door" href="#">Schedule</a></li>
+          <li><a class="corridor-door" href="#">Decision Loop</a></li>
+          <li><a class="corridor-door" href="#">Progression Intelligence</a></li>
+          <li><a class="corridor-door" href="#">Video Analysis</a></li>
+          <li><a class="corridor-door" href="#">Video Publications</a></li>
+          <li><a class="corridor-door" href="#">Intake Router</a></li>
+          <li><a class="corridor-door" href="#">Passbook Check</a></li>
+          <li><a class="corridor-door" href="#">Simulator</a></li>
+        </ul>
+      </section>
+      <section class="corridor-room room--office">
+        <header class="corridor-room-hd">
+          <b>Front Office</b>
+          <span class="corridor-room-blurb">Admin, records, families, operations.</span>
+        </header>
+        <ul class="corridor-doors">
+          <li><a class="corridor-door" href="#">Bell</a></li>
+          <li><a class="corridor-door" href="#">Operations Hub</a></li>
+          <li><a class="corridor-door" href="#">Notices</a></li>
+          <li><a class="corridor-door" href="#">Help</a></li>
+        </ul>
+      </section>
+      <section class="corridor-room room--file">
+        <header class="corridor-room-hd">
+          <b>File Room</b>
+          <span class="corridor-room-blurb">Research, evidence, the ledger.</span>
+        </header>
+        <ul class="corridor-doors">
+          <li><a class="corridor-door" href="#">Audit Trace</a></li>
+          <li><a class="corridor-door" href="#">Research Inbox</a></li>
+          <li><a class="corridor-door" href="#">Knowledge Graph</a></li>
+        </ul>
+      </section>
+      <section class="corridor-room room--clinic">
+        <header class="corridor-room-hd">
+          <b>Clinic</b>
+          <span class="corridor-room-blurb">Medical clearance and compliance.</span>
+        </header>
+        <ul class="corridor-doors">
+          <li><a class="corridor-door" href="#">Sports Medicine</a></li>
+        </ul>
+      </section>
+    </div>
+    <div class="corridor-foot">
+      Press <kbd>⌘K</kbd> or <kbd>/</kbd> to search every surface instead.
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ CATALOG -->
+<h2 class="sect">2 &middot; The card catalog</h2>
+<p class="note">
+  The file room is walled in cork and lit by a gooseneck; a drawer of index cards is the object
+  that belongs in it. <code>⌘K</code> from anywhere, or a bare <code>/</code> when you are not in
+  a field &mdash; that guard matters, because a coach typing a session note must never have the
+  slash swallowed by a palette. Arrows move, <kbd>↵</kbd> opens, <kbd>esc</kbd> closes
+  <b>and hands focus back where it came from</b>, which is the part most palettes skip.
+</p>
+
+<div class="stage stage--tall">
+  <p class="cap">Empty query — the catalog opens as a browse of the building</p>
+  <div class="catalog" style="animation:none;max-width:620px">
+    <div class="catalog-field">
+      <span class="catalog-glyph" aria-hidden="true">⌕</span>
+      <input placeholder="Find a room, a record, a queue…" readonly>
+      <kbd class="catalog-kbd">esc</kbd>
+    </div>
+    <ul class="catalog-list">
+      <li><div class="catalog-group">Gym Floor</div></li>
+      <li class="catalog-row is-active">
+        <div class="catalog-row-main"><b>Review Queue</b>
+          <span class="catalog-row-hint">Layer 10 — the decision queue.</span></div>
+        <div class="catalog-row-meta"><code>/coach/review-queue</code></div>
+      </li>
+      <li class="catalog-row">
+        <div class="catalog-row-main"><b>Schedule</b>
+          <span class="catalog-row-hint">The day's sessions — registration and attendance.</span></div>
+        <div class="catalog-row-meta"><code>/schedule</code></div>
+      </li>
+      <li><div class="catalog-group">File Room</div></li>
+      <li class="catalog-row">
+        <div class="catalog-row-main"><b>Audit Trace</b>
+          <span class="catalog-row-hint">The continuity ledger — what happened and who did it.</span></div>
+        <div class="catalog-row-meta"><code>/audit</code></div>
+      </li>
+    </ul>
+    <div class="catalog-foot">
+      <span><kbd>↑</kbd><kbd>↓</kbd> move</span>
+      <span><kbd>↵</kbd> open</span>
+      <span><kbd>esc</kbd> close</span>
+      <span class="catalog-count">19 cards</span>
+    </div>
+  </div>
+</div>
+
+<div class="stage">
+  <p class="cap">Typed query — matches label, keyword, or abbreviation. &ldquo;layer 10&rdquo; finds the queue.</p>
+  <div class="catalog" style="animation:none;max-width:620px">
+    <div class="catalog-field">
+      <span class="catalog-glyph" aria-hidden="true">⌕</span>
+      <input value="layer 10" readonly>
+      <kbd class="catalog-kbd">esc</kbd>
+    </div>
+    <ul class="catalog-list">
+      <li class="catalog-row is-active">
+        <div class="catalog-row-main"><b>Review Queue</b>
+          <span class="catalog-row-hint">Layer 10 — the decision queue.</span></div>
+        <div class="catalog-row-meta">
+          <span class="catalog-room-tag">Gym Floor</span><code>/coach/review-queue</code></div>
+      </li>
+    </ul>
+    <div class="catalog-foot">
+      <span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>↵</kbd> open</span>
+      <span class="catalog-count">1 card</span>
+    </div>
+  </div>
+</div>
+
+<div class="stage">
+  <p class="cap">No match — say so plainly, and say what would work</p>
+  <div class="catalog" style="animation:none;max-width:620px">
+    <div class="catalog-field">
+      <span class="catalog-glyph" aria-hidden="true">⌕</span>
+      <input value="zzzqqq" readonly>
+      <kbd class="catalog-kbd">esc</kbd>
+    </div>
+    <div class="catalog-empty">
+      <div class="catalog-empty-glyph" aria-hidden="true">⌾</div>
+      <b>Nothing filed under that</b>
+      <span>Try a room (Front Office, Gym Floor, Board Room…), a layer number, or a word from the surface you want.</span>
+    </div>
+  </div>
+</div>
+
+<div class="stage">
+  <p class="cap">The always-visible trigger — a shortcut nobody knows about is not a feature</p>
+  <button class="catalog-hint" type="button">
+    <span aria-hidden="true">⌕</span>
+    <span class="catalog-hint-lbl">Jump</span>
+    <kbd>⌘K</kbd>
+  </button>
+</div>
+
+<!-- ============================================================== RULES -->
+<h2 class="sect">3 &middot; The one rule that matters</h2>
+<div class="stage">
+  <p class="note" style="margin:0">
+    <b>Role filtering here is a courtesy, never a boundary.</b> The corridor hides a door so it
+    does not offer you something that will bounce you, and the catalog hides a card so it does not
+    leak the shape of surfaces you cannot open. Neither is authorization. The page guard
+    (<code>RoleSessionGate</code>, <code>BoardRoleGate</code>) and the API's own access checks
+    remain the authority, and if this map and a guard ever disagree, <b>the guard wins and the
+    fix belongs in the map</b>. Hiding a row protects nothing — never move a permission decision
+    into navigation.
+  </p>
+</div>
+
+<p class="note" style="margin-top:var(--s7);padding-top:var(--s5);border-top:1px dashed rgba(212,175,74,.14);font-size:11px">
+  Source of truth: <code>apps/web/components/buildingMap.ts</code>. Components:
+  <code>Corridor.tsx</code>, <code>CardCatalog.tsx</code>, both mounted once in
+  <code>GlobalRoleHeader</code> so all 63 surfaces inherit them.
+</p>
+</body>
+</html>

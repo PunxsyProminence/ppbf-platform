@@ -5,6 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useSyncExternalStore } from "react";
 import { clearRoleSession, getRoleSessionSnapshot, subscribeRoleSession } from "./roleSession";
 import { apiBase } from '@/lib/apiBase';
+import Corridor from "./Corridor";
+import CardCatalog from "./CardCatalog";
 
 export default function GlobalRoleHeader() {
   const router = useRouter();
@@ -41,9 +43,13 @@ export default function GlobalRoleHeader() {
           <span className="border-2 border-[var(--black)] bg-[var(--red-primary)] px-2.5 py-1 text-[11px] font-mono uppercase text-[var(--white)]">
             {session.role}
           </span>
+          {/* The corridor: the other 61 routes used to be reachable only by
+              typing a URL. It lives in the header so every surface gets it. */}
+          <Corridor />
         </div>
 
         <div className="flex items-center gap-2">
+          <CardCatalog />
           <Link
             href="/operations"
             className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-1 text-[11px] font-mono text-[var(--black)] transition hover:bg-[var(--olive-dark)] hover:text-[var(--white)]"
