@@ -95,7 +95,7 @@ export default function EvidenceReviewPage() {
               action: 'review',
               approvalState,
             })}
-            className="border border-[color:var(--brass-700)] bg-[#211717] px-3 py-1 text-xs font-mono uppercase text-[color:var(--bone-200)] disabled:opacity-50"
+            className="border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-3 py-1 text-xs font-mono uppercase text-[color:var(--bone-200)] disabled:opacity-50"
           >
             {approvalState === 'approved' ? 'Approve + verify' : 'Reject'}
           </button>
@@ -119,20 +119,20 @@ export default function EvidenceReviewPage() {
           </p>
         </header>
 
-        {error ? <p className="border border-[color:var(--brass-700)] bg-[var(--rust-900)] p-3 text-sm text-[#f0c4c4]">{error}</p> : null}
+        {error ? <p className="border border-[color:var(--brass-700)] bg-[var(--rust-900)] p-3 text-sm text-[var(--locked-ink)]">{error}</p> : null}
 
         <section className="space-y-3">
           <h2 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">Sources</h2>
           {queue.sources.length === 0 ? <p className="text-sm text-[color:var(--bone-300)]">No sources are awaiting review.</p> : null}
           {queue.sources.map((source) => (
-            <article key={source.source_id} className="border border-[color:var(--hide-600)] bg-[#151515] p-4">
+            <article key={source.source_id} className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h3 className="font-semibold text-[color:var(--bone-100)]">{source.title}</h3>
                   <p className="text-xs text-[color:var(--bone-300)]">
                     {source.publisher || 'Publisher unavailable'} · {source.source_type} · {source.status}
                   </p>
-                  <p className="mt-1 text-xs font-mono text-[#a99a8b]">
+                  <p className="mt-1 text-xs font-mono text-[var(--bone-400)]">
                     {source.approval_state} / {source.verification_state}
                   </p>
                 </div>
@@ -146,18 +146,18 @@ export default function EvidenceReviewPage() {
           <h2 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">Documents</h2>
           {queue.documents.length === 0 ? <p className="text-sm text-[color:var(--bone-300)]">No documents are awaiting review.</p> : null}
           {queue.documents.map((document) => (
-            <article key={document.document_id} className="border border-[color:var(--hide-600)] bg-[#151515] p-4">
+            <article key={document.document_id} className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h3 className="font-semibold text-[color:var(--bone-100)]">{document.document_name}</h3>
                   <p className="text-xs text-[color:var(--bone-300)]">
                     {document.ingest_state} · {document.chunk_count} indexed chunks
                   </p>
-                  <p className="mt-1 text-xs font-mono text-[#a99a8b]">
+                  <p className="mt-1 text-xs font-mono text-[var(--bone-400)]">
                     {document.approval_state} / {document.verification_state}
                   </p>
                   {document.extraction_error ? (
-                    <p className="mt-1 text-xs text-[#f0c4c4]">Extraction failed; this document cannot be approved.</p>
+                    <p className="mt-1 text-xs text-[var(--locked-ink)]">Extraction failed; this document cannot be approved.</p>
                   ) : null}
                 </div>
                 <div className="space-y-2">
@@ -170,7 +170,7 @@ export default function EvidenceReviewPage() {
                         entityId: document.document_id,
                         action: 'complete_indexing',
                       })}
-                      className="block border border-[color:var(--hide-600)] bg-[#171d21] px-3 py-1 text-xs font-mono uppercase text-[color:var(--brass-300)] disabled:opacity-50"
+                      className="block border border-[color:var(--hide-600)] bg-[var(--slate-board)] px-3 py-1 text-xs font-mono uppercase text-[color:var(--brass-300)] disabled:opacity-50"
                     >
                       Confirm index complete
                     </button>

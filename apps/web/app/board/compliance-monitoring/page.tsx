@@ -124,7 +124,7 @@ export default function BoardComplianceMonitoringPage() {
 
   const severityTiles = [
     { label: 'Critical', metric: severityCounts?.critical, tone: 'border-2 border-[var(--black)] bg-[color-mix(in_srgb,var(--locked)_12%,var(--paper))] p-4', headingTone: 'text-[var(--safety-locked)]' },
-    { label: 'High', metric: severityCounts?.high, tone: 'border-2 border-[var(--black)] bg-[#fff3cd] p-4', headingTone: 'text-[#ff9800]' },
+    { label: 'High', metric: severityCounts?.high, tone: 'border-2 border-[var(--black)] bg-[var(--bone-100)] p-4', headingTone: 'text-[var(--restricted)]' },
     { label: 'Medium', metric: severityCounts?.medium, tone: 'border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4', headingTone: '' },
     { label: 'Low', metric: severityCounts?.low, tone: 'border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4', headingTone: '' },
   ];

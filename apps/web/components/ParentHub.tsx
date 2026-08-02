@@ -691,7 +691,7 @@ export default function ParentHub() {
                 <button
                   type="button"
                   disabled
-                  className="px-4 py-2 bg-[#3a2a2a] text-[color:var(--bone-400)] font-semibold cursor-not-allowed"
+                  className="px-4 py-2 bg-[var(--hide-700)] text-[color:var(--bone-400)] font-semibold cursor-not-allowed"
                 >
                   Send Message (unavailable)
                 </button>
@@ -765,7 +765,7 @@ export default function ParentHub() {
                         <span>Progress</span>
                         <span>{milestone.percent}%</span>
                       </div>
-                      <div className="w-full bg-[#2a2a2a] h-2">
+                      <div className="w-full bg-[var(--hide-800)] h-2">
                         <div className="bg-[var(--brass-300)] h-2" style={{ width: `${milestone.percent}%` }}></div>
                       </div>
                     </div>

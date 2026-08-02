@@ -24,7 +24,7 @@ export default function PassbookCheckPage() {
             wired to a real source.
           </p>
 
-          <section className="grid max-w-[640px] gap-3 border-4 border-[#3d2817] bg-[var(--hide-900)] p-5">
+          <section className="grid max-w-[640px] gap-3 border-4 border-[var(--hide-700)] bg-[var(--hide-900)] p-5">
             <label htmlFor="usa-boxing-id" className="font-semibold text-[color:var(--bone-200)]">
               Athlete USA Boxing ID
             </label>

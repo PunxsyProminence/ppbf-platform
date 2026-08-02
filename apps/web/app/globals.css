@@ -376,7 +376,7 @@ h6 {
 }
 
 .tactical-alert-critical {
-  background: #f0d6d6;
+  background: var(--locked-ink);
   color: var(--safety-locked);
   border: var(--border-medium) solid var(--safety-locked);
   padding: var(--space-3);
@@ -397,7 +397,7 @@ h6 {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #f5e6c8;
+  color: var(--bone-200);
   box-shadow: var(--shadow-md);
   cursor: pointer;
   user-select: none;
@@ -421,28 +421,28 @@ h6 {
 
 .stamp-button--cleared {
   background: var(--stamp-cleared);
-  border-color: #2a3518;
+  border-color: color-mix(in_srgb,var(--cleared)_14%,var(--hide-950));
 }
 
 .stamp-button--hold {
   background: var(--stamp-hold);
-  border-color: #6a4e1a;
+  border-color: var(--brass-800);
 }
 
 .stamp-button--restricted,
 .stamp-button--escalate {
   background: var(--stamp-restricted);
-  border-color: #4a0000;
+  border-color: var(--hide-800);
 }
 
 .stamp-button--present {
   background: var(--stamp-present);
-  border-color: #1a2e24;
+  border-color: color-mix(in_srgb,var(--cleared)_14%,var(--hide-950));
 }
 
 .stamp-button--neutral {
   background: var(--stamp-neutral);
-  border-color: #2a2018;
+  border-color: var(--hide-800);
 }
 
 .brass-plate {
@@ -665,7 +665,7 @@ h6 {
   font-size: 10px;
   padding: 2px 6px;
   background: var(--stamp-restricted);
-  color: #f5e6c8;
+  color: var(--bone-200);
   border: 1px solid var(--black);
   font-family: var(--font-mono);
   letter-spacing: 0.06em;

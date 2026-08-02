@@ -128,7 +128,7 @@ export default function BoardRoleGate({
             <button
               type="button"
               onClick={() => setRetryNonce((value) => value + 1)}
-              className="mt-5 min-h-[44px] border-2 border-[color:var(--brass-700)] bg-[#2f1717] px-5 text-sm font-mono font-bold uppercase tracking-[0.12em] text-[color:var(--bone-200)]"
+              className="mt-5 min-h-[44px] border-2 border-[color:var(--brass-700)] bg-[var(--hide-800)] px-5 text-sm font-mono font-bold uppercase tracking-[0.12em] text-[color:var(--bone-200)]"
             >
               Retry
             </button>

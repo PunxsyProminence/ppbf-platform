@@ -119,9 +119,9 @@ function priorityTone(priority: CoachTask['priority']): string {
 }
 
 function taskStatusTone(status: CoachTask['status']): string {
-  if (status === 'Open') return 'bg-[#6b4a2a] text-[color:var(--brass-300)]';
-  if (status === 'In Progress') return 'bg-[#4a6b2a] text-[#b4d474]';
-  return 'bg-[#4a4a6b] text-[#a4a4d4]';
+  if (status === 'Open') return 'bg-[var(--brass-800)] text-[color:var(--brass-300)]';
+  if (status === 'In Progress') return 'bg-[var(--patina-500)] text-[var(--cleared-ink)]';
+  return 'bg-[color-mix(in_srgb,var(--monitor)_14%,var(--hide-950))] text-[var(--bone-400)]';
 }
 
 function readinessBadgeTone(readiness: Athlete['readiness']): string {
@@ -134,7 +134,7 @@ function readinessBadgeTone(readiness: Athlete['readiness']): string {
 function painSeverityTone(severity: CoachPainReport['severity']): string {
   if (severity === 'critical') return 'bg-red-700 text-white';
   if (severity === 'high') return 'bg-red-900 text-red-100';
-  return 'bg-[#6b4a2a] text-[#f0d9bf]';
+  return 'bg-[var(--brass-800)] text-[var(--paper-2)]';
 }
 
 // A stored timestamp the browser cannot parse is shown verbatim rather than as
@@ -624,9 +624,9 @@ export default function CoachWorkspace() {
             everything else on the page. A child reporting pain has to reach the
             coach on whatever screen they are already looking at, not on a tab
             they have to know to open. */}
-        <section aria-live="polite" className="border-2 border-[color:var(--locked)] bg-[#180d0d] p-4 space-y-3">
+        <section aria-live="polite" className="border-2 border-[color:var(--locked)] bg-[var(--hide-900)] p-4 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-mono text-sm font-bold uppercase tracking-[0.12em] text-[#ff9d9d]">
+            <h2 className="font-mono text-sm font-bold uppercase tracking-[0.12em] text-[var(--locked-ink)]">
               Athlete Pain Reports
             </h2>
             <button
@@ -664,7 +664,7 @@ export default function CoachWorkspace() {
           {!painReportsLoading && !painReportsError && painReports.length > 0 && (
             <div className="space-y-3">
               {painReportsTruncated && (
-                <p className="text-xs text-[#ffb3b3]">
+                <p className="text-xs text-[var(--locked-ink)]">
                   More reports matched than are listed here. The highest-severity ones are shown first;
                   the rest are in each athlete&apos;s near-miss history on the decision loop.
                 </p>
@@ -995,7 +995,7 @@ export default function CoachWorkspace() {
                         onClick={() => setSelectedAthleteId(athlete.id)}
                         className={`w-full p-3 border-2 rounded cursor-pointer transition text-left ${
                           selectedAthleteId === athlete.id
-                            ? 'bg-[#2a2a2a] border-[color:var(--brass-700)]'
+                            ? 'bg-[var(--hide-800)] border-[color:var(--brass-700)]'
                             : 'bg-[var(--hide-950)] border-[color:var(--hide-600)] hover:border-[color:var(--brass-700)]'
                         }`}
                       >
@@ -1330,7 +1330,7 @@ export default function CoachWorkspace() {
                 )}
                 {coachTasks.map(task => (
                   <div key={task.id} className={`border-2 p-4 rounded ${
-                    task.status === 'Completed' ? 'bg-[#2a5a2a]/30 border-green-700' : 'bg-[var(--hide-900)] border-[color:var(--brass-700)]'
+                    task.status === 'Completed' ? 'bg-[var(--cleared-deep)]/30 border-green-700' : 'bg-[var(--hide-900)] border-[color:var(--brass-700)]'
                   }`}>
                     <div className="flex justify-between items-start mb-2">
                       <div>
@@ -1463,12 +1463,12 @@ export default function CoachWorkspace() {
                   value={reviewSessionId}
                   onChange={(event) => setReviewSessionId(event.target.value)}
                   placeholder="Session ID (from persisted session)"
-                  className="h-11 w-full border border-[color:var(--brass-700)] bg-[#141414] px-3 text-sm text-[color:var(--bone-200)]"
+                  className="h-11 w-full border border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3 text-sm text-[color:var(--bone-200)]"
                 />
                 <select
                   value={reviewDecision}
                   onChange={(event) => setReviewDecision(event.target.value)}
-                  className="h-11 w-full border border-[color:var(--brass-700)] bg-[#141414] px-3 text-sm text-[color:var(--bone-200)]"
+                  className="h-11 w-full border border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3 text-sm text-[color:var(--bone-200)]"
                 >
                   <option value="approved">approved</option>
                   <option value="follow_up">follow_up</option>
@@ -1478,7 +1478,7 @@ export default function CoachWorkspace() {
                   value={reviewNotes}
                   onChange={(event) => setReviewNotes(event.target.value)}
                   placeholder="Review notes"
-                  className="min-h-[84px] w-full border border-[color:var(--brass-700)] bg-[#141414] px-3 py-2 text-sm text-[color:var(--bone-200)]"
+                  className="min-h-[84px] w-full border border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)]"
                 />
                 <button
                   type="button"
