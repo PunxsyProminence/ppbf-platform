@@ -89,6 +89,30 @@
   --font-body: var(--font-tactical-body), "Segoe UI", "Arial Narrow", Arial, sans-serif;
   --font-mono: var(--font-geist-mono), "Courier New", "Courier", monospace;
 
+  /* ppbf.css names three more faces and only --font-stencil was ever pointed at
+     a real one. --font-ui, --font-data and --font-hand were still the sheet's
+     own system stacks — "Inter", ui-monospace, SFMono-Regular, Consolas,
+     "Segoe Print" — which resolve to whatever a given machine happens to have
+     installed. .t-eyebrow, .t-data and .badge are set in them.
+
+     That is not only a look problem, it is a determinism problem. Text set in a
+     font the repo does not ship wraps at machine-dependent widths, so the same
+     page is a different height on two computers. It is what made the homepage
+     412x3620 here and 412x3680 in CI, and it is why the screenshot baseline had
+     to be switched off. Pointing these at the faces next/font already
+     self-hosts means every glyph on every surface now comes from a file in this
+     repo, and the render stops depending on the machine.
+
+     --font-hand is the exception worth stating out loud. Law 4's fourth voice
+     is chalk — schedules in a gym hand — and no cursive face is loaded, so
+     there is nothing correct to point it at. It takes the body face, which
+     means .t-hand currently renders as ordinary type rather than handwriting.
+     Nothing in the app uses it today; giving the chalk voice back its character
+     means loading a real face, not restoring a system stack. */
+  --font-ui: var(--font-tactical-body), "Segoe UI", "Arial Narrow", Arial, sans-serif;
+  --font-data: var(--font-geist-mono), "Courier New", "Courier", monospace;
+  --font-hand: var(--font-tactical-body), "Segoe UI", "Arial Narrow", Arial, sans-serif;
+
   /* --- Type: was an eyeballed 11/12/15/16/18/24/32/48 ladder with no ratio.
      Now the √φ ladder (Law 8). --text-sm climbing 12px→15px and --text-lg
      16px→19.1px are the two visible jumps; 19.1px is the kiosk floor (Law 5),

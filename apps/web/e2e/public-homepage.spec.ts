@@ -1,32 +1,27 @@
 import { expect, test } from '@playwright/test';
 
-/* The pixel baseline is opt-in, and that is a correction, not a retreat.
+/* The full-page baseline below only works because every glyph on the page now
+   comes from a file in this repo.
 
-   It was wired into CI on baselines recorded in a dev container, and CI
-   rendered the same page 60px taller: 412x3620 expected, 412x3680 received.
-   Both sides are deterministic -- two CI retries produced byte-identical
-   diffs -- so this is not flake, it is two different rendering environments.
-   Note also that a size mismatch fails BEFORE maxDiffPixelRatio is consulted,
-   so the tolerance in playwright.config.ts never applied and could not have.
+   It did not, at first. Wired into CI on baselines recorded in a dev
+   container, CI rendered the same page 60px taller -- 412x3620 expected,
+   412x3680 received -- deterministically on both sides, two retries producing
+   byte-identical diffs. The cause was in the sheet: ppbf.css named four faces
+   and only --font-stencil had been pointed at a real one, so .t-eyebrow,
+   .t-data and .badge were still set in system stacks (Inter, ui-monospace,
+   SFMono, Consolas). Text set in a font the repo does not ship wraps at
+   machine-dependent widths, and the page ends up a different height.
 
-   The cause is in the sheet, not the test. The app self-hosts its three real
-   faces through next/font, but ppbf.css's --font-ui, --font-data and
-   --font-hand are system stacks (Inter, ui-monospace, SFMono, Consolas,
-   Segoe Print). Those resolve to whatever a given machine happens to have,
-   and .t-eyebrow / .t-data / .badge are set in them, so text wraps at
-   different widths and the page ends up a different height.
+   Those three now alias to the faces next/font already self-hosts, so layout
+   no longer depends on what a machine has installed. Verified by walking every
+   element on four routes: the only text run that does not resolve to a loaded
+   face is <title>, which lives in <head> and is never painted.
 
-   A full-page pixel baseline therefore cannot be portable until those stacks
-   are self-hosted too. Until then this assertion runs where a baseline was
-   recorded on the same machine, and CI runs the rest of this file -- which is
-   the part that actually generalises: the homepage stays public, the headings
-   stay present, no password field appears on it, Log In routes to The Bell,
-   and protected routes still redirect. All five pass in CI today.
-
-   To use it:  npm --workspace web run test:e2e:homepage:update   (record)
-               PPBF_VISUAL_BASELINE=1 npm --workspace web run test:e2e:homepage */
-const visualBaseline = process.env.PPBF_VISUAL_BASELINE === '1';
-
+   Worth knowing if this fails in future: a size mismatch fails BEFORE
+   maxDiffPixelRatio is consulted, so the 2% tolerance in playwright.config.ts
+   covers rasterisation between Chromium revisions and nothing else. A height
+   difference means something reintroduced a font the repo does not ship, or
+   the page genuinely changed. */
 test.describe('Public homepage', () => {
   test('renders publicly at / without requiring authentication', async ({ page }) => {
     const response = await page.goto('/');
@@ -45,9 +40,7 @@ test.describe('Public homepage', () => {
     // No login form should be embedded directly on the homepage.
     await expect(page.locator('input[type="password"]')).toHaveCount(0);
 
-    if (visualBaseline) {
-      await expect(page).toHaveScreenshot('public-homepage.png', { fullPage: true });
-    }
+    await expect(page).toHaveScreenshot('public-homepage.png', { fullPage: true });
   });
 
   test('Log In routes to the existing authentication page', async ({ page }) => {
