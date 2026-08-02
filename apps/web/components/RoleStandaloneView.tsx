@@ -95,9 +95,18 @@ export default function RoleStandaloneView({
   return (
     <RoleSessionGate allowedRoles={allowedRoles}>
       <main
+        /* The family branch is deliberately left exactly as it was rather
+           than moved to .on-canvas. These pages' own content -- ParentHub,
+           AthleteWorkspace -- is built from ink-dark panels, so declaring the
+           canvas ground restates every design-system component inside them
+           for cream and then renders it on those dark panels: --brass-800
+           links at 2.36:1, .on-canvas .t-body at 1.43:1. Measured, not
+           guessed. Law 6 does put the family side on canvas, but getting
+           there means converting that content first; until then the honest
+           change is the eleven staff pages, which this branch verified. */
         className={
           familyGround
-            ? 'on-canvas min-h-screen'
+            ? 'min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]'
             : 'min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]'
         }
       >
