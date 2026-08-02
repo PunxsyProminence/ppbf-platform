@@ -74,7 +74,22 @@ export default function GlobalRoleHeader() {
       <div className={BAR}>
         <div className="flex items-center gap-[var(--s4)]">
           <span className={EYEBROW}>Session active</span>
-          <span className="mat-brass--patina inline-flex min-h-[var(--s6)] items-center rounded-[var(--r-sm)] px-[var(--s4)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.14em] text-[color:var(--hide-950)]">
+          {/* An engraved plate, not a painted one. This badge was
+              .mat-brass--patina with ink type, which reads fine in a mockup and
+              fails in pixels: patina is a mottled material, and its gradient
+              runs from rgb(72,68,32) to rgb(181,170,110). Sampling the rendered
+              badge put the ink label at 1.91:1 over the dark stops and 8.06:1
+              over the light ones -- legibility that depends on where in the
+              gradient a given role name happens to land.
+
+              A material with a range cannot carry small text. This is
+              ppbf.css's .plaque treatment instead: a recessed dark plate,
+              brass-700 rim, brass-200 legend. Flat ground, one contrast value,
+              and it is still unmistakably brass. Written out rather than using
+              .plaque itself because that class pins 13px through the `font:`
+              shorthand, which would beat the ladder size every other control on
+              this bar uses. */}
+          <span className="inline-flex min-h-[var(--s6)] items-center rounded-[var(--r-sm)] border border-[color:var(--brass-700)] bg-[rgba(0,0,0,.4)] px-[var(--s4)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.14em] text-[color:var(--brass-200)] shadow-[inset_0_1px_0_rgba(232,206,122,.16)]">
             {session.role}
           </span>
         </div>

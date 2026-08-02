@@ -363,7 +363,7 @@ function BoardSeatsConsole() {
         </header>
 
         {error && (
-          <p role="alert" className="rounded-xl border border-[var(--safety-locked)] bg-[rgba(184,59,52,0.06)] px-4 py-3 text-sm font-semibold text-[var(--safety-locked)]">
+          <p role="alert" className="rounded-xl border border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_6%,white)] px-4 py-3 text-sm font-semibold text-[var(--safety-locked)]">
             {error}
           </p>
         )}
@@ -468,7 +468,7 @@ function BoardSeatsConsole() {
                 id="seat"
                 value={draftSeat}
                 onChange={(event) => setDraftSeat(event.target.value as BoardSeatSlug)}
-                className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
               >
                 {seatRoster.map(({ config, primary }) => (
                   <option key={config.slug} value={config.slug}>
@@ -486,7 +486,7 @@ function BoardSeatsConsole() {
                   required
                   value={draftAccountId}
                   onChange={(event) => setDraftAccountId(event.target.value)}
-                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                 >
                   <option value="">Choose a member...</option>
                   {memberOptions.map((member) => (
@@ -508,7 +508,7 @@ function BoardSeatsConsole() {
                     value={draftAccountId}
                     onChange={(event) => setDraftAccountId(event.target.value.trim())}
                     placeholder="dana"
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                   />
                 </>
               )}
@@ -532,7 +532,7 @@ function BoardSeatsConsole() {
                     key={option.value}
                     className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${
                       draftKind === option.value
-                        ? 'border-[var(--safety-locked)] bg-[rgba(184,59,52,0.05)]'
+                        ? 'border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_5%,white)]'
                         : 'border-[rgba(0,0,0,0.12)] hover:border-[rgba(0,0,0,0.3)]'
                     }`}
                   >
@@ -554,7 +554,7 @@ function BoardSeatsConsole() {
             </fieldset>
 
             {primaryConflict && currentPrimary && (
-              <div role="alert" className="space-y-3 rounded-xl border-2 border-[var(--safety-locked)] bg-[rgba(184,59,52,0.06)] p-4">
+              <div role="alert" className="space-y-3 rounded-xl border-2 border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_6%,white)] p-4">
                 <p className="text-sm font-semibold text-[var(--safety-locked)]">
                   {seatLabelFor(draftSeat)} is held by {nameFor(currentPrimary.account_id)}. A seat has one officer of
                   record, so this cannot be a second — choose which one you meant.

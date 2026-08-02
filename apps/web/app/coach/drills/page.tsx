@@ -204,7 +204,7 @@ function CoachDrillLibrary() {
           </div>
 
           {formError && (
-            <p role="alert" className="mt-4 rounded-lg border-2 border-[var(--safety-locked)] bg-[rgba(184,59,52,0.06)] px-3 py-2 text-sm font-semibold text-[var(--safety-locked)]">
+            <p role="alert" className="mt-4 rounded-lg border-2 border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_6%,white)] px-3 py-2 text-sm font-semibold text-[var(--safety-locked)]">
               {formError}
             </p>
           )}

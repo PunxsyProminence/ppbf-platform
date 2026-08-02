@@ -214,7 +214,7 @@ export default function SetupWizard() {
           <div
             className={`rounded-xl border px-4 py-3 ${
               feedback.kind === 'error'
-                ? 'border-[var(--safety-locked)] bg-[rgba(184,59,52,0.05)]'
+                ? 'border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_5%,white)]'
                 : feedback.kind === 'success'
                   ? 'border-[#4caf50] bg-[rgba(76,175,80,0.05)]'
                   : 'border-[var(--gray-medium)] bg-[rgba(0,0,0,0.03)]'
@@ -238,7 +238,7 @@ export default function SetupWizard() {
         <section
           className={`rounded-2xl border-2 p-6 transition ${
             step === 1
-              ? 'border-[var(--safety-locked)] bg-white shadow-[0_4px_12px_rgba(184,59,52,0.15)]'
+              ? 'border-[var(--safety-locked)] bg-white shadow-[0_4px_12px_color-mix(in_srgb,var(--safety-locked)_15%,white)]'
               : 'border-[rgba(0,0,0,0.14)] bg-white/60 opacity-60'
           }`}
         >
@@ -262,7 +262,7 @@ export default function SetupWizard() {
                   value={gymId}
                   onChange={(e) => setGymId(e.target.value.toLowerCase())}
                   placeholder="golden_boxing"
-                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                 />
               </div>
 
@@ -274,7 +274,7 @@ export default function SetupWizard() {
                   value={gymName}
                   onChange={(e) => setGymName(e.target.value)}
                   placeholder="Golden Boxing Studio"
-                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                 />
               </div>
 
@@ -301,7 +301,7 @@ export default function SetupWizard() {
         <section
           className={`rounded-2xl border-2 p-6 transition ${
             step === 2
-              ? 'border-[var(--safety-locked)] bg-white shadow-[0_4px_12px_rgba(184,59,52,0.15)]'
+              ? 'border-[var(--safety-locked)] bg-white shadow-[0_4px_12px_color-mix(in_srgb,var(--safety-locked)_15%,white)]'
               : 'border-[rgba(0,0,0,0.14)] bg-white/60 opacity-60'
           }`}
         >
@@ -317,7 +317,7 @@ export default function SetupWizard() {
 
           {step === 2 && (
             <div className="mt-6 space-y-4">
-              <div className="rounded-lg border border-[rgba(184,59,52,0.2)] bg-[rgba(184,59,52,0.05)] p-4">
+              <div className="rounded-lg border border-[color-mix(in_srgb,var(--safety-locked)_20%,white)] bg-[color-mix(in_srgb,var(--safety-locked)_5%,white)] p-4">
                 <p className="text-xs font-semibold text-[var(--safety-locked)] uppercase tracking-[0.1em]">This is two steps, not one</p>
                 <p className="mt-2 text-sm text-[var(--gray-dark)]">
                   Saving here gives this person the gym admin role in PPBF. If their email is outside your Microsoft
@@ -332,7 +332,7 @@ export default function SetupWizard() {
                   value={adminEmail}
                   onChange={(e) => setAdminEmail(e.target.value)}
                   placeholder="owner@goldenboxing.org"
-                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                 />
               </div>
 
@@ -358,7 +358,7 @@ export default function SetupWizard() {
         {/* Step 3: Configure Features */}
         <section
           className={`rounded-2xl border-2 p-6 transition ${
-            step === 3 ? 'border-[var(--safety-locked)] bg-white shadow-[0_4px_12px_rgba(184,59,52,0.15)]' : 'border-[rgba(0,0,0,0.14)] bg-white/60 opacity-60'
+            step === 3 ? 'border-[var(--safety-locked)] bg-white shadow-[0_4px_12px_color-mix(in_srgb,var(--safety-locked)_15%,white)]' : 'border-[rgba(0,0,0,0.14)] bg-white/60 opacity-60'
           }`}
         >
           <div className="flex-1">

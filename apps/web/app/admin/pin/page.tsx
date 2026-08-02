@@ -216,7 +216,7 @@ function PinManagementPageContent() {
                         onClick={() => setSelectedAthleteId(item.athlete_id)}
                         className={`w-full rounded-xl border px-3 py-3 text-left transition ${
                           selected
-                            ? 'border-[var(--safety-locked)] bg-[rgba(184,59,52,0.08)]'
+                            ? 'border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_8%,white)]'
                             : 'border-[rgba(0,0,0,0.14)] bg-white hover:border-[rgba(0,0,0,0.3)]'
                         }`}
                       >
@@ -252,7 +252,7 @@ function PinManagementPageContent() {
                 />
               </div>
 
-              {createError && <p className="rounded-lg border border-[var(--safety-locked)] bg-[rgba(184,59,52,0.06)] px-3 py-2 text-sm" role="alert">{createError}</p>}
+              {createError && <p className="rounded-lg border border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_6%,white)] px-3 py-2 text-sm" role="alert">{createError}</p>}
               {createSuccess && <p className="rounded-lg border border-[rgba(16,120,40,0.5)] bg-[rgba(16,120,40,0.1)] px-3 py-2 text-sm">{createSuccess}</p>}
 
               <button
@@ -325,7 +325,7 @@ function PinManagementPageContent() {
                 />
               </div>
 
-              {error && <p className="rounded-lg border border-[var(--safety-locked)] bg-[rgba(184,59,52,0.06)] px-3 py-2 text-sm" role="alert">{error}</p>}
+              {error && <p className="rounded-lg border border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_6%,white)] px-3 py-2 text-sm" role="alert">{error}</p>}
               {success && <p className="rounded-lg border border-[rgba(16,120,40,0.5)] bg-[rgba(16,120,40,0.1)] px-3 py-2 text-sm">{success}</p>}
 
               <button

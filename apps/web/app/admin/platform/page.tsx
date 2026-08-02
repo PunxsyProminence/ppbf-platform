@@ -258,7 +258,7 @@ export default function PlatformConsole() {
           <div
             className={`rounded-xl border px-4 py-3 ${
               feedback.kind === 'error'
-                ? 'border-[var(--safety-locked)] bg-[rgba(184,59,52,0.05)]'
+                ? 'border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_5%,white)]'
                 : feedback.kind === 'success'
                   ? 'border-[#4caf50] bg-[rgba(76,175,80,0.05)]'
                   : 'border-[var(--gray-medium)] bg-[rgba(0,0,0,0.03)]'
@@ -281,7 +281,7 @@ export default function PlatformConsole() {
           <select
             value={selectedOrgId}
             onChange={(event) => setSelectedOrgId(event.target.value)}
-            className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+            className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
           >
             <option value="">Select a gym...</option>
             {organizations.map((org) => (
@@ -326,12 +326,12 @@ export default function PlatformConsole() {
               value={inviteEmail}
               onChange={(event) => setInviteEmail(event.target.value)}
               placeholder="name@example.org"
-              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
             />
             <select
               value={inviteRole}
               onChange={(event) => setInviteRole(event.target.value)}
-              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
             >
               {INVITABLE_ROLES.map((role) => (
                 <option key={role.value} value={role.value}>{role.label}</option>
@@ -360,14 +360,14 @@ export default function PlatformConsole() {
               value={athleteAccountId}
               onChange={(event) => setAthleteAccountId(event.target.value)}
               placeholder="Account ID (how they'll sign in)"
-              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
             />
             <input
               type="text"
               value={athleteRosterId}
               onChange={(event) => setAthleteRosterId(event.target.value)}
               placeholder="Existing athlete roster ID"
-              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
             />
             <button
               type="button"

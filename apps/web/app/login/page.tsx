@@ -332,7 +332,12 @@ function LoginPageContent() {
                   <button
                     type="submit"
                     disabled={loginBusy || !loginAccountId.trim() || !loginPin.trim()}
-                    className="inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl border-2 border-[var(--accent-quiet)] bg-[var(--accent-strong)] px-6 text-sm font-black uppercase tracking-[0.18em] text-[var(--accent-ink)] transition hover:bg-[var(--brass-400)] hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50 disabled:border-[rgba(0,0,0,0.14)] disabled:bg-[var(--gray-medium)] active:scale-[0.98]"
+                    /* The disabled state carries its own pair rather than
+                       dimming the enabled one. The label is ink because it sits
+                       on brass; the disabled fill is --gray-medium, and ink on
+                       that is 1.68:1 -- an empty PIN field would have left the
+                       button unreadable. Bone on the same fill is 7.3:1. */
+                    className="inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl border-2 border-[var(--accent-quiet)] bg-[var(--accent-strong)] px-6 text-sm font-black uppercase tracking-[0.18em] text-[var(--accent-ink)] transition hover:bg-[var(--brass-400)] hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:border-[rgba(0,0,0,0.14)] disabled:bg-[var(--gray-medium)] disabled:text-[var(--bone-300)] active:scale-[0.98]"
                   >
                     {loginBusy ? (
                       <>

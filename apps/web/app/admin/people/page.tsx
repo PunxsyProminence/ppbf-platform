@@ -746,7 +746,7 @@ function PeopleConsoleContent() {
         )}
 
         {error && (
-          <p role="alert" className="rounded-xl border border-[var(--safety-locked)] bg-[rgba(184,59,52,0.06)] px-4 py-3 text-sm font-semibold text-[var(--safety-locked)]">
+          <p role="alert" className="rounded-xl border border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_6%,white)] px-4 py-3 text-sm font-semibold text-[var(--safety-locked)]">
             {error}
           </p>
         )}
@@ -783,7 +783,7 @@ function PeopleConsoleContent() {
                 sign in and see nothing, and nothing else in the product says
                 so. */}
             {strandedGuardians.length > 0 && (
-              <div className="rounded-2xl border-2 border-[var(--safety-locked)] bg-[rgba(184,59,52,0.06)] p-4">
+              <div className="rounded-2xl border-2 border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_6%,white)] p-4">
                 <p className="text-sm font-bold text-[var(--safety-locked)]">
                   {strandedGuardians.length} guardian{strandedGuardians.length === 1 ? '' : 's'} linked to no athlete
                 </p>
@@ -813,7 +813,7 @@ function PeopleConsoleContent() {
             )}
 
             {pendingAthletes.length > 0 && (
-              <div className="rounded-2xl border border-[rgba(184,59,52,0.35)] bg-[rgba(184,59,52,0.04)] p-4">
+              <div className="rounded-2xl border border-[color-mix(in_srgb,var(--safety-locked)_35%,white)] bg-[color-mix(in_srgb,var(--safety-locked)_4%,white)] p-4">
                 <p className="text-sm font-bold">
                   {pendingAthletes.length} athlete{pendingAthletes.length === 1 ? '' : 's'} cannot sign in yet
                 </p>
@@ -941,7 +941,7 @@ function PeopleConsoleContent() {
                             type="button"
                             disabled={busy}
                             onClick={() => void handleResetToStartingPin(member.account_id)}
-                            className="min-h-[44px] shrink-0 rounded-xl border-2 border-[var(--safety-locked)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[var(--safety-locked)] transition hover:bg-[rgba(184,59,52,0.06)] disabled:opacity-50"
+                            className="min-h-[44px] shrink-0 rounded-xl border-2 border-[var(--safety-locked)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[var(--safety-locked)] transition hover:bg-[color-mix(in_srgb,var(--safety-locked)_6%,white)] disabled:opacity-50"
                           >
                             Reset To Starting PIN
                           </button>
@@ -964,7 +964,7 @@ function PeopleConsoleContent() {
               </p>
             </div>
 
-            <div className="rounded-xl border border-[rgba(184,59,52,0.25)] bg-[rgba(184,59,52,0.04)] p-4">
+            <div className="rounded-xl border border-[color-mix(in_srgb,var(--safety-locked)_25%,white)] bg-[color-mix(in_srgb,var(--safety-locked)_4%,white)] p-4">
               <p className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--safety-locked)]">Two steps, not one</p>
               <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
                 This form gives them a role in PPBF. If they are outside your Microsoft organization, someone also has to
@@ -983,7 +983,7 @@ function PeopleConsoleContent() {
                 value={inviteEmail}
                 onChange={(event) => setInviteEmail(event.target.value)}
                 placeholder="coach@example.com"
-                className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
               />
             </div>
 
@@ -1000,7 +1000,7 @@ function PeopleConsoleContent() {
                         blockedReason
                           ? 'cursor-not-allowed border-[rgba(0,0,0,0.12)] opacity-70'
                           : inviteRole === option.value
-                            ? 'cursor-pointer border-[var(--safety-locked)] bg-[rgba(184,59,52,0.05)]'
+                            ? 'cursor-pointer border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_5%,white)]'
                             : 'cursor-pointer border-[rgba(0,0,0,0.12)] hover:border-[rgba(0,0,0,0.3)]'
                       }`}
                     >
@@ -1055,7 +1055,7 @@ function PeopleConsoleContent() {
                     value={guardianFullName}
                     onChange={(event) => setGuardianFullName(event.target.value)}
                     placeholder="Dana Johnson"
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                   />
                 </div>
 
@@ -1071,7 +1071,7 @@ function PeopleConsoleContent() {
                     required
                     value={guardianAthleteId}
                     onChange={(event) => setGuardianAthleteId(event.target.value)}
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                   >
                     <option value="">Choose an athlete...</option>
                     {roster.map((athlete) => (
@@ -1091,7 +1091,7 @@ function PeopleConsoleContent() {
                     required
                     value={guardianRelationship}
                     onChange={(event) => setGuardianRelationship(event.target.value)}
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                   >
                     {GUARDIAN_RELATIONSHIPS.map((option) => (
                       <option key={option.value} value={option.value}>
@@ -1131,7 +1131,7 @@ function PeopleConsoleContent() {
                     key={option.value}
                     className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${
                       athleteMode === option.value
-                        ? 'border-[var(--safety-locked)] bg-[rgba(184,59,52,0.05)]'
+                        ? 'border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_5%,white)]'
                         : 'border-[rgba(0,0,0,0.12)] hover:border-[rgba(0,0,0,0.3)]'
                     }`}
                   >
@@ -1185,10 +1185,10 @@ function PeopleConsoleContent() {
                     value={athleteId}
                     onChange={(event) => setAthleteId(event.target.value.trim())}
                     placeholder="ath-001"
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                   />
                   {collidingAthlete && (
-                    <p className="mt-2 rounded-xl border border-[var(--safety-locked)] bg-[rgba(184,59,52,0.06)] px-3 py-2 text-xs font-semibold text-[var(--safety-locked)]">
+                    <p className="mt-2 rounded-xl border border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_6%,white)] px-3 py-2 text-xs font-semibold text-[var(--safety-locked)]">
                       {collidingAthlete.full_name} already holds record ID {collidingAthlete.athlete_id}. Pick a
                       different ID — or, if that is this same athlete, switch to “Already on the roster”.
                     </p>
@@ -1213,7 +1213,7 @@ function PeopleConsoleContent() {
                     value={athleteFullName}
                     onChange={(event) => setAthleteFullName(event.target.value)}
                     placeholder="Alex Johnson"
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                   />
                 </div>
 
@@ -1228,7 +1228,7 @@ function PeopleConsoleContent() {
                       required
                       value={athleteDob}
                       onChange={(event) => setAthleteDob(event.target.value)}
-                      className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                      className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                     />
                   </div>
 
@@ -1243,7 +1243,7 @@ function PeopleConsoleContent() {
                       value={athleteWeightClass}
                       onChange={(event) => setAthleteWeightClass(event.target.value)}
                       placeholder="middleweight"
-                      className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                      className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                     />
                   </div>
                 </div>
@@ -1257,7 +1257,7 @@ function PeopleConsoleContent() {
                     required
                     value={athleteGymStatus}
                     onChange={(event) => setAthleteGymStatus(event.target.value)}
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                   >
                     {GYM_STATUS_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>
@@ -1281,7 +1281,7 @@ function PeopleConsoleContent() {
                     value={athleteEmergencyContact}
                     onChange={(event) => setAthleteEmergencyContact(event.target.value)}
                     placeholder="Dana Johnson (mother) 555-0101"
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                   />
                 </div>
 
@@ -1299,7 +1299,7 @@ function PeopleConsoleContent() {
                     required
                     value={athleteCoachId}
                     onChange={(event) => setAthleteCoachId(event.target.value)}
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                   >
                     <option value="">Choose a coach...</option>
                     {coachOptions.map((coach) => (
@@ -1312,7 +1312,7 @@ function PeopleConsoleContent() {
               </fieldset>
             ) : rosterAvailable ? (
               unlinkedAthletes.length === 0 ? (
-                <div className="rounded-xl border border-[rgba(184,59,52,0.25)] bg-[rgba(184,59,52,0.04)] p-4">
+                <div className="rounded-xl border border-[color-mix(in_srgb,var(--safety-locked)_25%,white)] bg-[color-mix(in_srgb,var(--safety-locked)_4%,white)] p-4">
                   <p className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--safety-locked)]">
                     Nobody is waiting
                   </p>
@@ -1336,7 +1336,7 @@ function PeopleConsoleContent() {
                     required
                     value={athleteId}
                     onChange={(event) => setAthleteId(event.target.value)}
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                   >
                     <option value="">Choose an athlete...</option>
                     {unlinkedAthletes.map((athlete) => (
@@ -1367,7 +1367,7 @@ function PeopleConsoleContent() {
                   value={athleteId}
                   onChange={(event) => setAthleteId(event.target.value.trim())}
                   placeholder="ath-001"
-                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                 />
               </div>
             )}
@@ -1386,7 +1386,7 @@ function PeopleConsoleContent() {
                 value={athleteAccountId}
                 onChange={(event) => setAthleteAccountId(event.target.value.trim())}
                 placeholder="jsmith"
-                className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
               />
             </div>
 

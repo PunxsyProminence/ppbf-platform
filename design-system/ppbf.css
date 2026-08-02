@@ -67,6 +67,25 @@
   --restricted: #C05A1E;  --restricted-ink:#F6D6B8;
   --locked:     #A81E22;  --locked-ink:    #F3C9C6;
 
+  /* The rung itself is a FILL. As a fill it is fine on either ground, and the
+     -ink variants above are its readable text colour on the ink ground.
+
+     Law 6 gives the app two grounds, so the ladder needs the other half of
+     that pair too. Measured as text on --canvas-warm, three of the four rungs
+     miss the 4.5:1 floor -- cleared 3.90, restricted 3.52, monitor 4.38 -- and
+     only locked clears it at 5.78. A status word set in --cleared on a family
+     surface is not quite readable, which is the worst possible place for it.
+
+     These are the same four hues taken down until each measures ~5:1 on canvas
+     (and 6.3:1+ on paper and white, so they hold on cards too). Use the plain
+     rung for fills and borders, -ink for text on leather, -deep for text on
+     canvas or paper. They stay near-identical in luminance to one another by
+     design; hue separates them, and Law 3 already requires a second channel. */
+  --cleared-deep:    #366A42;
+  --monitor-deep:    #2A6488;
+  --restricted-deep: #9A4818;
+  --locked-deep:     #A81E22;  /* already 5.78:1 on canvas; kept for symmetry */
+
   --stamp-red:  #A81E22;  /* refusal, redaction, destructive */
   --stamp-green:#2F7A3E;  /* approved, compliant */
 
