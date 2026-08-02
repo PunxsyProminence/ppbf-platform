@@ -58,19 +58,20 @@ jobs:
       - name: Run board governance E2E
         run: npm --workspace web run test:e2e:board
 
-      # The public entry points, plus a pixel baseline on the masthead. This
+      # The public entry points, and the design system's own laws on them. This
       # spec existed and ran nowhere, so nothing checked that the homepage stays
       # reachable signed-out, that no password field creeps onto it, or that
       # protected routes still redirect.
       #
-      # The baseline covers the hero rather than the full page on purpose. This
-      # runner pins Chrome for Testing 149 and other environments pin other
-      # revisions; shaping differences move wrap points, so the prose sections
-      # come out 23-38px taller here and a fullPage baseline fails on image
-      # DIMENSIONS before the pixel tolerance is ever consulted. The hero
-      # measured identically in both, so it is the part that can actually be
-      # asserted. Whole-page coverage needs one pinned browser revision for
-      # recording and asserting alike, which is a container change.
+      # It asserts computed styles rather than pixels, on purpose. Screenshot
+      # baselines do not survive a browser revision change here — this runner
+      # pins Chrome for Testing 149, shaping moves wrap points, and the prose
+      # sections come out 23-38px taller than on the machine that recorded them.
+      # Narrowing to the hero fixed the geometry and still differed by 5% of the
+      # image, where a call-to-action changing colour is 4%: the noise and the
+      # signal are the same size. Computed styles do not have that problem, and
+      # every defect this branch found was a wrong token, a failing contrast
+      # ratio or an undersized target — all visible without pixels.
       - name: Run public homepage E2E
         run: npm --workspace web run test:e2e:homepage
 
