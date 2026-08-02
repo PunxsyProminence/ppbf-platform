@@ -61,162 +61,208 @@ export default function HomePage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
-      <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
+      {/* Law 6, warm ground: the public face of the gym belongs on the family
+          side of the two-ground split, not the ink leather the staff consoles
+          use. Section separation is brass rope trim rather than the 3px black
+          rules and alternating tans it replaces — a rule is hardware here. */}
+      <main className="on-canvas min-h-screen">
         {/* Hero */}
-        <section className="border-b-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-16 lg:px-10 lg:py-24">
-          <div className="mx-auto flex w-full max-w-5xl flex-col items-center text-center">
-            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--accent-quiet)]">
-              Punxsy Prominence Boxing &amp; Fitness
-            </p>
-            <h1 className="font-display mt-4 text-4xl font-black tracking-tight md:text-6xl">
+        <section className="px-[var(--s5)] py-[var(--s8)] lg:px-[var(--s6)]">
+          <div className="mx-auto flex w-full max-w-[1000px] flex-col items-center text-center">
+            <p className="t-eyebrow">Punxsy Prominence Boxing &amp; Fitness</p>
+            {/* Hand-painted signage, not the lit registered stencil of
+                .t-command: this is the board over the door of a gym that has
+                been run on donations for forty years. */}
+            <h1 className="t-painted mt-[var(--s4)]" style={{ fontSize: 'var(--t-2xl)' }}>
               Boxing is the engagement platform.
               <br />
               Youth development is the objective.
             </h1>
-            <p className="mt-6 max-w-3xl text-base leading-7 text-[var(--gray-dark)] md:text-lg">
+            <p className="t-body mt-[var(--s5)] max-w-[68ch]" style={{ fontSize: 'var(--t-md)' }}>
               Punxsy Prominence Boxing &amp; Fitness is an IRS-recognized 501(c)(3) nonprofit serving youth in
               Punxsutawney and surrounding rural western Pennsylvania communities.
             </p>
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
-              <Link
-                href="/login"
-                className="inline-flex min-h-[52px] items-center justify-center rounded-full border-2 border-[var(--black)] bg-[var(--accent-strong)] px-8 shadow-[var(--shadow-md)] transition hover:bg-[var(--brass-400)]"
-              >
-                <span className="text-sm font-black uppercase tracking-[0.15em] text-[var(--accent-ink)]">Log In</span>
+            <div className="mt-[var(--s6)] flex flex-wrap items-center justify-center gap-[var(--s4)]">
+              <Link href="/login" className="btn">
+                Log In
               </Link>
-              <a
-                href="#programs"
-                className="group inline-flex min-h-[52px] items-center justify-center rounded-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-8 shadow-[var(--shadow-sm)] transition hover:bg-[var(--canvas-tan-dark)]"
-              >
-                <span className="text-sm font-black uppercase tracking-[0.15em] text-[var(--black)] transition group-hover:text-[var(--white)]">
-                  Learn About Our Programs
-                </span>
+              <a href="#programs" className="btn btn--ghost">
+                Learn About Our Programs
               </a>
             </div>
           </div>
         </section>
 
-        {/* Mission */}
-        <section id="mission" aria-labelledby="mission-heading" className="px-6 py-16 lg:px-10">
-          <div className="mx-auto w-full max-w-4xl">
-            <h2 id="mission-heading" className="text-3xl font-black md:text-4xl">
-              Our Mission
-            </h2>
-            <p className="mt-5 text-base leading-7 text-[var(--gray-dark)] md:text-lg">
-              Punxsy Prominence uses structured boxing and athlete-development programming to help young people build
-              discipline, confidence, accountability, emotional control, physical fitness, academic responsibility,
-              leadership, decision-making, and practical life skills.
-            </p>
-            <p className="mt-6 border-l-[6px] border-[var(--accent)] bg-[var(--canvas-tan-light)] p-5 text-lg font-bold leading-7 md:text-xl">
-              Children participate at no charge. Financial circumstances do not determine whether a child can train.
-            </p>
-          </div>
-        </section>
+        {/* Rope trim as a centred ornament, not a full-bleed rule: run edge to
+            edge and repeated down the page, brass rope reads as hazard tape,
+            which is a saturated-looking warning the page never means (Law 2).
+            89px is the top of the Fibonacci space scale. */}
+        <div className="flex justify-center">
+          <div className="rope w-[var(--s8)]" />
+        </div>
 
-        {/* Programs */}
+        {/* Mission */}
         <section
-          id="programs"
-          aria-labelledby="programs-heading"
-          className="border-y-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-16 lg:px-10"
+          id="mission"
+          aria-labelledby="mission-heading"
+          className="mx-auto w-full max-w-[1000px] px-[var(--s5)] py-[var(--s7)] lg:px-[var(--s6)]"
         >
-          <div className="mx-auto w-full max-w-5xl">
-            <h2 id="programs-heading" className="text-3xl font-black md:text-4xl">
-              Programs
-            </h2>
-            <p className="mt-4 max-w-3xl text-base leading-7 text-[var(--gray-dark)]">
-              Every athlete progresses at their own pace. Sparring and competition are optional next steps for
-              athletes who are ready and choose that path &mdash; not a requirement of participation.
-            </p>
-            <div className="mt-8 grid gap-4 md:grid-cols-2">
-              {programs.map((program) => (
-                <article
-                  key={program.title}
-                  className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-5 shadow-[var(--shadow-sm)]"
-                >
-                  <h3 className="text-lg font-bold">{program.title}</h3>
-                  <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">{program.description}</p>
-                </article>
-              ))}
+          <h2 id="mission-heading" className="t-command" style={{ fontSize: 'var(--t-xl)' }}>
+            Our Mission
+          </h2>
+          <p className="t-body mt-[var(--s5)] max-w-[72ch]" style={{ fontSize: 'var(--t-md)' }}>
+            Punxsy Prominence uses structured boxing and athlete-development programming to help young people build
+            discipline, confidence, accountability, emotional control, physical fitness, academic responsibility,
+            leadership, decision-making, and practical life skills.
+          </p>
+          {/* The load-bearing promise of the organization, so it gets a real
+              object: a framed paper notice rather than a coloured left border.
+              The border it replaces was --red-primary, which aliases to
+              --locked — the safety gate's red. Law 2 spends saturated colour
+              on a participant's safety state and nothing else, and this
+              sentence is the opposite of a warning. */}
+          <div className="frame mt-[var(--s6)] max-w-[72ch]">
+            <span className="rivet rivet--tl" />
+            <span className="rivet rivet--tr" />
+            <span className="rivet rivet--bl" />
+            <span className="rivet rivet--br" />
+            <div className="frame-in mat-paper" style={{ padding: 'var(--s5) var(--s6)' }}>
+              <p className="t-command" style={{ fontSize: 'var(--t-md)', lineHeight: 1.45 }}>
+                Children participate at no charge. Financial circumstances do not determine whether a child can train.
+              </p>
             </div>
           </div>
         </section>
 
-        {/* Technology */}
-        <section id="technology" aria-labelledby="technology-heading" className="px-6 py-16 lg:px-10">
-          <div className="mx-auto w-full max-w-4xl">
-            <h2 id="technology-heading" className="text-3xl font-black md:text-4xl">
-              Technology Supporting Development
-            </h2>
-            <p className="mt-5 text-base leading-7 text-[var(--gray-dark)] md:text-lg">
-              Punxsy Prominence is developing the SHADOW application to support coaching, athlete development,
-              program access, progress tracking, evidence-informed learning, and continuous organizational
-              improvement. SHADOW is a decision-support and learning system in development; it does not replace
-              coaches, medical professionals, or responsible human decision-making.
-            </p>
+        {/* Programs */}
+        <div className="flex justify-center">
+          <div className="rope w-[var(--s8)]" />
+        </div>
+
+        <section
+          id="programs"
+          aria-labelledby="programs-heading"
+          className="mx-auto w-full max-w-[1000px] px-[var(--s5)] py-[var(--s7)] lg:px-[var(--s6)]"
+        >
+          <h2 id="programs-heading" className="t-command" style={{ fontSize: 'var(--t-xl)' }}>
+            Programs
+          </h2>
+          <p className="t-body mt-[var(--s5)] max-w-[72ch]" style={{ fontSize: 'var(--t-md)' }}>
+            Every athlete progresses at their own pace. Sparring and competition are optional next steps for athletes
+            who are ready and choose that path &mdash; not a requirement of participation.
+          </p>
+          {/* Paper cards on canvas: the programme list is the printed handout
+              on the counter, so it is paper rather than another frame. Five
+              riveted frames on one page would make the hardware the message,
+              which is exactly what Law 1 forbids. */}
+          <div className="mt-[var(--s6)] grid gap-[var(--s4)] md:grid-cols-2">
+            {programs.map((program) => (
+              <article
+                key={program.title}
+                className="mat-paper rounded-[var(--r-md)] border border-[color:rgba(107,78,18,0.34)] p-[var(--s5)]"
+              >
+                <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
+                  {program.title}
+                </h3>
+                <p className="t-body mt-[var(--s3)]">{program.description}</p>
+              </article>
+            ))}
           </div>
         </section>
 
+        {/* Technology */}
+        <div className="flex justify-center">
+          <div className="rope w-[var(--s8)]" />
+        </div>
+
+        <section
+          id="technology"
+          aria-labelledby="technology-heading"
+          className="mx-auto w-full max-w-[1000px] px-[var(--s5)] py-[var(--s7)] lg:px-[var(--s6)]"
+        >
+          <h2 id="technology-heading" className="t-command" style={{ fontSize: 'var(--t-xl)' }}>
+            Technology Supporting Development
+          </h2>
+          <p className="t-body mt-[var(--s5)] max-w-[72ch]" style={{ fontSize: 'var(--t-md)' }}>
+            Punxsy Prominence is developing the SHADOW application to support coaching, athlete development, program
+            access, progress tracking, evidence-informed learning, and continuous organizational improvement. SHADOW
+            is a decision-support and learning system in development; it does not replace coaches, medical
+            professionals, or responsible human decision-making.
+          </p>
+        </section>
+
         {/* Nonprofit and Leadership Information */}
+        <div className="flex justify-center">
+          <div className="rope w-[var(--s8)]" />
+        </div>
+
         <section
           id="about"
           aria-labelledby="about-heading"
-          className="border-y-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-16 lg:px-10"
+          className="mx-auto w-full max-w-[1000px] px-[var(--s5)] py-[var(--s7)] lg:px-[var(--s6)]"
         >
-          <div className="mx-auto w-full max-w-4xl">
-            <h2 id="about-heading" className="text-3xl font-black md:text-4xl">
-              Nonprofit &amp; Leadership
-            </h2>
-            <dl className="mt-6 grid gap-5 md:grid-cols-2">
+          <h2 id="about-heading" className="t-command" style={{ fontSize: 'var(--t-xl)' }}>
+            Nonprofit &amp; Leadership
+          </h2>
+          {/* Law 4: mono records. These are registry facts a grant officer
+              checks against a filing, not prose — the same voice the ledger
+              and audit surfaces use for anything auditable. */}
+          <dl className="mt-[var(--s6)] grid gap-[var(--s5)] md:grid-cols-2">
               <div>
-                <dt className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--gray-medium)]">
+                <dt className="t-label">
                   Legal Name
                 </dt>
-                <dd className="mt-1 text-base font-semibold">Punxsy Prominence Boxing &amp; Fitness</dd>
+                <dd className="t-data mt-[var(--s2)]">Punxsy Prominence Boxing &amp; Fitness</dd>
               </div>
               <div>
-                <dt className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--gray-medium)]">
+                <dt className="t-label">
                   Organization Type
                 </dt>
-                <dd className="mt-1 text-base font-semibold">IRS-recognized 501(c)(3) nonprofit</dd>
+                <dd className="t-data mt-[var(--s2)]">IRS-recognized 501(c)(3) nonprofit</dd>
               </div>
               <div>
-                <dt className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--gray-medium)]">
+                <dt className="t-label">
                   Primary Service Area
                 </dt>
-                <dd className="mt-1 text-base font-semibold">
+                <dd className="t-data mt-[var(--s2)]">
                   Punxsutawney and surrounding rural Pennsylvania communities
                 </dd>
               </div>
               <div>
-                <dt className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--gray-medium)]">
+                <dt className="t-label">
                   Head Coach / Governor
                 </dt>
-                <dd className="mt-1 text-base font-semibold">Jason Neale</dd>
+                <dd className="t-data mt-[var(--s2)]">Jason Neale</dd>
               </div>
               <div className="md:col-span-2">
-                <dt className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--gray-medium)]">
+                <dt className="t-label">
                   Official Contact
                 </dt>
-                <dd className="mt-1 text-base font-semibold">
+                <dd className="t-data mt-[var(--s2)]">
                   <a href="mailto:admin@punxsyprominence.org">admin@punxsyprominence.org</a>
                 </dd>
               </div>
-            </dl>
-          </div>
+          </dl>
         </section>
 
         {/* Footer */}
-        <footer className="px-6 py-10 lg:px-10">
-          <div className="mx-auto flex w-full max-w-5xl flex-col items-center gap-3 text-center text-sm text-[var(--gray-dark)]">
-            <p className="font-bold text-[var(--black)]">Punxsy Prominence Boxing &amp; Fitness</p>
-            <p>501(c)(3) nonprofit</p>
-            <p>
+        <div className="flex justify-center">
+          <div className="rope w-[var(--s8)]" />
+        </div>
+
+        <footer className="px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
+          <div className="mx-auto flex w-full max-w-[1000px] flex-col items-center gap-[var(--s3)] text-center">
+            <p className="t-command" style={{ fontSize: 'var(--t-md)' }}>
+              Punxsy Prominence Boxing &amp; Fitness
+            </p>
+            <p className="t-body">501(c)(3) nonprofit</p>
+            <p className="t-data">
               <a href="mailto:admin@punxsyprominence.org">admin@punxsyprominence.org</a>
             </p>
-            <p>
-              <Link href="/login">Log In</Link>
-            </p>
-            <p className="text-xs text-[var(--gray-medium)]">
+            <Link href="/login" className="btn btn--ghost mt-[var(--s2)]">
+              Log In
+            </Link>
+            <p className="t-muted mt-[var(--s3)]">
               &copy; {new Date().getFullYear()} Punxsy Prominence Boxing &amp; Fitness. All rights reserved.
             </p>
           </div>

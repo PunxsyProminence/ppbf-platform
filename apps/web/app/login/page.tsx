@@ -179,96 +179,94 @@ function LoginPageContent() {
 
   const microsoftSignIn = createMicrosoftSignInHandler(apiBase());
 
+  /* Law 1: a selected tab is a control in the "on" position — chassis state,
+     not a claim about anybody. The chosen method wears brass; the other wears
+     the ghost treatment. This is what the red used to do, and the red is the
+     safety gate's colour (Law 2), so it cannot also mean "you tapped this". */
+  const methodButton = (method: LoginMethod) =>
+    `btn ${selectedMethod === method ? '' : 'btn--ghost'} w-full justify-start text-left`;
+
   return (
-    <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
-      <div className="mx-auto grid min-h-screen w-full max-w-5xl place-items-center px-6 py-10 lg:px-10">
-        <section className="w-full max-w-2xl overflow-hidden rounded-[28px] border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-light)] shadow-[var(--shadow-lg)]">
-          <div className="border-b border-[rgba(0,0,0,0.14)] bg-[linear-gradient(135deg,var(--canvas-tan-dark),var(--canvas-tan-light))] px-8 py-8">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-[10px] font-mono uppercase tracking-[0.4em] text-[var(--gray-dark)]">Member Access</p>
-              <Link
-                href="/public"
-                className="inline-flex min-h-[44px] items-center justify-center gap-3 rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-3 text-[10px] font-mono font-bold uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]"
-              >
-                Public Page
-              </Link>
-            </div>
-            <h1 className="mt-4 text-4xl font-black tracking-[0.1em] text-[var(--black)] md:text-5xl">The Bell</h1>
-            <p className="mt-3 text-sm leading-relaxed text-[var(--gray-dark)]">
-              Sign in with your Account ID and PIN, or continue with Microsoft. You will land on the right dashboard for your role.
+    /* Law 6, warm ground: this is the family-facing side of the platform —
+       the same canvas Guardian Portal and Public Onboarding stand on, not the
+       ink leather the staff consoles use. .on-canvas paints its own ground and
+       restates every component that was tuned against leather, so it goes on
+       the full-bleed wrapper rather than being scoped to children. */
+    <main className="on-canvas min-h-screen">
+      <div className="mx-auto w-full max-w-[840px] px-[var(--s5)] py-[var(--s7)]">
+        <header className="mb-[var(--s6)] flex flex-wrap items-end justify-between gap-[var(--s4)]">
+          <div>
+            <div className="t-eyebrow">Member Access</div>
+            <h1 className="t-painted mt-[var(--s3)]" style={{ fontSize: 'var(--t-2xl)' }}>
+              The Bell
+            </h1>
+            <p className="t-body mt-[var(--s4)] max-w-[52ch]">
+              Sign in with Account ID/PIN or Microsoft. You will land on the right dashboard for your role.
             </p>
           </div>
+          <Link href="/public" className="btn btn--ghost">
+            Public Page
+          </Link>
+        </header>
 
-          <div className="space-y-6 px-8 py-8">
+        <div className="frame">
+          <span className="rivet rivet--tl" />
+          <span className="rivet rivet--tr" />
+          <span className="rivet rivet--bl" />
+          <span className="rivet rivet--br" />
+          <div className="frame-in mat-paper" style={{ padding: 'var(--s6)' }}>
             {/* Sign-in failures arrive as a full-page redirect, which resets the
                 tab to PIN. While this banner lived inside the Microsoft panel a
                 rejected user saw an empty PIN form and no reason at all. */}
+            {/* Law 3: the glyph and the uppercase label carry the state, so a
+                refusal still reads in greyscale and to a colour-blind user —
+                the red is the third channel, never the only one. This replaces
+                an emoji, which is neither a system glyph nor legible at 11px. */}
             {authErrorMessage && (
-              <div className="rounded-lg border border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_8%,white)] p-3" role="alert">
-                <p className="text-sm text-[var(--safety-locked)]">⚠️ {authErrorMessage}</p>
+              <div
+                className="mb-[var(--s5)] rounded-[var(--r-md)] border-2 border-[color:var(--locked)] bg-[rgba(168,30,34,0.06)] p-[var(--s4)]"
+                role="alert"
+              >
+                <span className="badge badge--locked">
+                  <i>✕</i>Sign-in refused
+                </span>
+                <p className="t-body mt-[var(--s3)]">{authErrorMessage}</p>
               </div>
             )}
 
-            <div className="grid gap-3 rounded-[24px] border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-md)]">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--black)]">Choose Sign-In Method</p>
-              <div className="grid gap-3 sm:grid-cols-2">
+            <fieldset className="mb-[var(--s6)] border-0 p-0">
+              <legend className="t-label mb-[var(--s4)]">Choose Sign-In Method</legend>
+              <div className="grid gap-[var(--s4)] sm:grid-cols-2">
                 <button
                   type="button"
                   onClick={() => setSelectedMethod('microsoft')}
-                  className={`relative rounded-xl border-2 p-4 transition ${
-                    selectedMethod === 'microsoft'
-                      ? 'border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_10%,white)] shadow-[0_4px_12px_color-mix(in_srgb,var(--accent)_22%,transparent)]'
-                      : 'border-[rgba(0,0,0,0.12)] bg-white hover:border-[rgba(0,0,0,0.2)]'
-                  }`}
+                  aria-pressed={selectedMethod === 'microsoft'}
+                  className={methodButton('microsoft')}
                 >
-                  <div className="flex items-start gap-3">
-                    <span className="text-2xl">☁️</span>
-                    <div className="flex-1 text-left">
-                      <p className={`text-xs font-black uppercase tracking-[0.15em] ${selectedMethod === 'microsoft' ? 'text-[var(--accent-quiet)]' : 'text-[var(--gray-dark)]'}`}>
-                        Microsoft
-                      </p>
-                      <p className="mt-1 text-[11px] leading-relaxed text-[var(--gray-medium)]">Sign in with your Microsoft account</p>
-                    </div>
-                    {selectedMethod === 'microsoft' && <span className="text-xl">✓</span>}
-                  </div>
+                  {selectedMethod === 'microsoft' ? '✓ ' : ''}Microsoft
                 </button>
                 <button
                   type="button"
                   onClick={() => setSelectedMethod('pin')}
-                  className={`relative rounded-xl border-2 p-4 transition ${
-                    selectedMethod === 'pin'
-                      ? 'border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_10%,white)] shadow-[0_4px_12px_color-mix(in_srgb,var(--accent)_22%,transparent)]'
-                      : 'border-[rgba(0,0,0,0.12)] bg-white hover:border-[rgba(0,0,0,0.2)]'
-                  }`}
+                  aria-pressed={selectedMethod === 'pin'}
+                  className={methodButton('pin')}
                 >
-                  <div className="flex items-start gap-3">
-                    <span className="text-2xl">🔐</span>
-                    <div className="flex-1 text-left">
-                      <p className={`text-xs font-black uppercase tracking-[0.15em] ${selectedMethod === 'pin' ? 'text-[var(--accent-quiet)]' : 'text-[var(--gray-dark)]'}`}>
-                        PIN
-                      </p>
-                      <p className="mt-1 text-[11px] leading-relaxed text-[var(--gray-medium)]">Sign in with Account ID and PIN</p>
-                    </div>
-                    {selectedMethod === 'pin' && <span className="text-xl">✓</span>}
-                  </div>
+                  {selectedMethod === 'pin' ? '✓ ' : ''}Account ID / PIN
                 </button>
               </div>
-            </div>
+            </fieldset>
 
             {selectedMethod === 'microsoft' && (
-              <div className="grid gap-4 rounded-[24px] border-2 border-[var(--gray-dark)] bg-white p-6 shadow-[var(--shadow-lg)]">
+              <div className="grid gap-[var(--s5)]">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--black)]">Microsoft Sign In</p>
-                  <p className="mt-2 text-sm leading-relaxed text-[var(--gray-dark)]">
-                    Click below to sign in securely with your Microsoft account. Your organization admin manages who can access the platform.
+                  <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>
+                    Microsoft Sign In
+                  </h2>
+                  <p className="t-body mt-[var(--s3)]">
+                    Continue below to sign in securely with your Microsoft account. Your organization admin manages who can access the platform.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={microsoftSignIn}
-                  className="inline-flex min-h-[52px] w-full items-center justify-center gap-3 rounded-xl border-2 border-[var(--gray-dark)] bg-[var(--gray-dark)] px-6 text-sm font-black uppercase tracking-[0.18em] text-white transition hover:bg-[var(--black)] hover:border-[var(--black)] active:scale-[0.98]"
-                >
-                  <span>☁️</span>
+                <button type="button" onClick={microsoftSignIn} className="btn btn--kiosk">
                   Continue With Microsoft
                 </button>
               </div>
@@ -280,23 +278,29 @@ function LoginPageContent() {
                   e.preventDefault();
                   void loginWithPin();
                 }}
-                className="grid gap-4 rounded-[24px] border-2 border-[var(--accent)] bg-white p-6 shadow-[var(--shadow-lg)]"
+                className="grid gap-[var(--s5)]"
               >
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--accent-quiet)]">Account PIN Sign In</p>
-                  <p className="mt-2 text-sm leading-relaxed text-[var(--gray-dark)]">
+                  <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>
+                    Account PIN Sign In
+                  </h2>
+                  <p className="t-body mt-[var(--s3)]">
                     Enter your Account ID and PIN. Ask your coach or admin if you do not have one.
                   </p>
-                  <p className="mt-3 rounded-lg border border-[rgba(0,0,0,0.12)] bg-[var(--canvas-tan-light)] px-3 py-2 text-sm text-[var(--gray-dark)]">
+                  <p className="t-body mt-[var(--s4)] rounded-[var(--r-sm)] border border-[rgba(0,0,0,0.14)] bg-[var(--paper-2)] px-[var(--s4)] py-[var(--s3)]">
                     First time here with an activation code?{' '}
-                    <Link href="/activate" className="font-semibold text-[var(--accent-quiet)] underline">
+                    <Link href="/activate" className="font-semibold text-[color:var(--brass-800)] underline">
                       Set up your account
                     </Link>
                   </p>
                 </div>
-                <div className="grid gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="login-account-id">
+                <div className="grid gap-[var(--s4)]">
+                  {/* Law 5: --tap and --t-md are the gym-floor floor. An athlete
+                      signs in on a shared tablet with sweaty hands, so the PIN
+                      pair gets kiosk sizing even though the desk could go
+                      smaller — the old 48px/16px pair cleared neither. */}
+                  <div className="field">
+                    <label className="t-label" htmlFor="login-account-id">
                       Account ID
                     </label>
                     <input
@@ -306,11 +310,11 @@ function LoginPageContent() {
                       onChange={(event) => setLoginAccountId(event.target.value)}
                       placeholder="account-001"
                       autoComplete="username"
-                      className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] bg-white px-4 text-[var(--black)] outline-none transition placeholder:text-[var(--gray-medium)] focus-visible:border-[var(--accent)] focus-visible:shadow-[var(--focus)]"
+                      className="input input--kiosk"
                     />
                   </div>
-                  <div>
-                    <label className="block text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-dark)]" htmlFor="login-pin">
+                  <div className="field">
+                    <label className="t-label" htmlFor="login-pin">
                       PIN (4+ digits)
                     </label>
                     <input
@@ -321,57 +325,55 @@ function LoginPageContent() {
                       onChange={(event) => setLoginPin(event.target.value)}
                       placeholder="••••"
                       autoComplete="current-password"
-                      className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] bg-white px-4 text-[var(--black)] outline-none transition placeholder:text-[var(--gray-medium)] focus-visible:border-[var(--accent)] focus-visible:shadow-[var(--focus)]"
+                      className="input input--kiosk"
                     />
                   </div>
                   {loginError && (
-                    <div className="rounded-lg border border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_8%,white)] p-3" role="alert">
-                      <p className="text-sm text-[var(--safety-locked)]">❌ {loginError}</p>
+                    <div
+                      className="rounded-[var(--r-md)] border-2 border-[color:var(--locked)] bg-[rgba(168,30,34,0.06)] p-[var(--s4)]"
+                      role="alert"
+                    >
+                      <span className="badge badge--locked">
+                        <i>✕</i>Sign-in refused
+                      </span>
+                      <p className="t-body mt-[var(--s3)]">{loginError}</p>
                     </div>
                   )}
                   <button
                     type="submit"
                     disabled={loginBusy || !loginAccountId.trim() || !loginPin.trim()}
-                    /* The disabled state carries its own pair rather than
-                       dimming the enabled one. The label is ink because it sits
-                       on brass; the disabled fill is --gray-medium, and ink on
-                       that is 1.68:1 -- an empty PIN field would have left the
-                       button unreadable. Bone on the same fill is 7.3:1. */
-                    className="inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl border-2 border-[var(--accent-quiet)] bg-[var(--accent-strong)] px-6 text-sm font-black uppercase tracking-[0.18em] text-[var(--accent-ink)] transition hover:bg-[var(--brass-400)] hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:border-[rgba(0,0,0,0.14)] disabled:bg-[var(--gray-medium)] disabled:text-[var(--bone-300)] active:scale-[0.98]"
+                    /* A brass face at reduced opacity still reads as a live
+                       control. Desaturating it too drops it off the chassis
+                       entirely, which is what "not yet" should look like. */
+                    className="btn btn--kiosk disabled:cursor-not-allowed disabled:opacity-60 disabled:grayscale"
                   >
-                    {loginBusy ? (
-                      <>
-                        <span>⏳</span>
-                        Signing In...
-                      </>
-                    ) : (
-                      <>
-                        <span>🔐</span>
-                        Sign In
-                      </>
-                    )}
+                    {loginBusy ? 'Signing In…' : 'Sign In'}
                   </button>
                 </div>
               </form>
             )}
 
-            <div className="rounded-[24px] border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-sm)]">
-              <div className="space-y-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--accent-quiet)]">💡 Need Help?</p>
-                  <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
-                    If you do not have an Account ID or PIN, or if you have forgotten your PIN, contact your gym admin or coach. They can create a new account or reset your PIN.
-                  </p>
-                  <Link
-                    href="/athlete/sign-in"
-                    className="mt-3 inline-flex min-h-[44px] items-center rounded-lg border border-[var(--accent)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--accent-quiet)]"
-                  >
-                    Open Simple Athlete PIN Sign-In
-                  </Link>
-                </div>
-                <AnnouncementBanner placement="gym_notices" source="public" heading="📢 Gym Notice" limit={3} />
-              </div>
-            </div>
+          </div>
+        </div>
+
+        {/* Help and gym notices sit outside the frame: the framed paper is the
+            thing you fill in, and this is what's tacked up next to it. */}
+        <section className="mt-[var(--s6)] grid gap-[var(--s5)] md:grid-cols-[var(--split-major)_var(--split-minor)]">
+          <div>
+            <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
+              Need Help?
+            </h2>
+            <p className="t-body mt-[var(--s3)] max-w-[54ch]">
+              If you do not have an Account ID or PIN, or if you have forgotten your PIN, contact your gym admin or
+              coach. They can create a new account or reset your PIN.
+            </p>
+            <Link href="/athlete/sign-in" className="btn btn--ghost mt-[var(--s4)]">
+              Open Simple Athlete PIN Sign-In
+            </Link>
+          </div>
+          <div>
+            <h2 className="t-label mb-[var(--s3)]">Gym Notice</h2>
+            <AnnouncementBanner placement="gym_notices" source="public" limit={3} />
           </div>
         </section>
       </div>
@@ -381,7 +383,7 @@ function LoginPageContent() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<main className="min-h-screen bg-[var(--canvas-tan)]" />}>
+    <Suspense fallback={<main className="on-canvas min-h-screen" />}>
       <LoginPageContent />
     </Suspense>
   );
