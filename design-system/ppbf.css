@@ -566,6 +566,25 @@ body.ppbf.on-canvas {
 .on-canvas .t-muted     { color: #6E5B3E; }
 .on-canvas .t-label     { color: #4A3B26; }
 .on-canvas .t-eyebrow   { color: var(--brass-700); }
+/* .t-data was the one voice with no canvas restatement, and it is the voice
+   Law 4 assigns to anything auditable — IDs, timestamps, the registry facts a
+   grant officer checks against a filing. It inherits --bone-200 (#EFE6D0),
+   which is within two points of --canvas-warm (#EFE4C8): on the warm ground
+   the record voice rendered as very nearly invisible text. Found on the
+   public homepage's Nonprofit & Leadership list, the first canvas screen to
+   put records on the page. */
+.on-canvas .t-data      { color: #2A2013; }
+
+/* Links, same reason. The system styles .btn and never a bare anchor, so an
+   inline link on canvas falls through to whatever the host app sets — in the
+   platform that is --red-primary, which aliases to --locked, the safety
+   gate's red. Law 2 spends saturated colour on a participant's safety state
+   and nothing else, so a mailto address cannot wear it. Brass has to be dark
+   here to hold contrast against cream (--brass-800 clears 4.5:1); the leather
+   ground needs the opposite end of the ramp, which is why this is stated per
+   ground rather than once globally. */
+.on-canvas a            { color: var(--brass-800); }
+.on-canvas a:hover      { color: #241B12; text-decoration: underline; }
 
 .on-canvas .badge {
   background-color: color-mix(in srgb, var(--badge) 20%, var(--canvas-warm));
