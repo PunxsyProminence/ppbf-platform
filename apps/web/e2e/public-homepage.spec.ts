@@ -32,7 +32,14 @@ test.describe('Public homepage', () => {
     const response = await page.goto('/login');
     expect(response?.ok()).toBeTruthy();
     await expect(page.getByRole('heading', { name: 'The Bell' })).toBeVisible();
-    await expect(page.getByText('Sign in with Account ID/PIN or Microsoft.')).toBeVisible();
+
+    // This asserted on one exact sentence of lede copy, which then got
+    // rewritten, so the test failed for a reason that had nothing to do with
+    // what it is named for. The two sign-in methods are the contract; the
+    // sentence introducing them is not.
+    await expect(page.getByRole('button', { name: /Sign in with your Microsoft account/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Sign in with Account ID and PIN/ })).toBeVisible();
+    await expect(page.getByLabel(/Account ID/i)).toBeVisible();
   });
 
   test('protected routes still require authentication', async ({ page }) => {

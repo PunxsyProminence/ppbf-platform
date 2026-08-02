@@ -58,5 +58,16 @@ jobs:
       - name: Run board governance E2E
         run: npm --workspace web run test:e2e:board
 
+      # The public entry points, plus the only screenshot baseline in the repo.
+      # It existed and ran nowhere, so its baselines were recorded on a Windows
+      # machine and had drifted far enough that the spec could not pass at all.
+      # Regenerated on Linux and wired in here so a visual change to the
+      # homepage or The Bell has to show up as a diff rather than be noticed by
+      # somebody happening to look. Both baselines are committed; the config
+      # allows a 2% pixel ratio so a Chromium revision bump does not read as a
+      # regression, which is well under what any real layout change moves.
+      - name: Run public homepage E2E
+        run: npm --workspace web run test:e2e:homepage
+
       - name: Build production application
         run: npm run build
