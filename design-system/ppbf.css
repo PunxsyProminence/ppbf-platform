@@ -1875,9 +1875,14 @@ body.ppbf.on-canvas {
   padding-left: var(--s3); border-left: 1px solid rgba(212,175,74,.24);
 }
 
+/* A column, not one scrolling block: the head and the ⌘K hint stay put while
+   only the rooms scroll. Scrolling the whole panel clipped the footer first,
+   which meant the single most useful line in it — "press ⌘K to search every
+   surface" — was the line a coach never saw. */
 .corridor-panel {
   position: absolute; top: calc(100% + var(--s3)); left: 0; z-index: 180;
-  width: min(92vw, 720px); max-height: min(74vh, 620px); overflow-y: auto;
+  width: min(92vw, 720px); max-height: min(74vh, 620px);
+  display: flex; flex-direction: column; overflow: hidden;
   border: 1px solid var(--brass-700); border-radius: var(--r-lg);
   background-color: var(--hide-950);
   background-image: var(--grain), linear-gradient(168deg, #241B14, #14100D);
@@ -1890,12 +1895,14 @@ body.ppbf.on-canvas {
 .corridor-head {
   display: flex; align-items: baseline; justify-content: space-between; gap: var(--s4);
   padding: var(--s4) var(--s5); border-bottom: 1px solid rgba(212,175,74,.2);
+  flex: 0 0 auto;
 }
 .corridor-head b { font-family: var(--font-display); text-transform: uppercase;
                    letter-spacing: .05em; font-size: 13px; color: var(--bone-100); }
 .corridor-head span { font: 400 10.5px/1 var(--font-data); color: var(--bone-400); }
 
-.corridor-rooms { display: grid; gap: 1px; background: rgba(212,175,74,.14); }
+.corridor-rooms { display: grid; gap: 1px; background: rgba(212,175,74,.14);
+                  flex: 1 1 auto; overflow-y: auto; min-height: 0; }
 /* The corridor does NOT wear the rooms' walls.
    Tempting, and wrong: a wall is an opaque background-image, and two of the six
    (cork, cabinetry) are LIGHT materials that also flip their own text colour to
@@ -1953,7 +1960,8 @@ body.ppbf.on-canvas {
                             font-weight: 650; }
 
 .corridor-foot { padding: var(--s3) var(--s5) var(--s4); font-size: 10.5px; color: var(--bone-400);
-                 border-top: 1px solid rgba(212,175,74,.14); }
+                 border-top: 1px solid rgba(212,175,74,.14);
+                 flex: 0 0 auto; background: var(--hide-950); }
 .corridor-foot kbd, .catalog-foot kbd, .catalog-kbd {
   font: 650 9.5px/1.5 var(--font-data); padding: 1px 5px; border-radius: 3px;
   background: rgba(0,0,0,.5); border: 1px solid rgba(212,175,74,.3);
