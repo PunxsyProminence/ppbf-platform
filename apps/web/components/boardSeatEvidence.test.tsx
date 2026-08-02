@@ -75,24 +75,44 @@ describe('the safety director sees the written standard', () => {
 
 describe('the secretary sees the communications register', () => {
   test('notices render with their author, and are not claimed to be minutes', async () => {
-    mockFetch(async () => jsonResponse({
-      ok: true,
-      announcements: [
-        {
-          announcement_id: 'a1',
-          message: 'Gym closed Monday for the holiday.',
-          author_name: 'Coach Jason',
-          author_role: 'coach',
-          created_at: '2026-07-30T12:00:00.000Z',
-        },
-      ],
-    }));
+    const fetchMock = jest.fn(async (_url: string, init?: RequestInit) => {
+      if (typeof init?.body === 'string') {
+        expect(JSON.parse(init.body)).toMatchObject({ view: 'authoring', limit: 25 });
+      }
+      return jsonResponse({
+        ok: true,
+        announcements: [
+          {
+            announcement_id: 'a1',
+            message: 'Gym closed Monday for the holiday.',
+            author_name: 'Coach Jason',
+            author_role: 'coach',
+            created_at: '2026-07-30T12:00:00.000Z',
+          },
+        ],
+      });
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
 
     render(<BoardSeatEvidence seat="secretary" />);
 
     expect(await screen.findByText('Gym closed Monday for the holiday.')).toBeTruthy();
     expect(screen.getByText(/Coach Jason/)).toBeTruthy();
     expect(screen.getByText(/it is notices, not minutes/i)).toBeTruthy();
+  });
+
+  test('requests the authoring view rather than only live notices', async () => {
+    const fetchMock = jest.fn(async (_url: string, init?: RequestInit) => {
+      if (typeof init?.body === 'string') {
+        expect(JSON.parse(init.body)).toMatchObject({ view: 'authoring', limit: 25 });
+      }
+      return jsonResponse({ ok: true, announcements: [] });
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<BoardSeatEvidence seat="secretary" />);
+
+    expect(await screen.findByText(/No notices have been published/i)).toBeTruthy();
   });
 });
 

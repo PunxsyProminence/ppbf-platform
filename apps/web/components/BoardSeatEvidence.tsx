@@ -68,7 +68,9 @@ export default function BoardSeatEvidence({ seat }: Readonly<{ seat: BoardSeatSl
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ limit: 25 }),
+          // The register claims full publication history, so it reads the
+          // authoring view rather than only currently-live gym notices.
+          body: JSON.stringify({ view: 'authoring', limit: 25 }),
           signal: controller.signal,
         });
         if (!response.ok) throw new Error('unavailable');
