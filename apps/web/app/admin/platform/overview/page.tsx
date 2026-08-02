@@ -79,7 +79,7 @@ export default function PlatformOverview() {
   if (!authChecked) {
     return (
       <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
-        <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--safety-locked)]">Loading...</p>
+        <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--accent-quiet)]">Loading...</p>
       </main>
     );
   }
@@ -102,7 +102,7 @@ export default function PlatformOverview() {
     <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       <div className="mx-auto w-full max-w-5xl space-y-8 px-6 py-12 lg:px-10">
         <header className="space-y-4 rounded-[28px] border border-[rgba(0,0,0,0.14)] bg-white p-6 shadow-[var(--shadow-md)]">
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--safety-locked)]">Platform Console</p>
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--accent-quiet)]">Platform Console</p>
           <h1 className="font-display text-4xl font-black">All Gyms Overview</h1>
           <p className="text-base leading-7 text-[var(--gray-dark)]">
             Every gym on the platform, one row each. Aggregate operational figures only.

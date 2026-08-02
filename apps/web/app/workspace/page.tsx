@@ -134,7 +134,7 @@ function WorkspaceContent() {
       <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-8 px-6 py-10 lg:px-10">
         <header className="flex flex-col gap-4 border-b-[3px] border-[var(--black)] pb-6 md:flex-row md:items-end md:justify-between">
           <div className="space-y-3">
-            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--safety-locked)]">Workspace</p>
+            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--accent-quiet)]">Workspace</p>
             <h1 className="font-display text-4xl font-black tracking-tight md:text-5xl">
               {roleLabel ? `${roleLabel} Workspace` : 'Workspace'}
             </h1>

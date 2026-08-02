@@ -29,7 +29,7 @@ interface AuthoredLesson extends RabbitHoleLessonItem {
 }
 
 const STATUS_TONE: Record<AuthoredLesson['status'], string> = {
-  published: 'border-[var(--status-ready)] bg-[#dce7ca]',
+  published: 'border-[var(--status-ready)] bg-[color-mix(in_srgb,var(--cleared)_14%,var(--paper))]',
   retired: 'border-[var(--gray-medium)] bg-[var(--canvas-tan)]',
 };
 
@@ -238,7 +238,7 @@ function RabbitHoleAuthoringPage() {
     <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       <div className="mx-auto w-full max-w-6xl px-6 py-10 lg:px-10">
         <header className="space-y-3 border-b-[3px] border-[var(--black)] pb-6">
-          <p className="text-xs font-mono uppercase tracking-[0.18em] text-[var(--safety-locked)]">Gym Coaching</p>
+          <p className="text-xs font-mono uppercase tracking-[0.18em] text-[var(--accent-quiet)]">Gym Coaching</p>
           <h1 className="font-display text-4xl font-black">Rabbit Holes</h1>
           <p className="max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
             A rabbit hole is a concept worth understanding and something to go and do with it. Pick the term it is
@@ -361,11 +361,11 @@ function RabbitHoleAuthoringPage() {
                 setMessage(error instanceof Error ? error.message : 'Unable to publish.'),
               )
             }
-            className="h-11 border-2 border-[var(--black)] bg-[var(--safety-locked)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[var(--white)] disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-11 border-2 border-[var(--black)] bg-[var(--accent-strong)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[var(--accent-ink)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isPublishing ? 'Publishing...' : 'Publish'}
           </button>
-          {message ? <p className="text-sm font-semibold text-[var(--safety-locked)]">{message}</p> : null}
+          {message ? <p className="text-sm font-semibold text-[var(--black)]">{message}</p> : null}
         </section>
 
         <section className="mt-6 space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
@@ -386,7 +386,7 @@ function RabbitHoleAuthoringPage() {
                     <span className={`border-2 px-2 py-0.5 text-[10px] font-mono font-bold uppercase ${STATUS_TONE[lesson.status]}`}>
                       {STATUS_LABELS[lesson.status]}
                     </span>
-                    <span className="text-xs font-mono uppercase tracking-[0.12em] text-[var(--safety-locked)]">
+                    <span className="text-xs font-mono uppercase tracking-[0.12em] text-[var(--accent-quiet)]">
                       {anchorLabel(lesson.anchor_type, lesson.anchor_key)}
                     </span>
                     <span className="text-xs font-mono uppercase tracking-[0.12em] text-[var(--gray-dark)]">
@@ -396,7 +396,7 @@ function RabbitHoleAuthoringPage() {
                   <p className="mt-2 text-sm font-semibold leading-6 text-[var(--black)]">{lesson.title}</p>
                   <p className="mt-1 text-sm leading-6 text-[var(--gray-dark)]">{lesson.concept}</p>
                   {lesson.homework ? (
-                    <p className="mt-2 border-l-2 border-[var(--safety-locked)] pl-2 text-sm leading-6 text-[var(--gray-dark)]">
+                    <p className="mt-2 border-l-2 border-[var(--accent)] pl-2 text-sm leading-6 text-[var(--gray-dark)]">
                       Homework: {lesson.homework}
                     </p>
                   ) : null}

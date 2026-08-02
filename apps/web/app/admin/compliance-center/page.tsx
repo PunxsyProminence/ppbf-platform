@@ -86,7 +86,7 @@ export default function AdminComplianceCenterPage() {
   const getSeverityColor = (severity: string) => {
     switch (severity) {
       case 'critical':
-        return 'bg-[#fce8e6]';
+        return 'bg-[color-mix(in_srgb,var(--locked)_12%,var(--paper))]';
       case 'high':
         return 'bg-[#fff3cd]';
       case 'medium':
@@ -185,7 +185,7 @@ export default function AdminComplianceCenterPage() {
             <p className="text-xs text-[color:var(--bone-300)]">Total</p>
             <p className="text-2xl font-bold text-[color:var(--bone-100)]">{metricValue(metrics.total)}</p>
           </div>
-          <div className="border-2 border-[#fce8e6] bg-[var(--hide-900)] p-3 text-center">
+          <div className="border-2 border-[color-mix(in_srgb,var(--locked)_12%,var(--paper))] bg-[var(--hide-900)] p-3 text-center">
             <p className="text-xs text-[#d32f2f]">Critical</p>
             <p className="text-2xl font-bold text-[color:var(--bone-100)]">{metricValue(metrics.critical)}</p>
           </div>
@@ -274,7 +274,7 @@ export default function AdminComplianceCenterPage() {
                     {v.status === 'new' || v.status === 'acknowledged' ? (
                       <button
                         onClick={() => setSelectedViolation(v)}
-                        className="border-2 border-[color:var(--hide-900)] bg-[#fce8e6] px-3 py-2 text-xs font-bold text-[color:var(--hide-900)]"
+                        className="border-2 border-[color:var(--hide-900)] bg-[color-mix(in_srgb,var(--locked)_12%,var(--paper))] px-3 py-2 text-xs font-bold text-[color:var(--hide-900)]"
                       >
                         Escalate
                       </button>

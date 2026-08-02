@@ -7,7 +7,7 @@ export default function HelpCenterPage() {
     <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-10 lg:px-10">
         <header className="space-y-4 border-b-[3px] border-[var(--black)] pb-6">
-          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--safety-locked)]">Help Center</p>
+          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--accent-quiet)]">Help Center</p>
           <h1 className="font-display text-4xl font-black tracking-tight md:text-5xl">PPBF MASTER TUTORIAL</h1>
           <p className="max-w-4xl text-base leading-7 text-[var(--gray-dark)] md:text-lg">
             Learn how to navigate the PPBF platform, understand each workspace, and test current capabilities safely.

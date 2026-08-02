@@ -160,7 +160,7 @@ export default function FeedbackBox() {
                 type="button"
                 disabled={isSending || !text.trim()}
                 onClick={() => void send()}
-                className="min-h-[44px] w-full border-2 border-[var(--black)] bg-[var(--safety-locked)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[var(--white)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="min-h-[44px] w-full border-2 border-[var(--black)] bg-[var(--accent-strong)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[var(--accent-ink)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isSending ? 'Sending...' : 'Send'}
               </button>

@@ -167,7 +167,7 @@ function WrongRoleNotice() {
   return (
     <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
       <div className="mx-auto max-w-xl space-y-5 text-center">
-        <p className="text-xs font-mono uppercase tracking-[0.3em] text-[var(--safety-locked)]">Different Console</p>
+        <p className="text-xs font-mono uppercase tracking-[0.3em] text-[var(--accent-quiet)]">Different Console</p>
         <h1 className="font-display text-3xl font-black">People is managed per gym</h1>
         <p className="text-sm leading-7 text-[var(--gray-dark)]">
           This console belongs to a gym admin — it manages one organization&apos;s coaches, staff, and athletes. As
@@ -176,7 +176,7 @@ function WrongRoleNotice() {
         <div className="flex flex-wrap items-center justify-center gap-3">
           <Link
             href="/admin/organizations"
-            className="inline-flex min-h-[48px] items-center justify-center rounded-full border-2 border-[var(--safety-locked)] bg-[var(--safety-locked)] px-6 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-[var(--red-highlight)]"
+            className="inline-flex min-h-[48px] items-center justify-center rounded-full border-2 border-[var(--accent)] bg-[var(--accent-strong)] px-6 text-sm font-black uppercase tracking-[0.12em] text-[var(--accent-ink)] transition hover:bg-[var(--red-highlight)]"
           >
             Organization Provisioning
           </Link>
@@ -672,7 +672,7 @@ function PeopleConsoleContent() {
         <header className="rounded-2xl border border-[rgba(0,0,0,0.16)] bg-white p-6 shadow-[var(--shadow-md)]">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--safety-locked)]">People</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--accent-quiet)]">People</p>
               <h1 className="mt-2 font-display text-3xl font-black tracking-tight">Manage Your Gym</h1>
               <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
                 Add coaches and staff, and create athlete sign-ins.
@@ -709,7 +709,7 @@ function PeopleConsoleContent() {
             for everyone and can be re-read at any time, so this panel is a
             convenience rather than a last chance. */}
         {createdAthlete && (
-          <section className="rounded-2xl border-2 border-[var(--safety-locked)] bg-white p-5 shadow-[var(--shadow-md)]">
+          <section className="rounded-2xl border-2 border-[var(--accent)] bg-white p-5 shadow-[var(--shadow-md)]">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-black">{createdAthlete.accountId} can sign in now</h2>
@@ -768,7 +768,7 @@ function PeopleConsoleContent() {
               onClick={() => setTab(key)}
               className={`min-h-[44px] flex-1 rounded-xl px-4 text-sm font-bold uppercase tracking-[0.1em] transition ${
                 tab === key
-                  ? 'bg-[var(--safety-locked)] text-white'
+                  ? 'bg-[var(--accent-strong)] text-[var(--accent-ink)]'
                   : 'bg-transparent text-[var(--gray-dark)] hover:bg-[var(--canvas-tan)]'
               }`}
             >
@@ -813,7 +813,7 @@ function PeopleConsoleContent() {
             )}
 
             {pendingAthletes.length > 0 && (
-              <div className="rounded-2xl border border-[color-mix(in_srgb,var(--safety-locked)_35%,white)] bg-[color-mix(in_srgb,var(--safety-locked)_4%,white)] p-4">
+              <div className="rounded-2xl border border-[color-mix(in_srgb,var(--accent)_35%,white)] bg-[color-mix(in_srgb,var(--accent)_4%,white)] p-4">
                 <p className="text-sm font-bold">
                   {pendingAthletes.length} athlete{pendingAthletes.length === 1 ? '' : 's'} cannot sign in yet
                 </p>
@@ -856,7 +856,7 @@ function PeopleConsoleContent() {
                               status.tone === 'ok'
                                 ? 'text-[#1b5e20]'
                                 : status.tone === 'pending'
-                                  ? 'text-[var(--safety-locked)]'
+                                  ? 'text-[var(--accent-quiet)]'
                                   : 'text-[var(--gray-dark)]'
                             }`}
                           >
@@ -894,7 +894,7 @@ function PeopleConsoleContent() {
                                               link.athlete_full_name,
                                             )
                                           }
-                                          className="min-h-[44px] rounded-full border-2 border-[var(--safety-locked)] bg-[var(--safety-locked)] px-3 text-[11px] font-black uppercase tracking-[0.08em] text-white disabled:opacity-50"
+                                          className="min-h-[44px] rounded-full border-2 border-[var(--accent)] bg-[var(--accent-strong)] px-3 text-[11px] font-black uppercase tracking-[0.08em] text-[var(--accent-ink)] disabled:opacity-50"
                                         >
                                           Confirm Remove
                                         </button>
@@ -941,7 +941,7 @@ function PeopleConsoleContent() {
                             type="button"
                             disabled={busy}
                             onClick={() => void handleResetToStartingPin(member.account_id)}
-                            className="min-h-[44px] shrink-0 rounded-xl border-2 border-[var(--safety-locked)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[var(--safety-locked)] transition hover:bg-[color-mix(in_srgb,var(--safety-locked)_6%,white)] disabled:opacity-50"
+                            className="min-h-[44px] shrink-0 rounded-xl border-2 border-[var(--accent)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[var(--accent-quiet)] transition hover:bg-[color-mix(in_srgb,var(--accent)_6%,white)] disabled:opacity-50"
                           >
                             Reset To Starting PIN
                           </button>
@@ -964,8 +964,8 @@ function PeopleConsoleContent() {
               </p>
             </div>
 
-            <div className="rounded-xl border border-[color-mix(in_srgb,var(--safety-locked)_25%,white)] bg-[color-mix(in_srgb,var(--safety-locked)_4%,white)] p-4">
-              <p className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--safety-locked)]">Two steps, not one</p>
+            <div className="rounded-xl border border-[color-mix(in_srgb,var(--accent)_25%,white)] bg-[color-mix(in_srgb,var(--accent)_4%,white)] p-4">
+              <p className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--accent-quiet)]">Two steps, not one</p>
               <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
                 This form gives them a role in PPBF. If they are outside your Microsoft organization, someone also has to
                 invite them as a guest in Entra ID — until that is done, their sign-in will be rejected.
@@ -1000,7 +1000,7 @@ function PeopleConsoleContent() {
                         blockedReason
                           ? 'cursor-not-allowed border-[rgba(0,0,0,0.12)] opacity-70'
                           : inviteRole === option.value
-                            ? 'cursor-pointer border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_5%,white)]'
+                            ? 'cursor-pointer border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_5%,white)]'
                             : 'cursor-pointer border-[rgba(0,0,0,0.12)] hover:border-[rgba(0,0,0,0.3)]'
                       }`}
                     >
@@ -1011,7 +1011,7 @@ function PeopleConsoleContent() {
                         checked={inviteRole === option.value}
                         disabled={Boolean(blockedReason)}
                         onChange={() => setInviteRole(option.value)}
-                        className="mt-1 accent-[var(--safety-locked)]"
+                        className="mt-1 accent-[var(--accent-quiet)]"
                       />
                       <span>
                         <span className="block text-sm font-semibold">{option.label}</span>
@@ -1036,7 +1036,7 @@ function PeopleConsoleContent() {
                 screen that does not exist. */}
             {inviteRole === 'parent' && !parentInviteBlockedReason && (
               <fieldset className="space-y-4 rounded-xl border border-[rgba(0,0,0,0.12)] p-4">
-                <legend className="px-1 text-xs font-bold uppercase tracking-[0.1em] text-[var(--safety-locked)]">
+                <legend className="px-1 text-xs font-bold uppercase tracking-[0.1em] text-[var(--accent-quiet)]">
                   Which child
                 </legend>
                 <p className="text-sm leading-6 text-[var(--gray-dark)]">
@@ -1106,7 +1106,7 @@ function PeopleConsoleContent() {
             <button
               type="submit"
               disabled={busy || !inviteReady}
-              className="min-h-[50px] w-full rounded-xl border-2 border-[var(--safety-locked)] bg-[var(--safety-locked)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-[50px] w-full rounded-xl border-2 border-[var(--accent)] bg-[var(--accent-strong)] px-4 text-sm font-black uppercase tracking-[0.14em] text-[var(--accent-ink)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy ? 'Adding...' : 'Add To My Gym'}
             </button>
@@ -1131,7 +1131,7 @@ function PeopleConsoleContent() {
                     key={option.value}
                     className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${
                       athleteMode === option.value
-                        ? 'border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_5%,white)]'
+                        ? 'border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_5%,white)]'
                         : 'border-[rgba(0,0,0,0.12)] hover:border-[rgba(0,0,0,0.3)]'
                     }`}
                   >
@@ -1148,7 +1148,7 @@ function PeopleConsoleContent() {
                         // the admin never picked in this mode.
                         setAthleteId('');
                       }}
-                      className="mt-1 accent-[var(--safety-locked)]"
+                      className="mt-1 accent-[var(--accent-quiet)]"
                     />
                     <span>
                       <span className="block text-sm font-semibold">{option.label}</span>
@@ -1168,7 +1168,7 @@ function PeopleConsoleContent() {
                 disabled={athleteDetailsLocked}
                 className="space-y-4 rounded-xl border border-[rgba(0,0,0,0.12)] p-4 disabled:opacity-70"
               >
-                <p className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--safety-locked)]">Athlete Details</p>
+                <p className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--accent-quiet)]">Athlete Details</p>
 
                 <div>
                   <label htmlFor="athlete-id" className="block text-sm font-semibold">
@@ -1312,8 +1312,8 @@ function PeopleConsoleContent() {
               </fieldset>
             ) : rosterAvailable ? (
               unlinkedAthletes.length === 0 ? (
-                <div className="rounded-xl border border-[color-mix(in_srgb,var(--safety-locked)_25%,white)] bg-[color-mix(in_srgb,var(--safety-locked)_4%,white)] p-4">
-                  <p className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--safety-locked)]">
+                <div className="rounded-xl border border-[color-mix(in_srgb,var(--accent)_25%,white)] bg-[color-mix(in_srgb,var(--accent)_4%,white)] p-4">
+                  <p className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--accent-quiet)]">
                     Nobody is waiting
                   </p>
                   <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
@@ -1393,7 +1393,7 @@ function PeopleConsoleContent() {
             <button
               type="submit"
               disabled={busy || !canSubmitAthlete}
-              className="min-h-[50px] w-full rounded-xl border-2 border-[var(--safety-locked)] bg-[var(--safety-locked)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-[50px] w-full rounded-xl border-2 border-[var(--accent)] bg-[var(--accent-strong)] px-4 text-sm font-black uppercase tracking-[0.14em] text-[var(--accent-ink)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy
                 ? 'Creating...'

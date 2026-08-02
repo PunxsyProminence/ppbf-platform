@@ -311,7 +311,7 @@ export default function DecisionLoopReviewPage() {
       <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
         <div className="mx-auto w-full max-w-6xl px-6 py-10 lg:px-10">
           <header className="space-y-3 border-b-[3px] border-[var(--black)] pb-6">
-            <p className="text-xs font-mono uppercase tracking-[0.18em] text-[var(--safety-locked)]">Coach Workspace</p>
+            <p className="text-xs font-mono uppercase tracking-[0.18em] text-[var(--accent-quiet)]">Coach Workspace</p>
             <h1 className="font-display text-4xl font-black">SHADOW Decision Loop</h1>
             <p className="max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
               Review provisional recommendations, record human decisions, flag near-misses, and evaluate outcomes.
@@ -442,7 +442,7 @@ export default function DecisionLoopReviewPage() {
                           <button
                             type="button"
                             onClick={() => void handleDecideRecommendation(rec.recommendation_id, 'rejected')}
-                            className="h-9 border-2 border-[var(--safety-locked)] px-3 text-xs font-bold uppercase text-[var(--safety-locked)]"
+                            className="h-9 border-2 border-[var(--accent)] px-3 text-xs font-bold uppercase text-[var(--accent-quiet)]"
                           >
                             Reject
                           </button>
@@ -601,7 +601,7 @@ export default function DecisionLoopReviewPage() {
                   </label>
                   <button
                     type="submit"
-                    className="h-11 border-2 border-[var(--safety-locked)] px-4 text-xs font-bold uppercase tracking-[0.1em] text-[var(--safety-locked)]"
+                    className="h-11 border-2 border-[var(--accent)] px-4 text-xs font-bold uppercase tracking-[0.1em] text-[var(--accent-quiet)]"
                   >
                     Flag Near-Miss
                   </button>

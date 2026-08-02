@@ -342,7 +342,7 @@ function BoardSeatsConsole() {
         <header className="rounded-2xl border border-[rgba(0,0,0,0.16)] bg-white p-6 shadow-[var(--shadow-md)]">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--safety-locked)]">Governance</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--accent-quiet)]">Governance</p>
               <h1 className="mt-2 font-display text-3xl font-black tracking-tight">Board Seats</h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--gray-dark)]">
                 Who holds each of the eight governing seats. {filledSeatCount} of {boardSeatConfigs.length} filled.
@@ -396,7 +396,7 @@ function BoardSeatsConsole() {
                           <span className="ml-2 text-xs font-bold uppercase tracking-[0.1em] text-[#1b5e20]">Holds the seat</span>
                         </p>
                       ) : (
-                        <p className="mt-1 text-xs font-bold uppercase tracking-[0.1em] text-[var(--safety-locked)]">
+                        <p className="mt-1 text-xs font-bold uppercase tracking-[0.1em] text-[var(--accent-quiet)]">
                           Unfilled
                         </p>
                       )}
@@ -407,7 +407,7 @@ function BoardSeatsConsole() {
                         type="button"
                         disabled={busy}
                         onClick={() => void remove(config.slug, primary.account_id)}
-                        className="min-h-[44px] shrink-0 rounded-xl border-2 border-[var(--safety-locked)] bg-white px-3 text-xs font-black uppercase tracking-[0.1em] text-[var(--safety-locked)] disabled:opacity-50"
+                        className="min-h-[44px] shrink-0 rounded-xl border-2 border-[var(--accent)] bg-white px-3 text-xs font-black uppercase tracking-[0.1em] text-[var(--accent-quiet)] disabled:opacity-50"
                       >
                         Remove
                       </button>
@@ -436,7 +436,7 @@ function BoardSeatsConsole() {
                                 type="button"
                                 disabled={busy}
                                 onClick={() => void remove(config.slug, holder.account_id)}
-                                className="min-h-[44px] rounded-xl border border-[var(--safety-locked)] bg-white px-3 text-xs font-bold uppercase tracking-[0.1em] text-[var(--safety-locked)] disabled:opacity-50"
+                                className="min-h-[44px] rounded-xl border border-[var(--accent)] bg-white px-3 text-xs font-bold uppercase tracking-[0.1em] text-[var(--accent-quiet)] disabled:opacity-50"
                               >
                                 Remove
                               </button>
@@ -532,7 +532,7 @@ function BoardSeatsConsole() {
                     key={option.value}
                     className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${
                       draftKind === option.value
-                        ? 'border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_5%,white)]'
+                        ? 'border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_5%,white)]'
                         : 'border-[rgba(0,0,0,0.12)] hover:border-[rgba(0,0,0,0.3)]'
                     }`}
                   >
@@ -542,7 +542,7 @@ function BoardSeatsConsole() {
                       value={option.value}
                       checked={draftKind === option.value}
                       onChange={() => setDraftKind(option.value)}
-                      className="mt-1 accent-[var(--safety-locked)]"
+                      className="mt-1 accent-[var(--accent-quiet)]"
                     />
                     <span>
                       <span className="block text-sm font-semibold">{option.label}</span>
@@ -564,7 +564,7 @@ function BoardSeatsConsole() {
                     type="button"
                     disabled={busy}
                     onClick={() => void handOver(draftSeat, trimmedAccountId, false)}
-                    className="min-h-[44px] rounded-xl border-2 border-[var(--safety-locked)] bg-[var(--safety-locked)] px-4 text-xs font-black uppercase tracking-[0.1em] text-white disabled:opacity-50"
+                    className="min-h-[44px] rounded-xl border-2 border-[var(--accent)] bg-[var(--accent-strong)] px-4 text-xs font-black uppercase tracking-[0.1em] text-[var(--accent-ink)] disabled:opacity-50"
                   >
                     Hand The Seat Over
                   </button>
@@ -587,7 +587,7 @@ function BoardSeatsConsole() {
             <button
               type="submit"
               disabled={busy || !canSubmit}
-              className="min-h-[50px] w-full rounded-xl border-2 border-[var(--safety-locked)] bg-[var(--safety-locked)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-[50px] w-full rounded-xl border-2 border-[var(--accent)] bg-[var(--accent-strong)] px-4 text-sm font-black uppercase tracking-[0.14em] text-[var(--accent-ink)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy ? 'Saving...' : 'Assign Seat'}
             </button>

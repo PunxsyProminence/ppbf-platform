@@ -220,22 +220,22 @@ const revenueCapabilities: Array<{ capability: string; state: 'EXISTS' | 'PARTIA
 ];
 
 function capabilityBadgeTone(state: 'EXISTS' | 'PARTIAL' | 'PLACEHOLDER' | 'MISSING'): string {
-  if (state === 'EXISTS') return 'border-[var(--status-ready)] bg-[#dce7ca] text-[var(--black)]';
-  if (state === 'PARTIAL') return 'border-[var(--status-warning)] bg-[#efe3c4] text-[var(--black)]';
-  if (state === 'PLACEHOLDER') return 'border-[var(--safety-locked)] bg-[#f1d6d1] text-[var(--black)]';
+  if (state === 'EXISTS') return 'border-[var(--status-ready)] bg-[color-mix(in_srgb,var(--cleared)_14%,var(--paper))] text-[var(--black)]';
+  if (state === 'PARTIAL') return 'border-[var(--status-warning)] bg-[color-mix(in_srgb,var(--restricted)_14%,var(--paper))] text-[var(--black)]';
+  if (state === 'PLACEHOLDER') return 'border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_14%,var(--paper))] text-[var(--black)]';
   return 'border-[var(--gray-medium)] bg-[var(--canvas-tan)] text-[var(--black)]';
 }
 
 function statusTone(status: string): string {
   const normalized = status.toLowerCase();
   if (normalized.includes('active') || normalized.includes('received') || normalized.includes('awarded')) {
-    return 'text-[var(--black)] border-[var(--status-ready)] bg-[#dce7ca]';
+    return 'text-[var(--black)] border-[var(--status-ready)] bg-[color-mix(in_srgb,var(--cleared)_14%,var(--paper))]';
   }
   if (normalized.includes('pending') || normalized.includes('review') || normalized.includes('draft') || normalized.includes('submitted')) {
-    return 'text-[var(--black)] border-[var(--status-warning)] bg-[#efe3c4]';
+    return 'text-[var(--black)] border-[var(--status-warning)] bg-[color-mix(in_srgb,var(--restricted)_14%,var(--paper))]';
   }
   if (normalized.includes('past due') || normalized.includes('declined') || normalized.includes('not connected')) {
-    return 'text-[var(--black)] border-[var(--safety-locked)] bg-[#f1d6d1]';
+    return 'text-[var(--black)] border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_14%,var(--paper))]';
   }
   return 'text-[var(--black)] border-[var(--gray-medium)] bg-[var(--canvas-tan)]';
 }
@@ -377,7 +377,7 @@ export default function RevenueFundingCenter() {
   return (
     <section className="space-y-6">
       <article className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-sm)]">
-        <p className="text-[14px] font-mono uppercase tracking-[0.14em] text-[var(--safety-locked)]">Revenue Operations</p>
+        <p className="text-[14px] font-mono uppercase tracking-[0.14em] text-[var(--accent-quiet)]">Revenue Operations</p>
         <h2 className="mt-2 text-[34px] font-black text-[var(--black)]">Revenue & Funding Center</h2>
         <p className="mt-3 text-base leading-7 text-[var(--gray-dark)]">
           Front-end control surface for memberships, donations, sponsors, B2B accounts, wholesale accounts, grants, scholarships, and funding workflows.
@@ -400,14 +400,14 @@ export default function RevenueFundingCenter() {
       </article>
 
       <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-        <p className="text-sm font-semibold text-[var(--safety-locked)]">Mission Funding Mindset</p>
+        <p className="text-sm font-semibold text-[var(--accent-quiet)]">Mission Funding Mindset</p>
         <p className="mt-1 text-sm text-[var(--gray-dark)]">Every dollar supports discipline, safety, and long-term growth. Keep the work clean, accountable, and purpose-driven.</p>
       </section>
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {summaryStrip.map((item) => (
           <article key={item.label} className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 py-4">
-            <p className="text-[14px] font-mono uppercase tracking-[0.1em] text-[var(--safety-locked)]">{item.label}</p>
+            <p className="text-[14px] font-mono uppercase tracking-[0.1em] text-[var(--accent-quiet)]">{item.label}</p>
             <p className="mt-2 text-[30px] font-black text-[var(--black)]">{item.value}</p>
           </article>
         ))}
@@ -464,7 +464,7 @@ export default function RevenueFundingCenter() {
                 <button
                   type="button"
                   disabled
-                  className="mt-3 inline-flex min-h-[44px] cursor-not-allowed items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--safety-locked)] opacity-80"
+                  className="mt-3 inline-flex min-h-[44px] cursor-not-allowed items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--accent-quiet)] opacity-80"
                 >
                   Planned Capability
                 </button>
@@ -483,7 +483,7 @@ export default function RevenueFundingCenter() {
             onClick={() => setActiveTab(tab.id)}
             className={`min-h-[44px] border px-4 text-[14px] font-bold ${
               activeTab === tab.id
-                ? 'border-[var(--black)] bg-[var(--safety-locked)] text-[var(--canvas-tan-light)]'
+                ? 'border-[var(--black)] bg-[var(--accent-strong)] text-[var(--accent-ink)]'
                 : 'border-[var(--black)] bg-[var(--canvas-tan-light)] text-[var(--black)] hover:bg-[var(--canvas-tan-dark)]'
             }`}
           >
@@ -663,7 +663,7 @@ export default function RevenueFundingCenter() {
                 <button
                   type="button"
                   onClick={handleAddDonation}
-                  className="h-11 border-2 border-[var(--black)] bg-[var(--safety-locked)] px-4 text-[14px] font-bold text-[var(--canvas-tan-light)]"
+                  className="h-11 border-2 border-[var(--black)] bg-[var(--accent-strong)] px-4 text-[14px] font-bold text-[var(--accent-ink)]"
                 >
                   Add Donation
                 </button>
@@ -715,7 +715,7 @@ export default function RevenueFundingCenter() {
             </div>
 
             <p className="text-[14px] text-[var(--gray-dark)]">Donation types supported in this lane: General Donation, Youth Program Support, Equipment Support, Scholarship Support, Facility Support, Event Support.</p>
-            <p className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-3 text-[14px] text-[var(--safety-locked)]">Operational tracking only. Payment processing and tax receipt issuance still require backend integration.</p>
+            <p className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-3 text-[14px] text-[var(--accent-quiet)]">Operational tracking only. Payment processing and tax receipt issuance still require backend integration.</p>
           </div>
         </SectionCard>
       )}
@@ -800,7 +800,7 @@ export default function RevenueFundingCenter() {
               </div>
             ))}
             <p className="text-[14px] text-[var(--gray-dark)]">Support types: Full Scholarship, Partial Scholarship, Participation Support Waiver, Equipment Assistance, Competition Participation Support, Travel Support, Program Support.</p>
-            <p className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-3 text-[14px] text-[var(--safety-locked)]">Scholarship tracking is for internal review only and does not expose private financial data to public users.</p>
+            <p className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-3 text-[14px] text-[var(--accent-quiet)]">Scholarship tracking is for internal review only and does not expose private financial data to public users.</p>
           </div>
         </SectionCard>
       )}
@@ -828,12 +828,12 @@ export default function RevenueFundingCenter() {
             {paymentIntegrations.map((integration) => (
               <article key={integration.provider} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
                 <p className="text-lg font-bold text-[var(--black)]">{integration.provider}</p>
-                <p className="mt-2 text-base text-[var(--safety-locked)]">{integration.status}</p>
+                <p className="mt-2 text-base text-[var(--accent-quiet)]">{integration.status}</p>
                 <p className="text-[14px] text-[var(--gray-dark)]">{integration.notes}</p>
               </article>
             ))}
           </div>
-          <p className="mt-4 border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-3 text-[14px] text-[var(--safety-locked)]">No payment processor is connected. This application does not currently process real payments.</p>
+          <p className="mt-4 border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-3 text-[14px] text-[var(--accent-quiet)]">No payment processor is connected. This application does not currently process real payments.</p>
         </SectionCard>
       )}
 

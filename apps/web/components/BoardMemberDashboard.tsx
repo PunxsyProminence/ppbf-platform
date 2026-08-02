@@ -120,7 +120,7 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
     return (
       <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
         <div className="max-w-xl text-center">
-          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--safety-locked)]">Board Seat</p>
+          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--accent-quiet)]">Board Seat</p>
           <h1 className="mt-3 text-3xl font-black tracking-tight">Opening the board hub</h1>
           <p className="mt-3 text-base leading-7 text-[var(--gray-dark)]">
             The {seat.seatLabel} workspace opens for the holders of that seat and for the President and Chair. Every board member reaches the same aggregate hub.
@@ -141,15 +141,15 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-10 lg:px-10">
         <header className="flex flex-col gap-4 border-b-2 border-[var(--black)] pb-6 md:flex-row md:items-end md:justify-between">
           <div className="space-y-3">
-            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--safety-locked)]">Board Workspace Framework</p>
+            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--accent-quiet)]">Board Workspace Framework</p>
             <h1 className="text-4xl font-black tracking-tight md:text-5xl">{seat.seatLabel} Workspace</h1>
             <p className="max-w-4xl text-base leading-7 text-[var(--gray-dark)] md:text-lg">One board workspace shell with seat-specific visibility for nonprofit governance, mission stewardship, and strategic oversight.</p>
           </div>
-          <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 py-3 text-sm font-mono text-[var(--safety-locked)]">{seat.seatLabel}</div>
+          <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 py-3 text-sm font-mono text-[var(--accent-quiet)]">{seat.seatLabel}</div>
         </header>
 
         <section className="mt-6 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
-          <p className="text-xs font-mono uppercase tracking-[0.22em] text-[var(--safety-locked)]">Seat Access</p>
+          <p className="text-xs font-mono uppercase tracking-[0.22em] text-[var(--accent-quiet)]">Seat Access</p>
           <p className="mt-2 text-base leading-7 text-[var(--gray-dark)]">{seatAccessNotice[access.mode]}</p>
           <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
             This notice describes what the page displays. Access is decided by the server on every request, and no choice made in this browser widens it.
@@ -164,7 +164,7 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
         </section>
 
         <section className="mt-6 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
-          <p className="text-xs font-mono uppercase tracking-[0.22em] text-[var(--safety-locked)]">Nonprofit Identity</p>
+          <p className="text-xs font-mono uppercase tracking-[0.22em] text-[var(--accent-quiet)]">Nonprofit Identity</p>
           <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
             {['Veteran-Founded', '501(c)(3) Public Charity', 'Mission-Focused Governance', 'Community Impact Oversight'].map((item) => (
               <div key={item} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-3 text-[16px] font-semibold text-[var(--black)]">
@@ -179,7 +179,7 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
         </div>
 
         <section className="mt-6 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
-          <p className="text-xs font-mono uppercase tracking-[0.25em] text-[var(--safety-locked)]">Governance Modules</p>
+          <p className="text-xs font-mono uppercase tracking-[0.25em] text-[var(--accent-quiet)]">Governance Modules</p>
           <div className="mt-4 grid gap-2 sm:grid-cols-3 xl:grid-cols-9">
             {boardWorkspaceTabs.map((tab) => (
               <button
@@ -188,7 +188,7 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
                 onClick={() => setActiveTab(tab)}
                 className={`min-h-[44px] border px-3 text-sm font-bold transition ${
                   activeTab === tab
-                    ? 'border-[var(--black)] bg-[var(--safety-locked)] text-[var(--canvas-tan-light)]'
+                    ? 'border-[var(--black)] bg-[var(--accent-strong)] text-[var(--accent-ink)]'
                     : 'border-[var(--black)] bg-[var(--canvas-tan)] text-[var(--black)] hover:bg-[var(--canvas-tan-dark)]'
                 }`}
               >
@@ -208,7 +208,7 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
               <div className="mt-4 grid gap-3 md:grid-cols-3">
                 {cards.map((card) => (
                   <div key={card.title} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-                    <p className="text-[11px] font-mono uppercase tracking-[0.12em] text-[var(--safety-locked)]">{cardStatusLabel[card.status]}</p>
+                    <p className="text-[11px] font-mono uppercase tracking-[0.12em] text-[var(--accent-quiet)]">{cardStatusLabel[card.status]}</p>
                     <p className="mt-2 text-base font-bold text-[var(--black)]">{card.title}</p>
                     <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">{card.detail}</p>
                   </div>
@@ -219,7 +219,7 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
             <article className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
               <h2 className="text-2xl font-black text-[var(--black)]">Role Description</h2>
               <p className="mt-2 text-base leading-7 text-[var(--gray-dark)]">{seat.roleDescription}</p>
-              <h3 className="mt-4 text-lg font-black text-[var(--safety-locked)]">Primary Responsibilities</h3>
+              <h3 className="mt-4 text-lg font-black text-[var(--accent-quiet)]">Primary Responsibilities</h3>
               <ul className="mt-2 space-y-1 text-[15px] leading-7 text-[var(--gray-dark)]">
                 {seat.primaryResponsibilities.map((responsibility) => (
                   <li key={responsibility}>- {responsibility}</li>
@@ -229,7 +229,7 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
 
             <article className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
               <h2 className="text-2xl font-black text-[var(--black)]">Seat Modules</h2>
-              <p className="mt-2 text-[11px] font-mono uppercase tracking-[0.12em] text-[var(--safety-locked)]">{BOARD_PLANNED_STAMP}</p>
+              <p className="mt-2 text-[11px] font-mono uppercase tracking-[0.12em] text-[var(--accent-quiet)]">{BOARD_PLANNED_STAMP}</p>
               <p className="mt-2 text-base leading-7 text-[var(--gray-dark)]">
                 The scope this seat is meant to cover. None of it reads or writes data yet.
               </p>
@@ -254,11 +254,11 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
               <p className="mt-2 text-base leading-7 text-[var(--gray-dark)]">Board chat and generated background summaries remain disabled. Only the authenticated organization-aggregate summary API is available.</p>
               <div className="mt-4 grid gap-3 md:grid-cols-2">
                 <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-                  <p className="text-[13px] font-mono uppercase tracking-[0.14em] text-[var(--safety-locked)]">Generation status</p>
+                  <p className="text-[13px] font-mono uppercase tracking-[0.14em] text-[var(--accent-quiet)]">Generation status</p>
                   <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">Disabled. No model call or background Board job is available.</p>
                 </div>
                 <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-                  <p className="text-[13px] font-mono uppercase tracking-[0.14em] text-[var(--safety-locked)]">Data Boundary</p>
+                  <p className="text-[13px] font-mono uppercase tracking-[0.14em] text-[var(--accent-quiet)]">Data Boundary</p>
                   <ul className="mt-2 space-y-1 text-sm leading-6 text-[var(--gray-dark)]">
                     <li>- Athlete data is not surfaced in board SHADOW.</li>
                     <li>- Coach data is not surfaced in board SHADOW.</li>

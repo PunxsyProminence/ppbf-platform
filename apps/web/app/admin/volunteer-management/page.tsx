@@ -33,7 +33,7 @@ function VolunteerCard(props: Readonly<VolunteerCardProps>) {
       <p className="text-sm leading-6 text-[var(--gray-dark)]">Availability: {item.availability}</p>
       <p className="text-sm leading-6 text-[var(--gray-dark)]">Certification: {item.certification_status}</p>
       <p className="text-sm leading-6 text-[var(--gray-dark)]">Background Check: {item.background_check_status}</p>
-      <p className="text-sm font-mono uppercase tracking-[0.08em] text-[var(--safety-locked)]">Status: {item.status}</p>
+      <p className="text-sm font-mono uppercase tracking-[0.08em] text-[var(--accent-quiet)]">Status: {item.status}</p>
       {item.notes ? <p className="mt-2 text-sm text-[var(--gray-dark)]">{item.notes}</p> : null}
       <div className="mt-3 flex flex-wrap gap-2">
         {volunteerStatuses.map((status) => (
@@ -184,9 +184,9 @@ export default function VolunteerManagementPage() {
       <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
         <div className="mx-auto w-full max-w-6xl px-6 py-10 lg:px-10">
           <header className="space-y-3 border-b-[3px] border-[var(--black)] pb-6">
-            <p className="text-xs font-mono uppercase tracking-[0.18em] text-[var(--safety-locked)]">Admin Workspace</p>
+            <p className="text-xs font-mono uppercase tracking-[0.18em] text-[var(--accent-quiet)]">Admin Workspace</p>
             <h1 className="font-display text-4xl font-black">Volunteer Management</h1>
-            <p className="text-sm font-mono uppercase tracking-[0.14em] text-[var(--safety-locked)]">LIVE | TABLE-BACKED | BACKEND CONNECTED</p>
+            <p className="text-sm font-mono uppercase tracking-[0.14em] text-[var(--accent-quiet)]">LIVE | TABLE-BACKED | BACKEND CONNECTED</p>
             <p className="max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
               Volunteer roster, status, and availability are now backed by persistent records instead of placeholders.
             </p>
@@ -222,7 +222,7 @@ export default function VolunteerManagementPage() {
               type="button"
               disabled={isCreating || !draft.full_name.trim()}
               onClick={() => void handleCreateVolunteer().catch((error) => setMessage(error instanceof Error ? error.message : 'Unable to create volunteer.'))}
-              className="h-11 border-2 border-[var(--black)] bg-[var(--safety-locked)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[var(--white)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-11 border-2 border-[var(--black)] bg-[var(--accent-strong)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[var(--accent-ink)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isCreating ? 'Creating...' : 'Create Volunteer'}
             </button>
@@ -234,7 +234,7 @@ export default function VolunteerManagementPage() {
             ))}
           </section>
 
-          {message ? <p className="mt-6 text-sm font-semibold text-[var(--safety-locked)]">{message}</p> : null}
+          {message ? <p className="mt-6 text-sm font-semibold text-[var(--black)]">{message}</p> : null}
 
           <div className="mt-8">
             <Link
