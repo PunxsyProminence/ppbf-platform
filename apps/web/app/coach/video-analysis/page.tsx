@@ -51,6 +51,7 @@ export default function CoachVideoAnalysisPage() {
   const [observations, setObservations] = useState<ShadowObservationItem[]>([]);
   const [observationError, setObservationError] = useState('');
   const [releasingVideoId, setReleasingVideoId] = useState<string | null>(null);
+  const [previewingVideoId, setPreviewingVideoId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadTitle, setUploadTitle] = useState('');
@@ -131,6 +132,31 @@ export default function CoachVideoAnalysisPage() {
     if (video.status !== 'quarantined') return false;
     if (isOrganizationAdminSessionRole(session.role)) return true;
     return session.accountId !== null && video.uploaded_by_account_id === session.accountId;
+  };
+
+  // Watch a video BEFORE releasing it. The ordinary read path refuses
+  // anything that is not 'ready', so until this existed the Release button
+  // was a click made blind -- a release that cannot see the footage is the
+  // rubber stamp intake/document-link already warned about for documents.
+  // The link is a 15-minute SAS and every issuance is audited.
+  const previewForRelease = async (videoId: string, title: string) => {
+    setPreviewingVideoId(videoId);
+    try {
+      const res = await fetch(`${apiBase()}/api/pilot/video/review-link`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ video_session_id: videoId }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { url?: string; title?: string; error?: string };
+      if (!res.ok || !data.url) throw new Error(data.error ?? `Could not open video (${res.status})`);
+      setActiveVideo({ url: data.url, title: data.title ?? title });
+      setVideoError('');
+    } catch (err) {
+      setVideoError(err instanceof Error ? err.message : 'Failed to open video for review');
+    } finally {
+      setPreviewingVideoId(null);
+    }
   };
 
   const releaseVideo = async (videoId: string) => {
@@ -259,9 +285,14 @@ export default function CoachVideoAnalysisPage() {
                   </div>
                   <div className="ml-4 flex shrink-0 items-center gap-2">
                     {canRelease(v) ? (
-                      <button onClick={() => { void releaseVideo(v.video_session_id); }} disabled={releasingVideoId === v.video_session_id} className="border border-[color:var(--brass-700)] bg-[#2a1a1a] px-3 py-1 text-xs font-mono text-[color:var(--brass-300)] disabled:opacity-50">
-                        {releasingVideoId === v.video_session_id ? 'Releasing...' : 'Release'}
-                      </button>
+                      <>
+                        <button onClick={() => { void previewForRelease(v.video_session_id, v.title); }} disabled={previewingVideoId === v.video_session_id} className="border border-[color:var(--brass-500)] bg-[#241f10] px-3 py-1 text-xs font-mono text-[color:var(--brass-300)] disabled:opacity-50">
+                          {previewingVideoId === v.video_session_id ? 'Opening...' : 'Watch first'}
+                        </button>
+                        <button onClick={() => { void releaseVideo(v.video_session_id); }} disabled={releasingVideoId === v.video_session_id} className="border border-[color:var(--brass-700)] bg-[#2a1a1a] px-3 py-1 text-xs font-mono text-[color:var(--brass-300)] disabled:opacity-50">
+                          {releasingVideoId === v.video_session_id ? 'Releasing...' : 'Release'}
+                        </button>
+                      </>
                     ) : null}
                     <button onClick={() => { void openVideo(v.video_session_id); }} disabled={v.status !== 'ready' || loadingVideoId === v.video_session_id} className="border border-[color:var(--brass-700)] bg-[#2a1a1a] px-3 py-1 text-xs font-mono text-[color:var(--brass-300)] disabled:opacity-50">
                       {v.status !== 'ready' ? 'Not released' : loadingVideoId === v.video_session_id ? 'Loading...' : 'Play'}
