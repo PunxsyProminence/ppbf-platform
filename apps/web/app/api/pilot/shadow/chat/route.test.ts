@@ -14,7 +14,7 @@ import {
   queueHumanReview,
   resolveConversation,
 } from '@/src/server/pilot/shadowConversations';
-import { enforceShadowRateLimit } from '@/src/server/pilot/shadowRateLimit';
+import { enforceShadowRateLimit, ShadowRateLimitExceeded } from '@/src/server/pilot/shadowRateLimit';
 import { classifyRequest } from '@/src/server/pilot/shadowClassifier';
 import { executeHeavyBagAsync, executeHeavyBagSync } from '@/src/server/pilot/shadowHeavyBag';
 import { isShadowWorkerEnabled } from '@/src/server/pilot/shadowJobWorker';
@@ -469,6 +469,45 @@ describe('POST /api/pilot/shadow/chat trust boundary', () => {
     expect(mockEnforceRateLimit).not.toHaveBeenCalledWith(
       expect.objectContaining({ endpointKey: 'heavy_bag' }),
     );
+  });
+
+  // The Heavy Bag cap is the only SHADOW limit that is partial: it closes one
+  // tier and leaves Quick Round answering. Described with the generic wording
+  // the other two buckets use, a coach reads a ten-round cap as SHADOW being
+  // gone for an hour and stops trying.
+  test('a refused Heavy Bag round says Quick Round still works', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach' }));
+    mockClassifyRequest.mockReturnValueOnce({
+      tier: 'heavy_bag', complexity: 0.9, topic: 'general',
+    } as ReturnType<typeof classifyRequest>);
+    // Refuse the Heavy Bag bucket specifically, not whichever bucket happens to
+    // be charged first. `mockRejectedValueOnce` would have thrown on the generic
+    // `chat` limit, which returns before the request is ever classified -- so
+    // the test would have passed against a message it never actually produced.
+    mockEnforceRateLimit.mockImplementation(async (input: { endpointKey: string }) => {
+      if (input.endpointKey === 'heavy_bag') {
+        throw new ShadowRateLimitExceeded(3_600, 'heavy_bag');
+      }
+    });
+
+    const response = await POST(postRequest({ message: 'Deep review please', tier: 'heavy_bag' }));
+    const body = await response.json();
+
+    expect(body.response).toContain('Heavy Bag');
+    expect(body.response).toContain('Quick Round');
+  });
+
+  test('a refused Quick Round keeps the general wording, because that limit is total', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach' }));
+    mockEnforceRateLimit.mockRejectedValueOnce(
+      new ShadowRateLimitExceeded(45, 'chat'),
+    );
+
+    const response = await POST(postRequest({ message: 'Quick question' }));
+    const body = await response.json();
+
+    expect(body.response).toContain('SHADOW');
+    expect(body.response).not.toContain('Quick Round questions still work');
   });
 
   test('a Quick Round is never charged against the Heavy Bag cap', async () => {
