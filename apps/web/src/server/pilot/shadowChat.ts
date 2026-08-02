@@ -485,16 +485,36 @@ export function validateShadowResponse(
     const clause = preceding.split(/[.!?;\n]/).pop() ?? '';
     return /\b(if|when|whenever|unless|in case)\b/.test(clause);
   };
+  // The prevention exemption belongs to BOTH patterns, not just the second.
+  //
+  // It was written for the second pattern and deliberately not extended here
+  // ("widened only -- the exemptions below are untouched"), which left this one
+  // filtering the same prevention advice the other one forgives, purely because
+  // of which subject the sentence used. Measured 2026-08-01:
+  //   'so you do not get a strain'              -> passed (second pattern, exempt)
+  //   'this means a higher injury risk'         -> FILTERED
+  //   'they have a higher injury risk off balance' -> FILTERED
+  // All three are injury-PREVENTION coaching, and the last two are what "name a
+  // common fault to watch for" produces. Asserted diagnoses are unaffected: "he
+  // has a concussion" carries no prevention cue and still filters.
+  const preventionCue = /(reduc|lower|prevent|avoid|risk|chance|less\s+likely|protect|keep\w*\s+you\s+from|don.?t|do\s+not|won.?t|shouldn.?t|without)/i;
   for (const match of normalized.matchAll(assertedDiagnosisPattern)) {
     const preceding = normalized.slice(Math.max(0, (match.index ?? 0) - 60), match.index ?? 0);
-    if (!conditionalCue(preceding)) {
+    // The prevention word usually lands AFTER the ailment, because the pattern
+    // stops at it: "a higher injury| risk". So the window runs past the match as
+    // well, and stops at sentence punctuation for the same reason conditionalCue
+    // does -- "the athlete has a rotator cuff injury." ends immediately and stays
+    // filtered, while "...a higher injury risk landing off balance" does not.
+    const following = normalized
+      .slice((match.index ?? 0) + match[0].length, (match.index ?? 0) + match[0].length + 40)
+      .split(/[.!?;\n]/)[0] ?? '';
+    if (!conditionalCue(preceding) && !preventionCue.test(preceding + match[0] + following)) {
       makesDiagnosisClaim = true;
       break;
     }
   }
   if (!makesDiagnosisClaim) {
     const diagnosisPattern = /you (have|have a|got|get|experience|develop)\b.{0,30}?\b(?:concussion|fracture|injury|pain|sprain|strain|trauma|condition|disease|syndrome|disorder)/gi;
-    const preventionCue = /(reduc|lower|prevent|avoid|risk|chance|less\s+likely|protect|keep\w*\s+you\s+from|don.?t|do\s+not|won.?t|shouldn.?t|without)/i;
     for (const match of response.matchAll(diagnosisPattern)) {
       const preceding = response.slice(Math.max(0, (match.index ?? 0) - 60), match.index ?? 0);
       if (!preventionCue.test(preceding) && !conditionalCue(preceding.toLowerCase())) {
@@ -516,8 +536,25 @@ export function validateShadowResponse(
     reasons.push('Contains prescriptive claim without medical authority');
   }
 
+  // Minute-scale rest is training vocabulary, not a medical directive.
+  //
+  // This rule exists for "rest for two weeks" after an injury. It also fired on
+  // "work 3 minutes, rest 1 minute before rotating" -- the ordinary way to write
+  // a bag circuit -- and withheld the whole answer as a treatment directive.
+  // Measured 2026-08-01 against the staging E2E gate's own question ("plan a
+  // four-station heavy bag circuit for a 60-minute youth class"), which cannot
+  // be answered well without stating rest intervals.
+  //
+  // The tell that this was wrong: "rest 20 seconds" passed and "rest 1 minute"
+  // did not, because `seconds` was never in the unit list. The same coaching
+  // instruction filtered or not depending on which unit the model chose, which
+  // is a coin flip, not a safety boundary.
+  //
+  // Injury rest that needs medical authority is measured in hours, days or
+  // weeks, so those keep filtering. Icing keeps `minutes` on its own rule below,
+  // because ice genuinely is a minute-scale medical instruction.
   if (
-    /\b(?:rest|avoid\s+training)\s+(?:for\s+)?\d+(?:\.\d+)?\s*(?:minutes?|hours?|days?|weeks?)\b/.test(normalized)
+    /\b(?:rest|avoid\s+training)\s+(?:for\s+)?\d+(?:\.\d+)?\s*(?:hours?|days?|weeks?)\b/.test(normalized)
     || /\b(?:ice|apply\s+ice)\b.{0,30}\b\d+(?:\.\d+)?\s*(?:minutes?|hours?)\b/.test(normalized)
     || /\b(?:start|begin|do|perform)\b.{0,25}\b(?:rehab|rehabilitation|therapeutic)\b/.test(normalized)
     || /\b(?:you\s+(?:should|need\s+to|must)|i\s+recommend(?:\s+that)?\s+you)\b.{0,60}\b(?:ice|immobilize|tape|compress|elevate|massage|rehab|treat)\b/.test(normalized)
