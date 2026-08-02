@@ -65,7 +65,7 @@ export default function HomePage() {
         {/* Hero */}
         <section className="border-b-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-16 lg:px-10 lg:py-24">
           <div className="mx-auto flex w-full max-w-5xl flex-col items-center text-center">
-            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--safety-locked)]">
+            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--accent-quiet)]">
               Punxsy Prominence Boxing &amp; Fitness
             </p>
             <h1 className="font-display mt-4 text-4xl font-black tracking-tight md:text-6xl">
@@ -80,9 +80,9 @@ export default function HomePage() {
             <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
               <Link
                 href="/login"
-                className="inline-flex min-h-[52px] items-center justify-center rounded-full border-2 border-[var(--black)] bg-[var(--safety-locked)] px-8 shadow-[var(--shadow-md)] transition hover:bg-[var(--red-highlight)]"
+                className="inline-flex min-h-[52px] items-center justify-center rounded-full border-2 border-[var(--black)] bg-[var(--accent-strong)] px-8 shadow-[var(--shadow-md)] transition hover:bg-[var(--brass-400)]"
               >
-                <span className="text-sm font-black uppercase tracking-[0.15em] text-[var(--white)]">Log In</span>
+                <span className="text-sm font-black uppercase tracking-[0.15em] text-[var(--accent-ink)]">Log In</span>
               </Link>
               <a
                 href="#programs"
@@ -107,7 +107,7 @@ export default function HomePage() {
               discipline, confidence, accountability, emotional control, physical fitness, academic responsibility,
               leadership, decision-making, and practical life skills.
             </p>
-            <p className="mt-6 border-l-[6px] border-[var(--safety-locked)] bg-[var(--canvas-tan-light)] p-5 text-lg font-bold leading-7 md:text-xl">
+            <p className="mt-6 border-l-[6px] border-[var(--accent)] bg-[var(--canvas-tan-light)] p-5 text-lg font-bold leading-7 md:text-xl">
               Children participate at no charge. Financial circumstances do not determine whether a child can train.
             </p>
           </div>

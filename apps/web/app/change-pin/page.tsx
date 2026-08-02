@@ -82,7 +82,7 @@ export default function ChangePinPage() {
     <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-4 py-8 text-[var(--black)]">
       <div className="w-full max-w-md space-y-5">
         <header className="rounded-2xl border border-[rgba(0,0,0,0.16)] bg-white p-6 shadow-[var(--shadow-md)]">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--safety-locked)]">First sign-in</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--accent-quiet)]">First sign-in</p>
           <h1 className="mt-2 font-display text-3xl font-black tracking-tight">Choose your PIN</h1>
           <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
             You are signed in with the starting PIN your gym gave you. Everyone gets the same one, so pick your own
@@ -92,8 +92,9 @@ export default function ChangePinPage() {
 
         <form onSubmit={submit} className="space-y-4 rounded-2xl border border-[rgba(0,0,0,0.14)] bg-white p-6 shadow-[var(--shadow-sm)]">
           {error && (
-            <p role="alert" className="rounded-xl border border-[var(--safety-locked)] bg-[rgba(184,59,52,0.06)] px-4 py-3 text-sm font-semibold text-[var(--safety-locked)]">
-              {error}
+            <p role="alert" className="flex items-start gap-2 rounded-xl border border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_8%,white)] px-4 py-3 text-sm font-semibold text-[var(--safety-locked)]">
+              <span aria-hidden="true">✕</span>
+              <span>{error}</span>
             </p>
           )}
 
@@ -110,7 +111,7 @@ export default function ChangePinPage() {
               value={currentPin}
               maxLength={DEFAULT_PIN_LENGTH}
               onChange={(event) => setCurrentPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))}
-              className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono tracking-[0.3em] focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+              className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono tracking-[0.3em] focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
             />
           </div>
 
@@ -128,7 +129,7 @@ export default function ChangePinPage() {
               value={newPin}
               maxLength={DEFAULT_PIN_LENGTH}
               onChange={(event) => setNewPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))}
-              className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono tracking-[0.3em] focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+              className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono tracking-[0.3em] focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
             />
           </div>
 
@@ -145,14 +146,14 @@ export default function ChangePinPage() {
               value={confirmPin}
               maxLength={DEFAULT_PIN_LENGTH}
               onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))}
-              className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono tracking-[0.3em] focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+              className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono tracking-[0.3em] focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
             />
           </div>
 
           <button
             type="submit"
             disabled={busy || !currentPin || !newPin || !confirmPin}
-            className="min-h-[50px] w-full rounded-xl border-2 border-[var(--safety-locked)] bg-[var(--safety-locked)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white disabled:cursor-not-allowed disabled:opacity-50"
+            className="min-h-[50px] w-full rounded-xl border-2 border-[var(--accent-quiet)] bg-[var(--accent-strong)] px-4 text-sm font-black uppercase tracking-[0.14em] text-[var(--accent-ink)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy ? 'Saving...' : 'Save My PIN'}
           </button>

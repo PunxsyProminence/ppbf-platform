@@ -204,7 +204,7 @@ function LoginPageContent() {
                 tab to PIN. While this banner lived inside the Microsoft panel a
                 rejected user saw an empty PIN form and no reason at all. */}
             {authErrorMessage && (
-              <div className="rounded-lg border border-[var(--safety-locked)] bg-[rgba(184,59,52,0.05)] p-3" role="alert">
+              <div className="rounded-lg border border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_8%,white)] p-3" role="alert">
                 <p className="text-sm text-[var(--safety-locked)]">⚠️ {authErrorMessage}</p>
               </div>
             )}
@@ -217,14 +217,14 @@ function LoginPageContent() {
                   onClick={() => setSelectedMethod('microsoft')}
                   className={`relative rounded-xl border-2 p-4 transition ${
                     selectedMethod === 'microsoft'
-                      ? 'border-[var(--safety-locked)] bg-[rgba(184,59,52,0.08)] shadow-[0_4px_12px_rgba(184,59,52,0.15)]'
+                      ? 'border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_10%,white)] shadow-[0_4px_12px_color-mix(in_srgb,var(--accent)_22%,transparent)]'
                       : 'border-[rgba(0,0,0,0.12)] bg-white hover:border-[rgba(0,0,0,0.2)]'
                   }`}
                 >
                   <div className="flex items-start gap-3">
                     <span className="text-2xl">☁️</span>
                     <div className="flex-1 text-left">
-                      <p className={`text-xs font-black uppercase tracking-[0.15em] ${selectedMethod === 'microsoft' ? 'text-[var(--safety-locked)]' : 'text-[var(--gray-dark)]'}`}>
+                      <p className={`text-xs font-black uppercase tracking-[0.15em] ${selectedMethod === 'microsoft' ? 'text-[var(--accent-quiet)]' : 'text-[var(--gray-dark)]'}`}>
                         Microsoft
                       </p>
                       <p className="mt-1 text-[11px] leading-relaxed text-[var(--gray-medium)]">Sign in with your Microsoft account</p>
@@ -237,14 +237,14 @@ function LoginPageContent() {
                   onClick={() => setSelectedMethod('pin')}
                   className={`relative rounded-xl border-2 p-4 transition ${
                     selectedMethod === 'pin'
-                      ? 'border-[var(--safety-locked)] bg-[rgba(184,59,52,0.08)] shadow-[0_4px_12px_rgba(184,59,52,0.15)]'
+                      ? 'border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_10%,white)] shadow-[0_4px_12px_color-mix(in_srgb,var(--accent)_22%,transparent)]'
                       : 'border-[rgba(0,0,0,0.12)] bg-white hover:border-[rgba(0,0,0,0.2)]'
                   }`}
                 >
                   <div className="flex items-start gap-3">
                     <span className="text-2xl">🔐</span>
                     <div className="flex-1 text-left">
-                      <p className={`text-xs font-black uppercase tracking-[0.15em] ${selectedMethod === 'pin' ? 'text-[var(--safety-locked)]' : 'text-[var(--gray-dark)]'}`}>
+                      <p className={`text-xs font-black uppercase tracking-[0.15em] ${selectedMethod === 'pin' ? 'text-[var(--accent-quiet)]' : 'text-[var(--gray-dark)]'}`}>
                         PIN
                       </p>
                       <p className="mt-1 text-[11px] leading-relaxed text-[var(--gray-medium)]">Sign in with Account ID and PIN</p>
@@ -280,16 +280,16 @@ function LoginPageContent() {
                   e.preventDefault();
                   void loginWithPin();
                 }}
-                className="grid gap-4 rounded-[24px] border-2 border-[var(--safety-locked)] bg-white p-6 shadow-[var(--shadow-lg)]"
+                className="grid gap-4 rounded-[24px] border-2 border-[var(--accent)] bg-white p-6 shadow-[var(--shadow-lg)]"
               >
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--safety-locked)]">Account PIN Sign In</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--accent-quiet)]">Account PIN Sign In</p>
                   <p className="mt-2 text-sm leading-relaxed text-[var(--gray-dark)]">
                     Enter your Account ID and PIN. Ask your coach or admin if you do not have one.
                   </p>
                   <p className="mt-3 rounded-lg border border-[rgba(0,0,0,0.12)] bg-[var(--canvas-tan-light)] px-3 py-2 text-sm text-[var(--gray-dark)]">
                     First time here with an activation code?{' '}
-                    <Link href="/activate" className="font-semibold text-[var(--safety-locked)] underline">
+                    <Link href="/activate" className="font-semibold text-[var(--accent-quiet)] underline">
                       Set up your account
                     </Link>
                   </p>
@@ -306,7 +306,7 @@ function LoginPageContent() {
                       onChange={(event) => setLoginAccountId(event.target.value)}
                       placeholder="account-001"
                       autoComplete="username"
-                      className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] bg-white px-4 text-[var(--black)] outline-none transition placeholder:text-[var(--gray-medium)] focus:border-[var(--safety-locked)] focus:ring-2 focus:ring-[rgba(184,59,52,0.15)]"
+                      className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] bg-white px-4 text-[var(--black)] outline-none transition placeholder:text-[var(--gray-medium)] focus-visible:border-[var(--accent)] focus-visible:shadow-[var(--focus)]"
                     />
                   </div>
                   <div>
@@ -321,18 +321,18 @@ function LoginPageContent() {
                       onChange={(event) => setLoginPin(event.target.value)}
                       placeholder="••••"
                       autoComplete="current-password"
-                      className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] bg-white px-4 text-[var(--black)] outline-none transition placeholder:text-[var(--gray-medium)] focus:border-[var(--safety-locked)] focus:ring-2 focus:ring-[rgba(184,59,52,0.15)]"
+                      className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] bg-white px-4 text-[var(--black)] outline-none transition placeholder:text-[var(--gray-medium)] focus-visible:border-[var(--accent)] focus-visible:shadow-[var(--focus)]"
                     />
                   </div>
                   {loginError && (
-                    <div className="rounded-lg border border-[var(--safety-locked)] bg-[rgba(184,59,52,0.05)] p-3" role="alert">
+                    <div className="rounded-lg border border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_8%,white)] p-3" role="alert">
                       <p className="text-sm text-[var(--safety-locked)]">❌ {loginError}</p>
                     </div>
                   )}
                   <button
                     type="submit"
                     disabled={loginBusy || !loginAccountId.trim() || !loginPin.trim()}
-                    className="inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl border-2 border-[var(--safety-locked)] bg-[var(--safety-locked)] px-6 text-sm font-black uppercase tracking-[0.18em] text-white transition hover:bg-[var(--red-highlight)] hover:border-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50 disabled:border-[rgba(0,0,0,0.14)] disabled:bg-[var(--gray-medium)] active:scale-[0.98]"
+                    className="inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl border-2 border-[var(--accent-quiet)] bg-[var(--accent-strong)] px-6 text-sm font-black uppercase tracking-[0.18em] text-[var(--accent-ink)] transition hover:bg-[var(--brass-400)] hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50 disabled:border-[rgba(0,0,0,0.14)] disabled:bg-[var(--gray-medium)] active:scale-[0.98]"
                   >
                     {loginBusy ? (
                       <>
@@ -353,13 +353,13 @@ function LoginPageContent() {
             <div className="rounded-[24px] border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-sm)]">
               <div className="space-y-4">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--safety-locked)]">💡 Need Help?</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--accent-quiet)]">💡 Need Help?</p>
                   <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
                     If you do not have an Account ID or PIN, or if you have forgotten your PIN, contact your gym admin or coach. They can create a new account or reset your PIN.
                   </p>
                   <Link
                     href="/athlete/sign-in"
-                    className="mt-3 inline-flex min-h-[44px] items-center rounded-lg border border-[var(--safety-locked)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--safety-locked)]"
+                    className="mt-3 inline-flex min-h-[44px] items-center rounded-lg border border-[var(--accent)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--accent-quiet)]"
                   >
                     Open Simple Athlete PIN Sign-In
                   </Link>

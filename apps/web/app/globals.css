@@ -225,20 +225,54 @@ h6 {
   line-height: var(--leading-tight);
 }
 
+/* These two rules were the single largest Law 2 violation in the codebase, and
+   the cheapest to fix: between them they painted EVERY link and EVERY keyboard
+   focus ring in the app with --safety-locked, the gate's "may not participate"
+   red. Not 340 call sites -- two rules, reaching every page at once.
+
+   Links and focus rings are chassis. They report where you are and what you can
+   press. Neither says anything about an athlete, so both are brass now. */
 @layer base {
   a {
-    color: var(--safety-locked);
+    color: var(--accent-quiet);
     text-decoration: none;
   }
 
   a:hover {
-    color: var(--red-highlight);
+    color: var(--accent);
     text-decoration: underline;
+  }
+
+  /* Brass-800 is 6.1:1 on canvas and 7.7:1 on paper, but only 2.45:1 on the ink
+     materials -- Law 6 gives the app two grounds, so a single link colour cannot
+     serve both. Dark materials take the light end of the same ramp (10.4:1 on
+     leather). Buttons and nav links carry their own text-[color:...] utilities,
+     which beat this layer; what is left here is the raw inline link, which is
+     exactly what should look like a link. */
+  .mat-leather a,
+  .mat-leather--raised a,
+  .mat-leather--worn a,
+  .mat-brass--dark a,
+  .mat-slate a {
+    color: var(--brass-300);
+  }
+
+  .mat-leather a:hover,
+  .mat-leather--raised a:hover,
+  .mat-leather--worn a:hover,
+  .mat-brass--dark a:hover,
+  .mat-slate a:hover {
+    color: var(--brass-200);
   }
 }
 
+/* Brass-700 is the only rung on the ramp that clears the 3:1 non-text minimum
+   against all three grounds a ring can land on -- canvas 3.92:1, white 4.96:1,
+   ink 3.82:1. Every lighter rung fails on canvas (brass-400 is 1.66:1) and
+   every darker one fails on ink (brass-800 is 2.45:1), so this is not a taste
+   pick; it is the one value that works everywhere. */
 :focus-visible {
-  outline: var(--border-medium) solid var(--safety-locked);
+  outline: var(--border-medium) solid var(--brass-700);
   outline-offset: 2px;
 }
 
