@@ -235,9 +235,9 @@ function documentReviewState(metadata: Record<string, unknown> | null | undefine
 }
 
 function reviewStateChip(state: DocumentReviewState): string {
-  if (state === 'clean') return 'border-[#3f8b5b] bg-[#162a1d] text-[#c9f0d7]';
-  if (state === 'quarantined') return 'border-[color:var(--brass-700)] bg-[var(--rust-900)] text-[#f0c9c9]';
-  return 'border-[color:var(--brass-300)] bg-[#241a10] text-[color:var(--bone-200)]';
+  if (state === 'clean') return 'border-[var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_14%,var(--hide-950))] text-[var(--cleared-ink)]';
+  if (state === 'quarantined') return 'border-[color:var(--brass-700)] bg-[var(--rust-900)] text-[var(--locked-ink)]';
+  return 'border-[color:var(--brass-300)] bg-[var(--hide-800)] text-[color:var(--bone-200)]';
 }
 
 // Per-case document security review: every uploaded file must be opened and
@@ -331,14 +331,14 @@ function CaseDocumentsPanel({ intakeCaseId }: { intakeCaseId: string }) {
       <button
         type="button"
         onClick={() => void handleToggle()}
-        className="h-9 border-2 border-[color:var(--brass-700)] bg-[#141414] px-3 text-[12px] font-bold text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)]"
+        className="h-9 border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3 text-[12px] font-bold text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)]"
       >
         {expanded ? 'Hide Document Security Review' : 'Document Security Review'}
       </button>
       {expanded ? (
         <div className="mt-2 space-y-2">
           {loading ? <p className="text-[13px] text-[color:var(--brass-300)]/80">Loading documents…</p> : null}
-          {error ? <p className="text-[13px] text-[#f0c9c9]">{error}</p> : null}
+          {error ? <p className="text-[13px] text-[var(--locked-ink)]">{error}</p> : null}
           {!loading && documents.length === 0 && !error ? (
             <p className="text-[13px] text-[color:var(--brass-300)]/80">No documents on this case.</p>
           ) : null}
@@ -348,7 +348,7 @@ function CaseDocumentsPanel({ intakeCaseId }: { intakeCaseId: string }) {
             return (
               <div
                 key={doc.intake_document_id}
-                className="flex flex-wrap items-center gap-2 border border-[color:var(--brass-700)]/60 bg-[#141414] p-2 text-[13px] text-[color:var(--bone-200)]"
+                className="flex flex-wrap items-center gap-2 border border-[color:var(--brass-700)]/60 bg-[var(--hide-950)] p-2 text-[13px] text-[color:var(--bone-200)]"
               >
                 <span className="min-w-0 flex-1 truncate font-mono">{doc.file_name}</span>
                 <span className={`inline-flex border px-2 py-0.5 font-mono text-[11px] uppercase ${reviewStateChip(state)}`}>
@@ -366,7 +366,7 @@ function CaseDocumentsPanel({ intakeCaseId }: { intakeCaseId: string }) {
                   type="button"
                   onClick={() => void handleReviewDocument(doc.intake_document_id, 'clean')}
                   disabled={busy}
-                  className="h-9 border-2 border-[#3f8b5b] bg-[#162a1d] px-2 text-[12px] font-bold text-[#c9f0d7] transition hover:border-[color:var(--brass-300)] disabled:cursor-not-allowed disabled:opacity-40"
+                  className="h-9 border-2 border-[var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_14%,var(--hide-950))] px-2 text-[12px] font-bold text-[var(--cleared-ink)] transition hover:border-[color:var(--brass-300)] disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Mark Clean
                 </button>
@@ -374,7 +374,7 @@ function CaseDocumentsPanel({ intakeCaseId }: { intakeCaseId: string }) {
                   type="button"
                   onClick={() => void handleReviewDocument(doc.intake_document_id, 'quarantined')}
                   disabled={busy}
-                  className="h-9 border-2 border-[color:var(--brass-700)] bg-[var(--rust-900)] px-2 text-[12px] font-bold text-[#f0c9c9] transition hover:border-[color:var(--brass-300)] disabled:cursor-not-allowed disabled:opacity-40"
+                  className="h-9 border-2 border-[color:var(--brass-700)] bg-[var(--rust-900)] px-2 text-[12px] font-bold text-[var(--locked-ink)] transition hover:border-[color:var(--brass-300)] disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Quarantine
                 </button>
@@ -420,10 +420,10 @@ function parsePromotionPayloadFromNotes(notes: string): Record<string, unknown> 
 }
 
 function statusChipClasses(status: IntakeStatus): string {
-  if (status === 'Pending') return 'border-[color:var(--brass-700)] bg-[#341515] text-[#f0c4c4]';
-  if (status === 'Approved') return 'border-[#3f8b5b] bg-[#162a1d] text-[#c9f0d7]';
-  if (status === 'Rejected') return 'border-[#a13f3f] bg-[#2c1414] text-[#f2c3c3]';
-  return 'border-[#46809b] bg-[#15242e] text-[#c8e6f2]';
+  if (status === 'Pending') return 'border-[color:var(--brass-700)] bg-[var(--hide-800)] text-[var(--locked-ink)]';
+  if (status === 'Approved') return 'border-[var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_14%,var(--hide-950))] text-[var(--cleared-ink)]';
+  if (status === 'Rejected') return 'border-[var(--locked)] bg-[var(--hide-900)] text-[var(--locked-ink)]';
+  return 'border-[var(--monitor)] bg-[color-mix(in_srgb,var(--monitor)_14%,var(--hide-950))] text-[var(--monitor-ink)]';
 }
 
 function toDataType(value: string): DataType {
@@ -464,10 +464,10 @@ function renderMetricsPanel(
   metricsError: string,
 ) {
   return (
-    <section className="col-span-full border-2 border-[#3f8b5b]/40 bg-[#0a1a0f] p-4">
+    <section className="col-span-full border-2 border-[var(--cleared)]/40 bg-[color-mix(in_srgb,var(--cleared)_14%,var(--hide-950))] p-4">
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#c9f0d7]/70">SHADOW Intelligence — Last 30 Days</p>
-        {metricsLoading && <span className="text-xs text-[#c9f0d7]/40">Loading…</span>}
+        <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--cleared-ink)]/70">SHADOW Intelligence — Last 30 Days</p>
+        {metricsLoading && <span className="text-xs text-[var(--cleared-ink)]/40">Loading…</span>}
       </div>
       {growthMetrics ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
@@ -481,9 +481,9 @@ function renderMetricsPanel(
             ['Research Closed', growthMetrics.growth.researchRequirementsClosed],
             ['New Patterns', growthMetrics.growth.newLibraryPatterns],
           ] as [string, string | number][]).map(([label, value]) => (
-            <div key={label} className="border border-[#3f8b5b]/30 bg-[#0f1f14] p-3 text-center">
-              <p className="text-[11px] font-mono uppercase tracking-[0.12em] text-[#c9f0d7]/60">{label}</p>
-              <p className="mt-1 text-xl font-black text-[#c9f0d7]">{value}</p>
+            <div key={label} className="border border-[var(--cleared)]/30 bg-[color-mix(in_srgb,var(--cleared)_14%,var(--hide-950))] p-3 text-center">
+              <p className="text-[11px] font-mono uppercase tracking-[0.12em] text-[var(--cleared-ink)]/60">{label}</p>
+              <p className="mt-1 text-xl font-black text-[var(--cleared-ink)]">{value}</p>
             </div>
           ))}
         </div>
@@ -494,9 +494,9 @@ function renderMetricsPanel(
         // endpoint is admin-only, while five of the console's other panels
         // admit coaches. A coach saw an unexplained blank here and working
         // panels beside it.
-        <p role="status" className="text-xs text-[#f2c3c3]">{metricsError}</p>
+        <p role="status" className="text-xs text-[var(--locked-ink)]">{metricsError}</p>
       ) : (
-        <p className="text-xs text-[#c9f0d7]/40">Metrics unavailable</p>
+        <p className="text-xs text-[var(--cleared-ink)]/40">Metrics unavailable</p>
       )}
     </section>
   );
@@ -608,7 +608,7 @@ function LibraryReviewFlagsPanel() {
         <button
           type="button"
           onClick={() => void loadFlags()}
-          className="h-9 border-2 border-[color:var(--brass-700)] bg-[#141414] px-3 text-[12px] font-bold text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)]"
+          className="h-9 border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3 text-[12px] font-bold text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)]"
         >
           Refresh
         </button>
@@ -618,17 +618,17 @@ function LibraryReviewFlagsPanel() {
       </p>
       <div className="mt-3 space-y-2">
         {loading ? <p className="text-[13px] text-[color:var(--brass-300)]/80">Loading flags…</p> : null}
-        {error ? <p className="text-[13px] text-[#f0c9c9]">{error}</p> : null}
+        {error ? <p className="text-[13px] text-[var(--locked-ink)]">{error}</p> : null}
         {!loading && !error && flags.length === 0 ? (
           <p className="text-[13px] text-[color:var(--brass-300)]/80">No pending flags. The Library has no unreviewed negative-outcome reports.</p>
         ) : null}
         {flags.map((flag) => {
           const busy = busyFlagId === flag.flag_id;
           return (
-            <div key={flag.flag_id} className="border border-[color:var(--brass-700)]/60 bg-[#141414] p-3 text-[13px] text-[color:var(--bone-200)]">
+            <div key={flag.flag_id} className="border border-[color:var(--brass-700)]/60 bg-[var(--hide-950)] p-3 text-[13px] text-[color:var(--bone-200)]">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-bold">{flag.topic}</span>
-                <span className="border border-[color:var(--brass-700)] px-2 py-0.5 font-mono text-[11px] uppercase text-[#f0c9c9]">
+                <span className="border border-[color:var(--brass-700)] px-2 py-0.5 font-mono text-[11px] uppercase text-[var(--locked-ink)]">
                   {flag.latest_outcome_signal ?? flag.outcome_signal ?? 'negative outcome'}
                 </span>
                 <span className="font-mono text-[11px] text-[color:var(--brass-300)]/70">
@@ -639,7 +639,7 @@ function LibraryReviewFlagsPanel() {
                     type="button"
                     onClick={() => void handleVerdict(flag.flag_id, 'resolved')}
                     disabled={busy}
-                    className="h-9 border-2 border-[#3f8b5b] bg-[#162a1d] px-2 text-[12px] font-bold text-[#c9f0d7] transition hover:border-[color:var(--brass-300)] disabled:cursor-not-allowed disabled:opacity-40"
+                    className="h-9 border-2 border-[var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_14%,var(--hide-950))] px-2 text-[12px] font-bold text-[var(--cleared-ink)] transition hover:border-[color:var(--brass-300)] disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Resolve
                   </button>
@@ -647,7 +647,7 @@ function LibraryReviewFlagsPanel() {
                     type="button"
                     onClick={() => void handleVerdict(flag.flag_id, 'rejected')}
                     disabled={busy}
-                    className="h-9 border-2 border-[color:var(--brass-700)] bg-[var(--rust-900)] px-2 text-[12px] font-bold text-[#f0c9c9] transition hover:border-[color:var(--brass-300)] disabled:cursor-not-allowed disabled:opacity-40"
+                    className="h-9 border-2 border-[color:var(--brass-700)] bg-[var(--rust-900)] px-2 text-[12px] font-bold text-[var(--locked-ink)] transition hover:border-[color:var(--brass-300)] disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Reject
                   </button>
@@ -668,7 +668,7 @@ function LibraryReviewFlagsPanel() {
 // worked for months with ZERO client callers, so activation mode was
 // unreachable: three of the four features ship in observation/disabled, which
 // means `unlocked = activationMode === 'enabled' && satisfied` can never be
-// true for them no matter how high the counter climbs. #123 stopped the UI
+// true for them no matter how high the counter climbs. color-mix(in_srgb,var(--monitor)_14%,var(--hide-950)) stopped the UI
 // promising those unlocks; this is the other half -- the surface that can
 // actually grant one.
 //
@@ -762,7 +762,7 @@ function FeatureUnlockPanel() {
         <button
           type="button"
           onClick={() => void loadThresholds()}
-          className="h-9 border-2 border-[color:var(--brass-700)] bg-[#141414] px-3 text-[12px] font-bold text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)]"
+          className="h-9 border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3 text-[12px] font-bold text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)]"
         >
           Refresh
         </button>
@@ -772,7 +772,7 @@ function FeatureUnlockPanel() {
       </p>
       <div className="mt-3 space-y-2">
         {loading ? <p className="text-[13px] text-[color:var(--brass-300)]/80">Loading thresholds…</p> : null}
-        {error ? <p className="text-[13px] text-[#f0c9c9]">{error}</p> : null}
+        {error ? <p className="text-[13px] text-[var(--locked-ink)]">{error}</p> : null}
         {rows.map((row) => {
           const busy = busyFeatureKey === row.featureKey;
           const draft = drafts[row.featureKey] ?? { minValue: String(row.minValue), activationMode: row.activationMode };
@@ -787,13 +787,13 @@ function FeatureUnlockPanel() {
               : 'Counter has not reached the threshold.';
 
           return (
-            <div key={row.featureKey} className="border border-[color:var(--brass-700)]/60 bg-[#141414] p-3 text-[13px] text-[color:var(--bone-200)]">
+            <div key={row.featureKey} className="border border-[color:var(--brass-700)]/60 bg-[var(--hide-950)] p-3 text-[13px] text-[color:var(--bone-200)]">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-bold">{row.featureKey}</span>
                 <span className={`border px-2 py-0.5 font-mono text-[11px] uppercase ${
                   status?.unlocked
-                    ? 'border-[#3f8b5b] text-[#c9f0d7]'
-                    : 'border-[color:var(--brass-700)] text-[#f0c9c9]'
+                    ? 'border-[var(--cleared)] text-[var(--cleared-ink)]'
+                    : 'border-[color:var(--brass-700)] text-[var(--locked-ink)]'
                 }`}>
                   {status?.unlocked ? 'unlocked' : 'locked'}
                 </span>
@@ -803,7 +803,7 @@ function FeatureUnlockPanel() {
               </div>
               <p className="mt-2 text-[12px] text-[color:var(--bone-400)]">{row.description}</p>
               {lockReason ? (
-                <p className="mt-1 text-[12px] text-[#f0c9c9]">{lockReason}</p>
+                <p className="mt-1 text-[12px] text-[var(--locked-ink)]">{lockReason}</p>
               ) : null}
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <label className="flex items-center gap-1 text-[12px] text-[color:var(--brass-300)]/80">
@@ -839,7 +839,7 @@ function FeatureUnlockPanel() {
                   type="button"
                   onClick={() => void handleSave(row)}
                   disabled={busy || !dirty}
-                  className="h-9 border-2 border-[#3f8b5b] bg-[#162a1d] px-3 text-[12px] font-bold text-[#c9f0d7] transition hover:border-[color:var(--brass-300)] disabled:cursor-not-allowed disabled:opacity-40"
+                  className="h-9 border-2 border-[var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_14%,var(--hide-950))] px-3 text-[12px] font-bold text-[var(--cleared-ink)] transition hover:border-[color:var(--brass-300)] disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {busy ? 'Saving…' : 'Save'}
                 </button>
@@ -874,32 +874,32 @@ function renderFeedbackReviewPanel(props: {
     const reviewable = resolvable && !reviewRefusal;
 
     return (
-      <article key={`${mode}-${item.feedback_id}`} className="border border-[#3f8b5b]/30 bg-[#0f1f14] p-3">
-        <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-[#c9f0d7]/60">
+      <article key={`${mode}-${item.feedback_id}`} className="border border-[var(--cleared)]/30 bg-[color-mix(in_srgb,var(--cleared)_14%,var(--hide-950))] p-3">
+        <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-[var(--cleared-ink)]/60">
           <span>#{item.feedback_id}</span>
           <span>{item.role}</span>
-          <span className={item.helpful ? 'text-[#7fd7a0]' : 'text-[#e39a9a]'}>
+          <span className={item.helpful ? 'text-[var(--cleared-ink)]' : 'text-[var(--locked-ink)]'}>
             {item.helpful ? 'Helpful' : 'Not helpful'}
           </span>
           {item.outcome_signal && <span>{item.outcome_signal}</span>}
           {item.rating != null && <span>Rating {item.rating}</span>}
-          <span className="text-[#c9f0d7]/40">{item.created_at}</span>
+          <span className="text-[var(--cleared-ink)]/40">{item.created_at}</span>
         </div>
 
         {item.comment ? (
-          <p className="mt-2 text-[13px] leading-6 text-[#c9f0d7]/90">{item.comment}</p>
+          <p className="mt-2 text-[13px] leading-6 text-[var(--cleared-ink)]/90">{item.comment}</p>
         ) : (
-          <p className="mt-2 text-[13px] italic text-[#c9f0d7]/40">No comment provided.</p>
+          <p className="mt-2 text-[13px] italic text-[var(--cleared-ink)]/40">No comment provided.</p>
         )}
 
         {mode === 'retry' && (
-          <p className="mt-2 text-[12px] leading-5 text-[#e3c99a]">
+          <p className="mt-2 text-[12px] leading-5 text-[var(--brass-300)]">
             Review was recorded, but durable learning promotion did not complete. Retry to finish promoting it.
           </p>
         )}
 
         {!resolvable && (
-          <p className="mt-2 text-[12px] leading-5 text-[#e39a9a]">
+          <p className="mt-2 text-[12px] leading-5 text-[var(--locked-ink)]">
             Not reviewable: only feedback correlated to a durable SHADOW message can be promoted
             {item.correlation_type ? ` (this item is “${item.correlation_type}”)` : ' (no correlation recorded)'}.
           </p>
@@ -910,7 +910,7 @@ function renderFeedbackReviewPanel(props: {
             type="button"
             disabled={busy || !reviewable}
             onClick={() => onReview(item, 'approve')}
-            className="border border-[#3f8b5b] px-3 py-1 font-mono text-[11px] uppercase tracking-[0.14em] text-[#c9f0d7] transition hover:bg-[#3f8b5b]/25 disabled:cursor-not-allowed disabled:opacity-40"
+            className="border border-[var(--cleared)] px-3 py-1 font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--cleared-ink)] transition hover:bg-[var(--cleared)]/25 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {busy ? 'Working…' : mode === 'retry' ? 'Retry promotion' : 'Approve for learning'}
           </button>
@@ -930,26 +930,26 @@ function renderFeedbackReviewPanel(props: {
   };
 
   return (
-    <section className="col-span-full border-2 border-[#3f8b5b]/40 bg-[#0a1a0f] p-4">
+    <section className="col-span-full border-2 border-[var(--cleared)]/40 bg-[color-mix(in_srgb,var(--cleared)_14%,var(--hide-950))] p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#c9f0d7]/70">
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--cleared-ink)]/70">
             SHADOW Learning Review — Human Approval Gate
           </p>
-          <p className="mt-1 text-[13px] leading-6 text-[#c9f0d7]/70">
+          <p className="mt-1 text-[13px] leading-6 text-[var(--cleared-ink)]/70">
             Nothing SHADOW learns from user feedback is applied until it is approved here.
           </p>
           {reviewRefusal && (
-            <p className="mt-1 text-[13px] leading-6 text-[#e3c99a]">{reviewRefusal}</p>
+            <p className="mt-1 text-[13px] leading-6 text-[var(--brass-300)]">{reviewRefusal}</p>
           )}
         </div>
         <div className="flex items-center gap-3">
-          {loading && <span className="text-xs text-[#c9f0d7]/40">Loading…</span>}
+          {loading && <span className="text-xs text-[var(--cleared-ink)]/40">Loading…</span>}
           <button
             type="button"
             onClick={onRefresh}
             disabled={loading}
-            className="border border-[#3f8b5b]/60 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.14em] text-[#c9f0d7] transition hover:bg-[#3f8b5b]/25 disabled:cursor-not-allowed disabled:opacity-40"
+            className="border border-[var(--cleared)]/60 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--cleared-ink)] transition hover:bg-[var(--cleared)]/25 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Refresh
           </button>
@@ -964,32 +964,32 @@ function renderFeedbackReviewPanel(props: {
             ['Satisfaction', `${(summary.satisfaction_rate * 100).toFixed(1)}%`],
             ['Avg Rating', summary.avg_rating != null ? summary.avg_rating.toFixed(2) : '—'],
           ] as [string, string | number][]).map(([label, value]) => (
-            <div key={label} className="border border-[#3f8b5b]/30 bg-[#0f1f14] p-3 text-center">
-              <p className="text-[11px] font-mono uppercase tracking-[0.12em] text-[#c9f0d7]/60">{label}</p>
-              <p className="mt-1 text-xl font-black text-[#c9f0d7]">{value}</p>
+            <div key={label} className="border border-[var(--cleared)]/30 bg-[color-mix(in_srgb,var(--cleared)_14%,var(--hide-950))] p-3 text-center">
+              <p className="text-[11px] font-mono uppercase tracking-[0.12em] text-[var(--cleared-ink)]/60">{label}</p>
+              <p className="mt-1 text-xl font-black text-[var(--cleared-ink)]">{value}</p>
             </div>
           ))}
         </div>
       )}
 
       {error && (
-        <p className="mb-3 border border-[color:var(--brass-700)] bg-[#1a0f0f] p-3 text-[13px] leading-6 text-[#e8b4b4]">{error}</p>
+        <p className="mb-3 border border-[color:var(--brass-700)] bg-[var(--hide-950)] p-3 text-[13px] leading-6 text-[var(--locked-ink)]">{error}</p>
       )}
 
       {retryQueue.length > 0 && (
         <div className="mb-4">
-          <p className="mb-2 text-[11px] font-mono uppercase tracking-[0.14em] text-[#e3c99a]">
+          <p className="mb-2 text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--brass-300)]">
             Promotion retry required ({retryQueue.length})
           </p>
           <div className="space-y-3">{retryQueue.map((item) => renderItem(item, 'retry'))}</div>
         </div>
       )}
 
-      <p className="mb-2 text-[11px] font-mono uppercase tracking-[0.14em] text-[#c9f0d7]/60">
+      <p className="mb-2 text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--cleared-ink)]/60">
         Awaiting review ({reviewQueue.length})
       </p>
       {reviewQueue.length === 0 ? (
-        <p className="text-xs text-[#c9f0d7]/40">
+        <p className="text-xs text-[var(--cleared-ink)]/40">
           {loading ? 'Loading feedback…' : 'No feedback is awaiting human review.'}
         </p>
       ) : (
@@ -1762,7 +1762,7 @@ export default function AdminShadowConsolePage() {
             </div>
             <div className="max-h-[500px] space-y-3 overflow-y-auto pr-1">
               {consoleLogs.map((log) => (
-                <article key={log.id} className="border-2 border-[color:var(--brass-700)]/70 bg-[#161616] p-4 font-mono text-[14px] leading-6 text-[color:var(--bone-200)]">
+                <article key={log.id} className="border-2 border-[color:var(--brass-700)]/70 bg-[var(--hide-950)] p-4 font-mono text-[14px] leading-6 text-[color:var(--bone-200)]">
                   <p className="text-[color:var(--brass-300)]">[{log.timestamp}]</p>
                   <p>SOURCE: {log.source}</p>
                   <p>TYPE: {log.dataType}</p>
@@ -1783,7 +1783,7 @@ export default function AdminShadowConsolePage() {
                   key={hint}
                   type="button"
                   onClick={() => setCommandInput(hint)}
-                  className="h-11 border border-[color:var(--rust-700)] bg-[#1d1010] px-3 font-mono text-[13px] text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)] hover:text-[#f0dfce]"
+                  className="h-11 border border-[color:var(--rust-700)] bg-[var(--hide-950)] px-3 font-mono text-[13px] text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)] hover:text-[var(--bone-100)]"
                 >
                   {hint}
                 </button>
@@ -1811,7 +1811,7 @@ export default function AdminShadowConsolePage() {
               />
               <button
                 type="submit"
-                className="h-11 border-2 border-[color:var(--brass-700)] bg-[#4a2020] px-6 font-mono text-[14px] font-bold text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-300)] hover:bg-[#5a3030]"
+                className="h-11 border-2 border-[color:var(--brass-700)] bg-[var(--hide-700)] px-6 font-mono text-[14px] font-bold text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-300)] hover:bg-[var(--hide-600)]"
               >
                 Submit Command
               </button>
@@ -1830,7 +1830,7 @@ export default function AdminShadowConsolePage() {
                 <select
                   value={queueFilterStatus}
                   onChange={(event) => setQueueFilterStatus(event.target.value as 'ALL' | IntakeStatus)}
-                  className="h-11 w-full border-2 border-[color:var(--brass-700)] bg-[#141414] px-3 text-[14px] text-[color:var(--bone-200)]"
+                  className="h-11 w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3 text-[14px] text-[color:var(--bone-200)]"
                 >
                   <option value="ALL">ALL</option>
                   <option value="Pending">Pending</option>
@@ -1844,7 +1844,7 @@ export default function AdminShadowConsolePage() {
                 <select
                   value={queueSort}
                   onChange={(event) => setQueueSort(event.target.value as QueueSort)}
-                  className="h-11 w-full border-2 border-[color:var(--brass-700)] bg-[#141414] px-3 text-[14px] text-[color:var(--bone-200)]"
+                  className="h-11 w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3 text-[14px] text-[color:var(--bone-200)]"
                 >
                   <option value="newest">Newest First</option>
                   <option value="oldest">Oldest First</option>
@@ -1860,7 +1860,7 @@ export default function AdminShadowConsolePage() {
                 {filteredSortedQueue.map((item) => (
                   <article
                     key={item.id}
-                    className={`border-2 p-4 ${selectedItemId === item.id ? 'border-[color:var(--brass-300)] bg-[#1d1111]' : 'border-[color:var(--brass-700)]/70 bg-[#151515]'}`}
+                    className={`border-2 p-4 ${selectedItemId === item.id ? 'border-[color:var(--brass-300)] bg-[var(--hide-950)]' : 'border-[color:var(--brass-700)]/70 bg-[var(--hide-950)]'}`}
                   >
                     <div className="grid gap-2 text-[14px] text-[color:var(--bone-200)] md:grid-cols-2">
                       <p><span className="font-semibold text-[color:var(--brass-300)]">Item Name:</span> {item.itemName}</p>
@@ -1892,7 +1892,7 @@ export default function AdminShadowConsolePage() {
                       ))}
                     </div>
                     {intakeWriteRefusal ? (
-                      <p className="mt-2 text-[12px] text-[#e3c99a]">{intakeWriteRefusal}</p>
+                      <p className="mt-2 text-[12px] text-[var(--brass-300)]">{intakeWriteRefusal}</p>
                     ) : null}
                     {item.reviewNeeded && !intakeWriteRefusal ? <CaseDocumentsPanel intakeCaseId={item.intakeCaseId} /> : null}
                   </article>
@@ -1908,13 +1908,13 @@ export default function AdminShadowConsolePage() {
             <h3 className="mt-2 text-xl font-black text-[color:var(--bone-200)]">External Sources</h3>
 
             {intakeWriteRefusal ? (
-              <p className="mt-4 border-2 border-dashed border-[#8b5a2b] bg-[#1a120a] p-3 text-[13px] leading-6 text-[#e3c99a]">
+              <p className="mt-4 border-2 border-dashed border-[var(--cork-dark)] bg-[var(--hide-900)] p-3 text-[13px] leading-6 text-[var(--brass-300)]">
                 {intakeWriteRefusal}
               </p>
             ) : (
               <div
                 className={`mt-4 space-y-2 rounded border-2 border-dashed p-3 transition ${
-                  isDragOver ? 'border-[color:var(--bone-200)] bg-[#3a2a1a]' : 'border-[#8b5a2b] bg-[#1a120a]'
+                  isDragOver ? 'border-[color:var(--bone-200)] bg-[var(--hide-700)]' : 'border-[var(--cork-dark)] bg-[var(--hide-900)]'
                 }`}
                 onDragOver={(event) => {
                   event.preventDefault();
@@ -1937,14 +1937,14 @@ export default function AdminShadowConsolePage() {
                   type="button"
                   onClick={handleUploadButtonClick}
                   disabled={isUploading}
-                  className="h-11 w-full border-2 border-[color:var(--brass-300)] bg-[#2a1a0a] px-3 text-[14px] font-mono text-[color:var(--brass-300)] transition hover:border-[color:var(--bone-200)] hover:bg-[#3a2a1a] hover:text-[color:var(--bone-200)]"
+                  className="h-11 w-full border-2 border-[color:var(--brass-300)] bg-[var(--hide-800)] px-3 text-[14px] font-mono text-[color:var(--brass-300)] transition hover:border-[color:var(--bone-200)] hover:bg-[var(--hide-700)] hover:text-[color:var(--bone-200)]"
                 >
                   {isUploading ? 'Processing PDF...' : 'Upload PDF'}
                 </button>
                 {uploadedFileName && <p className="text-[14px] text-[color:var(--brass-300)]/80">Last staged file: {uploadedFileName}</p>}
-                {uploadError && <p className="text-[13px] text-[#f2c3c3]">{uploadError}</p>}
+                {uploadError && <p className="text-[13px] text-[var(--locked-ink)]">{uploadError}</p>}
                 {lastIngestSummary && (
-                  <div className="border border-[#8b5a2b] bg-[#21160d] p-2 text-[12px] text-[color:var(--bone-200)]">
+                  <div className="border border-[var(--cork-dark)] bg-[var(--hide-900)] p-2 text-[12px] text-[color:var(--bone-200)]">
                     <p>Intake Case: {lastIngestSummary.intake_case_id}</p>
                     <p>Intake Document: {lastIngestSummary.intake_document_id}</p>
                     <p>Classification: {lastIngestSummary.classification}</p>
@@ -1963,7 +1963,7 @@ export default function AdminShadowConsolePage() {
                     key={option.label}
                     type="button"
                     onClick={() => handleQuickAdd(option.label, option.source, option.destination, option.route)}
-                    className="h-11 border-2 border-[color:var(--brass-300)] bg-[#2a1a0a] px-2 text-[12px] text-[color:var(--brass-300)] transition hover:border-[color:var(--bone-200)] hover:bg-[#3a2a1a]"
+                    className="h-11 border-2 border-[color:var(--brass-300)] bg-[var(--hide-800)] px-2 text-[12px] text-[color:var(--brass-300)] transition hover:border-[color:var(--bone-200)] hover:bg-[var(--hide-700)]"
                   >
                     {option.label}
                   </button>
@@ -1979,7 +1979,7 @@ export default function AdminShadowConsolePage() {
             ) : (
               <div className="mt-3 space-y-3 text-[14px] text-[color:var(--bone-200)]">
                 <p className="font-semibold text-[color:var(--brass-300)]">Selected: {selectedItem.itemName}</p>
-                <p className={`inline-flex border px-2 py-1 font-mono text-[12px] ${selectedItem.requiresJasonReview ? 'border-[color:var(--brass-700)] bg-[#341616] text-[#f0c4c4]' : 'border-[color:var(--brass-300)] bg-[#2e2a14] text-[#f5e7bf]'}`}>
+                <p className={`inline-flex border px-2 py-1 font-mono text-[12px] ${selectedItem.requiresJasonReview ? 'border-[color:var(--brass-700)] bg-[var(--hide-800)] text-[var(--locked-ink)]' : 'border-[color:var(--brass-300)] bg-[var(--hide-700)] text-[var(--bone-100)]'}`}>
                   {selectedItem.requiresJasonReview ? 'PENDING JASON REVIEW' : 'APPROVED FOR IMPORT'}
                 </p>
 
@@ -1988,7 +1988,7 @@ export default function AdminShadowConsolePage() {
                   <select
                     value={selectedItem.detectedType}
                     onChange={(event) => updateSelectedItem({ detectedType: event.target.value as DataType })}
-                    className="h-11 w-full border-2 border-[color:var(--brass-700)] bg-[#141414] px-3 text-[14px]"
+                    className="h-11 w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3 text-[14px]"
                   >
                     {QUICK_ADD_OPTIONS.map((option) => (
                       <option key={option.label} value={option.label}>
@@ -2008,7 +2008,7 @@ export default function AdminShadowConsolePage() {
                       const destination = event.target.value as IntakeDestination;
                       updateSelectedItem({ suggestedDestination: destination, destinationRoute: routeForDestination(destination) });
                     }}
-                    className="h-11 w-full border-2 border-[color:var(--brass-700)] bg-[#141414] px-3 text-[14px]"
+                    className="h-11 w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3 text-[14px]"
                   >
                     {DESTINATION_OPTIONS.map((destination) => (
                       <option key={destination} value={destination}>
@@ -2023,7 +2023,7 @@ export default function AdminShadowConsolePage() {
                   <select
                     value={selectedItem.confidence}
                     onChange={(event) => updateSelectedItem({ confidence: event.target.value as ConfidenceLevel })}
-                    className="h-11 w-full border-2 border-[color:var(--brass-700)] bg-[#141414] px-3 text-[14px]"
+                    className="h-11 w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3 text-[14px]"
                   >
                     <option value="Low">Low</option>
                     <option value="Medium">Medium</option>
@@ -2036,7 +2036,7 @@ export default function AdminShadowConsolePage() {
                   <select
                     value={selectedItem.requiresJasonReview ? 'Yes' : 'No'}
                     onChange={(event) => updateSelectedItem({ requiresJasonReview: event.target.value === 'Yes' })}
-                    className="h-11 w-full border-2 border-[color:var(--brass-700)] bg-[#141414] px-3 text-[14px]"
+                    className="h-11 w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3 text-[14px]"
                   >
                     <option value="Yes">Yes</option>
                     <option value="No">No</option>
@@ -2048,7 +2048,7 @@ export default function AdminShadowConsolePage() {
                   <textarea
                     value={selectedItem.notes}
                     onChange={(event) => updateSelectedItem({ notes: event.target.value })}
-                    className="min-h-[92px] w-full border-2 border-[color:var(--brass-700)] bg-[#141414] px-3 py-2 text-[14px]"
+                    className="min-h-[92px] w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3 py-2 text-[14px]"
                   />
                 </label>
 
@@ -2057,7 +2057,7 @@ export default function AdminShadowConsolePage() {
                   <input
                     value={selectedItem.destinationRoute}
                     onChange={(event) => updateSelectedItem({ destinationRoute: event.target.value })}
-                    className="h-11 w-full border-2 border-[color:var(--brass-700)] bg-[#141414] px-3 text-[14px]"
+                    className="h-11 w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3 text-[14px]"
                   />
                 </label>
               </div>
@@ -2076,7 +2076,7 @@ export default function AdminShadowConsolePage() {
               <div className="mt-3 max-h-[220px] space-y-2 overflow-y-auto border border-[color:var(--brass-700)]/60 bg-[var(--hide-900)] p-2 font-mono text-[12px] text-[color:var(--brass-300)]">
                 {telemetryEvents.length === 0 && <p className="p-2 text-[color:var(--brass-300)]/75">No telemetry events yet.</p>}
                 {telemetryEvents.map((event, index) => (
-                  <pre key={`${event.timestamp}-${index}`} className="whitespace-pre-wrap border border-[#502828] bg-[#151515] p-2 text-[color:var(--brass-300)]">
+                  <pre key={`${event.timestamp}-${index}`} className="whitespace-pre-wrap border border-[var(--hide-600)] bg-[var(--hide-950)] p-2 text-[color:var(--brass-300)]">
 {JSON.stringify(event, null, 2)}
                   </pre>
                 ))}
@@ -2085,7 +2085,7 @@ export default function AdminShadowConsolePage() {
                   <p className="mb-2 text-xs uppercase tracking-[0.08em] text-[color:var(--bone-200)]">SHADOW telemetry read model</p>
                   {shadowTelemetry.length === 0 && <p className="p-2 text-[color:var(--brass-300)]/75">No SHADOW telemetry events returned.</p>}
                   {shadowTelemetry.map((event) => (
-                    <pre key={`shadow-telemetry-${event.shadow_telemetry_event_id}`} className="whitespace-pre-wrap border border-[#3a4f2c] bg-[#102010] p-2 text-[#b5ddb1]">
+                    <pre key={`shadow-telemetry-${event.shadow_telemetry_event_id}`} className="whitespace-pre-wrap border border-[var(--patina-700)] bg-[color-mix(in_srgb,var(--cleared)_14%,var(--hide-950))] p-2 text-[var(--cleared-ink)]">
 {JSON.stringify(event, null, 2)}
                     </pre>
                   ))}
@@ -2095,7 +2095,7 @@ export default function AdminShadowConsolePage() {
                   <p className="mb-2 text-xs uppercase tracking-[0.08em] text-[color:var(--bone-200)]">SHADOW authority read model</p>
                   {shadowAuthorityChecks.length === 0 && <p className="p-2 text-[color:var(--brass-300)]/75">No SHADOW authority checks returned.</p>}
                   {shadowAuthorityChecks.map((check) => (
-                    <pre key={`shadow-authority-${check.authority_check_id}`} className="whitespace-pre-wrap border border-[#4f3428] bg-[#201510] p-2 text-[#e6c3a9]">
+                    <pre key={`shadow-authority-${check.authority_check_id}`} className="whitespace-pre-wrap border border-[var(--hide-700)] bg-[var(--hide-900)] p-2 text-[var(--bone-300)]">
 {JSON.stringify(check, null, 2)}
                     </pre>
                   ))}
@@ -2113,7 +2113,7 @@ export default function AdminShadowConsolePage() {
             </Link>
             <Link
               href="/shadow"
-              className="flex-1 border-2 border-[color:var(--brass-700)] bg-[#3a0000] px-3 py-2 text-center text-[12px] font-mono text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)] hover:bg-[#4a0000]"
+              className="flex-1 border-2 border-[color:var(--brass-700)] bg-[var(--hide-700)] px-3 py-2 text-center text-[12px] font-mono text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)] hover:bg-[var(--hide-700)]"
             >
               SHADOW
             </Link>
