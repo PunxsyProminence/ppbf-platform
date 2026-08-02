@@ -58,14 +58,19 @@ jobs:
       - name: Run board governance E2E
         run: npm --workspace web run test:e2e:board
 
-      # The public entry points, plus the only screenshot baseline in the repo.
-      # It existed and ran nowhere, so its baselines were recorded on a Windows
-      # machine and had drifted far enough that the spec could not pass at all.
-      # Regenerated on Linux and wired in here so a visual change to the
-      # homepage or The Bell has to show up as a diff rather than be noticed by
-      # somebody happening to look. Both baselines are committed; the config
-      # allows a 2% pixel ratio so a Chromium revision bump does not read as a
-      # regression, which is well under what any real layout change moves.
+      # The public entry points. This spec existed and ran nowhere, so nothing
+      # checked that the homepage stays reachable signed-out, that no password
+      # field creeps onto it, or that protected routes still redirect.
+      #
+      # Its pixel baseline is deliberately NOT part of this run. Recorded in a
+      # dev container it asserted 412x3620; CI renders the same page at
+      # 412x3680, deterministically on both sides. ppbf.css's --font-ui and
+      # --font-data are system stacks, so text wraps at machine-dependent
+      # widths and the page ends up a different height. Until those faces are
+      # self-hosted the way the three next/font ones already are, a full-page
+      # baseline cannot be portable, and a check that always fails teaches
+      # people to ignore CI. PPBF_VISUAL_BASELINE=1 turns it on where a
+      # baseline was recorded on the same machine.
       - name: Run public homepage E2E
         run: npm --workspace web run test:e2e:homepage
 
