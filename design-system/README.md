@@ -24,9 +24,9 @@ today and it gets erased, a stamped paper is a decision and it does not.
 
 **Nothing is fetched at runtime.** All texture — every wall, material, stain and grain —
 is generated from SVG `feTurbulence` data URIs and layered gradients, so there are no
-image assets at all. The six type faces are the one exception to "no files": they are
+image assets at all. The five type faces are the one exception to "no files": they are
 real `.woff2` files, but self-hosted from `fonts/` rather than pulled from a CDN, and
-they total 200 KB. The constraint that actually matters is unchanged — the kiosk renders
+they total 182 KB. The constraint that actually matters is unchanged — the kiosk renders
 on a cold tablet with no network, and grant packets print identically anywhere.
 
 ---
@@ -55,13 +55,18 @@ survives greyscale printing for board packets and every form of colour blindness
 
 **4. Six voices, each with a job.**
 
-All six are **self-hosted, SIL OFL 1.1, and free** — 200 KB total, latin subset only, no
-CDN (see `fonts.css`). The display voice is **wood type, not stencil**: the reference art
-is a jobbing printshop — heavy slab and heavy grotesque, letterpress-printed, ink broken
-up at the edges. Stencil letterforms carry bridges through the strokes and not one
-reference header has them. `--font-stencil` survives as an alias so older markup keeps
-working. Three candidates ship (`.voice-a` Alfa Slab One, `.voice-b` Archivo Black,
-`.voice-c` Oswald 700) — pick one, delete the rest, fold it into `--font-display`.
+All are **self-hosted, SIL OFL 1.1, and free** — five files, 182 KB total, latin subset
+only, no CDN (see `fonts.css`). The display voice is **wood type, not stencil**: the
+reference art is a jobbing printshop — heavy slab, letterpress-printed, ink broken up at
+the edges. Stencil letterforms carry bridges through the strokes and not one reference
+header has them. `--font-stencil` survives as an alias so older markup keeps working.
+
+The display voice is **Alfa Slab One**, chosen over two other candidates that shipped
+briefly for comparison. It beat Archivo Black (heavy grotesque) because every reference
+header has visible serif feet, and beat Oswald 700 (condensed) because Oswald is already
+`--font-ui` — a display voice that is the body voice at a heavier weight is not a second
+voice at all. Archivo Black's file was deleted with the decision; Oswald stays, doing the
+bone-sans job.
 
 - **Display** commands — headers, mottos, tile names, buttons. It gives orders.
   `.t-press` bites it into the paper, `.t-eroded` breaks the ink up.
@@ -234,7 +239,7 @@ stock, etc.
 
 ### Foundations
 - `foundations/patterns.html` — persistent alerts, form undo, empty state guidance, command reference, print parity
-- `foundations/matter.html` — type voices to choose from, paper conditions, light + shadow, placement, the seal, discoverables
+- `foundations/matter.html` — the display voice and its supporting voices, paper conditions, light + shadow, placement, the seal, discoverables
 - `foundations/rooms.html` — the six rooms, the wood/brick walls, lamps, ledger, nameplates
 - `foundations/materials.html` — the panel materials plus brass hardware and the stamp pad
 - `foundations/palette.html` — hide / brass / bone ramps and the status ladder
@@ -260,13 +265,16 @@ None — the design system is feature-complete. All 8 Laws, grit vocabulary, two
 
 ## Type licensing
 
-`--font-stencil` falls back to Impact / Haettenschweiler / Arial Narrow Bold — the closest
-condensed poster faces already present on Windows and macOS. The intended faces are
-**Big Shoulders Stencil** or **Stardos Stencil**. Self-host the files rather than linking
-Google Fonts: the floor kiosk has to render offline, and Law 6 means the type is part of
-the chassis, not a progressive enhancement.
+Nothing here costs anything. All five faces are **SIL OFL 1.1** and self-hosted from
+`fonts/` — the floor kiosk has to render offline, and Law 6 means the type is part of the
+chassis, not a progressive enhancement. There is no Google Fonts link and no CDN.
 
-Swapping is one token in `ppbf.css`.
+`--font-display` falls back to Impact / Haettenschweiler / Arial Narrow Bold if the woff2
+fails to load — the closest heavy poster faces already present on Windows and macOS.
+`--font-stencil` is a legacy alias pointing at the same token; the name is a leftover from
+the earlier stencil law and is kept only so existing markup keeps working.
+
+Swapping the display voice is one token in `ppbf.css`.
 
 ---
 
