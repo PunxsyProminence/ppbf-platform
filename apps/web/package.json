@@ -58,7 +58,7 @@
     "test:e2e:board": "playwright test e2e/board-governance.spec.ts",
     "test:e2e:board:update": "playwright test e2e/board-governance.spec.ts --update-snapshots",
     "test:e2e:homepage": "playwright test e2e/public-homepage.spec.ts",
-    "test:e2e:homepage:update": "PPBF_VISUAL_BASELINE=1 playwright test e2e/public-homepage.spec.ts --update-snapshots",
+    "test:e2e:homepage:update": "playwright test e2e/public-homepage.spec.ts --update-snapshots",
     "test:migrations:feedback-exit": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/feedbackReviewExit.pg.test.ts --testTimeout=180000",
     "pilot:apply-video-sessions": "node scripts/pilot-apply-video-sessions-migration.mjs",
     "pilot:apply-progression": "node scripts/pilot-apply-progression-migration.mjs",

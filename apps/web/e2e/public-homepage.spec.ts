@@ -1,37 +1,40 @@
 import { expect, test } from '@playwright/test';
 
-/* The pixel baseline is opt-in. Two attempts to make it portable failed, and
-   the honest state is that nobody yet knows why.
+/* The pixel check covers the masthead, not the whole page, and that is a
+   deliberate limit rather than an oversight.
 
-   Wired into CI on baselines recorded in a dev container, CI renders this page
-   60px taller -- 412x3620 expected, 412x3680 received. Deterministic on both
-   sides: retries produce byte-identical diffs. A size mismatch fails BEFORE
-   maxDiffPixelRatio is consulted, so the tolerance in playwright.config.ts
-   never applied to it.
+   A fullPage baseline recorded on one machine and asserted on another does not
+   work here, and it took a diagnostic run inside CI to say why. Per-section
+   heights, mobile:
 
-   The first theory was fonts, and it was well-evidenced: ppbf.css named four
-   faces and only --font-stencil pointed at a real one, so .t-eyebrow, .t-data
-   and .badge were set in system stacks. CDP confirmed 614 glyphs coming off
-   DejaVu Sans Mono. Aliasing those three onto the self-hosted next/font faces
-   moved every glyph onto a file in this repo -- and CI still rendered 3680,
-   with the pixel count essentially unchanged (127047 -> 128101). So the fonts
-   were a genuine bug worth fixing on their own, and they were not this bug.
+     header 36   hero 660   mission 596   footer 247      identical
+     #programs   1070 -> 1093                             +23 on the runner
+     #technology  483 ->  521                             +38 on the runner
 
-   60px is roughly two extra wrapped lines at .t-body's 31px leading, so
-   something still measures differently. The diagnostic below prints per-section
-   heights and font-load state from inside CI, which is what a third guess would
-   need and does not have. Once a run shows which section grows, delete the
-   diagnostic and put the assertion back unconditionally.
+   Only the prose-heavy sections move, and on desktop it is #mission that grows
+   instead. The font-face list and every load state are byte-identical between
+   the two, so this is not fonts -- it is text shaping. CI installs Chrome for
+   Testing 149 (playwright chromium v1228); other environments pin other
+   revisions, and shaping shifts glyph advances just enough to move a wrap
+   point. One extra line in a 1000px column is 31px of page height, and a size
+   mismatch fails before maxDiffPixelRatio is ever consulted.
 
-   Until then CI runs the rest of this file, which is the part that generalises:
-   the homepage stays reachable signed out, its headings stay present, no
-   password field appears on it, Log In routes to The Bell, and protected routes
-   still redirect. Those five pass, and a week ago nothing checked them at all.
+   Two earlier theories were wrong and worth recording so they are not retried.
+   The first was Chromium rasterisation, dismissed as too small to matter -- it
+   was right, via shaping rather than anti-aliasing. The second was fonts:
+   ppbf.css named four faces and only --font-stencil pointed at a real one, and
+   CDP confirmed 614 glyphs coming off DejaVu Sans Mono. Self-hosting those was
+   a genuine bug worth fixing, and it moved this number by nothing at all
+   (127047 differing pixels -> 128101).
 
-   To record and run it:  npm --workspace web run test:e2e:homepage:update
-                          PPBF_VISUAL_BASELINE=1 npm --workspace web run test:e2e:homepage */
-const visualBaseline = process.env.PPBF_VISUAL_BASELINE === '1';
+   So the assertion targets the hero section, which measured 660px in both
+   environments. Fixed dimensions mean the 2% tolerance in playwright.config.ts
+   finally applies to what it was written for -- rasterisation -- and the check
+   still fails loudly on the things worth catching there: the wordmark, the
+   ground colour, the type ladder and both call-to-action buttons.
 
+   Making the whole page assertable means pinning one browser revision for
+   recording and asserting alike, which is a container, not a test change. */
 test.describe('Public homepage', () => {
   test('renders publicly at / without requiring authentication', async ({ page }) => {
     const response = await page.goto('/');
@@ -50,34 +53,7 @@ test.describe('Public homepage', () => {
     // No login form should be embedded directly on the homepage.
     await expect(page.locator('input[type="password"]')).toHaveCount(0);
 
-    /* Temporary, and only in CI. This exists to answer one question -- which
-       part of the page is 60px taller on the runner than in the container the
-       baseline was recorded in -- because two rounds of reasoning from local
-       measurements got it wrong. Local numbers to compare against, at 412px:
-       total 3620, header 36, hero 660, mission 596, programs 1070,
-       technology 483, about 462, footer 247. Delete this once a run has
-       identified the section. */
-    if (process.env.CI) {
-      const diag = await page.evaluate(() => {
-        const faces = [...document.fonts].map((f) => `${f.family}:${f.status}`);
-        const sections = [...document.querySelectorAll('header, main > *, footer')].map((el) => {
-          const r = el.getBoundingClientRect();
-          return `${el.tagName}${el.id ? '#' + el.id : ''}=${Math.round(r.height)}`;
-        });
-        return {
-          viewport: `${innerWidth}x${innerHeight}`,
-          page: document.documentElement.scrollHeight,
-          dpr: devicePixelRatio,
-          sections,
-          faces,
-        };
-      });
-      console.log('[layout-diagnostic]', JSON.stringify(diag));
-    }
-
-    if (visualBaseline) {
-      await expect(page).toHaveScreenshot('public-homepage.png', { fullPage: true });
-    }
+    await expect(page.locator('main > section').first()).toHaveScreenshot('homepage-hero.png');
   });
 
   test('Log In routes to the existing authentication page', async ({ page }) => {
