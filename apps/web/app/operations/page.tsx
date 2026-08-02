@@ -163,11 +163,45 @@ const shadowComplianceChecks = [
   'Immutability default verified_by_jason: false remains locked pending coach verification.',
 ];
 
-function capabilityTone(state: CapabilityState): string {
-  if (state === 'EXISTS') return 'border-[var(--status-ready)] bg-[#dce7ca] text-[var(--black)]';
-  if (state === 'PARTIAL') return 'border-[var(--status-warning)] bg-[#efe3c4] text-[var(--black)]';
-  if (state === 'PLACEHOLDER') return 'border-[var(--red-primary)] bg-[#f1d6d1] text-[var(--black)]';
-  return 'border-[var(--gray-medium)] bg-[var(--canvas-tan)] text-[var(--black)]';
+/* Build state is deliberately kept OFF the status ladder.
+
+   These tiles used to carry it on the ladder's own colours — green for
+   EXISTS, amber for PARTIAL, --red-primary for PLACEHOLDER. Law 2 spends
+   saturated colour on a participant's safety state or a queue outcome and
+   nothing else, and "this screen is not written yet" is neither. Twenty
+   tiles of it on one page is the single largest drain on the budget the
+   Gate Matrix is supposed to own, and it teaches a coach that red on this
+   platform can mean a roadmap gap.
+
+   So the ladder goes back to safety, and build state reads on the chassis
+   instead: brass for shipped, bare leather for partial, and a brass stamp
+   for a capability that does not exist yet — Law 7's "a declaration is ink
+   on the page", in the .stamp--brass variant rather than the red one, so
+   even the stamp stays off the safety colour.
+
+   Law 3 is satisfied the same way it always is: each state carries its own
+   glyph and its uppercase label, so the three are separable in greyscale
+   and to a colour-blind reader without leaning on hue at all. */
+function capabilityChip(state: CapabilityState): { cls: string; glyph: string } {
+  if (state === 'EXISTS') {
+    return {
+      cls: 'rounded-[var(--r-sm)] bg-[var(--brass-300)] px-[var(--s3)] py-[var(--s1)] font-bold text-[color:var(--hide-950)]',
+      glyph: '✓',
+    };
+  }
+  if (state === 'PARTIAL') {
+    return {
+      cls: 'mat-leather rounded-[var(--r-sm)] border border-[color:var(--brass-600)] px-[var(--s3)] py-[var(--s1)] text-[color:var(--brass-300)]',
+      glyph: '▲',
+    };
+  }
+  if (state === 'PLACEHOLDER') {
+    return { cls: 'stamp stamp--brass stamp--flat', glyph: '✕' };
+  }
+  return {
+    cls: 'mat-leather rounded-[var(--r-sm)] px-[var(--s3)] py-[2px] text-[color:var(--bone-400)]',
+    glyph: '·',
+  };
 }
 
 // Navigation only, with no athlete-scoped data on the page, so the platform
@@ -177,12 +211,12 @@ const operationsRoles: ClubRole[] = [...roleRoutes.map((route) => route.role), '
 export default function OperationsHubPage() {
   return (
     <RoleSessionGate allowedRoles={operationsRoles}>
-      <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
-        <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-8 px-6 py-10 lg:px-10">
-          <header className="space-y-5 border-b-[3px] border-[var(--black)] pb-8">
-            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--red-primary)]">Mission Control</p>
-            <h1 className="font-display text-5xl font-black tracking-tight md:text-6xl">The Ring</h1>
-            <p className="max-w-4xl text-base leading-7 text-[var(--gray-dark)] md:text-lg">
+      <main className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+        <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-[var(--s6)] px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
+          <header className="space-y-[var(--s4)] border-b-2 border-[color:var(--brass-700)] pb-[var(--s6)]">
+            <p className="t-eyebrow tracking-[0.35em]">Mission Control</p>
+            <h1 className="t-command" style={{ fontSize: 'var(--t-2xl)' }}>The Ring</h1>
+            <p className="t-body max-w-[80ch]">
               Every corner has its own view. Athlete. Coach. Parent. Board. Admin. Public.
             </p>
             <ShadowChatButton context="Mission Control" />
@@ -191,31 +225,31 @@ export default function OperationsHubPage() {
           <AnnouncementBanner
             placement="everywhere"
             heading="Gym-wide notice"
-            className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-5 shadow-[var(--shadow-sm)]"
+            className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]"
           />
 
-          <section className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-5 shadow-[var(--shadow-sm)]">
+          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
+              <p className="t-body max-w-[80ch]">
                 Need orientation? Open the full tutorial center from one button instead of rendering all tutorial content inline.
               </p>
               <ShadowChatButton context="Mission Control Start Here" />
             </div>
           </section>
 
-          <details className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-4 shadow-[var(--shadow-sm)]">
-            <summary className="cursor-pointer list-none text-lg font-bold uppercase tracking-[0.08em] text-[var(--black)]">
+          <details className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s4)]">
+            <summary className="cursor-pointer list-none t-command" style={{ fontSize: 'var(--t-lg)' }}>
               System Diagnostics and SHADOW Certification
             </summary>
             <div className="mt-4 space-y-5">
-            <div className="space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-              <p className="text-xs font-mono uppercase tracking-[0.15em] text-[var(--red-primary)]">System Operational Audit and Validation Report</p>
-              <p className="text-sm leading-6 text-[var(--gray-dark)]">
+            <div className="space-y-[var(--s3)] mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+              <p className="t-eyebrow">System Operational Audit and Validation Report</p>
+              <p className="t-body">
                 SHADOW v21.1 seed is ingested, stress-validated, and sealed for development deployment. This build section mirrors the certified guardrails used for floor safety, role isolation, and audit integrity.
               </p>
               <div className="grid gap-2 md:grid-cols-3">
                 {shadowCertificationSignals.map((signal) => (
-                  <div key={signal} className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-2 text-[11px] font-mono uppercase tracking-[0.08em] text-[var(--black)]">
+                  <div key={signal} className="mat-leather rounded-[var(--r-sm)] px-[var(--s4)] py-[var(--s3)] t-data uppercase tracking-[0.08em]">
                     {signal}
                   </div>
                 ))}
@@ -223,24 +257,24 @@ export default function OperationsHubPage() {
             </div>
 
             <div className="grid gap-4 xl:grid-cols-2">
-              <article className="space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-                <h3 className="font-display text-xl font-bold text-[var(--black)]">Mathematical Gate Validation</h3>
-                <p className="border border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-2 text-xs font-mono text-[var(--black)]">{shadowReadinessEquation}</p>
-                <p className="border border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-2 text-xs font-mono text-[var(--black)]">{shadowRpeEquation}</p>
+              <article className="space-y-[var(--s3)] mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Mathematical Gate Validation</h3>
+                <p className="mat-leather rounded-[var(--r-sm)] px-[var(--s4)] py-[var(--s3)] t-data">{shadowReadinessEquation}</p>
+                <p className="mat-leather rounded-[var(--r-sm)] px-[var(--s4)] py-[var(--s3)] t-data">{shadowRpeEquation}</p>
                 <div className="grid gap-2">
                   {shadowBoundaryChecks.map((item) => (
-                    <p key={item} className="border border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-2 text-sm leading-6 text-[var(--gray-dark)]">
+                    <p key={item} className="mat-leather rounded-[var(--r-sm)] px-[var(--s4)] py-[var(--s3)] t-body">
                       {item}
                     </p>
                   ))}
                 </div>
               </article>
 
-              <article className="space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-                <h3 className="font-display text-xl font-bold text-[var(--black)]">Privacy and Compliance Boundaries</h3>
+              <article className="space-y-[var(--s3)] mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Privacy and Compliance Boundaries</h3>
                 <div className="grid gap-2">
                   {shadowComplianceChecks.map((item) => (
-                    <p key={item} className="border border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-2 text-sm leading-6 text-[var(--gray-dark)]">
+                    <p key={item} className="mat-leather rounded-[var(--r-sm)] px-[var(--s4)] py-[var(--s3)] t-body">
                       {item}
                     </p>
                   ))}
@@ -248,15 +282,15 @@ export default function OperationsHubPage() {
               </article>
             </div>
 
-            <article className="space-y-4 border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-              <h3 className="font-display text-xl font-bold text-[var(--black)]">SHADOW Dual-Engine Architecture</h3>
+            <article className="space-y-[var(--s4)] mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+              <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>SHADOW Dual-Engine Architecture</h3>
               <div className="grid gap-3 lg:grid-cols-2">
                 {shadowArchitectureNodes.map((node) => (
-                  <div key={node.name} className="space-y-2 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-3">
-                    <p className="text-sm font-mono font-bold uppercase tracking-[0.08em] text-[var(--red-primary)]">{node.name}</p>
+                  <div key={node.name} className="space-y-[var(--s2)] mat-leather rounded-[var(--r-md)] p-[var(--s4)]">
+                    <p className="t-eyebrow">{node.name}</p>
                     <div className="grid gap-2">
                       {node.details.map((detail) => (
-                        <p key={detail} className="text-sm leading-6 text-[var(--gray-dark)]">
+                        <p key={detail} className="t-body">
                           {detail}
                         </p>
                       ))}
@@ -264,24 +298,33 @@ export default function OperationsHubPage() {
                   </div>
                 ))}
               </div>
-              <p className="border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 py-3 text-sm font-bold uppercase tracking-[0.08em] text-[var(--white)]">
-                Certification Status: Signed and Active. Logical paths, equations, role boundaries, and sandbox behavior are aligned for SHADOW core build execution.
-              </p>
+              {/* This announced a PASS on a solid --red-primary field — the
+                  safety gate's red carrying a success message, which is the
+                  most misleading way the token has been misused anywhere in
+                  the app. A signed certification is a governance decision, so
+                  Law 7 gives it ink: a stamp on the page, in the approved
+                  green the system reserves for exactly this. */}
+              <div className="mat-leather rounded-[var(--r-md)] p-[var(--s4)]">
+                <span className="stamp stamp--green">Signed &amp; Active</span>
+                <p className="t-body mt-[var(--s4)]">
+                  Certification Status: Signed and Active. Logical paths, equations, role boundaries, and sandbox behavior are aligned for SHADOW core build execution.
+                </p>
+              </div>
             </article>
             </div>
           </details>
 
-          <section className="space-y-4 border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-6 shadow-[var(--shadow-sm)]">
-            <h2 className="font-display text-2xl font-bold tracking-tight text-[var(--black)]">Role Selector</h2>
+          <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
+            <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Role Selector</h2>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {roleSelector.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className="flex items-center justify-between border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-4 transition hover:bg-[var(--canvas-tan-dark)]"
+                  className="flex items-center justify-between mat-leather--raised rounded-[var(--r-md)] px-[var(--s4)] py-[var(--s4)] transition hover:border-[color:var(--brass-400)] border border-transparent"
                 >
-                  <span className="text-lg font-semibold text-[var(--black)]">{item.role}</span>
-                  <span className="text-xs font-mono uppercase tracking-[0.15em] text-[var(--red-primary)]">{item.status}</span>
+                  <span className="t-command">{item.role}</span>
+                  <span className="t-eyebrow">{item.status}</span>
                 </Link>
               ))}
             </div>
@@ -289,32 +332,32 @@ export default function OperationsHubPage() {
 
           <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
             <div className="space-y-6">
-              <section className="space-y-4 border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-6 shadow-[var(--shadow-sm)]">
-                <h2 className="font-display text-2xl font-bold tracking-tight text-[var(--black)]">MY PRIORITIES TODAY</h2>
+              <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
+                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>MY PRIORITIES TODAY</h2>
                 <div className="grid gap-3 md:grid-cols-3">
                   {priorityLanes.map((lane) => (
-                    <article key={lane.lane} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-4">
-                      <p className="text-xs font-mono uppercase tracking-[0.18em] text-[var(--red-primary)]">{lane.lane}</p>
-                      <p className="mt-2 text-3xl font-black text-[var(--black)]">{lane.count}</p>
-                      <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">{lane.summary}</p>
+                    <article key={lane.lane} className="mat-leather--raised rounded-[var(--r-md)] px-[var(--s4)] py-[var(--s4)]">
+                      <p className="t-eyebrow">{lane.lane}</p>
+                      <p className="t-command mt-[var(--s3)]">{lane.count}</p>
+                      <p className="t-body mt-[var(--s3)]">{lane.summary}</p>
                     </article>
                   ))}
                 </div>
               </section>
 
-              <section className="space-y-4 border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-6 shadow-[var(--shadow-sm)]">
-                <h2 className="font-display text-2xl font-bold tracking-tight text-[var(--black)]">WORKSPACES</h2>
+              <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
+                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>WORKSPACES</h2>
                 <div className="grid gap-3">
                   {workspaces.map((workspace) => (
-                    <article key={workspace.href} className="grid gap-3 border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-4 md:grid-cols-[1fr_auto_auto] md:items-center">
+                    <article key={workspace.href} className="grid gap-[var(--s4)] mat-leather--raised rounded-[var(--r-md)] px-[var(--s4)] py-[var(--s4)] md:grid-cols-[1fr_auto_auto] md:items-center">
                       <div>
-                        <h3 className="text-lg font-bold text-[var(--black)]">{workspace.label}</h3>
-                        <p className="mt-1 text-sm leading-6 text-[var(--gray-dark)]">{workspace.note}</p>
+                        <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>{workspace.label}</h3>
+                        <p className="t-body mt-[var(--s2)]">{workspace.note}</p>
                       </div>
-                      <p className="text-sm font-mono uppercase tracking-[0.14em] text-[var(--red-primary)]">{workspace.openCount} open</p>
+                      <p className="t-eyebrow">{workspace.openCount} open</p>
                       <Link
                         href={workspace.href}
-                        className="inline-flex min-h-[44px] items-center justify-center border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 py-2 text-xs font-mono font-bold uppercase tracking-[0.14em] text-[var(--white)] transition hover:bg-[var(--red-highlight)]"
+                        className="btn"
                       >
                         Open
                       </Link>
@@ -323,14 +366,14 @@ export default function OperationsHubPage() {
                 </div>
               </section>
 
-              <section className="space-y-4 border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-6 shadow-[var(--shadow-sm)]">
-                <h2 className="font-display text-2xl font-bold tracking-tight text-[var(--black)]">DEVELOPMENT LAB</h2>
+              <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
+                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>DEVELOPMENT LAB</h2>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {developmentLab.map((item) => (
                     <Link
                       key={item.href}
                       href={item.href}
-                      className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-4 text-base font-semibold text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"
+                      className="btn btn--ghost justify-start text-left"
                     >
                       {item.label}
                     </Link>
@@ -338,33 +381,38 @@ export default function OperationsHubPage() {
                 </div>
               </section>
 
-              <section className="space-y-4 border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-6 shadow-[var(--shadow-sm)]">
-                <h2 className="font-display text-2xl font-bold tracking-tight text-[var(--black)]">Capability Visibility Map</h2>
-                <p className="text-sm leading-6 text-[var(--gray-dark)]">
+              <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
+                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Capability Visibility Map</h2>
+                <p className="t-body">
                   Reality-based map of major PPBF capabilities. Placeholders are roadmap visibility only and are not implemented.
                 </p>
                 <div className="grid gap-3 md:grid-cols-2">
                   {capabilityRadar.map((item) => (
-                    <article key={item.name} className={`border-2 p-4 ${capabilityTone(item.state)}`}>
-                      <div className="flex items-center justify-between gap-3">
-                        <h3 className="text-[15px] font-bold uppercase tracking-[0.05em]">{item.name}</h3>
-                        <span className="border border-[var(--black)] bg-[var(--canvas-tan-light)] px-2 py-0.5 text-[10px] font-mono font-bold uppercase">
+                    <article
+                      key={item.name}
+                      className="mat-leather--raised rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.18)] p-[var(--s4)]"
+                    >
+                      <div className="flex items-start justify-between gap-[var(--s4)]">
+                        <h3 className="t-command" style={{ fontSize: 'var(--t-sm)' }}>
+                          {item.name}
+                        </h3>
+                        <span
+                          className={`inline-flex shrink-0 items-center gap-[var(--s2)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.1em] ${capabilityChip(item.state).cls}`}
+                        >
+                          <i className="not-italic">{capabilityChip(item.state).glyph}</i>
                           {item.state}
                         </span>
                       </div>
-                      <p className="mt-2 text-sm leading-6">{item.notes}</p>
+                      <p className="t-body mt-[var(--s3)]">{item.notes}</p>
                       {item.href ? (
-                        <Link
-                          href={item.href}
-                          className="mt-3 inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"
-                        >
+                        <Link href={item.href} className="btn btn--ghost mt-[var(--s3)]">
                           Open Capability
                         </Link>
                       ) : (
                         <button
                           type="button"
                           disabled
-                          className="mt-3 inline-flex min-h-[44px] cursor-not-allowed items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--red-primary)] opacity-80"
+                          className="btn btn--ghost mt-[var(--s3)] cursor-not-allowed opacity-60 grayscale"
                         >
                           Planned Capability
                         </button>
@@ -376,41 +424,54 @@ export default function OperationsHubPage() {
             </div>
 
             <aside className="space-y-6">
-              <section className="space-y-4 border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-6 shadow-[var(--shadow-sm)]">
-                <h2 className="font-display text-2xl font-bold tracking-tight text-[var(--black)]">SYSTEM STATUS</h2>
+              <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
+                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>SYSTEM STATUS</h2>
                 <div className="grid gap-2">
                   {systemStatus.map((item) => (
-                    <div key={item.label} className="flex items-center justify-between border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3">
-                      <span className="text-sm font-semibold text-[var(--black)]">{item.label}</span>
+                    <div key={item.label} className="flex items-center justify-between mat-leather--raised rounded-[var(--r-md)] px-[var(--s4)] py-[var(--s3)]">
+                      <span className="t-body">{item.label}</span>
                       <span className={`text-xs font-mono uppercase tracking-[0.15em] ${item.tone}`}>{item.value}</span>
                     </div>
                   ))}
                 </div>
               </section>
 
-              <section className="space-y-4 border-[3px] border-[var(--black)] bg-[var(--red-primary)] px-6 py-6 text-[var(--white)] shadow-[var(--shadow-sm)]">
-                <h2 className="font-display text-2xl font-bold tracking-tight text-[var(--white)]">SHADOW COMMAND NODE</h2>
-                <p className="text-sm font-mono uppercase tracking-[0.14em] text-[var(--white)]">PLANNED | NOT YET IMPLEMENTED</p>
-                <p className="text-sm leading-6 text-[var(--white-off)]">
+              {/* A solid red panel for "planned, not yet implemented". The
+                  copy underneath is the important part — an empty panel here
+                  does not mean the floor is clear — and drowning it in the
+                  safety red made the panel itself look like the alert it is
+                  explicitly telling you it is not. Law 7: the unbuilt state is
+                  stamped, in brass so the ladder keeps its colour. */}
+              <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
+                {/* Heading case and the stamp's wording are both load-bearing:
+                    app/operations/page.test.tsx asserts this panel says
+                    "PLANNED | NOT YET IMPLEMENTED" in as many words, so an
+                    empty alert panel can never be mistaken for a quiet floor.
+                    The restyle carries the exact string rather than paraphrase
+                    it — the guarantee is the point, the stamp is just how it
+                    is now said. */}
+                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>SHADOW COMMAND NODE</h2>
+                <span className="stamp stamp--brass">PLANNED | NOT YET IMPLEMENTED</span>
+                <p className="t-body">
                   No operational alert feed reaches this panel. An empty panel here means nothing is being watched
                   from this screen, not that the floor is clear. Open SHADOW Ops for what the system can report today.
                 </p>
                 <Link
                   href="/admin/shadow"
-                  className="inline-flex min-h-[44px] items-center justify-center border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-2 text-xs font-mono font-bold uppercase tracking-[0.14em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"
+                  className="btn btn--ghost"
                 >
                   Open SHADOW Ops
                 </Link>
               </section>
 
-              <section className="space-y-3 border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] px-6 py-6 shadow-[var(--shadow-sm)]">
-                <h2 className="font-display text-xl font-bold tracking-tight text-[var(--black)]">Platform Shortcuts</h2>
+              <section className="space-y-[var(--s3)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] px-[var(--s5)] py-[var(--s5)]">
+                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Platform Shortcuts</h2>
                 <div className="grid gap-2">
                   {utilityLinks.map((item) => (
                     <Link
                       key={item.href}
                       href={item.href}
-                      className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-sm font-semibold text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"
+                      className="btn btn--ghost justify-start text-left"
                     >
                       {item.label}
                     </Link>
