@@ -122,6 +122,7 @@
   --t-2xl: 39.3px;   /* 15 × φ²    · command headers              */
   --t-3xl: 50px;     /* 15 × φ²√φ  · mottos                       */
   --t-4xl: 63.6px;   /* 15 × φ³    · display                      */
+  --t-5xl: 80.9px;   /* 15 × φ³√φ  · hero, one per screen at most */
 
   /* Space + radius — Fibonacci */
   --s1: 3px;  --s2: 5px;  --s3: 8px;  --s4: 13px;

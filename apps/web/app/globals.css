@@ -92,7 +92,24 @@
   /* --- Type: was an eyeballed 11/12/15/16/18/24/32/48 ladder with no ratio.
      Now the √φ ladder (Law 8). --text-sm climbing 12px→15px and --text-lg
      16px→19.1px are the two visible jumps; 19.1px is the kiosk floor (Law 5),
-     which the old 16px silently violated on the gym floor. */
+     which the old 16px silently violated on the gym floor.
+
+     These names are not only the app's own. `--text-*` is Tailwind v4's font
+     size namespace, so redefining them here re-points every `text-sm` /
+     `text-lg` in the app — about 1,650 utility sites — at the ladder. That is
+     deliberate, and it works because this :root is UNLAYERED while Tailwind's
+     defaults sit in `@layer theme`: unlayered always wins, whatever the order.
+
+     Line height rides along safely. Tailwind pairs each size with a unitless
+     ratio (`--text-4xl--line-height: calc(2.5 / 2.25)`), not a fixed px, so
+     leading rescales with the size instead of clipping.
+
+     The ladder must stay covered to its end. It previously stopped at
+     --text-4xl, which left --text-5xl on Tailwind's 48px default while
+     --text-4xl had climbed to 50px — so the scale INVERTED. Every 5xl/6xl in
+     this app is a `md:` step-up from text-4xl (The Bell, The Ring, the public
+     landing page), which meant eight of the largest headings got *smaller* on
+     desktop. Any future rung Tailwind exposes needs a line here too. */
   --text-xs: var(--t-xs);
   --text-sm: var(--t-sm);
   --text-base: var(--t-sm);
@@ -101,6 +118,18 @@
   --text-2xl: var(--t-xl);
   --text-3xl: var(--t-2xl);
   --text-4xl: var(--t-3xl);
+  --text-5xl: var(--t-4xl);
+  --text-6xl: var(--t-5xl);
+
+  /* Nothing uses 7xl–9xl today, so they get no named rung in ppbf.css. They
+     still have to be covered: left on Tailwind's defaults, text-7xl (72px)
+     would render smaller than the bridged text-6xl (80.9px) — the same
+     inversion, waiting for whoever reaches for it first. Continuing the √φ
+     generator inline keeps the scale monotonic without inventing ladder rungs
+     for sizes no screen asks for. */
+  --text-7xl: calc(var(--t-5xl) * var(--root-phi));
+  --text-8xl: calc(var(--t-5xl) * var(--root-phi) * var(--root-phi));
+  --text-9xl: calc(var(--t-5xl) * var(--root-phi) * var(--root-phi) * var(--root-phi));
 
   --leading-tight: 1.2;
   --leading-normal: 1.5;
