@@ -234,6 +234,13 @@
       "bytes": 17418
     },
     {
+      "path": "foundations/training-card.html",
+      "group": "Foundations",
+      "name": "Training Card",
+      "subtitle": "One stamp per logged session, milestone seals on the Fibonacci series — a record, not a score, and deliberately not a streak",
+      "bytes": 9880
+    },
+    {
       "path": "components/forms.html",
       "group": "Components",
       "name": "Forms",
@@ -298,8 +305,8 @@
     }
   ],
   "counts": {
-    "previews": 17,
-    "foundations": 8,
+    "previews": 18,
+    "foundations": 9,
     "components": 3,
     "screens": 6
   }

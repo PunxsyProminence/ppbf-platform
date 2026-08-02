@@ -2119,6 +2119,91 @@ body.ppbf.on-canvas {
   outline: 2px solid rgba(20,16,13,.55); outline-offset: 1px;
 }
 
+/* ============================================================ TRAINING CARD ===
+   The punch card an athlete accumulates: one stamp per session, a seal at each
+   milestone. It is a RECORD, not a score — every mark corresponds to a real
+   session row, so the card cannot flatter anyone.
+
+   NO STREAKS, deliberately. A streak punishes illness and injury, and this
+   platform has a safety gate that locks athletes out for medical reasons: a
+   streak would mean an athlete watching their run die because a doctor
+   protected them, which is a direct incentive to hide a concussion. Cumulative
+   counts only. They never reset and never pressure.
+
+   LAW 2 HOLDS HERE. Effort is shown as ink density, never as colour — a red
+   stamp for a hard session would put a saturated pixel next to the safety
+   ladder and make "heavy training" look like "restricted". */
+.tcard { padding: var(--s5) var(--s5) var(--s4); }
+
+.tcard-hd { display: flex; align-items: flex-end; justify-content: space-between;
+            gap: var(--s5); flex-wrap: wrap; margin-bottom: var(--s5);
+            border-bottom: 2px solid rgba(20,16,13,.2); padding-bottom: var(--s3); }
+.tcard-title { font-family: var(--font-display); text-transform: uppercase;
+               font-size: var(--t-md); letter-spacing: .05em; color: #241C11; margin: 0; }
+.tcard-sub { font: 400 11px/1.4 var(--font-data); letter-spacing: .06em;
+             text-transform: uppercase; color: #6B5B44; margin-top: 2px; }
+/* The count that never resets. */
+.tcard-count { text-align: right; line-height: 1; }
+.tcard-count b { display: block; font-family: var(--font-display); font-size: var(--t-2xl);
+                 color: #241C11; line-height: .9; }
+.tcard-count span { display: block; font: 650 9.5px/1 var(--font-data); letter-spacing: .14em;
+                    text-transform: uppercase; color: #6B5B44; margin-top: var(--s2); }
+
+/* The grid of impressions. */
+.tcard-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(34px, 1fr));
+              gap: var(--s3); margin-bottom: var(--s5); }
+.tcard-stamp {
+  aspect-ratio: 1; border-radius: 2px; position: relative;
+  display: grid; place-items: center;
+  font: 650 10px/1 var(--font-data); color: rgba(36,28,17,.62);
+  border: 1.5px solid rgba(36,28,17,.34);
+  /* Slight rotation per position so the card reads as hand-stamped rather than
+     printed. Deterministic by nth-child, never random — a card that reshuffles
+     between reloads reads as breakage. */
+  background: rgba(36,28,17,.05);
+}
+.tcard-stamp:nth-child(3n+1)  { rotate: -1.5deg; }
+.tcard-stamp:nth-child(3n+2)  { rotate:  1deg; }
+.tcard-stamp:nth-child(5n)    { rotate: -0.5deg; }
+.tcard-stamp:nth-child(7n)    { rotate:  1.75deg; }
+
+/* A logged session. Ink density carries effort — never hue (Law 2).
+   The ramp starts at .66, not 0: the numeral is printed in paper-white on a
+   semi-transparent stamp, so a light session composites to pale-on-pale. A .52
+   floor measured 4.35:1 at RPE 3 and worse below it — under the 4.5 AA floor.
+   .66→.88 keeps a visible difference between a light and a heavy session while
+   every effort level from 1 to 10 clears AA. Correctness outranks drama. */
+.tcard-stamp--done {
+  border-color: rgba(36,28,17,.72); color: var(--paper);
+  background-color: rgba(36,28,17,calc(.66 + var(--ink, .5) * .22));
+  background-image: var(--grain-fine);
+  background-blend-mode: overlay;
+  box-shadow: inset 0 0 3px rgba(255,255,255,.14), 0 1px 2px rgba(0,0,0,.18);
+}
+/* Booked but not completed: an empty box on the card, which is the truth. */
+.tcard-stamp--open { border-style: dashed; color: rgba(36,28,17,.4); }
+
+.tcard-seals { display: flex; flex-wrap: wrap; gap: var(--s4); align-items: center;
+               padding-top: var(--s4); border-top: 1px dashed rgba(20,16,13,.18); }
+.tcard-seal-slot { text-align: center; }
+.tcard-seal-slot .tcard-seal-lbl {
+  display: block; font: 650 9px/1.5 var(--font-data); letter-spacing: .1em;
+  text-transform: uppercase; color: #6B5B44; margin-top: var(--s2);
+}
+/* An unearned milestone is drawn, not hidden — you can see what is next.
+   NOT named "--locked": in this platform "locked" is the Layer 11 safety state,
+   and borrowing that word for a gamification state is exactly the drift Law 2
+   exists to prevent. A milestone you have not reached is unearned, not locked. */
+.tcard-seal-slot--unearned { opacity: .3; filter: grayscale(1); }
+
+.tcard-legend { display: flex; gap: var(--s5); flex-wrap: wrap; margin-top: var(--s4);
+                font: 400 10.5px/1.5 var(--font-ui); color: #6B5B44; }
+.tcard-legend i { font-style: normal; display: inline-block; width: 11px; height: 11px;
+                  border-radius: 2px; vertical-align: -1px; margin-right: var(--s2);
+                  border: 1.5px solid rgba(36,28,17,.6); }
+.tcard-legend i.is-done { background: rgba(36,28,17,.72); }
+.tcard-legend i.is-open { border-style: dashed; }
+
 /* =========================================================== COMMANDS SHEET ===
    The "?" overlay: a laminated notice posted on the wall, which is where a list
    of rules belongs in this building. It renders from the shortcut registry, so

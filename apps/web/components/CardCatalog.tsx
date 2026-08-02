@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useSyncExternalStore } from 'react';
 
 import { getRoleSessionSnapshot, subscribeRoleSession } from './roleSession';
@@ -26,7 +26,6 @@ import { isTypingTarget } from './shortcuts';
  */
 export default function CardCatalog() {
   const router = useRouter();
-  const pathname = usePathname();
   const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
   const role = session?.role ?? null;
 
@@ -88,11 +87,12 @@ export default function CardCatalog() {
     if (open) inputRef.current?.focus();
   }, [open]);
 
-  /* ---- close on navigation -------------------------------------------- */
-  useEffect(() => { if (open) close(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [pathname]);
+  /* Closing on navigation is handled by the parent keying this component on the
+     pathname, not by an effect: setState inside an effect cascades a render, and
+     a remount is both cheaper and exactly the semantics wanted — a fresh, closed
+     palette on every surface. */
 
-  /* ---- keep the cursor in range and in view --------------------------- */
-  useEffect(() => { setCursor(0); }, [query]);
+  /* ---- keep the highlighted row in view ------------------------------- */
   useEffect(() => {
     const el = listRef.current?.querySelector<HTMLElement>(`[data-idx="${cursor}"]`);
     // Guarded rather than called blind: this runs inside an effect on every
@@ -142,7 +142,13 @@ export default function CardCatalog() {
           <input
             ref={inputRef}
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              // Cursor resets here rather than in an effect on [query]: the two
+              // belong to the same user action, so doing it in one handler
+              // avoids a second render pass.
+              setQuery(e.target.value);
+              setCursor(0);
+            }}
             onKeyDown={onFieldKey}
             placeholder="Find a room, a record, a queue…"
             aria-label="Search surfaces"

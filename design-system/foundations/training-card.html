@@ -1,0 +1,168 @@
+<!-- @dsCard group="Foundations" name="Training Card" subtitle="One stamp per logged session, milestone seals on the Fibonacci series — a record, not a score, and deliberately not a streak" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Training Card — PPBF</title>
+<link rel="stylesheet" href="../ppbf.css">
+<style>
+  body.ppbf { padding: var(--s6); max-width: 1100px; margin: 0 auto; }
+  h1 { font-family: var(--font-display); font-size: var(--t-2xl); color: var(--bone-100);
+       text-shadow: 0 2px 0 rgba(0,0,0,.6); margin: 0 0 var(--s3); text-transform: uppercase; }
+  h2.sect { font-family: var(--font-display); font-size: var(--t-lg); color: var(--brass-300);
+            margin: var(--s7) 0 var(--s3); padding-bottom: var(--s3); text-transform: uppercase;
+            border-bottom: 1px solid rgba(212,175,74,.28); }
+  .note { color: var(--bone-300); font-size: var(--t-sm); line-height: 1.65; max-width: 76ch; margin: 0 0 var(--s5); }
+  .note b { color: var(--bone-100); }
+  code { font-family: var(--font-data); font-size: .92em; color: var(--brass-200); }
+  .cap { font: 650 10px/1 var(--font-data); letter-spacing: .12em; text-transform: uppercase;
+         color: var(--brass-400); margin: 0 0 var(--s4); }
+  .stage { margin-bottom: var(--s6); }
+  .two { display: grid; gap: var(--s6); grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); }
+</style>
+</head>
+<body class="ppbf room--floor light-at--tc light--caged">
+
+<h1>Training Card</h1>
+<p class="note">
+  The platform had no progression artefact at all: an athlete checked in, chose an effort rating,
+  submitted, and left. Nothing accumulated, so there was nothing to come back to. A gym's real
+  engagement mechanic is physical and visible &mdash; a card that fills up &mdash; and every primitive
+  needed for it already existed here (<code>.pap</code>, <code>.stamp</code>, the seal),
+  unused for this.
+</p>
+<p class="note">
+  <b>It is a record, not a score.</b> Every impression corresponds to one row from
+  <code>/api/pilot/sessions/list</code>, so the card cannot flatter anyone and cannot be gamed.
+  A booked-but-not-completed session shows as an empty box, because that is the truth.
+</p>
+
+<!-- ============================================================ NO STREAKS -->
+<h2 class="sect">Why there is no streak</h2>
+<div class="alert alert--critical" style="max-width:76ch">
+  <div class="alert-icon">⚠</div>
+  <div class="alert-body">
+    <div class="alert-title">A streak would be a safety hazard here</div>
+    <div class="alert-msg">
+      Streaks are the obvious mechanic and the wrong one for this platform. PPBF runs a
+      <b>Layer&nbsp;11 safety gate that locks athletes out for medical reasons</b> &mdash; concussion
+      protocol, injury, illness. A streak would mean an athlete watching their run die
+      <em>because a doctor protected them</em>. That is a direct incentive to under-report a head
+      injury, in a contact sport, to children.
+      <br><br>
+      Cumulative counts never reset and never pressure. &ldquo;142 sessions logged&rdquo; is just as
+      motivating and cannot be broken by being careful.
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================ STATES -->
+<h2 class="sect">The card</h2>
+<div class="two">
+  <div class="stage">
+    <p class="cap">A card in progress &mdash; 9 logged, 1 booked and missed</p>
+    <section class="pap pap--card age-1 lift-1 tcard">
+      <header class="tcard-hd">
+        <div>
+          <h3 class="tcard-title">Training Card</h3>
+          <div class="tcard-sub">Marcus D. &middot; since Mar 4 2026</div>
+        </div>
+        <div class="tcard-count"><b>9</b><span>sessions logged</span></div>
+      </header>
+      <div class="tcard-grid" role="list">
+        <div class="tcard-stamp tcard-stamp--done" style="--ink:.3" role="listitem" title="Session Mar 4 2026, effort 3 of 10">3</div>
+        <div class="tcard-stamp tcard-stamp--done" style="--ink:.5" role="listitem" title="effort 5">5</div>
+        <div class="tcard-stamp tcard-stamp--done" style="--ink:.6" role="listitem" title="effort 6">6</div>
+        <div class="tcard-stamp tcard-stamp--open" role="listitem" title="booked, not completed">·</div>
+        <div class="tcard-stamp tcard-stamp--done" style="--ink:.8" role="listitem" title="effort 8">8</div>
+        <div class="tcard-stamp tcard-stamp--done" style="--ink:.7" role="listitem" title="effort 7">7</div>
+        <div class="tcard-stamp tcard-stamp--done" style="--ink:1"  role="listitem" title="effort 10">10</div>
+        <div class="tcard-stamp tcard-stamp--done" style="--ink:.4" role="listitem" title="effort 4">4</div>
+        <div class="tcard-stamp tcard-stamp--done" style="--ink:.9" role="listitem" title="effort 9">9</div>
+        <div class="tcard-stamp tcard-stamp--done" style="--ink:.6" role="listitem" title="effort 6">6</div>
+      </div>
+      <div class="tcard-seals">
+        <div class="tcard-seal-slot">
+          <svg width="52" height="52" viewBox="0 0 100 100" role="img" aria-label="5 session milestone, earned">
+            <defs><path id="s5" d="M 50,50 m -34,0 a 34,34 0 1,1 68,0 a 34,34 0 1,1 -68,0"/></defs>
+            <circle cx="50" cy="50" r="46" fill="none" stroke="#241C11" stroke-width="2.5" opacity=".8"/>
+            <circle cx="50" cy="50" r="30" fill="none" stroke="#241C11" stroke-width="1.5" opacity=".55"/>
+            <text font-size="15" font-weight="700" fill="#241C11" letter-spacing="1">
+              <textPath href="#s5" startOffset="50%" text-anchor="middle">PPBF · LOGGED</textPath></text>
+            <text x="50" y="58" text-anchor="middle" font-size="26" font-weight="700" fill="#241C11">5</text>
+          </svg>
+          <span class="tcard-seal-lbl">5</span>
+        </div>
+        <div class="tcard-seal-slot tcard-seal-slot--unearned">
+          <svg width="52" height="52" viewBox="0 0 100 100" role="img" aria-label="13 session milestone, not yet earned">
+            <defs><path id="s13" d="M 50,50 m -34,0 a 34,34 0 1,1 68,0 a 34,34 0 1,1 -68,0"/></defs>
+            <circle cx="50" cy="50" r="46" fill="none" stroke="#241C11" stroke-width="2.5" opacity=".8"/>
+            <circle cx="50" cy="50" r="30" fill="none" stroke="#241C11" stroke-width="1.5" opacity=".55"/>
+            <text font-size="15" font-weight="700" fill="#241C11" letter-spacing="1">
+              <textPath href="#s13" startOffset="50%" text-anchor="middle">PPBF · LOGGED</textPath></text>
+            <text x="50" y="58" text-anchor="middle" font-size="26" font-weight="700" fill="#241C11">13</text>
+          </svg>
+          <span class="tcard-seal-lbl">13 &middot; to go</span>
+        </div>
+        <p class="tcard-sub" style="margin-left:auto;text-align:right">4 more to 13</p>
+      </div>
+      <div class="tcard-legend">
+        <span><i class="is-done"></i>Logged &mdash; the number is effort, 1&ndash;10</span>
+        <span><i class="is-open"></i>Booked, not completed</span>
+      </div>
+    </section>
+  </div>
+
+  <div class="stage">
+    <p class="cap">An empty card &mdash; says what fills it, and that it never resets</p>
+    <div class="pap pap--card age-1 lift-1 tcard">
+      <div class="empty" style="padding:var(--s7) var(--s5)">
+        <div class="empty-glyph">🥊</div>
+        <div class="empty-title">No sessions on the card yet</div>
+        <div class="empty-msg">
+          Check in at the floor kiosk and the first stamp lands here. The card keeps every session
+          you log &mdash; it never resets.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================= LAWS -->
+<h2 class="sect">What the laws forced</h2>
+<p class="note">
+  <b>Law 2 &mdash; effort is ink, never hue.</b> The obvious move is a red stamp for a hard session
+  and a green one for a light one. That would put saturated colour next to the safety ladder and
+  make &ldquo;trained hard&rdquo; read as &ldquo;restricted&rdquo;. Effort is carried by
+  <b>ink density</b> instead, driven by a <code>--ink</code> custom property, so a heavy session
+  looks pressed harder into the paper and no pixel lies about safety.
+</p>
+<p class="note">
+  <b>Law 3 &mdash; never colour alone.</b> Each impression prints its own effort number, and carries
+  its full date and effort as text in the accessibility tree. The card is not a wall of shades to a
+  screen reader, and it survives greyscale printing for a board packet.
+</p>
+<p class="note">
+  <b>Law 8 &mdash; milestones on the Fibonacci series</b>, like every other measure in the system:
+  <b>5 &middot; 13 &middot; 34 &middot; 89 &middot; 233</b>. Five is reachable in a fortnight so the
+  card rewards early; the gaps then widen the way real progress does, instead of handing out a badge
+  a week forever. An unearned seal is drawn in grey rather than hidden, so the next one is always
+  visible.
+</p>
+<p class="note">
+  <b>Naming.</b> The unearned-milestone class is <code>.tcard-seal-slot--unearned</code>, not
+  <code>--locked</code>. In this platform &ldquo;locked&rdquo; is the Layer 11 safety state; borrowing
+  that word for a gamification state is exactly the drift Law 2 exists to prevent. A milestone you
+  have not reached is unearned. An athlete under medical hold is locked. They are not the same thing
+  and must never share a word.
+</p>
+
+<p class="note" style="margin-top:var(--s7);padding-top:var(--s5);border-top:1px dashed rgba(212,175,74,.14);font-size:11px">
+  Component: <code>apps/web/components/TrainingCard.tsx</code>, mounted in
+  <code>AthleteWorkspace</code>. Data: <code>GET /api/pilot/sessions/list?athlete_id=…</code>,
+  which returns <code>session_id</code>, <code>date</code>, <code>rpe</code> and
+  <code>completed_flag</code> per row.
+</p>
+</body>
+</html>

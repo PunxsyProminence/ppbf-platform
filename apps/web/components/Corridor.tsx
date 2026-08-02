@@ -64,8 +64,10 @@ export default function Corridor() {
     };
   }, [open, close]);
 
-  /* Walking through a door closes the corridor behind you. */
-  useEffect(() => { setOpen(false); }, [pathname]);
+  /* Walking through a door closes the corridor behind you. Done by the parent
+     keying this component on the pathname rather than by an effect: setState in
+     an effect cascades a render, and a remount gives exactly the semantics
+     wanted — the corridor is shut on every new surface. */
 
   // Signed out there is nothing to walk between, so the corridor stays shut
   // rather than showing a hallway of doors that all lead to /login.

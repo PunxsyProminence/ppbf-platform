@@ -5,6 +5,7 @@ import React, { type FormEvent, useCallback, useEffect, useState } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
 import { AthleteSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
+import TrainingCard, { type TrainingSession } from './TrainingCard';
 import { cx, ui } from './uiStyles';
 import { apiBase } from '@/lib/apiBase';
 
@@ -259,6 +260,7 @@ export default function AthleteWorkspace() {
   const [smartGoals, setSmartGoals] = useState<SMARTGoal[]>([]);
   const [goalsLoading, setGoalsLoading] = useState(true);
   const [goalsError, setGoalsError] = useState<string | null>(null);
+  const [trainingSessions, setTrainingSessions] = useState<TrainingSession[]>([]);
 
   const [showGoalForm, setShowGoalForm] = useState(false);
   const [isCreatingGoal, setIsCreatingGoal] = useState(false);
@@ -359,6 +361,39 @@ export default function AthleteWorkspace() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadGoals();
   }, [loadGoals]);
+
+  /**
+   * The training card's rows. Read-only and honest: one stamp per session row,
+   * so the card cannot show progress the ledger does not have. Failure is silent
+   * on purpose -- an athlete's card is an encouragement, not an operational
+   * surface, and an error banner over it would be louder than the thing itself.
+   */
+  const loadTrainingCard = useCallback(async () => {
+    if (!backendAthleteId) return;
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/sessions/list?athlete_id=${encodeURIComponent(backendAthleteId)}`,
+        { method: 'GET', credentials: 'include' },
+      );
+      if (!response.ok) { setTrainingSessions([]); return; }
+      const data = (await response.json()) as { items?: TrainingSession[] };
+      setTrainingSessions(
+        (data.items ?? []).map((s) => ({
+          session_id: s.session_id,
+          date: s.date,
+          rpe: Number(s.rpe) || 0,
+          completed_flag: Boolean(s.completed_flag),
+        })),
+      );
+    } catch {
+      setTrainingSessions([]);
+    }
+  }, [backendAthleteId]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadTrainingCard();
+  }, [loadTrainingCard]);
 
   /**
    * Load the athlete's floor tasks from their persisted floor plan.
@@ -857,6 +892,11 @@ export default function AthleteWorkspace() {
           upcomingSession="Unavailable - not yet tracked"
           unreadMessages={0}
         />
+
+        {/* The training card. One stamp per session row from the ledger -- a
+            record the athlete accumulates, so there is something to come back
+            to. Cumulative, never a streak: see TrainingCard.tsx. */}
+        <TrainingCard sessions={trainingSessions} />
 
         <details className="border-2 border-[var(--patina-700)] bg-[var(--hide-950)] p-4">
           <summary className="cursor-pointer text-xs font-mono uppercase tracking-[0.12em] text-[var(--brass-300)]">Critical Capability Surfaces</summary>

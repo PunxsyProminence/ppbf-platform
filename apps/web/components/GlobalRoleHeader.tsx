@@ -45,12 +45,17 @@ export default function GlobalRoleHeader() {
             {session.role}
           </span>
           {/* The corridor: the other 61 routes used to be reachable only by
-              typing a URL. It lives in the header so every surface gets it. */}
-          <Corridor />
+              typing a URL. It lives in the header so every surface gets it.
+              Keyed on the pathname so walking through a door leaves it shut --
+              a remount rather than a setState-in-effect, which would cascade a
+              render on every navigation. */}
+          <Corridor key={`corridor:${pathname}`} />
         </div>
 
         <div className="flex items-center gap-2">
-          <CardCatalog />
+          {/* Keyed for the same reason as the corridor: a fresh, closed palette
+              on every surface, with no effect writing state on navigation. */}
+          <CardCatalog key={`catalog:${pathname}`} />
           <CommandsOverlay />
           <Link
             href="/operations"
