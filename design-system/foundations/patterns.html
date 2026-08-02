@@ -64,8 +64,8 @@
       <div class="alert alert--info">
         <div class="alert-icon">ℹ</div>
         <div class="alert-body">
-          <div class="alert-title">Offline Mode Active</div>
-          <div class="alert-msg">The floor kiosk is running without network. Changes will sync when connectivity returns.</div>
+          <div class="alert-title">Network Unavailable</div>
+          <div class="alert-msg">The floor kiosk has no connection. Do not close this screen &mdash; a check-in submitted now is not saved.</div>
         </div>
       </div>
     </div>
@@ -75,6 +75,21 @@
       <code>.alert--success</code>, or <code>.alert--info</code>. Place at top of content area or inline near related content.
       Keyboard-accessible; screen readers announce presence.
     </p>
+
+    <div class="alert alert--warning" style="margin-top:var(--s5)">
+      <div class="alert-icon">⚠</div>
+      <div class="alert-body">
+        <div class="alert-title">Write only what is true</div>
+        <div class="alert-msg">
+          The network alert above used to read &ldquo;changes will sync when connectivity returns.&rdquo;
+          There is <b>no offline write queue in the platform</b> &mdash; no service worker, no
+          <code>navigator.onLine</code> handling, no pending-write store. A check-in submitted during
+          an outage is lost. Reassuring copy over silent data loss is worse than no copy at all, so
+          the alert now tells the athlete not to close the screen. Restore the softer wording only
+          once a queue actually exists.
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- ================================================================ UNDO === -->
@@ -173,51 +188,69 @@
   <div class="pattern">
     <h2>4. Command Reference Card</h2>
     <p>
-      Coaches and admins need quick keyboard shortcuts (submit/next, approve/deny, lock/unlock).
-      A command cheat lives in the corner or pops up on <code>?</code>. Styled as a laminated card
-      posted on the gym wall. Discoverable without breaking the interface.
+      A command cheat that pops up on <code>?</code>, styled as a laminated notice posted on the gym
+      wall. <b>It renders from a shortcut registry</b> (<code>shortcuts.ts</code>), not from hand-written
+      markup, so it can only list keys that something actually binds &mdash; see the note below for why
+      that matters.
     </p>
+
+    <div class="alert alert--warning" style="margin-bottom:var(--s5)">
+      <div class="alert-icon">⚠</div>
+      <div class="alert-body">
+        <div class="alert-title">This card used to be a picture of a feature</div>
+        <div class="alert-msg">
+          The first version listed eight shortcuts &mdash; submit/next, approve/deny, lock/unlock &mdash;
+          and <b>not one of them was bound to anything</b>. That is worse than shipping no card, because
+          a documented key that does nothing teaches a user the keyboard is not worth trying here.
+          The overlay now renders from the registry, and a test asserts every listed entry has an
+          owning component.
+          <br><br>
+          <b>Approve/deny are deliberately absent.</b> The coach's review queue
+          (<code>shadow/review-projection</code>) is read-only, and the only coach decision endpoint
+          (<code>coach-reviews</code>) resolves <code>session_id</code> to a <em>training session</em>
+          while the queue holds <code>intake_case_id</code> &mdash; a different entity. Binding a key to
+          approve would fail validation or, on an ID collision, attach a review to the wrong athlete.
+          Triage needs a coach-facing write endpoint first.
+        </div>
+      </div>
+    </div>
 
     <div class="section-note">Example: Floating command card in a workspace</div>
     <div class="showcase" style="position: relative; min-height: 300px; display: flex; align-items: center; justify-content: center;">
-      <div style="position: absolute; bottom: var(--s5); right: var(--s5);">
-        <div class="commands">
-          <div class="commands-title">Keyboard Shortcuts</div>
-          <ul class="commands-list">
-            <li class="commands-item">
-              <span class="commands-key">Enter</span>
-              <span class="commands-desc">Submit / Next</span>
-            </li>
-            <li class="commands-item">
-              <span class="commands-key">Esc</span>
-              <span class="commands-desc">Cancel / Close</span>
-            </li>
-            <li class="commands-item">
-              <span class="commands-key">⌘+Z / Ctrl+Z</span>
-              <span class="commands-desc">Undo</span>
-            </li>
-            <li class="commands-item">
-              <span class="commands-key">⌘+Y / Ctrl+Y</span>
-              <span class="commands-desc">Redo</span>
-            </li>
-            <li class="commands-item">
-              <span class="commands-key">Space</span>
-              <span class="commands-desc">Approve / Toggle</span>
-            </li>
-            <li class="commands-item">
-              <span class="commands-key">?</span>
-              <span class="commands-desc">This help</span>
-            </li>
-            <li class="commands-item">
-              <span class="commands-key">L</span>
-              <span class="commands-desc">Lock / Engage</span>
-            </li>
-            <li class="commands-item">
-              <span class="commands-key">P</span>
-              <span class="commands-desc">Print / Export</span>
-            </li>
-          </ul>
+      <div class="commands-sheet" style="animation:none;position:relative;max-width:460px;margin:0 auto">
+        <div class="commands-sheet-hd">
+          <b>Keyboard</b>
+          <span>Everything here is bound. Nothing here is decoration.</span>
         </div>
+        <section class="commands-scope">
+          <div class="commands-scope-hd">Anywhere</div>
+          <ul class="commands-list">
+            <li class="commands-item"><span class="commands-key">&#8984;K</span>
+              <span class="commands-desc">Open the card catalog &mdash; jump to any surface</span></li>
+            <li class="commands-item"><span class="commands-key">/</span>
+              <span class="commands-desc">Open the card catalog (when not typing in a field)</span></li>
+            <li class="commands-item"><span class="commands-key">?</span>
+              <span class="commands-desc">Show this list of shortcuts</span></li>
+          </ul>
+        </section>
+        <section class="commands-scope">
+          <div class="commands-scope-hd">In a dialog</div>
+          <ul class="commands-list">
+            <li class="commands-item"><span class="commands-key">Esc</span>
+              <span class="commands-desc">Close the catalog, the corridor, or this list</span></li>
+          </ul>
+        </section>
+        <section class="commands-scope">
+          <div class="commands-scope-hd">In a list</div>
+          <ul class="commands-list">
+            <li class="commands-item"><span class="commands-key">&#8593; &#8595;</span>
+              <span class="commands-desc">Move through catalog results</span></li>
+            <li class="commands-item"><span class="commands-key">&#8629;</span>
+              <span class="commands-desc">Open the highlighted result</span></li>
+          </ul>
+        </section>
+        <div class="commands-sheet-ft"><kbd>esc</kbd> or <kbd>?</kbd> to close</div>
+      </div>
       </div>
 
       <div style="color: var(--bone-400); text-align: center;">

@@ -11,6 +11,7 @@ import {
   searchDoors,
   type Door,
 } from './buildingMap';
+import { isTypingTarget } from './shortcuts';
 
 /**
  * THE CARD CATALOG — Cmd/Ctrl+K, or "/" on any surface that is not a field.
@@ -54,13 +55,9 @@ export default function CardCatalog() {
   /* ---- global shortcut ------------------------------------------------- */
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      const target = e.target as HTMLElement | null;
-      const typing =
-        !!target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.tagName === 'SELECT' ||
-          target.isContentEditable);
+      // Shared with the "?" binding via the registry, so the two guards cannot
+      // drift apart — that drift is how a palette starts eating keystrokes.
+      const typing = isTypingTarget(e.target);
 
       // Cmd/Ctrl+K always opens, even mid-field: it is unambiguous.
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {

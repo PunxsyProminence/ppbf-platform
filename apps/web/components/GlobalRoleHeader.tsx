@@ -7,6 +7,7 @@ import { clearRoleSession, getRoleSessionSnapshot, subscribeRoleSession } from "
 import { apiBase } from '@/lib/apiBase';
 import Corridor from "./Corridor";
 import CardCatalog from "./CardCatalog";
+import CommandsOverlay from "./CommandsOverlay";
 
 export default function GlobalRoleHeader() {
   const router = useRouter();
@@ -50,6 +51,7 @@ export default function GlobalRoleHeader() {
 
         <div className="flex items-center gap-2">
           <CardCatalog />
+          <CommandsOverlay />
           <Link
             href="/operations"
             className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-1 text-[11px] font-mono text-[var(--black)] transition hover:bg-[var(--olive-dark)] hover:text-[var(--white)]"

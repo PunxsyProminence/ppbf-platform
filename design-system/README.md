@@ -282,10 +282,27 @@ When a list or panel loads empty, show what's supposed to go there and what's ne
 "No pending reviews — all athletes cleared" beats a blank screen. Encourages exploration and
 explains the flow. Every empty list should have an action button or next step.
 
-**4. Command Reference Card** (`.commands`, `.commands-list`, `.commands-item`)
-Keyboard shortcuts and command reference as a laminated card styled like a posted gym notice.
-Lives in a corner or pops on `?` keypress. Discoverable without breaking the interface. Commands
-are critical for coaches (approve/deny, lock/unlock) and admins (submit, undo, print, export).
+**4. Command Reference Card** (`.commands-sheet`, `.commands-list`, `.commands-item`)
+A laminated notice posted on the wall, on `?` from anywhere.
+
+The first version of this listed eight shortcuts — submit/next, approve/deny, lock/unlock — and
+**not one of them was bound to anything.** It was a picture of a feature, which is worse than
+shipping nothing: a documented key that does nothing teaches a user that the keyboard is not worth
+trying here. It now renders from a **shortcut registry**
+(`apps/web/components/shortcuts.ts`), so a key cannot appear in the help without a component
+binding it, and a test asserts every listed entry names its owner.
+
+`isTypingTarget()` lives in that registry and is shared by every bare printable-key binding —
+`/` for the catalog, `?` for this sheet. Sharing it is the point: two copies of that guard drift,
+and drift is exactly how a palette starts eating keystrokes out of a coach's session note.
+
+**Approve/deny are deliberately absent.** The coach's review queue
+(`shadow/review-projection`) is read-only — its POST is a query — and the only coach decision
+endpoint (`coach-reviews`) resolves `session_id` through `getSessionAthleteId`, so it takes
+*training sessions*, while the queue holds `intake_case_id`. Binding a key to approve would fail
+server-side validation or, on an ID collision, attach a coach review to an unrelated athlete.
+Keyboard triage needs a coach-facing write endpoint for intake cases first; a test fails if
+someone adds an approve/deny key before that exists.
 
 **5. Print Parity** (`@media print` rules per room)
 Every screen prints identically to how it renders on screen. A board governance record and a
