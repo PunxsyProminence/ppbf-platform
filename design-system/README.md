@@ -200,6 +200,67 @@ rings, `.tally` counts rounds the way a gym does. All keyboard-reachable via
 
 ---
 
+## Motion & sound
+
+`foundations/motion.html` renders both.
+
+**Motion is Law 8 applied to time.** Durations were the one axis still picked by eye — `.12s`,
+`.28s`, `.34s`, `.42s`, `.6s`, with no relationship to each other or to anything else in the
+system. They are Fibonacci milliseconds now, the same series that governs space, so a drawer
+opening and a 21px gutter descend from one source: `--m-instant` 55, `--m-quick` 89,
+`--m-base` 144, `--m-settle` 233, `--m-travel` 377, `--m-swing` 610.
+
+**Easings are named for the physics, not the curve.** Nothing in this building floats. A stamp
+is driven down by a hand and stops dead against the paper (`--e-stamp`); a panel with mass
+arrives under friction (`--e-settle`); a drawer drags on its runners (`--e-drawer`); a lever is
+a mechanical linkage with a snap at the end (`--e-lever`); a hung sign swings past level before
+it settles (`--e-swing`). `ease` describes none of that, which is why every skeuomorphic surface
+that uses it feels like software. `--e-swing` is the only curve whose output passes 1 — reach for
+it on things that hang and nothing else, because a stamp does not bounce off paper.
+
+Every `transition` and `animation` in `ppbf.css` now runs through these tokens; none carries a
+literal duration. The existing global `prefers-reduced-motion` rule kills all of it.
+
+**Pending states.** The system could say *empty* and *done* but had no word for *in progress*, so
+a submitted form looked identical to an ignored one — and the honest response to that is to press
+the button again. `.btn[aria-busy="true"]` is driven from the ARIA attribute rather than a class,
+so the accessibility tree and the pixels cannot disagree, and `pointer-events: none` is what
+actually stops the double-submit. `.skeleton` is a blank ruled sheet — the paper system doing the
+work, because a sheet with nothing written on it yet is what the physical world hands you while
+you wait for a record. `.working` is the text cue: pair it with either, always. **A bare spinner
+is colour-and-motion-only, which is exactly what Law 3 bans.**
+
+**The focus ring.** `--focus` existed but only `.btn` and the inputs used it, so tabbing through a
+room fell through to the browser default on tags, tiles, seals and every link — a thin blue halo
+belonging to no room in this building. One `:focus-visible` rule now covers anything focusable.
+
+**Sound is synthesized, and opt-in.** `ppbf-sound.js`. There is no `.mp3` or `.wav` in this
+repository: five voices — `bell`, `stamp`, `latch`, `accept`, `refuse` — are built from
+oscillators and filtered noise through the Web Audio API, because the zero-asset promise does not
+get an exception for audio. The bell uses inharmonic partials (1 : 2.01 : 3.04 : 4.22 : 5.78),
+which is what separates struck bronze from a sine beep.
+
+It is a **classic script**, not an ES module, on purpose: browsers block `import` over `file://`,
+and every other preview here opens by double-clicking it off disk, so a module would mean the
+sound section silently vanished for anyone browsing the design system the normal way. It defines
+one global, `window.PPBFSound`.
+
+Five rules, stricter than the visual system's:
+
+1. **Off by default.** Always opt-in.
+2. **Never the only channel.** Law 3 does not stop applying because the channel is audio. Every
+   sound accompanies a visible change; a user with the volume down, on a loud floor, or with a
+   hearing impairment loses nothing. Sound is confirmation, never information.
+3. **State changes only.** Never hover, never focus, never keystrokes — UI chrome that clicks is
+   how a tool starts feeling like a toy, and this one holds medical clearances.
+4. **The floor is loud.** A gym floor at session time drowns a tablet speaker, so floor kiosks
+   should generally leave it off. Sound earns its place on quiet surfaces: office, clinic,
+   after-hours kiosk.
+5. **One at a time, and short.** Nothing runs past ~1.2s; an overlapping call is dropped rather
+   than stacked.
+
+---
+
 ## UX Patterns — the five
 
 Five patterns that improve usability without breaking the gym aesthetic. All are zero-asset,
@@ -238,6 +299,7 @@ stock, etc.
 ## Contents
 
 ### Foundations
+- `foundations/motion.html` — Fibonacci durations, the five physical easings, pending states, the brass focus ring, synthesized sound
 - `foundations/patterns.html` — persistent alerts, form undo, empty state guidance, command reference, print parity
 - `foundations/matter.html` — the display voice and its supporting voices, paper conditions, light + shadow, placement, the seal, discoverables
 - `foundations/rooms.html` — the six rooms, the wood/brick walls, lamps, ledger, nameplates

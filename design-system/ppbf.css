@@ -187,6 +187,36 @@
   --tap: 55px;        /* Fibonacci, and comfortably above the 44px WCAG floor */
   --focus: 0 0 0 3px rgba(212, 175, 74, .55);
 
+  /* --- Motion — Law 8 applied to time ------------------------------------
+     Durations were the one axis still picked by eye (.12s, .28s, .34s, .42s,
+     .6s — no relationship to each other or to anything else in the system).
+     They are Fibonacci milliseconds now, the same series that governs space,
+     so a drawer opening and a gutter measuring 21px come from one source.
+
+     Easings are named for the PHYSICS, not for a curve. Nothing in this
+     building floats: a stamp is driven down by a hand and stops dead against
+     the paper, a drawer drags on its runners, a hung sign swings past level
+     before it settles. `ease` describes none of that, which is why every
+     skeuomorphic surface that uses it feels like software. */
+  --m-instant:  55ms;   /* state flip — pressed, checked. Perceived as "now" */
+  --m-quick:    89ms;   /* hover, focus ring, small colour shift */
+  --m-base:    144ms;   /* the default: buttons, tags, tiles */
+  --m-settle:  233ms;   /* something with mass arriving — a sheet, a panel */
+  --m-travel:  377ms;   /* something crossing distance — a drawer, a peeled corner */
+  --m-swing:   610ms;   /* a pendulum: gloves, a hung sign, the bell */
+
+  /* Driven and stopped: fast off the mark, dead halt. No overshoot — a stamp
+     does not bounce off paper, and a latch does not wobble shut. */
+  --e-stamp:  cubic-bezier(.2, .9, .1, 1);
+  /* Mass arriving under friction — decelerates long, never quite bounces. */
+  --e-settle: cubic-bezier(.16, .84, .28, 1);
+  /* Runners and grit: reluctant to start, then steady. */
+  --e-drawer: cubic-bezier(.45, .05, .35, 1);
+  /* Mechanical linkage — a lever is close to linear with a snap at the end. */
+  --e-lever:  cubic-bezier(.6, .04, .78, .9);
+  /* Pendulum: overshoots level, comes back. The one curve allowed to pass 1. */
+  --e-swing:  cubic-bezier(.34, 1.56, .64, 1);
+
   /* --- Generated grain -------------------------------------------------- */
   --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.78' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
   --grain-fine: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.6' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
@@ -716,7 +746,7 @@ body.ppbf.on-canvas {
     inset 0 1px 0 rgba(232,206,122,.18),
     inset 0 -2px 6px rgba(0,0,0,.55),
     0 4px 10px rgba(0,0,0,.5);
-  transition: translate .12s ease, box-shadow .12s ease;
+  transition: translate var(--m-quick) var(--e-stamp), box-shadow var(--m-quick) var(--e-stamp);
 }
 .tile::after {
   content: ""; position: absolute; inset: 6px; pointer-events: none;
@@ -1686,7 +1716,7 @@ body.ppbf.on-canvas {
 .peek > .peek-top {
   position: relative; z-index: 1;
   transform-origin: bottom right;
-  transition: clip-path .34s ease, box-shadow .34s ease;
+  transition: clip-path var(--m-travel) var(--e-drawer), box-shadow var(--m-travel) var(--e-drawer);
   clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
 }
 .peek:hover > .peek-top, .peek:focus-within > .peek-top {
@@ -1698,9 +1728,9 @@ body.ppbf.on-canvas {
 .gloves {
   display: inline-block; font-size: var(--t-2xl); line-height: 1;
   transform-origin: 50% 6%;
-  transition: rotate .5s cubic-bezier(.36,.07,.19,.97);
+  transition: rotate var(--m-swing) var(--e-swing);
 }
-.gloves:hover, .gloves:focus-visible { animation: ppbf-swing 1.5s ease-out; }
+.gloves:hover, .gloves:focus-visible { animation: ppbf-swing calc(var(--m-swing) * 2.5) var(--e-swing); }
 @keyframes ppbf-swing {
   0%{rotate:0deg} 15%{rotate:11deg} 35%{rotate:-8deg} 55%{rotate:5deg}
   75%{rotate:-3deg} 100%{rotate:0deg}
@@ -1714,19 +1744,19 @@ body.ppbf.on-canvas {
     var(--brass-200), var(--brass-400) 42%, var(--brass-700) 78%, var(--brass-900));
   box-shadow: inset 0 -2px 3px rgba(0,0,0,.5), 0 3px 8px rgba(0,0,0,.55);
 }
-.bell:active { animation: ppbf-ring .42s ease-out; }
+.bell:active { animation: ppbf-ring var(--m-travel) var(--e-settle); }
 @keyframes ppbf-ring {
   0%{scale:1} 20%{scale:.94} 40%{scale:1.03} 60%{scale:.98} 100%{scale:1}
 }
 .bell:active::after {              /* the ring-out */
   content: ""; position: absolute; inset: -8px; border-radius: 50%;
-  border: 2px solid var(--brass-300); animation: ppbf-ringout .6s ease-out forwards;
+  border: 2px solid var(--brass-300); animation: ppbf-ringout var(--m-swing) var(--e-settle) forwards;
 }
 @keyframes ppbf-ringout { to { inset: -21px; opacity: 0; } }
 
 /* A speed bag that takes a hit. */
 .speedbag { display: inline-block; transform-origin: 50% 0; }
-.speedbag:hover { animation: ppbf-bag .28s linear 3; }
+.speedbag:hover { animation: ppbf-bag var(--m-settle) linear 3; }
 @keyframes ppbf-bag { 0%{translate:0 0} 50%{translate:3px 2px} 100%{translate:0 0} }
 
 /* Tally marks — four strokes and a slash, the way a gym counts rounds. */
@@ -1736,7 +1766,7 @@ body.ppbf.on-canvas {
 }
 
 /* The long-press reward: hold a stamp down and it presses in harder. */
-.stamp--press { transition: scale .1s ease, filter .1s ease; }
+.stamp--press { transition: scale var(--m-instant) var(--e-stamp), filter var(--m-instant) var(--e-stamp); }
 .stamp--press:active { scale: .96; filter: saturate(1.3) contrast(1.15); }
 
 /* ============================================================ NOTIFICATIONS === */
@@ -1765,9 +1795,25 @@ body.ppbf.on-canvas {
 /* Form history buttons styled as physical levers. Pairs (.undo-redo-group) sit
    near the form controls and roll back to the last saved state. */
 .undo-redo-group { display: flex; gap: var(--s2); margin: var(--s4) 0; }
-.btn--lever { min-height: 38px; padding: 0 var(--s3); font-size: 12px; letter-spacing: .08em;
+/* Self-sufficient on purpose. The `--` reads like a .btn modifier, but a lever
+   is its own object and gets used standalone next to a form, so it carries a
+   full surface rather than falling through to the browser's native button. */
+.btn--lever { min-height: 38px; padding: 0 var(--s4); font-size: 12px; letter-spacing: .08em;
               text-transform: uppercase; display: inline-flex; align-items: center; gap: var(--s2);
-              position: relative; transition: all .15s ease; }
+              position: relative; cursor: pointer;
+              font-family: var(--font-ui); font-weight: 650;
+              color: var(--bone-200);
+              border: 1px solid var(--brass-700); border-radius: var(--r-sm);
+              background-color: var(--hide-800);
+              background-image: linear-gradient(180deg, rgba(92,70,50,.9), rgba(30,23,18,.95));
+              box-shadow: inset 0 1px 0 rgba(232,206,122,.14), 0 2px 5px rgba(0,0,0,.45);
+              transition: background-image var(--m-base) var(--e-lever),
+                          color var(--m-base) var(--e-lever),
+                          box-shadow var(--m-base) var(--e-lever); }
+.btn--lever:hover { color: var(--bone-100); border-color: var(--brass-400);
+                    background-image: linear-gradient(180deg, rgba(110,84,60,.95), rgba(42,31,24,.98)); }
+.btn--lever:active { box-shadow: inset 0 2px 5px rgba(0,0,0,.55); translate: 0 1px; }
+.btn--lever:disabled { opacity: .45; cursor: not-allowed; }
 .btn--lever::before { content: ""; display: inline-block; width: 6px; height: 18px;
                        background: linear-gradient(90deg, var(--brass-600), var(--brass-400), var(--brass-600));
                        border-radius: 3px; box-shadow: inset 0 1px 2px rgba(255,255,255,.1), 0 1px 3px rgba(0,0,0,.4); }
@@ -1801,10 +1847,89 @@ body.ppbf.on-canvas {
 .commands-key { font-family: var(--font-data); font-weight: 650; color: var(--brass-300); letter-spacing: .02em; }
 .commands-desc { color: var(--bone-400); text-align: left; }
 
+/* ============================================================== IN PROGRESS ===
+   The system could say "empty" and "done" but had no word for "working on it",
+   so a submitted form looked identical to an ignored one and the honest user
+   response was to press the button again. Every one of these is a physical
+   object mid-motion, and every one of them ALSO carries a text cue, because
+   Law 3 does not stop applying just because the channel is animation: a
+   spinner alone is colour-and-motion-only, which is exactly what Law 3 bans. */
+
+/* A control mid-commit. Drive it from aria-busy so the accessibility tree and
+   the pixels cannot disagree — styling a class instead lets them. */
+.btn[aria-busy="true"],
+.btn--lever[aria-busy="true"] {
+  cursor: progress; pointer-events: none;
+  /* The lever is thrown and held at the end of its travel. */
+  filter: saturate(.72) brightness(.88);
+}
+.btn[aria-busy="true"]::after {
+  content: ""; display: inline-block; margin-left: var(--s3);
+  width: 1em; height: 1em; vertical-align: -.14em;
+  border: 2px solid currentColor; border-right-color: transparent;
+  border-radius: 50%;
+  animation: ppbf-wind var(--m-swing) linear infinite;
+}
+/* Winding, not spinning — the crank on a ledger, one direction, steady. */
+@keyframes ppbf-wind { to { rotate: 360deg; } }
+
+/* A blank ruled form waiting to be filled. This is the paper system doing the
+   work: a skeleton here is a real sheet with nothing written on it yet, which
+   is what the physical world actually does while you wait for a record. */
+.skeleton {
+  background-color: var(--paper-2);
+  background-image: var(--grain-fine),
+    repeating-linear-gradient(180deg,
+      transparent 0 calc(var(--s5) - 1px),
+      rgba(0,0,0,.10) calc(var(--s5) - 1px) var(--s5));
+  background-blend-mode: multiply, normal;
+  border-radius: var(--r-sm);
+  position: relative; overflow: hidden;
+  min-height: var(--s7);
+}
+/* A hand passing over the page — one slow sweep, not a shimmer loop. */
+.skeleton::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(100deg, transparent 30%,
+              rgba(255,255,255,.42) 50%, transparent 70%);
+  translate: -100% 0;
+  animation: ppbf-sweep calc(var(--m-swing) * 2) var(--e-drawer) infinite;
+}
+@keyframes ppbf-sweep { to { translate: 100% 0; } }
+.skeleton--line { min-height: var(--s5); }
+.skeleton--block { min-height: calc(var(--s8) * 1.5); }
+
+/* The text cue that keeps a pending state off the colour-and-motion-only list.
+   Pair it with any of the above; never ship one of the above without it. */
+.working {
+  font: 650 11px/1 var(--font-data); letter-spacing: .1em;
+  text-transform: uppercase; color: var(--brass-300);
+  display: inline-flex; align-items: center; gap: var(--s2);
+}
+.working::before { content: "◴"; font-size: 13px; }
+
+/* ============================================================== FOCUS RING ===
+   --focus existed but only .btn and the inputs used it, so tabbing through a
+   room fell through to the browser default on tags, tiles, seals and every
+   link — a thin blue halo that belongs to no room in this building. One rule
+   gives the brass ring to anything focusable, and :focus-visible means a mouse
+   click never draws it. */
+.ppbf :where(a, button, [role="button"], [tabindex]:not([tabindex="-1"]),
+             summary, select, input, textarea):focus-visible {
+  outline: 0;
+  box-shadow: var(--focus);
+  /* Keep the ring visible on a dark wall and on paper alike. */
+  outline: 2px solid rgba(20,16,13,.55); outline-offset: 1px;
+}
+
 /* ======================================================== PRINT MEDIA RULES === */
 /* Every screen must print identically to how it renders on screen.
    Board records and family records are the same sheet of stamped paper. */
 @media print {
+  /* Paper does not wait. A skeleton or a spinner on a printed board packet is
+     an artefact of the screen it was captured from. */
+  .skeleton::after, .btn[aria-busy="true"]::after { display: none; }
+  .skeleton { background-image: none; border: 1px dashed #666; }
   body, html { background: #FFF; color: #000; }
   a { color: #000; text-decoration: underline; }
   button, .btn, .btn--ghost, .btn--lever { border: 1px solid #000; background: #FFF; color: #000; }
