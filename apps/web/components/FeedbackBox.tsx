@@ -96,7 +96,7 @@ export default function FeedbackBox() {
         onClick={toggle}
         aria-expanded={isOpen}
         aria-controls={panelId}
-        className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-1 text-[11px] font-mono text-[var(--black)] transition hover:bg-[var(--olive-dark)] hover:text-[var(--white)]"
+        className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-1 text-[11px] font-mono text-[var(--black)] transition hover:bg-[var(--olive-dark)] hover:text-[var(--white)]"
       >
         Tell Us
       </button>

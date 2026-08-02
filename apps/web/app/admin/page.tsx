@@ -1089,7 +1089,7 @@ export default function AdminCapabilitiesPage() {
                           <button
                             type="button"
                             onClick={() => setCapabilityStatus(capability.id, isOn ? 'BLOCKED' : 'ACTIVE')}
-                            className={`inline-flex h-10 items-center rounded-full border px-4 text-[12px] font-bold uppercase tracking-[0.12em] transition ${
+                            className={`inline-flex min-h-[44px] items-center rounded-full border px-4 text-[12px] font-bold uppercase tracking-[0.12em] transition ${
                               isOn
                                 ? 'border-[color:var(--brass-700)] bg-[var(--rust-700)] text-[color:var(--bone-100)]'
                                 : 'border-[#2d2d2d] bg-[var(--hide-900)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-700)]'
@@ -1118,7 +1118,7 @@ export default function AdminCapabilitiesPage() {
                           <button
                             type="button"
                             onClick={() => toggleGymCapabilityAccess(capability.capabilityId)}
-                            className={`inline-flex h-10 items-center rounded-full border px-4 text-[12px] font-bold uppercase tracking-[0.12em] transition ${
+                            className={`inline-flex min-h-[44px] items-center rounded-full border px-4 text-[12px] font-bold uppercase tracking-[0.12em] transition ${
                               allowed
                                 ? 'border-[color:var(--brass-700)] bg-[var(--rust-700)] text-[color:var(--bone-100)]'
                                 : 'border-[#2d2d2d] bg-[var(--hide-900)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-700)]'

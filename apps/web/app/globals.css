@@ -678,3 +678,84 @@ h6 {
   }
 }
 
+/* ---------------------------------------------------------------------------
+   Tailwind's own spacing and radius scales, put on Fibonacci (Law 8).
+
+   This block has to be @theme, not :root. The `--text-*` bridge above works
+   from :root because Tailwind emits `.text-sm{font-size:var(--text-sm)}` and
+   any :root definition wins the cascade. Spacing is different: Tailwind emits
+   `.p-4{padding:calc(var(--spacing) * 4)}`, a computed value with no per-step
+   variable to override. Declaring `--spacing-4` in @theme changes what Tailwind
+   GENERATES -- the utility becomes `.p-4{padding:var(--spacing-4)}` -- so this
+   is a build-time change, and it is the only lever that reaches these.
+
+   Values are nearest-Fibonacci, not index-to-index. Tailwind's scale is linear
+   (step x 4px) and Fibonacci is exponential, so mapping step 6 to the 6th term
+   would take it 24px -> 34px while step 4 went 16px -> 13px, stretching the top
+   of the scale and inverting relationships that pages depend on. Snapping each
+   step to its nearest Fibonacci value keeps every change under 25% and lands on
+   exactly the --s1..--s8 set the design system already publishes.
+
+   THE STEPS DELIBERATELY LEFT OUT MATTER MORE THAN THE ONES INCLUDED.
+
+   A --spacing-N key is shared by every family that reads the scale, so p-11 and
+   h-11 cannot be given different values. Sizing families are not spacing: they
+   set how big a thing IS. Crosstabbing all 3,784 call sites by family, the
+   size-dominant steps turn out to be disjoint from the spacing-dominant ones,
+   so the split is clean -- but only if the size-dominant steps are left alone:
+
+     step 11  =  44px, and all 135 uses are h-11 on form fields and buttons.
+                 That is the WCAG 2.5.5 minimum target, chosen on purpose.
+                 Nearest Fibonacci is 34px, which would put every one of those
+                 135 controls under the accessibility floor. NOT BRIDGED.
+     step 20+ =  80px and up, all sizing. Nearest Fibonacci is 89px/144px, which
+                 would resize layout boxes by up to 62%. NOT BRIDGED.
+
+   Step 9 is bridged despite being sizing-only, for monotonicity: left at 36px
+   it would have landed above the bridged step 10 (34px), so mt-10 would render
+   tighter than mt-9. Its 14 sites move 36px -> 34px.
+
+   The result stays monotonic across the join: ...8(34) 9(34) 10(34) 11(44)
+   12(55) 16(55) 20(80)...
+   --------------------------------------------------------------------------- */
+@theme {
+  --spacing-0\.5: 3px;   /* 2px  */
+  --spacing-1:    3px;   /* 4px  */
+  --spacing-1\.5: 5px;   /* 6px  */
+  --spacing-2:    5px;   /* 8px  */
+  --spacing-2\.5: 8px;   /* 10px */
+  --spacing-3:    8px;   /* 12px */
+  --spacing-3\.5: 13px;  /* 14px */
+  --spacing-4:    13px;  /* 16px */
+  --spacing-5:    21px;  /* 20px */
+  --spacing-6:    21px;  /* 24px */
+  --spacing-7:    34px;  /* 28px */
+  --spacing-8:    34px;  /* 32px */
+  --spacing-9:    34px;  /* 36px */
+  --spacing-10:   34px;  /* 40px */
+  --spacing-12:   55px;  /* 48px */
+  --spacing-16:   55px;  /* 64px */
+
+  /* Radius, on the same nearest-Fibonacci rule as the spacing above rather than
+     mapping Tailwind's rung NAMES onto the design system's --r-* names.
+
+     Name-mapping was the first attempt and it was visibly wrong. It sent
+     rounded-xl from 12px to --r-xl's 21px, and since the app's fields and
+     buttons are 44-48px tall, a 21px corner is nearly half their height: every
+     input on the PIN-change screen rendered as a capsule. That is a soft
+     consumer look, not leather and brass. Fibonacci only offers 3/5/8/13/21/34
+     in the useful radius range -- six values for eight Tailwind rungs -- so
+     something has to give, and it should be the unused rungs, not the geometry.
+
+     sm and md share 5px. Neither has a call site, so the flat spot costs
+     nothing; every rung the app actually uses stays distinct and moves by no
+     more than a third. */
+  --radius-xs:  3px;   /* 2px  */
+  --radius-sm:  5px;   /* 4px  */
+  --radius-md:  5px;   /* 6px  */
+  --radius-lg:  8px;   /* 8px, exact */
+  --radius-xl:  13px;  /* 12px */
+  --radius-2xl: 21px;  /* 16px */
+  --radius-3xl: 34px;  /* 24px */
+  --radius-4xl: 55px;  /* 32px */
+}
