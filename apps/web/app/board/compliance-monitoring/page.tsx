@@ -123,7 +123,7 @@ export default function BoardComplianceMonitoringPage() {
   const nothingToShow = summary?.total.status === 'unavailable';
 
   const severityTiles = [
-    { label: 'Critical', metric: severityCounts?.critical, tone: 'border-2 border-[var(--black)] bg-[#fce8e6] p-4', headingTone: 'text-[var(--red-primary)]' },
+    { label: 'Critical', metric: severityCounts?.critical, tone: 'border-2 border-[var(--black)] bg-[#fce8e6] p-4', headingTone: 'text-[var(--safety-locked)]' },
     { label: 'High', metric: severityCounts?.high, tone: 'border-2 border-[var(--black)] bg-[#fff3cd] p-4', headingTone: 'text-[#ff9800]' },
     { label: 'Medium', metric: severityCounts?.medium, tone: 'border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4', headingTone: '' },
     { label: 'Low', metric: severityCounts?.low, tone: 'border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4', headingTone: '' },
@@ -142,7 +142,7 @@ export default function BoardComplianceMonitoringPage() {
       <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
         <div className="mx-auto max-w-7xl px-6 py-10 lg:px-10">
           <header className="space-y-3 border-b-[3px] border-[var(--black)] pb-6">
-            <p className="text-xs font-mono uppercase tracking-[0.22em] text-[var(--red-primary)]">Board Workspace</p>
+            <p className="text-xs font-mono uppercase tracking-[0.22em] text-[var(--safety-locked)]">Board Workspace</p>
             <h1 className="font-display text-4xl font-black">Hand-Filed Compliance Register</h1>
             <p className="max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
               Aggregate counts of compliance violations that staff have filed by hand, with escalation status. The
@@ -156,15 +156,15 @@ export default function BoardComplianceMonitoringPage() {
                   ? `Read ${measuredAt}`
                   : 'Read time unknown'}
             </p>
-            {errorMessage ? <p className="text-sm text-[var(--red-primary)]">{errorMessage}</p> : null}
+            {errorMessage ? <p className="text-sm text-[var(--safety-locked)]">{errorMessage}</p> : null}
             {!errorMessage && !isLoading && !summary ? (
-              <p className="text-sm text-[var(--red-primary)]">The register could not be read, so no counts are shown. This is a failed read, not an empty register.</p>
+              <p className="text-sm text-[var(--safety-locked)]">The register could not be read, so no counts are shown. This is a failed read, not an empty register.</p>
             ) : null}
           </header>
 
           {nothingToShow ? (
-            <section className="mt-6 border-2 border-[var(--red-primary)] bg-[var(--canvas-tan-light)] p-5">
-              <h2 className="text-sm font-black uppercase tracking-[0.08em] text-[var(--red-primary)]">Read this zero correctly</h2>
+            <section className="mt-6 border-2 border-[var(--safety-locked)] bg-[var(--canvas-tan-light)] p-5">
+              <h2 className="text-sm font-black uppercase tracking-[0.08em] text-[var(--safety-locked)]">Read this zero correctly</h2>
               <p className="mt-2 max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
                 {isFiltered
                   ? 'No violation with the selected status has been filed, so every count in this view reads as none filed.'

@@ -20,7 +20,7 @@ const PIN_PATTERN = /^\d{6}$/;
 
    The cards were bg-white with rounded-2xl and rounded-xl fields: white is not
    one of the five materials and neither radius is on the Fibonacci scale. They
-   are paper now. The chrome comes off --red-primary, which aliases to --locked
+   are paper now. The chrome comes off --safety-locked, which aliases to --locked
    -- a Continue button is not a safety state. Red survives only on the genuine
    refusal, and the success panel takes the ladder's own --cleared instead of a
    hardcoded #4caf50.

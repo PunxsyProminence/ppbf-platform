@@ -153,14 +153,14 @@ export default function FeedbackBox() {
               </label>
 
               {errorMessage ? (
-                <p className="text-sm font-semibold text-[var(--red-primary)]">{errorMessage}</p>
+                <p className="text-sm font-semibold text-[var(--safety-locked)]">{errorMessage}</p>
               ) : null}
 
               <button
                 type="button"
                 disabled={isSending || !text.trim()}
                 onClick={() => void send()}
-                className="min-h-[44px] w-full border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[var(--white)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="min-h-[44px] w-full border-2 border-[var(--black)] bg-[var(--safety-locked)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[var(--white)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isSending ? 'Sending...' : 'Send'}
               </button>

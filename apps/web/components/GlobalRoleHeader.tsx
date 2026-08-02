@@ -20,7 +20,7 @@ const FEEDBACK_TRIAGE_ROLES = ["admin", "platform_owner"];
 
    - Targets were px-3 py-1, about 26px tall. That is under the 44px WCAG floor
      on a bar that ships on every route including phones. They are now --tap.
-   - The role badge was --red-primary, which aliases to --locked: the safety
+   - The role badge was --safety-locked, which aliases to --locked: the safety
      gate's "this athlete may not participate" red. Law 2 reserves saturated
      colour for safety state, and a job title is not one. Role is identity, so
      it wears patina brass and the red goes back to meaning only what it should.

@@ -166,7 +166,7 @@ const shadowComplianceChecks = [
 function capabilityTone(state: CapabilityState): string {
   if (state === 'EXISTS') return 'border-[var(--status-ready)] bg-[#dce7ca] text-[var(--black)]';
   if (state === 'PARTIAL') return 'border-[var(--status-warning)] bg-[#efe3c4] text-[var(--black)]';
-  if (state === 'PLACEHOLDER') return 'border-[var(--red-primary)] bg-[#f1d6d1] text-[var(--black)]';
+  if (state === 'PLACEHOLDER') return 'border-[var(--safety-locked)] bg-[#f1d6d1] text-[var(--black)]';
   return 'border-[var(--gray-medium)] bg-[var(--canvas-tan)] text-[var(--black)]';
 }
 
@@ -180,7 +180,7 @@ export default function OperationsHubPage() {
       <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
         <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-8 px-6 py-10 lg:px-10">
           <header className="space-y-5 border-b-[3px] border-[var(--black)] pb-8">
-            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--red-primary)]">Mission Control</p>
+            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--safety-locked)]">Mission Control</p>
             <h1 className="font-display text-5xl font-black tracking-tight md:text-6xl">The Ring</h1>
             <p className="max-w-4xl text-base leading-7 text-[var(--gray-dark)] md:text-lg">
               Every corner has its own view. Athlete. Coach. Parent. Board. Admin. Public.
@@ -209,7 +209,7 @@ export default function OperationsHubPage() {
             </summary>
             <div className="mt-4 space-y-5">
             <div className="space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-              <p className="text-xs font-mono uppercase tracking-[0.15em] text-[var(--red-primary)]">System Operational Audit and Validation Report</p>
+              <p className="text-xs font-mono uppercase tracking-[0.15em] text-[var(--safety-locked)]">System Operational Audit and Validation Report</p>
               <p className="text-sm leading-6 text-[var(--gray-dark)]">
                 SHADOW v21.1 seed is ingested, stress-validated, and sealed for development deployment. This build section mirrors the certified guardrails used for floor safety, role isolation, and audit integrity.
               </p>
@@ -253,7 +253,7 @@ export default function OperationsHubPage() {
               <div className="grid gap-3 lg:grid-cols-2">
                 {shadowArchitectureNodes.map((node) => (
                   <div key={node.name} className="space-y-2 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-3">
-                    <p className="text-sm font-mono font-bold uppercase tracking-[0.08em] text-[var(--red-primary)]">{node.name}</p>
+                    <p className="text-sm font-mono font-bold uppercase tracking-[0.08em] text-[var(--safety-locked)]">{node.name}</p>
                     <div className="grid gap-2">
                       {node.details.map((detail) => (
                         <p key={detail} className="text-sm leading-6 text-[var(--gray-dark)]">
@@ -264,7 +264,7 @@ export default function OperationsHubPage() {
                   </div>
                 ))}
               </div>
-              <p className="border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 py-3 text-sm font-bold uppercase tracking-[0.08em] text-[var(--white)]">
+              <p className="border-2 border-[var(--black)] bg-[var(--safety-locked)] px-4 py-3 text-sm font-bold uppercase tracking-[0.08em] text-[var(--white)]">
                 Certification Status: Signed and Active. Logical paths, equations, role boundaries, and sandbox behavior are aligned for SHADOW core build execution.
               </p>
             </article>
@@ -281,7 +281,7 @@ export default function OperationsHubPage() {
                   className="flex items-center justify-between border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-4 transition hover:bg-[var(--canvas-tan-dark)]"
                 >
                   <span className="text-lg font-semibold text-[var(--black)]">{item.role}</span>
-                  <span className="text-xs font-mono uppercase tracking-[0.15em] text-[var(--red-primary)]">{item.status}</span>
+                  <span className="text-xs font-mono uppercase tracking-[0.15em] text-[var(--safety-locked)]">{item.status}</span>
                 </Link>
               ))}
             </div>
@@ -294,7 +294,7 @@ export default function OperationsHubPage() {
                 <div className="grid gap-3 md:grid-cols-3">
                   {priorityLanes.map((lane) => (
                     <article key={lane.lane} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-4">
-                      <p className="text-xs font-mono uppercase tracking-[0.18em] text-[var(--red-primary)]">{lane.lane}</p>
+                      <p className="text-xs font-mono uppercase tracking-[0.18em] text-[var(--safety-locked)]">{lane.lane}</p>
                       <p className="mt-2 text-3xl font-black text-[var(--black)]">{lane.count}</p>
                       <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">{lane.summary}</p>
                     </article>
@@ -311,10 +311,10 @@ export default function OperationsHubPage() {
                         <h3 className="text-lg font-bold text-[var(--black)]">{workspace.label}</h3>
                         <p className="mt-1 text-sm leading-6 text-[var(--gray-dark)]">{workspace.note}</p>
                       </div>
-                      <p className="text-sm font-mono uppercase tracking-[0.14em] text-[var(--red-primary)]">{workspace.openCount} open</p>
+                      <p className="text-sm font-mono uppercase tracking-[0.14em] text-[var(--safety-locked)]">{workspace.openCount} open</p>
                       <Link
                         href={workspace.href}
-                        className="inline-flex min-h-[44px] items-center justify-center border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 py-2 text-xs font-mono font-bold uppercase tracking-[0.14em] text-[var(--white)] transition hover:bg-[var(--red-highlight)]"
+                        className="inline-flex min-h-[44px] items-center justify-center border-2 border-[var(--black)] bg-[var(--safety-locked)] px-4 py-2 text-xs font-mono font-bold uppercase tracking-[0.14em] text-[var(--white)] transition hover:bg-[var(--red-highlight)]"
                       >
                         Open
                       </Link>
@@ -364,7 +364,7 @@ export default function OperationsHubPage() {
                         <button
                           type="button"
                           disabled
-                          className="mt-3 inline-flex min-h-[44px] cursor-not-allowed items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--red-primary)] opacity-80"
+                          className="mt-3 inline-flex min-h-[44px] cursor-not-allowed items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--safety-locked)] opacity-80"
                         >
                           Planned Capability
                         </button>
@@ -388,7 +388,7 @@ export default function OperationsHubPage() {
                 </div>
               </section>
 
-              <section className="space-y-4 border-[3px] border-[var(--black)] bg-[var(--red-primary)] px-6 py-6 text-[var(--white)] shadow-[var(--shadow-sm)]">
+              <section className="space-y-4 border-[3px] border-[var(--black)] bg-[var(--safety-locked)] px-6 py-6 text-[var(--white)] shadow-[var(--shadow-sm)]">
                 <h2 className="font-display text-2xl font-bold tracking-tight text-[var(--white)]">SHADOW COMMAND NODE</h2>
                 <p className="text-sm font-mono uppercase tracking-[0.14em] text-[var(--white)]">PLANNED | NOT YET IMPLEMENTED</p>
                 <p className="text-sm leading-6 text-[var(--white-off)]">

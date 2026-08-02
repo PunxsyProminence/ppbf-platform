@@ -205,7 +205,7 @@ export default function PlatformConsole() {
     return (
       <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
         <div className="text-center">
-          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--red-primary)]">Checking Access</p>
+          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--safety-locked)]">Checking Access</p>
           <h1 className="mt-3 font-display text-2xl tracking-tight">Loading...</h1>
         </div>
       </main>
@@ -216,13 +216,13 @@ export default function PlatformConsole() {
     return (
       <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
         <div className="mx-auto max-w-2xl space-y-6 text-center">
-          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--red-primary)]">Access Denied</p>
+          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--safety-locked)]">Access Denied</p>
           <h1 className="font-display text-3xl font-black">Platform Owner Access Required</h1>
           <p className="text-sm leading-7 text-[var(--gray-dark)]">
             This console is for PPBF platform administrators only.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
-            <Link href="/login" className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-[var(--red-primary)] px-6 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-[var(--red-highlight)]">
+            <Link href="/login" className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-[var(--safety-locked)] px-6 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-[var(--red-highlight)]">
               Sign In With Microsoft
             </Link>
             <Link href="/admin" className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-6 text-sm font-black uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]">
@@ -238,7 +238,7 @@ export default function PlatformConsole() {
     <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       <div className="mx-auto w-full max-w-3xl space-y-8 px-6 py-12 lg:px-10">
         <header className="space-y-4 rounded-[28px] border border-[rgba(0,0,0,0.14)] bg-white p-6 shadow-[var(--shadow-md)]">
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--red-primary)]">Platform Console</p>
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--safety-locked)]">Platform Console</p>
           <h1 className="font-display text-4xl font-black">Omega</h1>
           <p className="text-base leading-7 text-[var(--gray-dark)]">
             View any gym individually here, or see every gym at once in the overview. Reaches across
@@ -258,7 +258,7 @@ export default function PlatformConsole() {
           <div
             className={`rounded-xl border px-4 py-3 ${
               feedback.kind === 'error'
-                ? 'border-[var(--red-primary)] bg-[rgba(184,59,52,0.05)]'
+                ? 'border-[var(--safety-locked)] bg-[rgba(184,59,52,0.05)]'
                 : feedback.kind === 'success'
                   ? 'border-[#4caf50] bg-[rgba(76,175,80,0.05)]'
                   : 'border-[var(--gray-medium)] bg-[rgba(0,0,0,0.03)]'
@@ -266,7 +266,7 @@ export default function PlatformConsole() {
           >
             <p
               className={`text-sm font-semibold ${
-                feedback.kind === 'error' ? 'text-[var(--red-primary)]' : feedback.kind === 'success' ? 'text-[#2e7d32]' : 'text-[var(--gray-dark)]'
+                feedback.kind === 'error' ? 'text-[var(--safety-locked)]' : feedback.kind === 'success' ? 'text-[#2e7d32]' : 'text-[var(--gray-dark)]'
               }`}
             >
               {feedback.kind === 'error' && '❌ '}
@@ -281,7 +281,7 @@ export default function PlatformConsole() {
           <select
             value={selectedOrgId}
             onChange={(event) => setSelectedOrgId(event.target.value)}
-            className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+            className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
           >
             <option value="">Select a gym...</option>
             {organizations.map((org) => (
@@ -326,12 +326,12 @@ export default function PlatformConsole() {
               value={inviteEmail}
               onChange={(event) => setInviteEmail(event.target.value)}
               placeholder="name@example.org"
-              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
             />
             <select
               value={inviteRole}
               onChange={(event) => setInviteRole(event.target.value)}
-              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
             >
               {INVITABLE_ROLES.map((role) => (
                 <option key={role.value} value={role.value}>{role.label}</option>
@@ -341,7 +341,7 @@ export default function PlatformConsole() {
               type="button"
               disabled={isBusy || !selectedOrgId}
               onClick={() => void inviteStaff()}
-              className="h-11 w-full rounded-lg border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-11 w-full rounded-lg border-2 border-[var(--safety-locked)] bg-[var(--safety-locked)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isBusy ? 'Working...' : 'Send Invite'}
             </button>
@@ -360,20 +360,20 @@ export default function PlatformConsole() {
               value={athleteAccountId}
               onChange={(event) => setAthleteAccountId(event.target.value)}
               placeholder="Account ID (how they'll sign in)"
-              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
             />
             <input
               type="text"
               value={athleteRosterId}
               onChange={(event) => setAthleteRosterId(event.target.value)}
               placeholder="Existing athlete roster ID"
-              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--safety-locked)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
             />
             <button
               type="button"
               disabled={isBusy || !selectedOrgId}
               onClick={() => void createAthleteShell()}
-              className="h-11 w-full rounded-lg border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-11 w-full rounded-lg border-2 border-[var(--safety-locked)] bg-[var(--safety-locked)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isBusy ? 'Working...' : 'Create Account Shell'}
             </button>

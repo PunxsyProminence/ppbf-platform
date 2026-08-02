@@ -61,7 +61,7 @@ export default function PaymentSetupBubble() {
     >
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-[10px] font-mono font-bold uppercase tracking-[0.3em] text-[var(--red-primary)]">
+          <p className="text-[10px] font-mono font-bold uppercase tracking-[0.3em] text-[var(--safety-locked)]">
             Setup
           </p>
           <h2 id="payment-setup-heading" className="mt-1 text-lg font-black tracking-tight text-[var(--black)]">

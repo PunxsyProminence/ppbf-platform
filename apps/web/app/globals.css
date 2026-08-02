@@ -7,7 +7,7 @@
 
    Everything in the :root block that follows is an ALIAS. The app's ~61 pages
    style themselves with Tailwind arbitrary values reading these legacy names
-   (`bg-[var(--canvas-tan)]`, `text-[var(--red-primary)]`), so pointing the old
+   (`bg-[var(--canvas-tan)]`, `text-[var(--safety-locked)]`), so pointing the old
    names at design-system values re-themes the whole app without editing a
    single page. Add new work against the ppbf tokens directly (--hide-*,
    --brass-*, --t-*, --s*); the aliases exist to carry the pages that predate
@@ -37,7 +37,7 @@
   /* --- Danger ------------------------------------------------------------
      Was #8b0000, a pure-red that sat badly against brass. Now the Layer 11
      locked rung, which was chosen to stay separable from a gold bezel. */
-  --red-primary: var(--locked);
+  --safety-locked: var(--locked);
   --red-highlight: var(--restricted);
   --red-blood: var(--rust-900);
 
@@ -61,11 +61,16 @@
   --skeleton-bg: var(--paper-2);
 
   /* --- Chrome accent ------------------------------------------------------
-     The app spent the safety red on ordinary furniture: --red-primary aliases
-     to --locked, and 322 call sites across 33 files use it for active tabs,
-     KPI labels and panel borders. That is precisely what Law 2 exists to stop
-     — when the gate's red is also the tab highlight, a locked athlete stops
-     being unmissable.
+     The app spent the safety red on ordinary furniture. The alias above used
+     to be called --red-primary, and under that name 322 call sites across 33
+     files reached for it for active tabs, KPI labels and panel borders —
+     "primary red" reads like a brand colour, so of course they did. That is
+     precisely what Law 2 exists to stop: when the gate's red is also the tab
+     highlight, a locked athlete stops being unmissable.
+
+     It is --safety-locked now, and the name is the enforcement. There is no
+     lint rule here; there is a call site that has to say the word "locked"
+     out loud to use the colour, which makes a wrong use visible in review.
 
      So chrome gets its own accent, and it is brass. A selected tab is a
      control in the "on" position: chassis state, not a claim about a person.
@@ -193,7 +198,7 @@ h6 {
 
 @layer base {
   a {
-    color: var(--red-primary);
+    color: var(--safety-locked);
     text-decoration: none;
   }
 
@@ -204,7 +209,7 @@ h6 {
 }
 
 :focus-visible {
-  outline: var(--border-medium) solid var(--red-primary);
+  outline: var(--border-medium) solid var(--safety-locked);
   outline-offset: 2px;
 }
 
@@ -233,7 +238,7 @@ h6 {
 }
 
 .tactical-chip-critical {
-  background: var(--red-primary);
+  background: var(--safety-locked);
   color: var(--white);
   border-color: var(--black);
 }
@@ -260,7 +265,7 @@ h6 {
 }
 
 .tactical-btn-critical {
-  background: var(--red-primary);
+  background: var(--safety-locked);
   color: var(--white);
 }
 
@@ -279,20 +284,20 @@ h6 {
 }
 
 .tactical-input:focus {
-  border-color: var(--red-primary);
+  border-color: var(--safety-locked);
   box-shadow: 0 0 0 2px rgba(139, 0, 0, 0.15);
 }
 
 .tactical-alert-critical {
   background: #f0d6d6;
-  color: var(--red-primary);
-  border: var(--border-medium) solid var(--red-primary);
+  color: var(--safety-locked);
+  border: var(--border-medium) solid var(--safety-locked);
   padding: var(--space-3);
 }
 
 /* ---------- Retro components (work in both themes) ---------- */
 
-.stamp {
+.stamp-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -312,43 +317,43 @@ h6 {
   transition: transform 80ms ease, box-shadow 80ms ease;
 }
 
-.stamp:active {
+.stamp-button:active {
   transform: translate(2px, 2px);
   box-shadow: 1px 1px 0 var(--black);
 }
 
-.stamp:focus-visible {
-  outline: 2px solid var(--red-primary);
+.stamp-button:focus-visible {
+  outline: 2px solid var(--safety-locked);
   outline-offset: 3px;
 }
 
-.stamp--static {
+.stamp-button--static {
   cursor: default;
   pointer-events: none;
 }
 
-.stamp--cleared {
+.stamp-button--cleared {
   background: var(--stamp-cleared);
   border-color: #2a3518;
 }
 
-.stamp--hold {
+.stamp-button--hold {
   background: var(--stamp-hold);
   border-color: #6a4e1a;
 }
 
-.stamp--restricted,
-.stamp--escalate {
+.stamp-button--restricted,
+.stamp-button--escalate {
   background: var(--stamp-restricted);
   border-color: #4a0000;
 }
 
-.stamp--present {
+.stamp-button--present {
   background: var(--stamp-present);
   border-color: #1a2e24;
 }
 
-.stamp--neutral {
+.stamp-button--neutral {
   background: var(--stamp-neutral);
   border-color: #2a2018;
 }
@@ -405,7 +410,7 @@ h6 {
 }
 
 .leather-tag.is-active {
-  box-shadow: inset 0 -3px 0 var(--red-primary), var(--shadow-sm);
+  box-shadow: inset 0 -3px 0 var(--safety-locked), var(--shadow-sm);
 }
 
 .paper-ticket {
@@ -581,7 +586,7 @@ h6 {
 
 /* Floor-use: larger stamps on small screens */
 @media (max-width: 768px) {
-  .stamp {
+  .stamp-button {
     min-height: 56px;
     min-width: 56px;
     padding: 10px 16px;
@@ -597,13 +602,13 @@ h6 {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .stamp,
+  .stamp-button,
   .brass-plate,
   .mechanical-lock__keys button {
     transition: none;
   }
 
-  .stamp:active,
+  .stamp-button:active,
   .brass-plate:active,
   .mechanical-lock__keys button:active {
     transform: none;

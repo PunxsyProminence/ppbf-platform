@@ -65,7 +65,7 @@ const palettes: Record<BoardSummaryVariant, BoardSummaryPalette> = {
     label: 'text-[var(--gray-dark)]',
     value: 'text-[var(--black)]',
     note: 'text-[var(--gray-dark)]',
-    accent: 'text-[var(--red-primary)]',
+    accent: 'text-[var(--safety-locked)]',
   },
 };
 

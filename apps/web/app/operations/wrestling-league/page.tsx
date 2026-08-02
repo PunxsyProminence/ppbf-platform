@@ -5,9 +5,9 @@ export default function WrestlingLeagueManagementPage() {
     <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       <div className="mx-auto w-full max-w-6xl px-6 py-10 lg:px-10">
         <header className="space-y-3 border-b-[3px] border-[var(--black)] pb-6">
-          <p className="text-xs font-mono uppercase tracking-[0.18em] text-[var(--red-primary)]">Operations Workspace</p>
+          <p className="text-xs font-mono uppercase tracking-[0.18em] text-[var(--safety-locked)]">Operations Workspace</p>
           <h1 className="font-display text-4xl font-black">Wrestling League Management</h1>
-          <p className="text-sm font-mono uppercase tracking-[0.14em] text-[var(--red-primary)]">PLANNED | NOT YET IMPLEMENTED</p>
+          <p className="text-sm font-mono uppercase tracking-[0.14em] text-[var(--safety-locked)]">PLANNED | NOT YET IMPLEMENTED</p>
           <p className="max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
             Front-end scaffold for future league operations. No registration, scheduling engine, or competition backend logic is implemented.
           </p>

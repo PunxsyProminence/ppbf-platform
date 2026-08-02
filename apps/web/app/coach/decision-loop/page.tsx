@@ -86,7 +86,7 @@ function statusChipClasses(status: string): string {
     return 'border-[var(--black)] bg-[var(--canvas-tan-light)] font-bold';
   }
   if (status === 'rejected' || status === 'not_cleared' || status === 'miss') {
-    return 'border-[var(--red-primary)] bg-[var(--canvas-tan-light)] text-[var(--red-primary)]';
+    return 'border-[var(--safety-locked)] bg-[var(--canvas-tan-light)] text-[var(--safety-locked)]';
   }
   return 'border-[var(--gray-dark)] bg-[var(--canvas-tan-light)] text-[var(--gray-dark)]';
 }
@@ -311,7 +311,7 @@ export default function DecisionLoopReviewPage() {
       <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
         <div className="mx-auto w-full max-w-6xl px-6 py-10 lg:px-10">
           <header className="space-y-3 border-b-[3px] border-[var(--black)] pb-6">
-            <p className="text-xs font-mono uppercase tracking-[0.18em] text-[var(--red-primary)]">Coach Workspace</p>
+            <p className="text-xs font-mono uppercase tracking-[0.18em] text-[var(--safety-locked)]">Coach Workspace</p>
             <h1 className="font-display text-4xl font-black">SHADOW Decision Loop</h1>
             <p className="max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
               Review provisional recommendations, record human decisions, flag near-misses, and evaluate outcomes.
@@ -347,7 +347,7 @@ export default function DecisionLoopReviewPage() {
               />
             </label>
             {loading && <p className="mt-2 text-xs text-[var(--gray-dark)]">Loading…</p>}
-            {errorMessage && <p className="mt-2 text-sm font-bold text-[var(--red-primary)]">{errorMessage}</p>}
+            {errorMessage && <p className="mt-2 text-sm font-bold text-[var(--safety-locked)]">{errorMessage}</p>}
           </section>
 
           {!athleteId ? (
@@ -442,7 +442,7 @@ export default function DecisionLoopReviewPage() {
                           <button
                             type="button"
                             onClick={() => void handleDecideRecommendation(rec.recommendation_id, 'rejected')}
-                            className="h-9 border-2 border-[var(--red-primary)] px-3 text-xs font-bold uppercase text-[var(--red-primary)]"
+                            className="h-9 border-2 border-[var(--safety-locked)] px-3 text-xs font-bold uppercase text-[var(--safety-locked)]"
                           >
                             Reject
                           </button>
@@ -601,7 +601,7 @@ export default function DecisionLoopReviewPage() {
                   </label>
                   <button
                     type="submit"
-                    className="h-11 border-2 border-[var(--red-primary)] px-4 text-xs font-bold uppercase tracking-[0.1em] text-[var(--red-primary)]"
+                    className="h-11 border-2 border-[var(--safety-locked)] px-4 text-xs font-bold uppercase tracking-[0.1em] text-[var(--safety-locked)]"
                   >
                     Flag Near-Miss
                   </button>

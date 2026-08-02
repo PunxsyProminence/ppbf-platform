@@ -6,7 +6,7 @@
  *
  * Chrome vs. status
  * -----------------
- * Selected tabs and modes used to be painted in --red-primary, which aliases
+ * Selected tabs and modes used to be painted in --safety-locked, which aliases
  * to --locked: the safety gate's "this athlete may not participate" red. Law 2
  * reserves saturated colour for safety state, and a selected tab is not one —
  * when the gate's red is also the tab highlight, a locked athlete stops being

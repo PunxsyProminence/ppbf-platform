@@ -153,7 +153,7 @@ export function RabbitHole({ anchor, className }: Readonly<RabbitHoleProps>) {
             >
               {/* Provenance before content: the reader learns who is talking and
                   on what authority before they read the claim. */}
-              <p className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--red-primary)]">
+              <p className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--safety-locked)]">
                 Gym coaching · Written by {lesson.author_display_name}
               </p>
               <h4 className="mt-1 text-sm font-semibold text-[var(--black)]">{lesson.title}</h4>
@@ -162,7 +162,7 @@ export function RabbitHole({ anchor, className }: Readonly<RabbitHoleProps>) {
                 {lesson.concept}
               </p>
               {lesson.homework ? (
-                <p className="mt-2 border-l-2 border-[var(--red-primary)] pl-2">
+                <p className="mt-2 border-l-2 border-[var(--safety-locked)] pl-2">
                   <span className="font-semibold text-[var(--black)]">Homework: </span>
                   {lesson.homework}
                 </p>

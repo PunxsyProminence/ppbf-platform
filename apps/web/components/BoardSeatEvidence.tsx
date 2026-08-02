@@ -127,7 +127,7 @@ export default function BoardSeatEvidence({ seat }: Readonly<{ seat: BoardSeatSl
               <li key={rule.rule_id} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-3">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <p className="text-base font-black text-[var(--black)]">{rule.rule_name}</p>
-                  <p className="text-[12px] font-mono uppercase tracking-[0.12em] text-[var(--red-primary)]">
+                  <p className="text-[12px] font-mono uppercase tracking-[0.12em] text-[var(--safety-locked)]">
                     {rule.severity}
                   </p>
                 </div>

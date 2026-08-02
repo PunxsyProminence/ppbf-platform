@@ -45,7 +45,7 @@ export default function TutorialButton({ anchor, label = 'HOW THIS WORKS', class
 
       {open ? (
         <div className="absolute right-0 top-[calc(100%+6px)] z-50 w-[320px] max-w-[calc(100vw-1.5rem)] border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-3 shadow-[var(--shadow-md)]">
-          <p className="text-xs font-mono uppercase tracking-[0.08em] text-[var(--red-primary)]">Quick Tutorial</p>
+          <p className="text-xs font-mono uppercase tracking-[0.08em] text-[var(--safety-locked)]">Quick Tutorial</p>
           <div className="mt-2 grid gap-2 text-sm leading-6 text-[var(--gray-dark)]">
             <p>Use this panel for quick orientation while keeping the workspace visible.</p>
             <p>Open the full tutorial center only when deeper guidance is needed.</p>
