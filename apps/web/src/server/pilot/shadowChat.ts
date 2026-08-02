@@ -639,34 +639,68 @@ export function validateShadowResponse(
   // Both retries filtered because the trigger is in the question, not in the
   // phrasing, so the retry policy could never clear it.
   //
-  // Narrowed the same way the percentage strip above was: the count reads as
-  // evidence only when framed as a sample -- drawn 'out of' a population, or
-  // attached to an observed outcome. "300 athletes improved their guard" still
-  // filters without a citation; "3 athletes per station" no longer does.
-  // Stated as a strip rather than a narrowed trigger, deliberately. An
-  // unrecognized phrasing then keeps filtering -- a withheld benign answer,
-  // which is the safe direction -- instead of letting an uncited figure
-  // through. "Alpha Boxing has 12 athletes" is an organizational rollup and
-  // must still carry a citation; only allocation speech is removed.
+  // Handled in two layers, because one alone leaks in a direction that matters.
+  //
+  // The first fix here stripped known allocation phrasings and kept filtering
+  // any count that survived. That is the safe direction for an unrecognized
+  // phrasing, but a sweep of 34 realistic benign answers (2026-08-02) still
+  // found 3 withheld -- "keep the beginner class to 8 athletes", "one coach for
+  // every 6 athletes", "with only 5 bags and 14 athletes". Planning speech is
+  // unbounded, so a strip will always trail it, and every miss is a coach told
+  // SHADOW withheld an answer to a fair question. Nobody reports those; they
+  // just stop trusting it.
+  //
+  // Asserting a population count, by contrast, IS enumerable. So layer 2
+  // inverts: a people-count only reads as evidence inside an assertion frame --
+  // possession/existence ("Alpha Boxing has 12 athletes", "there are 30
+  // athletes enrolled"), a sample draw ("7 out of 10 athletes", "247 similar
+  // athletes"), or an observed outcome ("300 athletes improved"). Anything else
+  // is somebody planning a session.
+  //
+  // Layer 1 is kept in front of it so an allocation that happens to sit near an
+  // assertion verb ("there are 3 athletes at each station") is removed before
+  // layer 2 ever reads it. Neither layer alone gets both cases right.
   const peopleCountSource = quantSource
     // "3 athletes per bag", "4 athletes per station"
     .replace(/\b\d+\s+(?:athletes?|participants?)\s+per\b/gi, '')
     // "groups of 3 athletes", "pairs of 2 participants"
     .replace(/\b(?:groups?|pairs?|teams?|waves?|lines?|rotations?)\s+of\s+\d+\s+(?:athletes?|participants?)\b/gi, '')
-    // "3 athletes at each station", "4 athletes to every bag"
-    .replace(/\b\d+\s+(?:athletes?|participants?)\s+(?:at|to|on)\s+(?:each|every)\b/gi, '')
-    // Instruction-led allocation: "split the 12 athletes", "pair up the 10 athletes"
-    .replace(/\b(?:split|divide|put|place|pair|group|assign|rotate|send|line|keep|run|start|stagger|alternate)\b[^.\n]{0,20}?\b\d+\s+(?:athletes?|participants?)\b/gi, '')
+    // "3 athletes at each station", "4 athletes to every bag". Deliberately
+    // only each/every -- widening this to a/the swallowed "45 athletes in the
+    // program", which is a rollup, not an allocation.
+    .replace(/\b\d+\s+(?:athletes?|participants?)\s+(?:at|to|on|in)\s+(?:each|every)\b/gi, '')
+    // "for every 6 athletes", "per 8 participants"
+    .replace(/\b(?:for\s+)?(?:every|each|per)\s+\d+\s+(?:athletes?|participants?)\b/gi, '')
+    // Instruction-led allocation: "split the 12 athletes", "keep the beginner
+    // class to 8 athletes". The window is wide because the noun phrase between
+    // the verb and the count is arbitrary ("the beginner class to").
+    .replace(/\b(?:split|divide|put|place|pair|group|assign|rotate|send|line|keep|cap|limit|run|start|stagger|alternate|bring|take|fit|seat|host)\b[^.\n]{0,40}?\b\d+\s+(?:athletes?|participants?)\b/gi, '')
     // "4 athletes rotate through", "3 athletes work the bag"
-    .replace(/\b\d+\s+(?:athletes?|participants?)\s+(?:rotate|work|go|move|start|begin|switch|cycle|share|train|hit|shadowbox|spar)\b/gi, '')
-    // Planning conditional: "with 8 participants you can run two stations"
-    .replace(/\bwith\s+\d+\s+(?:athletes?|participants?)\b/gi, '');
+    .replace(/\b\d+\s+(?:athletes?|participants?)\s+(?:rotate|work|go|move|start|begin|switch|cycle|share|train|hit|shadowbox|spar|wait|line)\b/gi, '')
+    // Planning conditional: "with 8 participants you can run two stations",
+    // "with only 5 bags and 14 athletes"
+    .replace(/\bwith\s+(?:only\s+)?[^.\n]{0,30}?\b\d+\s+(?:athletes?|participants?)\b/gi, '');
+  // Frames in which a people-count is an assertion about a population rather
+  // than a plan for one.
+  const assertsPopulationCount = (
+    // "247 similar athletes" -- 'similar' is itself the comparison frame.
+    /\b\d+\s+similar\s+(?:athletes?|participants?)\b/i.test(peopleCountSource)
+    // "7 out of 10 athletes"
+    || /\b\d+\s+out\s+of\s+\d+\s+(?:athletes?|participants?)\b/i.test(peopleCountSource)
+    // "Alpha Boxing has 12 athletes", "there are 30 athletes enrolled",
+    // "we tracked 40 participants"
+    || /\b(?:has|have|had|there\s+(?:are|is|were|was)|serves?|served|enrolled|registered|tracked|surveyed|studied|observed|sampled)\b[^.\n]{0,30}?\b\d+\s+(?:athletes?|participants?)\b/i.test(peopleCountSource)
+    // "300 athletes improved their guard". Deliberately excludes the copulas --
+    // "6 athletes is what lets you correct faults" is a coaching ratio, not a
+    // finding.
+    || /\b\d+\s+(?:athletes?|participants?)\b[^.\n]{0,60}?\b(?:improv|show|report|demonstrat|experienc|recover|reduc|increas|decreas|respond|sustain|avoid|gain|drop)\w*\b/i.test(peopleCountSource)
+  );
   const makesQuantifiedEvidenceClaim = (
     /\b\d+(?:\.\d+)?\s*%/i.test(quantSource)
     // 'cases' and 'studies' are inherently evidentiary -- counting them IS
     // stating a sample, in any sentence. Untouched.
     || /\b\d+\s+(?:similar\s+)?(?:cases?|studies?)\b/i.test(quantSource)
-    || /\b\d+\s+(?:similar\s+)?(?:athletes?|participants?)\b/i.test(peopleCountSource)
+    || assertsPopulationCount
   );
   if ((makesEvidenceClaim || makesQuantifiedEvidenceClaim) && citationIds.length === 0) {
     filtered = true;
