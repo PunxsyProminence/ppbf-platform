@@ -602,8 +602,9 @@ export default function AthleteWorkspace() {
         });
         if (!response.ok) throw new Error('Drill library could not be loaded.');
 
+        // `items`, not `drills` -- same seam defect as the coach library.
         const payload = (await response.json()) as {
-          drills?: Array<{
+          items?: Array<{
             drill_id: string;
             name: string;
             category: string;
@@ -614,7 +615,7 @@ export default function AthleteWorkspace() {
         };
         if (controller.signal.aborted) return;
 
-        setDrills((payload.drills ?? []).map((drill) => ({
+        setDrills((payload.items ?? []).map((drill) => ({
           id: drill.drill_id,
           name: drill.name,
           category: drill.category,

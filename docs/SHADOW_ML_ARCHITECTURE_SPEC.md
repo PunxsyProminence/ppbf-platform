@@ -1,8 +1,12 @@
 # SHADOW: Total Best ML Build Specification
 
-**Version:** 1.0  
+**Version:** 1.1  
 **Status:** Production Design  
-**Last Updated:** 2026-07-18  
+**Last Updated:** 2026-08-03  
+**Verified against code:** `main` @ `2aa2ded` — §1, §2.1, §4.2, §5, and §7 were
+rewritten on 2026-08-03 to match `shadowRouter.ts` / `shadowClassifier.ts` as
+shipped. Where this document and the code disagree, the code is authoritative;
+treat any drift as a defect in this file.  
 **Audience:** Engineering, Platform Leadership
 
 ---
@@ -34,59 +38,94 @@ This specification defines the complete technical architecture, API contracts, d
 
 ### 1.1 Hybrid Intelligence Stack
 
-SHADOW uses a multi-tier inference architecture designed for latency, cost, and reasoning quality:
+SHADOW is a **dual-mode** inference architecture — Quick Round and Heavy Bag —
+plus a dedicated vision path for Film Study. (An earlier three-tier design with
+a "Standard Round" middle tier was never built; the classifier resolves every
+conversational request to one of the two tiers.)
 
 ```
 User Query
     ↓
 ┌─────────────────────────────────────┐
-│  REQUEST CLASSIFIER (The Corner)    │
+│  REQUEST CLASSIFIER                 │
+│  (shadowClassifier.ts)              │
 │  - Complexity scoring (0.0 - 1.0)   │
 │  - Topic category                   │
-│  - User role & context              │
-│  - History & personalization state  │
+│  - Role baseline adjustment         │
+│  - High-risk pattern detection      │
+│  - Manual tier override handling    │
 └─────────────────────────────────────┘
     ↓
-    ├─ Quick Round (complexity < 0.4)
-    │  └→ Azure OpenAI gpt-5-mini-shadow
-    │     (< 2s, < 500 tokens)
+┌─────────────────────────────────────┐
+│  THE CORNER (shadowRouter.ts)       │
+│  Model routing per session type     │
+└─────────────────────────────────────┘
+    ↓
+    ├─ Quick Round (complexity < 0.4, and boundary cases 0.4–0.6)
+    │  └→ gpt-5.6-luna-shadow (fallback: gpt-5-mini-shadow)
+    │     measured ~33s, 90s timeout, synchronous, no streaming yet
     │
-    ├─ Standard Round (0.4 - 0.65)
-    │  └→ Azure OpenAI gpt-5-small-shadow
-    │     (< 5s, < 1000 tokens)
+    ├─ Heavy Bag (complexity ≥ 0.6, high-risk patterns, or manual escalation)
+    │  └→ gpt-5.6-sol-shadow (fallback: gpt-5-shadow)
+    │     measured ~95s, 210s timeout — async-default via shadow_jobs,
+    │     processed by /jobs/process, result linked in shadow_chat_audit
     │
-    └─ Heavy Bag (complexity > 0.65)
-       └→ Azure OpenAI gpt-5-shadow [ASYNC]
-          (< 30s, full reasoning, chain-of-thought)
-          └→ Stored in shadow_jobs table
-             └→ Processed by /jobs/process endpoint
-                └→ Result linked in shadow_chat_audit
+    └─ Film Study (vision)
+       └→ gpt-5-vision-shadow (fallback: text-only via luna)
+          measured ~75s, 200s timeout
 ```
 
 **Design Rationale:**
-- Fast path (Quick Round) handles ~70% of queries (coaches asking about common situations)
-- Standard path handles coaching-specific context and athlete-specific guidance
-- Heavy Bag reserved for complex, high-stakes decisions (progression planning, risk assessment, sensitive escalations)
-- All paths are deterministic and explainable (full chain-of-thought logged)
+- Quick Round handles the common case: fast (for a reasoning model), consistent
+  coaching answers. It is still ~33s unstreamed today — streaming this path is
+  the top open UX item, tracked in the capability build plan (Track S1).
+- Heavy Bag is reserved for complex, high-stakes work (progression planning,
+  risk assessment, sensitive escalations) and is a poor synchronous wait by
+  design — the async job path is the intended UX.
+- High-risk medical/psychological patterns force Heavy Bag regardless of the
+  complexity score. Safety escalation is never latency-optimized away.
+- All timeouts stay under 240s because that is the Azure Container Apps ingress
+  limit; a longer provider wait would be cut off by the platform.
+- All paths are deterministic and explainable (routing rationale and
+  classification reasoning are recorded per request).
 
 ### 1.2 Inference Engine Selection
 
-**Primary:** Azure OpenAI
-- **Quick Round Model:** `gpt-5-mini-shadow` (128K context, 16K output)
-- **Standard Model:** `gpt-5-small-shadow` (128K context, 16K output)
-- **Heavy Bag Model:** `gpt-5-shadow` (128K context, 16K output, reasoning mode enabled)
+**Primary (and only) provider:** Azure OpenAI. The model registry lives in
+`shadowRouter.ts` (`MODEL_REGISTRY`) and is the source of truth; latencies below
+were measured 2026-07-29 against a representative Heavy Bag prompt.
 
-**Fallback Strategy:**
-1. Azure OpenAI (primary)
-2. Anthropic Claude (secondary, if OpenAI quota exhausted)
-3. Static library claims (tertiary, if both AI services unavailable)
-4. Human escalation (safety net for all services)
+| Deployment | Role | Measured latency | Timeout | Max completion |
+|---|---|---|---|---|
+| `gpt-5.6-luna-shadow` | Quick Round primary | ~33s | 90s | 8192 |
+| `gpt-5.6-sol-shadow` | Heavy Bag primary | ~95s | 210s | 16384 |
+| `gpt-5-mini-shadow` | Quick Round fallback | ~58s | 150s | 4096 |
+| `gpt-5-shadow` | Heavy Bag fallback | ~75s | 200s | 16384 |
+| `gpt-5-vision-shadow` | Film Study (vision) | ~75s | 200s | 16384 |
 
-**Fine-Tuning Plan (Q3 2026):**
-- Collect 500+ curated training examples from pilot phase
-- Fine-tune `gpt-5-mini-shadow` on PPBF-specific terminology and patterns
-- Deploy as `ppbf-shadow-v1-mini`
-- Expected improvement: +12-15% relevance, -8% latency
+`gpt-5-vision-shadow` is the same natively-multimodal gpt-5 under its own
+deployment alias; Film Study stays on it because the Azure catalog reports no
+vision flag for the gpt-5.6 family. Scout/Board synthesis and background
+recovery rounds route through the same registry (sol or luna).
+
+**Degradation strategy (as implemented):**
+1. Azure OpenAI current generation (luna/sol)
+2. Azure OpenAI previous generation (mini/gpt-5) — same tier, never a silent
+   downgrade from heavy to quick
+3. Human escalation (safety net for all services)
+
+**Deferred — specified but NOT implemented:** an Anthropic Claude secondary
+provider and a static-library-claims tertiary path. Neither exists in
+`azureAiRuntime.ts` today. Build them only if Azure quota becomes a real
+production incident; until then this paragraph is the record that the gap is
+intentional.
+
+**Fine-Tuning Plan — deferred indefinitely:** the learning loop's
+`fine_tuning_pipeline` capability is disabled in code until a governance,
+privacy, and evaluation process exists (threshold: 500 labeled examples). The
+earlier "Q3 2026, +12-15% relevance" projection was aspirational; collecting
+high-quality (query, context, response, feedback) pairs under the retention
+policy is the only fine-tuning work in scope now.
 
 ### 1.3 Context Assembly Engine
 
@@ -101,28 +140,19 @@ interface ShadowContext {
     athleteProfile?: AthleteProfile;
   };
   
-  // Quick Round: Minimal
+  // Quick Round: lightweight depth (classifier suggestedContextDepth)
   quickRoundContext: {
     recentQuestions: QueryHistory[];  // last 3 from session
     roleGuidance: string;              // 150 tokens
     safetyBoundaries: string;          // 200 tokens
   };
   
-  // Standard Round: Expanded
-  standardContext: {
+  // Heavy Bag: full depth
+  heavyBagContext: {
     ...quickRoundContext,
     athleteAssessments: AssessmentSummary[];
     progressionHistory: ProgressionHistory;
     previousRecommendations: Recommendation[];
-    organizationPatterns: OrganizationPattern[];
-  };
-  
-  // Heavy Bag: Full
-  heavyBagContext: {
-    ...standardContext,
-    fullAthleteHistory: CompleteAthleteRecord;
-    videoAnalysisResults: VideoAnalysis[];
-    biometricTrends: BiometricTrend[];
     researchLibraryMatches: ResearchMatch[];
     executedRecommendations: ExecutionOutcome[];
     learningLoopInsights: LearningInsight[];
@@ -130,72 +160,55 @@ interface ShadowContext {
 }
 ```
 
+There are two context depths, matching the two tiers (`suggestedContextDepth:
+'lightweight' | 'full'`); the three-depth version with a "standard" middle was
+part of the never-built middle tier. Video analysis results reach context via
+the Film Study proposals path, and biometric trends are deferred with the rest
+of biometric integration (§7 Phase 4).
+
 ---
 
 ## System Components
 
-### 2.1 The Corner (Complexity Classifier)
+### 2.1 The Classifier and The Corner
 
-**Purpose:** Route each query to the appropriate inference tier.
+**Purpose:** Resolve each query to a tier (classifier), then to a model and call
+parameters (router).
 
-**Location:** `src/server/pilot/shadowRouter.ts`
+**Locations:** `src/server/pilot/shadowClassifier.ts` (tier decision) and
+`src/server/pilot/shadowRouter.ts` (The Corner — model routing).
 
-**Algorithm:**
+**Algorithm (as shipped — a transparent heuristic, deliberately not a trained
+model):** `classifyRequest(message, role, userManualTier?)` computes an additive
+complexity score:
 
-```typescript
-interface CornerClassification {
-  complexity: number;           // 0.0 - 1.0
-  topic: QueryTopic;           // 'technique', 'progression', 'injury', 'mental', 'nutrition', 'governance'
-  estimatedDuration: number;   // seconds
-  requiresHeavyBag: boolean;
-  riskLevel: 'low' | 'medium' | 'high' | 'escalate';
-  requiresHumanReview: boolean;
-}
+1. **Message length** — word-count buckets, max +0.2
+2. **Complexity keywords** — multi-step / trade-off / edge-case / compare /
+   conditional-logic patterns, +0.05 each, capped at +0.3
+3. **High-risk patterns** — concussion, medical clearance, return-to-play,
+   surgery, prescription, weight cutting, self-harm/mental-health: **+0.6**,
+   which forces Heavy Bag regardless of everything else
+4. **Role baseline** — coach +0.15, admin/org-admin +0.1, platform owner/staff
+   +0.05, parent/board 0, athlete/volunteer −0.05
 
-function classifyRequest(
-  message: string,
-  userRole: string,
-  organizationId: string,
-  history: QueryHistory[],
-  userProfile: UserProfile
-): CornerClassification {
-  // 1. Keyword matching
-  let complexity = baseComplexity(message);
-  
-  // 2. Role adjustment
-  complexity *= roleMultiplier[userRole];  // admin queries get higher weight
-  
-  // 3. Context multiplier
-  if (history.length > 0) {
-    complexity *= contextRelevanceScore(message, history);
-  }
-  
-  // 4. Risk detection
-  if (containsSensitiveKeywords(message)) {
-    riskLevel = detectRiskLevel(message);
-    if (riskLevel === 'high') requiresHeavyBag = true;
-  }
-  
-  // 5. Profile-based adjustment
-  if (userProfile.tier === 'Gold') {
-    complexity *= 0.9;  // experienced users get faster responses
-  }
-  
-  return {
-    complexity: Math.min(1.0, complexity),
-    topic: classifyTopic(message),
-    estimatedDuration: estimateDuration(complexity),
-    requiresHeavyBag: complexity > 0.65 || riskLevel === 'high',
-    riskLevel,
-    requiresHumanReview: riskLevel === 'escalate'
-  };
-}
-```
+It also detects a topic (technique, training, recovery, medical, mindset,
+strategy, competition, safety, equipment) by first-match pattern, and honors
+manual tier overrides: **Heavy Bag escalation is gated to coach/admin/org-admin/
+platform-owner; Quick Round downgrade is available to anyone** (a downgrade is
+always safe). There is no history multiplier and no profile-tier adjustment —
+earlier drafts of this section described both, but they were never built.
 
-**Routing Decision:**
-- **complexity < 0.4:** Quick Round (< 2s)
-- **0.4 ≤ complexity < 0.65:** Standard Round (< 5s)
-- **complexity ≥ 0.65 OR riskLevel === 'high':** Heavy Bag (async, < 30s)
+**Routing Decision (thresholds in code):**
+- **complexity < 0.4:** Quick Round
+- **complexity ≥ 0.6:** Heavy Bag
+- **0.4 ≤ complexity < 0.6 (boundary):** Quick Round, with a manual-override
+  flag offered to authorized roles
+
+**Known limitation:** as a pure heuristic it will misroute nuanced language in
+both directions (high-risk patterns excepted — those always escalate). The
+planned evolution is to log (query, tier, override, outcome) and calibrate or
+augment with a small classifier once labeled volume exists — not before
+(capability build plan, Track S8).
 
 ### 2.2 Multimodal Input Engine
 
@@ -956,7 +969,13 @@ CREATE TABLE shadow_library_review_flags (
 );
 ```
 
-### 4.2 Cache Layer (Redis)
+### 4.2 Cache Layer (Redis) — **NOT IMPLEMENTED; design only**
+
+No Redis layer exists in the SHADOW path today: profiles, recent queries,
+library entries, and jobs are all read from Postgres, and the job queue is
+`shadow_jobs` with lease-based claiming. The keyspace below is retained as the
+design of record for if/when a cache tier is justified by measured load — it is
+**not** a description of running code.
 
 ```
 // User Profiles (2-hour TTL)
@@ -980,52 +999,50 @@ shadow:jobs:{job_id} → Job (JSON)
 
 ## Processing Pipelines
 
-### 5.1 Quick Round Pipeline (< 2s)
+### 5.1 Quick Round Pipeline (synchronous, ~33s measured)
 
 ```
-1. Message received → hash for deduplication (Redis check)
-2. Validate request (content safety, rate limits)
-3. Classify with The Corner (fast keyword matching, complexity < 0.4)
-4. Assemble Quick Context (last 3 messages, role guidance, safety boundaries)
-5. Call Azure OpenAI gpt-5-mini-shadow
+1. Message received
+2. Validate request (content safety, rate limits — 30/60s chat bucket)
+3. Classify (shadowClassifier: complexity < 0.4, or boundary 0.4–0.6)
+4. Assemble lightweight context (role guidance, safety boundaries)
+5. Call Azure OpenAI gpt-5.6-luna-shadow (90s timeout; fallback gpt-5-mini)
 6. Filter response (medical boundaries, confidence markers)
 7. Log to shadow_chat_audit
 8. Return response with metadata
 ```
 
-**SLA:** p99 < 2000ms
+**Measured:** ~33s end-to-end — luna is a reasoning model and there is **no
+streaming yet**. The earlier "< 2s" SLA was aspirational and is withdrawn;
+streaming this path (Track S1) is the route to perceived speed, not a faster
+synchronous wait.
 
-### 5.2 Standard Round Pipeline (< 5s)
+### 5.2 Standard Round Pipeline — **REMOVED FROM DESIGN**
 
-```
-1-7. Same as Quick Round
-8. If complexity 0.4-0.65:
-   - Assemble Standard Context (assessments, progression history, org patterns)
-   - Call Azure OpenAI gpt-5-small-shadow
-   - Enhanced filtering
-9. Return response
-```
+The middle tier was never built. Boundary-complexity requests (0.4–0.6) run as
+Quick Round with a manual escalation flag for authorized roles (§2.1). This
+heading is retained so old references resolve to an explanation rather than a
+dangling anchor.
 
-**SLA:** p99 < 5000ms
-
-### 5.3 Heavy Bag Pipeline (async, < 30s execution)
+### 5.3 Heavy Bag Pipeline (async-default, ~95s measured execution)
 
 ```
 1. Message received
-2. Validate & classify (complexity > 0.65 OR risk_level = high)
+2. Validate & classify (complexity ≥ 0.6, high-risk pattern, or manual
+   escalation by an authorized role) — 10/user/hour Heavy Bag rate bucket
 3. Create job record → shadow_jobs table (status = 'pending')
 4. Return jobId to user with "processing" indicator
-5. [Async] /api/pilot/shadow/jobs/process claims job
-6. [Async] Assemble Heavy Bag Context (full history, video analysis, research)
-7. [Async] Call Azure OpenAI gpt-5-shadow (reasoning enabled)
-8. [Async] Generate chain-of-thought explanation
-9. [Async] Apply full safety pipeline
-10. [Async] Update job record (status = 'completed', output = response)
-11. [Client polls via GET /api/pilot/shadow/jobs/:jobId]
-12. User sees result in real-time
+5. [Async] /api/pilot/shadow/jobs/process claims job (lease-based)
+6. [Async] Assemble full context (history, library evidence, research)
+7. [Async] Call Azure OpenAI gpt-5.6-sol-shadow (210s timeout; fallback gpt-5)
+8. [Async] Apply full safety pipeline
+9. [Async] Update job record (status = 'completed', output = response)
+10. [Client polls via GET /api/pilot/shadow/jobs/:jobId]
 ```
 
-**SLA:** p99 < 30000ms for job completion
+**Measured:** ~95s model execution. The earlier "< 30s" SLA was aspirational
+and is withdrawn; the async job path is the intended UX, and timeouts are
+bounded by the 240s Azure Container Apps ingress limit, not by an SLA.
 
 ### 5.4 Learning Loop Pipeline
 
@@ -1182,9 +1199,9 @@ SHADOW escalates to human review when:
 - **Deleted Data:** One-way hash only (for audit compliance)
 
 **Tenant Isolation:**
-- Organization data completely isolated in all queries
+- Organization data completely isolated in all queries (enforced in Postgres —
+  every organization-owned record carries `organization_id`)
 - No cross-organization recommendations or patterns
-- Separate Redis namespaces
 
 **Consent Management:**
 - Gold-tier members opt-in to anonymized pattern analysis
@@ -1203,27 +1220,38 @@ SHADOW escalates to human review when:
 ### Phase 2: Heavy Bag & Learning Loop (Weeks 5-8)
 - ✅ Heavy Bag async job processing
 - ✅ Learning Loop feedback → effectiveness scoring
-- ✅ Scout Reports MVP
-- **Status:** COMPLETE
+- ❌ Scout Reports — the dedicated producer was implemented, never gained a
+  caller, and was **deleted** in the 2026-07-31 audit; build-or-retitle is an
+  open owner decision (§3.5, §5.5)
+- **Status:** COMPLETE except Scout Reports
 
 ### Phase 3: Personalization (Weeks 9-12)
-- 🔄 User Profiling (Bronze/Silver/Gold tiers)
-- 🔄 Adaptive response generation
-- 🔄 Learning style detection
-- **Timeline:** Starting July 25, 2026
+- 🔄 User Profiling (Bronze/Silver/Gold tiers) — shipped; tiers must never gate
+  capabilities
+- ⏳ Adaptive response generation — unlock-gated; needs real feedback volume
+  and human review capacity before it can warm up
+- ⏳ Learning style detection — current inference is crude heuristics; do not
+  deepen until volume exists
+- **Status:** partially shipped; advancing is gated on operational volume, not
+  code
 
-### Phase 4: Multimodal (Weeks 13-16)
-- ⏳ Video Intelligence (pose estimation, drill classification)
-- ⏳ Document Intelligence (OCR, fact extraction)
-- ⏳ Biometric Integration (trend detection, readiness scoring)
-- **Timeline:** August 22, 2026
+### Phase 4: Multimodal (status: emerging, not scheduled)
+- 🔄 Video Intelligence — upload → content scan → promote path is **live**;
+  Film Study executor runs behind a mandatory human proposals gate; per-frame
+  cost measurement still required before general availability. Pose estimation
+  and drill classification are **aspirational, not in scope**.
+- 🔄 Document Intelligence — document-intake pipeline exists (classify, review,
+  link); OCR/fact-extraction depth is future work
+- ⏳ Biometric Integration — **deferred; nothing built**
+- The original week-13-16 timeline is withdrawn; this phase advances behind
+  the capability build plan's Track S5.
 
-### Phase 5: Fine-Tuning & Optimization (Weeks 17-20)
-- ⏳ Collect 500+ training examples
-- ⏳ Fine-tune gpt-5-mini-shadow
-- ⏳ Deploy ppbf-shadow-v1-mini
-- ⏳ Performance optimization
-- **Timeline:** September 19, 2026
+### Phase 5: Fine-Tuning & Optimization (deferred indefinitely)
+- ⏳ Collect curated training examples under retention policy — the only
+  in-scope work
+- ❌ Fine-tune / deploy `ppbf-shadow-v1-mini` — **disabled in code** until a
+  governance, privacy, and evaluation process exists (500-example threshold);
+  the September 2026 timeline is withdrawn
 
 ### Phase 6: Advanced Features (Weeks 21+)
 - ⏳ Cross-organizational anonymized insights
@@ -1364,9 +1392,10 @@ apps/web/
          ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ Azure OpenAI (shadow-ai.openai.azure.com)                  │
-│ ├─ gpt-5-mini-shadow (Quick Round)                         │
-│ ├─ gpt-5-small-shadow (Standard)                           │
-│ └─ gpt-5-shadow (Heavy Bag, reasoning enabled)             │
+│ ├─ gpt-5.6-luna-shadow (Quick Round)                       │
+│ ├─ gpt-5.6-sol-shadow (Heavy Bag)                          │
+│ ├─ gpt-5-vision-shadow (Film Study)                        │
+│ └─ gpt-5-mini-shadow / gpt-5-shadow (fallbacks)            │
 └─────────────────────────────────────────────────────────────┘
          ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -1379,18 +1408,13 @@ apps/web/
 └─────────────────────────────────────────────────────────────┘
          ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ Azure Cache for Redis (ppbf-cache*.redis.cache.windows.net)│
-│ ├─ User profiles (2h TTL)                                  │
-│ ├─ Recent queries (1h TTL)                                 │
-│ ├─ Library entries (24h TTL)                               │
-│ └─ Job queue (active)                                      │
-└─────────────────────────────────────────────────────────────┘
-         ↓
-┌─────────────────────────────────────────────────────────────┐
 │ Azure Container Registry (ppbfacr*.azurecr.io)             │
-│ └─ Shadow models (fine-tuned versions)                     │
+│ └─ App container images                                    │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+(The Redis cache tier shown in earlier versions of this diagram was never
+provisioned — see §4.2. Fine-tuned model hosting is deferred with §7 Phase 5.)
 
 ### 9.2 Environment Variables
 
@@ -1398,14 +1422,12 @@ apps/web/
 # Azure OpenAI
 AZURE_AI_ENDPOINT=https://shadow-ai.openai.azure.com/
 AZURE_AI_KEY=<secret>
-AZURE_AI_DEPLOYMENT_NAME=gpt-5-mini-shadow
+AZURE_AI_DEPLOYMENT_NAME=<default deployment; per-tier routing comes from
+                          MODEL_REGISTRY in shadowRouter.ts>
 AZURE_AI_API_VERSION=2024-12-01-preview
 
 # Database
 AZURE_POSTGRES_CONNECTION_STRING=postgresql://...
-
-# Redis
-AZURE_REDIS_CONNECTION_STRING=<secret>
 
 # Bootstrap
 PPBF_PILOT_BOOTSTRAP_KEY=<secret>
@@ -1470,13 +1492,16 @@ jobs:
 
 ### 10.1 Performance
 
-| Metric | Target | Current |
+| Metric | Target | Current (measured 2026-07-29) |
 |--------|--------|---------|
-| Quick Round p99 latency | < 2s | TBD |
-| Standard Round p99 latency | < 5s | TBD |
-| Heavy Bag p99 completion | < 30s | TBD |
+| Quick Round latency (unstreamed) | streaming first token < 5s (Track S1) | ~33s full response |
+| Heavy Bag completion (async) | tracked, not SLA'd — bounded by 240s ingress | ~95s model execution |
 | API availability | 99.9% | TBD |
-| Cache hit rate | > 70% | TBD |
+| Withheld-answer (over-filter) rate | < 1% (Track S4) | measurement landing (#178) |
+
+(The former "< 2s / < 5s / < 30s" targets described the never-built three-tier
+design and are withdrawn. The cache-hit-rate metric goes with the unbuilt Redis
+tier, §4.2.)
 
 ### 10.2 Quality
 
@@ -1511,10 +1536,10 @@ jobs:
 
 ## Appendix: Glossary
 
-- **Quick Round:** < 2s, lightweight inference, 70% of queries
-- **Standard Round:** < 5s, contextual inference, 20% of queries
-- **Heavy Bag:** async, full reasoning, 10% of queries
-- **The Corner:** Complexity classifier that routes queries
+- **Quick Round:** synchronous, lightweight context, luna (~33s measured, unstreamed)
+- **Heavy Bag:** async-default, full context and deep reasoning, sol (~95s measured)
+- **The Corner:** model routing layer (`shadowRouter.ts`); tier decisions come
+  from the classifier (`shadowClassifier.ts`)
 - **Scout Report:** Comprehensive athlete intelligence generated async
 - **Outcome Signal:** User feedback (thumbs up/down) + objective data
 - **Effectiveness Score:** 0-100 rating of recommendation quality

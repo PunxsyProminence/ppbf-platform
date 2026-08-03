@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import RabbitHole from '@/components/RabbitHole';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
+import { formatCalendarDay } from '@/lib/calendarDay';
 
 // Each rabbit hole carries its own top margin rather than sitting in a shared
 // wrapper: two anchors are read per gap and either may have nothing to show, so
@@ -301,7 +302,10 @@ export default function AthleteProgressionIntelligencePage() {
                             {assignment.due_date && (
                               <div className="bg-[color-mix(in_srgb,var(--monitor)_12%,var(--paper))] p-3 rounded">
                                 <p className="text-[color:var(--hide-700)]">Due Date</p>
-                                <p className="font-semibold text-[color:var(--hide-950)]">{new Date(assignment.due_date).toLocaleDateString()}</p>
+                                {/* due_date is a pg DATE. new Date() parses a bare date as UTC
+                                    midnight and renders the previous day in every zone west of
+                                    Greenwich -- the athlete saw the 14th for a drill due the 15th. */}
+                                <p className="font-semibold text-[color:var(--hide-950)]">{formatCalendarDay(assignment.due_date)}</p>
                               </div>
                             )}
                           </div>

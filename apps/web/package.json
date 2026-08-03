@@ -69,6 +69,7 @@
     "pilot:apply-feedback": "node scripts/pilot-apply-feedback-migration.mjs",
     "pilot:apply-rabbit-holes": "node scripts/pilot-apply-rabbit-holes-migration.mjs",
     "pilot:apply-drills": "node scripts/pilot-apply-drills-migration.mjs",
+    "pilot:apply-rate-limit": "node scripts/pilot-apply-rate-limit-migration.mjs",
     "pilot:apply-goal-category-progress": "node scripts/pilot-apply-goal-category-progress-migration.mjs",
     "test:migrations:video-sessions": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/videoSessionsMigration.pg.test.ts --testTimeout=180000",
     "test:migrations:video-scan": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/videoScanPromotion.pg.test.ts --testTimeout=180000",
