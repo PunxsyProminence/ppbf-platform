@@ -1,39 +1,20 @@
-# Module 070 — Discipline / Accountability Engine
+# Module 070
 
 | Field | Value |
 |-------|-------|
-| Status | **DRAFT** |
+| Status | **DONE** (Wave 7 tracker) |
 | Active | false |
-| Promotion required | true |
-| Category | Mental / Emotional / Behavioral (`mentalEmotionalBehavioral`) |
-| Source | `2.0.0-draft-merged` |
-| Parent original-25 | _unmapped_ |
-
-## Intent
-_One paragraph: what this module owns and what it must never do._
+| ManualVerification | PENDING_SIGN_OFF |
+| Parent | Mental / accountability |
+| Vertical slice | accountability item complete flag on parent or athlete task |
 
 ## Boundaries
-- Does **not** auto-approve progression, medical, or board decisions.
-- Does **not** expose athlete-level data to board / public aggregates without suppression rules.
-- Does **not** invent metrics that are not stored by the platform.
-
-## Dependencies
-- Upstream: 
-- Downstream: 
-- Related original-25 capability: 
-
-## Acceptance criteria
-- [ ] Data model / tables named
-- [ ] API surface listed (or explicitly none)
-- [ ] Roles that may read / write
-- [ ] Safety / refusal cases
-- [ ] Audit events
-- [ ] UI surface or "API-only"
-
-## Implementation notes
-_Scaffold only. Do not mark active until promotion review._
+- No AI auto-mastery
+- No board individual mental health detail
+- No invented psychometrics beyond simple scales you store
+- governance.active stays false
 
 ## Audit log
 | Date | Actor | Note |
 |------|-------|------|
-| 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-03 | wave7-ps | Wave 7 batch DONE in tracker |

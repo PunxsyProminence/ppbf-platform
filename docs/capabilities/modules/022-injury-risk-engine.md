@@ -1,39 +1,20 @@
-# Module 022 — Injury-Risk Engine
+# Module 022
 
 | Field | Value |
 |-------|-------|
-| Status | **DRAFT** |
+| Status | **DONE** (Wave 6 tracker) |
 | Active | false |
-| Promotion required | true |
-| Category | Physical Training System (`physicalTrainingSystem`) |
-| Source | `2.0.0-draft-merged` |
-| Parent original-25 | _unmapped_ |
-
-## Intent
-_One paragraph: what this module owns and what it must never do._
+| ManualVerification | PENDING_SIGN_OFF |
+| Parent | 11 Safety |
+| Vertical slice | injury-risk flag coach-set; does not auto-hold gate |
 
 ## Boundaries
-- Does **not** auto-approve progression, medical, or board decisions.
-- Does **not** expose athlete-level data to board / public aggregates without suppression rules.
-- Does **not** invent metrics that are not stored by the platform.
-
-## Dependencies
-- Upstream: 
-- Downstream: 
-- Related original-25 capability: 
-
-## Acceptance criteria
-- [ ] Data model / tables named
-- [ ] API surface listed (or explicitly none)
-- [ ] Roles that may read / write
-- [ ] Safety / refusal cases
-- [ ] Audit events
-- [ ] UI surface or "API-only"
-
-## Implementation notes
-_Scaffold only. Do not mark active until promotion review._
+- No auto safety gate changes (use 003)
+- No invented sensor metrics
+- No board individual rows
+- governance.active stays false
 
 ## Audit log
 | Date | Actor | Note |
 |------|-------|------|
-| 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-03 | wave6-ps | Wave 6 batch DONE in tracker |
