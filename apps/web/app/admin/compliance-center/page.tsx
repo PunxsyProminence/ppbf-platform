@@ -240,7 +240,7 @@ export default function AdminComplianceCenterPage() {
 
         {/* Violations List */}
         <section>
-          <h2 className="mb-4 text-lg font-bold text-[color:var(--hide-950)]">
+          <h2 className="mb-4 text-lg font-bold text-[color:var(--bone-100)]">
             Violations ({filteredViolations.length} of {violations.length})
           </h2>
           <div className="space-y-3">

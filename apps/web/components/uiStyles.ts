@@ -20,6 +20,15 @@
  * ------
  * - --accent / --accent-ink : chrome accent (brass). Never a status.
  * - --black, --canvas-tan*  : ground and ink, aliased onto design-system values
+ *
+ * Ground
+ * ------
+ * The tab and panel shells are ppbf component classes (.wk-tabs, .wk-tab,
+ * .wk-panel) rather than Tailwind strings, because these three workspaces do
+ * not share a ground: Law 6 puts Athlete and Parent on canvas and Coach on ink.
+ * One hardcoded fill served neither -- it put paper panels under bone-and-brass
+ * type, and the coach's review queue read at 2.01:1. The sheet picks the
+ * material from the ground now, the way it already does for .btn.
  * - --status-*              : the safety ladder. --status-danger and
  *                             --status-info were referenced here for a long
  *                             time without being defined anywhere; they exist
@@ -28,18 +37,18 @@
  */
 
 export const ui = {
-  tabContainer: 'border-2 border-[var(--black)] bg-[var(--canvas-tan)]',
+  tabContainer: 'wk-tabs',
   tabRow: 'flex flex-wrap gap-1 p-2',
   tabButtonBase:
     'inline-flex min-h-[44px] items-center px-3 py-2 text-xs font-semibold uppercase transition border-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]',
   tabButtonActive: 'bg-[var(--accent)] border-[var(--black)] text-[var(--accent-ink)]',
-  tabButtonInactive: 'bg-[var(--canvas-tan-light)] border-[var(--black)] text-[var(--gray-dark)] hover:bg-[var(--canvas-tan-dark)] hover:text-[var(--black)]',
+  tabButtonInactive: 'wk-tab',
   modeButtonBase:
     'inline-flex min-h-[44px] items-center px-4 py-2 font-mono font-bold text-xs border-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]',
   modeButtonActive: 'bg-[var(--accent)] border-[var(--black)] text-[var(--accent-ink)]',
-  modeButtonInactive: 'bg-[var(--canvas-tan-light)] border-[var(--black)] text-[var(--gray-dark)] hover:bg-[var(--canvas-tan-dark)] hover:text-[var(--black)]',
-  panel: 'border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6',
-  panelSpaced: 'border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 space-y-4',
+  modeButtonInactive: 'wk-tab',
+  panel: 'wk-panel',
+  panelSpaced: 'wk-panel space-y-4',
 
   /* Status badges. Law 3: colour is never the only channel, so callers pair
      these with the state's glyph and uppercase label rather than relying on

@@ -115,9 +115,9 @@ export default function PublicInterestReviewPage() {
         </div>
 
         {error ? <p className="border border-[color:var(--brass-700)] bg-[var(--rust-900)] p-3 text-sm text-[var(--locked-ink)]">{error}</p> : null}
-        {loading ? <p className="text-sm text-[color:var(--hide-800)]">Loading submissions...</p> : null}
+        {loading ? <p className="text-sm text-[color:var(--bone-300)]">Loading submissions...</p> : null}
         {!loading && items.length === 0 && !error ? (
-          <p className="text-sm text-[color:var(--hide-800)]">No submissions match this filter.</p>
+          <p className="text-sm text-[color:var(--bone-300)]">No submissions match this filter.</p>
         ) : null}
 
         <section className="space-y-3">

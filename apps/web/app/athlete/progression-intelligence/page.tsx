@@ -193,8 +193,8 @@ export default function AthleteProgressionIntelligencePage() {
           </div>
 
           {errorMessage && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-red-800">{errorMessage}</p>
+            <div className="mb-6 p-4 bg-[color-mix(in_srgb,var(--locked)_10%,var(--paper))] border border-[color:var(--locked)] rounded-lg">
+              <p className="text-[color:var(--hide-950)]">{errorMessage}</p>
             </div>
           )}
 

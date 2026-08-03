@@ -40,6 +40,24 @@ const LINK =
   "inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-sm)] border border-[color:rgba(0,0,0,.18)] bg-[var(--paper-2)] px-[var(--s4)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.14em] text-[color:var(--hide-900)] transition " +
   "hover:border-[color:var(--brass-700)] hover:bg-[var(--paper)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]";
 
+/* Law 6 gives the app two grounds: warm canvas for families, ink for staff.
+   This shell put all 23 of its routes on canvas, including the admin and coach
+   consoles, whose panels and copy were written for ink -- so compliance-center
+   was rendering a bone heading straight onto the tan at 1.12:1 and public
+   interest its status copy at 1.22:1. Those were not styling slips; they were
+   ink-native pages standing on the wrong floor.
+
+   The ground is derived rather than passed, because the component already
+   knows: it is handed the roles allowed to open the page. If everyone allowed
+   is a family member, the page is a family surface. If a coach or an admin can
+   open it, it is a staff surface, whoever else can. No call site changes, and
+   a new route cannot forget to say which it is.
+
+   Roles outside this set -- staff, volunteer, board and the board seats -- are
+   all governance or floor operations, so they fall to ink by omission, which is
+   the correct default for them. */
+const FAMILY_ROLES: ReadonlySet<ClubRole> = new Set<ClubRole>(['athlete', 'parent']);
+
 export default function RoleStandaloneView({
   roleLabel,
   routeLabel,
@@ -47,9 +65,23 @@ export default function RoleStandaloneView({
   children,
   showShellHeader = true,
 }: RoleStandaloneViewProps) {
+  /* The family branch keeps the ground it already had rather than moving to
+     ppbf's .on-canvas class, and that is deliberate. .on-canvas carries an
+     unlayered `:where(.on-canvas) a:not(.btn) { color: var(--brass-800) }`,
+     and unlayered beats every cascade layer including utilities -- so adopting
+     the class silently repainted the dark chips inside ParentHub and the
+     Guardian snapshot, overriding their explicit bone text and taking them to
+     2.36:1. Only the staff surfaces were on the wrong ground; the family ones
+     were already right, so they are left exactly as they were. */
+  const isFamilySurface =
+    allowedRoles.length > 0 && allowedRoles.every((role) => FAMILY_ROLES.has(role));
+  const GROUND = isFamilySurface
+    ? 'min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]'
+    : 'min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]';
+
   return (
     <RoleSessionGate allowedRoles={allowedRoles}>
-      <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
+      <main className={GROUND}>
         {showShellHeader && (
           <header className={BAND}>
             <div className="mx-auto flex w-full max-w-[1600px] flex-wrap items-center justify-between gap-[var(--s4)]">

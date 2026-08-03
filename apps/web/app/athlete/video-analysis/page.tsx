@@ -150,7 +150,7 @@ export default function AthleteVideoAnalysisPage() {
             {['Skill Recognition', 'Technique Scoring'].map((p) => (
               <div key={p} className="border border-[color:var(--hide-700)] bg-[var(--hide-950)] p-3">
                 <p className="text-xs font-semibold text-[color:var(--bone-400)]">{p}</p>
-                <p className="mt-1 text-xs font-mono uppercase tracking-[0.07em] text-[color:var(--hide-500)]">{ML_PLACEHOLDER}</p>
+                <p className="mt-1 text-xs font-mono uppercase tracking-[0.07em] text-[color:var(--bone-400)]">{ML_PLACEHOLDER}</p>
               </div>
             ))}
           </div>
