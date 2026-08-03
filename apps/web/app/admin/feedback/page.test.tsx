@@ -120,6 +120,13 @@ it('names the submitter for the gym that received it', async () => {
 // The platform payload has no name in it, because the query never selected
 // one. What this asserts is that the page offers no action the owner could not
 // honestly take, and shows the gym instead of the person.
+//
+// The body is NULL here, and that is not an arbitrary fixture choice: it is the
+// only thing PLATFORM_FEEDBACK_SQL can send for a safeguarding row. This test
+// used to pass the disclosure text, which the server withholds on every
+// cross-gym read -- so it exercised a payload that cannot exist and left the
+// real rendering path uncovered. That is how the page came to draw an empty
+// card for every withheld body.
 it('gives the platform owner the gym and the role, and no triage controls', async () => {
   const items = [
     {
@@ -128,7 +135,7 @@ it('gives the platform owner the gym and the role, and no triage controls', asyn
       organization_name: 'Northside Boxing',
       submitted_by_role: 'athlete',
       kind: 'other',
-      body: DISCLOSURE,
+      body: null,
       route: 'safeguarding',
       triage_status: 'new',
       created_at: '2026-08-01T12:00:00.000Z',
@@ -137,11 +144,38 @@ it('gives the platform owner the gym and the role, and no triage controls', asyn
 
   await renderPage(listOnly({ ok: true, scope: 'platform', items }));
 
-  await screen.findByText(DISCLOSURE);
-  expect(screen.getByText('Northside Boxing')).toBeTruthy();
+  expect(await screen.findByText('Northside Boxing')).toBeTruthy();
   expect(screen.getByText('athlete')).toBeTruthy();
   expect(screen.queryByRole('button', { name: /save triage/i })).toBeNull();
   expect(screen.queryByRole('combobox')).toBeNull();
+});
+
+// A withheld body must read as withheld. An empty card reads as a submission
+// with no text, or as a page that failed to load -- and it invites the reader
+// to go looking for the words somewhere they should not be found.
+it('says a withheld safeguarding body is withheld, rather than drawing an empty card', async () => {
+  const items = [
+    {
+      submission_id: 'sub-1',
+      organization_id: 'org-7',
+      organization_name: 'Northside Boxing',
+      submitted_by_role: 'athlete',
+      kind: 'other',
+      body: null,
+      route: 'safeguarding',
+      triage_status: 'new',
+      created_at: '2026-08-01T12:00:00.000Z',
+    },
+  ];
+
+  await renderPage(listOnly({ ok: true, scope: 'platform', items }));
+
+  expect(await screen.findByText(/withheld/i)).toBeTruthy();
+  // Named, so the reader knows who is holding it. Twice on the page now: the
+  // gym badge, and inside the withheld notice itself.
+  expect(screen.getAllByText(/Northside Boxing/).length).toBeGreaterThanOrEqual(2);
+  // And the words themselves are nowhere on the page.
+  expect(screen.queryByText(DISCLOSURE)).toBeNull();
 });
 
 it('sends the chosen status and note, and shows the stored result', async () => {

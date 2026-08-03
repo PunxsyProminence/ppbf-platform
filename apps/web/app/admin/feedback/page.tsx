@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import { FEEDBACK_ACKNOWLEDGEMENT } from '@/lib/feedbackWording';
 
 /**
  * The queue an administrator works.
@@ -32,7 +33,10 @@ interface FeedbackItem {
   submitted_by_role: string;
   submitter_name?: string | null;
   kind: string;
-  body: string;
+  // Null on the cross-gym view for every safeguarding row -- the server
+  // withholds it deliberately. Declared honestly so a consumer cannot be
+  // written assuming there is always text.
+  body: string | null;
   route: 'product' | 'safeguarding';
   triage_status: TriageStatus;
   triage_note?: string | null;
@@ -93,7 +97,22 @@ function SubmissionCard({ item, scope, onTriage }: SubmissionCardProps) {
         <span className="text-[var(--red-primary)]">{item.triage_status}</span>
       </div>
 
-      <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[var(--black)]">{item.body}</p>
+      {/*
+        A safeguarding body is nulled by the query for the cross-gym view, on
+        purpose: what a child disclosed belongs to the gym handling it, not to
+        whoever is looking across gyms. The withholding is correct. Rendering it
+        as an empty card was not -- it reads as a submission with no text, or as
+        a page that failed to load, and it invites someone to go looking for the
+        text somewhere it should not be found.
+      */}
+      {item.body === null || item.body === '' ? (
+        <p className="mt-3 border-l-4 border-[var(--red-primary)] bg-[var(--canvas-tan)] px-3 py-2 text-sm leading-6 text-[var(--gray-dark)]">
+          Withheld. This was routed to a person at {item.organization_name ?? 'the gym'}, and what the
+          submitter wrote stays with them. Nothing failed to load and there is nothing to open.
+        </p>
+      ) : (
+        <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[var(--black)]">{item.body}</p>
+      )}
 
       {item.triage_note ? (
         <p className="mt-3 border-l-4 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-2 text-sm leading-6 text-[var(--gray-dark)]">
@@ -250,8 +269,9 @@ export default function FeedbackTriagePage() {
                     : `${safeguarding.length} submissions need a person today`}
                 </h2>
                 <p className="mt-1 text-sm leading-6 text-[var(--white-off)]">
-                  An athlete wrote about being hurt, frightened, or not wanting to be here. They were told a
-                  person at the gym would read it and come talk with them.
+                  An athlete wrote about being hurt, frightened, or not wanting to be here. All they were
+                  told is: &ldquo;{FEEDBACK_ACKNOWLEDGEMENT}&rdquo; They were not promised a reply or a
+                  conversation, so they do not know one is coming.
                 </p>
               </div>
               <div className="mt-4 grid gap-4">

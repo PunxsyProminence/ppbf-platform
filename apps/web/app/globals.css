@@ -97,6 +97,21 @@
   --text-3xl: var(--t-2xl);
   --text-4xl: var(--t-3xl);
 
+  /* The ladder has to keep climbing past where ppbf.css stops.
+     --t-3xl is 50px and is the top of the design system's scale. Tailwind
+     defines --text-5xl as 48px, and this :root block is UNLAYERED, so it beats
+     Tailwind's @layer theme unconditionally for the names it sets and leaves
+     the names it does not. The result: --text-4xl (50px) was LARGER than
+     --text-5xl (48px), and every `text-4xl md:text-5xl` heading in the app got
+     SMALLER as the viewport got wider.
+
+     Continued here on the same √φ ratio rather than left to Tailwind, so the
+     order is monotonic by construction. If ppbf.css ever grows a --t-4xl,
+     point these at it and delete the literals. */
+  --text-5xl: 63.5px;   /* 50 × √φ */
+  --text-6xl: 80.9px;   /* 50 × φ   */
+  --text-7xl: 102.8px;  /* 50 × φ√φ */
+
   --leading-tight: 1.2;
   --leading-normal: 1.5;
   --leading-relaxed: 1.75;
@@ -164,6 +179,63 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* --- The tap floor, by default rather than by sweep ----------------------
+
+   Three separate passes tried to raise every interactive target to 44px, and
+   each one missed a different subset:
+
+     - the first two rewrote literal `min-h-[Npx]` values, so any control sized
+       with Tailwind's numeric scale (h-8 = 32px, h-9 = 36px, h-10 = 40px) was
+       invisible to them -- and those set `height`, not `min-height`, so padding
+       could not rescue them;
+     - and roughly 110 buttons and links carry no height constraint at all,
+       landing wherever their font size leaves them, between 22px and 38px.
+       The athlete floor Check In / Check Out are among them.
+
+   Nothing established a default. ppbf.css sets min-height only on .btn (44px)
+   and .btn--kiosk / .input--kiosk / .tag (55px), and the app's ~61 pages
+   largely do not use those classes. So a fourth textual sweep would have
+   found a fourth subset it did not know to look for.
+
+   This is the floor instead. It works on `min-height`, which wins over the
+   `height` a numeric utility sets, so an h-9 control lands at 44px without
+   anyone editing it. And because a bare element selector loses to any class,
+   an explicit `min-h-[Npx]` utility still overrides it -- a control that
+   genuinely must be smaller says so at its own call site, which is a decision
+   someone can read, rather than an omission nobody notices.
+
+   Deliberately NOT applied to `a`: a link inside a paragraph is not a target,
+   and giving every inline link a 44px box would wreck prose. Links styled as
+   controls carry a class that sets their own geometry.
+
+   Covers `select` and text-entry inputs too: the donation status select and the
+   athlete's own session-duration field were both on the numeric scale, and a
+   dropdown you cannot hit is a control you cannot use exactly like a button you
+   cannot hit. Checkboxes, radios and hidden inputs are excluded -- a 44px
+   checkbox is a layout bug, and their labels are the real target. */
+button,
+[role="button"],
+select,
+input[type="button"],
+input[type="submit"],
+input[type="text"],
+input[type="number"],
+input[type="password"],
+input[type="email"],
+input[type="tel"],
+input[type="search"],
+input[type="date"] {
+  min-height: 44px;
+}
+
+/* Gym-floor surfaces want 55px, not 44 -- a child in gloves, a cracked screen,
+   a phone across the room. ppbf.css reserves --tap for exactly this and gives
+   .btn--kiosk / .input--kiosk to opt in per control.
+   There is deliberately no container rule here yet: no kiosk WRAPPER class
+   exists to hang one on, and inventing a selector that matches nothing would
+   read like athlete surfaces were covered when they are not. Raising the
+   athlete surfaces to --tap needs a real hook and its own change. */
 
 body::before {
   content: "";

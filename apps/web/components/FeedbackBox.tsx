@@ -96,7 +96,21 @@ export default function FeedbackBox() {
         onClick={toggle}
         aria-expanded={isOpen}
         aria-controls={panelId}
-        className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-1 text-[11px] font-mono text-[var(--black)] transition hover:bg-[var(--olive-dark)] hover:text-[var(--white)]"
+        /*
+          Same geometry as every other control on this bar -- min-h-[var(--tap)]
+          is 55px -- because this is the control a child taps to say someone
+          hurt them, and it was the smallest thing in the header at 28.5px.
+
+          The WCAG sweep that raised "every interactive target" edited this very
+          file: it took the two buttons INSIDE the opened panel from 40px and
+          42px to 44px, and never touched the one that opens it. So the two
+          controls behind the door met the floor and the door did not.
+
+          Not min-h-[44px]. Its four siblings here (Triage, Operations, the
+          notification bell, Logout) are all --tap, and a 44px control beside
+          four 55px ones is both harder to hit and visibly the odd one out.
+        */
+        className="inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.32)] bg-[rgba(0,0,0,.26)] px-[var(--s4)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.14em] text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-400)] hover:text-[color:var(--bone-100)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
       >
         Tell Us
       </button>
