@@ -1115,6 +1115,9 @@ function PeopleConsoleContent() {
                 This puts the athlete in your gym and gives you a sign-in ID to hand them, along with the starting PIN
                 every new athlete gets. They have to choose their own PIN the first time they sign in — you never see it.
               </p>
+              <p className="mt-2 text-xs text-[var(--gray-dark)]">
+                Only organization admins can add athletes to the roster. Coaches manage assignments once athletes are in the system.
+              </p>
             </div>
 
             <fieldset>

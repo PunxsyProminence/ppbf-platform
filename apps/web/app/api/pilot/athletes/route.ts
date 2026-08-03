@@ -11,14 +11,12 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['organization_admin', 'coach']);
+    // Only organization admins can create athlete roster records. Coaches work with
+    // existing athletes; roster management (adding/removing people) is an admin responsibility.
+    requireRole(principal, ['organization_admin']);
 
     const body = await request.json();
     const payload = validateAthletePayload(body);
-
-    if (principal.role === 'coach' && payload.coach_id !== principal.accountId) {
-      throw new Error('Forbidden: coach can only create athletes assigned to self');
-    }
 
     // Create-only, and enforced by the primary key rather than by a prior
     // read: an "on conflict do update" here would silently overwrite an

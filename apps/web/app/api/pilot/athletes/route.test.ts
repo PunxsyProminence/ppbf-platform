@@ -98,23 +98,13 @@ describe('POST /api/pilot/athletes', () => {
     await expect(response.json()).resolves.toEqual({ error: 'Athlete record already exists: ath-existing-1' });
   });
 
-  test('rejects a coach creating an athlete assigned to a different coach', async () => {
+  test('rejects a coach attempting to create an athlete (roster management is admin-only)', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ accountId: 'coach-1', role: 'coach', authProvider: 'ppbf_local' }));
-
-    const response = await POST(makeRequest({ ...athletePayload({ coach_id: 'coach-2' }) }));
-
-    expect(response.status).toBe(403);
-    expect(mockInsertAthleteIfAbsent).not.toHaveBeenCalled();
-  });
-
-  test('allows a coach to create an athlete assigned to themselves', async () => {
-    mockRequirePrincipal.mockResolvedValueOnce(principal({ accountId: 'coach-1', role: 'coach', authProvider: 'ppbf_local' }));
-    mockInsertAthleteIfAbsent.mockResolvedValueOnce(true);
 
     const response = await POST(makeRequest({ ...athletePayload({ coach_id: 'coach-1' }) }));
 
-    expect(response.status).toBe(200);
-    expect(mockInsertAthleteIfAbsent).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(403);
+    expect(mockInsertAthleteIfAbsent).not.toHaveBeenCalled();
   });
 
   test('rejects a role that is not permitted to touch the roster', async () => {
