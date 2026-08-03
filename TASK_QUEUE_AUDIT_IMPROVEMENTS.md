@@ -153,75 +153,110 @@ These reduce operational friction and improve UX.
 ### CAP2-P1-001: Extract Shared gym_status Constant
 **Priority:** MEDIUM (consistency)  
 **Effort:** 1 hour  
-**Depends on:** CAP2-P0-001
+**Depends on:** CAP2-P0-001  
+**Status:** ✅ COMPLETED (commit ed69310)
 
-- [ ] Verify `apps/web/src/shared/athleteConstants.ts` created in P0-001
-- [ ] Update `apps/web/components/PeopleWorkspace.tsx` or forms
-  - Import `GYM_STATUS_OPTIONS`
-  - Replace hardcoded lists with import
-- [ ] Update any other UI surfaces using gym_status
-- [ ] Verify no duplicate lists remain in codebase
+- [x] `apps/web/src/shared/athleteConstants.ts` now holds both the allow-list
+  (`GYM_STATUS_OPTIONS`) and the operator-facing labels (`GYM_STATUS_CHOICES`),
+  plus an `isGymStatus()` guard used by the server validator
+- [x] `app/admin/people/page.tsx` and `app/admin/athletes/page.tsx` both import
+  `GYM_STATUS_CHOICES`; their local copies are deleted
+- [x] Verified no duplicate lists remain (`grep` for the vocabulary returns only
+  the shared module, the two importers, seeds and tests)
 
-**Acceptance:** Single source of truth for gym_status; UI imports from shared constant
+**Also fixed — a second write path the tightened type exposed:**
+`POST /api/pilot/intake/review-action` wrote `promotion.athlete.gym_status`
+straight through `upsertAthlete` with no allow-list check, so an approved intake
+case was a way to store a value the roster form cannot offer and the coach
+workspace displays verbatim. Now validated at that boundary, with
+`IntakePromotionPayload.athlete.gym_status` typed as `GymStatus` and a test
+asserting an out-of-vocabulary promotion is refused with 400.
+
+**Acceptance:** ✅ Single source of truth; both UI surfaces import it; both write
+paths (roster create and intake promotion) enforce it
 
 ---
 
 ### CAP2-P1-002: Empty Coach State UX
 **Priority:** MEDIUM (usability)  
 **Effort:** 2-3 hours  
+**Status:** ✅ COMPLETED (commit ed69310)
 
-- [ ] Add empty-state banner on "Add Athlete" tab when no coaches exist
-  - Message: "No coaches yet. Add a coach first using the Staff Invite tab."
-  - Include link/CTA to staff invite
-  - Disable submit button if no coaches in picker
-- [ ] Test: Form shows banner when org has no coaches; hides when coach is added
-- [ ] Update error message if form somehow submits: "No coaches available for this athlete"
+- [x] Added fail-closed banner on the Add Athlete tab when `coachOptions` is empty
+  - Copy: "Every athlete record has to name a coach, and your gym does not have
+    one yet… nothing you type here can be saved until then."
+  - "Add a coach" button switches to the invite tab (no page reload)
+- [x] Submit was already blocked: `canSubmitAthlete` requires `athleteCoachId`,
+  which cannot be set from an empty picker — verified rather than re-implemented
+- [x] Banner is conditional on `coachOptions.length === 0`, so it disappears as
+  soon as a coach exists
 
-**Acceptance:** Add Athlete form displays helpful CTA when no coaches exist
+**Acceptance:** ✅ Add Athlete shows an actionable CTA before the operator fills
+in six fields and meets an empty required picker at the bottom
 
 ---
 
 ### CAP2-P1-003: Cross-Link PIN Console ↔ People Tab
 **Priority:** MEDIUM (reduces confusion)  
-**Effort:** 1-2 hours
+**Effort:** 1-2 hours  
+**Status:** ✅ COMPLETED (commit ed69310)
 
-- [ ] On **People tab** (PIN reset section):
-  - Add: "To set a custom PIN, use the PIN Console tab. To force a PIN change on next sign-in, reset here to the starting PIN."
-- [ ] On **PIN Console tab**:
-  - Add: "To reset an athlete's PIN and force a change on sign-in, use the People tab."
-- [ ] Add one-sentence explanation on both pages
-- [ ] Test: Operators can see cross-link on both surfaces
+- [x] **People tab** (pending-athletes panel): "Resetting here always uses the
+  shared starting PIN and forces a change at next sign-in. To set a custom
+  6-digit PIN instead, use the **PIN console**." — links to `/admin/pin`
+- [x] **PIN console** (header): "This sets a custom PIN you choose. To put an
+  athlete back on the shared starting PIN and force them to choose their own at
+  next sign-in, use **People** instead." — links to `/admin/people`
+- [x] Both note the behavioural difference, not just the location: only the
+  People path forces a change at next sign-in, which is the distinction an
+  operator picking the wrong surface gets wrong
 
-**Acceptance:** One-sentence cross-link visible on both PIN surfaces
+**Acceptance:** ✅ One-sentence cross-link on both surfaces, each naming what the
+other one does differently
 
 ---
 
 ### CAP2-P1-004: Account ID Collision Error Message
 **Priority:** MEDIUM (usability)  
-**Effort:** 2-3 hours
+**Effort:** 2-3 hours  
+**Status:** ✅ COMPLETED (commit ed69310)
 
-- [ ] Update `POST /api/pilot/athletes` error handling
-  - When `insertAthleteIfAbsent` returns false (409 conflict):
-  - Before returning, query existing athlete: `getAthleteById(organizationId, athlete_id)`
-  - Return: `Athlete record already exists: {full_name} (athlete_id={athlete_id})`
-- [ ] Update error mapping in `http.ts` to preserve athlete details
-- [ ] Add test: collision returns 409 with athlete name
-- [ ] Optional: Add client-side pre-check for athlete_id uniqueness
+- [x] `POST /api/pilot/athletes` now reads the colliding row on conflict and
+  returns `Athlete record already exists: ath-014 belongs to Marcus Webb`
+  - The read happens only on collision, and only within the caller's own
+    organization, so it discloses nothing they could not already list
+  - Falls back to the bare id when the row cannot be read
+- [x] No `http.ts` change needed — the existing `Athlete record already exists`
+  prefix already maps to 409 and passes the message through verbatim
+- [x] Test: `names the athlete already holding a colliding athlete_id`
+- [x] Client-side pre-check **already existed** (`collidingAthlete`, naming the
+  holder inline before submit); the client now also surfaces the server's name so
+  the two agree when the roster directory could not be read
 
-**Acceptance:** 409 Conflict includes existing athlete's name; helps operators correct typos
+**Acceptance:** ✅ 409 names the existing athlete, so a typo landing on a teammate
+is distinguishable from a record the admin created themselves
 
 ---
 
 ### CAP2-P1-005: Coach Picker Pre-Load
 **Priority:** MEDIUM (UX improvement)  
-**Effort:** 2-3 hours
+**Effort:** 2-3 hours  
+**Status:** ✅ NO CHANGE NEEDED — already implemented (verified)
 
-- [ ] Update Add Athlete form: Load coach list on component mount (not on submit)
-- [ ] Show all active coaches in dropdown before athlete is created
-- [ ] Test: Picker is populated before form submission
-- [ ] Optional: Add "Unassigned" option if product allows it (requires schema change)
+The audit recorded this as "must type coach_id; no picker if form not yet saved",
+but the code does not work that way:
 
-**Acceptance:** Coach dropdown is populated and usable before athlete is created
+- `coachOptions` (people/page.tsx:306) is a `useMemo` over `members`, which is
+  loaded on mount by the same fetch that populates the People list — not on submit
+- It filters to `role === 'coach' && active_flag && membership_active`, so the
+  dropdown is populated with every active coach before the operator types anything
+- The field is already a `<select>`, not a text box
+
+No code change made. The genuine gap here was the **empty** case, which is
+CAP2-P1-002 (now done). "Unassigned" remains out of scope — `coach_id` is
+`not null` with an FK, so it needs a schema migration and a product decision.
+
+**Acceptance:** ✅ Verified populated before create; no work required
 
 ---
 
@@ -290,9 +325,15 @@ These improve observability and UX polish.
 |----------|-------|--------|--------|
 | P0 Security | 6 | — | ✅ Implemented |
 | P0 Capability | 4 | 8-13 hrs | ✅ 4/4 Complete |
-| P1 Improvements | 5 | 8-12 hrs | 🔴 Not Started |
+| P1 Improvements | 5 | 8-12 hrs | ✅ 5/5 Complete |
 | P2 Polish | 4 | 6-8 hrs | 🔴 Not Started |
-| **Total** | **19** | **22-33 hrs** | **10 Complete** |
+| **Total** | **19** | **22-33 hrs** | **15 Complete** |
+
+**Found while implementing (not in the original audit):** the intake promotion
+route was a second, unvalidated write path for `gym_status` — closed under
+CAP2-P1-001. Worth noting that the original audit's API surface map only covered
+`/api/pilot/athletes*`, so other `upsertAthlete` callers were not reviewed for the
+constraints P0 added.
 
 ---
 
