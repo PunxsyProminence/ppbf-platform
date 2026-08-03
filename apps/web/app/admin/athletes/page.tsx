@@ -101,25 +101,19 @@ function normalizeRosterAthlete(row: unknown): RosterAthlete | null {
  */
 function WrongRoleNotice() {
   return (
-    <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
-      <div className="mx-auto max-w-xl space-y-5 text-center">
-        <p className="text-xs font-mono uppercase tracking-[0.3em] text-[color:var(--brass-800)]">Different Console</p>
-        <h1 className="font-display text-3xl font-black">Athlete records are managed per gym</h1>
-        <p className="text-sm leading-7 text-[var(--gray-dark)]">
+    <main className="room--office grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
+      <div className="mx-auto max-w-xl space-y-[var(--s5)] text-center">
+        <p className="t-eyebrow">Different Console</p>
+        <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>Athlete records are managed per gym</h1>
+        <p className="t-body">
           This console corrects one organization&apos;s athlete records. As platform owner you create organizations
           and appoint their admins, and they take it from there.
         </p>
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          <Link
-            href="/admin/organizations"
-            className="inline-flex min-h-[48px] items-center justify-center rounded-full border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-6 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-[var(--red-highlight)]"
-          >
+        <div className="flex flex-wrap items-center justify-center gap-[var(--s3)]">
+          <Link href="/admin/organizations" className="btn">
             Organization Provisioning
           </Link>
-          <Link
-            href="/admin"
-            className="inline-flex min-h-[48px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-6 text-sm font-black uppercase tracking-[0.12em] transition hover:bg-[var(--canvas-tan)]"
-          >
+          <Link href="/admin" className="btn btn--ghost">
             Admin Home
           </Link>
         </div>
@@ -339,29 +333,23 @@ function AthleteRecordsConsoleContent() {
   }
 
   return (
-    <main className="min-h-screen bg-[var(--canvas-tan)] px-4 py-8 text-[var(--black)] sm:px-6">
-      <div className="mx-auto w-full max-w-5xl space-y-6">
-        <header className="rounded-2xl border border-[rgba(0,0,0,0.16)] bg-white p-6 shadow-[var(--shadow-md)]">
-          <div className="flex flex-wrap items-start justify-between gap-4">
+    <main className="room--office min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s6)] text-[color:var(--bone-200)] sm:px-[var(--s5)]">
+      <div className="mx-auto w-full max-w-5xl space-y-[var(--s5)]">
+        <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <div className="flex flex-wrap items-start justify-between gap-[var(--s4)]">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--brass-800)]">Athlete Records</p>
-              <h1 className="mt-2 font-display text-3xl font-black tracking-tight">Correct An Athlete Record</h1>
-              <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
+              <p className="t-eyebrow">Athlete Records</p>
+              <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Correct An Athlete Record</h1>
+              <p className="t-body mt-[var(--s3)]">
                 Fix anything that was typed wrong when the athlete was added, reassign their coach, and mark an
                 athlete inactive when they leave the gym. Nothing here deletes anything.
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Link
-                href="/admin/people"
-                className="inline-flex min-h-[44px] items-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-5 text-sm font-bold uppercase tracking-[0.1em] transition hover:bg-[var(--canvas-tan)]"
-              >
+            <div className="flex flex-wrap gap-[var(--s3)]">
+              <Link href="/admin/people" className="btn btn--ghost">
                 People
               </Link>
-              <Link
-                href="/admin"
-                className="inline-flex min-h-[44px] items-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-5 text-sm font-bold uppercase tracking-[0.1em] transition hover:bg-[var(--canvas-tan)]"
-              >
+              <Link href="/admin" className="btn btn--ghost">
                 Admin Home
               </Link>
             </div>
@@ -369,50 +357,55 @@ function AthleteRecordsConsoleContent() {
         </header>
 
         {error && (
-          <p role="alert" className="rounded-xl border border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_6%,white)] px-4 py-3 text-sm font-semibold text-[var(--safety-locked)]">
+          <p role="alert" className="rounded-[var(--r-md)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-[var(--s4)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[color:var(--locked-ink)]">
             {error}
           </p>
         )}
         {notice && (
-          <p className="rounded-xl border border-[rgba(16,120,40,0.5)] bg-[rgba(16,120,40,0.08)] px-4 py-3 text-sm font-semibold text-[var(--cleared-deep)]">
-            {notice}
+          <p className="rounded-[var(--r-md)] border border-[color:var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_16%,var(--hide-950))] px-[var(--s4)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[color:var(--cleared-ink)]">
+            ✓ {notice}
           </p>
         )}
 
-        <section className="space-y-4 rounded-2xl border border-[rgba(0,0,0,0.14)] bg-white p-6 shadow-[var(--shadow-sm)]">
-          <h2 className="text-lg font-black">Choose an athlete</h2>
+        <section className="frame">
+          <span className="rivet rivet--tl" />
+          <span className="rivet rivet--tr" />
+          <span className="rivet rivet--bl" />
+          <span className="rivet rivet--br" />
+          <div className="frame-in mat-leather space-y-[var(--s4)] p-[var(--s5)]">
+          <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Choose an athlete</h2>
 
           {rosterLoad === 'loading' ? (
-            <p className="text-sm text-[var(--gray-dark)]">Loading your athlete records...</p>
+            <p className="t-body">Loading your athlete records...</p>
           ) : rosterLoad === 'unavailable' ? (
-            <div className="space-y-3">
-              <p className="text-sm font-semibold text-[color:var(--brass-800)]">
-                Your athlete records could not be read. That is a problem reaching the app, not a sign that your gym
+            <div className="space-y-[var(--s3)]">
+              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--restricted-ink)]">
+                ▲ Your athlete records could not be read. That is a problem reaching the app, not a sign that your gym
                 has none, so nothing is listed below.
               </p>
               <button
                 type="button"
                 onClick={() => void load()}
-                className="min-h-[44px] rounded-xl border-2 border-[color:var(--brass-600)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[color:var(--brass-800)]"
+                className="btn btn--ghost"
               >
                 Try Again
               </button>
             </div>
           ) : roster.length === 0 ? (
-            <p className="text-sm text-[var(--gray-dark)]">
+            <p className="t-body">
               There are no athlete records in your gym yet. Add one on the People screen first.
             </p>
           ) : (
             <>
               {unreadableRows > 0 && (
-                <p className="rounded-xl border border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_6%,white)] px-4 py-3 text-sm font-semibold text-[var(--safety-locked)]">
-                  {unreadableRows} record{unreadableRows === 1 ? '' : 's'} could not be read and {unreadableRows === 1 ? 'is' : 'are'} not
+                <p className="rounded-[var(--r-md)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-[var(--s4)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[color:var(--locked-ink)]">
+                  ▲ {unreadableRows} record{unreadableRows === 1 ? '' : 's'} could not be read and {unreadableRows === 1 ? 'is' : 'are'} not
                   listed below. They still exist — this screen cannot correct them.
                 </p>
               )}
 
-              <div>
-                <label htmlFor="athlete-filter" className="block text-sm font-semibold">
+              <div className="field">
+                <label htmlFor="athlete-filter" className="t-label">
                   Find an athlete
                 </label>
                 <input
@@ -421,34 +414,34 @@ function AthleteRecordsConsoleContent() {
                   value={filter}
                   onChange={(event) => setFilter(event.target.value)}
                   placeholder="Name or record ID"
-                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+                  className="input"
                 />
               </div>
 
               {visibleRoster.length === 0 ? (
-                <p className="text-sm text-[var(--gray-dark)]">
+                <p className="t-body">
                   No athlete matches “{filter.trim()}”. All {roster.length} records are still there — clear the box to
                   see them.
                 </p>
               ) : (
-                <ul className="divide-y divide-[rgba(0,0,0,0.08)] overflow-hidden rounded-xl border border-[rgba(0,0,0,0.12)]">
+                <ul className="divide-y divide-[color:var(--hide-700)] overflow-hidden rounded-[var(--r-md)] border border-[color:var(--hide-700)]">
                   {visibleRoster.map((athlete) => (
-                    <li key={athlete.athlete_id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                    <li key={athlete.athlete_id} className="flex flex-wrap items-center justify-between gap-[var(--s3)] px-[var(--s4)] py-[var(--s3)]">
                       <div className="min-w-0 flex-1">
-                        <p className="truncate font-semibold">{athlete.full_name}</p>
-                        <p className="mt-1 font-mono text-xs text-[var(--gray-dark)]">
+                        <p className="truncate text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{athlete.full_name}</p>
+                        <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">
                           {athlete.athlete_id} · born {athlete.dob} · coach {athlete.coach_id}
                         </p>
                         {!athlete.active_flag && (
-                          <p className="mt-1 text-xs font-bold uppercase tracking-[0.1em] text-[var(--gray-dark)]">
-                            Inactive
+                          <p className="mt-[var(--s2)]">
+                            <span className="badge badge--locked"><i>✕</i>Inactive</span>
                           </p>
                         )}
                       </div>
                       <button
                         type="button"
                         onClick={() => openRecord(athlete)}
-                        className="min-h-[44px] shrink-0 rounded-xl border-2 border-[var(--accent)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[var(--accent-quiet)] transition hover:bg-[color-mix(in_srgb,var(--accent)_6%,white)]"
+                        className={`shrink-0 ${selectedId === athlete.athlete_id ? 'btn' : 'btn btn--ghost'}`}
                       >
                         {selectedId === athlete.athlete_id ? 'Editing' : 'Correct Record'}
                       </button>
@@ -458,22 +451,23 @@ function AthleteRecordsConsoleContent() {
               )}
             </>
           )}
+          </div>
         </section>
 
         {selected && (
           <>
-            <form onSubmit={saveCorrection} className="space-y-5 rounded-2xl border border-[rgba(0,0,0,0.14)] bg-white p-6 shadow-[var(--shadow-sm)]">
+            <form onSubmit={saveCorrection} className="mat-leather space-y-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
               <div>
-                <h2 className="text-lg font-black">{selected.full_name}</h2>
-                <p className="mt-1 font-mono text-xs text-[var(--gray-dark)]">Record ID {selected.athlete_id}</p>
-                <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
+                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>{selected.full_name}</h2>
+                <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">Record ID {selected.athlete_id}</p>
+                <p className="t-body mt-[var(--s3)]">
                   The record ID is permanent — every session, goal and review hangs off it, so it cannot be changed
                   here. Everything else can.
                 </p>
               </div>
 
-              <div>
-                <label htmlFor="correct-full-name" className="block text-sm font-semibold">
+              <div className="field">
+                <label htmlFor="correct-full-name" className="t-label">
                   Full name
                 </label>
                 <input
@@ -482,13 +476,13 @@ function AthleteRecordsConsoleContent() {
                   required
                   value={draftFullName}
                   onChange={(event) => setDraftFullName(event.target.value)}
-                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+                  className="input"
                 />
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label htmlFor="correct-dob" className="block text-sm font-semibold">
+              <div className="grid gap-[var(--s4)] sm:grid-cols-2">
+                <div className="field">
+                  <label htmlFor="correct-dob" className="t-label">
                     Date of birth
                   </label>
                   <input
@@ -497,13 +491,13 @@ function AthleteRecordsConsoleContent() {
                     required
                     value={draftDob}
                     onChange={(event) => setDraftDob(event.target.value)}
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+                    className="input"
                   />
-                  <p className="mt-1 text-xs text-[var(--gray-dark)]">Currently stored as {selected.dob}.</p>
+                  <p className="t-muted mt-[var(--s2)]">Currently stored as {selected.dob}.</p>
                 </div>
 
-                <div>
-                  <label htmlFor="correct-weight-class" className="block text-sm font-semibold">
+                <div className="field">
+                  <label htmlFor="correct-weight-class" className="t-label">
                     Weight class
                   </label>
                   <input
@@ -512,13 +506,13 @@ function AthleteRecordsConsoleContent() {
                     required
                     value={draftWeightClass}
                     onChange={(event) => setDraftWeightClass(event.target.value)}
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+                    className="input"
                   />
                 </div>
               </div>
 
-              <div>
-                <label htmlFor="correct-gym-status" className="block text-sm font-semibold">
+              <div className="field">
+                <label htmlFor="correct-gym-status" className="t-label">
                   Status in the gym
                 </label>
                 <select
@@ -526,7 +520,7 @@ function AthleteRecordsConsoleContent() {
                   required
                   value={draftGymStatus}
                   onChange={(event) => setDraftGymStatus(event.target.value)}
-                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+                  className="select"
                 >
                   {/* A stored value outside the documented vocabulary is kept
                       as an option rather than replaced, so opening a record
@@ -542,26 +536,26 @@ function AthleteRecordsConsoleContent() {
                 </select>
               </div>
 
-              <div>
-                <label htmlFor="correct-emergency-contact" className="block text-sm font-semibold">
+              <div className="field">
+                <label htmlFor="correct-emergency-contact" className="t-label">
                   Emergency contact
                 </label>
-                <p className="mt-1 text-xs text-[var(--gray-dark)]">Who to call, and the number.</p>
+                <p className="t-muted mb-[var(--s2)]">Who to call, and the number.</p>
                 <input
                   id="correct-emergency-contact"
                   type="text"
                   required
                   value={draftEmergencyContact}
                   onChange={(event) => setDraftEmergencyContact(event.target.value)}
-                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+                  className="input"
                 />
               </div>
 
-              <div>
-                <label htmlFor="correct-coach" className="block text-sm font-semibold">
+              <div className="field">
+                <label htmlFor="correct-coach" className="t-label">
                   Coach
                 </label>
-                <p className="mt-1 text-xs text-[var(--gray-dark)]">
+                <p className="t-muted mb-[var(--s2)]">
                   {coachesAvailable
                     ? 'A coach only sees the athletes assigned to them, so moving an athlete here moves what their old coach can read.'
                     : 'Your coach list could not be read, so the only choice offered is the coach already on this record. Everything else on this form still saves.'}
@@ -572,7 +566,7 @@ function AthleteRecordsConsoleContent() {
                   value={draftCoachId}
                   onChange={(event) => setDraftCoachId(event.target.value)}
                   disabled={!coachesAvailable}
-                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] disabled:opacity-70"
+                  className="select disabled:opacity-70"
                 >
                   {coachChoices.map((coach) => (
                     <option key={coach.account_id} value={coach.account_id}>
@@ -585,46 +579,46 @@ function AthleteRecordsConsoleContent() {
               <button
                 type="submit"
                 disabled={busy || !hasUnsavedEdits || !draftComplete}
-                className="min-h-[50px] w-full rounded-xl border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white disabled:cursor-not-allowed disabled:opacity-50"
+                className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {busy ? 'Saving...' : hasUnsavedEdits ? 'Save Correction' : 'Nothing To Save'}
               </button>
             </form>
 
-            <section className="space-y-4 rounded-2xl border border-[rgba(0,0,0,0.14)] bg-white p-6 shadow-[var(--shadow-sm)]">
+            <section className="mat-leather space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
               <div>
-                <h2 className="text-lg font-black">
+                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>
                   {selected.active_flag ? 'This athlete has left the gym' : 'This athlete is back'}
                 </h2>
-                <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
+                <p className="t-body mt-[var(--s3)]">
                   {selected.active_flag
                     ? 'Marking them inactive keeps their whole record — every session, goal, review and pain report stays exactly where it is. It can be undone here at any time.'
                     : 'This record is marked inactive. Marking them active again puts them back on the roster as they were.'}
                 </p>
-                <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
+                <p className="t-body mt-[var(--s3)]">
                   Two things it does not do: it does not switch off their sign-in, and it does not take them off their
                   coach&apos;s lists. Turn the sign-in off on the People screen.
                 </p>
               </div>
 
               {hasUnsavedEdits ? (
-                <p className="rounded-xl border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-light)] px-4 py-3 text-sm text-[var(--gray-dark)]">
+                <p className="mat-leather--raised rounded-[var(--r-md)] px-[var(--s4)] py-[var(--s3)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
                   Save or discard the corrections above first — this button writes the record as it is stored now, not
                   as the form currently reads.
                 </p>
               ) : confirmingStatusChange ? (
-                <div className="space-y-3">
-                  <p className="text-sm font-semibold">
+                <div className="space-y-[var(--s3)]">
+                  <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">
                     {selected.active_flag
                       ? `Mark ${selected.full_name} inactive?`
                       : `Mark ${selected.full_name} active again?`}
                   </p>
-                  <div className="flex flex-wrap gap-3">
+                  <div className="flex flex-wrap gap-[var(--s3)]">
                     <button
                       type="button"
                       disabled={busy}
                       onClick={() => void toggleActive()}
-                      className="min-h-[48px] flex-1 rounded-xl border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 text-sm font-black uppercase tracking-[0.12em] text-white disabled:opacity-50"
+                      className="btn flex-1 disabled:opacity-50"
                     >
                       {busy ? 'Saving...' : 'Yes, Save It'}
                     </button>
@@ -632,7 +626,7 @@ function AthleteRecordsConsoleContent() {
                       type="button"
                       disabled={busy}
                       onClick={() => setConfirmingStatusChange(false)}
-                      className="min-h-[48px] flex-1 rounded-xl border border-[rgba(0,0,0,0.14)] bg-white px-4 text-sm font-black uppercase tracking-[0.12em] disabled:opacity-50"
+                      className="btn btn--ghost flex-1 disabled:opacity-50"
                     >
                       Cancel
                     </button>
@@ -642,7 +636,7 @@ function AthleteRecordsConsoleContent() {
                 <button
                   type="button"
                   onClick={() => setConfirmingStatusChange(true)}
-                  className="min-h-[48px] w-full rounded-xl border-2 border-[var(--accent)] bg-white px-4 text-sm font-black uppercase tracking-[0.12em] text-[var(--accent-quiet)]"
+                  className="btn btn--ghost w-full"
                 >
                   {selected.active_flag ? 'Deactivate Athlete' : 'Reactivate Athlete'}
                 </button>
@@ -660,8 +654,8 @@ function AthleteRecordsRoleSwitch() {
 
   if (session.loading) {
     return (
-      <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
-        <p className="text-sm text-[var(--gray-dark)]">Loading...</p>
+      <main className="room--office grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
+        <p className="t-body">Loading...</p>
       </main>
     );
   }

@@ -88,36 +88,27 @@
   --accent-ink: var(--hide-950);
   --accent-quiet: var(--brass-800);
 
-  /* --font-stencil keeps its next/font wiring — --font-tactical-display is a
-     real loaded face, where the design system's fallback chain is not. The
-     design system's own --font-stencil stays available for previews. */
-  --font-stencil: var(--font-tactical-display), "Impact", "Arial Black", sans-serif;
+  /* Golden-era pass: the app now speaks the design system's own faces.
+
+     Every family named here is SHIPPED BY THIS REPO — ppbf.css @imports
+     fonts.css, whose @font-face rules resolve to design-system/fonts/*.woff2
+     and ride the same bundle as the sheet itself. So the determinism argument
+     that used to justify the Oswald/Roboto stand-ins now points the other way:
+     Alfa Slab One (wood-type display), Oswald (bone-sans UI), Special Elite
+     (typewriter), and Caveat (the chalk hand, Law 4's fourth voice — real
+     handwriting at last) all come from files in the repo, render offline on the
+     floor kiosk, and wrap identically on every machine.
+
+     Body prose and aligned data columns stay on the next/font self-hosted pair
+     (Roboto Condensed, Geist Mono): the DS's own --font-body chain begins with
+     Inter, which the repo does NOT ship, and that would reintroduce
+     machine-dependent wrapping for the app's largest text mass. */
+  --font-stencil: "Alfa Slab One", var(--font-tactical-display), Impact, Haettenschweiler, "Arial Black", sans-serif;
   --font-body: var(--font-tactical-body), "Segoe UI", "Arial Narrow", Arial, sans-serif;
   --font-mono: var(--font-geist-mono), "Courier New", "Courier", monospace;
-
-  /* ppbf.css names three more faces and only --font-stencil was ever pointed at
-     a real one. --font-ui, --font-data and --font-hand were still the sheet's
-     own system stacks — "Inter", ui-monospace, SFMono-Regular, Consolas,
-     "Segoe Print" — which resolve to whatever a given machine happens to have
-     installed. .t-eyebrow, .t-data and .badge are set in them.
-
-     That is not only a look problem, it is a determinism problem. Text set in a
-     font the repo does not ship wraps at machine-dependent widths, so the same
-     page is a different height on two computers. It is what made the homepage
-     412x3620 here and 412x3680 in CI, and it is why the screenshot baseline had
-     to be switched off. Pointing these at the faces next/font already
-     self-hosts means every glyph on every surface now comes from a file in this
-     repo, and the render stops depending on the machine.
-
-     --font-hand is the exception worth stating out loud. Law 4's fourth voice
-     is chalk — schedules in a gym hand — and no cursive face is loaded, so
-     there is nothing correct to point it at. It takes the body face, which
-     means .t-hand currently renders as ordinary type rather than handwriting.
-     Nothing in the app uses it today; giving the chalk voice back its character
-     means loading a real face, not restoring a system stack. */
-  --font-ui: var(--font-tactical-body), "Segoe UI", "Arial Narrow", Arial, sans-serif;
+  --font-ui: "Oswald", var(--font-tactical-body), "Segoe UI", "Arial Narrow", Arial, sans-serif;
   --font-data: var(--font-geist-mono), "Courier New", "Courier", monospace;
-  --font-hand: var(--font-tactical-body), "Segoe UI", "Arial Narrow", Arial, sans-serif;
+  --font-hand: "Caveat", "Segoe Print", "Bradley Hand", "Chalkboard SE", cursive;
 
   /* --- Type: was an eyeballed 11/12/15/16/18/24/32/48 ladder with no ratio.
      Now the √φ ladder (Law 8). --text-sm climbing 12px→15px and --text-lg

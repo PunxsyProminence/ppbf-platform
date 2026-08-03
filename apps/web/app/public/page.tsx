@@ -326,7 +326,7 @@ export default function PublicPortalPage() {
               <p className="t-body">You are viewing the public surface as an admin. Use these links to manage visitor-facing content and announcements.</p>
               <Link
                 href="/admin"
-                className="inline-flex min-h-[44px] items-center justify-center border-2 border-[var(--white)] bg-transparent px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[color:var(--bone-100)] transition hover:bg-[var(--white)] hover:text-[color:var(--brass-800)]"
+                className="inline-flex min-h-[44px] items-center justify-center border-2 border-[color:var(--bone-100)] bg-transparent px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[color:var(--bone-100)] transition hover:bg-[var(--bone-100)] hover:text-[color:var(--brass-800)]"
               >
                 Open Admin Workspace
               </Link>

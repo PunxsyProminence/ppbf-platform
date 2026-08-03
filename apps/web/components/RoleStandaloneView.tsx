@@ -91,27 +91,24 @@ export default function RoleStandaloneView({
   return (
     <RoleSessionGate allowedRoles={allowedRoles}>
       <main
-        /* The family branch is deliberately left exactly as it was rather
-           than moved to .on-canvas. These pages' own content -- ParentHub,
-           AthleteWorkspace -- is built from ink-dark panels, so declaring the
-           canvas ground restates every design-system component inside them
-           for cream and then renders it on those dark panels: --brass-800
-           links at 2.36:1, .on-canvas .t-body at 1.43:1. Measured, not
-           guessed. Law 6 does put the family side on canvas, but getting
-           there means converting that content first; until then the honest
-           change is the eleven staff pages, which this branch verified. */
+        /* Golden-era pass: the family branch now stands on the design
+           system's own .on-canvas ground. The condition the old comment set —
+           "getting there means converting that content first" — is met:
+           ParentHub and the guardian portal are built from paper-on-canvas
+           materials and rely on the .on-canvas restatements. Athlete routes
+           left the family branch entirely (see roleGround.ts): they are the
+           floor kiosk, ink by PAGE_MAP, so they now take rooms like any staff
+           surface. */
         /* A room supplies the wall, the light and the floor shadow. It is only
            applied on the ink branch, and that restriction is load-bearing:
            .room--* sets a background-image as well as a colour, and this sheet
            is unlayered while Tailwind's utilities sit in a layer, so a room
-           would beat bg-[var(--canvas-tan)] and put a dark plank wall behind the
-           family branch's dark text. The comment above explains why the family
-           ground is still the warm one; until that content is converted, a room
-           on it would be unreadable rather than merely wrong. */
+           would beat the canvas ground and put a dark plank wall behind
+           canvas-coloured text. Rooms stay ink-only. */
         className={[
           familyGround ? '' : (room ? `room--${room}` : ''),
           familyGround
-            ? 'min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]'
+            ? 'on-canvas min-h-screen'
             : 'min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]',
         ].filter(Boolean).join(' ')}
       >

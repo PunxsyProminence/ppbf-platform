@@ -112,29 +112,63 @@ function readinessDotClass(readiness: Athlete['readiness']): string {
   return 'bg-[var(--hide-600)]';
 }
 
-function priorityTone(priority: CoachTask['priority']): string {
-  if (priority === 'High') return 'bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] text-[color:var(--locked-ink)]';
-  if (priority === 'Normal') return 'bg-[color-mix(in_srgb,var(--restricted)_22%,var(--hide-950))] text-[color:var(--restricted-ink)]';
-  return 'bg-[color-mix(in_srgb,var(--monitor)_22%,var(--hide-950))] text-[color:var(--monitor-ink)]';
+/* Status vocabulary (Law 2 + Law 3): every state maps onto the design system's
+   four-rung ladder and renders as a `.badge` -- glyph + uppercase label, never
+   colour alone. 'neutral' is for values that are genuinely NOT a safety state
+   or queue outcome (unknown readiness, low priority), which Law 2 forbids from
+   wearing a saturated rung. */
+type BadgeTone = 'cleared' | 'monitor' | 'restricted' | 'locked' | 'neutral';
+
+const BADGE_GLYPH: Record<Exclude<BadgeTone, 'neutral'>, string> = {
+  cleared: '✓',
+  monitor: '◉',
+  restricted: '▲',
+  locked: '✕',
+};
+
+const NEUTRAL_BADGE =
+  'inline-flex items-center gap-[7px] rounded-[var(--r-pill)] border border-[color:var(--hide-600)] bg-[rgba(0,0,0,.28)] px-[12px] py-[6px] text-[11px] font-bold uppercase tracking-[0.1em] text-[color:var(--bone-300)]';
+
+function StatusBadge({ tone, label }: { readonly tone: BadgeTone; readonly label: string }) {
+  if (tone === 'neutral') {
+    return (
+      <span className={NEUTRAL_BADGE}>
+        <i className="not-italic">◌</i>
+        {label}
+      </span>
+    );
+  }
+  return (
+    <span className={`badge badge--${tone}`}>
+      <i>{BADGE_GLYPH[tone]}</i>
+      {label}
+    </span>
+  );
 }
 
-function taskStatusTone(status: CoachTask['status']): string {
-  if (status === 'Open') return 'bg-[var(--brass-800)] text-[color:var(--brass-300)]';
-  if (status === 'In Progress') return 'bg-[var(--patina-500)] text-[var(--cleared-ink)]';
-  return 'bg-[color-mix(in_srgb,var(--monitor)_14%,var(--hide-950))] text-[var(--bone-400)]';
+function priorityTone(priority: CoachTask['priority']): BadgeTone {
+  if (priority === 'High') return 'restricted';
+  if (priority === 'Normal') return 'monitor';
+  return 'neutral';
 }
 
-function readinessBadgeTone(readiness: Athlete['readiness']): string {
-  if (readiness === 'GREEN') return 'bg-[color-mix(in_srgb,var(--cleared)_22%,var(--hide-950))] text-[color:var(--cleared-ink)]';
-  if (readiness === 'YELLOW') return 'bg-[color-mix(in_srgb,var(--restricted)_22%,var(--hide-950))] text-[color:var(--restricted-ink)]';
-  if (readiness === 'RED') return 'bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] text-[color:var(--locked-ink)]';
-  return 'bg-[var(--hide-900)] text-[color:var(--bone-300)]';
+function taskStatusTone(status: CoachTask['status']): BadgeTone {
+  if (status === 'Open') return 'restricted';
+  if (status === 'In Progress') return 'monitor';
+  return 'cleared';
 }
 
-function painSeverityTone(severity: CoachPainReport['severity']): string {
-  if (severity === 'critical') return 'bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] text-white';
-  if (severity === 'high') return 'bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] text-[color:var(--locked-ink)]';
-  return 'bg-[var(--brass-800)] text-[var(--paper-2)]';
+function readinessBadgeTone(readiness: Athlete['readiness']): BadgeTone {
+  if (readiness === 'GREEN') return 'cleared';
+  if (readiness === 'YELLOW') return 'restricted';
+  if (readiness === 'RED') return 'locked';
+  return 'neutral';
+}
+
+function painSeverityTone(severity: CoachPainReport['severity']): BadgeTone {
+  if (severity === 'critical' || severity === 'high') return 'locked';
+  if (severity === 'moderate') return 'restricted';
+  return 'monitor';
 }
 
 // A stored timestamp the browser cannot parse is shown verbatim rather than as
@@ -594,26 +628,26 @@ export default function CoachWorkspace() {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)] font-sans">
-      <div className="max-w-7xl mx-auto p-4 space-y-8">
+    <div className="text-[color:var(--bone-200)]">
+      <div className="max-w-7xl mx-auto p-[var(--s4)] space-y-[var(--s6)]">
         {/* HEADER */}
-        <div className="border-b-2 border-[color:var(--brass-700)] pb-6 space-y-4">
+        <div className="border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)] space-y-[var(--s4)]">
           <div>
-            <p className="text-xs font-mono uppercase tracking-[0.15em] text-[color:var(--brass-300)]">Coach Development Workspace</p>
-            <h1 className="text-3xl md:text-4xl font-black mt-2">Live Session Management</h1>
-            <p className="text-base text-[color:var(--bone-400)] mt-2">Manage your program floor, develop yourself, and track athlete progress with SMART goals and assessments.</p>
-            <p className="text-sm font-mono uppercase tracking-[0.14em] text-[color:var(--bone-300)] mt-2">Old Gauze | Sweat | Grit | Grind | Dedication | Motivation</p>
+            <p className="t-eyebrow">Coach Development Workspace</p>
+            <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)] md:text-[length:var(--t-2xl)]">Live Session Management</h1>
+            <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Manage your program floor, develop yourself, and track athlete progress with SMART goals and assessments.</p>
+            <p className="t-label mt-[var(--s3)]">Old Gauze | Sweat | Grit | Grind | Dedication | Motivation</p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-[var(--s3)]">
             <ShadowChatButton
               context="Coach Workspace"
               label="Open SHADOW Chat"
-              className="border-[color:var(--brass-700)] bg-[var(--rust-900)] text-[color:var(--bone-200)] hover:bg-[var(--rust-900)]"
+              className="btn"
             />
             <button
               type="button"
               onClick={() => setActiveTab('shadow')}
-              className="min-h-[44px] border-2 border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)]"
+              className="btn btn--ghost"
             >
               Open SHADOW Intel Tab
             </button>
@@ -624,15 +658,15 @@ export default function CoachWorkspace() {
             everything else on the page. A child reporting pain has to reach the
             coach on whatever screen they are already looking at, not on a tab
             they have to know to open. */}
-        <section aria-live="polite" className="border-2 border-[color:var(--locked)] bg-[var(--hide-900)] p-4 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-mono text-sm font-bold uppercase tracking-[0.12em] text-[var(--locked-ink)]">
+        <section aria-live="polite" className="mat-leather rounded-[var(--r-lg)] border-2 border-[color:var(--locked)] p-[var(--s4)] space-y-[var(--s3)]">
+          <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
+            <h2 className="font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.12em] text-[var(--locked-ink)]">
               Athlete Pain Reports
             </h2>
             <button
               type="button"
               onClick={() => void loadPainReports()}
-              className="min-h-[44px] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 text-[11px] font-mono font-bold uppercase tracking-[0.08em] text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-300)]"
+              className="btn btn--ghost"
               aria-label="Refresh athlete pain reports"
             >
               Refresh
@@ -671,18 +705,18 @@ export default function CoachWorkspace() {
               )}
 
               {painReports.map((report) => (
-                <article key={report.nearMissId} className="border-2 border-[color:var(--locked)] bg-[var(--hide-950)] p-3 space-y-3">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
+                <article key={report.nearMissId} className="mat-leather--raised rounded-[var(--r-md)] border-2 border-[color:var(--locked)] p-[var(--s3)] space-y-[var(--s3)]">
+                  <div className="flex flex-wrap items-start justify-between gap-[var(--s3)]">
                     <div>
-                      <p className="text-lg font-black text-[color:var(--bone-100)]">
+                      <p className="text-[length:var(--t-md)] font-black text-[color:var(--bone-100)]">
                         {report.athleteName ?? 'Athlete name unavailable'}
                       </p>
-                      <p className="text-xs font-mono text-[color:var(--bone-400)]">Athlete ID {report.athleteId}</p>
+                      <p className="t-data text-[color:var(--bone-400)]">Athlete ID {report.athleteId}</p>
                     </div>
-                    <span className={`rounded px-2 py-1 text-xs font-bold uppercase tracking-[0.08em] ${painSeverityTone(report.severity)}`}>
-                      {report.severity}
-                      {report.painScore === null ? '' : ` - ${report.painScore}/10`}
-                    </span>
+                    <StatusBadge
+                      tone={painSeverityTone(report.severity)}
+                      label={`${report.severity}${report.painScore === null ? '' : ` - ${report.painScore}/10`}`}
+                    />
                   </div>
 
                   <dl className="grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
@@ -722,7 +756,7 @@ export default function CoachWorkspace() {
               <div className="flex flex-wrap items-center gap-3">
                 <Link
                   href="/coach/decision-loop"
-                  className="min-h-[44px] inline-flex items-center border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 text-[11px] font-mono font-bold uppercase tracking-[0.08em] text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-300)]"
+                  className="btn"
                 >
                   Record What You Did
                 </Link>
@@ -736,22 +770,26 @@ export default function CoachWorkspace() {
           )}
         </section>
 
+        {/* Announcements are pinned notes from the office: paper, not another
+            leather panel. .mat-paper sets its own dark ink so the text does not
+            inherit bone-on-bone (the old bg-[--bone-200] wrapper did exactly
+            that). */}
         <AnnouncementBanner
           placement="coach_workspace"
           kind="notice"
           heading="Gym Notices"
-          className="border-2 border-[color:var(--brass-700)] bg-[var(--bone-200)] p-4"
+          className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]"
         />
         <AnnouncementBanner
           placement="coach_workspace"
           kind="motivation"
           heading="From the Gym"
-          className="border-2 border-[color:var(--hide-500)] bg-[var(--bone-200)] p-4"
+          className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]"
         />
 
-        <div className="border border-[color:var(--hide-500)] bg-[var(--hide-950)] p-4">
-          <p className="text-sm text-[color:var(--brass-300)] font-semibold">Coach Standard</p>
-          <p className="mt-1 text-sm text-[color:var(--bone-300)]">Lead with discipline, protect the culture, and model the grind. The room rises when the coach stays locked in.</p>
+        <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+          <p className="t-eyebrow">Coach Standard</p>
+          <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">Lead with discipline, protect the culture, and model the grind. The room rises when the coach stays locked in.</p>
         </div>
 
         {/* ROLE SUMMARY PANEL */}
@@ -764,7 +802,7 @@ export default function CoachWorkspace() {
         />
 
         {/* MODE TOGGLE */}
-        <div className="flex w-fit gap-2 border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-2">
+        <div className="mat-leather flex w-fit gap-[var(--s3)] rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] p-[var(--s3)]">
           {(['Group', 'One-on-One'] as const).map(mode => (
             <button
               key={mode}
@@ -813,91 +851,91 @@ export default function CoachWorkspace() {
           {/* DASHBOARD */}
           {activeTab === 'dashboard' && (
             <div className="space-y-6 animate-fadeIn">
-              <section className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4">
-                <h3 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">Quick Actions</h3>
-                <div className="mt-3 grid gap-2 md:grid-cols-2 lg:grid-cols-4">
+              <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
+                <h3 className="t-eyebrow">Quick Actions</h3>
+                <div className="mt-[var(--s3)] grid gap-[var(--s3)] md:grid-cols-2 lg:grid-cols-4">
                   <ShadowChatButton
                     context="Coach Dashboard"
                     label="SHADOW Chat"
-                    className="min-h-[44px] border-[color:var(--brass-700)] bg-[var(--rust-900)] text-[color:var(--bone-200)] hover:bg-[var(--rust-900)]"
+                    className="btn"
                   />
                   <Link
                     href="/schedule"
-                    className="min-h-[44px] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[color:var(--bone-200)] transition hover:bg-[var(--rust-900)] inline-flex items-center justify-center"
+                    className="btn"
                   >
                     Open Scheduler
                   </Link>
                   <button
                     type="button"
                     onClick={() => setActiveTab('floor')}
-                    className="min-h-[44px] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[color:var(--bone-200)] transition hover:bg-[var(--rust-900)]"
+                    className="btn"
                   >
                     Open Live Floor
                   </button>
                   <button
                     type="button"
                     onClick={() => setActiveTab('athlete-floor-plans')}
-                    className="min-h-[44px] border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)]"
+                    className="btn btn--ghost"
                   >
                     Review Athlete Plans
                   </button>
                   <button
                     type="button"
                     onClick={() => setActiveTab('tasks')}
-                    className="min-h-[44px] border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)]"
+                    className="btn btn--ghost"
                   >
                     Process Tasks
                   </button>
                   <button
                     type="button"
                     onClick={() => setActiveTab('shadow')}
-                    className="min-h-[44px] border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)]"
+                    className="btn btn--ghost"
                   >
                     Open SHADOW Intel
                   </button>
                   <Link
                     href="/rabbit-holes"
-                    className="min-h-[44px] border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)] inline-flex items-center justify-center"
+                    className="btn btn--ghost"
                   >
                     Write a Rabbit Hole
                   </Link>
                 </div>
               </section>
 
-              <section className="grid gap-3 md:grid-cols-3">
-                <article className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-4 py-3">
-                  <p className="text-xs font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Readiness Alerts</p>
+              <section className="grid gap-[var(--s3)] md:grid-cols-3">
+                <article className="mat-leather--raised rounded-[var(--r-lg)] px-[var(--s4)] py-[var(--s3)]">
+                  <p className="t-eyebrow">Readiness Alerts</p>
                   {readinessTrackingAvailable ? (
                     <>
-                      <p className="mt-2 text-2xl font-black text-[color:var(--bone-100)]">{redReadinessCount + yellowReadinessCount}</p>
-                      <p className="text-xs text-[color:var(--bone-400)]">{redReadinessCount} RED, {yellowReadinessCount} YELLOW</p>
+                      <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{redReadinessCount + yellowReadinessCount}</p>
+                      <p className="t-muted">{redReadinessCount} RED, {yellowReadinessCount} YELLOW</p>
                     </>
                   ) : (
                     <>
-                      <p className="mt-2 text-2xl font-black text-[color:var(--bone-400)]">Not tracked</p>
-                      <p className="text-xs text-[color:var(--bone-400)]">No backend readiness feed yet -- do not read this as &quot;zero flags&quot;</p>
+                      <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-400)]">Not tracked</p>
+                      <p className="t-muted">No backend readiness feed yet -- do not read this as &quot;zero flags&quot;</p>
                     </>
                   )}
                 </article>
-                <article className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-4 py-3">
-                  <p className="text-xs font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Injury Flags</p>
+                <article className="mat-leather--raised rounded-[var(--r-lg)] px-[var(--s4)] py-[var(--s3)]">
+                  <p className="t-eyebrow">Injury Flags</p>
                   {injuryTrackingAvailable ? (
                     <>
-                      <p className="mt-2 text-2xl font-black text-[color:var(--bone-100)]">{injuryFlags}</p>
-                      <p className="text-xs text-[color:var(--bone-400)]">Escalate before block progression</p>
+                      <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{injuryFlags}</p>
+                      <p className="t-muted">Escalate before block progression</p>
                     </>
                   ) : (
                     <>
-                      <p className="mt-2 text-2xl font-black text-[color:var(--bone-400)]">Not tracked</p>
-                      <p className="text-xs text-[color:var(--bone-400)]">No backend injury feed yet -- do not read this as &quot;no injuries&quot;</p>
-                      <p className="mt-1 text-xs text-[color:var(--bone-400)]">Pain an athlete reported themselves is a separate feed, at the top of this page.</p>
+                      <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-400)]">Not tracked</p>
+                      <p className="t-muted">No backend injury feed yet -- do not read this as &quot;no injuries&quot;</p>
+                      <p className="t-muted mt-[var(--s2)]">Pain an athlete reported themselves is a separate feed, at the top of this page.</p>
                     </>
                   )}
                 </article>
-                <article className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-4 py-3">
-                  <p className="text-xs font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Open Reviews</p>
-                  <p className="mt-2 text-2xl font-black text-[color:var(--bone-100)]">{reviewsNeeded}</p>
-                  <p className="text-xs text-[color:var(--bone-400)]">Resolve queue items this session</p>
+                <article className="mat-leather--raised rounded-[var(--r-lg)] px-[var(--s4)] py-[var(--s3)]">
+                  <p className="t-eyebrow">Open Reviews</p>
+                  <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{reviewsNeeded}</p>
+                  <p className="t-muted">Resolve queue items this session</p>
                 </article>
               </section>
 
@@ -920,30 +958,28 @@ export default function CoachWorkspace() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Session Status */}
                 <div className={ui.panelSpaced}>
-                  <h3 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">Today&apos;s Session</h3>
-                  <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked-ink)]">
-                    PLANNED | NOT YET IMPLEMENTED
-                  </p>
-                  <p className="text-xs text-[color:var(--bone-400)]">
+                  <h3 className="t-eyebrow">Today&apos;s Session</h3>
+                  <p><span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span></p>
+                  <p className="t-muted">
                     There is no scheduling backend feed yet -- session name, time, and status below are not
                     real. Check your actual schedule directly until this is wired up.
                   </p>
-                  <div className="space-y-3">
+                  <div className="space-y-[var(--s3)]">
                     <div>
-                      <p className="text-xs text-[color:var(--bone-400)] block mb-1">Session Name</p>
-                      <p className="text-base font-semibold text-[color:var(--bone-400)]">Unavailable - not yet tracked</p>
+                      <p className="t-label mb-[var(--s2)] block">Session Name</p>
+                      <p className="t-body font-semibold text-[color:var(--bone-400)]">Unavailable - not yet tracked</p>
                     </div>
                     <div>
-                      <p className="text-xs text-[color:var(--bone-400)] block mb-1">Time</p>
-                      <p className="text-base font-semibold text-[color:var(--bone-400)]">Unavailable - not yet tracked</p>
+                      <p className="t-label mb-[var(--s2)] block">Time</p>
+                      <p className="t-body font-semibold text-[color:var(--bone-400)]">Unavailable - not yet tracked</p>
                     </div>
                     <div>
-                      <p className="text-xs text-[color:var(--bone-400)] block mb-1">Status</p>
-                      <p className="text-base font-semibold text-[color:var(--bone-400)]">Unavailable - not yet tracked</p>
+                      <p className="t-label mb-[var(--s2)] block">Status</p>
+                      <p className="t-body font-semibold text-[color:var(--bone-400)]">Unavailable - not yet tracked</p>
                     </div>
                     <div>
-                      <p className="text-xs text-[color:var(--bone-400)] block mb-1">Athletes Present</p>
-                      <p className="text-base font-semibold">
+                      <p className="t-label mb-[var(--s2)] block">Athletes Present</p>
+                      <p className="t-data text-[length:var(--t-sm)]">
                         {trackedAttendanceCount > 0 ? `${activeAthletes}/${athletes.length}` : (
                           <span className="text-[color:var(--bone-400)]">Not tracked</span>
                         )}
@@ -954,49 +990,49 @@ export default function CoachWorkspace() {
 
                 {/* Athlete Roster */}
                 <div className={ui.panelSpaced}>
-                  <h3 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">Athlete Roster</h3>
-                  
+                  <h3 className="t-eyebrow">Athlete Roster</h3>
+
                   {athletesLoading && (
-                    <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-4 text-center">
-                      <p className="text-[color:var(--bone-400)] text-sm">Loading athletes...</p>
-                      <div className="mt-3 flex justify-center">
+                    <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)] text-center">
+                      <p className="t-muted">Loading athletes...</p>
+                      <div className="mt-[var(--s3)] flex justify-center">
                         <div className="animate-spin h-5 w-5 border-2 border-[color:var(--brass-300)] border-t-transparent rounded-full"></div>
                       </div>
                     </div>
                   )}
-                  
+
                   {athletesError && !athletesLoading && (
-                    <div className="border-2 border-[var(--locked)] bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))]/20 p-3 rounded">
-                      <div className="flex items-center justify-between mb-1">
-                        <p className="text-[color:var(--locked-ink)] text-sm font-semibold">Error loading athletes</p>
+                    <div className="rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                      <div className="flex items-center justify-between mb-[var(--s2)] gap-[var(--s3)]">
+                        <p className="text-[color:var(--locked-ink)] text-[length:var(--t-sm)] font-semibold">Error loading athletes</p>
                         <button
                           onClick={() => void loadAthletes()}
-                          className="px-2 py-0.5 bg-[var(--locked)] hover:bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] text-white text-xs font-semibold uppercase transition"
+                          className="btn btn--ghost"
                           aria-label="Retry loading athletes"
                         >
                           Retry
                         </button>
                       </div>
-                      <p className="text-[color:var(--locked-ink)] text-xs">{athletesError}</p>
+                      <p className="text-[color:var(--locked-ink)] text-[length:var(--t-xs)]">{athletesError}</p>
                     </div>
                   )}
-                  
+
                   {!athletesLoading && athletes.length === 0 && !athletesError && (
-                    <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-4 text-center">
-                      <p className="text-[color:var(--bone-400)] text-sm">No athletes found</p>
+                    <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)] text-center">
+                      <p className="t-muted">No athletes found</p>
                     </div>
                   )}
-                  
+
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {athletes.map(athlete => (
                       <button
                         type="button"
                         key={athlete.id}
                         onClick={() => setSelectedAthleteId(athlete.id)}
-                        className={`w-full p-3 border-2 rounded cursor-pointer transition text-left ${
+                        className={`w-full p-[var(--s3)] border rounded-[var(--r-md)] cursor-pointer transition text-left ${
                           selectedAthleteId === athlete.id
-                            ? 'bg-[var(--hide-800)] border-[color:var(--brass-700)]'
-                            : 'bg-[var(--hide-950)] border-[color:var(--hide-600)] hover:border-[color:var(--brass-700)]'
+                            ? 'bg-[rgba(212,175,74,.10)] border-[color:var(--brass-500)]'
+                            : 'bg-[rgba(0,0,0,.28)] border-[color:rgba(212,175,74,.22)] hover:border-[color:var(--brass-500)]'
                         }`}
                       >
                         <div className="flex items-center justify-between">
@@ -1007,10 +1043,10 @@ export default function CoachWorkspace() {
                             ></div>
                             <span className="font-semibold">{athlete.name}</span>
                           </div>
-                          <span className="text-xs text-[color:var(--bone-400)]">{athlete.attendance}</span>
+                          <span className="t-muted">{athlete.attendance}</span>
                         </div>
                         {athlete.injuryFlag && (
-                          <p className="text-xs text-[color:var(--locked-ink)] mt-1">🚨 Injury flag active</p>
+                          <p className="mt-[var(--s2)]"><StatusBadge tone="locked" label="Injury flag active" /></p>
                         )}
                       </button>
                     ))}
@@ -1018,22 +1054,20 @@ export default function CoachWorkspace() {
                 </div>
 
                 {/* Open Tasks */}
-                <div className="md:col-span-2 border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4">
-                  <h3 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">Open Tasks</h3>
+                <div className="md:col-span-2 mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
+                  <h3 className="t-eyebrow">Open Tasks</h3>
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {coachTasks.filter(t => t.status !== 'Completed').map(task => (
-                      <div key={task.id} className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-3">
-                        <div className="flex justify-between items-start mb-2">
+                      <div key={task.id} className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                        <div className="flex justify-between items-start mb-[var(--s3)] gap-[var(--s3)]">
                           <h4 className="font-semibold">{task.title}</h4>
-                          <span className={`text-xs px-2 py-1 rounded font-semibold ${priorityTone(task.priority)}`}>
-                            {task.priority}
-                          </span>
+                          <StatusBadge tone={priorityTone(task.priority)} label={task.priority} />
                         </div>
-                        <p className="text-xs text-[color:var(--bone-400)]">{task.when}</p>
+                        <p className="t-muted">{task.when}</p>
                       </div>
                     ))}
                     {coachTasks.length === 0 && (
-                      <p className="text-xs text-[color:var(--bone-400)]">No open tasks. Items appear here from the SHADOW review queue.</p>
+                      <p className="t-muted">No open tasks. Items appear here from the SHADOW review queue.</p>
                     )}
                   </div>
                 </div>
@@ -1061,51 +1095,47 @@ export default function CoachWorkspace() {
               />
 
               {floorPlansError ? (
-                <div className="border-2 border-[var(--locked)] bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))]/20 p-3 rounded">
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="text-[color:var(--locked-ink)] text-sm font-semibold">Error loading athlete floor plans</p>
+                <div className="rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                  <div className="flex items-center justify-between mb-[var(--s2)] gap-[var(--s3)]">
+                    <p className="text-[color:var(--locked-ink)] text-[length:var(--t-sm)] font-semibold">Error loading athlete floor plans</p>
                     <button
                       onClick={() => void loadFloorPlans()}
-                      className="px-2 py-0.5 bg-[var(--locked)] hover:bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] text-white text-xs font-semibold uppercase transition"
+                      className="btn btn--ghost"
                       aria-label="Retry loading athlete floor plans"
                     >
                       Retry
                     </button>
                   </div>
-                  <p className="text-[color:var(--locked-ink)] text-xs">{floorPlansError}</p>
-                  <p className="text-[color:var(--locked-ink)] text-xs mt-1">Plans may exist that are not shown here. Do not read this as an empty queue.</p>
+                  <p className="text-[color:var(--locked-ink)] text-[length:var(--t-xs)]">{floorPlansError}</p>
+                  <p className="text-[color:var(--locked-ink)] text-[length:var(--t-xs)] mt-[var(--s2)]">Plans may exist that are not shown here. Do not read this as an empty queue.</p>
                 </div>
               ) : athleteFloorPlans.length === 0 ? (
-                <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6">
-                  <p className="text-sm text-[color:var(--brass-300)] font-semibold">No athlete floor plans received yet.</p>
-                  <p className="mt-2 text-sm text-[color:var(--bone-400)]">Once an athlete checks in and their floor plan auto-generates, it will appear here as an individual coach review tab.</p>
+                <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
+                  <p className="t-body font-semibold text-[color:var(--bone-100)]">No athlete floor plans received yet.</p>
+                  <p className="t-muted mt-[var(--s3)]">Once an athlete checks in and their floor plan auto-generates, it will appear here as an individual coach review tab.</p>
                 </div>
               ) : (
                 <div className="space-y-4">
                   {athleteFloorPlans.map((plan, index) => (
-                    <article key={`${plan.athleteName}-${plan.generatedAt}-${index}`} className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-5 space-y-4">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
+                    <article key={`${plan.athleteName}-${plan.generatedAt}-${index}`} className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
+                      <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
                         <div>
-                          <p className="text-xs font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Individual Plan</p>
-                          <h4 className="text-lg font-semibold text-[color:var(--bone-200)]">{plan.athleteName}</h4>
-                          <p className="text-xs text-[color:var(--bone-400)]">Generated {new Date(plan.generatedAt).toLocaleString()}</p>
+                          <p className="t-eyebrow">Individual Plan</p>
+                          <h4 className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{plan.athleteName}</h4>
+                          <p className="t-muted">Generated {new Date(plan.generatedAt).toLocaleString()}</p>
                         </div>
-                        <span className={`inline-flex items-center rounded px-2 py-1 text-xs font-bold ${readinessBadgeTone(plan.readiness)}`}>
-                          {plan.readiness}
-                        </span>
+                        <StatusBadge tone={readinessBadgeTone(plan.readiness)} label={plan.readiness} />
                       </div>
 
-                      <div className="grid gap-3 md:grid-cols-2">
+                      <div className="grid gap-[var(--s3)] md:grid-cols-2">
                         {plan.tasks.map((task) => (
-                          <div key={task.id} className="border border-[color:var(--hide-500)] bg-[var(--hide-950)] p-3">
-                            <div className="flex items-center justify-between gap-2">
-                              <p className="text-sm font-semibold text-[color:var(--bone-200)]">{task.title}</p>
-                              <span className={`text-[11px] font-semibold px-2 py-1 rounded ${task.priority === 'High' ? 'bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] text-[color:var(--locked-ink)]' : 'bg-[color-mix(in_srgb,var(--restricted)_22%,var(--hide-950))] text-[color:var(--restricted-ink)]'}`}>
-                                {task.priority}
-                              </span>
+                          <div key={task.id} className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                            <div className="flex items-center justify-between gap-[var(--s3)]">
+                              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-200)]">{task.title}</p>
+                              <StatusBadge tone={task.priority === 'High' ? 'restricted' : 'monitor'} label={task.priority} />
                             </div>
-                            <p className="mt-1 text-xs text-[color:var(--brass-300)]">{task.category} - {task.dueDate}</p>
-                            <p className="mt-2 text-xs text-[color:var(--bone-400)]">{task.description}</p>
+                            <p className="t-label mt-[var(--s2)]">{task.category} - {task.dueDate}</p>
+                            <p className="t-muted mt-[var(--s3)]">{task.description}</p>
                           </div>
                         ))}
                       </div>
@@ -1136,39 +1166,37 @@ export default function CoachWorkspace() {
                 ]}
               />
 
-              <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4">
-                <h3 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">Session Workout Plan</h3>
-                <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked-ink)]">
-                  PLANNED | NOT YET IMPLEMENTED
-                </p>
-                <p className="text-xs text-[color:var(--bone-400)]">
+              <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
+                <h3 className="t-eyebrow">Session Workout Plan</h3>
+                <p><span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span></p>
+                <p className="t-muted">
                   This is the standard {sessionMode} block template, not a running session. Block
                   completion and session progress are not tracked yet. Track the live session on the
                   floor until this is wired up.
                 </p>
 
-                <div className="space-y-2">
+                <div className="space-y-[var(--s3)]">
                   {workoutBlocks.map((block) => (
-                    <div key={block.id} className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-3 rounded">
+                    <div key={block.id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s3)]">
                       <div className="flex justify-between items-center">
                         <div>
-                          <p className="font-semibold">{block.title}</p>
-                          <p className="text-xs text-[color:var(--bone-400)]">{block.duration} minutes</p>
-                          <p className="text-xs text-[color:var(--brass-300)] mt-1">{block.objective}</p>
+                          <p className="font-semibold text-[color:var(--bone-100)]">{block.title}</p>
+                          <p className="t-muted">{block.duration} minutes</p>
+                          <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">{block.objective}</p>
                         </div>
                       </div>
-                      <div className="mt-3 grid gap-2 md:grid-cols-2">
-                        <div className="border border-[color:var(--hide-500)] bg-[var(--hide-900)] p-2">
-                          <p className="text-[11px] font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Planned Training</p>
-                          <ul className="mt-1 space-y-1 text-xs text-[color:var(--bone-300)]">
+                      <div className="mt-[var(--s3)] grid gap-[var(--s3)] md:grid-cols-2">
+                        <div className="rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                          <p className="t-label">Planned Training</p>
+                          <ul className="mt-[var(--s2)] space-y-1 text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
                             {block.trainingItems.map((item) => (
                               <li key={item}>- {item}</li>
                             ))}
                           </ul>
                         </div>
-                        <div className="border border-[color:var(--hide-500)] bg-[var(--hide-900)] p-2">
-                          <p className="text-[11px] font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Coach Cues</p>
-                          <ul className="mt-1 space-y-1 text-xs text-[color:var(--bone-300)]">
+                        <div className="rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                          <p className="t-label">Coach Cues</p>
+                          <ul className="mt-[var(--s2)] space-y-1 text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
                             {block.coachingCues.map((cue) => (
                               <li key={cue}>- {cue}</li>
                             ))}
@@ -1203,28 +1231,24 @@ export default function CoachWorkspace() {
               />
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4">
-                  <h3 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">Current Certifications</h3>
-                  <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked-ink)]">
-                    PLANNED | NOT YET IMPLEMENTED
-                  </p>
-                  <p className="text-sm text-[color:var(--bone-400)]">
+                <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
+                  <h3 className="t-eyebrow">Current Certifications</h3>
+                  <p><span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span></p>
+                  <p className="t-body text-[color:var(--bone-400)]">
                     There is no backend feed for coach certifications yet, so this platform holds no record
                     of your credentials or their expiry dates and cannot tell you whether a license is
                     current. Check with your certifying body until this is wired up.
                   </p>
                 </div>
 
-                <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4">
-                  <h3 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">Development Topics</h3>
-                  <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked-ink)]">
-                    PLANNED | NOT YET IMPLEMENTED
-                  </p>
-                  <p className="text-sm text-[color:var(--bone-400)]">
+                <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
+                  <h3 className="t-eyebrow">Development Topics</h3>
+                  <p><span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span></p>
+                  <p className="t-body text-[color:var(--bone-400)]">
                     Reference list of the coach development curriculum. There is no backend store for
                     completion yet, so progress through these topics cannot be recorded here.
                   </p>
-                  <ul className="space-y-2">
+                  <ul className="space-y-[var(--s3)]">
                     {[
                       'Boxing Technique Instruction',
                       'Youth Development Psychology',
@@ -1232,7 +1256,7 @@ export default function CoachWorkspace() {
                       'Class Management Skills',
                       'Adaptive Coaching'
                     ].map((topic) => (
-                      <li key={topic} className="p-2 border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] text-sm">
+                      <li key={topic} className="rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-sm)]">
                         {topic}
                       </li>
                     ))}
@@ -1261,28 +1285,30 @@ export default function CoachWorkspace() {
                 ]}
               />
 
-              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked-ink)]">
-                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for coach goals yet, so this section
-                is always empty.
+              <p>
+                <span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span>
+              </p>
+              <p className="t-muted">
+                There is no backend feed for coach goals yet, so this section is always empty.
               </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {coachGoals.map(goal => (
-                  <div key={goal.id} className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4 space-y-3">
-                    <div className="flex justify-between items-start">
+                  <div key={goal.id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
+                    <div className="flex justify-between items-start gap-[var(--s3)]">
                       <h4 className="font-semibold">{goal.title}</h4>
-                      <span className="text-xs bg-[var(--hide-600)] text-[color:var(--bone-400)] px-2 py-1">{goal.category}</span>
+                      <span className="plaque">{goal.category}</span>
                     </div>
                     <div>
-                      <div className="flex justify-between text-xs mb-1">
+                      <div className="flex justify-between text-[length:var(--t-xs)] mb-[var(--s2)]">
                         <span className="text-[color:var(--bone-400)]">Progress</span>
-                        <span className="font-semibold">{goal.progress}%</span>
+                        <span className="t-data">{goal.progress}%</span>
                       </div>
-                      <div className="w-full bg-[var(--hide-600)] h-2">
-                        <div className="bg-[var(--brass-300)] h-2" style={{width: `${goal.progress}%`}}></div>
+                      <div className="w-full rounded-[var(--r-sm)] bg-[rgba(0,0,0,.4)] h-2">
+                        <div className="rounded-[var(--r-sm)] bg-[var(--brass-500)] h-2" style={{width: `${goal.progress}%`}}></div>
                       </div>
                     </div>
-                    <p className="text-xs text-[color:var(--bone-400)]">Due: {goal.dueDate}</p>
+                    <p className="t-muted">Due: {goal.dueDate}</p>
                   </div>
                 ))}
               </div>
@@ -1309,45 +1335,41 @@ export default function CoachWorkspace() {
               />
 
               {shadowQueueUnavailable && (
-                <div className="border-2 border-[var(--locked)] bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))]/20 p-3 rounded">
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="text-[color:var(--locked-ink)] text-sm font-semibold">Unable to load the SHADOW review queue</p>
+                <div className="rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                  <div className="flex items-center justify-between mb-[var(--s2)] gap-[var(--s3)]">
+                    <p className="text-[color:var(--locked-ink)] text-[length:var(--t-sm)] font-semibold">Unable to load the SHADOW review queue</p>
                     <button
                       onClick={() => void loadShadowData()}
-                      className="px-2 py-0.5 bg-[var(--locked)] hover:bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] text-white text-xs font-semibold uppercase transition flex-shrink-0"
+                      className="btn btn--ghost flex-shrink-0"
                       aria-label="Retry loading the SHADOW review queue"
                     >
                       Retry
                     </button>
                   </div>
-                  <p className="text-[color:var(--locked-ink)] text-xs">This board is incomplete. Open review items may exist that are not listed below.</p>
+                  <p className="text-[color:var(--locked-ink)] text-[length:var(--t-xs)]">This board is incomplete. Open review items may exist that are not listed below.</p>
                 </div>
               )}
 
               <div className="space-y-3">
                 {coachTasks.length === 0 && !shadowQueueUnavailable && (
-                  <p className="text-sm text-[color:var(--bone-400)]">No open tasks. Items appear here from the SHADOW review queue.</p>
+                  <p className="t-muted text-[length:var(--t-sm)]">No open tasks. Items appear here from the SHADOW review queue.</p>
                 )}
                 {coachTasks.map(task => (
-                  <div key={task.id} className={`border-2 p-4 rounded ${
-                    task.status === 'Completed' ? 'bg-[var(--cleared-deep)]/30 border-[var(--cleared)]' : 'bg-[var(--hide-900)] border-[color:var(--brass-700)]'
+                  <div key={task.id} className={`mat-leather rounded-[var(--r-lg)] p-[var(--s4)] ${
+                    task.status === 'Completed' ? 'border-2 border-[var(--cleared)]' : 'border border-[color:rgba(212,175,74,.22)]'
                   }`}>
-                    <div className="flex justify-between items-start mb-2">
+                    <div className="flex justify-between items-start mb-[var(--s3)] gap-[var(--s3)]">
                       <div>
                         <h4 className="font-semibold">{task.title}</h4>
-                        <p className="text-xs text-[color:var(--bone-400)] mt-1">{task.when}</p>
+                        <p className="t-muted mt-[var(--s2)]">{task.when}</p>
                       </div>
-                      <div className="flex gap-2">
-                        <span className={`text-xs px-2 py-1 rounded font-semibold ${priorityTone(task.priority)}`}>
-                          {task.priority}
-                        </span>
-                        <span className={`text-xs px-2 py-1 rounded font-semibold ${taskStatusTone(task.status)}`}>
-                          {task.status}
-                        </span>
+                      <div className="flex gap-[var(--s3)]">
+                        <StatusBadge tone={priorityTone(task.priority)} label={task.priority} />
+                        <StatusBadge tone={taskStatusTone(task.status)} label={task.status} />
                       </div>
                     </div>
                     {task.relatedAthlete && (
-                      <p className="text-xs text-[color:var(--bone-400)]">Related: {athletes.find(a => a.id === task.relatedAthlete)?.name}</p>
+                      <p className="t-muted">Related: {athletes.find(a => a.id === task.relatedAthlete)?.name}</p>
                     )}
                   </div>
                 ))}
@@ -1364,20 +1386,20 @@ export default function CoachWorkspace() {
                 chatContext="Coach Workspace"
               />
 
-              <div className="border-2 border-[color:var(--brass-300)] bg-[var(--hide-950)] p-6 space-y-4">
-                <h3 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">SHADOW Coach Assistant</h3>
-                <p className="text-sm text-[color:var(--bone-400)]">Ask questions about session management, athlete readiness, goals, tasks, or coaching strategy.</p>
+              <div className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
+                <h3 className="t-eyebrow">SHADOW Coach Assistant</h3>
+                <p className="t-body text-[color:var(--bone-400)]">Ask questions about session management, athlete readiness, goals, tasks, or coaching strategy.</p>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
-                <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4">
-                  <h3 className="font-mono text-xs font-bold uppercase tracking-[0.08em] text-[color:var(--brass-300)]">SHADOW Review Projection</h3>
+                <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+                  <h3 className="t-eyebrow">SHADOW Review Projection</h3>
                   {shadowQueue.length === 0 ? (
-                    <p className="mt-2 text-xs text-[color:var(--bone-400)]">No SHADOW queue items returned.</p>
+                    <p className="t-muted mt-[var(--s3)]">No SHADOW queue items returned.</p>
                   ) : (
-                    <div className="mt-2 space-y-2">
+                    <div className="mt-[var(--s3)] space-y-[var(--s3)]">
                       {shadowQueue.slice(0, 6).map((item) => (
-                        <div key={item.intake_case_id} className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-2 text-xs text-[color:var(--bone-300)]">
+                        <div key={item.intake_case_id} className="rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
                           <p className="font-semibold text-[color:var(--bone-200)]">{item.summary}</p>
                           <p>Status: {item.status}</p>
                           <p>Documents: {item.document_count}</p>
@@ -1387,14 +1409,14 @@ export default function CoachWorkspace() {
                   )}
                 </div>
 
-                <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4">
-                  <h3 className="font-mono text-xs font-bold uppercase tracking-[0.08em] text-[color:var(--brass-300)]">SHADOW Observation Projection</h3>
+                <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+                  <h3 className="t-eyebrow">SHADOW Observation Projection</h3>
                   {shadowObservations.length === 0 ? (
-                    <p className="mt-2 text-xs text-[color:var(--bone-400)]">No SHADOW observation items returned.</p>
+                    <p className="t-muted mt-[var(--s3)]">No SHADOW observation items returned.</p>
                   ) : (
-                    <div className="mt-2 space-y-2">
+                    <div className="mt-[var(--s3)] space-y-[var(--s3)]">
                       {shadowObservations.slice(0, 6).map((item) => (
-                        <div key={item.id} className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-2 text-xs text-[color:var(--bone-300)]">
+                        <div key={item.id} className="rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
                           <p className="font-semibold text-[color:var(--bone-200)]">{item.label}</p>
                           <p>Source: {item.source}</p>
                           <p>State: {item.review_state}</p>
@@ -1406,12 +1428,12 @@ export default function CoachWorkspace() {
               </div>
 
               {shadowReadError ? (
-                <div className="border-2 border-[var(--locked)] bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))]/20 p-3 rounded">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[color:var(--locked-ink)] text-sm font-semibold">{shadowReadError}</p>
+                <div className="rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                  <div className="flex items-center justify-between gap-[var(--s3)]">
+                    <p className="text-[color:var(--locked-ink)] text-[length:var(--t-sm)] font-semibold">{shadowReadError}</p>
                     <button
                       onClick={() => void loadShadowData()}
-                      className="px-2 py-0.5 bg-[var(--locked)] hover:bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] text-white text-xs font-semibold uppercase transition flex-shrink-0"
+                      className="btn btn--ghost flex-shrink-0"
                       aria-label="Retry loading SHADOW queue"
                     >
                       Retry
@@ -1424,27 +1446,27 @@ export default function CoachWorkspace() {
 
           {/* ASSESSMENTS */}
           {activeTab === 'assessments' && (
-            <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4 animate-fadeIn">
-              <h3 className="font-mono font-bold text-[color:var(--brass-300)] uppercase">Coach Assessments</h3>
-              <p className="text-[color:var(--bone-400)]">Evaluate coaching effectiveness, communication, and athlete development.</p>
-              <div className="text-sm text-[color:var(--bone-400)]">Coming soon: Leadership assessment, communication effectiveness survey, teaching impact evaluation.</div>
+            <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)] animate-fadeIn">
+              <h3 className="t-eyebrow">Coach Assessments</h3>
+              <p className="t-body text-[color:var(--bone-400)]">Evaluate coaching effectiveness, communication, and athlete development.</p>
+              <div className="t-body text-[color:var(--bone-400)]">Coming soon: Leadership assessment, communication effectiveness survey, teaching impact evaluation.</div>
             </div>
           )}
 
           {/* FILM STUDY */}
           {activeTab === 'film-study' && (
-            <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4 animate-fadeIn">
-              <h3 className="font-mono font-bold text-[color:var(--brass-300)] uppercase">Film Study</h3>
-              <p className="text-[color:var(--bone-400)]">Record observations from training videos and self-evaluations.</p>
-              <div className="text-sm text-[color:var(--bone-400)]">Coming soon: Video upload, timestamp annotations, technical analysis tools.</div>
-              <div className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-3">
-                <p className="text-xs font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">AI Video Analysis - Planned</p>
-                <p className="mt-1 text-xs text-[color:var(--bone-300)]">Video Upload: FRONT-END PLACEHOLDER | Skill Recognition: BACKEND REQUIRED | Technique Scoring: ML REQUIRED</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <Link href="/coach/video-analysis" className="border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[color:var(--bone-200)]">
+            <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)] animate-fadeIn">
+              <h3 className="t-eyebrow">Film Study</h3>
+              <p className="t-body text-[color:var(--bone-400)]">Record observations from training videos and self-evaluations.</p>
+              <div className="t-body text-[color:var(--bone-400)]">Coming soon: Video upload, timestamp annotations, technical analysis tools.</div>
+              <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                <p className="t-label">AI Video Analysis - Planned</p>
+                <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">Video Upload: FRONT-END PLACEHOLDER | Skill Recognition: BACKEND REQUIRED | Technique Scoring: ML REQUIRED</p>
+                <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
+                  <Link href="/coach/video-analysis" className="btn">
                     Open Video Analysis Surface
                   </Link>
-                  <Link href="/athlete/video-analysis" className="border border-[color:var(--hide-600)] bg-[var(--hide-900)] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[color:var(--bone-300)]">
+                  <Link href="/athlete/video-analysis" className="btn btn--ghost">
                     Athlete Feedback Surface
                   </Link>
                 </div>
@@ -1454,46 +1476,55 @@ export default function CoachWorkspace() {
 
           {/* ATHLETE REVIEWS */}
           {activeTab === 'athlete-reviews' && (
-            <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4 animate-fadeIn">
-              <h3 className="font-mono font-bold text-[color:var(--brass-300)] uppercase">Athlete Performance Reviews</h3>
-              <p className="text-[color:var(--bone-400)]">Comprehensive athlete progress tracking and performance feedback.</p>
-              <div className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-3 space-y-3">
-                <p className="text-xs font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Persist Coach Review</p>
-                <input
-                  value={reviewSessionId}
-                  onChange={(event) => setReviewSessionId(event.target.value)}
-                  placeholder="Session ID (from persisted session)"
-                  className="h-11 w-full border border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3 text-sm text-[color:var(--bone-200)]"
-                />
-                <select
-                  value={reviewDecision}
-                  onChange={(event) => setReviewDecision(event.target.value)}
-                  className="h-11 w-full border border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3 text-sm text-[color:var(--bone-200)]"
-                >
-                  <option value="approved">approved</option>
-                  <option value="follow_up">follow_up</option>
-                  <option value="hold">hold</option>
-                </select>
-                <textarea
-                  value={reviewNotes}
-                  onChange={(event) => setReviewNotes(event.target.value)}
-                  placeholder="Review notes"
-                  className="min-h-[84px] w-full border border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)]"
-                />
+            <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)] animate-fadeIn">
+              <h3 className="t-eyebrow">Athlete Performance Reviews</h3>
+              <p className="t-body text-[color:var(--bone-400)]">Comprehensive athlete progress tracking and performance feedback.</p>
+              <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)] space-y-[var(--s3)]">
+                <p className="t-label">Persist Coach Review</p>
+                <label className="field">
+                  <span className="t-label">Session ID</span>
+                  <input
+                    value={reviewSessionId}
+                    onChange={(event) => setReviewSessionId(event.target.value)}
+                    placeholder="Session ID (from persisted session)"
+                    className="input"
+                  />
+                </label>
+                <label className="field">
+                  <span className="t-label">Decision</span>
+                  <select
+                    value={reviewDecision}
+                    onChange={(event) => setReviewDecision(event.target.value)}
+                    className="select"
+                  >
+                    <option value="approved">approved</option>
+                    <option value="follow_up">follow_up</option>
+                    <option value="hold">hold</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span className="t-label">Review notes</span>
+                  <textarea
+                    value={reviewNotes}
+                    onChange={(event) => setReviewNotes(event.target.value)}
+                    placeholder="Review notes"
+                    className="textarea min-h-[84px]"
+                  />
+                </label>
                 <button
                   type="button"
                   onClick={() => void submitCoachReview()}
                   disabled={reviewSubmitting}
-                  className="h-11 border-2 border-[color:var(--brass-700)] bg-[var(--rust-900)] px-4 text-xs font-mono font-bold uppercase tracking-[0.08em] text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-300)] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="btn disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {reviewSubmitting ? 'Saving...' : 'Save Coach Review'}
                 </button>
-                {reviewSyncMessage ? <p className="text-xs text-[color:var(--brass-300)]">{reviewSyncMessage}</p> : null}
+                {reviewSyncMessage ? <p className="t-data text-[color:var(--brass-300)]">{reviewSyncMessage}</p> : null}
               </div>
-              <div className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-3">
-                <p className="text-xs font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Closed-Loop Progression Intelligence - Planned</p>
-                <p className="mt-1 text-xs text-[color:var(--bone-300)]">Development Recommendation: PLACEHOLDER | Coach Review Required | Human Review Required</p>
-                <Link href="/coach/progression-intelligence" className="mt-2 inline-flex border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[color:var(--bone-200)]">
+              <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                <p className="t-label">Closed-Loop Progression Intelligence - Planned</p>
+                <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">Development Recommendation: PLACEHOLDER | Coach Review Required | Human Review Required</p>
+                <Link href="/coach/progression-intelligence" className="btn btn--ghost mt-[var(--s3)]">
                   Open Progression Intelligence Surface
                 </Link>
               </div>

@@ -116,22 +116,35 @@ export default function BoardRoleGate({
 
   if (gate.status !== 'authorized') {
     return (
-      <main className="grid min-h-screen place-items-center bg-[var(--hide-950)] px-6 text-[color:var(--bone-200)]">
-        <div className="text-center">
-          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[color:var(--brass-300)]">
+      <main className="room--board grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
+        {/* The gate stands in the board room like everything behind it, and its
+            interim states sit on raised leather so they carry their own ground
+            wherever the wall's plaster/wainscot seam falls. */}
+        <div className="mat-leather--raised max-w-xl rounded-[var(--r-lg)] p-[var(--s6)] text-center">
+          <p className="t-eyebrow tracking-[0.35em]">
             Board Session
           </p>
-          <h1 className="mt-3 text-3xl font-black tracking-tight">
+          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">
             {gate.status === 'retryable' ? 'Unable to verify access' : 'Checking aggregate access'}
           </h1>
           {gate.status === 'retryable' && (
-            <button
-              type="button"
-              onClick={() => setRetryNonce((value) => value + 1)}
-              className="mt-5 min-h-[44px] border-2 border-[color:var(--brass-700)] bg-[var(--hide-800)] px-5 text-sm font-mono font-bold uppercase tracking-[0.12em] text-[color:var(--bone-200)]"
-            >
-              Retry
-            </button>
+            <>
+              {/* Law 7: the refusal itself is static ink, not a toast. The
+                  button below is the way back in; the stamp is the state. */}
+              <p className="mt-[var(--s4)]">
+                <span className="stamp stamp--flat">
+                  <span aria-hidden="true">✕ </span>
+                  <span>Not verified</span>
+                </span>
+              </p>
+              <button
+                type="button"
+                onClick={() => setRetryNonce((value) => value + 1)}
+                className="btn mt-[var(--s5)]"
+              >
+                Retry
+              </button>
+            </>
           )}
         </div>
       </main>

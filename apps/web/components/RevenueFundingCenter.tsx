@@ -438,14 +438,13 @@ export default function RevenueFundingCenter() {
       <details className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
         <summary className="cursor-pointer t-command">Capability Visibility (Revenue)</summary>
         <div className="mt-2">
-        <h3 className="t-command">Capability Visibility (Revenue)</h3>
         <p className="t-body mt-[var(--s2)]">Status map is front-end only and intended to improve discoverability and roadmap clarity.</p>
         <div className="mt-3 grid gap-2 md:grid-cols-2">
           {revenueCapabilities.map((item) => (
             <article key={item.capability} className={`border p-3 ${capabilityBadgeTone(item.state)}`}>
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm font-bold uppercase tracking-[0.06em]">{item.capability}</p>
-                <span className="mat-leather rounded-[var(--r-sm)] px-[var(--s3)] py-[2px] t-data uppercase">{item.state}</span>
+                <span className="mat-leather rounded-[var(--r-sm)] px-[var(--s3)] py-[var(--s1)] t-data uppercase">{item.state}</span>
               </div>
               <p className="mt-2 text-xs leading-5">{item.detail}</p>
               {item.tab ? (
@@ -456,7 +455,7 @@ export default function RevenueFundingCenter() {
                       setActiveTab(item.tab)
                     }
                   }}
-                  className="btn btn--ghost"
+                  className="btn btn--ghost mt-[var(--s3)]"
                 >
                   Open Capability
                 </button>

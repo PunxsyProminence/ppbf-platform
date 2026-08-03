@@ -168,7 +168,14 @@ export default function TrainingCard({
   );
 }
 
-/** The roundel, zero-asset — curved text via textPath, same as .seal. */
+/** The roundel, zero-asset — curved text via textPath, same as .seal.
+ *
+ * The seal's ink was a raw hex — the same paper-card ink ppbf.css uses for
+ * .tcard-title, which has no token of its own (logged as a DS gap). Until the
+ * sheet grows a card-ink token, the nearest existing token is --hide-900:
+ * indistinguishable at 52px, and no hardcoded hex here. */
+const SEAL_INK = 'var(--hide-900)';
+
 function Seal({ count, earned }: { count: number; earned: boolean }) {
   const id = `tcard-seal-${count}`;
   return (
@@ -182,9 +189,9 @@ function Seal({ count, earned }: { count: number; earned: boolean }) {
       <defs>
         <path id={id} d="M 50,50 m -34,0 a 34,34 0 1,1 68,0 a 34,34 0 1,1 -68,0" />
       </defs>
-      <circle cx="50" cy="50" r="46" fill="none" stroke="#241C11" strokeWidth="2.5" opacity=".8" />
-      <circle cx="50" cy="50" r="30" fill="none" stroke="#241C11" strokeWidth="1.5" opacity=".55" />
-      <text fontSize="15" fontWeight="700" fill="#241C11" letterSpacing="1">
+      <circle cx="50" cy="50" r="46" fill="none" stroke={SEAL_INK} strokeWidth="2.5" opacity=".8" />
+      <circle cx="50" cy="50" r="30" fill="none" stroke={SEAL_INK} strokeWidth="1.5" opacity=".55" />
+      <text fontSize="15" fontWeight="700" fill={SEAL_INK} letterSpacing="1">
         <textPath href={`#${id}`} startOffset="50%" textAnchor="middle">
           PPBF · LOGGED
         </textPath>
@@ -195,7 +202,7 @@ function Seal({ count, earned }: { count: number; earned: boolean }) {
         textAnchor="middle"
         fontSize="26"
         fontWeight="700"
-        fill="#241C11"
+        fill={SEAL_INK}
         fontFamily="var(--font-display)"
       >
         {count}

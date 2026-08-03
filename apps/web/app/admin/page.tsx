@@ -913,7 +913,7 @@ export default function AdminCapabilitiesPage() {
               {canManagePeople && (
                 <Link
                   href="/admin/athletes"
-                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[#2a1a1a]"
+                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--hide-800)]"
                 >
                   ATHLETE RECORDS
                 </Link>
@@ -921,7 +921,7 @@ export default function AdminCapabilitiesPage() {
               {canManagePeople && (
                 <Link
                   href="/admin/export"
-                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[#2a1a1a]"
+                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--hide-800)]"
                 >
                   EXPORT
                 </Link>
@@ -929,7 +929,7 @@ export default function AdminCapabilitiesPage() {
               {canManagePeople && (
                 <Link
                   href="/coach/drills"
-                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[#2a1a1a]"
+                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--hide-800)]"
                 >
                   DRILL LIBRARY
                 </Link>
