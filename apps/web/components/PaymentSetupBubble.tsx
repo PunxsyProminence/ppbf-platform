@@ -56,39 +56,39 @@ export default function PaymentSetupBubble() {
 
   return (
     <aside
-      className="rounded-2xl border-2 border-[var(--brass-dark)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-md)]"
+      className="rounded-2xl border-2 border-[var(--brass-dark)] p-5 shadow-[var(--shadow-md)]"
       aria-labelledby="payment-setup-heading"
     >
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-[10px] font-mono font-bold uppercase tracking-[0.3em] text-[var(--red-primary)]">
+          <p className="text-[10px] font-mono font-bold uppercase tracking-[0.3em] text-[color:var(--brass-600)]">
             Setup
           </p>
-          <h2 id="payment-setup-heading" className="mt-1 text-lg font-black tracking-tight text-[var(--black)]">
+          <h2 id="payment-setup-heading" className="mt-1 text-lg font-black tracking-tight">
             Finish connecting payments
           </h2>
         </div>
         <button
           type="button"
           onClick={() => setDismissed(true)}
-          className="min-h-[44px] shrink-0 rounded-full border border-[rgba(0,0,0,0.2)] px-3 text-[10px] font-mono font-bold uppercase tracking-[0.1em] text-[var(--gray-dark)] transition hover:bg-white"
+          className="min-h-[44px] shrink-0 rounded-[var(--r-pill)] border border-[color:color-mix(in_srgb,currentColor_26%,transparent)] px-[var(--s4)] font-mono text-[length:var(--t-xs)] font-bold uppercase tracking-[0.1em] opacity-80 transition hover:opacity-100"
           aria-label="Hide the payment setup steps until the next page load"
         >
           Hide
         </button>
       </div>
 
-      <p className="mt-2 text-sm leading-relaxed text-[var(--gray-dark)]">
+      <p className="mt-2 text-sm leading-relaxed opacity-80">
         Donations and program payments settle into two separate Stripe accounts, so each one
         connects on its own. This panel disappears once both are connected.
       </p>
 
       <ol className="mt-4 space-y-2">
         {steps.map((step, index) => (
-          <li key={step} className="flex gap-3 text-sm leading-relaxed text-[var(--black)]">
+          <li key={step} className="flex gap-3 text-sm leading-relaxed">
             <span
               aria-hidden="true"
-              className="mt-[2px] grid size-5 shrink-0 place-items-center rounded-full border border-[var(--black)] bg-white text-[10px] font-mono font-bold"
+              className="mt-[2px] grid size-5 shrink-0 place-items-center rounded-full border border-[color:color-mix(in_srgb,currentColor_26%,transparent)] text-[10px] font-mono font-bold"
             >
               {index + 1}
             </span>

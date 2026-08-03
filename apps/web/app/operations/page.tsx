@@ -32,11 +32,11 @@ const priorityLanes = [
 ];
 
 const systemStatus = [
-  { label: 'Safety Gates', value: 'Live', tone: 'text-[var(--status-ready)]' },
-  { label: 'Continuity Ledger', value: 'Logging', tone: 'text-[var(--status-ready)]' },
-  { label: 'Context Boundaries', value: 'Enforced', tone: 'text-[var(--status-ready)]' },
-  { label: 'SHADOW', value: 'Operational', tone: 'text-[var(--status-warning)]' },
-  { label: 'Validation Status', value: 'Stable', tone: 'text-[var(--status-ready)]' },
+  { label: 'Safety Gates', value: 'Live', tone: 'text-[color:var(--cleared-ink)]' },
+  { label: 'Continuity Ledger', value: 'Logging', tone: 'text-[color:var(--cleared-ink)]' },
+  { label: 'Context Boundaries', value: 'Enforced', tone: 'text-[color:var(--cleared-ink)]' },
+  { label: 'SHADOW', value: 'Operational', tone: 'text-[color:var(--restricted-ink)]' },
+  { label: 'Validation Status', value: 'Stable', tone: 'text-[color:var(--cleared-ink)]' },
 ];
 
 const workspaces = [

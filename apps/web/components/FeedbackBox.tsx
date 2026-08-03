@@ -96,7 +96,7 @@ export default function FeedbackBox() {
         onClick={toggle}
         aria-expanded={isOpen}
         aria-controls={panelId}
-        className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-1 text-[11px] font-mono text-[var(--black)] transition hover:bg-[var(--olive-dark)] hover:text-[var(--white)]"
+        className="btn btn--ghost px-[var(--s4)] text-[length:var(--t-xs)]"
       >
         Tell Us
       </button>
@@ -104,34 +104,34 @@ export default function FeedbackBox() {
       {isOpen ? (
         <div
           id={panelId}
-          className="absolute right-0 z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-4 shadow-[var(--shadow-md)]"
+          className="absolute right-0 z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] border border-[color:rgba(212,175,74,.28)] mat-leather p-4 shadow-[var(--shadow-md)]"
         >
-          <h2 className="font-display text-lg tracking-tight text-[var(--black)]">Tell us anything</h2>
-          <p className="mt-1 text-xs leading-5 text-[var(--gray-dark)]">
+          <h2 className="font-display text-lg tracking-tight">Tell us anything</h2>
+          <p className="mt-1 text-xs leading-5 opacity-80">
             What is broken, what is annoying, what you wish this did, or anything else on your mind.
           </p>
 
           {acknowledgement ? (
             <div className="mt-4 space-y-3">
-              <p className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-3 text-sm leading-6 text-[var(--black)]">
+              <p className="border border-[color:rgba(212,175,74,.28)] mat-leather p-3 text-sm leading-6">
                 {acknowledgement}
               </p>
               <button
                 type="button"
                 onClick={() => setAcknowledgement('')}
-                className="min-h-[44px] w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--black)]"
+                className="min-h-[44px] w-full border border-[color:rgba(212,175,74,.28)] mat-leather px-3 text-xs font-bold uppercase tracking-[0.08em]"
               >
                 Say something else
               </button>
             </div>
           ) : (
             <div className="mt-3 space-y-3">
-              <label className="block text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--gray-dark)]">
+              <label className="block text-[11px] font-mono uppercase tracking-[0.14em] opacity-80">
                 This is about
                 <select
                   value={kind}
                   onChange={(event) => setKind(event.target.value)}
-                  className="mt-1 h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-2 text-sm normal-case tracking-normal text-[var(--black)]"
+                  className="mt-1 h-11 w-full border border-[color:rgba(212,175,74,.28)] mat-leather px-2 text-sm normal-case tracking-normal"
                 >
                   {FEEDBACK_KINDS.map((item) => (
                     <option key={item.value} value={item.value}>
@@ -141,26 +141,26 @@ export default function FeedbackBox() {
                 </select>
               </label>
 
-              <label className="block text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--gray-dark)]">
+              <label className="block text-[11px] font-mono uppercase tracking-[0.14em] opacity-80">
                 In your own words
                 <textarea
                   value={text}
                   maxLength={BODY_MAX_LENGTH}
                   onChange={(event) => setText(event.target.value)}
                   placeholder="Type it however it comes out."
-                  className="mt-1 h-32 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-2 text-sm normal-case tracking-normal text-[var(--black)]"
+                  className="mt-1 h-32 w-full border border-[color:rgba(212,175,74,.28)] mat-leather px-3 py-2 text-sm normal-case tracking-normal"
                 />
               </label>
 
               {errorMessage ? (
-                <p className="text-sm font-semibold text-[var(--red-primary)]">{errorMessage}</p>
+                <p className="text-sm font-semibold text-[color:var(--brass-600)]">{errorMessage}</p>
               ) : null}
 
               <button
                 type="button"
                 disabled={isSending || !text.trim()}
                 onClick={() => void send()}
-                className="min-h-[44px] w-full border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[var(--white)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="min-h-[44px] w-full border border-[color:rgba(212,175,74,.28)] btn px-4 text-sm font-black uppercase tracking-[0.12em] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isSending ? 'Sending...' : 'Send'}
               </button>
