@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { requireRole } from '@/src/server/pilot/access';
-import { createOrUpdateAthleteAccount } from '@/src/server/pilot/auth';
+import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
+import { createAthleteAccountPendingActivation } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import type { PilotRole } from '@/src/server/pilot/contracts';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
@@ -17,7 +17,19 @@ function assertSupportedCreateRole(role: string): role is 'athlete' {
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['platform_owner']);
+
+    // Athlete credentials sit outside the platform-owner tier, the same
+    // boundary session revocation, PIN reset and the PIN directory hold: Omega
+    // gathers data and supports organization admins rather than holding the
+    // keys to a child's account.
+    //
+    // This route admitted only the platform owner, and `organization_id` comes
+    // from the request body rather than the session -- so the one role the rule
+    // excludes was the only role that could reach it, in any gym it named.
+    requireRole(principal, ['organization_admin']);
+    if (!isOrganizationAdminRole(principal.role)) {
+      throw new Error('Forbidden: role not allowed');
+    }
 
     const body = (await request.json()) as {
       organization_id?: string;
@@ -27,13 +39,23 @@ export async function POST(request: NextRequest) {
       athlete_id?: string;
     };
 
-    const organizationId = body.organization_id?.trim() || '';
+    // The gym comes from the session, never from the request. A body-supplied
+    // organization_id is how this route reached across gyms; an admin acts in
+    // their own gym and nowhere else. A caller naming a different one is
+    // refused rather than silently redirected, so a wrong integration fails
+    // loudly instead of writing somewhere unexpected.
+    const organizationId = principal.organizationId;
+    const requestedOrganizationId = body.organization_id?.trim() || '';
+    if (requestedOrganizationId && requestedOrganizationId !== organizationId) {
+      throw new Error('Forbidden: organization_id does not match the session');
+    }
+
     const accountId = body.account_id?.trim() || '';
     const role = body.role?.trim() || '';
     const athleteId = body.athlete_id?.trim() || '';
 
-    if (!organizationId || !accountId || !role) {
-      throw new Error('Missing organization_id, account_id, or role');
+    if (!accountId || !role) {
+      throw new Error('Missing account_id or role');
     }
 
     if (!assertSupportedCreateRole(role)) {
@@ -44,7 +66,12 @@ export async function POST(request: NextRequest) {
       throw new Error('Missing athlete_id for athlete role');
     }
 
-    await createOrUpdateAthleteAccount(accountId, athleteId, organizationId);
+    // Create-only. The upsert this used to call nulls pin_hash, clears
+    // active_flag and revokes every session when the account already exists --
+    // so a replayed request locked a child out of their own account. Issuing
+    // new credentials to an existing athlete is the PIN reset console's job,
+    // and it says so.
+    await createAthleteAccountPendingActivation(accountId, athleteId, organizationId);
 
     // Each of the create/rotate functions above already assigns the
     // matching organization membership atomically alongside the account

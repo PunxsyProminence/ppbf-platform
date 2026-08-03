@@ -894,6 +894,46 @@ export default function AdminCapabilitiesPage() {
                   VIDEO UPLOAD
                 </Link>
               )}
+              {/*
+                The same defect the VIDEO UPLOAD comment above describes,
+                repeated three times by the change that shipped these consoles.
+                /admin/athletes, /admin/export and /coach/drills were reachable
+                only by typing the URL -- no navigation anywhere in the app
+                pointed at any of them.
+
+                Two of the three are the floor-readiness surfaces: correcting an
+                athlete's record before a real roster is loaded, and handing a
+                family their own information back. Built for the pilot, and
+                findable by nobody in it.
+
+                Gated on the same organization-admin check for the same reason:
+                every route behind them refuses platform_owner, and a link that
+                403s is worse than no link.
+              */}
+              {canManagePeople && (
+                <Link
+                  href="/admin/athletes"
+                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[#2a1a1a]"
+                >
+                  ATHLETE RECORDS
+                </Link>
+              )}
+              {canManagePeople && (
+                <Link
+                  href="/admin/export"
+                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[#2a1a1a]"
+                >
+                  EXPORT
+                </Link>
+              )}
+              {canManagePeople && (
+                <Link
+                  href="/coach/drills"
+                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[#2a1a1a]"
+                >
+                  DRILL LIBRARY
+                </Link>
+              )}
               <Link
                 href="/operations"
                 className="inline-flex h-11 items-center border border-[color:var(--hide-600)] bg-[var(--hide-900)] px-4 text-[length:var(--t-sm)] font-bold text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)]"

@@ -682,6 +682,54 @@ export async function createOrUpdateAthleteAccount(
   }
 }
 
+/**
+ * Create an athlete account awaiting activation, and refuse if one already
+ * exists.
+ *
+ * createOrUpdateAthleteAccount is an upsert, and its update branch is
+ * destructive by design: it nulls pin_hash, clears active_flag and revokes
+ * every session, which is right for a deliberate credential reset and wrong for
+ * anything called "create". A replayed or repeated create would lock a child
+ * out of their own account with no operator intending it.
+ *
+ * The existence check runs inside the same transaction as the insert, so two
+ * concurrent creates cannot both pass it. Intake promotion keeps the upsert --
+ * re-running a review there is meant to re-provision.
+ */
+export async function createAthleteAccountPendingActivation(
+  accountId: string,
+  athleteId: string,
+  organizationId: string,
+): Promise<void> {
+  await withTransaction(async (client) => {
+    const existing = await client.query<{ organization_id: string }>(
+      'select organization_id from pilot.accounts where account_id = $1 limit 1',
+      [accountId],
+    );
+
+    if (existing.rows.length > 0) {
+      // Same message either way. Which gym holds an account id is not
+      // something a caller who does not already have it should learn here.
+      throw new Error('Account already exists');
+    }
+
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner)
+       values ($1, 'athlete', $2, $3, null, false, false)`,
+      [accountId, organizationId, athleteId],
+    );
+    await client.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+       values ($1, $2, 'athlete', false)
+       on conflict (account_id, organization_id) do update
+         set role = 'athlete',
+             active_flag = false,
+             updated_at = now()`,
+      [accountId, organizationId],
+    );
+  });
+}
+
 // The three constructors below write local PIN accounts for privileged roles.
 // Every account they produce is unusable: loginWithAccountIdAndPin admits only
 // 'athlete', and resolvePrincipal revokes on sight any live session belonging
@@ -925,6 +973,25 @@ export async function setOrganizationStatus(
       );
     }
   });
+}
+
+/**
+ * The role an account holds in a gym, or null if it holds none there.
+ *
+ * Used to keep the platform tier off athlete accounts. A platform owner
+ * suspending a compromised staff account is legitimate cross-gym operation; a
+ * platform owner deactivating a child and revoking their sessions is the thing
+ * the PIN directory, PIN reset and revoke routes all already refuse.
+ */
+export async function getAccountRoleInOrganization(
+  accountId: string,
+  organizationId: string,
+): Promise<PilotRole | null> {
+  const rows = await query<{ role: PilotRole }>(
+    'select role from pilot.accounts where account_id = $1 and organization_id = $2 limit 1',
+    [accountId, organizationId],
+  );
+  return rows.length > 0 ? rows[0].role : null;
 }
 
 export async function setAccountActiveStatus(accountId: string, organizationId: string, activeFlag: boolean): Promise<void> {
