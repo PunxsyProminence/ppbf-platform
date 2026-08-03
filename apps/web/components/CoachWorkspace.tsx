@@ -106,16 +106,16 @@ interface CoachPainReport {
 }
 
 function readinessDotClass(readiness: Athlete['readiness']): string {
-  if (readiness === 'GREEN') return 'bg-green-500';
-  if (readiness === 'YELLOW') return 'bg-yellow-500';
-  if (readiness === 'RED') return 'bg-red-500';
-  return 'bg-gray-500';
+  if (readiness === 'GREEN') return 'bg-[var(--cleared)]';
+  if (readiness === 'YELLOW') return 'bg-[var(--restricted)]';
+  if (readiness === 'RED') return 'bg-[var(--locked)]';
+  return 'bg-[var(--hide-600)]';
 }
 
 function priorityTone(priority: CoachTask['priority']): string {
-  if (priority === 'High') return 'bg-red-900 text-red-200';
-  if (priority === 'Normal') return 'bg-yellow-900 text-yellow-200';
-  return 'bg-blue-900 text-blue-200';
+  if (priority === 'High') return 'bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] text-[color:var(--locked-ink)]';
+  if (priority === 'Normal') return 'bg-[color-mix(in_srgb,var(--restricted)_22%,var(--hide-950))] text-[color:var(--restricted-ink)]';
+  return 'bg-[color-mix(in_srgb,var(--monitor)_22%,var(--hide-950))] text-[color:var(--monitor-ink)]';
 }
 
 function taskStatusTone(status: CoachTask['status']): string {
@@ -125,15 +125,15 @@ function taskStatusTone(status: CoachTask['status']): string {
 }
 
 function readinessBadgeTone(readiness: Athlete['readiness']): string {
-  if (readiness === 'GREEN') return 'bg-green-900 text-green-200';
-  if (readiness === 'YELLOW') return 'bg-yellow-900 text-yellow-200';
-  if (readiness === 'RED') return 'bg-red-900 text-red-200';
-  return 'bg-gray-800 text-gray-300';
+  if (readiness === 'GREEN') return 'bg-[color-mix(in_srgb,var(--cleared)_22%,var(--hide-950))] text-[color:var(--cleared-ink)]';
+  if (readiness === 'YELLOW') return 'bg-[color-mix(in_srgb,var(--restricted)_22%,var(--hide-950))] text-[color:var(--restricted-ink)]';
+  if (readiness === 'RED') return 'bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] text-[color:var(--locked-ink)]';
+  return 'bg-[var(--hide-900)] text-[color:var(--bone-300)]';
 }
 
 function painSeverityTone(severity: CoachPainReport['severity']): string {
-  if (severity === 'critical') return 'bg-red-700 text-white';
-  if (severity === 'high') return 'bg-red-900 text-red-100';
+  if (severity === 'critical') return 'bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] text-white';
+  if (severity === 'high') return 'bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] text-[color:var(--locked-ink)]';
   return 'bg-[var(--brass-800)] text-[var(--paper-2)]';
 }
 
@@ -644,9 +644,9 @@ export default function CoachWorkspace() {
           )}
 
           {!painReportsLoading && painReportsError && (
-            <div className="border-2 border-red-600 bg-red-900/20 p-3">
-              <p className="text-sm font-semibold text-red-400">{painReportsError}</p>
-              <p className="mt-1 text-xs text-red-300">
+            <div className="border-2 border-[var(--locked)] bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))]/20 p-3">
+              <p className="text-sm font-semibold text-[color:var(--locked-ink)]">{painReportsError}</p>
+              <p className="mt-1 text-xs text-[color:var(--locked-ink)]">
                 Pain reports may exist that are not shown here. Do not read this as &quot;no athlete
                 reported pain&quot; -- ask the floor.
               </p>
@@ -966,18 +966,18 @@ export default function CoachWorkspace() {
                   )}
                   
                   {athletesError && !athletesLoading && (
-                    <div className="border-2 border-red-600 bg-red-900/20 p-3 rounded">
+                    <div className="border-2 border-[var(--locked)] bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))]/20 p-3 rounded">
                       <div className="flex items-center justify-between mb-1">
-                        <p className="text-red-400 text-sm font-semibold">Error loading athletes</p>
+                        <p className="text-[color:var(--locked-ink)] text-sm font-semibold">Error loading athletes</p>
                         <button
                           onClick={() => void loadAthletes()}
-                          className="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition"
+                          className="px-2 py-0.5 bg-[var(--locked)] hover:bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] text-white text-xs font-semibold uppercase transition"
                           aria-label="Retry loading athletes"
                         >
                           Retry
                         </button>
                       </div>
-                      <p className="text-red-300 text-xs">{athletesError}</p>
+                      <p className="text-[color:var(--locked-ink)] text-xs">{athletesError}</p>
                     </div>
                   )}
                   
@@ -1010,7 +1010,7 @@ export default function CoachWorkspace() {
                           <span className="text-xs text-[color:var(--bone-400)]">{athlete.attendance}</span>
                         </div>
                         {athlete.injuryFlag && (
-                          <p className="text-xs text-red-400 mt-1">🚨 Injury flag active</p>
+                          <p className="text-xs text-[color:var(--locked-ink)] mt-1">🚨 Injury flag active</p>
                         )}
                       </button>
                     ))}
@@ -1061,19 +1061,19 @@ export default function CoachWorkspace() {
               />
 
               {floorPlansError ? (
-                <div className="border-2 border-red-600 bg-red-900/20 p-3 rounded">
+                <div className="border-2 border-[var(--locked)] bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))]/20 p-3 rounded">
                   <div className="flex items-center justify-between mb-1">
-                    <p className="text-red-400 text-sm font-semibold">Error loading athlete floor plans</p>
+                    <p className="text-[color:var(--locked-ink)] text-sm font-semibold">Error loading athlete floor plans</p>
                     <button
                       onClick={() => void loadFloorPlans()}
-                      className="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition"
+                      className="px-2 py-0.5 bg-[var(--locked)] hover:bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] text-white text-xs font-semibold uppercase transition"
                       aria-label="Retry loading athlete floor plans"
                     >
                       Retry
                     </button>
                   </div>
-                  <p className="text-red-300 text-xs">{floorPlansError}</p>
-                  <p className="text-red-300 text-xs mt-1">Plans may exist that are not shown here. Do not read this as an empty queue.</p>
+                  <p className="text-[color:var(--locked-ink)] text-xs">{floorPlansError}</p>
+                  <p className="text-[color:var(--locked-ink)] text-xs mt-1">Plans may exist that are not shown here. Do not read this as an empty queue.</p>
                 </div>
               ) : athleteFloorPlans.length === 0 ? (
                 <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6">
@@ -1100,7 +1100,7 @@ export default function CoachWorkspace() {
                           <div key={task.id} className="border border-[color:var(--hide-500)] bg-[var(--hide-950)] p-3">
                             <div className="flex items-center justify-between gap-2">
                               <p className="text-sm font-semibold text-[color:var(--bone-200)]">{task.title}</p>
-                              <span className={`text-[11px] font-semibold px-2 py-1 rounded ${task.priority === 'High' ? 'bg-red-900 text-red-200' : 'bg-yellow-900 text-yellow-200'}`}>
+                              <span className={`text-[11px] font-semibold px-2 py-1 rounded ${task.priority === 'High' ? 'bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] text-[color:var(--locked-ink)]' : 'bg-[color-mix(in_srgb,var(--restricted)_22%,var(--hide-950))] text-[color:var(--restricted-ink)]'}`}>
                                 {task.priority}
                               </span>
                             </div>
@@ -1309,18 +1309,18 @@ export default function CoachWorkspace() {
               />
 
               {shadowQueueUnavailable && (
-                <div className="border-2 border-red-600 bg-red-900/20 p-3 rounded">
+                <div className="border-2 border-[var(--locked)] bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))]/20 p-3 rounded">
                   <div className="flex items-center justify-between mb-1">
-                    <p className="text-red-400 text-sm font-semibold">Unable to load the SHADOW review queue</p>
+                    <p className="text-[color:var(--locked-ink)] text-sm font-semibold">Unable to load the SHADOW review queue</p>
                     <button
                       onClick={() => void loadShadowData()}
-                      className="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition flex-shrink-0"
+                      className="px-2 py-0.5 bg-[var(--locked)] hover:bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] text-white text-xs font-semibold uppercase transition flex-shrink-0"
                       aria-label="Retry loading the SHADOW review queue"
                     >
                       Retry
                     </button>
                   </div>
-                  <p className="text-red-300 text-xs">This board is incomplete. Open review items may exist that are not listed below.</p>
+                  <p className="text-[color:var(--locked-ink)] text-xs">This board is incomplete. Open review items may exist that are not listed below.</p>
                 </div>
               )}
 
@@ -1330,7 +1330,7 @@ export default function CoachWorkspace() {
                 )}
                 {coachTasks.map(task => (
                   <div key={task.id} className={`border-2 p-4 rounded ${
-                    task.status === 'Completed' ? 'bg-[var(--cleared-deep)]/30 border-green-700' : 'bg-[var(--hide-900)] border-[color:var(--brass-700)]'
+                    task.status === 'Completed' ? 'bg-[var(--cleared-deep)]/30 border-[var(--cleared)]' : 'bg-[var(--hide-900)] border-[color:var(--brass-700)]'
                   }`}>
                     <div className="flex justify-between items-start mb-2">
                       <div>
@@ -1406,12 +1406,12 @@ export default function CoachWorkspace() {
               </div>
 
               {shadowReadError ? (
-                <div className="border-2 border-red-600 bg-red-900/20 p-3 rounded">
+                <div className="border-2 border-[var(--locked)] bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))]/20 p-3 rounded">
                   <div className="flex items-center justify-between">
-                    <p className="text-red-400 text-sm font-semibold">{shadowReadError}</p>
+                    <p className="text-[color:var(--locked-ink)] text-sm font-semibold">{shadowReadError}</p>
                     <button
                       onClick={() => void loadShadowData()}
-                      className="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition flex-shrink-0"
+                      className="px-2 py-0.5 bg-[var(--locked)] hover:bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] text-white text-xs font-semibold uppercase transition flex-shrink-0"
                       aria-label="Retry loading SHADOW queue"
                     >
                       Retry

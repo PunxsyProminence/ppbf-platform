@@ -177,9 +177,9 @@ function getReadinessLevel(readinessToTrain: number): ReadinessLevel {
 }
 
 function getGoalStatusTone(status: GoalStatus): string {
-  if (status === 'Active') return 'bg-blue-900 text-blue-200';
-  if (status === 'Completed') return 'bg-green-900 text-green-200';
-  return 'bg-yellow-900 text-yellow-200';
+  if (status === 'Active') return 'bg-[color-mix(in_srgb,var(--monitor)_22%,var(--hide-950))] text-[color:var(--monitor-ink)]';
+  if (status === 'Completed') return 'bg-[color-mix(in_srgb,var(--cleared)_22%,var(--hide-950))] text-[color:var(--cleared-ink)]';
+  return 'bg-[color-mix(in_srgb,var(--restricted)_22%,var(--hide-950))] text-[color:var(--restricted-ink)]';
 }
 
 function formatDueTime(checkInAt: Date, offsetMinutes: number): string {
@@ -1525,7 +1525,7 @@ export default function AthleteWorkspace() {
                       type="button"
                       onClick={() => void handleCheckOut()}
                       disabled={isCheckingOut}
-                      className="w-full bg-red-700 hover:bg-red-800 text-white font-semibold py-2 px-4 transition disabled:opacity-50"
+                      className="w-full bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] hover:bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] text-white font-semibold py-2 px-4 transition disabled:opacity-50"
                     >
                       {isCheckingOut ? 'Checking out...' : 'Check Out'}
                     </button>
@@ -1603,21 +1603,21 @@ export default function AthleteWorkspace() {
               )}
 
               {tasksError && !tasksLoading && (
-                <div className="border-2 border-red-600 bg-red-900/20 p-4 rounded">
+                <div className="border-2 border-[var(--locked)] bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))]/20 p-4 rounded">
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-red-400 font-semibold">Error loading tasks</p>
+                    <p className="text-[color:var(--locked-ink)] font-semibold">Error loading tasks</p>
                     <button
                       onClick={() => {
                         setTasksError(null);
                         void loadFloorTasks();
                       }}
-                      className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition"
+                      className="px-3 py-1 bg-[var(--locked)] hover:bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] text-white text-xs font-semibold uppercase transition"
                       aria-label="Retry loading tasks"
                     >
                       Retry
                     </button>
                   </div>
-                  <p className="text-red-300 text-sm">{tasksError}</p>
+                  <p className="text-[color:var(--locked-ink)] text-sm">{tasksError}</p>
                 </div>
               )}
 
@@ -1648,7 +1648,7 @@ export default function AthleteWorkspace() {
                     <p className="text-sm text-[color:var(--bone-400)] mb-3">{task.description}</p>
                     <div className="flex items-center justify-between text-xs text-[color:var(--bone-400)]">
                       <span>⏰ {task.dueDate}</span>
-                      <span className={`font-semibold ${task.priority === 'High' ? 'text-red-400' : 'text-yellow-600'}`}>
+                      <span className={`font-semibold ${task.priority === 'High' ? 'text-[color:var(--locked-ink)]' : 'text-[color:var(--restricted-deep)]'}`}>
                         {task.priority}
                       </span>
                     </div>
@@ -1754,21 +1754,21 @@ export default function AthleteWorkspace() {
               )}
 
               {goalsError && !goalsLoading && (
-                <div className="border-2 border-red-600 bg-red-900/20 p-4 rounded">
+                <div className="border-2 border-[var(--locked)] bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))]/20 p-4 rounded">
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-red-400 font-semibold">Error loading goals</p>
+                    <p className="text-[color:var(--locked-ink)] font-semibold">Error loading goals</p>
                     <button
                       onClick={() => {
                         setGoalsError(null);
                         void loadGoals();
                       }}
-                      className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition"
+                      className="px-3 py-1 bg-[var(--locked)] hover:bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] text-white text-xs font-semibold uppercase transition"
                       aria-label="Retry loading goals"
                     >
                       Retry
                     </button>
                   </div>
-                  <p className="text-red-300 text-sm">{goalsError}</p>
+                  <p className="text-[color:var(--locked-ink)] text-sm">{goalsError}</p>
                 </div>
               )}
 
@@ -2050,11 +2050,11 @@ export default function AthleteWorkspace() {
               {/* No parent notification exists anywhere in the messaging path --
                   no recipient, address, or delivery step is stored or sent --
                   so this surface cannot claim parent CC is in force. */}
-              <div className="border-2 border-red-600 bg-red-900/20 p-4 space-y-2">
+              <div className="border-2 border-[var(--locked)] bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))]/20 p-4 space-y-2">
                 <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked-ink)]">
                   PLANNED | NOT YET IMPLEMENTED
                 </p>
-                <p className="text-sm text-red-200">🔒 <strong>SafeSport:</strong> messages sent here are logged, but automatic parent carbon copy is not built yet and no coach is notified. Tell a coach or trusted adult in person about anything urgent or unsafe.</p>
+                <p className="text-sm text-[color:var(--locked-ink)]">🔒 <strong>SafeSport:</strong> messages sent here are logged, but automatic parent carbon copy is not built yet and no coach is notified. Tell a coach or trusted adult in person about anything urgent or unsafe.</p>
               </div>
 
               <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4">
@@ -2165,21 +2165,21 @@ export default function AthleteWorkspace() {
                 </div>
               </div>
 
-              <div className="bg-yellow-900/20 border-2 border-yellow-700 p-4 text-sm">
-                <p className="text-yellow-200"><strong>Note:</strong> SHADOW cannot answer questions about other athletes, board operations, financial data, or provide medical/legal advice.</p>
+              <div className="bg-[color-mix(in_srgb,var(--restricted)_22%,var(--hide-950))]/20 border-2 border-[var(--restricted)] p-4 text-sm">
+                <p className="text-[color:var(--restricted-ink)]"><strong>Note:</strong> SHADOW cannot answer questions about other athletes, board operations, financial data, or provide medical/legal advice.</p>
               </div>
 
               <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4">
                 <h3 className="font-mono text-xs font-bold uppercase tracking-[0.08em] text-[color:var(--brass-300)]">SHADOW Observation Projection</h3>
                 {shadowObservationError ? (
-                  <div className="mt-2 border border-red-600 bg-red-900/20 p-2 rounded flex items-center justify-between">
-                    <p className="text-xs text-red-400 flex-1">{shadowObservationError}</p>
+                  <div className="mt-2 border border-[var(--locked)] bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))]/20 p-2 rounded flex items-center justify-between">
+                    <p className="text-xs text-[color:var(--locked-ink)] flex-1">{shadowObservationError}</p>
                     <button
                       onClick={() => {
                         setShadowObservationError('');
                         void loadShadowObservations();
                       }}
-                      className="ml-2 px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition flex-shrink-0"
+                      className="ml-2 px-2 py-1 bg-[var(--locked)] hover:bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] text-white text-xs font-semibold uppercase transition flex-shrink-0"
                       aria-label="Retry loading SHADOW observations"
                     >
                       Retry

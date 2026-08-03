@@ -84,14 +84,14 @@ interface ParentResource {
 }
 
 function assignmentCardTone(status: HomeAssignment['status']): string {
-  if (status === 'Completed') return 'bg-green-900/20 border-green-700';
-  if (status === 'In Progress') return 'bg-yellow-900/20 border-yellow-700';
+  if (status === 'Completed') return 'bg-[color-mix(in_srgb,var(--cleared)_22%,var(--hide-950))]/20 border-[var(--cleared)]';
+  if (status === 'In Progress') return 'bg-[color-mix(in_srgb,var(--restricted)_22%,var(--hide-950))]/20 border-[var(--restricted)]';
   return 'bg-[var(--hide-900)] border-[color:var(--brass-700)]';
 }
 
 function assignmentBadgeTone(status: HomeAssignment['status']): string {
-  if (status === 'Completed') return 'bg-green-900 text-green-200';
-  if (status === 'In Progress') return 'bg-yellow-900 text-yellow-200';
+  if (status === 'Completed') return 'bg-[color-mix(in_srgb,var(--cleared)_22%,var(--hide-950))] text-[color:var(--cleared-ink)]';
+  if (status === 'In Progress') return 'bg-[color-mix(in_srgb,var(--restricted)_22%,var(--hide-950))] text-[color:var(--restricted-ink)]';
   return 'bg-[var(--hide-600)] text-[color:var(--bone-400)]';
 }
 
@@ -172,15 +172,15 @@ export default function ParentHub() {
   const activeProgressMilestones = progressMilestones.filter((item) => item.childId === activeChildId);
 
   function milestoneStatusTone(status: ProgressMilestone['status']): string {
-    if (status === 'Achieved') return 'border-green-700 bg-green-900/20 text-green-200';
-    if (status === 'Needs Work') return 'border-yellow-700 bg-yellow-900/20 text-yellow-200';
+    if (status === 'Achieved') return 'border-[var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_22%,var(--hide-950))]/20 text-[color:var(--cleared-ink)]';
+    if (status === 'Needs Work') return 'border-[var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_22%,var(--hide-950))]/20 text-[color:var(--restricted-ink)]';
     return 'border-[color:var(--brass-700)] bg-[var(--hide-900)] text-[color:var(--bone-200)]';
   }
 
   function attendanceStatusTone(status: AttendanceEntry['status']): string {
-    if (status === 'Present') return 'text-green-300';
-    if (status === 'Excused') return 'text-yellow-300';
-    return 'text-red-300';
+    if (status === 'Present') return 'text-[color:var(--cleared-ink)]';
+    if (status === 'Excused') return 'text-[color:var(--restricted-ink)]';
+    return 'text-[color:var(--locked-ink)]';
   }
 
   return (
@@ -259,21 +259,21 @@ export default function ParentHub() {
         )}
         
         {childrenError && !childrenLoading && (
-          <div className="border-2 border-red-600 bg-red-900/20 p-3 rounded">
+          <div className="border-2 border-[var(--locked)] bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))]/20 p-3 rounded">
             <div className="flex items-center justify-between mb-1">
-              <p className="text-red-400 text-sm font-semibold">Error loading children</p>
+              <p className="text-[color:var(--locked-ink)] text-sm font-semibold">Error loading children</p>
               <button
                 onClick={() => {
                   setChildrenError(null);
                   setChildrenRetryNonce((value) => value + 1);
                 }}
-                className="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition"
+                className="px-2 py-0.5 bg-[var(--locked)] hover:bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] text-white text-xs font-semibold uppercase transition"
                 aria-label="Retry loading children"
               >
                 Retry
               </button>
             </div>
-            <p className="text-red-300 text-xs">{childrenError}</p>
+            <p className="text-[color:var(--locked-ink)] text-xs">{childrenError}</p>
           </div>
         )}
         
@@ -415,7 +415,7 @@ export default function ParentHub() {
                       <div>
                         <p className="text-xs text-[color:var(--bone-400)] block mb-1">Attendance</p>
                         {activeChild.attendancePercent !== null ? (
-                          <p className="text-base font-semibold text-green-400">{activeChild.attendancePercent}%</p>
+                          <p className="text-base font-semibold text-[color:var(--cleared-ink)]">{activeChild.attendancePercent}%</p>
                         ) : (
                           <p className="text-base font-semibold">Unavailable - not yet tracked</p>
                         )}
