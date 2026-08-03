@@ -921,7 +921,7 @@ export default function CoachWorkspace() {
                 {/* Session Status */}
                 <div className={ui.panelSpaced}>
                   <h3 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">Today&apos;s Session</h3>
-                  <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked)]">
+                  <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked-ink)]">
                     PLANNED | NOT YET IMPLEMENTED
                   </p>
                   <p className="text-xs text-[color:var(--bone-400)]">
@@ -1138,7 +1138,7 @@ export default function CoachWorkspace() {
 
               <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4">
                 <h3 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">Session Workout Plan</h3>
-                <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked)]">
+                <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked-ink)]">
                   PLANNED | NOT YET IMPLEMENTED
                 </p>
                 <p className="text-xs text-[color:var(--bone-400)]">
@@ -1205,7 +1205,7 @@ export default function CoachWorkspace() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4">
                   <h3 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">Current Certifications</h3>
-                  <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked)]">
+                  <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked-ink)]">
                     PLANNED | NOT YET IMPLEMENTED
                   </p>
                   <p className="text-sm text-[color:var(--bone-400)]">
@@ -1217,7 +1217,7 @@ export default function CoachWorkspace() {
 
                 <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4">
                   <h3 className="font-mono text-sm font-bold uppercase text-[color:var(--brass-300)]">Development Topics</h3>
-                  <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked)]">
+                  <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked-ink)]">
                     PLANNED | NOT YET IMPLEMENTED
                   </p>
                   <p className="text-sm text-[color:var(--bone-400)]">
@@ -1261,7 +1261,7 @@ export default function CoachWorkspace() {
                 ]}
               />
 
-              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked)]">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked-ink)]">
                 PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for coach goals yet, so this section
                 is always empty.
               </p>

@@ -25,7 +25,13 @@
      materials, but that is a per-surface material choice, not a user toggle. */
   --canvas-tan: var(--canvas-warm);
   --canvas-tan-light: var(--paper);
-  --canvas-tan-dark: var(--hide-600);
+  /* Was --hide-600 (#4A3728), which is a leather tone rather than a darker
+     cream. Every caller reads the name as "the tan, a shade down" and pairs
+     it with dark type, so /public rendered --black on it at 1.68:1 -- the
+     contrast sweep found this, and the mapping is the cause rather than any
+     one page. --paper-2 is the actual darker paper in the ramp and is what
+     the name promises. */
+  --canvas-tan-dark: var(--paper-2);
 
   --olive-dark: var(--patina-900);
   --black: var(--hide-950);
