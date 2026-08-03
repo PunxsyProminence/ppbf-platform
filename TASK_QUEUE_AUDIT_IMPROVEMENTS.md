@@ -79,25 +79,22 @@ These are correctness/safety issues for the Participant Master Record capability
 **Priority:** HIGH (correctness)  
 **Effort:** 1-2 hours  
 **Risk:** Low - only affects auth boundary
+**Status:** ✅ COMPLETED (commit f9c573f) - Option A: Restrict to org-admin only
 
-**Option A (Recommended):** Restrict to org-admin only
-- [ ] Change `apps/web/app/api/pilot/athletes/route.ts` line 14
+**Implementation:**
+- [x] Changed `apps/web/app/api/pilot/athletes/route.ts` line 14
   - From: `requireRole(principal, ['organization_admin', 'coach'])`
   - To: `requireRole(principal, ['organization_admin'])`
-- [ ] Add test: org-admin can create, coach cannot
-- [ ] Add UI note: "Only organization admins can add athletes to the roster"
+  - Added clarifying comment: roster creation is admin responsibility
+- [x] Updated tests: coach now correctly rejected with 403 Forbidden
+  - Test `rejects a coach attempting to create an athlete` verifies restriction
+  - Org-admin path still works: `creates a roster row for an athlete_id that is not yet taken`
+- [x] Added UI note in People tab: "Only organization admins can add athletes to the roster"
+- [x] Updated DEEP_IMPROVEMENT_AUDIT_CAPABILITY_2.md with decision
 
-**Option B (If coaches should create):** Document and test both paths
-- [ ] Add inline comment explaining coach scope: "Coaches can create athletes assigned only to themselves (enforced by line 19-21)"
-- [ ] Add test: coach can create self-assigned; cannot create assigned to other coach
-- [ ] Add integration test verifying coach restriction
-- [ ] Update UI copy: "You can add athletes assigned to you"
+**Decision Rationale:** Roster creation is fundamentally an admin responsibility. Coaches manage assignments within the existing roster but don't control who gets added to the system. This prevents scope creep and maintains clear authorization boundaries.
 
-- [ ] Decide A or B and document decision in code comment
-- [ ] Add test case covering chosen path
-- [ ] Update DEEP_IMPROVEMENT_AUDIT_CAPABILITY_2.md with decision
-
-**Acceptance:** Decision documented; tests verify chosen behavior
+**Acceptance:** ✅ Decision documented; tests verify only org-admin can create
 
 ---
 
@@ -285,10 +282,10 @@ These improve observability and UX polish.
 | Priority | Count | Effort | Status |
 |----------|-------|--------|--------|
 | P0 Security | 6 | — | ✅ Implemented |
-| P0 Capability | 4 | 8-13 hrs | 🟡 1/4 Complete |
+| P0 Capability | 4 | 8-13 hrs | 🟡 2/4 Complete |
 | P1 Improvements | 5 | 8-12 hrs | 🔴 Not Started |
 | P2 Polish | 4 | 6-8 hrs | 🔴 Not Started |
-| **Total** | **19** | **22-33 hrs** | **1 Complete** |
+| **Total** | **19** | **22-33 hrs** | **2 Complete** |
 
 ---
 
