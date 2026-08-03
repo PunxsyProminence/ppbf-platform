@@ -853,9 +853,9 @@ export default function AdminCapabilitiesPage() {
         <header className="border-b-4 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-6 py-4">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <p className="text-[12px] font-mono uppercase tracking-[0.16em] text-[color:var(--brass-300)]">PPBF ADMIN AUTHORITY CONSOLE</p>
-              <h1 className="mt-2 font-display text-[32px] font-black tracking-tight text-[color:var(--bone-100)]">Capability Management Console</h1>
-              <p className="mt-2 max-w-4xl text-[16px] leading-7 text-[color:var(--bone-300)]">
+              <p className="text-[length:var(--t-xs)] font-mono uppercase tracking-[0.16em] text-[color:var(--brass-300)]">PPBF ADMIN AUTHORITY CONSOLE</p>
+              <h1 className="mt-2 font-display text-[length:var(--t-xl)] font-black tracking-tight text-[color:var(--bone-100)]">Capability Management Console</h1>
+              <p className="mt-2 max-w-4xl text-[length:var(--t-sm)] leading-7 text-[color:var(--bone-300)]">
                 Control capability definitions, assignments, status, and role exposure across the PPBF ecosystem.
               </p>
             </div>
@@ -864,14 +864,14 @@ export default function AdminCapabilitiesPage() {
               {canManagePeople && (
                 <Link
                   href="/admin/people"
-                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--rust-700)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--rust-500)]"
+                  className="btn"
                 >
                   PEOPLE
                 </Link>
               )}
               <Link
                 href="/admin/shadow"
-                className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--rust-700)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--rust-500)]"
+                className="btn"
               >
                 SHADOW
               </Link>
@@ -889,35 +889,35 @@ export default function AdminCapabilitiesPage() {
               {canManagePeople && (
                 <Link
                   href="/coach/video-analysis"
-                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--hide-800)]"
+                  className="btn btn--ghost"
                 >
                   VIDEO UPLOAD
                 </Link>
               )}
               <Link
                 href="/operations"
-                className="inline-flex h-11 items-center border border-[color:var(--hide-600)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)]"
+                className="inline-flex h-11 items-center border border-[color:var(--hide-600)] bg-[var(--hide-900)] px-4 text-[length:var(--t-sm)] font-bold text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)]"
               >
                 MISSION CONTROL
               </Link>
               {canOpenComplianceCenter && (
                 <Link
                   href="/admin/compliance-center"
-                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--brass-300)] transition hover:bg-[var(--hide-800)]"
+                  className="btn btn--ghost"
                 >
                   COMPLIANCE CENTER (PLANNED)
                 </Link>
               )}
               <Link
                 href="/admin/organizations"
-                className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--hide-800)]"
+                className="btn btn--ghost"
               >
                 ORGANIZATION PROVISIONING
               </Link>
               <button
                 type="button"
                 onClick={exportCapabilities}
-                className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-950)] px-4 text-[14px] font-bold text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)]"
+                className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-950)] px-4 text-[length:var(--t-sm)] font-bold text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)]"
               >
                 EXPORT JSON
               </button>
@@ -925,12 +925,12 @@ export default function AdminCapabilitiesPage() {
           </div>
         </header>
 
-        <section className="border-b border-[color:var(--hide-600)] bg-[var(--hide-900)] px-6 py-3 text-[14px] text-[color:var(--bone-400)]">
+        <section className="border-b border-[color:var(--hide-600)] bg-[var(--hide-900)] px-6 py-3 text-[length:var(--t-sm)] text-[color:var(--bone-400)]">
           Capability, assignment, and gym feature changes are saved to your organization&apos;s record as you make them. Jason approval is still required for platform-wide changes.
         </section>
 
         {(capabilityStoreError || gymCapabilityStoreError) && (
-          <section role="alert" className="border-b border-[color:var(--brass-700)] bg-[var(--rust-900)] px-6 py-3 text-[14px] text-[var(--locked-ink)]">
+          <section role="alert" className="border-b border-[color:var(--brass-700)] bg-[var(--rust-900)] px-6 py-3 text-[length:var(--t-sm)] text-[var(--locked-ink)]">
             {capabilityStoreError && <p>{capabilityStoreError}</p>}
             {gymCapabilityStoreError && <p className={capabilityStoreError ? 'mt-1' : undefined}>{gymCapabilityStoreError}</p>}
           </section>
@@ -947,8 +947,8 @@ export default function AdminCapabilitiesPage() {
               { label: 'ARCHIVED', value: dashboardCounts.archived },
             ].map((card) => (
               <article key={card.label} className="border border-[color:var(--hide-700)] bg-[var(--hide-950)] px-4 py-4">
-                <p className="text-[12px] font-mono uppercase tracking-[0.16em] text-[color:var(--brass-300)]">{card.label}</p>
-                <p className="mt-2 text-[30px] font-black text-[color:var(--bone-100)]">{card.value}</p>
+                <p className="text-[length:var(--t-xs)] font-mono uppercase tracking-[0.16em] text-[color:var(--brass-300)]">{card.label}</p>
+                <p className="mt-2 text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{card.value}</p>
               </article>
             ))}
           </section>
@@ -968,9 +968,9 @@ export default function AdminCapabilitiesPage() {
                   setActiveTab(tab.id as TabKey);
                   logTrace('tab changed', tab.label);
                 }}
-                className={`h-11 border px-4 text-[14px] font-bold ${
+                className={`h-11 border px-4 text-[length:var(--t-sm)] font-bold ${
                   activeTab === tab.id
-                    ? 'border-[color:var(--brass-700)] bg-[var(--rust-700)] text-[color:var(--bone-100)]'
+                    ? 'border-[color:var(--brass-700)] bg-[var(--accent-strong)] text-[color:var(--accent-ink)]'
                     : 'border-[color:var(--hide-700)] bg-[var(--hide-900)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-700)]'
                 }`}
               >
@@ -981,11 +981,11 @@ export default function AdminCapabilitiesPage() {
 
           {activeTab === 'overview' && (
             <section className="grid gap-6">
-              <article className="border border-[color:var(--brass-700)] bg-[var(--hide-950)] p-6">
+              <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <h2 className="text-[24px] font-bold text-[color:var(--bone-100)]">Tutorial Access</h2>
-                    <p className="mt-2 text-[14px] leading-6 text-[var(--bone-400)]">
+                    <h2 className="text-[length:var(--t-lg)] font-bold text-[color:var(--bone-100)]">Tutorial Access</h2>
+                    <p className="t-body mt-[var(--s3)]">
                       Open the full tutorial center from this button when needed. Tutorial cards are no longer rendered inline in Admin.
                     </p>
                   </div>
@@ -993,83 +993,83 @@ export default function AdminCapabilitiesPage() {
                 </div>
               </article>
 
-              <article className="border border-[color:var(--hide-700)] bg-[var(--hide-950)] p-6">
-                <h2 className="text-[20px] font-bold text-[color:var(--bone-100)]">Operational Overview</h2>
+              <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Operational Overview</h2>
                 <div className="mt-4 grid gap-4 lg:grid-cols-2">
                   <div className="space-y-3">
-                    <h3 className="text-[18px] font-semibold text-[color:var(--bone-100)]">Recently Updated Capabilities</h3>
+                    <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Recently Updated Capabilities</h3>
                     {recentlyUpdated.map((capability) => (
-                      <div key={capability.id} className="border border-[var(--hide-800)] bg-[var(--hide-900)] px-4 py-3">
-                        <p className="text-[16px] font-semibold text-[color:var(--bone-100)]">{capability.capabilityId} - {capability.name}</p>
-                        <p className="text-[14px] text-[var(--bone-400)]">{capability.group} • {capability.status}</p>
+                      <div key={capability.id} className="border border-[var(--hide-700)] bg-[var(--hide-900)] px-4 py-3">
+                        <p className="t-command">{capability.capabilityId} - {capability.name}</p>
+                        <p className="t-muted">{capability.group} • {capability.status}</p>
                       </div>
                     ))}
                   </div>
 
                   <div className="space-y-3">
-                    <h3 className="text-[18px] font-semibold text-[color:var(--bone-100)]">Role Exposure Snapshot</h3>
+                    <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Role Exposure Snapshot</h3>
                     {roleExposureSnapshot.map((item) => (
-                      <div key={item.role} className="flex items-center justify-between border border-[var(--hide-800)] bg-[var(--hide-900)] px-4 py-3">
-                        <p className="text-[16px] text-[color:var(--bone-100)]">{item.role}</p>
-                        <p className="text-[16px] font-bold text-[color:var(--brass-300)]">{item.count}</p>
+                      <div key={item.role} className="flex items-center justify-between border border-[var(--hide-700)] bg-[var(--hide-900)] px-4 py-3">
+                        <p className="text-[length:var(--t-sm)] text-[color:var(--bone-100)]">{item.role}</p>
+                        <p className="text-[length:var(--t-sm)] font-bold text-[color:var(--brass-300)]">{item.count}</p>
                       </div>
                     ))}
                   </div>
                 </div>
               </article>
 
-              <article className="border border-[color:var(--hide-700)] bg-[var(--hide-950)] p-6">
-                <h2 className="text-[20px] font-bold text-[color:var(--bone-100)]">Workload Buckets</h2>
+              <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Workload Buckets</h2>
                 <div className="mt-4 grid gap-4 md:grid-cols-3">
-                  <div className="border border-[var(--hide-800)] bg-[var(--hide-900)] p-4">
-                    <p className="text-[18px] font-semibold text-[color:var(--bone-100)]">Capabilities Missing Assignments</p>
-                    <p className="mt-2 text-[28px] font-black text-[color:var(--brass-300)]">{missingAssignments.length}</p>
+                  <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                    <p className="t-command">Capabilities Missing Assignments</p>
+                    <p className="t-command--brass mt-[var(--s3)] t-command">{missingAssignments.length}</p>
                   </div>
-                  <div className="border border-[var(--hide-800)] bg-[var(--hide-900)] p-4">
-                    <p className="text-[18px] font-semibold text-[color:var(--bone-100)]">Capabilities Pending Review</p>
-                    <p className="mt-2 text-[28px] font-black text-[color:var(--brass-300)]">{pendingReview.length}</p>
+                  <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                    <p className="t-command">Capabilities Pending Review</p>
+                    <p className="t-command--brass mt-[var(--s3)] t-command">{pendingReview.length}</p>
                   </div>
-                  <div className="border border-[var(--hide-800)] bg-[var(--hide-900)] p-4">
-                    <p className="text-[18px] font-semibold text-[color:var(--bone-100)]">Capabilities Marked Draft</p>
-                    <p className="mt-2 text-[28px] font-black text-[color:var(--brass-300)]">{draftCapabilities.length}</p>
+                  <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                    <p className="t-command">Capabilities Marked Draft</p>
+                    <p className="t-command--brass mt-[var(--s3)] t-command">{draftCapabilities.length}</p>
                   </div>
                 </div>
               </article>
 
-              <article className="border border-[color:var(--brass-700)] bg-[var(--hide-950)] p-6">
-                <h2 className="text-[20px] font-bold text-[color:var(--bone-100)]">Critical Missing Capability Front-End Surfaces</h2>
-                <p className="mt-2 text-[14px] leading-6 text-[var(--bone-400)]">
+              <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Critical Missing Capability Front-End Surfaces</h2>
+                <p className="t-body mt-[var(--s3)]">
                   PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED
                 </p>
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  <Link href="/public" className="inline-flex min-h-[44px] items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-3 text-[13px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--hide-800)]">
+                  <Link href="/public" className="btn btn--ghost">
                     Edit Public Page Surface
                   </Link>
-                  <Link href="/login" className="inline-flex min-h-[44px] items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-3 text-[13px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--hide-800)]">
+                  <Link href="/login" className="btn btn--ghost">
                     Manage Login Announcements
                   </Link>
                   {canOpenComplianceCenter && (
-                    <Link href="/admin/compliance-center" className="inline-flex min-h-[44px] items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-3 text-[13px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--hide-800)]">
+                    <Link href="/admin/compliance-center" className="btn btn--ghost">
                       Automated Compliance Monitoring Surface
                     </Link>
                   )}
-                  <Link href="/source-control/publication-workflow" className="inline-flex min-h-[44px] items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-3 text-[13px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--hide-800)]">
+                  <Link href="/source-control/publication-workflow" className="btn btn--ghost">
                     Automated Publication Workflow Surface
                   </Link>
                 </div>
               </article>
 
-              <article className="border border-[color:var(--brass-700)] bg-[var(--hide-950)] p-6">
+              <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <h2 className="text-[20px] font-bold text-[color:var(--bone-100)]">Capability On/Off Switchboard</h2>
-                    <p className="mt-2 text-[14px] leading-6 text-[var(--bone-400)]">
+                    <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Capability On/Off Switchboard</h2>
+                    <p className="t-body mt-[var(--s3)]">
                       Turn platform capabilities on or off, then mirror the same access for gym admins you hand capabilities to.
                     </p>
                   </div>
                   <Link
                     href="/admin/organizations"
-                    className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[13px] font-bold text-[color:var(--brass-300)] transition hover:bg-[var(--hide-800)]"
+                    className="btn btn--ghost"
                   >
                     Open Gym Admin Provisioning
                   </Link>
@@ -1077,22 +1077,22 @@ export default function AdminCapabilitiesPage() {
 
                 <div className="mt-5 grid gap-4 lg:grid-cols-2">
                   <div className="space-y-3">
-                    <p className="text-[14px] font-semibold uppercase tracking-[0.12em] text-[color:var(--brass-300)]">Platform Control</p>
+                    <p className="t-eyebrow">Platform Control</p>
                     {switchboardCapabilities.map((capability) => {
                       const isOn = capability.status === 'ACTIVE';
                       return (
-                        <div key={capability.id} className="flex items-center justify-between gap-3 border border-[var(--hide-800)] bg-[var(--hide-900)] px-4 py-3">
+                        <div key={capability.id} className="flex items-center justify-between gap-3 border border-[var(--hide-700)] bg-[var(--hide-900)] px-4 py-3">
                           <div>
-                            <p className="text-[16px] font-semibold text-[color:var(--bone-100)]">{capability.capabilityId} - {capability.name}</p>
-                            <p className="text-[13px] text-[var(--bone-400)]">{capability.group} • {capability.status}</p>
+                            <p className="t-command">{capability.capabilityId} - {capability.name}</p>
+                            <p className="text-[length:var(--t-xs)] text-[var(--bone-400)]">{capability.group} • {capability.status}</p>
                           </div>
                           <button
                             type="button"
                             onClick={() => setCapabilityStatus(capability.id, isOn ? 'BLOCKED' : 'ACTIVE')}
-                            className={`inline-flex min-h-[44px] items-center rounded-full border px-4 text-[12px] font-bold uppercase tracking-[0.12em] transition ${
+                            className={`inline-flex min-h-[44px] items-center rounded-full border px-4 text-[length:var(--t-xs)] font-bold uppercase tracking-[0.12em] transition ${
                               isOn
-                                ? 'border-[color:var(--brass-700)] bg-[var(--rust-700)] text-[color:var(--bone-100)]'
-                                : 'border-[var(--hide-800)] bg-[var(--hide-900)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-700)]'
+                                ? 'border-[color:var(--brass-700)] bg-[var(--accent-strong)] text-[color:var(--accent-ink)]'
+                                : 'border-[var(--hide-700)] bg-[var(--hide-900)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-700)]'
                             }`}
                           >
                             {isOn ? 'On' : 'Off'}
@@ -1103,25 +1103,25 @@ export default function AdminCapabilitiesPage() {
                   </div>
 
                   <div className="space-y-3">
-                    <p className="text-[14px] font-semibold uppercase tracking-[0.12em] text-[color:var(--brass-300)]">Gym Admin Access</p>
-                    <p className="text-[14px] leading-6 text-[var(--bone-400)]">
+                    <p className="t-eyebrow">Gym Admin Access</p>
+                    <p className="text-[length:var(--t-sm)] leading-6 text-[var(--bone-400)]">
                       Grant a gym admin the same capability access, then let them flip it on or off inside their organization.
                     </p>
                     {switchboardCapabilities.map((capability) => {
                       const allowed = !!gymCapabilityAccess[capability.capabilityId];
                       return (
-                        <div key={capability.capabilityId} className="flex items-center justify-between gap-3 border border-[var(--hide-800)] bg-[var(--hide-900)] px-4 py-3">
+                        <div key={capability.capabilityId} className="flex items-center justify-between gap-3 border border-[var(--hide-700)] bg-[var(--hide-900)] px-4 py-3">
                           <div>
-                            <p className="text-[16px] font-semibold text-[color:var(--bone-100)]">{capability.capabilityId}</p>
-                            <p className="text-[13px] text-[var(--bone-400)]">Gym admins can {allowed ? 'toggle this capability' : 'not yet toggle this capability'}.</p>
+                            <p className="t-command">{capability.capabilityId}</p>
+                            <p className="text-[length:var(--t-xs)] text-[var(--bone-400)]">Gym admins can {allowed ? 'toggle this capability' : 'not yet toggle this capability'}.</p>
                           </div>
                           <button
                             type="button"
                             onClick={() => toggleGymCapabilityAccess(capability.capabilityId)}
-                            className={`inline-flex min-h-[44px] items-center rounded-full border px-4 text-[12px] font-bold uppercase tracking-[0.12em] transition ${
+                            className={`inline-flex min-h-[44px] items-center rounded-full border px-4 text-[length:var(--t-xs)] font-bold uppercase tracking-[0.12em] transition ${
                               allowed
-                                ? 'border-[color:var(--brass-700)] bg-[var(--rust-700)] text-[color:var(--bone-100)]'
-                                : 'border-[var(--hide-800)] bg-[var(--hide-900)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-700)]'
+                                ? 'border-[color:var(--brass-700)] bg-[var(--accent-strong)] text-[color:var(--accent-ink)]'
+                                : 'border-[var(--hide-700)] bg-[var(--hide-900)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-700)]'
                             }`}
                           >
                             {allowed ? 'Enabled' : 'Disabled'}
@@ -1133,21 +1133,21 @@ export default function AdminCapabilitiesPage() {
                 </div>
               </article>
 
-              <article className="border border-[color:var(--brass-700)] bg-[var(--hide-950)] p-6">
-                <h2 className="text-[20px] font-bold text-[color:var(--bone-100)]">FRONT-END TRACK ASSIGNMENT PREVIEW</h2>
-                <p className="mt-2 text-[14px] leading-6 text-[var(--bone-400)]">
+              <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>FRONT-END TRACK ASSIGNMENT PREVIEW</h2>
+                <p className="t-body mt-[var(--s3)]">
                   Active Track Assignments are displayed here in preview mode for capability planning and role exposure checks.
                 </p>
                 <div className="mt-4 grid gap-4 lg:grid-cols-[300px_1fr]">
                   <div>
-                    <label className="mb-2 block text-[14px] font-semibold text-[color:var(--bone-300)]" htmlFor="athleteProfile">
+                    <label className="t-label mb-[var(--s3)] block" htmlFor="athleteProfile">
                       Active athlete profile
                     </label>
                     <select
                       id="athleteProfile"
                       value={selectedAthleteId}
                       onChange={(event) => setSelectedAthleteId(event.target.value)}
-                      className="h-11 w-full border border-[color:var(--hide-700)] bg-[var(--hide-950)] px-3 text-[16px] text-[color:var(--bone-100)]"
+                      className="input"
                     >
                       {athleteProfiles.map((profile) => (
                         <option key={profile.id} value={profile.id}>
@@ -1165,18 +1165,18 @@ export default function AdminCapabilitiesPage() {
                           key={trackId}
                           type="button"
                           onClick={() => toggleTrackAssignment(trackId)}
-                          className={`grid gap-2 border px-4 py-4 text-left ${
+                          className={`grid gap-[var(--s3)] rounded-[var(--r-md)] border px-[var(--s4)] py-[var(--s4)] text-left ${
                             assigned
-                              ? 'border-[color:var(--brass-700)] bg-[var(--hide-800)] text-[color:var(--bone-100)]'
-                              : 'border-[var(--hide-800)] bg-[var(--hide-900)] text-[color:var(--bone-300)]'
+                              ? 'mat-leather--raised border-[color:var(--brass-400)] bg-[rgba(212,175,74,.07)] text-[color:var(--bone-100)]'
+                              : 'mat-leather border-[color:var(--hide-700)] text-[color:var(--bone-300)]'
                           }`}
                         >
-                          <span className="text-[18px] font-semibold">{trackManifests[trackId].name}</span>
-                          <span className="text-[14px]">Assigned Capabilities: {TRACK_CAPABILITY_PREVIEW[trackId].length} preview mapped</span>
-                          <span className="text-[14px]">Assigned Roles: Athlete / Coach</span>
-                          <span className="text-[14px]">Status: {assigned ? 'Assigned' : 'Unassigned'}</span>
-                          <span className="text-[14px]">Review Needed: {assigned ? 'No' : 'Yes'}</span>
-                          <span className="text-[14px] text-[var(--bone-400)]">{TRACK_CAPABILITY_PREVIEW[trackId].join(', ')}</span>
+                          <span className="text-[length:var(--t-md)] font-semibold">{trackManifests[trackId].name}</span>
+                          <span className="text-[length:var(--t-sm)]">Assigned Capabilities: {TRACK_CAPABILITY_PREVIEW[trackId].length} preview mapped</span>
+                          <span className="text-[length:var(--t-sm)]">Assigned Roles: Athlete / Coach</span>
+                          <span className="text-[length:var(--t-sm)]">Status: {assigned ? 'Assigned' : 'Unassigned'}</span>
+                          <span className="text-[length:var(--t-sm)]">Review Needed: {assigned ? 'No' : 'Yes'}</span>
+                          <span className="t-muted">{TRACK_CAPABILITY_PREVIEW[trackId].join(', ')}</span>
                         </button>
                       );
                     })}
@@ -1188,8 +1188,8 @@ export default function AdminCapabilitiesPage() {
 
           {activeTab === 'library' && (
             <section className="space-y-5">
-              <article className="border border-[color:var(--hide-700)] bg-[var(--hide-950)] p-6">
-                <h2 className="text-[20px] font-bold text-[color:var(--bone-100)]">Capability Library</h2>
+              <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Capability Library</h2>
                 <div className="mt-4 grid gap-3 lg:grid-cols-3">
                   <input
                     value={searchQuery}
@@ -1198,7 +1198,7 @@ export default function AdminCapabilitiesPage() {
                       logTrace('capability searched', event.target.value || '(cleared)');
                     }}
                     placeholder="SEARCH CAPABILITIES"
-                    className="h-11 border border-[color:var(--hide-700)] bg-[var(--hide-950)] px-3 text-[16px] text-[color:var(--bone-100)]"
+                    className="input"
                   />
 
                   <select
@@ -1207,7 +1207,7 @@ export default function AdminCapabilitiesPage() {
                       setFilterRole(event.target.value as 'ALL' | RoleName);
                       logTrace('filter changed', `Role: ${event.target.value}`);
                     }}
-                    className="h-11 border border-[color:var(--hide-700)] bg-[var(--hide-950)] px-3 text-[16px] text-[color:var(--bone-100)]"
+                    className="input"
                   >
                     <option value="ALL">Role: ALL</option>
                     {ROLE_OPTIONS.map((role) => (
@@ -1223,7 +1223,7 @@ export default function AdminCapabilitiesPage() {
                       setFilterCategory(event.target.value);
                       logTrace('filter changed', `Category: ${event.target.value}`);
                     }}
-                    className="h-11 border border-[color:var(--hide-700)] bg-[var(--hide-950)] px-3 text-[16px] text-[color:var(--bone-100)]"
+                    className="input"
                   >
                     {categoryOptions.map((category) => (
                       <option key={category} value={category}>
@@ -1238,7 +1238,7 @@ export default function AdminCapabilitiesPage() {
                       setFilterStatus(event.target.value as 'ALL' | CapabilityStatus);
                       logTrace('filter changed', `Status: ${event.target.value}`);
                     }}
-                    className="h-11 border border-[color:var(--hide-700)] bg-[var(--hide-950)] px-3 text-[16px] text-[color:var(--bone-100)]"
+                    className="input"
                   >
                     <option value="ALL">Status: ALL</option>
                     <option value="DRAFT">Status: DRAFT</option>
@@ -1253,7 +1253,7 @@ export default function AdminCapabilitiesPage() {
                       setFilterOwner(event.target.value);
                       logTrace('filter changed', `Owner: ${event.target.value}`);
                     }}
-                    className="h-11 border border-[color:var(--hide-700)] bg-[var(--hide-950)] px-3 text-[16px] text-[color:var(--bone-100)]"
+                    className="input"
                   >
                     {ownerOptions.map((owner) => (
                       <option key={owner} value={owner}>
@@ -1268,7 +1268,7 @@ export default function AdminCapabilitiesPage() {
                       setFilterVisibility(event.target.value as 'ALL' | CapabilityVisibility);
                       logTrace('filter changed', `Visibility: ${event.target.value}`);
                     }}
-                    className="h-11 border border-[color:var(--hide-700)] bg-[var(--hide-950)] px-3 text-[16px] text-[color:var(--bone-100)]"
+                    className="input"
                   >
                     <option value="ALL">Visibility: ALL</option>
                     <option value="Internal">Visibility: Internal</option>
@@ -1282,7 +1282,7 @@ export default function AdminCapabilitiesPage() {
                       setFilterAssignment(event.target.value as AssignmentFilter);
                       logTrace('filter changed', `Assignment: ${event.target.value}`);
                     }}
-                    className="h-11 border border-[color:var(--hide-700)] bg-[var(--hide-950)] px-3 text-[16px] text-[color:var(--bone-100)]"
+                    className="input"
                   >
                     <option value="all">Assigned/Unassigned: ALL</option>
                     <option value="assigned">Assigned only</option>
@@ -1291,21 +1291,21 @@ export default function AdminCapabilitiesPage() {
                 </div>
               </article>
 
-              <article className="border border-[color:var(--hide-700)] bg-[var(--hide-950)] p-0">
-                <div className="divide-y divide-[var(--hide-800)] lg:hidden">
+              <article className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] p-0">
+                <div className="divide-y divide-[var(--hide-700)] lg:hidden">
                   {filteredCapabilities.map((capability) => {
                     const expanded = expandedCapabilityId === capability.id;
                     const assignmentFocused = assignmentFocusId === capability.id;
                     return (
                       <div key={capability.id} className="space-y-3 px-4 py-4">
                         <div className="space-y-2">
-                          <p className="text-[13px] font-mono uppercase tracking-[0.1em] text-[color:var(--brass-300)]">{capability.capabilityId}</p>
-                          <h3 className="text-[18px] font-bold text-[color:var(--bone-100)]">{capability.name}</h3>
-                          <p className="text-[14px] text-[var(--bone-400)]">Last updated: {formatDateLabel(capability.updatedAt)}</p>
-                          <p className="text-[14px] text-[color:var(--bone-300)]">Category: {capability.group}</p>
-                          <p className="text-[14px] text-[color:var(--bone-300)]">Roles: {capability.assignedRoles.length > 0 ? capability.assignedRoles.join(', ') : 'Unassigned'}</p>
-                          <p className="text-[14px] text-[color:var(--bone-300)]">Status: {capability.status} | Visibility: {capability.visibility}</p>
-                          <p className="text-[14px] text-[color:var(--bone-300)]">Owner: {capability.owner}</p>
+                          <p className="text-[length:var(--t-xs)] font-mono uppercase tracking-[0.1em] text-[color:var(--brass-300)]">{capability.capabilityId}</p>
+                          <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>{capability.name}</h3>
+                          <p className="t-muted">Last updated: {formatDateLabel(capability.updatedAt)}</p>
+                          <p className="t-body">Category: {capability.group}</p>
+                          <p className="t-body">Roles: {capability.assignedRoles.length > 0 ? capability.assignedRoles.join(', ') : 'Unassigned'}</p>
+                          <p className="t-body">Status: {capability.status} | Visibility: {capability.visibility}</p>
+                          <p className="t-body">Owner: {capability.owner}</p>
                         </div>
 
                         <div className="flex flex-wrap gap-2">
@@ -1315,14 +1315,14 @@ export default function AdminCapabilitiesPage() {
                               setExpandedCapabilityId(expanded ? null : capability.id);
                               logTrace('capability viewed', capability.capabilityId);
                             }}
-                            className="h-11 border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-3 text-[12px] font-bold text-[color:var(--bone-300)]"
+                            className="btn btn--ghost"
                           >
                             VIEW
                           </button>
                           <button
                             type="button"
                             onClick={() => beginEdit(capability)}
-                            className="h-11 border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-3 text-[12px] font-bold text-[color:var(--bone-300)]"
+                            className="btn btn--ghost"
                           >
                             EDIT
                           </button>
@@ -1333,28 +1333,28 @@ export default function AdminCapabilitiesPage() {
                               setAssignmentFocusId(capability.id);
                               logTrace('capability assigned', `Open assignment panel for ${capability.capabilityId}`);
                             }}
-                            className="h-11 border border-[color:var(--brass-700)] bg-[var(--hide-800)] px-3 text-[12px] font-bold text-[color:var(--bone-100)]"
+                            className="btn btn--ghost"
                           >
                             ASSIGN
                           </button>
                           <button
                             type="button"
                             onClick={() => setCapabilityStatus(capability.id, 'ARCHIVED')}
-                            className="h-11 border border-[color:var(--brass-700)] bg-[var(--hide-800)] px-3 text-[12px] font-bold text-[color:var(--bone-100)]"
+                            className="btn btn--ghost"
                           >
                             ARCHIVE
                           </button>
                         </div>
 
                         {expanded && (
-                          <div className="border border-[var(--hide-800)] bg-[var(--hide-900)] px-4 py-4">
-                            <p className="text-[16px] text-[color:var(--bone-300)]">{capability.description}</p>
-                            <p className="mt-2 text-[14px] text-[var(--bone-400)]">Dependencies: {capability.dependencies || 'None listed'}</p>
-                            <p className="mt-1 text-[14px] text-[var(--bone-400)]">Notes: {capability.notes || 'No additional notes'}</p>
+                          <div className="border border-[var(--hide-700)] bg-[var(--hide-900)] px-4 py-4">
+                            <p className="t-body">{capability.description}</p>
+                            <p className="mt-2 text-[length:var(--t-sm)] text-[var(--bone-400)]">Dependencies: {capability.dependencies || 'None listed'}</p>
+                            <p className="mt-1 text-[length:var(--t-sm)] text-[var(--bone-400)]">Notes: {capability.notes || 'No additional notes'}</p>
 
                             {assignmentFocused && (
                               <div className="mt-4 space-y-2">
-                                <p className="text-[14px] font-semibold uppercase tracking-[0.12em] text-[color:var(--brass-300)]">Role Assignment Controls</p>
+                                <p className="t-eyebrow">Role Assignment Controls</p>
                                 <div className="flex flex-wrap gap-2">
                                   {ROLE_OPTIONS.map((role) => {
                                     const assigned = capability.assignedRoles.includes(role);
@@ -1363,9 +1363,9 @@ export default function AdminCapabilitiesPage() {
                                         key={role}
                                         type="button"
                                         onClick={() => toggleCapabilityRole(capability.id, role)}
-                                        className={`h-11 border px-3 text-[13px] font-bold ${
+                                        className={`h-11 border px-3 text-[length:var(--t-xs)] font-bold ${
                                           assigned
-                                            ? 'border-[color:var(--brass-700)] bg-[var(--rust-700)] text-[color:var(--bone-100)]'
+                                            ? 'border-[color:var(--brass-700)] bg-[var(--accent-strong)] text-[color:var(--accent-ink)]'
                                             : 'border-[color:var(--hide-700)] bg-[var(--hide-900)] text-[color:var(--bone-300)]'
                                         }`}
                                       >
@@ -1382,28 +1382,28 @@ export default function AdminCapabilitiesPage() {
                               <button
                                 type="button"
                                 onClick={() => setCapabilityStatus(capability.id, 'DRAFT')}
-                                className="h-11 border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-3 text-[13px] font-bold text-[color:var(--bone-300)]"
+                                className="btn btn--ghost"
                               >
                                 SET DRAFT
                               </button>
                               <button
                                 type="button"
                                 onClick={() => setCapabilityStatus(capability.id, 'ACTIVE')}
-                                className="h-11 border border-[color:var(--brass-700)] bg-[var(--rust-700)] px-3 text-[13px] font-bold text-[color:var(--bone-100)]"
+                                className="btn"
                               >
                                 SET ACTIVE
                               </button>
                               <button
                                 type="button"
                                 onClick={() => setCapabilityStatus(capability.id, 'BLOCKED')}
-                                className="h-11 border border-[color:var(--brass-700)] bg-[var(--hide-800)] px-3 text-[13px] font-bold text-[color:var(--bone-100)]"
+                                className="btn btn--ghost"
                               >
                                 SET BLOCKED
                               </button>
                               <button
                                 type="button"
                                 onClick={() => removeCapability(capability.id)}
-                                className="h-11 border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-3 text-[13px] font-bold text-[color:var(--bone-100)]"
+                                className="btn btn--danger"
                               >
                                 DELETE
                               </button>
@@ -1417,7 +1417,7 @@ export default function AdminCapabilitiesPage() {
 
                 <div className="hidden overflow-x-auto lg:block">
                   <div className="min-w-[1260px]">
-                    <div className="grid grid-cols-[100px_minmax(200px,1.3fr)_minmax(160px,1fr)_minmax(150px,1fr)_120px_130px_150px_170px] gap-2 border-b border-[color:var(--hide-700)] bg-[var(--hide-950)] px-4 py-3 text-[14px] font-semibold text-[color:var(--bone-300)]">
+                    <div className="grid grid-cols-[100px_minmax(200px,1.3fr)_minmax(160px,1fr)_minmax(150px,1fr)_120px_130px_150px_170px] gap-2 border-b border-[color:var(--hide-700)] bg-[var(--hide-900)] px-4 py-3 text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-300)]">
                       <span>ID</span>
                       <span>Capability</span>
                       <span>Category</span>
@@ -1428,17 +1428,17 @@ export default function AdminCapabilitiesPage() {
                       <span>Actions</span>
                     </div>
 
-                    <div className="divide-y divide-[var(--hide-800)]">
+                    <div className="divide-y divide-[var(--hide-700)]">
                   {filteredCapabilities.map((capability) => {
                     const expanded = expandedCapabilityId === capability.id;
                     const assignmentFocused = assignmentFocusId === capability.id;
                     return (
-                      <div key={capability.id} className="bg-[var(--hide-950)]">
-                        <div className="grid grid-cols-[100px_minmax(200px,1.3fr)_minmax(160px,1fr)_minmax(150px,1fr)_120px_130px_150px_170px] gap-2 px-4 py-3 text-[14px] text-[color:var(--bone-100)]">
+                      <div key={capability.id} className="bg-[var(--hide-900)]">
+                        <div className="grid grid-cols-[100px_minmax(200px,1.3fr)_minmax(160px,1fr)_minmax(150px,1fr)_120px_130px_150px_170px] gap-2 px-4 py-3 text-[length:var(--t-sm)] text-[color:var(--bone-100)]">
                           <span>{capability.capabilityId}</span>
                           <span>
-                            <strong className="block text-[16px]">{capability.name}</strong>
-                            <span className="text-[14px] text-[var(--bone-400)]">Last updated: {formatDateLabel(capability.updatedAt)}</span>
+                            <strong className="block text-[length:var(--t-sm)]">{capability.name}</strong>
+                            <span className="t-muted">Last updated: {formatDateLabel(capability.updatedAt)}</span>
                           </span>
                           <span>{capability.group}</span>
                           <span>{capability.assignedRoles.length > 0 ? capability.assignedRoles.join(', ') : 'Unassigned'}</span>
@@ -1452,14 +1452,14 @@ export default function AdminCapabilitiesPage() {
                                 setExpandedCapabilityId(expanded ? null : capability.id);
                                 logTrace('capability viewed', capability.capabilityId);
                               }}
-                              className="h-11 border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-2 text-[12px] font-bold text-[color:var(--bone-300)]"
+                              className="h-11 border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-2 text-[length:var(--t-xs)] font-bold text-[color:var(--bone-300)]"
                             >
                               VIEW
                             </button>
                             <button
                               type="button"
                               onClick={() => beginEdit(capability)}
-                              className="h-11 border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-2 text-[12px] font-bold text-[color:var(--bone-300)]"
+                              className="h-11 border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-2 text-[length:var(--t-xs)] font-bold text-[color:var(--bone-300)]"
                             >
                               EDIT
                             </button>
@@ -1470,14 +1470,14 @@ export default function AdminCapabilitiesPage() {
                                 setAssignmentFocusId(capability.id);
                                 logTrace('capability assigned', `Open assignment panel for ${capability.capabilityId}`);
                               }}
-                              className="h-11 border border-[color:var(--brass-700)] bg-[var(--hide-800)] px-2 text-[12px] font-bold text-[color:var(--bone-100)]"
+                              className="btn btn--ghost"
                             >
                               ASSIGN
                             </button>
                             <button
                               type="button"
                               onClick={() => setCapabilityStatus(capability.id, 'ARCHIVED')}
-                              className="h-11 border border-[color:var(--brass-700)] bg-[var(--hide-800)] px-2 text-[12px] font-bold text-[color:var(--bone-100)]"
+                              className="btn btn--ghost"
                             >
                               ARCHIVE
                             </button>
@@ -1485,14 +1485,14 @@ export default function AdminCapabilitiesPage() {
                         </div>
 
                         {expanded && (
-                          <div className="border-t border-[var(--hide-800)] bg-[var(--hide-900)] px-4 py-4">
-                            <p className="text-[16px] text-[color:var(--bone-300)]">{capability.description}</p>
-                            <p className="mt-2 text-[14px] text-[var(--bone-400)]">Dependencies: {capability.dependencies || 'None listed'}</p>
-                            <p className="mt-1 text-[14px] text-[var(--bone-400)]">Notes: {capability.notes || 'No additional notes'}</p>
+                          <div className="border-t border-[var(--hide-700)] bg-[var(--hide-900)] px-4 py-4">
+                            <p className="t-body">{capability.description}</p>
+                            <p className="mt-2 text-[length:var(--t-sm)] text-[var(--bone-400)]">Dependencies: {capability.dependencies || 'None listed'}</p>
+                            <p className="mt-1 text-[length:var(--t-sm)] text-[var(--bone-400)]">Notes: {capability.notes || 'No additional notes'}</p>
 
                             {assignmentFocused && (
                               <div className="mt-4 space-y-2">
-                                <p className="text-[14px] font-semibold uppercase tracking-[0.12em] text-[color:var(--brass-300)]">Role Assignment Controls</p>
+                                <p className="t-eyebrow">Role Assignment Controls</p>
                                 <div className="flex flex-wrap gap-2">
                                   {ROLE_OPTIONS.map((role) => {
                                     const assigned = capability.assignedRoles.includes(role);
@@ -1501,9 +1501,9 @@ export default function AdminCapabilitiesPage() {
                                         key={role}
                                         type="button"
                                         onClick={() => toggleCapabilityRole(capability.id, role)}
-                                        className={`h-11 border px-3 text-[13px] font-bold ${
+                                        className={`h-11 border px-3 text-[length:var(--t-xs)] font-bold ${
                                           assigned
-                                            ? 'border-[color:var(--brass-700)] bg-[var(--rust-700)] text-[color:var(--bone-100)]'
+                                            ? 'border-[color:var(--brass-700)] bg-[var(--accent-strong)] text-[color:var(--accent-ink)]'
                                             : 'border-[color:var(--hide-700)] bg-[var(--hide-900)] text-[color:var(--bone-300)]'
                                         }`}
                                       >
@@ -1520,28 +1520,28 @@ export default function AdminCapabilitiesPage() {
                               <button
                                 type="button"
                                 onClick={() => setCapabilityStatus(capability.id, 'DRAFT')}
-                                className="h-11 border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-3 text-[13px] font-bold text-[color:var(--bone-300)]"
+                                className="btn btn--ghost"
                               >
                                 SET DRAFT
                               </button>
                               <button
                                 type="button"
                                 onClick={() => setCapabilityStatus(capability.id, 'ACTIVE')}
-                                className="h-11 border border-[color:var(--brass-700)] bg-[var(--rust-700)] px-3 text-[13px] font-bold text-[color:var(--bone-100)]"
+                                className="btn"
                               >
                                 SET ACTIVE
                               </button>
                               <button
                                 type="button"
                                 onClick={() => setCapabilityStatus(capability.id, 'BLOCKED')}
-                                className="h-11 border border-[color:var(--brass-700)] bg-[var(--hide-800)] px-3 text-[13px] font-bold text-[color:var(--bone-100)]"
+                                className="btn btn--ghost"
                               >
                                 SET BLOCKED
                               </button>
                               <button
                                 type="button"
                                 onClick={() => removeCapability(capability.id)}
-                                className="h-11 border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-3 text-[13px] font-bold text-[color:var(--bone-100)]"
+                                className="btn btn--danger"
                               >
                                 DELETE
                               </button>
@@ -1560,8 +1560,8 @@ export default function AdminCapabilitiesPage() {
 
           {activeTab === 'matrix' && (
             <section className="space-y-5">
-              <article className="border border-[color:var(--hide-700)] bg-[var(--hide-950)] p-6">
-                <h2 className="text-[20px] font-bold text-[color:var(--bone-100)]">Assignment Matrix</h2>
+              <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Assignment Matrix</h2>
                 <div className="mt-4 flex flex-wrap gap-2">
                   {[
                     { id: 'all', label: 'Show All' },
@@ -1577,9 +1577,9 @@ export default function AdminCapabilitiesPage() {
                         setMatrixFilter(option.id as MatrixFilter);
                         logTrace('filter changed', `Matrix filter: ${option.label}`);
                       }}
-                      className={`h-11 border px-4 text-[14px] font-bold ${
+                      className={`h-11 border px-4 text-[length:var(--t-sm)] font-bold ${
                         matrixFilter === option.id
-                          ? 'border-[color:var(--brass-700)] bg-[var(--rust-700)] text-[color:var(--bone-100)]'
+                          ? 'border-[color:var(--brass-700)] bg-[var(--accent-strong)] text-[color:var(--accent-ink)]'
                           : 'border-[color:var(--hide-700)] bg-[var(--hide-900)] text-[color:var(--bone-300)]'
                       }`}
                     >
@@ -1589,10 +1589,10 @@ export default function AdminCapabilitiesPage() {
                 </div>
               </article>
 
-              <article className="overflow-x-auto border border-[color:var(--hide-700)] bg-[var(--hide-950)]">
+              <article className="overflow-x-auto border border-[color:var(--hide-700)] bg-[var(--hide-900)]">
                 <table className="min-w-[1300px] border-collapse text-left">
                   <thead>
-                    <tr className="border-b border-[color:var(--hide-700)] bg-[var(--hide-950)] text-[14px] uppercase tracking-[0.08em] text-[color:var(--bone-300)]">
+                    <tr className="border-b border-[color:var(--hide-700)] bg-[var(--hide-900)] text-[length:var(--t-sm)] uppercase tracking-[0.08em] text-[color:var(--bone-300)]">
                       <th className="px-4 py-3">Capability</th>
                       {ROLE_OPTIONS.map((role) => (
                         <th key={role} className="px-3 py-3">
@@ -1603,21 +1603,21 @@ export default function AdminCapabilitiesPage() {
                   </thead>
                   <tbody>
                     {matrixCapabilities.map((capability) => (
-                      <tr key={capability.id} className="border-b border-[var(--hide-800)] text-[14px] text-[color:var(--bone-100)]">
+                      <tr key={capability.id} className="border-b border-[var(--hide-700)] text-[length:var(--t-sm)] text-[color:var(--bone-100)]">
                         <td className="px-4 py-3">
-                          <p className="text-[16px] font-semibold">{capability.capabilityId} - {capability.name}</p>
-                          <p className="text-[14px] text-[var(--bone-400)]">{capability.group} • {capability.status}</p>
+                          <p className="text-[length:var(--t-sm)] font-semibold">{capability.capabilityId} - {capability.name}</p>
+                          <p className="t-muted">{capability.group} • {capability.status}</p>
                         </td>
                         {ROLE_OPTIONS.map((role) => {
                           const assigned = capability.assignedRoles.includes(role);
                           const needsReview = assigned && capability.status === 'DRAFT';
-                          let assignmentClass = 'border-[var(--hide-800)] bg-[var(--hide-900)] text-[color:var(--bone-300)]';
+                          let assignmentClass = 'border-[var(--hide-700)] bg-[var(--hide-900)] text-[color:var(--bone-300)]';
                           let marker = '—';
                           if (needsReview) {
-                            assignmentClass = 'border-[color:var(--brass-700)] bg-[var(--hide-800)] text-[color:var(--bone-100)]';
+                            assignmentClass = 'border-[color:var(--restricted)] bg-[rgba(192,90,30,.22)] text-[color:var(--restricted-ink)]';
                             marker = '⚠';
                           } else if (assigned) {
-                            assignmentClass = 'border-[color:var(--brass-700)] bg-[var(--rust-700)] text-[color:var(--bone-100)]';
+                            assignmentClass = 'border-[color:var(--brass-700)] bg-[var(--accent-strong)] text-[color:var(--accent-ink)]';
                             marker = '✓';
                           }
                           return (
@@ -1625,7 +1625,7 @@ export default function AdminCapabilitiesPage() {
                               <button
                                 type="button"
                                 onClick={() => toggleCapabilityRole(capability.id, role)}
-                                className={`h-11 min-w-[90px] border px-2 text-[13px] font-bold ${assignmentClass}`}
+                                className={`h-11 min-w-[90px] border px-2 text-[length:var(--t-xs)] font-bold ${assignmentClass}`}
                               >
                                 {marker}
                               </button>
@@ -1642,71 +1642,71 @@ export default function AdminCapabilitiesPage() {
 
           {activeTab === 'builder' && (
             <section className="space-y-5">
-              <article className="border border-[color:var(--brass-700)] bg-[var(--hide-950)] p-6">
-                <h2 className="text-[20px] font-bold text-[color:var(--bone-100)]">Capability Builder</h2>
-                <p className="mt-2 text-[14px] leading-6 text-[var(--bone-400)]">
+              <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Capability Builder</h2>
+                <p className="t-body mt-[var(--s3)]">
                   Create and manage capability definitions without leaving the Admin Console.
                 </p>
 
                 <div className="mt-4 grid gap-4 lg:grid-cols-2">
                   <div>
-                    <label className="mb-2 block text-[14px] font-semibold text-[color:var(--bone-300)]" htmlFor="builder-name">Capability Name</label>
+                    <label className="t-label mb-[var(--s3)] block" htmlFor="builder-name">Capability Name</label>
                     <input
                       id="builder-name"
                       value={builderName}
                       onChange={(event) => setBuilderName(event.target.value)}
-                      className="h-11 w-full border border-[color:var(--hide-700)] bg-[var(--hide-950)] px-3 text-[16px] text-[color:var(--bone-100)]"
+                      className="input"
                     />
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-[14px] font-semibold text-[color:var(--bone-300)]" htmlFor="builder-capability-id">Capability ID</label>
+                    <label className="t-label mb-[var(--s3)] block" htmlFor="builder-capability-id">Capability ID</label>
                     <input
                       id="builder-capability-id"
                       value={builderCapabilityId}
                       onChange={(event) => setBuilderCapabilityId(event.target.value)}
                       placeholder="CAP-###"
-                      className="h-11 w-full border border-[color:var(--hide-700)] bg-[var(--hide-950)] px-3 text-[16px] text-[color:var(--bone-100)]"
+                      className="input"
                     />
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-[14px] font-semibold text-[color:var(--bone-300)]" htmlFor="builder-category">Category</label>
+                    <label className="t-label mb-[var(--s3)] block" htmlFor="builder-category">Category</label>
                     <input
                       id="builder-category"
                       value={builderCategory}
                       onChange={(event) => setBuilderCategory(event.target.value)}
-                      className="h-11 w-full border border-[color:var(--hide-700)] bg-[var(--hide-950)] px-3 text-[16px] text-[color:var(--bone-100)]"
+                      className="input"
                     />
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-[14px] font-semibold text-[color:var(--bone-300)]" htmlFor="builder-owner">Owner / Steward</label>
+                    <label className="t-label mb-[var(--s3)] block" htmlFor="builder-owner">Owner / Steward</label>
                     <input
                       id="builder-owner"
                       value={builderOwner}
                       onChange={(event) => setBuilderOwner(event.target.value)}
-                      className="h-11 w-full border border-[color:var(--hide-700)] bg-[var(--hide-950)] px-3 text-[16px] text-[color:var(--bone-100)]"
+                      className="input"
                     />
                   </div>
 
                   <div className="lg:col-span-2">
-                    <label className="mb-2 block text-[14px] font-semibold text-[color:var(--bone-300)]" htmlFor="builder-description">Description</label>
+                    <label className="t-label mb-[var(--s3)] block" htmlFor="builder-description">Description</label>
                     <textarea
                       id="builder-description"
                       value={builderDescription}
                       onChange={(event) => setBuilderDescription(event.target.value)}
-                      className="min-h-[110px] w-full border border-[color:var(--hide-700)] bg-[var(--hide-950)] px-3 py-2 text-[16px] text-[color:var(--bone-100)]"
+                      className="min-h-[110px] w-full border border-[color:var(--hide-700)] bg-[var(--hide-950)] px-3 py-2 text-[length:var(--t-sm)] text-[color:var(--bone-100)]"
                     />
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-[14px] font-semibold text-[color:var(--bone-300)]" htmlFor="builder-primary-role">Primary Role</label>
+                    <label className="t-label mb-[var(--s3)] block" htmlFor="builder-primary-role">Primary Role</label>
                     <select
                       id="builder-primary-role"
                       value={builderPrimaryRole}
                       onChange={(event) => setBuilderPrimaryRole(event.target.value as RoleName)}
-                      className="h-11 w-full border border-[color:var(--hide-700)] bg-[var(--hide-950)] px-3 text-[16px] text-[color:var(--bone-100)]"
+                      className="input"
                     >
                       {ROLE_OPTIONS.map((role) => (
                         <option key={role} value={role}>
@@ -1717,12 +1717,12 @@ export default function AdminCapabilitiesPage() {
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-[14px] font-semibold text-[color:var(--bone-300)]" htmlFor="builder-status">Status</label>
+                    <label className="t-label mb-[var(--s3)] block" htmlFor="builder-status">Status</label>
                     <select
                       id="builder-status"
                       value={builderStatus}
                       onChange={(event) => setBuilderStatus(event.target.value as CapabilityStatus)}
-                      className="h-11 w-full border border-[color:var(--hide-700)] bg-[var(--hide-950)] px-3 text-[16px] text-[color:var(--bone-100)]"
+                      className="input"
                     >
                       <option value="DRAFT">Draft</option>
                       <option value="ACTIVE">Active</option>
@@ -1732,12 +1732,12 @@ export default function AdminCapabilitiesPage() {
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-[14px] font-semibold text-[color:var(--bone-300)]" htmlFor="builder-visibility">Visibility</label>
+                    <label className="t-label mb-[var(--s3)] block" htmlFor="builder-visibility">Visibility</label>
                     <select
                       id="builder-visibility"
                       value={builderVisibility}
                       onChange={(event) => setBuilderVisibility(event.target.value as CapabilityVisibility)}
-                      className="h-11 w-full border border-[color:var(--hide-700)] bg-[var(--hide-950)] px-3 text-[16px] text-[color:var(--bone-100)]"
+                      className="input"
                     >
                       <option value="Internal">Internal</option>
                       <option value="Role-Bound">Role-Bound</option>
@@ -1746,17 +1746,17 @@ export default function AdminCapabilitiesPage() {
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-[14px] font-semibold text-[color:var(--bone-300)]" htmlFor="builder-dependencies">Dependencies</label>
+                    <label className="t-label mb-[var(--s3)] block" htmlFor="builder-dependencies">Dependencies</label>
                     <input
                       id="builder-dependencies"
                       value={builderDependencies}
                       onChange={(event) => setBuilderDependencies(event.target.value)}
-                      className="h-11 w-full border border-[color:var(--hide-700)] bg-[var(--hide-950)] px-3 text-[16px] text-[color:var(--bone-100)]"
+                      className="input"
                     />
                   </div>
 
                   <div className="lg:col-span-2">
-                    <p className="mb-2 block text-[14px] font-semibold text-[color:var(--bone-300)]">Secondary Roles</p>
+                    <p className="t-label mb-[var(--s3)] block">Secondary Roles</p>
                     <div className="flex flex-wrap gap-2">
                       {ROLE_OPTIONS.filter((role) => role !== builderPrimaryRole).map((role) => {
                         const selected = builderSecondaryRoles.includes(role);
@@ -1765,9 +1765,9 @@ export default function AdminCapabilitiesPage() {
                             key={role}
                             type="button"
                             onClick={() => toggleSecondaryRole(role)}
-                            className={`h-11 border px-3 text-[13px] font-bold ${
+                            className={`h-11 border px-3 text-[length:var(--t-xs)] font-bold ${
                               selected
-                                ? 'border-[color:var(--brass-700)] bg-[var(--rust-700)] text-[color:var(--bone-100)]'
+                                ? 'border-[color:var(--brass-700)] bg-[var(--accent-strong)] text-[color:var(--accent-ink)]'
                                 : 'border-[color:var(--hide-700)] bg-[var(--hide-900)] text-[color:var(--bone-300)]'
                             }`}
                           >
@@ -1780,12 +1780,12 @@ export default function AdminCapabilitiesPage() {
                   </div>
 
                   <div className="lg:col-span-2">
-                    <label className="mb-2 block text-[14px] font-semibold text-[color:var(--bone-300)]" htmlFor="builder-notes">Notes</label>
+                    <label className="t-label mb-[var(--s3)] block" htmlFor="builder-notes">Notes</label>
                     <textarea
                       id="builder-notes"
                       value={builderNotes}
                       onChange={(event) => setBuilderNotes(event.target.value)}
-                      className="min-h-[90px] w-full border border-[color:var(--hide-700)] bg-[var(--hide-950)] px-3 py-2 text-[16px] text-[color:var(--bone-100)]"
+                      className="min-h-[90px] w-full border border-[color:var(--hide-700)] bg-[var(--hide-950)] px-3 py-2 text-[length:var(--t-sm)] text-[color:var(--bone-100)]"
                     />
                   </div>
                 </div>
@@ -1794,14 +1794,14 @@ export default function AdminCapabilitiesPage() {
                   <button
                     type="button"
                     onClick={saveCapability}
-                    className="h-11 border border-[color:var(--brass-700)] bg-[var(--rust-700)] px-4 text-[14px] font-bold text-[color:var(--bone-100)]"
+                    className="btn"
                   >
                     SAVE CAPABILITY
                   </button>
                   <button
                     type="button"
                     onClick={resetBuilder}
-                    className="h-11 border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-300)]"
+                    className="btn btn--ghost"
                   >
                     RESET FORM
                   </button>
@@ -1811,7 +1811,7 @@ export default function AdminCapabilitiesPage() {
                       resetBuilder();
                       setActiveTab('library');
                     }}
-                    className="h-11 border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-300)]"
+                    className="btn btn--ghost"
                   >
                     CANCEL
                   </button>
@@ -1822,20 +1822,20 @@ export default function AdminCapabilitiesPage() {
 
           {activeTab === 'revenue' && <RevenueFundingCenter />}
 
-          <section className="border border-[color:var(--hide-700)] bg-[var(--hide-950)] p-4">
+          <section className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
             <button
               type="button"
               onClick={() => setShowTelemetry((current) => !current)}
-              className="h-11 border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-300)]"
+              className="btn btn--ghost"
             >
               {showTelemetry ? 'Hide' : 'Show'} local event traces
             </button>
 
             {showTelemetry && (
-              <div className="mt-3 max-h-[220px] overflow-y-auto border border-[var(--hide-800)] bg-[var(--hide-900)]">
-                {eventTraces.length === 0 && <p className="px-4 py-3 text-[14px] text-[var(--bone-400)]">No traces yet.</p>}
+              <div className="mt-3 max-h-[220px] overflow-y-auto border border-[var(--hide-700)] bg-[var(--hide-900)]">
+                {eventTraces.length === 0 && <p className="px-4 py-3 text-[length:var(--t-sm)] text-[var(--bone-400)]">No traces yet.</p>}
                 {eventTraces.map((trace, index) => (
-                  <div key={`${trace.timestamp}-${index}`} className="border-b border-[var(--hide-800)] px-4 py-3 text-[14px] text-[var(--bone-400)]">
+                  <div key={`${trace.timestamp}-${index}`} className="border-b border-[var(--hide-700)] px-4 py-3 text-[length:var(--t-sm)] text-[var(--bone-400)]">
                     <span className="font-mono text-[color:var(--brass-300)]">[{trace.timestamp}]</span> {trace.action} - {trace.detail}
                   </div>
                 ))}
@@ -1846,15 +1846,15 @@ export default function AdminCapabilitiesPage() {
               <button
                 type="button"
                 onClick={() => setShowIntegrationStubs((current) => !current)}
-                className="h-11 border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-300)]"
+                className="btn btn--ghost"
               >
                 {showIntegrationStubs ? 'Hide' : 'Show'} backend integration stubs
               </button>
 
               {showIntegrationStubs && (
-                <div className="mt-3 border border-[var(--hide-800)] bg-[var(--hide-900)]">
+                <div className="mt-3 border border-[var(--hide-700)] bg-[var(--hide-900)]">
                   {INTEGRATION_STUBS.map((item) => (
-                    <div key={item} className="border-b border-[var(--hide-800)] px-4 py-3 text-[14px] text-[var(--bone-400)] last:border-b-0">
+                    <div key={item} className="border-b border-[var(--hide-700)] px-4 py-3 text-[length:var(--t-sm)] text-[var(--bone-400)] last:border-b-0">
                       {item}
                     </div>
                   ))}
