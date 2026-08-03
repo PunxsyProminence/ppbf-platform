@@ -137,7 +137,7 @@ export default function SetupWizard() {
     return (
       <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
         <div className="text-center">
-          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--red-primary)]">Checking Access</p>
+          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[color:var(--brass-800)]">Checking Access</p>
           <h1 className="mt-3 font-display text-2xl tracking-tight">Loading...</h1>
         </div>
       </main>
@@ -148,7 +148,7 @@ export default function SetupWizard() {
     return (
       <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
         <div className="mx-auto max-w-2xl space-y-6 text-center">
-          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--red-primary)]">Access Denied</p>
+          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[color:var(--brass-800)]">Access Denied</p>
           <h1 className="font-display text-3xl font-black">Platform Owner Access Required</h1>
           <p className="text-sm leading-7 text-[var(--gray-dark)]">
             This setup wizard is for PPBF platform administrators only. To proceed:
@@ -182,7 +182,7 @@ export default function SetupWizard() {
       <div className="mx-auto w-full max-w-3xl space-y-8 px-6 py-12 lg:px-10">
         {/* Header */}
         <header className="space-y-4 rounded-[28px] border border-[rgba(0,0,0,0.14)] bg-white p-6 shadow-[var(--shadow-md)]">
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--red-primary)]">Setup Wizard</p>
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--brass-800)]">Setup Wizard</p>
           <h1 className="font-display text-4xl font-black">Get Your Gym Online</h1>
           <p className="text-base leading-7 text-[var(--gray-dark)]">
             Follow these 3 simple steps to set up your gym in PPBF and start managing athletes.

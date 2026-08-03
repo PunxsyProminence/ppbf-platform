@@ -277,7 +277,7 @@ export default function PublicPortalPage() {
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-10 lg:px-10">
         <header className="flex flex-col gap-4 border-b-[3px] border-[var(--black)] pb-6 md:flex-row md:items-end md:justify-between">
           <div className="space-y-3">
-            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--red-primary)]">PUBLIC PORTAL</p>
+            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[color:var(--brass-800)]">PUBLIC PORTAL</p>
             <h1 className="font-display text-4xl tracking-tight text-[var(--black)] md:text-5xl">PPBF Public Entry + Interest Intake</h1>
             <p className="max-w-4xl text-sm leading-7 text-[var(--gray-dark)] md:text-base">
               The public-facing front door for awareness, trust building, community introduction, public interest intake, volunteer recruitment, partner engagement, and future athlete enrollment.
@@ -326,7 +326,7 @@ export default function PublicPortalPage() {
               <p className="text-sm leading-6 text-[var(--white)]">You are viewing the public surface as an admin. Use these links to manage visitor-facing content and announcements.</p>
               <Link
                 href="/admin"
-                className="inline-flex min-h-[44px] items-center justify-center border-2 border-[var(--white)] bg-transparent px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--white)] transition hover:bg-[var(--white)] hover:text-[var(--red-primary)]"
+                className="inline-flex min-h-[44px] items-center justify-center border-2 border-[var(--white)] bg-transparent px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--white)] transition hover:bg-[var(--white)] hover:text-[color:var(--brass-800)]"
               >
                 Open Admin Workspace
               </Link>
@@ -341,7 +341,7 @@ export default function PublicPortalPage() {
         )}
 
         <section className="mt-6 border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-md)]">
-          <p className="text-xs font-mono uppercase tracking-[0.25em] text-[var(--red-primary)]">Identity</p>
+          <p className="text-xs font-mono uppercase tracking-[0.25em] text-[color:var(--brass-800)]">Identity</p>
           <div className="mt-4 grid gap-3 md:grid-cols-3">
             {['VETERAN-OWNED', '501(c)(3) PUBLIC CHARITY', 'COMMUNITY IMPACT DRIVEN'].map((item) => (
               <div key={item} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4 text-center">

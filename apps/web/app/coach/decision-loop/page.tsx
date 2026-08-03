@@ -311,7 +311,7 @@ export default function DecisionLoopReviewPage() {
       <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
         <div className="mx-auto w-full max-w-6xl px-6 py-10 lg:px-10">
           <header className="space-y-3 border-b-[3px] border-[var(--black)] pb-6">
-            <p className="text-xs font-mono uppercase tracking-[0.18em] text-[var(--red-primary)]">Coach Workspace</p>
+            <p className="text-xs font-mono uppercase tracking-[0.18em] text-[color:var(--brass-800)]">Coach Workspace</p>
             <h1 className="font-display text-4xl font-black">SHADOW Decision Loop</h1>
             <p className="max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
               Review provisional recommendations, record human decisions, flag near-misses, and evaluate outcomes.

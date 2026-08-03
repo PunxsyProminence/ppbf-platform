@@ -122,7 +122,7 @@ function CoachDrillLibrary() {
     <main className="min-h-screen bg-[var(--canvas-tan)] px-6 py-10 text-[var(--black)]">
       <div className="mx-auto max-w-5xl">
         <header className="border-b-[3px] border-[var(--black)] pb-6">
-          <p className="text-xs font-mono uppercase tracking-[0.22em] text-[var(--red-primary)]">Coach</p>
+          <p className="text-xs font-mono uppercase tracking-[0.22em] text-[color:var(--brass-800)]">Coach</p>
           <h1 className="mt-2 text-4xl font-black tracking-tight">Drill Library</h1>
           <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--gray-dark)]">
             Drills written here are what athletes see and what assignments point at. Writing one once
@@ -249,7 +249,7 @@ function CoachDrillLibrary() {
               <article key={drill.drill_id} className="rounded-2xl border-2 border-[var(--black)] bg-white p-4">
                 <div className="flex items-baseline justify-between gap-2">
                   <h3 className="text-base font-black">{drill.name}</h3>
-                  <span className="text-[11px] font-mono uppercase tracking-[0.1em] text-[var(--red-primary)]">
+                  <span className="text-[11px] font-mono uppercase tracking-[0.1em] text-[color:var(--brass-800)]">
                     {drill.difficulty}
                   </span>
                 </div>

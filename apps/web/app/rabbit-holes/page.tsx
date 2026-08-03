@@ -238,7 +238,7 @@ function RabbitHoleAuthoringPage() {
     <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       <div className="mx-auto w-full max-w-6xl px-6 py-10 lg:px-10">
         <header className="space-y-3 border-b-[3px] border-[var(--black)] pb-6">
-          <p className="text-xs font-mono uppercase tracking-[0.18em] text-[var(--red-primary)]">Gym Coaching</p>
+          <p className="text-xs font-mono uppercase tracking-[0.18em] text-[color:var(--brass-800)]">Gym Coaching</p>
           <h1 className="font-display text-4xl font-black">Rabbit Holes</h1>
           <p className="max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
             A rabbit hole is a concept worth understanding and something to go and do with it. Pick the term it is
@@ -386,7 +386,7 @@ function RabbitHoleAuthoringPage() {
                     <span className={`border-2 px-2 py-0.5 text-[10px] font-mono font-bold uppercase ${STATUS_TONE[lesson.status]}`}>
                       {STATUS_LABELS[lesson.status]}
                     </span>
-                    <span className="text-xs font-mono uppercase tracking-[0.12em] text-[var(--red-primary)]">
+                    <span className="text-xs font-mono uppercase tracking-[0.12em] text-[color:var(--brass-800)]">
                       {anchorLabel(lesson.anchor_type, lesson.anchor_key)}
                     </span>
                     <span className="text-xs font-mono uppercase tracking-[0.12em] text-[var(--gray-dark)]">
