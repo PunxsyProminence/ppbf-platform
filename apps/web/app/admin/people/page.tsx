@@ -25,6 +25,8 @@ interface Member {
 interface RosterAthlete {
   athlete_id: string;
   full_name: string;
+  /** ISO date. Optional so an older payload without it degrades to a name-only caution. */
+  dob?: string;
   account_id: string | null;
   account_active: boolean | null;
   has_pin: boolean;
@@ -227,6 +229,14 @@ function PeopleConsoleContent() {
   const [athleteMode, setAthleteMode] = useState<AthleteMode>('new');
   const [athleteAccountId, setAthleteAccountId] = useState('');
   const [athleteId, setAthleteId] = useState('');
+  // Whether the admin has typed in the record ID themselves. Once they have,
+  // the suggestion below stops overwriting it -- a field that keeps
+  // re-populating while you are editing it is worse than one that never did.
+  const [athleteIdEdited, setAthleteIdEdited] = useState(false);
+  // Set only by the admin ticking past the duplicate-child warning. Never
+  // defaulted true and cleared whenever the form resets, so the tick applies
+  // to the one child it was read for.
+  const [duplicateAcknowledged, setDuplicateAcknowledged] = useState(false);
   const [athleteFullName, setAthleteFullName] = useState('');
   const [athleteDob, setAthleteDob] = useState('');
   const [athleteWeightClass, setAthleteWeightClass] = useState('');
@@ -367,7 +377,109 @@ function PeopleConsoleContent() {
 
   const rosterById = useMemo(() => new Map(roster.map((athlete) => [athlete.athlete_id, athlete])), [roster]);
 
-  const trimmedAthleteId = athleteId.trim();
+  /**
+   * The next free `ath-NNN`, or '' when one cannot be offered safely.
+   *
+   * Returns '' if the roster could not be read. A suggestion computed against
+   * a roster this page cannot see is a suggestion that may already belong to
+   * an athlete -- and the collision warning below is blind in exactly the same
+   * situation, so the admin would get a prefilled ID with nothing to catch it.
+   * Typing it by hand is the honest fallback.
+   *
+   * Ids the gym numbers some other way are simply skipped by the pattern, and
+   * the final loop makes the result safe regardless: whatever the scan
+   * produces, it is walked forward until it hits an id nobody holds.
+   */
+  const suggestedAthleteId = useMemo(() => {
+    if (!rosterAvailable) {
+      return '';
+    }
+
+    let highest = 0;
+    for (const athlete of roster) {
+      const match = /^ath-(\d+)$/.exec(athlete.athlete_id);
+      if (match) {
+        highest = Math.max(highest, Number.parseInt(match[1], 10));
+      }
+    }
+
+    let candidate = '';
+    let next = highest + 1;
+    do {
+      candidate = `ath-${String(next).padStart(3, '0')}`;
+      next += 1;
+    } while (rosterById.has(candidate));
+
+    return candidate;
+  }, [roster, rosterAvailable, rosterById]);
+
+  /**
+   * What the record ID field actually shows: the admin's own text once they
+   * have typed any, and the suggestion until then.
+   *
+   * Derived rather than pushed into state by an effect. Writing the suggestion
+   * into athleteId would mean a render that immediately triggers another one,
+   * and it would also make "the admin chose this" and "we guessed this"
+   * indistinguishable afterwards -- which is the thing the lock below and the
+   * submit path both need to tell apart.
+   *
+   * Suppressed once the roster record is written: from that point the id is
+   * the key to a row that exists, and changing it would orphan that row behind
+   * a second one.
+   */
+  const effectiveAthleteId =
+    athleteMode === 'new' && !athleteIdEdited && !rosterCreatedFor && suggestedAthleteId
+      ? suggestedAthleteId
+      : athleteId;
+
+  const trimmedAthleteId = effectiveAthleteId.trim();
+
+  /**
+   * Is this child already on the roster under a different record ID?
+   *
+   * THIS SHIPS WITH THE AUTOFILL ABOVE, NOT AFTER IT. Typing an ID by hand and
+   * finding it taken used to be the one moment an admin stopped and asked
+   * "wait -- is this the same kid?". Filling the ID in removes that moment, so
+   * something has to replace it, or the change makes the real hazard more
+   * likely rather than less.
+   *
+   * The hazard is NOT a duplicate ID -- the create route is create-only and
+   * the primary key refuses one, and the form already names the clash. It is
+   * the same child entered twice under two IDs: two sets of sessions, goals
+   * and reviews that can never be added together, and no error anywhere,
+   * because as far as the database is concerned they are two children.
+   *
+   * Name AND date of birth, never name alone: two Alex Johnsons in one gym is
+   * ordinary, and a warning that cries wolf on it gets clicked through within
+   * a week.
+   */
+  const normalizedName = athleteFullName.trim().replace(/\s+/g, ' ').toLowerCase();
+
+  const duplicateChild = useMemo(() => {
+    if (athleteMode !== 'new' || !normalizedName || !athleteDob.trim()) {
+      return undefined;
+    }
+    return roster.find(
+      (athlete) =>
+        athlete.athlete_id !== trimmedAthleteId
+        && athlete.full_name.trim().replace(/\s+/g, ' ').toLowerCase() === normalizedName
+        && athlete.dob === athleteDob.trim(),
+    );
+  }, [athleteMode, normalizedName, athleteDob, roster, trimmedAthleteId]);
+
+  // Same name, different birthday. Genuinely common and genuinely fine, so it
+  // is a remark and not a gate -- but it is worth saying, because it is also
+  // what a mistyped birthday on a real duplicate looks like.
+  const sameNameDifferentDob = useMemo(() => {
+    if (athleteMode !== 'new' || !normalizedName || duplicateChild) {
+      return undefined;
+    }
+    return roster.find(
+      (athlete) =>
+        athlete.athlete_id !== trimmedAthleteId
+        && athlete.full_name.trim().replace(/\s+/g, ' ').toLowerCase() === normalizedName,
+    );
+  }, [athleteMode, normalizedName, duplicateChild, roster, trimmedAthleteId]);
 
   // A hand-typed athlete_id that lands on someone already in the roster is the
   // dangerous case: the create route now refuses it, but catching it here
@@ -398,7 +510,73 @@ function PeopleConsoleContent() {
 
   const canSubmitAthlete =
     Boolean(athleteAccountId.trim() && trimmedAthleteId)
-    && (athleteMode === 'new' ? newAthleteReady && !collidingAthlete : true);
+    && (athleteMode === 'new'
+      ? newAthleteReady && !collidingAthlete && (!duplicateChild || duplicateAcknowledged)
+      : true);
+
+  /**
+   * Why the submit button is down, or null when it is live.
+   *
+   * Keeping the button disabled until every field is filled is right -- a
+   * blank roster field comes back from the server as an opaque 500, so
+   * refusing to send it beats sending it. What was missing was the sentence
+   * saying WHICH field, and the omission is worse than it looks: a disabled
+   * button also suppresses the browser's own "Please fill out this field"
+   * bubble that the `required` attributes would otherwise raise. So the form
+   * had two ways to explain itself and used neither -- the button simply sat
+   * there greyed out.
+   *
+   * The list mirrors newAthleteReady above; the two must not drift.
+   */
+  const athleteSubmitBlockedReason = useMemo(() => {
+    // Both of these have their own, more specific warning rendered against
+    // the fields they are about. Repeating them here would say less, twice.
+    if (collidingAthlete || (duplicateChild && !duplicateAcknowledged)) {
+      return null;
+    }
+
+    const missing: string[] = [];
+
+    if (athleteMode === 'new') {
+      if (!trimmedAthleteId) missing.push('athlete record ID');
+      if (!athleteFullName.trim()) missing.push('full name');
+      if (!athleteDob.trim()) missing.push('date of birth');
+      if (!athleteWeightClass.trim()) missing.push('weight class');
+      if (!athleteGymStatus) missing.push('gym status');
+      if (!athleteEmergencyContact.trim()) missing.push('emergency contact');
+      if (!athleteCoachId) {
+        // Naming the cure matters more here than naming the field: an admin
+        // whose gym has no coaches yet cannot fix this on this form at all,
+        // and would otherwise keep looking for a control that is empty by
+        // necessity.
+        missing.push(
+          coachOptions.length === 0
+            ? 'a coach - your gym has none yet, so add one on the "Add Coach, Staff Or Guardian" tab first'
+            : 'coach',
+        );
+      }
+    } else if (!trimmedAthleteId) {
+      missing.push('the athlete this login is for');
+    }
+
+    if (!athleteAccountId.trim()) missing.push('sign-in ID');
+
+    return missing.length === 0 ? null : `Still needed: ${missing.join(', ')}.`;
+  }, [
+    athleteMode,
+    collidingAthlete,
+    duplicateChild,
+    duplicateAcknowledged,
+    trimmedAthleteId,
+    athleteFullName,
+    athleteDob,
+    athleteWeightClass,
+    athleteGymStatus,
+    athleteEmergencyContact,
+    athleteCoachId,
+    athleteAccountId,
+    coachOptions.length,
+  ]);
 
   // A parent invite is not submittable until the athlete it links to has been
   // chosen. The server refuses the role without one, and an account created
@@ -502,6 +680,12 @@ function PeopleConsoleContent() {
   function resetAthleteForm() {
     setAthleteAccountId('');
     setAthleteId('');
+    // Hand the field back to the suggestion, so adding a second athlete in a
+    // row offers the next id rather than an empty box. load() refreshes the
+    // roster first, so the one it offers already accounts for the athlete
+    // just created.
+    setAthleteIdEdited(false);
+    setDuplicateAcknowledged(false);
     setAthleteFullName('');
     setAthleteDob('');
     setAthleteWeightClass('');
@@ -560,7 +744,17 @@ function PeopleConsoleContent() {
     setBusy(true);
 
     const accountId = athleteAccountId.trim();
-    const recordId = athleteId.trim();
+    const recordId = trimmedAthleteId;
+
+    // Pin the suggestion into state before anything is written. Everything
+    // after this point -- the half-done lock, the retry that skips the roster
+    // write, the collision check -- compares against the id that was actually
+    // submitted, and a value that is still being derived would evaporate the
+    // moment the roster reloads and the next free id moves on.
+    if (!athleteIdEdited) {
+      setAthleteId(recordId);
+      setAthleteIdEdited(true);
+    }
 
     // Tracked locally as well as in state because the catch below runs before
     // React has applied setRosterCreatedFor, and it needs to know whether the
@@ -1147,6 +1341,12 @@ function PeopleConsoleContent() {
                         // a list. Carrying a value across would submit an id
                         // the admin never picked in this mode.
                         setAthleteId('');
+                        setDuplicateAcknowledged(false);
+                        // Clearing the field is not enough on its own: without
+                        // this, switching to "new" would leave the suggestion
+                        // suppressed because an earlier edit had claimed the
+                        // field, and the admin would get a blank box back.
+                        setAthleteIdEdited(false);
                       }}
                       className="mt-1 accent-[var(--brass-600)]"
                     />
@@ -1175,15 +1375,20 @@ function PeopleConsoleContent() {
                     Athlete record ID
                   </label>
                   <p className="mt-1 text-xs text-[var(--gray-dark)]">
-                    Permanent id for their record in your roster — every session, goal, and review hangs off it. Short
-                    and unique, like <code>ath-001</code>.
+                    Permanent id for their record in your roster — every session, goal, and review hangs off it.{' '}
+                    {suggestedAthleteId
+                      ? 'Filled in with the next free one; change it if your gym numbers athletes its own way.'
+                      : 'Short and unique, like ath-001.'}
                   </p>
                   <input
                     id="athlete-id"
                     type="text"
                     required
-                    value={athleteId}
-                    onChange={(event) => setAthleteId(event.target.value.trim())}
+                    value={effectiveAthleteId}
+                    onChange={(event) => {
+                      setAthleteIdEdited(true);
+                      setAthleteId(event.target.value.trim());
+                    }}
                     placeholder="ath-001"
                     className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                   />
@@ -1211,7 +1416,13 @@ function PeopleConsoleContent() {
                     type="text"
                     required
                     value={athleteFullName}
-                    onChange={(event) => setAthleteFullName(event.target.value)}
+                    onChange={(event) => {
+                      // Editing the identity re-opens the question the tick
+                      // answered. Carrying it across would let a tick read for
+                      // one child wave a different one through.
+                      setDuplicateAcknowledged(false);
+                      setAthleteFullName(event.target.value);
+                    }}
                     placeholder="Alex Johnson"
                     className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                   />
@@ -1227,7 +1438,10 @@ function PeopleConsoleContent() {
                       type="date"
                       required
                       value={athleteDob}
-                      onChange={(event) => setAthleteDob(event.target.value)}
+                      onChange={(event) => {
+                        setDuplicateAcknowledged(false);
+                        setAthleteDob(event.target.value);
+                      }}
                       className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                     />
                   </div>
@@ -1247,6 +1461,50 @@ function PeopleConsoleContent() {
                     />
                   </div>
                 </div>
+
+                {duplicateChild && (
+                  // Blocks the submit until it is answered. The database will
+                  // happily accept this -- two ids, two children, no error
+                  // anywhere -- so a person is the only check there is.
+                  <div className="rounded-xl border-2 border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_6%,white)] p-3">
+                    <p className="text-sm font-black uppercase tracking-[0.08em] text-[var(--safety-locked)]">
+                      This may already be the same child
+                    </p>
+                    <p className="mt-2 text-xs leading-5">
+                      <strong>{duplicateChild.full_name}</strong>, born {duplicateChild.dob}, is already on your
+                      roster as <code>{duplicateChild.athlete_id}</code>. Adding them again makes a second record:
+                      their sessions, goals and reviews would be split across the two and could never be added back
+                      together.
+                    </p>
+                    <p className="mt-2 text-xs leading-5">
+                      If this is that child and they only need a sign-in, switch to &ldquo;Already on the roster&rdquo;
+                      above.
+                    </p>
+                    <label className="mt-3 flex items-start gap-2 text-xs font-semibold">
+                      <input
+                        type="checkbox"
+                        checked={duplicateAcknowledged}
+                        onChange={(event) => setDuplicateAcknowledged(event.target.checked)}
+                        className="mt-0.5 h-4 w-4"
+                      />
+                      <span>
+                        I have checked, and this is a different child who happens to share a name and a birthday.
+                      </span>
+                    </label>
+                  </div>
+                )}
+
+                {sameNameDifferentDob && (
+                  // Not a gate. Two Alex Johnsons in one gym is ordinary, and
+                  // a warning that cries wolf on it gets clicked through
+                  // within a week. But a mistyped birthday on a genuine
+                  // duplicate looks exactly like this, so it is worth saying.
+                  <p className="rounded-xl border border-[rgba(0,0,0,0.16)] bg-[color-mix(in_srgb,var(--accent)_4%,white)] px-3 py-2 text-xs leading-5">
+                    {sameNameDifferentDob.full_name} is already on your roster as{' '}
+                    <code>{sameNameDifferentDob.athlete_id}</code>, with a different date of birth. Fine if they are
+                    two different people &mdash; worth a second look at the birthday if they are not.
+                  </p>
+                )}
 
                 <div>
                   <label htmlFor="athlete-gym-status" className="block text-sm font-semibold">
@@ -1389,6 +1647,15 @@ function PeopleConsoleContent() {
                 className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
               />
             </div>
+
+            {!busy && athleteSubmitBlockedReason && (
+              <p
+                role="status"
+                className="rounded-xl border border-[rgba(0,0,0,0.16)] bg-[color-mix(in_srgb,var(--accent)_4%,white)] px-3 py-2 text-xs font-semibold text-[var(--gray-dark)]"
+              >
+                {athleteSubmitBlockedReason}
+              </p>
+            )}
 
             <button
               type="submit"

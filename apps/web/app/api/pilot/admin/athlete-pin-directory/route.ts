@@ -9,6 +9,7 @@ export const runtime = 'nodejs';
 interface AthletePinDirectoryRow {
   athlete_id: string;
   full_name: string;
+  dob: string;
   account_id: string | null;
   account_active: boolean | null;
   has_pin: boolean;
@@ -32,6 +33,14 @@ export async function GET(request: NextRequest) {
       `select
          ath.athlete_id,
          ath.full_name,
+         -- Carried so the add-athlete form can warn that a child with this
+         -- name and this date of birth is already on the roster. Name alone
+         -- is not enough to act on -- two Alex Johnsons in one gym is
+         -- ordinary -- and the duplicate that actually hurts is the same
+         -- child entered twice under two ids, whose sessions and goals then
+         -- can never be added together. Same role, same organization, and
+         -- the same audience that already receives every child's name here.
+         ath.dob::text as dob,
          acc.account_id,
          acc.active_flag as account_active,
          (acc.pin_hash is not null) as has_pin,

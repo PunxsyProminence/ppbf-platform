@@ -39,6 +39,10 @@ interface MockOptions {
   rosterOk?: boolean;
   onPost?: (body: Record<string, unknown>) => { ok: boolean; status?: number; error?: string };
   onDelete?: (body: Record<string, unknown>) => { ok: boolean; status?: number; error?: string };
+  // Creating an athlete is two writes against two routes -- the roster record
+  // and then the sign-in -- and neither goes through /admin/staff, so they
+  // need their own branch below.
+  onAthleteWrite?: (url: string, body: Record<string, unknown>) => { ok: boolean; status?: number; error?: string };
 }
 
 function fetchMock(options: MockOptions = {}) {
@@ -49,6 +53,16 @@ function fetchMock(options: MockOptions = {}) {
         status: options.rosterOk === false ? 500 : 200,
         json: async () =>
           options.rosterOk === false ? { ok: false } : { ok: true, items: options.roster ?? [] },
+      } as Response;
+    }
+
+    if (url.includes('/api/pilot/athletes') || url.includes('/api/pilot/admin/athlete-accounts')) {
+      const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+      const outcome = options.onAthleteWrite ? options.onAthleteWrite(url, body) : { ok: true };
+      return {
+        ok: outcome.ok,
+        status: outcome.status ?? (outcome.ok ? 200 : 400),
+        json: async () => (outcome.ok ? { ok: true } : { error: outcome.error }),
       } as Response;
     }
 
@@ -97,8 +111,8 @@ function guardianMember(overrides: Record<string, unknown> = {}) {
 }
 
 const ROSTER = [
-  { athlete_id: 'ath-1', full_name: 'Alex Johnson', account_id: null, account_active: null, has_pin: false, account_updated_at: null },
-  { athlete_id: 'ath-2', full_name: 'Sam Rivera', account_id: 'sriv', account_active: true, has_pin: true, account_updated_at: null },
+  { athlete_id: 'ath-1', full_name: 'Alex Johnson', dob: '2012-03-14', account_id: null, account_active: null, has_pin: false, account_updated_at: null },
+  { athlete_id: 'ath-2', full_name: 'Sam Rivera', dob: '2011-07-02', account_id: 'sriv', account_active: true, has_pin: true, account_updated_at: null },
 ];
 
 afterEach(() => {
@@ -302,5 +316,275 @@ describe('removing a guardian link', () => {
     fireEvent.click(screen.getByRole('button', { name: /Confirm Remove/i }));
 
     expect(await screen.findByText(/only athlete this guardian is linked to/i)).toBeTruthy();
+  });
+});
+
+/**
+ * The add-athlete form.
+ *
+ * A record ID had to be invented by hand for every athlete, and the submit
+ * button was disabled until eight fields were filled with nothing on screen
+ * saying which one was missing -- so the reported symptom was a dead button
+ * and no explanation. The disabled button also suppresses the browser's own
+ * "Please fill out this field" bubble that the `required` attributes would
+ * otherwise raise, so the form had two ways to explain itself and used
+ * neither.
+ */
+describe('the add-athlete form', () => {
+  const COACH = {
+    account_id: 'coach-1',
+    login_email: 'coach@example.com',
+    auth_provider: 'microsoft',
+    role: 'coach',
+    athlete_id: null,
+    active_flag: true,
+    has_pin: false,
+    membership_active: true,
+  };
+
+  async function openAddAthleteTab(options: MockOptions) {
+    global.fetch = fetchMock(options) as never;
+    render(<PeopleConsolePage />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Add Athlete$/i }));
+  }
+
+  function recordIdField() {
+    return screen.getByLabelText(/Athlete record ID/i) as HTMLInputElement;
+  }
+
+  test('fills in the next free record ID', async () => {
+    // ROSTER holds ath-1 and ath-2, so the next free one is ath-003. Padded
+    // to match the convention the placeholder always advertised.
+    await openAddAthleteTab({ roster: ROSTER, members: [COACH] });
+
+    await waitFor(() => expect(recordIdField().value).toBe('ath-003'));
+  });
+
+  test('skips an id that is already taken rather than counting from the highest', async () => {
+    // A gym whose numbering has a hole in it: the scan lands on ath-003 and
+    // has to walk past it. Counting alone would have suggested a collision.
+    await openAddAthleteTab({
+      members: [COACH],
+      roster: [
+        ...ROSTER,
+        { athlete_id: 'ath-003', full_name: 'Jo Nguyen', account_id: null, account_active: null, has_pin: false, account_updated_at: null },
+      ],
+    });
+
+    await waitFor(() => expect(recordIdField().value).toBe('ath-004'));
+  });
+
+  test('leaves the admin own id alone once they type one', async () => {
+    await openAddAthleteTab({ roster: ROSTER, members: [COACH] });
+    await waitFor(() => expect(recordIdField().value).toBe('ath-003'));
+
+    fireEvent.change(recordIdField(), { target: { value: 'PPBF-2026-14' } });
+
+    expect(recordIdField().value).toBe('PPBF-2026-14');
+  });
+
+  test('suggests nothing when the roster could not be read', async () => {
+    // The collision warning is blind in exactly this situation, so a
+    // prefilled id would have nothing to catch it if it were already taken.
+    await openAddAthleteTab({ rosterOk: false, members: [COACH] });
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Add Athlete & Get Code/i })).toBeTruthy());
+    expect(recordIdField().value).toBe('');
+  });
+
+  test('says which fields are still missing instead of only greying the button', async () => {
+    await openAddAthleteTab({ roster: ROSTER, members: [COACH] });
+
+    const submit = await screen.findByRole('button', { name: /Add Athlete & Get Code/i }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+
+    // The record ID is already filled in, so it must not be listed.
+    const reason = screen.getByText(/Still needed:/i).textContent ?? '';
+    expect(reason).toMatch(/full name/i);
+    expect(reason).toMatch(/date of birth/i);
+    expect(reason).toMatch(/weight class/i);
+    expect(reason).toMatch(/emergency contact/i);
+    expect(reason).toMatch(/coach/i);
+    expect(reason).toMatch(/sign-in ID/i);
+    expect(reason).not.toMatch(/record ID/i);
+  });
+
+  test('names the cure when the gym has no coach to assign', async () => {
+    // Unfixable on this form: the select is empty by necessity, so pointing
+    // at the field would send the admin looking for a control that cannot
+    // help them.
+    await openAddAthleteTab({ roster: ROSTER, members: [] });
+
+    await waitFor(() => expect(screen.getByText(/Still needed:/i)).toBeTruthy());
+    expect(screen.getByText(/Still needed:/i).textContent ?? '').toMatch(/Add Coach, Staff Or Guardian/i);
+  });
+
+  test('drops the reason and enables the button once everything is filled', async () => {
+    await openAddAthleteTab({ roster: ROSTER, members: [COACH] });
+
+    const submit = await screen.findByRole('button', { name: /Add Athlete & Get Code/i }) as HTMLButtonElement;
+
+    fireEvent.change(screen.getByLabelText(/Full name/i), { target: { value: 'Riley Chen' } });
+    fireEvent.change(screen.getByLabelText(/Date of birth/i), { target: { value: '2012-03-14' } });
+    fireEvent.change(screen.getByLabelText(/Weight class/i), { target: { value: '60kg' } });
+    fireEvent.change(screen.getByLabelText(/Emergency contact/i), { target: { value: 'Dana 555-0101' } });
+    fireEvent.change(screen.getByLabelText(/^Coach$/i), { target: { value: 'coach-1' } });
+    fireEvent.change(screen.getByLabelText(/Sign-in ID/i), { target: { value: 'rchen' } });
+
+    await waitFor(() => expect(submit.disabled).toBe(false));
+    expect(screen.queryByText(/Still needed:/i)).toBeNull();
+  });
+
+  test('submits the suggested id the admin never touched', async () => {
+    // The id was only ever derived for display, so this is the case that
+    // would silently post an empty athlete_id if it were not pinned at submit.
+    const posted: Record<string, unknown>[] = [];
+    await openAddAthleteTab({
+      roster: ROSTER,
+      members: [COACH],
+      onAthleteWrite: (_url, body) => {
+        posted.push(body);
+        return { ok: true };
+      },
+    });
+
+    fireEvent.change(screen.getByLabelText(/Full name/i), { target: { value: 'Riley Chen' } });
+    fireEvent.change(screen.getByLabelText(/Date of birth/i), { target: { value: '2012-03-14' } });
+    fireEvent.change(screen.getByLabelText(/Weight class/i), { target: { value: '60kg' } });
+    fireEvent.change(screen.getByLabelText(/Emergency contact/i), { target: { value: 'Dana 555-0101' } });
+    fireEvent.change(screen.getByLabelText(/^Coach$/i), { target: { value: 'coach-1' } });
+    fireEvent.change(screen.getByLabelText(/Sign-in ID/i), { target: { value: 'rchen' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /Add Athlete & Get Code/i }));
+
+    await waitFor(() => expect(posted.length).toBeGreaterThan(0));
+    expect(posted[0].athlete_id).toBe('ath-003');
+  });
+});
+
+/**
+ * The duplicate-child check, which ships WITH the record-ID autofill and not
+ * after it.
+ *
+ * Typing an ID by hand and finding it taken used to be the one moment an
+ * admin stopped and asked "is this the same kid?". Filling the ID in removes
+ * that moment, so something has to replace it -- otherwise the convenience
+ * makes the real hazard more likely rather than less.
+ *
+ * The hazard is not a duplicate ID. That is already impossible: the create
+ * route is create-only and the primary key refuses it, and the form names the
+ * clash. It is the same child under two IDs -- two sets of sessions and goals
+ * that can never be added together, and no error anywhere, because to the
+ * database they are two children.
+ */
+describe('adding a child who is already on the roster', () => {
+  const COACH = {
+    account_id: 'coach-1',
+    login_email: 'coach@example.com',
+    auth_provider: 'microsoft',
+    role: 'coach',
+    athlete_id: null,
+    active_flag: true,
+    has_pin: false,
+    membership_active: true,
+  };
+
+  async function openAddAthleteTab(options: MockOptions) {
+    global.fetch = fetchMock(options) as never;
+    render(<PeopleConsolePage />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Add Athlete$/i }));
+  }
+
+  function fillEverythingExceptIdentity() {
+    fireEvent.change(screen.getByLabelText(/Weight class/i), { target: { value: '60kg' } });
+    fireEvent.change(screen.getByLabelText(/Emergency contact/i), { target: { value: 'Dana 555-0101' } });
+    fireEvent.change(screen.getByLabelText(/^Coach$/i), { target: { value: 'coach-1' } });
+    fireEvent.change(screen.getByLabelText(/Sign-in ID/i), { target: { value: 'ajohnson2' } });
+  }
+
+  test('warns and blocks when the name and birthday both match', async () => {
+    await openAddAthleteTab({ roster: ROSTER, members: [COACH] });
+    const submit = await screen.findByRole('button', { name: /Add Athlete & Get Code/i }) as HTMLButtonElement;
+
+    fireEvent.change(screen.getByLabelText(/Full name/i), { target: { value: 'Alex Johnson' } });
+    fireEvent.change(screen.getByLabelText(/Date of birth/i), { target: { value: '2012-03-14' } });
+    fillEverythingExceptIdentity();
+
+    expect(screen.getByText(/may already be the same child/i)).toBeTruthy();
+    // Names the record they would be duplicating, so the admin can go and look.
+    expect(screen.getByText(/ath-1/)).toBeTruthy();
+    expect(submit.disabled).toBe(true);
+  });
+
+  test('lets it through once the admin says they have checked', async () => {
+    await openAddAthleteTab({ roster: ROSTER, members: [COACH] });
+    const submit = await screen.findByRole('button', { name: /Add Athlete & Get Code/i }) as HTMLButtonElement;
+
+    fireEvent.change(screen.getByLabelText(/Full name/i), { target: { value: 'Alex Johnson' } });
+    fireEvent.change(screen.getByLabelText(/Date of birth/i), { target: { value: '2012-03-14' } });
+    fillEverythingExceptIdentity();
+    expect(submit.disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /different child/i }));
+
+    await waitFor(() => expect(submit.disabled).toBe(false));
+  });
+
+  test('forgets that answer when the identity is edited afterwards', async () => {
+    // A tick read for one child must not wave a different one through.
+    await openAddAthleteTab({
+      members: [COACH],
+      roster: [
+        ...ROSTER,
+        { athlete_id: 'ath-9', full_name: 'Sam Rivera', dob: '2011-07-02', account_id: null, account_active: null, has_pin: false, account_updated_at: null },
+      ],
+    });
+    const submit = await screen.findByRole('button', { name: /Add Athlete & Get Code/i }) as HTMLButtonElement;
+
+    fireEvent.change(screen.getByLabelText(/Full name/i), { target: { value: 'Alex Johnson' } });
+    fireEvent.change(screen.getByLabelText(/Date of birth/i), { target: { value: '2012-03-14' } });
+    fillEverythingExceptIdentity();
+    fireEvent.click(screen.getByRole('checkbox', { name: /different child/i }));
+    await waitFor(() => expect(submit.disabled).toBe(false));
+
+    // Now retype it as a different child who ALSO collides.
+    fireEvent.change(screen.getByLabelText(/Full name/i), { target: { value: 'Sam Rivera' } });
+    fireEvent.change(screen.getByLabelText(/Date of birth/i), { target: { value: '2011-07-02' } });
+
+    expect(screen.getByText(/may already be the same child/i)).toBeTruthy();
+    await waitFor(() => expect(submit.disabled).toBe(true));
+  });
+
+  // Negative control. A gate that fires on name alone would be clicked
+  // through within a week, and then it protects nothing.
+  test('does not block two different children who share a name', async () => {
+    await openAddAthleteTab({ roster: ROSTER, members: [COACH] });
+    const submit = await screen.findByRole('button', { name: /Add Athlete & Get Code/i }) as HTMLButtonElement;
+
+    fireEvent.change(screen.getByLabelText(/Full name/i), { target: { value: 'Alex Johnson' } });
+    fireEvent.change(screen.getByLabelText(/Date of birth/i), { target: { value: '2014-09-01' } });
+    fillEverythingExceptIdentity();
+
+    expect(screen.queryByText(/may already be the same child/i)).toBeNull();
+    // It still remarks on it, because a mistyped birthday looks like this too.
+    expect(screen.getByText(/with a different date of birth/i)).toBeTruthy();
+    await waitFor(() => expect(submit.disabled).toBe(false));
+  });
+
+  test('ignores case and extra spacing when matching a name', async () => {
+    await openAddAthleteTab({ roster: ROSTER, members: [COACH] });
+
+    fireEvent.change(screen.getByLabelText(/Full name/i), { target: { value: '  alex   JOHNSON ' } });
+    fireEvent.change(screen.getByLabelText(/Date of birth/i), { target: { value: '2012-03-14' } });
+
+    expect(screen.getByText(/may already be the same child/i)).toBeTruthy();
+  });
+
+  test('says nothing until there is both a name and a birthday to match on', async () => {
+    await openAddAthleteTab({ roster: ROSTER, members: [COACH] });
+
+    fireEvent.change(screen.getByLabelText(/Full name/i), { target: { value: 'Alex Johnson' } });
+
+    expect(screen.queryByText(/may already be the same child/i)).toBeNull();
   });
 });
