@@ -93,11 +93,19 @@ Evidence pointers are the primary module or route; tests live alongside.
 
 ### Group D — Transfer System (46–53) — not started
 
-All eight (Performance Transfer Validation, Multi-Sport, Tactical Athlete,
-Wrestling, Military Readiness, Life-Skill Transfer, Transfer Evidence, False
-Progress Detection) are ⬜ → **Phase 6**. They are validation layers over
-longitudinal data; building them before the data exists would produce empty
-dashboards, which the truth-on-screen rule forbids.
+Validation layers over longitudinal data; building them before the data exists
+would produce empty dashboards, which the truth-on-screen rule forbids.
+
+| # | Capability | Status | Phase |
+|---|---|---|---|
+| 46 | Performance Transfer Validation Engine | ⬜ | 6 |
+| 47 | Multi-Sport Transfer Engine | ⬜ | 6 |
+| 48 | Tactical Athlete Transfer Engine | ⬜ | 6 |
+| 49 | Wrestling Transfer Module | ⬜ | 6 |
+| 50 | Military Readiness Transfer Module | ⬜ | 6 |
+| 51 | Life-Skill Transfer Module | ⬜ | 6 |
+| 52 | Transfer Evidence Engine | ⬜ | 6 |
+| 53 | False Progress Detection Engine | ⬜ | 6 |
 
 ### Group E — Learning / Skill Acquisition (54–63)
 
@@ -111,12 +119,23 @@ dashboards, which the truth-on-screen rule forbids.
 
 ### Group F — Mental / Emotional / Behavioral (64–74) — not started
 
-All eleven (Emotional Regulation, Resilience, Confidence Stability, Frustration
-Response, Reset Ability, Behavior Pattern, Discipline/Accountability,
-Motivation/Engagement, Character, Leadership, Habit Formation) are ⬜ →
-**Phase 6**, except **70 Discipline/Accountability** and **74 Habit Formation**,
-which have natural hooks in the Phase 2 class-management build (behavior
-standards, at-home habit engine) and can start there as data capture.
+All eleven are ⬜. Two (70, 74) have natural data-capture hooks in the Phase 2
+class-management build (behavior standards, at-home habit engine) and start
+there; the inference layers land in Phase 6.
+
+| # | Capability | Status | Phase |
+|---|---|---|---|
+| 64 | Emotional Regulation Engine | ⬜ | 6 |
+| 65 | Resilience Engine | ⬜ | 6 |
+| 66 | Confidence Stability Engine | ⬜ | 6 |
+| 67 | Frustration Response Monitor | ⬜ | 6 |
+| 68 | Reset Ability Engine | ⬜ | 6 |
+| 69 | Behavior Pattern Engine | ⬜ | 6 |
+| 70 | Discipline / Accountability Engine | ⬜ | 2 (capture) → 6 |
+| 71 | Motivation / Engagement Engine | ⬜ | 6 |
+| 72 | Character Development Engine | ⬜ | 6 |
+| 73 | Leadership Development Engine | ⬜ | 6 |
+| 74 | Habit Formation Engine | ⬜ | 2 (capture) → 6 |
 
 ### Group G — Safety / Recovery / Health (75–84) — the safety spine
 
@@ -152,14 +171,33 @@ standards, at-home habit engine) and can start there as data capture.
 
 ### Group I — Swim / Water Confidence (97–103) — not started
 
-All seven ⬜ → **Phase 7**. Self-contained specialty module; carries its own
-hard safety gates (water panic, breath-hold) which must ship *with* it, not after.
+Self-contained specialty module; its hard safety gates (water panic,
+breath-hold) must ship *with* it, not after.
+
+| # | Capability | Status | Phase |
+|---|---|---|---|
+| 97 | Swim Screening Module | ⬜ | 7 |
+| 98 | Water Confidence Tracker | ⬜ | 7 |
+| 99 | Pool Safety Gate | ⬜ | 7 |
+| 100 | Underwater Restriction Engine | ⬜ | 7 |
+| 101 | Continuous Swim Progression Tracker | ⬜ | 7 |
+| 102 | Water Panic / Unsafe Breath-Hold Flag | ⬜ | 7 |
+| 103 | Lifeguard / Safety Support Requirement Tracker | ⬜ | 7 |
 
 ### Group J — Body Composition (104–109) — not started
 
-All six ⬜ → **Phase 7**. Small, but sensitive: the safety router (#108) and
-growth/maturation context (#109) are prerequisites for the trackers, not add-ons,
-and it must sit behind the Privacy-Tier System (#200).
+Small, but sensitive: the safety router (#108) and growth/maturation context
+(#109) are prerequisites for the trackers, not add-ons, and the whole group
+sits behind the Privacy-Tier System (#200).
+
+| # | Capability | Status | Phase |
+|---|---|---|---|
+| 104 | Bodyweight Tracking | ⬜ | 7 |
+| 105 | Waist Tracking | ⬜ | 7 |
+| 106 | Measurement Context Engine | ⬜ | 7 |
+| 107 | Body-Composition Trend Monitor | ⬜ | 7 |
+| 108 | Body-Composition Safety Router | ⬜ | 7 (first in group) |
+| 109 | Growth / Maturation Context Layer | ⬜ | 7 (first in group) |
 
 ### Group K — Coach System (110–119)
 
@@ -259,13 +297,21 @@ and it must sit behind the Privacy-Tier System (#200).
 
 ### Group Q — Advanced / Future (176–192) — deliberately last
 
-All seventeen (Digital Twin, Athlete OS, Forecasting, Plateau Detection, Best
-Next Action, Risk Forecasting, LTAD, Multi-Athlete Patterns, Program
-Effectiveness, Environment, Competitive/Tactical Readiness, Selection Prep,
-Scenario Simulation, Adaptive Logic, System-Driven Next Session, Closed-Loop
-Execution) are ⬜ → **Phase 8**. These are prediction/automation layers that are
-only honest once 6–12 months of real athlete data exists. Building them earlier
-recreates the fake-data problem the owner has explicitly banned.
+Prediction/automation layers that are only honest once 6–12 months of real
+athlete data exists. Building them earlier recreates the fake-data problem the
+owner has explicitly banned.
+
+| # | Capability | Status | Phase | | # | Capability | Status | Phase |
+|---|---|---|---|---|---|---|---|---|
+| 176 | Physical Digital Twin | ⬜ | 8 | | 185 | Environment Engine | ⬜ | 8 |
+| 177 | Athlete Operating System | ⬜ | 8 | | 186 | Competitive Readiness Engine | ⬜ | 8 |
+| 178 | Development Forecasting Engine | ⬜ | 8 | | 187 | Tactical Readiness Engine | ⬜ | 8 |
+| 179 | Plateau Detection Engine | ⬜ | 8 | | 188 | Selection Prep Engine | ⬜ | 8 |
+| 180 | Best Next Action Engine | ⬜ | 8 | | 189 | Scenario Simulation Engine | ⬜ | 8 |
+| 181 | Risk Forecasting Engine | ⬜ | 8 | | 190 | Adaptive Logic Engine | ⬜ | 8 |
+| 182 | Long-Term Athlete Development Engine | ⬜ | 8 | | 191 | System-Driven Next Session Engine | ⬜ | 8 |
+| 183 | Multi-Athlete Pattern Engine | ⬜ | 8 | | 192 | Closed-Loop Execution Engine | ⬜ | 8 |
+| 184 | Program Effectiveness Engine | ⬜ | 8 | | | | | |
 
 ### Group R — Strongest Additions Now (193–200) — pulled forward, as named
 
