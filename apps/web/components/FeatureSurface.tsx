@@ -85,7 +85,7 @@ export default function FeatureSurface({
               </div>
             </section>
 
-            <section className="border-[3px] border-[var(--black)] bg-[var(--red-primary)] p-6 text-sm text-[var(--white)] shadow-[var(--shadow-md)]">
+            <section className="border-[3px] border-[var(--black)] bg-[var(--brass-800)] p-6 text-sm text-[var(--white)] shadow-[var(--shadow-md)]">
               <h2 className="font-display text-lg tracking-tight text-[var(--white)]">Front-end status</h2>
               <p className="mt-3 leading-6 text-[var(--white-off)]">
                 This route is a live scaffold for one of the missing capability surfaces. It is intentionally simple,

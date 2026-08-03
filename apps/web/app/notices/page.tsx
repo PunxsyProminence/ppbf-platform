@@ -35,7 +35,7 @@ const LIFECYCLE_TONE: Record<AnnouncementLifecycle, string> = {
   live: 'border-[var(--status-ready)] bg-[#dce7ca]',
   scheduled: 'border-[var(--status-warning)] bg-[#efe3c4]',
   expired: 'border-[var(--gray-medium)] bg-[var(--canvas-tan)]',
-  retired: 'border-[var(--red-primary)] bg-[#f1d6d1]',
+  retired: 'border-[color:var(--brass-600)] bg-[#f1d6d1]',
 };
 
 const EMPTY_DRAFT = {
@@ -332,7 +332,7 @@ function NoticesAuthoringPage() {
               </label>
             ) : null}
             {windowIsBackwards ? (
-              <p className="text-sm text-[var(--red-primary)]">The end time must be after the start time.</p>
+              <p className="text-sm text-[color:var(--brass-800)]">The end time must be after the start time.</p>
             ) : null}
             <button
               type="button"
@@ -342,7 +342,7 @@ function NoticesAuthoringPage() {
             >
               {isPublishing ? 'Publishing...' : 'Publish'}
             </button>
-            {message ? <p className="text-sm font-semibold text-[var(--red-primary)]">{message}</p> : null}
+            {message ? <p className="text-sm font-semibold text-[color:var(--brass-800)]">{message}</p> : null}
           </div>
 
           <div className="space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">

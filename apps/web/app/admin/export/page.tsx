@@ -109,7 +109,7 @@ export default function RosterExportPage() {
               onClick={() => {
                 void handleDownload();
               }}
-              className="min-h-[48px] w-full border-2 border-[var(--black)] bg-[var(--red-primary)] px-6 text-sm font-black uppercase tracking-[0.12em] text-[var(--white)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-[48px] w-full border-2 border-[var(--black)] bg-[var(--brass-800)] px-6 text-sm font-black uppercase tracking-[0.12em] text-[var(--white)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isWorking ? 'Preparing the file...' : 'Download roster (CSV)'}
             </button>
@@ -147,11 +147,11 @@ export default function RosterExportPage() {
           <section className="mt-8">
             <h2 className="font-display text-xl tracking-tight">What is not in the file</h2>
             <ul className="mt-3 space-y-2 text-sm leading-6 text-[var(--gray-dark)]">
-              <li className="border-l-4 border-[var(--red-primary)] pl-3">
+              <li className="border-l-4 border-[color:var(--brass-600)] pl-3">
                 No PINs, no stored password hashes, and no sign-in tokens. The athlete sign-in ID is
                 included because you need it to rebuild a roster; the credential on it is not.
               </li>
-              <li className="border-l-4 border-[var(--red-primary)] pl-3">
+              <li className="border-l-4 border-[color:var(--brass-600)] pl-3">
                 No medical intake, waivers, attendance, session records, coach reviews or pain
                 reports. Those are held in the database and there is no screen that exports them
                 today.

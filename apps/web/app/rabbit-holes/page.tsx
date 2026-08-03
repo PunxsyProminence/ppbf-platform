@@ -365,7 +365,7 @@ function RabbitHoleAuthoringPage() {
           >
             {isPublishing ? 'Publishing...' : 'Publish'}
           </button>
-          {message ? <p className="text-sm font-semibold text-[var(--red-primary)]">{message}</p> : null}
+          {message ? <p className="text-sm font-semibold text-[color:var(--brass-800)]">{message}</p> : null}
         </section>
 
         <section className="mt-6 space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
@@ -396,7 +396,7 @@ function RabbitHoleAuthoringPage() {
                   <p className="mt-2 text-sm font-semibold leading-6 text-[var(--black)]">{lesson.title}</p>
                   <p className="mt-1 text-sm leading-6 text-[var(--gray-dark)]">{lesson.concept}</p>
                   {lesson.homework ? (
-                    <p className="mt-2 border-l-2 border-[var(--red-primary)] pl-2 text-sm leading-6 text-[var(--gray-dark)]">
+                    <p className="mt-2 border-l-2 border-[color:var(--brass-600)] pl-2 text-sm leading-6 text-[var(--gray-dark)]">
                       Homework: {lesson.homework}
                     </p>
                   ) : null}

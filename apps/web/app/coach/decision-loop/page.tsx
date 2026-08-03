@@ -86,7 +86,7 @@ function statusChipClasses(status: string): string {
     return 'border-[var(--black)] bg-[var(--canvas-tan-light)] font-bold';
   }
   if (status === 'rejected' || status === 'not_cleared' || status === 'miss') {
-    return 'border-[var(--red-primary)] bg-[var(--canvas-tan-light)] text-[var(--red-primary)]';
+    return 'border-[color:var(--brass-600)] bg-[var(--canvas-tan-light)] text-[color:var(--brass-800)]';
   }
   return 'border-[var(--gray-dark)] bg-[var(--canvas-tan-light)] text-[var(--gray-dark)]';
 }
@@ -442,7 +442,7 @@ export default function DecisionLoopReviewPage() {
                           <button
                             type="button"
                             onClick={() => void handleDecideRecommendation(rec.recommendation_id, 'rejected')}
-                            className="h-9 border-2 border-[var(--red-primary)] px-3 text-xs font-bold uppercase text-[var(--red-primary)]"
+                            className="h-9 border-2 border-[color:var(--brass-600)] px-3 text-xs font-bold uppercase text-[color:var(--brass-800)]"
                           >
                             Reject
                           </button>
@@ -601,7 +601,7 @@ export default function DecisionLoopReviewPage() {
                   </label>
                   <button
                     type="submit"
-                    className="h-11 border-2 border-[var(--red-primary)] px-4 text-xs font-bold uppercase tracking-[0.1em] text-[var(--red-primary)]"
+                    className="h-11 border-2 border-[color:var(--brass-600)] px-4 text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--brass-800)]"
                   >
                     Flag Near-Miss
                   </button>

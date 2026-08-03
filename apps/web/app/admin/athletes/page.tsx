@@ -112,7 +112,7 @@ function WrongRoleNotice() {
         <div className="flex flex-wrap items-center justify-center gap-3">
           <Link
             href="/admin/organizations"
-            className="inline-flex min-h-[48px] items-center justify-center rounded-full border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-6 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-[var(--red-highlight)]"
+            className="inline-flex min-h-[48px] items-center justify-center rounded-full border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-6 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-[var(--red-highlight)]"
           >
             Organization Provisioning
           </Link>
@@ -344,7 +344,7 @@ function AthleteRecordsConsoleContent() {
         <header className="rounded-2xl border border-[rgba(0,0,0,0.16)] bg-white p-6 shadow-[var(--shadow-md)]">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">Athlete Records</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--brass-800)]">Athlete Records</p>
               <h1 className="mt-2 font-display text-3xl font-black tracking-tight">Correct An Athlete Record</h1>
               <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
                 Fix anything that was typed wrong when the athlete was added, reassign their coach, and mark an
@@ -386,14 +386,14 @@ function AthleteRecordsConsoleContent() {
             <p className="text-sm text-[var(--gray-dark)]">Loading your athlete records...</p>
           ) : rosterLoad === 'unavailable' ? (
             <div className="space-y-3">
-              <p className="text-sm font-semibold text-[var(--red-primary)]">
+              <p className="text-sm font-semibold text-[color:var(--brass-800)]">
                 Your athlete records could not be read. That is a problem reaching the app, not a sign that your gym
                 has none, so nothing is listed below.
               </p>
               <button
                 type="button"
                 onClick={() => void load()}
-                className="min-h-[44px] rounded-xl border-2 border-[var(--red-primary)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[var(--red-primary)]"
+                className="min-h-[44px] rounded-xl border-2 border-[color:var(--brass-600)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[color:var(--brass-800)]"
               >
                 Try Again
               </button>
@@ -405,7 +405,7 @@ function AthleteRecordsConsoleContent() {
           ) : (
             <>
               {unreadableRows > 0 && (
-                <p className="rounded-xl border border-[var(--red-primary)] bg-[rgba(184,59,52,0.06)] px-4 py-3 text-sm font-semibold text-[var(--red-primary)]">
+                <p className="rounded-xl border border-[color:var(--brass-600)] bg-[rgba(184,59,52,0.06)] px-4 py-3 text-sm font-semibold text-[color:var(--brass-800)]">
                   {unreadableRows} record{unreadableRows === 1 ? '' : 's'} could not be read and {unreadableRows === 1 ? 'is' : 'are'} not
                   listed below. They still exist — this screen cannot correct them.
                 </p>
@@ -421,7 +421,7 @@ function AthleteRecordsConsoleContent() {
                   value={filter}
                   onChange={(event) => setFilter(event.target.value)}
                   placeholder="Name or record ID"
-                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                 />
               </div>
 
@@ -448,7 +448,7 @@ function AthleteRecordsConsoleContent() {
                       <button
                         type="button"
                         onClick={() => openRecord(athlete)}
-                        className="min-h-[44px] shrink-0 rounded-xl border-2 border-[var(--red-primary)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[var(--red-primary)] transition hover:bg-[rgba(184,59,52,0.06)]"
+                        className="min-h-[44px] shrink-0 rounded-xl border-2 border-[color:var(--brass-600)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[color:var(--brass-800)] transition hover:bg-[rgba(184,59,52,0.06)]"
                       >
                         {selectedId === athlete.athlete_id ? 'Editing' : 'Correct Record'}
                       </button>
@@ -482,7 +482,7 @@ function AthleteRecordsConsoleContent() {
                   required
                   value={draftFullName}
                   onChange={(event) => setDraftFullName(event.target.value)}
-                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                 />
               </div>
 
@@ -497,7 +497,7 @@ function AthleteRecordsConsoleContent() {
                     required
                     value={draftDob}
                     onChange={(event) => setDraftDob(event.target.value)}
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                   />
                   <p className="mt-1 text-xs text-[var(--gray-dark)]">Currently stored as {selected.dob}.</p>
                 </div>
@@ -512,7 +512,7 @@ function AthleteRecordsConsoleContent() {
                     required
                     value={draftWeightClass}
                     onChange={(event) => setDraftWeightClass(event.target.value)}
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                   />
                 </div>
               </div>
@@ -526,7 +526,7 @@ function AthleteRecordsConsoleContent() {
                   required
                   value={draftGymStatus}
                   onChange={(event) => setDraftGymStatus(event.target.value)}
-                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                 >
                   {/* A stored value outside the documented vocabulary is kept
                       as an option rather than replaced, so opening a record
@@ -553,7 +553,7 @@ function AthleteRecordsConsoleContent() {
                   required
                   value={draftEmergencyContact}
                   onChange={(event) => setDraftEmergencyContact(event.target.value)}
-                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                 />
               </div>
 
@@ -572,7 +572,7 @@ function AthleteRecordsConsoleContent() {
                   value={draftCoachId}
                   onChange={(event) => setDraftCoachId(event.target.value)}
                   disabled={!coachesAvailable}
-                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)] disabled:opacity-70"
+                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)] disabled:opacity-70"
                 >
                   {coachChoices.map((coach) => (
                     <option key={coach.account_id} value={coach.account_id}>
@@ -585,7 +585,7 @@ function AthleteRecordsConsoleContent() {
               <button
                 type="submit"
                 disabled={busy || !hasUnsavedEdits || !draftComplete}
-                className="min-h-[50px] w-full rounded-xl border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white disabled:cursor-not-allowed disabled:opacity-50"
+                className="min-h-[50px] w-full rounded-xl border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {busy ? 'Saving...' : hasUnsavedEdits ? 'Save Correction' : 'Nothing To Save'}
               </button>
@@ -624,7 +624,7 @@ function AthleteRecordsConsoleContent() {
                       type="button"
                       disabled={busy}
                       onClick={() => void toggleActive()}
-                      className="min-h-[48px] flex-1 rounded-xl border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.12em] text-white disabled:opacity-50"
+                      className="min-h-[48px] flex-1 rounded-xl border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 text-sm font-black uppercase tracking-[0.12em] text-white disabled:opacity-50"
                     >
                       {busy ? 'Saving...' : 'Yes, Save It'}
                     </button>

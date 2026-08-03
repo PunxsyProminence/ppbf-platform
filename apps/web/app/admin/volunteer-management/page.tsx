@@ -234,7 +234,7 @@ export default function VolunteerManagementPage() {
             ))}
           </section>
 
-          {message ? <p className="mt-6 text-sm font-semibold text-[var(--red-primary)]">{message}</p> : null}
+          {message ? <p className="mt-6 text-sm font-semibold text-[color:var(--brass-800)]">{message}</p> : null}
 
           <div className="mt-8">
             <Link

@@ -222,7 +222,7 @@ export default function PlatformConsole() {
             This console is for PPBF platform administrators only.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
-            <Link href="/login" className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-[var(--red-primary)] px-6 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-[var(--red-highlight)]">
+            <Link href="/login" className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-[var(--brass-800)] px-6 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-[var(--red-highlight)]">
               Sign In With Microsoft
             </Link>
             <Link href="/admin" className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-6 text-sm font-black uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]">
@@ -281,7 +281,7 @@ export default function PlatformConsole() {
           <select
             value={selectedOrgId}
             onChange={(event) => setSelectedOrgId(event.target.value)}
-            className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+            className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
           >
             <option value="">Select a gym...</option>
             {organizations.map((org) => (
@@ -326,12 +326,12 @@ export default function PlatformConsole() {
               value={inviteEmail}
               onChange={(event) => setInviteEmail(event.target.value)}
               placeholder="name@example.org"
-              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
             />
             <select
               value={inviteRole}
               onChange={(event) => setInviteRole(event.target.value)}
-              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
             >
               {INVITABLE_ROLES.map((role) => (
                 <option key={role.value} value={role.value}>{role.label}</option>
@@ -341,7 +341,7 @@ export default function PlatformConsole() {
               type="button"
               disabled={isBusy || !selectedOrgId}
               onClick={() => void inviteStaff()}
-              className="h-11 w-full rounded-lg border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-11 w-full rounded-lg border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isBusy ? 'Working...' : 'Send Invite'}
             </button>
@@ -360,20 +360,20 @@ export default function PlatformConsole() {
               value={athleteAccountId}
               onChange={(event) => setAthleteAccountId(event.target.value)}
               placeholder="Account ID (how they'll sign in)"
-              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
             />
             <input
               type="text"
               value={athleteRosterId}
               onChange={(event) => setAthleteRosterId(event.target.value)}
               placeholder="Existing athlete roster ID"
-              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
             />
             <button
               type="button"
               disabled={isBusy || !selectedOrgId}
               onClick={() => void createAthleteShell()}
-              className="h-11 w-full rounded-lg border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-11 w-full rounded-lg border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isBusy ? 'Working...' : 'Create Account Shell'}
             </button>

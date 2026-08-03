@@ -218,7 +218,7 @@ function CoachDrillLibrary() {
             type="button"
             onClick={() => void createDrill()}
             disabled={saving}
-            className="mt-5 min-h-[48px] rounded-xl border-2 border-[var(--black)] bg-[var(--red-primary)] px-6 text-sm font-black uppercase tracking-[0.14em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+            className="mt-5 min-h-[48px] rounded-xl border-2 border-[var(--black)] bg-[var(--brass-800)] px-6 text-sm font-black uppercase tracking-[0.14em] text-white disabled:cursor-not-allowed disabled:opacity-60"
           >
             {saving ? 'Saving...' : 'Add drill'}
           </button>

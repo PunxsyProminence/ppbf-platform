@@ -124,8 +124,8 @@ function SetupWizardContent() {
     <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       <div className="mx-auto w-full max-w-3xl space-y-8 px-6 py-12 lg:px-10">
         {/* Test Banner */}
-        <div className="rounded-lg border-2 border-[var(--red-primary)] bg-[rgba(184,59,52,0.1)] p-4">
-          <p className="text-sm font-semibold text-[var(--red-primary)]">🧪 TEST MODE - No authentication required. Form submissions are simulated.</p>
+        <div className="rounded-lg border-2 border-[color:var(--brass-600)] bg-[rgba(184,59,52,0.1)] p-4">
+          <p className="text-sm font-semibold text-[color:var(--brass-800)]">🧪 TEST MODE - No authentication required. Form submissions are simulated.</p>
         </div>
 
         {/* Header */}
@@ -144,15 +144,15 @@ function SetupWizardContent() {
               <div
                 className={`flex h-10 w-10 items-center justify-center rounded-full border-2 font-bold transition ${
                   s < step
-                    ? 'border-[var(--red-primary)] bg-[var(--red-primary)] text-white'
+                    ? 'border-[color:var(--brass-600)] bg-[var(--brass-800)] text-white'
                     : s === step
-                      ? 'border-[var(--red-primary)] bg-white text-[var(--red-primary)]'
+                      ? 'border-[color:var(--brass-600)] bg-white text-[color:var(--brass-800)]'
                       : 'border-[rgba(0,0,0,0.14)] bg-white text-[var(--gray-dark)]'
                 }`}
               >
                 {s < step ? '✓' : s}
               </div>
-              {s < 3 && <div className={`flex-1 h-1 rounded ${s < step ? 'bg-[var(--red-primary)]' : 'bg-[rgba(0,0,0,0.08)]'}`} />}
+              {s < 3 && <div className={`flex-1 h-1 rounded ${s < step ? 'bg-[var(--brass-800)]' : 'bg-[rgba(0,0,0,0.08)]'}`} />}
             </div>
           ))}
         </div>
@@ -186,7 +186,7 @@ function SetupWizardContent() {
         <section
           className={`rounded-2xl border-2 p-6 transition ${
             step === 1
-              ? 'border-[var(--red-primary)] bg-white shadow-[0_4px_12px_rgba(184,59,52,0.15)]'
+              ? 'border-[color:var(--brass-600)] bg-white shadow-[0_4px_12px_rgba(184,59,52,0.15)]'
               : 'border-[rgba(0,0,0,0.14)] bg-white/60 opacity-60'
           }`}
         >
@@ -210,7 +210,7 @@ function SetupWizardContent() {
                   value={gymId}
                   onChange={(e) => setGymId(e.target.value.toLowerCase())}
                   placeholder="golden_boxing"
-                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                 />
               </div>
 
@@ -222,7 +222,7 @@ function SetupWizardContent() {
                   value={gymName}
                   onChange={(e) => setGymName(e.target.value)}
                   placeholder="Golden Boxing Studio"
-                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                 />
               </div>
 
@@ -236,7 +236,7 @@ function SetupWizardContent() {
                     setStep(2);
                   }
                 }}
-                className="h-11 w-full rounded-lg border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="h-11 w-full rounded-lg border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isBusy ? 'Creating...' : 'Create Gym & Continue'}
               </button>
@@ -248,7 +248,7 @@ function SetupWizardContent() {
         <section
           className={`rounded-2xl border-2 p-6 transition ${
             step === 2
-              ? 'border-[var(--red-primary)] bg-white shadow-[0_4px_12px_rgba(184,59,52,0.15)]'
+              ? 'border-[color:var(--brass-600)] bg-white shadow-[0_4px_12px_rgba(184,59,52,0.15)]'
               : 'border-[rgba(0,0,0,0.14)] bg-white/60 opacity-60'
           }`}
         >
@@ -272,7 +272,7 @@ function SetupWizardContent() {
                   value={adminAccountId}
                   onChange={(e) => setAdminAccountId(e.target.value)}
                   placeholder="coach-john"
-                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                 />
               </div>
 
@@ -284,7 +284,7 @@ function SetupWizardContent() {
                   value={adminPin}
                   onChange={(e) => setAdminPin(e.target.value)}
                   placeholder="••••"
-                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                 />
               </div>
 
@@ -295,7 +295,7 @@ function SetupWizardContent() {
                   value={adminConfirmPin}
                   onChange={(e) => setAdminConfirmPin(e.target.value)}
                   placeholder="••••"
-                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                 />
               </div>
 
@@ -309,7 +309,7 @@ function SetupWizardContent() {
                     setStep(3);
                   }
                 }}
-                className="h-11 w-full rounded-lg border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="h-11 w-full rounded-lg border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isBusy ? 'Creating...' : 'Create Admin Account & Continue'}
               </button>
@@ -320,7 +320,7 @@ function SetupWizardContent() {
         {/* Step 3: Configure Features */}
         <section
           className={`rounded-2xl border-2 p-6 transition ${
-            step === 3 ? 'border-[var(--red-primary)] bg-white shadow-[0_4px_12px_rgba(184,59,52,0.15)]' : 'border-[rgba(0,0,0,0.14)] bg-white/60 opacity-60'
+            step === 3 ? 'border-[color:var(--brass-600)] bg-white shadow-[0_4px_12px_rgba(184,59,52,0.15)]' : 'border-[rgba(0,0,0,0.14)] bg-white/60 opacity-60'
           }`}
         >
           <div className="flex-1">
@@ -334,7 +334,7 @@ function SetupWizardContent() {
             <div className="mt-6 space-y-4">
               <div className="space-y-3">
                 {gymCapabilities.map(({ id, label, description }) => (
-                  <label key={id} className="flex items-start gap-3 rounded-lg border border-[rgba(0,0,0,0.12)] bg-[var(--canvas-tan-light)] p-4 cursor-pointer hover:border-[var(--red-primary)] transition">
+                  <label key={id} className="flex items-start gap-3 rounded-lg border border-[rgba(0,0,0,0.12)] bg-[var(--canvas-tan-light)] p-4 cursor-pointer hover:border-[color:var(--brass-600)] transition">
                     <input
                       type="checkbox"
                       checked={gymCapabilityAccess[id] ?? false}
@@ -344,7 +344,7 @@ function SetupWizardContent() {
                           [id]: e.target.checked,
                         })
                       }
-                      className="mt-1 h-5 w-5 cursor-pointer accent-[var(--red-primary)]"
+                      className="mt-1 h-5 w-5 cursor-pointer accent-[var(--brass-600)]"
                     />
                     <div className="flex-1">
                       <p className="font-semibold text-[var(--black)]">{label}</p>
@@ -364,7 +364,7 @@ function SetupWizardContent() {
                     setStep(4);
                   }
                 }}
-                className="h-11 w-full rounded-lg border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="h-11 w-full rounded-lg border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isBusy ? 'Saving...' : 'Save & Complete Setup'}
               </button>
