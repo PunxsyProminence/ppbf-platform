@@ -229,6 +229,86 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* --- The tap floor, by default rather than by sweep ----------------------
+
+   Three separate passes tried to raise every interactive target to 44px, and
+   each one missed a different subset:
+
+     - the first two rewrote literal `min-h-[Npx]` values, so any control sized
+       with Tailwind's numeric scale (h-8 = 32px, h-9 = 36px, h-10 = 40px) was
+       invisible to them -- and those set `height`, not `min-height`, so padding
+       could not rescue them;
+     - and roughly 110 buttons and links carry no height constraint at all,
+       landing wherever their font size leaves them, between 22px and 38px.
+       The athlete floor Check In / Check Out are among them.
+
+   Nothing established a default. ppbf.css sets min-height only on .btn (44px)
+   and .btn--kiosk / .input--kiosk / .tag (55px), and the app's ~61 pages
+   largely do not use those classes. So a fourth textual sweep would have
+   found a fourth subset it did not know to look for.
+
+   This is the floor instead. It works on `min-height`, which wins over the
+   `height` a numeric utility sets, so an h-9 control lands at 44px without
+   anyone editing it. And because a bare element selector loses to any class,
+   an explicit `min-h-[Npx]` utility still overrides it -- a control that
+   genuinely must be smaller says so at its own call site, which is a decision
+   someone can read, rather than an omission nobody notices.
+
+   Deliberately NOT applied to `a`: a link inside a paragraph is not a target,
+   and giving every inline link a 44px box would wreck prose. Links styled as
+   controls carry a class that sets their own geometry.
+
+   Covers `select` and text-entry inputs too: the donation status select and the
+   athlete's own session-duration field were both on the numeric scale, and a
+   dropdown you cannot hit is a control you cannot use exactly like a button you
+   cannot hit. Checkboxes, radios and hidden inputs are excluded -- a 44px
+   checkbox is a layout bug, and their labels are the real target. */
+button,
+[role="button"],
+select,
+input[type="button"],
+input[type="submit"],
+input[type="text"],
+input[type="number"],
+input[type="password"],
+input[type="email"],
+input[type="tel"],
+input[type="search"],
+input[type="date"] {
+  min-height: 44px;
+}
+
+/* Gym-floor surfaces want 55px, not 44 -- a child in gloves, a cracked screen,
+   a phone across the room, and a loud room. 44px is a desk number.
+
+   ppbf.css has carried .btn--kiosk and .input--kiosk for this all along and
+   they work, but they are opt-in per control: an athlete surface ends up only
+   as tall as the controls somebody remembered to mark, which is how a
+   session-duration input on a child's screen sat at 36px through three
+   accessibility sweeps.
+
+   The hook is app/athlete/layout.tsx, which every athlete route already passes
+   through. It carries `display: contents`, so it marks its subtree without
+   adding a box any page has to be designed around.
+
+   Scoped to /athlete rather than applied globally: 55px everywhere would push
+   dense admin tables around for no gain, and the people using those are at a
+   desk. /activate is the other gym-floor surface and opts in per control with
+   .btn--kiosk today. */
+[data-surface="kiosk"] button,
+[data-surface="kiosk"] [role="button"],
+[data-surface="kiosk"] select,
+[data-surface="kiosk"] input[type="button"],
+[data-surface="kiosk"] input[type="submit"],
+[data-surface="kiosk"] input[type="text"],
+[data-surface="kiosk"] input[type="number"],
+[data-surface="kiosk"] input[type="password"],
+[data-surface="kiosk"] input[type="tel"],
+[data-surface="kiosk"] input[type="search"],
+[data-surface="kiosk"] input[type="date"] {
+  min-height: var(--tap);
+}
+
 body::before {
   content: "";
   position: fixed;

@@ -1,3 +1,5 @@
+import { FEEDBACK_ACKNOWLEDGEMENT } from '@/lib/feedbackWording';
+
 import type { PilotRole } from './contracts';
 import { query } from './db';
 import { scanForSafetyLanguage } from './feedbackSafetyScan';
@@ -88,7 +90,11 @@ export interface PlatformFeedbackItem {
   organization_name: string;
   submitted_by_role: PilotRole;
   kind: FeedbackKind;
-  body: string;
+  // NULL for every safeguarding row. PLATFORM_FEEDBACK_SQL withholds the body
+  // on purpose -- what a child disclosed belongs to the gym handling it -- and
+  // this type said `string`, so every consumer was written believing there was
+  // always text to render. The admin queue drew an empty card because of it.
+  body: string | null;
   route: FeedbackRoute;
   triage_status: FeedbackTriageStatus;
   created_at: string;
@@ -204,9 +210,13 @@ export function decideFeedbackRoute(params: { role: PilotRole; body: string }): 
  * conversation, so telling a child someone will come and talk with them was an
  * assurance no code backed. What is true of every submission is that a person
  * reads it, and that is what it says.
+ *
+ * The text itself lives in lib/feedbackWording so the admin queue can quote it
+ * rather than restate it. Restating it is how the responder's screen came to
+ * promise a conversation months after the child stopped being promised one.
  */
 export function feedbackAcknowledgement(): string {
-  return 'Thank you for telling us. A person at the gym reads this.';
+  return FEEDBACK_ACKNOWLEDGEMENT;
 }
 
 export interface CreatedFeedbackSubmission {

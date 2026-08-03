@@ -391,6 +391,69 @@ describe('settleVideoSessionScan', () => {
     expect(settled).toBe(false);
     expect((await readRow('vs-1')).status).toBe('quarantined');
   });
+
+  // The race that mattered. A human 'block' leaves status at 'quarantined' --
+  // only an approve moves it to 'ready' -- so the `status = 'quarantined'`
+  // guard, which exists to stop a late scan resurrecting a video, did not fire
+  // for the one case where a PERSON had refused it.
+  //
+  // Ordering under test: an administrator blocks the video while a scan is
+  // still in flight, then that scan returns with 'passed'/'ready'. Before the
+  // scan_state guard, it promoted the video and -- because scan_detail is
+  // replaced, not merged -- erased the attestation that a person had refused
+  // it. A blocked video of a child would have been published with no trace of
+  // the decision.
+  test('an in-flight scan cannot overturn a human block, and the attestation survives', async () => {
+    await insertQuarantined('vs-1');
+    await client.query(
+      `update pilot.video_sessions set scan_state = 'needs_human_review'`,
+    );
+    await videoSessions.claimNextVideoSessionForScan();
+
+    await videoSessions.reviewVideoSessionScan({
+      organizationId: 'org-1',
+      videoSessionId: 'vs-1',
+      decision: 'block',
+      priorScanState: 'needs_human_review',
+      reviewedByAccountId: 'admin-1',
+      reviewedByRole: 'organization_admin',
+      notes: 'A person refused this.',
+    });
+
+    const blocked = await readRow('vs-1');
+    expect(blocked.status).toBe('quarantined');
+    expect(blocked.scan_state).toBe('blocked');
+
+    // The scan that was already running comes back and says it is fine.
+    const settled = await videoSessions.settleVideoSessionScan({
+      videoSessionId: 'vs-1',
+      scanState: 'passed',
+      nextStatus: 'ready',
+      detail: { decision: 'promote', reason: 'ALL_GATES_PASSED' },
+      retryInSeconds: 0,
+      terminal: true,
+    });
+
+    expect(settled).toBe(false);
+
+    const after = await readRow('vs-1');
+    expect(after.status).toBe('quarantined');
+    expect(after.scan_state).toBe('blocked');
+    // The person's decision is still on the record.
+    expect(after.scan_detail).toMatchObject({
+      human_review: {
+        decision: 'block',
+        reviewed_by_account_id: 'admin-1',
+        notes: 'A person refused this.',
+      },
+    });
+    // And what the machine concluded afterwards is kept beside it rather than
+    // dropped -- a scanner disagreeing with a person is worth being able to
+    // look at later.
+    expect(after.scan_detail).toMatchObject({
+      late_scan_after_human_block: { scan_state: 'passed' },
+    });
+  });
 });
 
 describe('reviewVideoSessionScan (human attestation)', () => {
