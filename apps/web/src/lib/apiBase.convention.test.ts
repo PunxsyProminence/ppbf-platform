@@ -82,6 +82,13 @@ test('every client /api fetch goes through apiBase()', () => {
 const PUBLIC_FETCH_ALLOWLIST = new Set([
   // The public-interest form is submitted by signed-out visitors by design.
   'app/public/page.tsx',
+  // The gear shop. Read by anyone, signed in or not, and it must NOT send a
+  // session cookie: /api/public/store answers identically to every caller, so
+  // attaching credentials would send an athlete's or an admin's session to a
+  // route that has no use for it and cannot act on it. Omitting them is the
+  // stronger posture here, not the lazier one.
+  'app/store/page.tsx',
+  'app/store/[organizationId]/page.tsx',
 ]);
 
 test('every apiBase() fetch states credentials (public endpoints allowlisted)', () => {
