@@ -48,12 +48,30 @@ Spot-checked against the codebase:
 None of those are wrong. But `DONE` is carrying two different meanings, and the
 one it carries most often is *mapped*.
 
-**A known contradiction.** `docs/FIX_LIST_2026-08-02.md` lists **"Consent
-capture — build it, or decide on paper and write that down"** as an open owner
-decision. This backlog marks 151 Consent / Waiver as DONE. Both cannot be true.
-The likely resolution is that `pilot.waivers` exists as a table and no flow
-writes to it, which would make the fix list right and the backlog optimistic —
-but that has not been traced, and nobody should act on either until it is.
+**A contradiction, now resolved — and the backlog was right.**
+`docs/FIX_LIST_2026-08-02.md` listed "Consent capture — build it, or decide on
+paper" as an open owner decision, while this backlog marked 151 Consent /
+Waiver DONE. Traced on 2026-08-03:
+
+- `pilot.waivers` is in the base schema at `pilot_slice_postgres.sql:421`, with
+  an athlete foreign key, `signed_by_name`, `signed_by_role`, `signed_at`,
+  `consent_version` and `status`.
+- `POST /api/pilot/intake/domain-upsert` with `entity_type: 'waiver'` writes it
+  (`intake.ts:480` → `upsertWaiver`), guarded by
+  `requireRole(['organization_admin', 'coach'])`.
+- That route is **not** behind `PPBF_INTAKE_PROMOTION_ENABLED`, so it works in
+  production today.
+
+I had guessed the opposite in this file's first draft — that the table existed
+and nothing wrote to it. That guess was wrong, and the fix list has been
+corrected rather than this one.
+
+**What is genuinely missing is narrower than either document said:** no screen
+calls that route. A repo-wide search for `domain-upsert` across `.tsx` returns
+nothing. A guardian's signature can be recorded by an API call and by no human
+standing in the gym. That is the same defect as the three consoles that shipped
+with no navigation — the capability exists and there is no way in — and it is
+worth its own module rather than being buried in a DONE row.
 
 ---
 
