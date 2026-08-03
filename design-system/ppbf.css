@@ -2,9 +2,10 @@
    PPBF Design System — "Leather & Brass"
    Punxsutawney Prominence Boxing Foundation
    ---------------------------------------------------------------------------
-   A skeuomorphic system: every surface in the platform is a real object found
-   in a boxing gym's back office — oiled leather, cast brass, slate chalkboard,
-   cork, and stamped paper.
+   A skeuomorphic system: the platform is a building, and every screen is a
+   ROOM in it. A room supplies the wall, the light, and the shadow; the panels
+   standing in it are real objects — oiled leather, cast brass, slate
+   chalkboard, cork, stamped paper, stained wood, brick.
 
    Zero external assets. Textures are generated from SVG feTurbulence data URIs
    and layered gradients, so the kiosk renders on a cold tablet with no network.
@@ -13,12 +14,18 @@
      1. Brass is the chassis, never the message.
      2. Saturated colour means safety or status. Nothing else may use it.
      3. Colour is never the only channel — glyph + uppercase label, always.
-     4. Four voices: stencil commands, bone informs, chalk schedules, mono records.
+     4. Six voices: stencil commands, bone informs, chalk schedules, hand annotates,
+        gothic mastheads the clinic, mono records.
      5. Kiosk-first sizing — 55px targets, 19.1px type on the gym floor.
-     6. Every panel is a real object. If it isn't one of the materials, it doesn't ship.
+     6. Every screen is a room, and every panel in it is a real object. If a
+        surface isn't one of the materials, it doesn't ship.
      7. Refusal is a stamp, not an error toast.
      8. Proportion descends from φ. Nothing is sized by eye.
    ========================================================================= */
+
+/* Self-hosted OFL faces — see fonts.css. Imported here so ppbf.css stays the
+   single thing a consumer needs to include. */
+@import "./fonts.css";
 
 /* ---------------------------------------------------------------- TOKENS -- */
 :root {
@@ -58,6 +65,31 @@
   --cork:      #C08E4E;
   --cork-dark: #96682F;
 
+  /* --- Wood — the surround ------------------------------------------------
+     Stained oak: the frame around a board, the rail a row of plaques hangs
+     from, the plank wall behind it, the desk it all sits on. Leather is what
+     you hold; wood is what the room is built from. Distinct from --hide-*
+     (which is hide, and warmer/redder) because a wooden frame around a
+     leather panel has to read as two different objects. */
+  --wood-900: #1F1409;  /* frame shadow, deepest recess */
+  --wood-800: #2E1D0E;  /* dark-stained board face */
+  --wood-700: #422A15;  /* standard frame */
+  --wood-600: #5A3A1E;  /* mid oak, rail */
+  --wood-500: #7A5029;  /* lit edge */
+  --wood-300: #9C6B3A;  /* specular along a bevel */
+
+  /* --- Brick + mortar — the gym wall ------------------------------------ */
+  --brick-900: #2A1712;
+  --brick-700: #4A251C;
+  --brick-500: #6B3A2A;
+  --mortar:    #6E6255;
+
+  /* --- Lamp — the practical light ----------------------------------------
+     Every surface in this system is lit by a hanging fixture or a gooseneck,
+     never by ambient fill. Warm, pooled, falling off fast. */
+  --lamp:      #FFE9B8;
+  --lamp-hot:  #FFF6DF;
+
   /* --- Status ladder ----------------------------------------------------
      Layer 11 Safety Gate + Layer 10 queue states. Chosen to sit correctly on
      leather while staying clearly separate from brass — a gold bezel must
@@ -67,12 +99,32 @@
   --restricted: #C05A1E;  --restricted-ink:#F6D6B8;
   --locked:     #A81E22;  --locked-ink:    #F3C9C6;
 
+  /* The rung itself is a FILL. As a fill it is fine on either ground, and the
+     -ink variants above are its readable text colour on the ink ground.
+
+     Law 6 gives the app two grounds, so the ladder needs the other half of
+     that pair too. Measured as text on --canvas-warm, three of the four rungs
+     miss the 4.5:1 floor -- cleared 3.90, restricted 3.52, monitor 4.38 -- and
+     only locked clears it at 5.78. A status word set in --cleared on a family
+     surface is not quite readable, which is the worst possible place for it.
+
+     These are the same four hues taken down until each measures ~5:1 on canvas
+     (and 6.3:1+ on paper and white, so they hold on cards too). Use the plain
+     rung for fills and borders, -ink for text on leather, -deep for text on
+     canvas or paper. They stay near-identical in luminance to one another by
+     design; hue separates them, and Law 3 already requires a second channel. */
+  --cleared-deep:    #366A42;
+  --monitor-deep:    #2A6488;
+  --restricted-deep: #9A4818;
+  --locked-deep:     #A81E22;  /* already 5.78:1 on canvas; kept for symmetry */
+
   --stamp-red:  #A81E22;  /* refusal, redaction, destructive */
   --stamp-green:#2F7A3E;  /* approved, compliant */
 
   /* --- Grit — golden-era, poor man's gym ---------------------------------
-     A period-accent layer, not a new ground (Law 6 stays two grounds: ink
-     for staff, warm canvas for family). Most hardware in a gym that's run
+     A period-accent layer, not a room of its own (see the ROOMS section: the
+     wall is what varies per screen, and grit sits on top of any of them).
+     Most hardware in a gym that's run
      forty years on donations is oxidized, not polished — --brass-* stays
      reserved for the few things that would actually see a polishing rag:
      the crest, a championship belt, one ceremonial rivet. Everything
@@ -92,16 +144,34 @@
   --rust-300: #7A4130;
 
   /* --- Type -------------------------------------------------------------
-     Swap --font-stencil for a licensed face (Big Shoulders Stencil or
-     Stardos Stencil, self-hosted for offline kiosk use) — the fallbacks are
-     the closest condensed poster faces already on Windows and macOS. */
-  --font-stencil: "Big Shoulders Stencil", "Stardos Stencil", Impact,
-                  Haettenschweiler, "Franklin Gothic Bold", "Arial Narrow Bold",
-                  "Arial Narrow", sans-serif;
-  --font-ui:      "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+     All faces are SIL OFL 1.1 and self-hosted from fonts/ — no licence to buy
+     and no CDN, because the gym floor renders with no network. See fonts.css.
+
+     THE DISPLAY VOICE IS ALFA SLAB ONE. The reference art is a jobbing
+     printshop, not a military crate: heavy wood-type slab, letterpress-printed,
+     ink eroded at the edges. It is NOT stencil — stencil letterforms carry
+     bridges through the strokes and none of the reference headers have them.
+     A slab was chosen over a grotesque because every reference header has
+     visible serif feet, and over a condensed face because Oswald is already
+     doing duty as --font-ui — a display voice that is the body voice at a
+     heavier weight is not a second voice at all.
+     --font-stencil is kept as an alias so nothing already written breaks. */
+  --font-display: "Alfa Slab One", Impact, Haettenschweiler,
+                  "Arial Narrow Bold", serif;
+  --font-stencil: var(--font-display);          /* legacy alias */
+  --font-ui:      "Oswald", "Inter", ui-sans-serif, system-ui, -apple-system,
+                  "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-body:    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
                   Roboto, Helvetica, Arial, sans-serif;
-  --font-hand:    "Segoe Print", "Bradley Hand", "Chalkboard SE", cursive;
+  /* A typed document — the typewriter in the back office. Distinct from
+     --font-data, which is for columns that must align; this is for prose that
+     was typed rather than printed. */
+  --font-type:    "Special Elite", "Courier Prime", Courier, monospace;
+  --font-hand:    "Caveat", "Segoe Print", "Bradley Hand", "Chalkboard SE", cursive;
   --font-data:    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  /* One blackletter voice, for the clinic masthead only — a medical notice in
+     1948 was set in it. Never body copy; it fails Law 3 at small sizes. */
+  --font-gothic:  "UnifrakturCook", "Cloister Black", "Old English Text MT", serif;
 
   /* --- Proportion — φ ---------------------------------------------------
      Law 8. Every measurement in the system descends from the golden ratio.
@@ -122,6 +192,7 @@
   --t-2xl: 39.3px;   /* 15 × φ²    · command headers              */
   --t-3xl: 50px;     /* 15 × φ²√φ  · mottos                       */
   --t-4xl: 63.6px;   /* 15 × φ³    · display                      */
+  --t-5xl: 80.9px;   /* 15 × φ³√φ  · hero, one per screen at most */
 
   /* Space + radius — Fibonacci */
   --s1: 3px;  --s2: 5px;  --s3: 8px;  --s4: 13px;
@@ -135,6 +206,36 @@
   /* --- Ergonomics ------------------------------------------------------- */
   --tap: 55px;        /* Fibonacci, and comfortably above the 44px WCAG floor */
   --focus: 0 0 0 3px rgba(212, 175, 74, .55);
+
+  /* --- Motion — Law 8 applied to time ------------------------------------
+     Durations were the one axis still picked by eye (.12s, .28s, .34s, .42s,
+     .6s — no relationship to each other or to anything else in the system).
+     They are Fibonacci milliseconds now, the same series that governs space,
+     so a drawer opening and a gutter measuring 21px come from one source.
+
+     Easings are named for the PHYSICS, not for a curve. Nothing in this
+     building floats: a stamp is driven down by a hand and stops dead against
+     the paper, a drawer drags on its runners, a hung sign swings past level
+     before it settles. `ease` describes none of that, which is why every
+     skeuomorphic surface that uses it feels like software. */
+  --m-instant:  55ms;   /* state flip — pressed, checked. Perceived as "now" */
+  --m-quick:    89ms;   /* hover, focus ring, small colour shift */
+  --m-base:    144ms;   /* the default: buttons, tags, tiles */
+  --m-settle:  233ms;   /* something with mass arriving — a sheet, a panel */
+  --m-travel:  377ms;   /* something crossing distance — a drawer, a peeled corner */
+  --m-swing:   610ms;   /* a pendulum: gloves, a hung sign, the bell */
+
+  /* Driven and stopped: fast off the mark, dead halt. No overshoot — a stamp
+     does not bounce off paper, and a latch does not wobble shut. */
+  --e-stamp:  cubic-bezier(.2, .9, .1, 1);
+  /* Mass arriving under friction — decelerates long, never quite bounces. */
+  --e-settle: cubic-bezier(.16, .84, .28, 1);
+  /* Runners and grit: reluctant to start, then steady. */
+  --e-drawer: cubic-bezier(.45, .05, .35, 1);
+  /* Mechanical linkage — a lever is close to linear with a snap at the end. */
+  --e-lever:  cubic-bezier(.6, .04, .78, .9);
+  /* Pendulum: overshoots level, comes back. The one curve allowed to pass 1. */
+  --e-swing:  cubic-bezier(.34, 1.56, .64, 1);
 
   /* --- Generated grain -------------------------------------------------- */
   --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.78' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
@@ -455,6 +556,34 @@ body.ppbf {
 .stamp--flat    { rotate: 0deg; }
 .stamp--lg      { font-size: 17px; padding: 9px 15px; border-width: 4px; }
 
+/* A stamp is ink pressed into paper, so the colours above are the ones that
+   belong on the warm ground: --stamp-red measures 5.78:1 on canvas. On the
+   leathers the same ink is 1.83:1 to 3.58:1, because a dark pigment on a dark
+   hide is not a stamp, it is a smudge. Both the colour AND the 3px border are
+   currentColor, so the whole mark fades together.
+
+   Law 6 gives the app two grounds and the sheet keeps having to carry both --
+   this is the same pair the status ladder already ships as -ink, and the same
+   shape as the link colours. A stamp on leather reads light, exactly the way
+   .badge--cleared already resolves its own ink. */
+.mat-leather .stamp,
+.mat-leather--raised .stamp,
+.mat-leather--worn .stamp,
+.mat-brass--dark .stamp,
+.mat-slate .stamp             { color: var(--locked-ink); }
+
+.mat-leather .stamp--green,
+.mat-leather--raised .stamp--green,
+.mat-leather--worn .stamp--green,
+.mat-brass--dark .stamp--green,
+.mat-slate .stamp--green      { color: var(--cleared-ink); }
+
+.mat-leather .stamp--brass,
+.mat-leather--raised .stamp--brass,
+.mat-leather--worn .stamp--brass,
+.mat-brass--dark .stamp--brass,
+.mat-slate .stamp--brass      { color: var(--brass-300); }
+
 /* Redaction bar — Layer 17 grant privacy */
 .redacted {
   background-color: #0C0906;
@@ -486,6 +615,11 @@ body.ppbf {
   font-family: var(--font-stencil); text-transform: uppercase;
   font-size: 15px; letter-spacing: .07em; font-weight: 700;
   border: 0; border-radius: var(--r-md); cursor: pointer;
+  /* A .btn is often an anchor — a router Link, a mailto action. Host apps
+     routinely underline a:hover, and nothing here opposed it, so a brass
+     button grew an underline on hover. Stated once on the component rather
+     than defended per app. */
+  text-decoration: none;
   color: #2A1B04;
   background-image: linear-gradient(180deg,
     var(--brass-200) 0%, var(--brass-400) 38%, var(--brass-600) 78%, var(--brass-800) 100%);
@@ -565,7 +699,42 @@ body.ppbf.on-canvas {
 .on-canvas .t-body      { color: #3A2E1D; }
 .on-canvas .t-muted     { color: #6E5B3E; }
 .on-canvas .t-label     { color: #4A3B26; }
-.on-canvas .t-eyebrow   { color: var(--brass-700); }
+/* brass-700 is the right weight for a rule or a border on canvas, where the
+   floor is 3:1. An eyebrow is 11px text, so it owes 4.5:1 and was delivering
+   3.92. One rung down clears it at 6.10 without changing what the label is. */
+.on-canvas .t-eyebrow   { color: var(--brass-800); }
+/* .t-data was the one voice with no canvas restatement, and it is the voice
+   Law 4 assigns to anything auditable — IDs, timestamps, the registry facts a
+   grant officer checks against a filing. It inherits --bone-200 (#EFE6D0),
+   which is within two points of --canvas-warm (#EFE4C8): on the warm ground
+   the record voice rendered as very nearly invisible text. Found on the
+   public homepage's Nonprofit & Leadership list, the first canvas screen to
+   put records on the page. */
+.on-canvas .t-data      { color: #2A2013; }
+
+/* Links, same reason. The system styles .btn and never a bare anchor, so an
+   inline link on canvas falls through to whatever the host app sets — in the
+   platform that is --red-primary, which aliases to --locked, the safety
+   gate's red. Law 2 spends saturated colour on a participant's safety state
+   and nothing else, so a mailto address cannot wear it. Brass has to be dark
+   here to hold contrast against cream (--brass-800 clears 4.5:1); the leather
+   ground needs the opposite end of the ramp, which is why this is stated per
+   ground rather than once globally.
+
+   Two guards on the selector, both load-bearing:
+
+   :not(.btn) — a .btn is frequently an anchor (a router Link styled as a
+   button, a mailto action). A bare `.on-canvas a` is (0,1,1) and outranks
+   .btn at (0,1,0), so it repainted the brass button's ink with the link
+   colour and, on :hover, underlined it. .btn is the base class on every
+   variant, so excluding it covers ghost, danger and kiosk too.
+
+   :where() — contributes no specificity, keeping this at the weight of a
+   bare element rule so a page can override it without a fight. It still
+   beats the host app's own `a` rule, because that one lives in a cascade
+   layer and this sheet is unlayered. */
+:where(.on-canvas) a:not(.btn)       { color: var(--brass-800); }
+:where(.on-canvas) a:not(.btn):hover { color: #241B12; text-decoration: underline; }
 
 .on-canvas .badge {
   background-color: color-mix(in srgb, var(--badge) 20%, var(--canvas-warm));
@@ -683,7 +852,7 @@ body.ppbf.on-canvas {
     inset 0 1px 0 rgba(232,206,122,.18),
     inset 0 -2px 6px rgba(0,0,0,.55),
     0 4px 10px rgba(0,0,0,.5);
-  transition: translate .12s ease, box-shadow .12s ease;
+  transition: translate var(--m-quick) var(--e-stamp), box-shadow var(--m-quick) var(--e-stamp);
 }
 .tile::after {
   content: ""; position: absolute; inset: 6px; pointer-events: none;
@@ -745,4 +914,1570 @@ body.ppbf.on-canvas {
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
+}
+
+/* ================================================================ ROOMS ==
+   Law 6, restated. The platform is not one ground, nor two — it is a building
+   with rooms, and every screen declares which room it is standing in. A room
+   supplies three things: the WALL behind everything, the LIGHT falling on it,
+   and the floor-level shadow. Panels (paper, leather, slate, cork, wood) are
+   the furniture placed in it, and they work in any room.
+
+   This replaces "ink for staff, canvas for family," which forced dense
+   operational screens onto a ground the reference art never uses. A room is
+   chosen by what the screen IS, not who is looking:
+
+     .room--office   front office, admin, records     plank wall + desk lamp
+     .room--floor    gym floor, schedule, kiosk       brick wall + caged lamps
+     .room--board    rosters, seats, assignments      wainscot + hung board
+     .room--file     research, evidence, graph        cork wall + gooseneck
+     .room--clinic   medical, clearance, safety       cabinetry + green shade
+     .room--night    after hours, locked kiosk        the old ink ground
+
+   Every room is zero-asset: walls are gradients + feTurbulence like every
+   other material, so the floor tablet still renders them with no network. */
+.room {
+  position: relative;
+  min-height: 100%;
+  padding: var(--s6) var(--s5);
+  color: var(--bone-200);
+  background-color: var(--wood-800);
+  background-image: var(--grain);
+  background-blend-mode: overlay;
+}
+/* The light. A room is lit by fixtures, never by ambient fill, so the pool
+   sits high and falls off fast — content lands in the lit third. */
+.room::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background-image:
+    /* the two fixtures' pools, thrown wide and deep enough to actually land on
+       the content rather than dying in the top margin */
+    radial-gradient(86% 78% at 20% -12%, rgba(255,233,184,.34), transparent 72%),
+    radial-gradient(86% 78% at 80% -12%, rgba(255,233,184,.30), transparent 72%),
+    /* a broad warm wash across the middle where the work sits */
+    radial-gradient(120% 62% at 50% 34%, rgba(255,233,184,.13), transparent 78%),
+    radial-gradient(130% 84% at 50% 112%, rgba(0,0,0,.66), transparent 68%);
+}
+.room > * { position: relative; z-index: 1; }
+/* One lamp overhead instead of two in the corners. */
+.room--lit-center::before {
+  background-image:
+    radial-gradient(78% 74% at 50% -12%, rgba(255,246,223,.38), transparent 70%),
+    radial-gradient(120% 60% at 50% 36%, rgba(255,233,184,.12), transparent 78%),
+    radial-gradient(130% 84% at 50% 112%, rgba(0,0,0,.62), transparent 68%);
+}
+
+/* --- Office: horizontal stained plank wall -------------------------------
+   Three layers make a plank read as a plank: a dark seam, a lit top edge just
+   under it, and long grain streaks running along the board. Without the lit
+   edge the wall is just a brown field with lines on it. */
+.room--office {
+  background-color: var(--wood-700);
+  background-image:
+    var(--grain),
+    /* long grain streaks along the board */
+    repeating-linear-gradient(91deg,
+      transparent 0 7px, rgba(0,0,0,.13) 7px 9px, transparent 9px 23px,
+      rgba(156,107,58,.10) 23px 25px, transparent 25px 47px),
+    /* seam + the lit edge of the board below it */
+    repeating-linear-gradient(180deg,
+      rgba(0,0,0,.55) 0 3px,
+      rgba(156,107,58,.34) 3px 6px,
+      transparent 6px 68px,
+      rgba(0,0,0,.22) 68px 74px),
+    linear-gradient(178deg, #543516 0%, #3E2713 54%, #2A1B0C 100%);
+  background-size: 180px 180px, 100% 100%, 100% 74px, 100% 100%;
+  background-blend-mode: overlay, overlay, normal, normal;
+}
+
+/* --- Floor: brick and mortar, offset courses ----------------------------
+   Mortar is LIGHTER than the brick, so those layers blend normally — running
+   them through multiply turns the joints into black gaps, which reads as a
+   grid drawn on top of the wall rather than as masonry. */
+.room--floor {
+  background-color: var(--brick-700);
+  background-image:
+    var(--grain),
+    /* per-brick tonal variation, so courses aren't uniform */
+    repeating-linear-gradient(90deg,
+      rgba(0,0,0,.16) 0 89px, rgba(255,255,255,.05) 89px 178px,
+      rgba(0,0,0,.09) 178px 267px, transparent 267px 356px),
+    /* horizontal joints */
+    repeating-linear-gradient(180deg,
+      var(--mortar) 0 3px, transparent 3px 37px),
+    /* vertical joints, alternating courses offset by half a brick */
+    repeating-linear-gradient(90deg,
+      var(--mortar) 0 3px, transparent 3px 89px),
+    repeating-linear-gradient(90deg,
+      transparent 0 44px, var(--mortar) 44px 47px, transparent 47px 89px),
+    linear-gradient(168deg, #5E2D21 0%, #43231A 58%, #2E1913 100%);
+  background-size: 180px 180px, 100% 74px, 100% 74px, 100% 37px, 100% 37px, 100% 100%;
+  background-position: 0 0, 0 0, 0 0, 0 0, 0 37px, 0 0;
+  background-blend-mode: overlay, multiply, normal, normal, normal, normal;
+}
+
+/* --- Board room: painted wainscot below, plaster above ------------------ */
+.room--board {
+  background-color: var(--wood-800);
+  background-image:
+    var(--grain),
+    linear-gradient(180deg,
+      #C9BBA0 0%, #BCAC8E 52%, #6B4A2A 52%, #4A3119 56%, #33200F 100%),
+    repeating-linear-gradient(90deg,
+      transparent 0 53px, rgba(0,0,0,.22) 53px 55px, transparent 55px 108px);
+  background-blend-mode: overlay, normal, multiply;
+  color: var(--hide-900);
+}
+
+/* --- File room: cork wall, wood rail ------------------------------------ */
+.room--file {
+  background-color: var(--cork);
+  background-image:
+    var(--grain),
+    radial-gradient(circle at 22% 28%, rgba(120,78,34,.5)  0 2px, transparent 3px),
+    radial-gradient(circle at 68% 72%, rgba(150,105,55,.45) 0 3px, transparent 4px),
+    radial-gradient(circle at 84% 20%, rgba(110,70,30,.4)   0 1.5px, transparent 2.5px),
+    linear-gradient(178deg, #C89757 0%, #B0813F 60%, #96682F 100%);
+  background-size: 180px 180px, 17px 17px, 27px 27px, 11px 11px, 100% 100%;
+  background-blend-mode: overlay, normal, normal, normal, normal;
+  color: var(--hide-900);
+}
+
+/* --- Clinic: varnished cabinetry, cooler green-shaded light ------------- */
+.room--clinic {
+  background-color: var(--wood-700);
+  background-image:
+    var(--grain),
+    repeating-linear-gradient(90deg,
+      transparent 0 87px, rgba(0,0,0,.3) 87px 91px, transparent 91px 178px),
+    linear-gradient(172deg, #55371B 0%, #3E2712 55%, #2B1B0C 100%);
+  background-blend-mode: overlay, multiply, normal;
+}
+.room--clinic::before {
+  background-image:
+    radial-gradient(46% 34% at 26% -4%, rgba(190,255,206,.24), transparent 62%),
+    radial-gradient(60% 44% at 26% 2%,  rgba(255,246,223,.22), transparent 68%),
+    radial-gradient(120% 90% at 50% 108%, rgba(0,0,0,.6), transparent 70%);
+}
+
+/* --- Night: the original ink ground, kept for after-hours surfaces ------ */
+.room--night {
+  background-color: var(--hide-950);
+  background-image:
+    var(--grain),
+    radial-gradient(120% 90% at 50% -10%, rgba(150,112,66,.18), transparent 62%),
+    linear-gradient(180deg, #1B1410, #0F0C0A);
+  background-blend-mode: overlay, screen, normal;
+}
+.room--night::before {
+  background-image: radial-gradient(120% 90% at 50% 104%, rgba(0,0,0,.5), transparent 72%);
+}
+
+/* ============================================================= WOOD ======
+   Furniture-grade surfaces: the frame around a board, the rail a row of
+   plaques hangs from, a routed sign. */
+.mat-wood {
+  background-color: var(--wood-700);
+  background-image:
+    var(--grain),
+    repeating-linear-gradient(94deg,
+      transparent 0 5px, rgba(0,0,0,.13) 5px 6px, transparent 6px 14px),
+    linear-gradient(170deg, var(--wood-500) 0%, var(--wood-700) 54%, var(--wood-900) 100%);
+  background-blend-mode: overlay, multiply, normal;
+  box-shadow:
+    inset 0 1px 0 rgba(156,107,58,.42),
+    inset 0 -2px 5px rgba(0,0,0,.55),
+    0 4px 12px rgba(0,0,0,.5);
+}
+.mat-wood--dark {
+  background-color: var(--wood-900);
+  background-image:
+    var(--grain),
+    repeating-linear-gradient(94deg,
+      transparent 0 7px, rgba(0,0,0,.2) 7px 8px, transparent 8px 19px),
+    linear-gradient(170deg, #3A250F 0%, #26180A 56%, #170E06 100%);
+  background-blend-mode: overlay, multiply, normal;
+  color: var(--brass-200);
+}
+/* A wooden frame: put the content in a child so the bevel reads as depth. */
+.woodframe {
+  padding: var(--s4);
+  border-radius: var(--r-sm);
+  background-color: var(--wood-700);
+  background-image:
+    var(--grain),
+    repeating-linear-gradient(94deg,
+      transparent 0 5px, rgba(0,0,0,.14) 5px 6px, transparent 6px 15px),
+    linear-gradient(168deg, var(--wood-500) 0%, var(--wood-600) 38%, var(--wood-800) 100%);
+  background-blend-mode: overlay, multiply, normal;
+  box-shadow:
+    inset 0 2px 0 rgba(156,107,58,.5),
+    inset 0 -3px 6px rgba(0,0,0,.6),
+    0 14px 34px rgba(0,0,0,.6);
+}
+.woodframe > .frame-in {
+  border-radius: 3px;
+  box-shadow: inset 0 3px 12px rgba(0,0,0,.62), inset 0 0 0 1px rgba(0,0,0,.55);
+  overflow: hidden;
+}
+/* Routed hanging sign — two chains and a plank. */
+.signboard {
+  display: inline-block; padding: var(--s3) var(--s5);
+  border-radius: var(--r-sm);
+  background-color: var(--wood-600);
+  background-image:
+    var(--grain),
+    linear-gradient(170deg, var(--wood-500), var(--wood-700) 60%, var(--wood-900));
+  background-blend-mode: overlay, normal;
+  box-shadow:
+    inset 0 1px 0 rgba(156,107,58,.5),
+    inset 0 -2px 4px rgba(0,0,0,.5),
+    0 6px 16px rgba(0,0,0,.55);
+  font-family: var(--font-stencil); text-transform: uppercase;
+  letter-spacing: .07em; color: var(--bone-100);
+  text-shadow: 0 -1px 0 rgba(0,0,0,.8), 0 1px 0 rgba(156,107,58,.3);
+}
+
+/* ============================================================ FIXTURES ===
+   The lamp itself, for when a screen wants the fixture visible and not just
+   its light. Hangs from the top edge of its container. */
+.lamp {
+  position: absolute; top: 0; width: 89px; height: 55px; pointer-events: none;
+}
+.lamp::before {           /* the shade */
+  content: ""; position: absolute; top: 0; left: 50%; translate: -50% 0;
+  width: 89px; height: 27px;
+  border-radius: 50% 50% 42% 42% / 78% 78% 30% 30%;
+  background-image: linear-gradient(178deg,
+    var(--patina-300) 0%, var(--patina-700) 46%, var(--patina-900) 100%);
+  box-shadow: inset 0 -3px 6px rgba(0,0,0,.6), 0 3px 7px rgba(0,0,0,.6);
+}
+.lamp::after {            /* the pool of light under it */
+  content: ""; position: absolute; top: 21px; left: 50%; translate: -50% 0;
+  width: 233px; height: 178px;
+  background-image: radial-gradient(50% 46% at 50% 0%,
+    var(--lamp-hot) 0%, rgba(255,233,184,.44) 26%, transparent 72%);
+  mix-blend-mode: screen;
+}
+.lamp--green::before {    /* banker's shade, the clinic lamp */
+  background-image: linear-gradient(178deg, #7FB08A 0%, #3E6B4A 52%, #24402C 100%);
+}
+.lamp--green::after {
+  background-image: radial-gradient(50% 46% at 50% 0%,
+    #EAFFF0 0%, rgba(190,255,206,.4) 26%, transparent 72%);
+}
+.lamp--caged::before {    /* wire-caged floor fixture */
+  background-image:
+    repeating-linear-gradient(90deg, rgba(0,0,0,.5) 0 1.5px, transparent 1.5px 9px),
+    linear-gradient(178deg, var(--patina-300), var(--patina-700) 48%, var(--patina-900));
+  background-blend-mode: multiply, normal;
+}
+
+/* ============================================================= LEDGER ====
+   A ruled paper record. Law 4: mono voice, because every row is auditable.
+   The action line carries ledger-red ink — a period bookkeeping convention,
+   atmosphere rather than status, so it must never be the only signal that
+   something is wrong (that is what .stamp and .badge are for). */
+.ledger {
+  width: 100%; border-collapse: collapse;
+  font-family: var(--font-data); font-size: var(--t-xs);
+  color: #33291B;
+}
+.ledger caption {
+  font-family: var(--font-stencil); text-transform: uppercase;
+  font-size: var(--t-lg); letter-spacing: .05em;
+  color: #2A2116; padding-bottom: var(--s3);
+}
+.ledger th {
+  font-weight: 700; text-transform: uppercase; letter-spacing: .1em;
+  font-size: var(--t-xs); text-align: left;
+  padding: var(--s2) var(--s3);
+  border-bottom: 2px solid rgba(51,41,27,.7);
+  white-space: nowrap;
+}
+.ledger td {
+  padding: var(--s3);
+  border-bottom: 1px solid rgba(51,41,27,.26);
+  vertical-align: top;
+}
+.ledger tbody tr:last-child td { border-bottom: 0; }
+.ledger .rule-v { border-left: 1px solid rgba(51,41,27,.26); }
+.ledger-val {                       /* the red-ink action line */
+  display: block; color: var(--rust-500);
+  text-transform: uppercase; letter-spacing: .04em;
+}
+.ledger-id { letter-spacing: .06em; opacity: .84; }
+
+/* ========================================================== NAMEPLATE ====
+   An engraved brass plate screwed to a board — the Organizations rail and the
+   Volunteer roster. Chassis, so it labels and never reports status (Law 1). */
+.nameplate {
+  position: relative;
+  /* Padding clears the screws at both ends; nowrap because a plate is a single
+     engraved line — a wrapped nameplate is a physically impossible object. */
+  display: inline-block; padding: var(--s3) var(--s5);
+  white-space: nowrap; text-align: center;
+  border-radius: 2px;
+  /* A plate screwed to a board for thirty years is not a glossy bar. The ramp
+     stays inside brass-400..800 with no specular white, the grain is blended
+     in rather than laid over, and the only bright line is the 1px top bevel —
+     a full highlight sweep across the face reads as moulded plastic. */
+  background-color: var(--brass-600);
+  background-image:
+    var(--grain-fine),
+    linear-gradient(174deg,
+      var(--brass-400) 0%, var(--brass-600) 34%,
+      var(--brass-500) 58%, var(--brass-700) 82%, var(--brass-800) 100%);
+  background-blend-mode: overlay, normal;
+  box-shadow:
+    inset 0 1px 0 rgba(242,226,168,.42),
+    inset 0 0 0 1px rgba(74,52,11,.55),
+    inset 0 -2px 3px rgba(0,0,0,.34),
+    0 2px 6px rgba(0,0,0,.5);
+  font-family: var(--font-stencil); text-transform: uppercase;
+  letter-spacing: .08em; color: #2A1E06;
+  text-shadow: 0 1px 0 rgba(242,226,168,.34);   /* engraved, not printed */
+}
+/* The two screws holding it on. */
+.nameplate::before, .nameplate::after {
+  content: ""; position: absolute; top: 50%; translate: 0 -50%;
+  width: 7px; height: 7px; border-radius: 50%;
+  background-image: radial-gradient(circle at 36% 30%,
+    var(--brass-300) 0%, var(--brass-600) 44%, var(--brass-900) 100%);
+  box-shadow: inset 0 -1px 1px rgba(0,0,0,.6);
+}
+.nameplate::before { left: var(--s3); }
+.nameplate::after  { right: var(--s3); }
+.nameplate--noscrew::before, .nameplate--noscrew::after { content: none; }
+.nameplate--patina {
+  background-image: linear-gradient(172deg,
+    var(--patina-100) 0%, var(--patina-300) 24%, var(--patina-100) 46%,
+    var(--patina-500) 64%, var(--patina-900) 100%);
+  color: #1E1C10;
+}
+.nameplate--leather {           /* blank embossed hide, the spacer plate */
+  background-image: var(--grain), linear-gradient(168deg, #6B4630, #46291B);
+  background-blend-mode: overlay, normal;
+  color: var(--bone-300); text-shadow: 0 -1px 0 rgba(0,0,0,.7);
+  box-shadow: inset 0 1px 0 rgba(200,150,100,.25), 0 3px 8px rgba(0,0,0,.5);
+}
+
+/* ============================================================= KEYTAG ====
+   A hanging brass luggage tag — PIN cards, access keys. */
+.keytag {
+  position: relative;
+  display: inline-block; width: 144px; padding: var(--s5) var(--s3) var(--s3);
+  border-radius: var(--r-md) var(--r-md) var(--r-sm) var(--r-sm);
+  background-image: var(--grain-fine), linear-gradient(172deg,
+    var(--brass-200) 0%, var(--brass-400) 30%, var(--brass-600) 72%, var(--brass-800) 100%);
+  background-blend-mode: overlay, normal;
+  box-shadow: inset 0 1px 0 rgba(255,244,214,.6), 0 5px 12px rgba(0,0,0,.55);
+  font-family: var(--font-data); font-size: var(--t-xs);
+  color: #2A1E06; text-align: center;
+  rotate: -2deg;
+}
+.keytag::before {               /* the grommet */
+  content: ""; position: absolute; top: 7px; left: 50%; translate: -50% 0;
+  width: 15px; height: 15px; border-radius: 50%;
+  background: var(--wood-900);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,.8), 0 1px 0 rgba(255,244,214,.4);
+}
+.keytag--expired { filter: saturate(.55) brightness(.86); }
+
+/* ============================================================== PHOTO ====
+   A sepia print in a white border — the People roster board. */
+.photo {
+  display: block; padding: 5px 5px 21px;
+  background: linear-gradient(178deg, #F7F1E1, #E4DAC2);
+  box-shadow: 0 3px 9px rgba(0,0,0,.55);
+  rotate: -1deg;
+  font-family: var(--font-data); font-size: 9px; text-align: center;
+  color: #4A3B28; text-transform: uppercase; letter-spacing: .08em;
+}
+.photo > img, .photo > .photo-plate {
+  display: block; width: 100%; aspect-ratio: 4 / 5;
+  filter: sepia(.55) contrast(1.06) brightness(.94);
+  background-color: var(--hide-700);
+  background-image: var(--grain), linear-gradient(168deg, #6E5A44, #2E241A);
+  background-blend-mode: overlay, normal;
+}
+
+/* =========================================================== CLIPPING ====
+   Newsprint: greyer and thinner than --paper, set in narrow columns. */
+.clipping {
+  background-color: #E8E2D2;
+  background-image: var(--grain-fine), linear-gradient(178deg, #EFEADB, #DED7C4);
+  background-blend-mode: overlay, normal;
+  color: #2B2721;
+  padding: var(--s3);
+  box-shadow: 0 3px 9px rgba(0,0,0,.45);
+  rotate: 1deg;
+}
+.clipping-head {
+  font-family: var(--font-stencil); text-transform: uppercase;
+  font-size: var(--t-sm); line-height: 1.05; letter-spacing: .01em;
+  border-bottom: 1px solid rgba(43,39,33,.5); padding-bottom: 3px;
+}
+.clipping-body { columns: 2; column-gap: var(--s3); font-size: 9px; line-height: 1.35; }
+
+/* ============================================================= CREASE ====
+   Fold lines across a sheet that has been carried in a pocket. Decorative
+   only, and deliberately near-threshold: a crease strong enough to notice
+   while reading a row is a crease that will be mistaken for a table rule or a
+   rendering fault. One per surface. */
+.crease { position: relative; }
+.crease::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  opacity: .5;
+  background-image:
+    linear-gradient(90deg, transparent 0 49.6%, rgba(0,0,0,.05) 49.8%,
+                    rgba(255,255,255,.16) 50.2%, transparent 50.5%),
+    linear-gradient(180deg, transparent 0 33.6%, rgba(0,0,0,.04) 33.8%,
+                    rgba(255,255,255,.12) 34.2%, transparent 34.5%);
+}
+
+/* ============================================================== AGING ====
+   Paper that has sat in a filing cabinet since the Truman administration:
+   darkened edges, foxing blooms, and a soft warm cast. Applied as an overlay
+   so it ages whatever paper it wraps without touching the text colour. Put it
+   on the panel, not on the text container. */
+.aged { position: relative; isolation: isolate; }
+.aged::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 1;
+  mix-blend-mode: multiply;
+  background-image:
+    /* edge darkening — handled, stacked, rubbed */
+    radial-gradient(118% 108% at 50% 50%,
+      transparent 56%, rgba(150,116,66,.20) 78%, rgba(105,78,42,.42) 100%),
+    /* foxing blooms, irregular and off-centre */
+    radial-gradient(19% 13% at 12% 18%, rgba(163,124,74,.24), transparent 72%),
+    radial-gradient(13% 9%  at 88% 26%, rgba(150,112,66,.20), transparent 74%),
+    radial-gradient(23% 15% at 74% 88%, rgba(140,104,60,.17), transparent 76%),
+    radial-gradient(11% 8%  at 31% 79%, rgba(163,124,74,.15), transparent 78%);
+}
+/* Deckled/damaged edge, for a sheet that isn't machine-trimmed. */
+.aged--deckle {
+  clip-path: polygon(
+    0.4% 1%, 12% 0.2%, 27% 1.1%, 41% 0.3%, 58% 1.2%, 73% 0.4%, 88% 1.1%, 99.6% 0.5%,
+    99.3% 14%, 100% 31%, 99.2% 48%, 99.8% 66%, 99.1% 83%, 99.7% 99%,
+    87% 99.3%, 71% 98.7%, 55% 99.6%, 39% 98.8%, 24% 99.5%, 9% 98.9%, 0.5% 99.4%,
+    1% 82%, 0.2% 65%, 0.9% 47%, 0.3% 30%, 1% 15%);
+}
+
+/* --- Blackletter, the clinic's one voice --------------------------------- */
+.t-gothic {
+  font-family: var(--font-gothic);
+  letter-spacing: .01em; font-weight: 400;
+}
+
+/* Letterpress: ink pressed into paper, so the face is bitten in, not floating
+   on top. The light direction drives which side the bite falls on, which is
+   why it reads correctly in every room. */
+.t-press {
+  font-family: var(--font-display); text-transform: uppercase;
+  color: #241C11;
+  text-shadow:
+    calc(var(--sx, 1) * -1px) calc(var(--sy, 1) * -1px) 0 rgba(255,255,255,.42),
+    calc(var(--sx, 1) *  1px) calc(var(--sy, 1) *  1px) 0 rgba(0,0,0,.34),
+    calc(var(--sx, 1) *  2px) calc(var(--sy, 1) *  2px) 3px rgba(0,0,0,.20);
+}
+/* Dimensional wood type — a deep extrude, for a masthead only. */
+.t-press--deep {
+  text-shadow:
+    calc(var(--sx, 1) * -1px) calc(var(--sy, 1) * -1px) 0 rgba(255,255,255,.34),
+    1px 1px 0 #3E3120, 2px 2px 0 #33291B, 3px 3px 0 #2A2116,
+    4px 4px 0 #241C11, 5px 6px 8px rgba(0,0,0,.44);
+}
+/* Worn ink — the plate was old and the impression broke up. A screen-blended
+   grain overlay rather than a mask, for the same reason .stamp does it that
+   way: masking costs ~50% of the ink's contrast and Law 3 does not let
+   distress buy itself legibility. Degrades to solid ink, the correct failure. */
+.t-eroded { position: relative; display: inline-block; }
+.t-eroded::after {
+  content: ""; position: absolute; inset: -2px; pointer-events: none;
+  background-image: var(--grain); background-size: 90px;
+  mix-blend-mode: screen; opacity: .30;
+}
+.t-eroded--heavy::after { opacity: .46; background-size: 64px; }
+/* Typed, not printed. */
+.t-typed { font-family: var(--font-type); letter-spacing: .01em; }
+
+/* ============================================================== LIGHT ====
+   Every shadow in the system used to fall straight down with a 0 x-offset,
+   regardless of where the room's lamp was — which is the single loudest tell
+   that a "physical" surface is a stack of divs. Light is now a token, and
+   shadows read from it.
+
+   A light declares two things:
+     WHERE it is   → --sx / --sy, the unit direction a shadow travels (away
+                     from the source). Set by .light-at--*.
+     WHAT it is    → --sh-len (how far the shadow throws), --sh-blur (how soft
+                     the penumbra), --sh-op (how dark). Set by .light--*.
+
+   A bare bulb close to the wall throws a long hard black shadow. An overcast
+   window throws a short soft grey one. Same object, same .lift-2 class.
+
+   NOT EVERY SCREEN NEEDS A VISIBLE FIXTURE. .light--ambient and
+   .light--overcast give a room believable soft light with no lamp drawn at
+   all — use them for dense working screens where a big glowing lamp in the
+   corner would just be one more thing competing with the data. */
+:root { --sx: 1; --sy: 1; --sh-len: 1; --sh-blur: 1; --sh-op: 1; }
+
+/* --- Where the light is -------------------------------------------------- */
+.light-at--tl { --sx:  1;   --sy:  1;   }   /* top-left  → shadow down-right */
+.light-at--tr { --sx: -1;   --sy:  1;   }
+.light-at--tc { --sx:  0;   --sy:  1;   }   /* directly overhead */
+.light-at--bl { --sx:  1;   --sy: -1;   }   /* uplight, a floor lamp */
+.light-at--l  { --sx:  1;   --sy:  0.3; }   /* raking from a window */
+.light-at--r  { --sx: -1;   --sy:  0.3; }
+.light-at--split { --sx: 0; --sy: 1;    }   /* two matched fixtures cancel out */
+
+/* --- What kind of light -------------------------------------------------- */
+.light--bulb     { --sh-len: 1.35; --sh-blur: .55; --sh-op: 1.20; }  /* bare, harsh */
+.light--caged    { --sh-len: 1.15; --sh-blur: .80; --sh-op: 1.05; }
+.light--pendant  { --sh-len: 1.00; --sh-blur: 1.00; --sh-op: .95; }
+.light--gooseneck{ --sh-len: 1.40; --sh-blur: .65; --sh-op: 1.10; }  /* close + directional */
+.light--banker   { --sh-len:  .85; --sh-blur: 1.15; --sh-op: .80; }  /* green shade, contained */
+.light--window   { --sh-len:  .70; --sh-blur: 1.70; --sh-op: .62; }  /* soft daylight */
+.light--skylight { --sh-len:  .30; --sh-blur: 2.10; --sh-op: .50; }  /* overhead diffuse */
+.light--overcast { --sh-len:  .45; --sh-blur: 1.90; --sh-op: .45; }
+.light--ambient  { --sh-len:  .40; --sh-blur: 1.45; --sh-op: .55; }  /* no fixture drawn */
+
+/* --- How far off the surface the object sits ----------------------------
+   Height drives shadow length: a pinned note is nearly flat, a framed board
+   stands well off the wall. Use these instead of hand-written box-shadows so
+   every object in a room agrees about where the lamp is. */
+.lift-0 {                                    /* flush — a stamp, an inlay */
+  box-shadow:
+    calc(var(--sx) * 1px * var(--sh-len)) calc(var(--sy) * 1px * var(--sh-len))
+    calc(2px * var(--sh-blur)) rgba(0,0,0,calc(.28 * var(--sh-op)));
+}
+.lift-1 {                                    /* paper on a wall */
+  box-shadow:
+    calc(var(--sx) * 2px * var(--sh-len)) calc(var(--sy) * 3px * var(--sh-len))
+    calc(7px * var(--sh-blur)) rgba(0,0,0,calc(.34 * var(--sh-op)));
+}
+.lift-2 {                                    /* a card, a plaque */
+  box-shadow:
+    calc(var(--sx) * 5px * var(--sh-len)) calc(var(--sy) * 8px * var(--sh-len))
+    calc(16px * var(--sh-blur)) rgba(0,0,0,calc(.42 * var(--sh-op)));
+}
+.lift-3 {                                    /* a framed board off the wall */
+  box-shadow:
+    calc(var(--sx) * 9px * var(--sh-len)) calc(var(--sy) * 14px * var(--sh-len))
+    calc(30px * var(--sh-blur)) rgba(0,0,0,calc(.52 * var(--sh-op)));
+}
+.lift-4 {                                    /* hanging, well proud of the wall */
+  box-shadow:
+    calc(var(--sx) * 14px * var(--sh-len)) calc(var(--sy) * 22px * var(--sh-len))
+    calc(48px * var(--sh-blur)) rgba(0,0,0,calc(.58 * var(--sh-op)));
+}
+/* A lit top edge, on the side the light actually comes from. */
+.lit-edge {
+  box-shadow:
+    inset calc(var(--sx) * -1px) calc(var(--sy) * -1px) 0 rgba(255,233,184,.20),
+    calc(var(--sx) * 5px * var(--sh-len)) calc(var(--sy) * 8px * var(--sh-len))
+    calc(16px * var(--sh-blur)) rgba(0,0,0,calc(.42 * var(--sh-op)));
+}
+
+/* Rooms declare their own light so panels inherit it without being told. */
+.room--office  { --sx:  1; --sy: 1; --sh-len: 1.05; --sh-blur: .95; --sh-op: 1; }
+.room--floor   { --sx:  0; --sy: 1; --sh-len: 1.15; --sh-blur: .80; --sh-op: 1.05; }
+.room--board   { --sx:  0; --sy: 1; --sh-len: 1.00; --sh-blur: 1.00; --sh-op: .95; }
+.room--file    { --sx:  1; --sy: 1; --sh-len: 1.40; --sh-blur: .65; --sh-op: 1.10; }
+.room--clinic  { --sx:  1; --sy: 1; --sh-len:  .85; --sh-blur: 1.15; --sh-op: .80; }
+.room--night   { --sx:  0; --sy: 1; --sh-len:  .40; --sh-blur: 1.45; --sh-op: .55; }
+
+/* ============================================================== PAPER ====
+   Paper is not one material. A fresh intake form, a carbon copy that has lived
+   in a shirt pocket, and a 1948 ledger page pulled from a damp basement are
+   three different objects, and the system needs to say which one it means.
+
+   Four independent axes, composable — stock × age × soil × damage:
+     STOCK    .pap--bond .pap--news .pap--onion .pap--card .pap--kraft
+              .pap--graph .pap--ruled
+     AGE      .age-0 (fresh) → .age-3 (ancient). Yellowing + edge darkening.
+     SOIL     .soil-1 → .soil-3, plus named marks: blood, sweat, coffee, oil.
+     DAMAGE   .tear--* and .fold--*.
+
+   All of it multiply-blends over whatever stock is underneath, so ageing a
+   newsprint clipping and ageing a card-stock index card give different — and
+   correct — results from the same .age-2. */
+
+/* --- Stock --------------------------------------------------------------- */
+.pap {
+  position: relative; isolation: isolate;
+  background-color: var(--paper);
+  background-image: var(--grain-fine), linear-gradient(178deg, #F8F0DC, #E7DBBD);
+  background-blend-mode: overlay, normal;
+  color: #33291B;
+}
+.pap--news {                       /* newsprint: greyer, thinner, cheaper */
+  background-color: #E8E2D2;
+  background-image: var(--grain-fine), linear-gradient(178deg, #EFEADB, #DCD5C1);
+  color: #2B2721;
+}
+.pap--onion {                      /* carbon copy: translucent, bluish, flimsy */
+  background-color: #EDEFE6;
+  background-image: var(--grain-fine), linear-gradient(178deg, #F2F4EC, #DFE2D6);
+  color: #37423B; opacity: .96;
+}
+.pap--card {                       /* index card / card stock: brighter, stiffer */
+  background-color: #F7F2E2;
+  background-image: var(--grain-fine), linear-gradient(178deg, #FBF7EA, #EDE4CC);
+  color: #2E2519;
+}
+.pap--kraft {                      /* buff envelope / folder stock */
+  background-color: #C9A874;
+  background-image: var(--grain-fine), linear-gradient(178deg, #D3B584, #B08F5C);
+  color: #33240F;
+}
+.pap--graph {                      /* engineering grid, for load profiles */
+  background-image:
+    repeating-linear-gradient(90deg, rgba(70,110,150,.22) 0 1px, transparent 1px 13px),
+    repeating-linear-gradient(180deg, rgba(70,110,150,.22) 0 1px, transparent 1px 13px),
+    var(--grain-fine), linear-gradient(178deg, #F8F5E6, #E9E3CD);
+  background-blend-mode: normal, normal, overlay, normal;
+}
+.pap--ruled {                      /* legal pad ruling + red margin */
+  background-image:
+    linear-gradient(90deg, transparent 0 33px, rgba(168,30,34,.34) 33px 34px, transparent 34px),
+    repeating-linear-gradient(180deg, transparent 0 20px, rgba(70,110,150,.26) 20px 21px),
+    var(--grain-fine), linear-gradient(178deg, #F8F0DC, #E7DBBD);
+  background-blend-mode: normal, normal, overlay, normal;
+}
+
+/* --- Age ----------------------------------------------------------------
+   Yellowing pulls the whole sheet warm; edge darkening is where hands and
+   stacking wore it. Foxing blooms only appear from .age-2 — a form filled in
+   last week does not have mould on it. */
+.age-0::before { content: none; }
+.age-1::before, .age-2::before, .age-3::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 1;
+  mix-blend-mode: multiply;
+}
+.age-1::before {
+  background-image:
+    radial-gradient(122% 112% at 50% 50%, transparent 62%, rgba(163,124,74,.14) 84%, rgba(120,90,50,.26) 100%),
+    linear-gradient(178deg, rgba(214,186,132,.10), rgba(196,166,112,.16));
+}
+.age-2::before {
+  background-image:
+    radial-gradient(118% 108% at 50% 50%, transparent 54%, rgba(150,116,66,.22) 78%, rgba(105,78,42,.46) 100%),
+    radial-gradient(19% 13% at 12% 18%, rgba(163,124,74,.26), transparent 72%),
+    radial-gradient(13% 9%  at 88% 26%, rgba(150,112,66,.22), transparent 74%),
+    radial-gradient(23% 15% at 74% 88%, rgba(140,104,60,.19), transparent 76%),
+    linear-gradient(178deg, rgba(206,174,116,.18), rgba(184,150,96,.26));
+}
+.age-3::before {
+  background-image:
+    radial-gradient(112% 104% at 50% 50%, transparent 42%, rgba(132,98,52,.34) 70%, rgba(84,60,30,.62) 100%),
+    radial-gradient(22% 15% at 14% 22%, rgba(140,102,54,.40), transparent 70%),
+    radial-gradient(16% 11% at 84% 30%, rgba(128,94,50,.34), transparent 72%),
+    radial-gradient(26% 17% at 72% 84%, rgba(120,88,46,.30), transparent 74%),
+    radial-gradient(13% 9%  at 34% 74%, rgba(146,108,58,.28), transparent 76%),
+    linear-gradient(178deg, rgba(190,156,98,.30), rgba(166,132,80,.40));
+}
+/* .aged from the rooms work is .age-2 under its original name. */
+.aged { position: relative; isolation: isolate; }
+
+/* --- Soil ---------------------------------------------------------------
+   Generalised grime, distinct from ageing: this is a gym, and the forms live
+   on a clipboard next to the ring. Thumb smudges at the edges where it was
+   held, not evenly spread. */
+.soil-1::after, .soil-2::after, .soil-3::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 2;
+  mix-blend-mode: multiply;
+  background-image:
+    radial-gradient(9% 12% at 4% 46%,  rgba(62,44,26,.40), transparent 70%),
+    radial-gradient(8% 10% at 97% 62%, rgba(62,44,26,.34), transparent 72%),
+    radial-gradient(14% 7%  at 52% 2%, rgba(62,44,26,.26), transparent 74%);
+}
+.soil-1::after { opacity: .34; }
+.soil-2::after { opacity: .62; }
+.soil-3::after { opacity: .92; }
+
+/* --- Named marks ---------------------------------------------------------
+   Atmosphere, never status (the Law 2 amendment). At most one or two per
+   surface, in a decorative zone, never touching a control, badge or stamp.
+   They are absolutely-positioned children, so they can be placed precisely
+   rather than hoping a background gradient lands somewhere plausible. */
+.mark {
+  position: absolute; pointer-events: none; z-index: 2;
+  mix-blend-mode: multiply; opacity: .5;
+}
+/* Old blood: oxidised to brown, dark ring at the rim where it dried last,
+   with a spatter fleck or two. Deliberately far from --locked in hue and
+   saturation so it can never be read as the safety ladder. */
+.mark--blood {
+  width: 34px; height: 27px; opacity: .58;
+  background-image:
+    radial-gradient(44% 50% at 44% 44%, var(--rust-700) 0%, var(--rust-500) 54%, transparent 72%),
+    radial-gradient(30% 34% at 62% 62%, var(--rust-900) 0%, transparent 68%);
+  border-radius: 46% 54% 52% 48% / 52% 48% 54% 46%;
+  box-shadow: inset 0 0 4px rgba(36,16,9,.55);
+}
+.mark--blood::after {              /* a fleck alongside */
+  content: ""; position: absolute; top: -6px; left: 78%;
+  width: 6px; height: 5px; border-radius: 50%;
+  background: var(--rust-700); opacity: .8;
+}
+/* Sweat: a salt ring. Pale, cool, diffuse, with a harder tide line at the
+   edge — it lifts colour out of the paper rather than adding any. */
+.mark--sweat {
+  width: 55px; height: 44px; opacity: .42;
+  mix-blend-mode: color-burn;
+  background-image:
+    radial-gradient(50% 50% at 50% 50%, transparent 58%, rgba(150,146,116,.50) 76%, rgba(124,120,92,.30) 90%, transparent 100%),
+    radial-gradient(46% 46% at 50% 50%, rgba(186,182,150,.22), transparent 70%);
+  border-radius: 50%;
+}
+.mark--coffee {                    /* cup ring, darker at the rim */
+  width: 46px; height: 42px; opacity: .46;
+  background-image:
+    radial-gradient(50% 50% at 50% 50%, transparent 56%, rgba(104,66,30,.58) 74%, rgba(74,46,20,.34) 88%, transparent 100%);
+  border-radius: 50%;
+}
+.mark--oil {                       /* chain/machine oil, dark and translucent */
+  width: 27px; height: 21px; opacity: .5;
+  background-image: radial-gradient(50% 54% at 46% 46%, rgba(28,24,18,.72), transparent 74%);
+  border-radius: 52% 48% 44% 56% / 48% 56% 44% 52%;
+}
+.mark--sm { scale: .62; } .mark--lg { scale: 1.7; }
+
+/* --- Damage: tears ------------------------------------------------------- */
+.tear--bottom { clip-path: polygon(0 0, 100% 0, 100% 94%,
+  96% 100%, 91% 95%, 86% 100%, 81% 96%, 76% 100%, 70% 95%, 65% 100%, 59% 96%,
+  54% 100%, 48% 95%, 43% 100%, 37% 96%, 32% 100%, 26% 95%, 21% 100%, 15% 96%,
+  10% 100%, 5% 95%, 0 100%); }
+.tear--top { clip-path: polygon(0 6%, 5% 0, 10% 5%, 15% 0, 21% 4%, 26% 0,
+  32% 5%, 37% 0, 43% 4%, 48% 0, 54% 5%, 59% 0, 65% 4%, 70% 0, 76% 5%, 81% 0,
+  86% 4%, 91% 0, 96% 5%, 100% 0, 100% 100%, 0 100%); }
+.tear--right { clip-path: polygon(0 0, 95% 0, 100% 5%, 96% 11%, 100% 18%,
+  95% 25%, 100% 32%, 96% 39%, 100% 46%, 95% 53%, 100% 60%, 96% 67%, 100% 74%,
+  95% 81%, 100% 88%, 96% 95%, 100% 100%, 0 100%); }
+.tear--corner {                    /* a bite out of the top-right */
+  clip-path: polygon(0 0, 78% 0, 84% 4%, 90% 3%, 95% 8%, 100% 14%, 100% 100%, 0 100%);
+}
+.tear--half {                      /* torn clean in two, right half missing */
+  clip-path: polygon(0 0, 62% 0, 58% 9%, 64% 19%, 57% 28%, 63% 38%, 56% 47%,
+    62% 57%, 55% 66%, 61% 76%, 54% 85%, 60% 94%, 55% 100%, 0 100%);
+}
+/* Deckled — not machine-trimmed, all four edges irregular. */
+.tear--deckle { clip-path: polygon(
+  0.4% 1%, 12% 0.2%, 27% 1.1%, 41% 0.3%, 58% 1.2%, 73% 0.4%, 88% 1.1%, 99.6% 0.5%,
+  99.3% 14%, 100% 31%, 99.2% 48%, 99.8% 66%, 99.1% 83%, 99.7% 99%,
+  87% 99.3%, 71% 98.7%, 55% 99.6%, 39% 98.8%, 24% 99.5%, 9% 98.9%, 0.5% 99.4%,
+  1% 82%, 0.2% 65%, 0.9% 47%, 0.3% 30%, 1% 15%); }
+
+/* --- Damage: folds -------------------------------------------------------
+   A fold is a valley and a ridge next to each other. The light direction sets
+   which side catches, so a folded sheet in the clinic and the same sheet on
+   the gym floor crease the correct way. */
+.fold--half, .fold--tri, .fold--quarto, .fold--pocket { position: relative; }
+.fold--half::after, .fold--tri::after, .fold--quarto::after, .fold--pocket::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 3;
+}
+.fold--half::after {                /* one fold, across the middle */
+  background-image: linear-gradient(180deg, transparent 0 49.4%,
+    rgba(0,0,0,.10) 49.7%, rgba(255,255,255,.26) 50.3%, transparent 50.8%);
+}
+.fold--tri::after {                 /* letter-folded in thirds for an envelope */
+  background-image:
+    linear-gradient(180deg, transparent 0 32.7%, rgba(0,0,0,.10) 33%,
+      rgba(255,255,255,.24) 33.6%, transparent 34%),
+    linear-gradient(180deg, transparent 0 66.1%, rgba(0,0,0,.10) 66.4%,
+      rgba(255,255,255,.24) 67%, transparent 67.4%);
+}
+.fold--quarto::after {              /* quartered — carried in a hip pocket */
+  background-image:
+    linear-gradient(180deg, transparent 0 49.4%, rgba(0,0,0,.11) 49.7%,
+      rgba(255,255,255,.28) 50.3%, transparent 50.8%),
+    linear-gradient(90deg, transparent 0 49.4%, rgba(0,0,0,.09) 49.7%,
+      rgba(255,255,255,.22) 50.3%, transparent 50.8%);
+}
+.fold--pocket::after {              /* folded small and soft at the corners */
+  background-image:
+    linear-gradient(180deg, transparent 0 49.5%, rgba(0,0,0,.12) 49.8%,
+      rgba(255,255,255,.30) 50.2%, transparent 50.6%),
+    linear-gradient(90deg, transparent 0 33%, rgba(0,0,0,.08) 33.3%,
+      rgba(255,255,255,.20) 33.7%, transparent 34%),
+    linear-gradient(90deg, transparent 0 66%, rgba(0,0,0,.08) 66.3%,
+      rgba(255,255,255,.20) 66.7%, transparent 67%),
+    radial-gradient(120% 100% at 50% 50%, transparent 72%, rgba(120,90,50,.20) 100%);
+}
+/* A dog-eared corner, turned down and casting onto the sheet. */
+.dogear::before {
+  content: ""; position: absolute; top: 0; right: 0; width: 27px; height: 27px;
+  background-image: linear-gradient(225deg, #D8CBA8 0 50%, transparent 50%);
+  box-shadow: calc(var(--sx) * -2px) calc(var(--sy) * 2px) 4px rgba(0,0,0,.28);
+  z-index: 3;
+}
+
+/* ========================================================== PLACEMENT ====
+   Rotation and overlap are one problem, not two: tilting every card but
+   keeping them in tidy lanes just looks like a tilted grid, and overlapping
+   them while all axis-aligned looks like a z-index bug. Objects on a real
+   surface are both slightly turned AND slightly on top of each other.
+
+   Rotation is DETERMINISTIC (nth-child, not random) so a screen looks
+   identical on every render and in every screenshot diff — a paper that
+   wanders between reloads reads as breakage, not as craft. */
+.desk { display: flex; flex-wrap: wrap; gap: var(--s5); align-items: flex-start; }
+.desk > * { position: relative; }
+.desk > :nth-child(7n+1) { rotate: -1.1deg; }
+.desk > :nth-child(7n+2) { rotate:   .7deg; }
+.desk > :nth-child(7n+3) { rotate: -0.4deg; }
+.desk > :nth-child(7n+4) { rotate:  1.3deg; }
+.desk > :nth-child(7n+5) { rotate: -0.8deg; }
+.desk > :nth-child(7n+6) { rotate:   .5deg; }
+.desk > :nth-child(7n+7) { rotate: -1.6deg; }
+/* Stacking: later children sit on top, and each is pulled back over the last.
+   z-index climbs so the overlap direction stays consistent. */
+.desk--stack { gap: 0; }
+.desk--stack > * + * { margin-left: calc(var(--s5) * -1); }
+.desk--stack > :nth-child(1) { z-index: 1; } .desk--stack > :nth-child(2) { z-index: 2; }
+.desk--stack > :nth-child(3) { z-index: 3; } .desk--stack > :nth-child(4) { z-index: 4; }
+.desk--stack > :nth-child(5) { z-index: 5; } .desk--stack > :nth-child(6) { z-index: 6; }
+.desk--stack > :nth-child(7) { z-index: 7; } .desk--stack > :nth-child(8) { z-index: 8; }
+/* A loose pile — heavier overlap and vertical drift, for an in-tray. */
+.desk--pile { gap: 0; }
+.desk--pile > * + *          { margin-left: calc(var(--s7) * -1); }
+.desk--pile > :nth-child(2n) { margin-top: var(--s3); }
+.desk--pile > :nth-child(3n) { margin-top: calc(var(--s2) * -1); }
+.desk--calm > * { rotate: none; }            /* opt out where alignment matters */
+
+/* Explicit placement, when a specific object needs a specific spot. */
+.place { position: relative; rotate: var(--rot, 0deg);
+         translate: var(--dx, 0) var(--dy, 0); }
+/* Deliberate overrun — a stamp hanging off the edge of the card it stamps, a
+   photo breaking its frame. This is most of what makes a screen read as
+   objects on a surface rather than boxes in a column. */
+.overrun     { position: absolute; z-index: 5; }
+.overrun--br { right: calc(var(--s4) * -1); bottom: calc(var(--s3) * -1); }
+.overrun--tr { right: calc(var(--s4) * -1); top:    calc(var(--s3) * -1); }
+.overrun--bl { left:  calc(var(--s4) * -1); bottom: calc(var(--s3) * -1); }
+.overrun--tl { left:  calc(var(--s4) * -1); top:    calc(var(--s3) * -1); }
+
+/* =============================================================== SEAL ====
+   The PPBF roundel — the most repeated mark in the whole body of reference
+   art, and the system had no component for it. Circular, double-ruled, with
+   text following the curve. Curved text needs SVG <textPath>, so .seal styles
+   an inline SVG (still zero-asset — the markup ships in the page):
+
+     <span class="seal">
+       <svg viewBox="0 0 100 100" aria-hidden="true">
+         <defs><path id="ring" d="M50,50 m-37,0 a37,37 0 1,1 74,0 a37,37 0 1,1 -74,0"/></defs>
+         <text><textPath href="#ring" startOffset="0%">POOR MAN'S SPORT ·</textPath></text>
+       </svg>
+       <b>PPBF</b>
+     </span>
+
+   Rotated a few degrees and ink-eroded, because it is a rubber stamp pressed
+   by hand, not a logo placed by a designer. */
+.seal {
+  position: relative; display: inline-grid; place-items: center;
+  width: 89px; height: 89px; rotate: -7deg;
+  color: var(--stamp-red);
+  border: 2.5px solid currentColor; border-radius: 50%;
+  box-shadow: inset 0 0 0 2px currentColor;   /* the inner rule */
+}
+.seal > svg { position: absolute; inset: 0; width: 100%; height: 100%;
+              fill: currentColor; }
+.seal > svg text { font: 700 8.5px var(--font-ui); letter-spacing: .18em;
+                   text-transform: uppercase; }
+.seal > b {
+  font-family: var(--font-display); font-size: 25px; line-height: 1;
+  letter-spacing: .02em;
+}
+.seal::after {                     /* the worn ink */
+  content: ""; position: absolute; inset: -3px; border-radius: 50%;
+  background-image: var(--grain); background-size: 70px;
+  mix-blend-mode: screen; opacity: .40; pointer-events: none;
+}
+.seal--green { color: var(--stamp-green); }
+.seal--ink   { color: #2A2116; }
+.seal--sm { width: 55px; height: 55px; }
+.seal--sm > b { font-size: 16px; }
+.seal--sm > svg text { font-size: 6px; letter-spacing: .12em; }
+.seal--lg { width: 144px; height: 144px; }
+.seal--lg > b { font-size: 42px; }
+.seal--lg > svg text { font-size: 11px; }
+
+/* ======================================================== DISCOVERABLES ==
+   Rewards for touching things. Each one is a real object behaving the way the
+   real object would, so exploring the interface teaches the metaphor instead
+   of just decorating it. All CSS-only, all keyboard-reachable, and all inert
+   under prefers-reduced-motion (handled by the global rule at the end). */
+
+/* A sheet whose corner you can lift to read what is filed underneath. This is
+   progressive disclosure that fits the world — the detail is literally behind
+   the top sheet. Works on hover AND focus-within, so it is not mouse-only. */
+.peek { position: relative; }
+.peek > .peek-under {
+  position: absolute; inset: 0; z-index: 0;
+  display: grid; place-items: end start; padding: var(--s4);
+  font-family: var(--font-hand); font-size: var(--t-sm); color: #4A3B28;
+}
+.peek > .peek-top {
+  position: relative; z-index: 1;
+  transform-origin: bottom right;
+  transition: clip-path var(--m-travel) var(--e-drawer), box-shadow var(--m-travel) var(--e-drawer);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+}
+.peek:hover > .peek-top, .peek:focus-within > .peek-top {
+  clip-path: polygon(0 0, 100% 0, 100% 64%, 64% 100%, 0 100%);
+  box-shadow: calc(var(--sx) * 8px) calc(var(--sy) * 10px) 20px rgba(0,0,0,.44);
+}
+
+/* Hanging gloves that swing when disturbed. */
+.gloves {
+  display: inline-block; font-size: var(--t-2xl); line-height: 1;
+  transform-origin: 50% 6%;
+  transition: rotate var(--m-swing) var(--e-swing);
+}
+.gloves:hover, .gloves:focus-visible { animation: ppbf-swing calc(var(--m-swing) * 2.5) var(--e-swing); }
+@keyframes ppbf-swing {
+  0%{rotate:0deg} 15%{rotate:11deg} 35%{rotate:-8deg} 55%{rotate:5deg}
+  75%{rotate:-3deg} 100%{rotate:0deg}
+}
+
+/* The ring bell. Press it and it actually rings (visually). */
+.bell {
+  display: inline-grid; place-items: center; width: var(--tap); height: var(--tap);
+  border: 0; border-radius: 50%; cursor: pointer;
+  background-image: radial-gradient(circle at 34% 28%,
+    var(--brass-200), var(--brass-400) 42%, var(--brass-700) 78%, var(--brass-900));
+  box-shadow: inset 0 -2px 3px rgba(0,0,0,.5), 0 3px 8px rgba(0,0,0,.55);
+}
+.bell:active { animation: ppbf-ring var(--m-travel) var(--e-settle); }
+@keyframes ppbf-ring {
+  0%{scale:1} 20%{scale:.94} 40%{scale:1.03} 60%{scale:.98} 100%{scale:1}
+}
+.bell:active::after {              /* the ring-out */
+  content: ""; position: absolute; inset: -8px; border-radius: 50%;
+  border: 2px solid var(--brass-300); animation: ppbf-ringout var(--m-swing) var(--e-settle) forwards;
+}
+@keyframes ppbf-ringout { to { inset: -21px; opacity: 0; } }
+
+/* A speed bag that takes a hit. */
+.speedbag { display: inline-block; transform-origin: 50% 0; }
+.speedbag:hover { animation: ppbf-bag var(--m-settle) linear 3; }
+@keyframes ppbf-bag { 0%{translate:0 0} 50%{translate:3px 2px} 100%{translate:0 0} }
+
+/* Tally marks — four strokes and a slash, the way a gym counts rounds. */
+.tally {
+  font-family: var(--font-hand); font-size: var(--t-lg); letter-spacing: .12em;
+  color: var(--rust-500);
+}
+
+/* The long-press reward: hold a stamp down and it presses in harder. */
+.stamp--press { transition: scale var(--m-instant) var(--e-stamp), filter var(--m-instant) var(--e-stamp); }
+.stamp--press:active { scale: .96; filter: saturate(1.3) contrast(1.15); }
+
+/* ============================================================ NOTIFICATIONS === */
+/* Persistent alerts that live on the page — not dismissible toasts. Law 7 applied:
+   critical notifications (clearance needed, alert fired, lock engaged) are stamps
+   that sit until actively clicked. Styled as inline banners with clear status. */
+.alert { border-left: 4px solid; padding: var(--s4) var(--s5); border-radius: 0 var(--r-lg) var(--r-lg) 0;
+         margin: var(--s5) 0; display: flex; gap: var(--s4); align-items: flex-start; }
+.alert-icon { flex-shrink: 0; font-size: 18px; margin-top: 2px; }
+.alert-body { flex: 1; }
+.alert-title { font: 650 12px/1 var(--font-data); letter-spacing: .1em; text-transform: uppercase; margin: 0 0 var(--s2); }
+.alert-msg { font-size: var(--t-sm); line-height: 1.55; margin: 0; }
+.alert-action { margin-top: var(--s3); }
+.alert-action a { color: inherit; text-decoration: underline; cursor: pointer; }
+
+.alert--info    { border-left-color: var(--monitor);    background: color-mix(in srgb, var(--monitor) 12%, transparent);
+                  color: var(--bone-100); }
+.alert--warning { border-left-color: var(--restricted); background: color-mix(in srgb, var(--restricted) 12%, transparent);
+                  color: var(--bone-100); }
+.alert--critical { border-left-color: var(--locked);    background: color-mix(in srgb, var(--locked) 12%, transparent);
+                   color: var(--bone-100); }
+.alert--success { border-left-color: var(--cleared);    background: color-mix(in srgb, var(--cleared) 12%, transparent);
+                  color: var(--bone-100); }
+
+/* ========================================================= UNDO/REDO CONTROL === */
+/* Form history buttons styled as physical levers. Pairs (.undo-redo-group) sit
+   near the form controls and roll back to the last saved state. */
+.undo-redo-group { display: flex; gap: var(--s2); margin: var(--s4) 0; }
+/* Self-sufficient on purpose. The `--` reads like a .btn modifier, but a lever
+   is its own object and gets used standalone next to a form, so it carries a
+   full surface rather than falling through to the browser's native button. */
+.btn--lever { min-height: 38px; padding: 0 var(--s4); font-size: 12px; letter-spacing: .08em;
+              text-transform: uppercase; display: inline-flex; align-items: center; gap: var(--s2);
+              position: relative; cursor: pointer;
+              font-family: var(--font-ui); font-weight: 650;
+              color: var(--bone-200);
+              border: 1px solid var(--brass-700); border-radius: var(--r-sm);
+              background-color: var(--hide-800);
+              background-image: linear-gradient(180deg, rgba(92,70,50,.9), rgba(30,23,18,.95));
+              box-shadow: inset 0 1px 0 rgba(232,206,122,.14), 0 2px 5px rgba(0,0,0,.45);
+              transition: background-image var(--m-base) var(--e-lever),
+                          color var(--m-base) var(--e-lever),
+                          box-shadow var(--m-base) var(--e-lever); }
+.btn--lever:hover { color: var(--bone-100); border-color: var(--brass-400);
+                    background-image: linear-gradient(180deg, rgba(110,84,60,.95), rgba(42,31,24,.98)); }
+.btn--lever:active { box-shadow: inset 0 2px 5px rgba(0,0,0,.55); translate: 0 1px; }
+.btn--lever:disabled { opacity: .45; cursor: not-allowed; }
+.btn--lever::before { content: ""; display: inline-block; width: 6px; height: 18px;
+                       background: linear-gradient(90deg, var(--brass-600), var(--brass-400), var(--brass-600));
+                       border-radius: 3px; box-shadow: inset 0 1px 2px rgba(255,255,255,.1), 0 1px 3px rgba(0,0,0,.4); }
+.btn--lever:hover::before { background: linear-gradient(90deg, var(--brass-500), var(--brass-300), var(--brass-500));
+                            box-shadow: inset 0 1px 2px rgba(255,255,255,.2), 0 2px 4px rgba(0,0,0,.5); }
+.btn--lever:active::before { scale: .92; box-shadow: inset 0 2px 3px rgba(0,0,0,.3); }
+
+/* ========================================================= EMPTY STATES ===== */
+/* When a list, grid, or panel is empty, show what's supposed to go there and
+   what's needed to fill it. Encourages exploration and explains the flow. */
+.empty { text-align: center; padding: var(--s8) var(--s6); color: var(--bone-400); }
+.empty-glyph { font-size: 48px; opacity: .42; margin-bottom: var(--s4); }
+.empty-title { font: 650 14px/1.4 var(--font-ui); letter-spacing: .04em; color: var(--bone-300); margin: 0 0 var(--s3); }
+.empty-msg { font-size: var(--t-sm); line-height: 1.6; margin: 0 0 var(--s5); max-width: 44ch; }
+.empty-action { display: inline-flex; gap: var(--s3); flex-wrap: wrap; justify-content: center; margin-top: var(--s4); }
+
+/* ====================================================== COMMAND REFERENCE === */
+/* Keyboard shortcuts and command reference card. Styled as a laminated card
+   posted on the wall. Lives in a corner or pops on ? press. */
+.commands { border: 1px solid rgba(212,175,74,.24); border-radius: var(--r-lg);
+            padding: var(--s4) var(--s5); background: linear-gradient(135deg, rgba(42,31,24,.8), rgba(30,23,18,.9));
+            font-size: 11px; max-width: 220px; }
+.commands-title { font: 650 10px/1 var(--font-data); letter-spacing: .12em; text-transform: uppercase;
+                  color: var(--brass-300); margin: 0 0 var(--s3); display: flex; align-items: center; gap: var(--s2); }
+.commands-title::before { content: ""; display: inline-block; width: 8px; height: 8px; background: var(--brass-400);
+                          border-radius: 2px; }
+.commands-list { list-style: none; padding: 0; margin: 0; }
+.commands-item { display: flex; justify-content: space-between; gap: var(--s4); padding: var(--s2) 0;
+                 border-bottom: 1px dashed rgba(212,175,74,.12); }
+.commands-item:last-child { border-bottom: 0; }
+.commands-key { font-family: var(--font-data); font-weight: 650; color: var(--brass-300); letter-spacing: .02em; }
+.commands-desc { color: var(--bone-400); text-align: left; }
+
+/* ================================================================ CORRIDOR ===
+   Law 6 made every screen a room; the corridor is the hallway they open onto.
+   It moves you between rooms and says which one you are standing in — the job
+   a breadcrumb usually does badly. Each room block wears its own .room--*
+   ground, so the hallway is a set of doorways you can see through. */
+.corridor-root { position: relative; display: inline-flex; }
+
+.corridor-trigger {
+  display: inline-flex; align-items: center; gap: var(--s3);
+  min-height: 34px; padding: 0 var(--s4); cursor: pointer;
+  border: 1px solid var(--brass-700); border-radius: var(--r-sm);
+  background-image: linear-gradient(180deg, rgba(92,70,50,.9), rgba(30,23,18,.95));
+  color: var(--bone-200); font: 650 11px/1 var(--font-ui);
+  letter-spacing: .08em; text-transform: uppercase;
+  transition: border-color var(--m-quick) var(--e-stamp),
+              background-image var(--m-base) var(--e-lever);
+}
+.corridor-trigger:hover, .corridor-trigger.is-open {
+  border-color: var(--brass-400); color: var(--bone-100);
+  background-image: linear-gradient(180deg, rgba(110,84,60,.95), rgba(42,31,24,.98));
+}
+.corridor-trigger-glyph { color: var(--brass-300); font-size: 13px; }
+.corridor-trigger-here {
+  font: 400 10.5px/1 var(--font-data); letter-spacing: .04em;
+  text-transform: none; color: var(--bone-400);
+  padding-left: var(--s3); border-left: 1px solid rgba(212,175,74,.24);
+}
+
+/* A column, not one scrolling block: the head and the ⌘K hint stay put while
+   only the rooms scroll. Scrolling the whole panel clipped the footer first,
+   which meant the single most useful line in it — "press ⌘K to search every
+   surface" — was the line a coach never saw. */
+.corridor-panel {
+  position: absolute; top: calc(100% + var(--s3)); left: 0; z-index: 180;
+  width: min(92vw, 720px); max-height: min(74vh, 620px);
+  display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid var(--brass-700); border-radius: var(--r-lg);
+  background-color: var(--hide-950);
+  background-image: var(--grain), linear-gradient(168deg, #241B14, #14100D);
+  background-blend-mode: overlay, normal;
+  box-shadow: 0 21px 55px rgba(0,0,0,.72), inset 0 1px 0 rgba(232,206,122,.12);
+  animation: corridor-in var(--m-settle) var(--e-settle);
+}
+@keyframes corridor-in { from { opacity: 0; translate: 0 -6px; } }
+
+.corridor-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--s4);
+  padding: var(--s4) var(--s5); border-bottom: 1px solid rgba(212,175,74,.2);
+  flex: 0 0 auto;
+}
+.corridor-head b { font-family: var(--font-display); text-transform: uppercase;
+                   letter-spacing: .05em; font-size: 13px; color: var(--bone-100); }
+.corridor-head span { font: 400 10.5px/1 var(--font-data); color: var(--bone-400); }
+
+.corridor-rooms { display: grid; gap: 1px; background: rgba(212,175,74,.14);
+                  flex: 1 1 auto; overflow-y: auto; min-height: 0; }
+/* The corridor does NOT wear the rooms' walls.
+   Tempting, and wrong: a wall is an opaque background-image, and two of the six
+   (cork, cabinetry) are LIGHT materials that also flip their own text colour to
+   dark. Dropped into a nav list whose labels are bone, the File Room's blurb
+   went light-on-light and vanished. A hallway is a working surface, not a
+   showcase, so every block stays on the dark ground and the room is identified
+   by an accent edge that reads identically in all six.
+   The attribute selector outranks the bare .room--* rules without !important. */
+.corridor-room { padding: var(--s4) var(--s5) var(--s5); position: relative; }
+.corridor-room[class*="room--"] {
+  background-color: var(--hide-950);
+  background-image: var(--grain);
+  background-blend-mode: overlay;
+  color: var(--bone-200);
+  box-shadow: inset 3px 0 0 var(--room-accent, transparent);
+}
+.corridor-room.room--office { --room-accent: var(--wood-500); }
+.corridor-room.room--floor  { --room-accent: var(--brick-500); }
+.corridor-room.room--board  { --room-accent: var(--wood-300); }
+.corridor-room.room--file   { --room-accent: var(--cork); }
+.corridor-room.room--clinic { --room-accent: #4E6B52; }
+.corridor-room.room--night  { --room-accent: var(--hide-500); }
+/* The room you are standing in takes the brass edge and lifts off the ground. */
+.corridor-room.is-here[class*="room--"] {
+  box-shadow: inset 3px 0 0 var(--brass-400);
+  background-color: #1B1409;
+}
+
+.corridor-room-hd { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--s3);
+                    margin-bottom: var(--s4); position: relative; z-index: 1; }
+.corridor-room-hd b { font-family: var(--font-display); text-transform: uppercase;
+                      font-size: 12px; letter-spacing: .07em; color: var(--brass-200); }
+.corridor-room-blurb { font-size: 10.5px; color: var(--bone-400); }
+.corridor-youarehere {
+  font: 650 9px/1.6 var(--font-data); letter-spacing: .12em; text-transform: uppercase;
+  color: var(--hide-950); background: var(--brass-400);
+  padding: 1px 6px; border-radius: 2px;
+}
+
+.corridor-doors { list-style: none; margin: 0; padding: 0; position: relative; z-index: 1;
+                  display: flex; flex-wrap: wrap; gap: var(--s3); }
+.corridor-door {
+  display: inline-block; padding: var(--s2) var(--s4); text-decoration: none;
+  border: 1px solid rgba(212,175,74,.26); border-radius: var(--r-sm);
+  background: rgba(12,9,6,.55); color: var(--bone-200);
+  font: 500 12px/1.5 var(--font-ui);
+  transition: border-color var(--m-quick) var(--e-stamp),
+              background var(--m-quick) var(--e-stamp),
+              translate var(--m-quick) var(--e-stamp);
+}
+.corridor-door:hover { border-color: var(--brass-400); color: var(--bone-100);
+                       background: rgba(0,0,0,.34); translate: 0 -1px; }
+.corridor-door.is-current { border-color: var(--brass-300); color: var(--hide-950);
+                            background-image: linear-gradient(180deg, var(--brass-200), var(--brass-500));
+                            font-weight: 650; }
+
+.corridor-foot { padding: var(--s3) var(--s5) var(--s4); font-size: 10.5px; color: var(--bone-400);
+                 border-top: 1px solid rgba(212,175,74,.14);
+                 flex: 0 0 auto; background: var(--hide-950); }
+.corridor-foot kbd, .catalog-foot kbd, .catalog-kbd {
+  font: 650 9.5px/1.5 var(--font-data); padding: 1px 5px; border-radius: 3px;
+  background: rgba(0,0,0,.5); border: 1px solid rgba(212,175,74,.3);
+  color: var(--brass-200);
+}
+
+/* ============================================================ CARD CATALOG ===
+   The file room is cork and a gooseneck; a drawer of index cards is the object
+   that belongs in it. ⌘K, or "/" anywhere that is not a field. */
+.catalog {
+  border: 1px solid var(--brass-600); border-radius: var(--r-lg);
+  background-color: var(--hide-950);
+  background-image: var(--grain), linear-gradient(168deg, #2A2018, #14100D);
+  background-blend-mode: overlay, normal;
+  box-shadow: 0 34px 89px rgba(0,0,0,.8), inset 0 1px 0 rgba(232,206,122,.14);
+  overflow: hidden;
+  animation: catalog-in var(--m-settle) var(--e-settle);
+}
+@keyframes catalog-in { from { opacity: 0; translate: 0 -13px; scale: .985; } }
+
+.catalog-field { display: flex; align-items: center; gap: var(--s4);
+                 padding: var(--s4) var(--s5); border-bottom: 1px solid rgba(212,175,74,.24); }
+.catalog-glyph { font-size: 19px; color: var(--brass-400); }
+.catalog-field input {
+  flex: 1; min-width: 0; background: transparent; border: 0; outline: 0;
+  color: var(--bone-100); font: 400 var(--t-md)/1.4 var(--font-ui);
+}
+.catalog-field input::placeholder { color: var(--bone-400); opacity: .8; }
+
+.catalog-list { list-style: none; margin: 0; padding: var(--s2) 0; max-height: 48vh; overflow-y: auto; }
+.catalog-group {
+  font: 650 9.5px/1 var(--font-data); letter-spacing: .14em; text-transform: uppercase;
+  color: var(--brass-400); padding: var(--s4) var(--s5) var(--s2);
+}
+.catalog-row {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s5);
+  padding: var(--s3) var(--s5); cursor: pointer;
+  border-left: 3px solid transparent;
+}
+.catalog-row.is-active {
+  background: linear-gradient(90deg, rgba(212,175,74,.16), transparent 78%);
+  border-left-color: var(--brass-400);
+}
+.catalog-row-main { min-width: 0; }
+.catalog-row-main b { display: block; font: 650 13.5px/1.35 var(--font-ui); color: var(--bone-100); }
+.catalog-row-hint { display: block; font-size: 11px; color: var(--bone-400); line-height: 1.4; }
+.catalog-row-meta { display: flex; align-items: center; gap: var(--s3); flex-shrink: 0; }
+.catalog-row-meta code { font: 400 10.5px/1 var(--font-data); color: var(--bone-400); }
+.catalog-room-tag {
+  font: 650 9px/1.7 var(--font-data); letter-spacing: .1em; text-transform: uppercase;
+  color: var(--brass-200); background: rgba(212,175,74,.14);
+  border: 1px solid rgba(212,175,74,.26); padding: 0 6px; border-radius: 2px; white-space: nowrap;
+}
+
+.catalog-empty { padding: var(--s7) var(--s5); text-align: center; }
+.catalog-empty-glyph { font-size: 34px; opacity: .4; margin-bottom: var(--s3); }
+.catalog-empty b { display: block; font: 650 13px/1.4 var(--font-ui); color: var(--bone-200);
+                   margin-bottom: var(--s2); }
+.catalog-empty span { font-size: 11.5px; color: var(--bone-400); line-height: 1.55; }
+
+.catalog-foot { display: flex; align-items: center; gap: var(--s4); flex-wrap: wrap;
+                padding: var(--s3) var(--s5); border-top: 1px solid rgba(212,175,74,.18);
+                font-size: 10.5px; color: var(--bone-400); }
+.catalog-count { margin-left: auto; font-family: var(--font-data); }
+
+/* A shortcut nobody knows about is not a feature, so the trigger is always
+   visible — quiet, out of the way, and clickable for anyone who never learns
+   the chord. */
+.catalog-hint {
+  display: inline-flex; align-items: center; gap: var(--s2);
+  min-height: 30px; padding: 0 var(--s3); cursor: pointer;
+  border: 1px solid rgba(212,175,74,.3); border-radius: var(--r-sm);
+  background: rgba(12,9,6,.5); color: var(--bone-300);
+  font: 650 10px/1 var(--font-ui); letter-spacing: .1em; text-transform: uppercase;
+  transition: border-color var(--m-quick) var(--e-stamp), color var(--m-quick) var(--e-stamp);
+}
+.catalog-hint:hover { border-color: var(--brass-400); color: var(--bone-100); }
+.catalog-hint kbd { font: 650 9.5px/1.5 var(--font-data); padding: 1px 5px; border-radius: 3px;
+                    background: rgba(0,0,0,.5); border: 1px solid rgba(212,175,74,.3);
+                    color: var(--brass-200); }
+@media (max-width: 620px) { .catalog-hint-lbl { display: none; } }
+
+/* ============================================================== IN PROGRESS ===
+   The system could say "empty" and "done" but had no word for "working on it",
+   so a submitted form looked identical to an ignored one and the honest user
+   response was to press the button again. Every one of these is a physical
+   object mid-motion, and every one of them ALSO carries a text cue, because
+   Law 3 does not stop applying just because the channel is animation: a
+   spinner alone is colour-and-motion-only, which is exactly what Law 3 bans. */
+
+/* A control mid-commit. Drive it from aria-busy so the accessibility tree and
+   the pixels cannot disagree — styling a class instead lets them. */
+.btn[aria-busy="true"],
+.btn--lever[aria-busy="true"] {
+  cursor: progress; pointer-events: none;
+  /* The lever is thrown and held at the end of its travel. */
+  filter: saturate(.72) brightness(.88);
+}
+.btn[aria-busy="true"]::after {
+  content: ""; display: inline-block; margin-left: var(--s3);
+  width: 1em; height: 1em; vertical-align: -.14em;
+  border: 2px solid currentColor; border-right-color: transparent;
+  border-radius: 50%;
+  animation: ppbf-wind var(--m-swing) linear infinite;
+}
+/* Winding, not spinning — the crank on a ledger, one direction, steady. */
+@keyframes ppbf-wind { to { rotate: 360deg; } }
+
+/* A blank ruled form waiting to be filled. This is the paper system doing the
+   work: a skeleton here is a real sheet with nothing written on it yet, which
+   is what the physical world actually does while you wait for a record. */
+.skeleton {
+  background-color: var(--paper-2);
+  background-image: var(--grain-fine),
+    repeating-linear-gradient(180deg,
+      transparent 0 calc(var(--s5) - 1px),
+      rgba(0,0,0,.10) calc(var(--s5) - 1px) var(--s5));
+  background-blend-mode: multiply, normal;
+  border-radius: var(--r-sm);
+  position: relative; overflow: hidden;
+  min-height: var(--s7);
+}
+/* A hand passing over the page — one slow sweep, not a shimmer loop. */
+.skeleton::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(100deg, transparent 30%,
+              rgba(255,255,255,.42) 50%, transparent 70%);
+  translate: -100% 0;
+  animation: ppbf-sweep calc(var(--m-swing) * 2) var(--e-drawer) infinite;
+}
+@keyframes ppbf-sweep { to { translate: 100% 0; } }
+.skeleton--line { min-height: var(--s5); }
+.skeleton--block { min-height: calc(var(--s8) * 1.5); }
+
+/* The text cue that keeps a pending state off the colour-and-motion-only list.
+   Pair it with any of the above; never ship one of the above without it. */
+.working {
+  font: 650 11px/1 var(--font-data); letter-spacing: .1em;
+  text-transform: uppercase; color: var(--brass-300);
+  display: inline-flex; align-items: center; gap: var(--s2);
+}
+.working::before { content: "◴"; font-size: 13px; }
+
+/* ============================================================== FOCUS RING ===
+   --focus existed but only .btn and the inputs used it, so tabbing through a
+   room fell through to the browser default on tags, tiles, seals and every
+   link — a thin blue halo that belongs to no room in this building. One rule
+   gives the brass ring to anything focusable, and :focus-visible means a mouse
+   click never draws it. */
+.ppbf :where(a, button, [role="button"], [tabindex]:not([tabindex="-1"]),
+             summary, select, input, textarea):focus-visible {
+  outline: 0;
+  box-shadow: var(--focus);
+  /* Keep the ring visible on a dark wall and on paper alike. */
+  outline: 2px solid rgba(20,16,13,.55); outline-offset: 1px;
+}
+
+/* ============================================================ TRAINING CARD ===
+   The punch card an athlete accumulates: one stamp per session, a seal at each
+   milestone. It is a RECORD, not a score — every mark corresponds to a real
+   session row, so the card cannot flatter anyone.
+
+   NO STREAKS, deliberately. A streak punishes illness and injury, and this
+   platform has a safety gate that locks athletes out for medical reasons: a
+   streak would mean an athlete watching their run die because a doctor
+   protected them, which is a direct incentive to hide a concussion. Cumulative
+   counts only. They never reset and never pressure.
+
+   LAW 2 HOLDS HERE. Effort is shown as ink density, never as colour — a red
+   stamp for a hard session would put a saturated pixel next to the safety
+   ladder and make "heavy training" look like "restricted". */
+.tcard { padding: var(--s5) var(--s5) var(--s4); }
+
+.tcard-hd { display: flex; align-items: flex-end; justify-content: space-between;
+            gap: var(--s5); flex-wrap: wrap; margin-bottom: var(--s5);
+            border-bottom: 2px solid rgba(20,16,13,.2); padding-bottom: var(--s3); }
+.tcard-title { font-family: var(--font-display); text-transform: uppercase;
+               font-size: var(--t-md); letter-spacing: .05em; color: #241C11; margin: 0; }
+.tcard-sub { font: 400 11px/1.4 var(--font-data); letter-spacing: .06em;
+             text-transform: uppercase; color: #6B5B44; margin-top: 2px; }
+/* The count that never resets. */
+.tcard-count { text-align: right; line-height: 1; }
+.tcard-count b { display: block; font-family: var(--font-display); font-size: var(--t-2xl);
+                 color: #241C11; line-height: .9; }
+.tcard-count span { display: block; font: 650 9.5px/1 var(--font-data); letter-spacing: .14em;
+                    text-transform: uppercase; color: #6B5B44; margin-top: var(--s2); }
+
+/* The grid of impressions. */
+.tcard-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(34px, 1fr));
+              gap: var(--s3); margin-bottom: var(--s5); }
+.tcard-stamp {
+  aspect-ratio: 1; border-radius: 2px; position: relative;
+  display: grid; place-items: center;
+  font: 650 10px/1 var(--font-data); color: rgba(36,28,17,.62);
+  border: 1.5px solid rgba(36,28,17,.34);
+  /* Slight rotation per position so the card reads as hand-stamped rather than
+     printed. Deterministic by nth-child, never random — a card that reshuffles
+     between reloads reads as breakage. */
+  background: rgba(36,28,17,.05);
+}
+.tcard-stamp:nth-child(3n+1)  { rotate: -1.5deg; }
+.tcard-stamp:nth-child(3n+2)  { rotate:  1deg; }
+.tcard-stamp:nth-child(5n)    { rotate: -0.5deg; }
+.tcard-stamp:nth-child(7n)    { rotate:  1.75deg; }
+
+/* A logged session. Ink density carries effort — never hue (Law 2).
+   The ramp starts at .66, not 0: the numeral is printed in paper-white on a
+   semi-transparent stamp, so a light session composites to pale-on-pale. A .52
+   floor measured 4.35:1 at RPE 3 and worse below it — under the 4.5 AA floor.
+   .66→.88 keeps a visible difference between a light and a heavy session while
+   every effort level from 1 to 10 clears AA. Correctness outranks drama. */
+.tcard-stamp--done {
+  border-color: rgba(36,28,17,.72); color: var(--paper);
+  background-color: rgba(36,28,17,calc(.66 + var(--ink, .5) * .22));
+  background-image: var(--grain-fine);
+  background-blend-mode: overlay;
+  box-shadow: inset 0 0 3px rgba(255,255,255,.14), 0 1px 2px rgba(0,0,0,.18);
+}
+/* Booked but not completed: an empty box on the card, which is the truth. */
+.tcard-stamp--open { border-style: dashed; color: rgba(36,28,17,.4); }
+
+.tcard-seals { display: flex; flex-wrap: wrap; gap: var(--s4); align-items: center;
+               padding-top: var(--s4); border-top: 1px dashed rgba(20,16,13,.18); }
+.tcard-seal-slot { text-align: center; }
+.tcard-seal-slot .tcard-seal-lbl {
+  display: block; font: 650 9px/1.5 var(--font-data); letter-spacing: .1em;
+  text-transform: uppercase; color: #6B5B44; margin-top: var(--s2);
+}
+/* An unearned milestone is drawn, not hidden — you can see what is next.
+   NOT named "--locked": in this platform "locked" is the Layer 11 safety state,
+   and borrowing that word for a gamification state is exactly the drift Law 2
+   exists to prevent. A milestone you have not reached is unearned, not locked. */
+.tcard-seal-slot--unearned { opacity: .3; filter: grayscale(1); }
+
+.tcard-legend { display: flex; gap: var(--s5); flex-wrap: wrap; margin-top: var(--s4);
+                font: 400 10.5px/1.5 var(--font-ui); color: #6B5B44; }
+.tcard-legend i { font-style: normal; display: inline-block; width: 11px; height: 11px;
+                  border-radius: 2px; vertical-align: -1px; margin-right: var(--s2);
+                  border: 1.5px solid rgba(36,28,17,.6); }
+.tcard-legend i.is-done { background: rgba(36,28,17,.72); }
+.tcard-legend i.is-open { border-style: dashed; }
+
+/* =========================================================== COMMANDS SHEET ===
+   The "?" overlay: a laminated notice posted on the wall, which is where a list
+   of rules belongs in this building. It renders from the shortcut registry, so
+   it lists what is bound and nothing else — a documented key that does nothing
+   teaches a user that the keyboard is not worth trying. */
+.commands-sheet {
+  width: min(92vw, 520px); max-height: 82vh; overflow-y: auto;
+  border: 1px solid var(--brass-600); border-radius: var(--r-md);
+  background-color: var(--paper);
+  background-image: var(--grain-fine),
+    linear-gradient(172deg, #F6EED8 0%, #E8DCBE 100%);
+  background-blend-mode: multiply, normal;
+  box-shadow: 0 34px 89px rgba(0,0,0,.72), inset 0 1px 0 rgba(255,255,255,.5);
+  padding: var(--s5) var(--s6) var(--s4);
+  outline: 0;
+  animation: commands-in var(--m-settle) var(--e-settle);
+}
+@keyframes commands-in { from { opacity: 0; scale: .97; } }
+
+.commands-sheet-hd { border-bottom: 2px solid rgba(20,16,13,.24); padding-bottom: var(--s3);
+                     margin-bottom: var(--s4); }
+.commands-sheet-hd b { display: block; font-family: var(--font-display); text-transform: uppercase;
+                       font-size: var(--t-lg); letter-spacing: .04em; color: #241C11; line-height: 1; }
+.commands-sheet-hd span { display: block; margin-top: var(--s2); font-size: 11px;
+                          color: #6B5B44; line-height: 1.45; }
+
+.commands-scope { margin-bottom: var(--s4); }
+.commands-scope-hd { font: 650 9.5px/1 var(--font-data); letter-spacing: .14em;
+                     text-transform: uppercase; color: #8A7454; margin-bottom: var(--s3); }
+/* The sheet's own list overrides the dark-panel .commands-* rules above, which
+   were written for the floating card on a leather ground. */
+.commands-sheet .commands-list { list-style: none; margin: 0; padding: 0; }
+.commands-sheet .commands-item {
+  display: flex; align-items: baseline; gap: var(--s4);
+  padding: var(--s2) 0; border-bottom: 1px dashed rgba(20,16,13,.14);
+}
+.commands-sheet .commands-item:last-child { border-bottom: 0; }
+.commands-sheet .commands-key {
+  flex: 0 0 74px; font: 650 12px/1.6 var(--font-data); color: #241C11;
+  background: rgba(20,16,13,.07); border: 1px solid rgba(20,16,13,.22);
+  border-radius: 3px; padding: 1px 6px; text-align: center; white-space: nowrap;
+}
+.commands-sheet .commands-desc { flex: 1; font-size: 12.5px; line-height: 1.5; color: #3A2E1E;
+                                 text-align: left; }
+
+.commands-sheet-ft { border-top: 1px solid rgba(20,16,13,.16); padding-top: var(--s3);
+                     font-size: 10.5px; color: #6B5B44; }
+.commands-sheet-ft kbd {
+  font: 650 9.5px/1.5 var(--font-data); padding: 1px 5px; border-radius: 3px;
+  background: rgba(20,16,13,.08); border: 1px solid rgba(20,16,13,.24); color: #241C11;
+}
+
+/* ======================================================== PRINT MEDIA RULES === */
+/* Every screen must print identically to how it renders on screen.
+   Board records and family records are the same sheet of stamped paper. */
+@media print {
+  /* Paper does not wait. A skeleton or a spinner on a printed board packet is
+     an artefact of the screen it was captured from. */
+  .skeleton::after, .btn[aria-busy="true"]::after { display: none; }
+  .skeleton { background-image: none; border: 1px dashed #666; }
+  body, html { background: #FFF; color: #000; }
+  a { color: #000; text-decoration: underline; }
+  button, .btn, .btn--ghost, .btn--lever { border: 1px solid #000; background: #FFF; color: #000; }
+  .btn::after, .btn::before, .btn--lever::before { display: none; }
+  .kiosk-bar, .rail, .shadow-panel, .commands { display: none; }
+  .room--floor::before, .room--office::before, .room--board::before,
+  .room--file::before, .room--clinic::before, .room--night::before { display: none; }
+  @page { margin: 1in; size: letter portrait; }
+  .page-break { page-break-after: always; }
+}
+
+/* The block below arrived with #170 and is the authoritative print
+   treatment: it collapses every ground onto paper and takes the safety
+   ladder to ink weights. It is kept as a second @media print rather than
+   folded into the one above because the two do different jobs -- the
+   first hides this sheet's own transient chrome (skeletons, spinners,
+   the corridor and catalog), this one restates grounds and colour. Later
+   wins on any overlap, which is the order we want. */
+/* ---------------------------------------------------------------- PRINT -- */
+/* Board packets, compliance registers and roster exports get printed, and
+   until now they printed the screen: an ink ground is a full page of toner,
+   and most printers drop background colours by default anyway, which left
+   bone type on white -- a blank sheet with the layout faintly visible.
+
+   Paper is its own ground, so this is not a third theme. It is the two grounds
+   collapsing onto the one Law 6 already calls a material: white stock, black
+   ink, and hardware drawn as rules rather than as fills.
+
+   Colour is not thrown away. Law 2 says saturated colour carries safety state,
+   and a printed compliance register is exactly where that has to survive, so
+   the ladder keeps its hue and only darkens enough to read on white. Law 3 is
+   what makes this safe: every status already carries a glyph and an uppercase
+   label, so a greyscale printer loses nothing that matters. */
+@media print {
+  :root {
+    /* The ladder, taken to ink weights. --cleared at 3F7D4E is 4.94:1 on white
+       and --restricted only 4.45:1; the -deep rungs clear 5.7:1, which holds up
+       through a photocopier as well as a printer. */
+    --cleared: var(--cleared-deep);
+    --monitor: var(--monitor-deep);
+    --restricted: var(--restricted-deep);
+  }
+
+  /* Grounds and materials become paper. The texture data URIs and gradients go
+     with them -- they are surface, and a printer renders them as grey mud.
+
+     This is a catch-all rather than a list of the material classes, and it has
+     to be. Grounds are not only set by .mat-* and .on-canvas: RoleStandaloneView
+     paints the staff ground with a Tailwind utility, bg-[var(--hide-950)], so a
+     list of design-system class names left every staff console printing as a
+     full page of near-black. Anything that names a specific class will keep
+     missing the next one somebody writes.
+
+     Nothing is lost by being broad here. The rules below restore colour to the
+     ladder and the stamp through `color` and `border-color`, which this does
+     not touch, and images keep their own pixels. */
+  *:not(img):not(svg):not(canvas):not(video) {
+    background-color: #FFF !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  /* Type that was tuned to glow on leather has to go to ink. The voices keep
+     their family, weight and tracking -- only the colour moves.
+
+     Broad for the same reason the grounds are: bone and brass arrive through
+     Tailwind utilities as often as through .t-*, so an element list keeps
+     missing them. The ladder and the stamp are restored below and win on
+     specificity -- a class beats the universal selector even when both are
+     !important. */
+  *:not(img):not(svg):not(canvas):not(video) {
+    color: #000 !important;
+  }
+
+  /* Hardware reads as a rule on paper, not as a filled bar. The stamp is
+     deliberately not in this list: its border is currentColor, so blacking it
+     would leave a red legend inside a black box instead of one red mark. */
+  .frame, .tile, .plaque, .badge {
+    border-color: #000 !important;
+  }
+
+  /* The ladder still marks the page, as an outline rather than a block of
+     toner, and its own hue survives for anyone printing in colour. */
+  .badge--cleared    { color: var(--cleared) !important;    border-color: var(--cleared) !important; }
+  .badge--monitor    { color: var(--monitor) !important;    border-color: var(--monitor) !important; }
+  .badge--restricted { color: var(--restricted) !important; border-color: var(--restricted) !important; }
+  .badge--locked     { color: var(--locked) !important;     border-color: var(--locked) !important; }
+
+  /* Law 7: a refusal is a stamp, and a stamp is the one thing on the page that
+     must survive being photocopied. It keeps its red and its rotation. */
+  .stamp             { color: var(--stamp-red) !important; }
+  .stamp--green      { color: var(--stamp-green) !important; }
+  .stamp--brass      { color: #000 !important; }
+
+  /* Screen furniture: nothing here means anything on paper. */
+  header[class*="sticky"], .rope, .rivet,
+  button, [role="button"], .btn, .stamp-button,
+  nav, [aria-hidden="true"]:not(.stamp) {
+    display: none !important;
+  }
+
+  /* A printed record has to say where it came from, and a URL that only makes
+     sense while signed in is noise on a board packet. */
+  a { text-decoration: underline !important; }
+  a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 10px; }
+
+  /* Keep a record from breaking across a fold mid-row. */
+  tr, .tile, .frame, .badge, .stamp { break-inside: avoid; }
+  thead { display: table-header-group; }
 }

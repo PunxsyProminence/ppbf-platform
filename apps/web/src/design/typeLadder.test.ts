@@ -24,9 +24,16 @@ const DESIGN_SYSTEM = path.resolve(__dirname, '../../../../design-system/ppbf.cs
 
 function declarations(css: string): Map<string, string> {
   const found = new Map<string, string>();
+  // Comments first. Both stylesheets discuss their own token names in prose --
+  // "it previously stopped at --text-4xl, which left --text-5xl on Tailwind's
+  // default" -- and a naive scan reads those as declarations, swallowing the
+  // real ones that follow. That cost a debugging round: the test reported
+  // --text-xs missing from a file that plainly declares it.
+  const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
+
   // Later declarations win, which matches how the cascade resolves a repeated
   // custom property inside one :root block.
-  for (const match of css.matchAll(/(--[a-z0-9-]+)\s*:\s*([^;}]+)[;}]/gi)) {
+  for (const match of withoutComments.matchAll(/(--[a-z0-9-]+)\s*:\s*([^;}]+)[;}]/gi)) {
     found.set(match[1], match[2].trim());
   }
   return found;
@@ -58,6 +65,37 @@ function resolvePx(name: string, tokens: Map<string, string>, seen = new Set<str
     return Number.parseFloat(rem[1]) * 16;
   }
 
+  // The top of the ladder is generated rather than listed: the rungs nothing
+  // uses today are continued as `calc(var(--t-5xl) * var(--root-phi) * ...)`
+  // so they stay monotonic without inventing named sizes no screen asks for.
+  // Only multiplication of var() references and numbers appears here, which is
+  // all this evaluates -- anything else should fail loudly rather than be
+  // guessed at.
+  const calc = raw.match(/^calc\(([^)]*(?:\([^)]*\)[^)]*)*)\)$/i);
+  if (calc) {
+    return calc[1]
+      .split('*')
+      .map((term) => {
+        const trimmed = term.trim();
+        const ref = trimmed.match(/^var\((--[a-z0-9-]+)\)$/i);
+        if (ref) {
+          return resolvePx(ref[1], tokens, new Set(seen));
+        }
+        const literal = Number.parseFloat(trimmed);
+        if (Number.isNaN(literal)) {
+          throw new Error(`Cannot evaluate calc term in ${name}: ${trimmed}`);
+        }
+        return literal;
+      })
+      .reduce((product, value) => product * value, 1);
+  }
+
+  // A bare unitless number, which --root-phi and the other ratios are.
+  const unitless = raw.match(/^[\d.]+$/);
+  if (unitless) {
+    return Number.parseFloat(raw);
+  }
+
   throw new Error(`Cannot resolve ${name} to px: ${raw}`);
 }
 
@@ -79,6 +117,8 @@ describe('type ladder', () => {
     '--text-5xl',
     '--text-6xl',
     '--text-7xl',
+    '--text-8xl',
+    '--text-9xl',
   ];
 
   it('never gets smaller as the step gets larger', () => {

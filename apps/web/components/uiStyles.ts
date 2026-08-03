@@ -1,6 +1,12 @@
 /**
  * UI Styles Registry
  *
+ * These surfaces were authored in cream while the workspaces that fill them
+ * -- Athlete, Coach, Parent -- write ink-authored type into them: --bone-400
+ * captions and --brass-300 headings. That pairing measured 1.31:1 and 2.01:1,
+ * on a page a coach reads mid-session from a floor tablet. The panels are
+ * leather now, which is the ground the content was already written for.
+ *
  * Backs the tabs, mode switches and panel shells in the Athlete, Coach and
  * Parent workspaces, which makes it the highest-reach style file in the app.
  *
@@ -28,18 +34,18 @@
  */
 
 export const ui = {
-  tabContainer: 'border-2 border-[var(--black)] bg-[var(--canvas-tan)]',
+  tabContainer: 'mat-leather rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)]',
   tabRow: 'flex flex-wrap gap-1 p-2',
   tabButtonBase:
     'inline-flex min-h-[44px] items-center px-3 py-2 text-xs font-semibold uppercase transition border-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]',
-  tabButtonActive: 'bg-[var(--accent)] border-[var(--black)] text-[var(--accent-ink)]',
-  tabButtonInactive: 'bg-[var(--canvas-tan-light)] border-[var(--black)] text-[var(--gray-dark)] hover:bg-[var(--canvas-tan-dark)] hover:text-[var(--black)]',
+  tabButtonActive: 'bg-[var(--accent)] border-[color:var(--brass-600)] text-[color:var(--accent-ink)]',
+  tabButtonInactive: 'border-[color:rgba(212,175,74,.28)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-400)] hover:text-[color:var(--bone-100)]',
   modeButtonBase:
     'inline-flex min-h-[44px] items-center px-4 py-2 font-mono font-bold text-xs border-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]',
-  modeButtonActive: 'bg-[var(--accent)] border-[var(--black)] text-[var(--accent-ink)]',
-  modeButtonInactive: 'bg-[var(--canvas-tan-light)] border-[var(--black)] text-[var(--gray-dark)] hover:bg-[var(--canvas-tan-dark)] hover:text-[var(--black)]',
-  panel: 'border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6',
-  panelSpaced: 'border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 space-y-4',
+  modeButtonActive: 'bg-[var(--accent)] border-[color:var(--brass-600)] text-[color:var(--accent-ink)]',
+  modeButtonInactive: 'border-[color:rgba(212,175,74,.28)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-400)] hover:text-[color:var(--bone-100)]',
+  panel: 'mat-leather--raised rounded-[var(--r-md)] p-[var(--s5)]',
+  panelSpaced: 'mat-leather--raised rounded-[var(--r-md)] p-[var(--s5)] space-y-[var(--s4)]',
 
   /* Status badges. Law 3: colour is never the only channel, so callers pair
      these with the state's glyph and uppercase label rather than relying on
@@ -54,7 +60,7 @@ export const ui = {
   // Error state button (with retry) — red here is correct: it is destructive
   // or it is reporting a real failure.
   errorButton:
-    'inline-flex min-h-[44px] items-center bg-[var(--status-danger)] text-[var(--bone-100)] hover:opacity-80 transition border-2 border-[var(--black)] px-3 py-2 text-xs font-semibold uppercase',
+    'inline-flex min-h-[44px] items-center bg-[var(--status-danger)] text-[var(--bone-100)] hover:opacity-80 transition border-2 border-[color:var(--locked)] px-3 py-2 text-xs font-semibold uppercase',
   errorContainer: 'border-2 border-[var(--status-danger)] bg-[var(--status-danger)]/10 p-4 rounded',
   errorText: 'text-[var(--status-danger)] font-semibold',
 

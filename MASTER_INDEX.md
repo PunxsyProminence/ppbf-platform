@@ -18,7 +18,38 @@ branches in this repo have repeatedly been many commits behind — verify agains
 ## Contracts and interfaces
 
 - [AUTH_CONTRACT.md](AUTH_CONTRACT.md) — authentication and principal model
-- [docs/FRONTEND_STYLE_CONTRACT.md](docs/FRONTEND_STYLE_CONTRACT.md) — UI conventions
+- [docs/FRONTEND_STYLE_CONTRACT.md](docs/FRONTEND_STYLE_CONTRACT.md) — UI
+  conventions, the alias layer, and drift guardrails. Holds no colour values of
+  its own; the design system below is the source of truth for those.
+
+## Visual design
+
+- [design-system/README.md](design-system/README.md) — the "Leather & Brass"
+  direction and the Eight Laws that govern it
+- [design-system/ppbf.css](design-system/ppbf.css) — **the single source of truth**
+  for every token, material, and component class. `@import`ed by
+  [apps/web/app/globals.css](apps/web/app/globals.css), so the previews and the
+  shipped app render against the same sheet and a value cannot drift between them.
+  Zero external assets — all texture is generated from SVG `feTurbulence` data
+  URIs, so the floor kiosk renders offline.
+- [apps/web/src/design/PAGE_MAP.md](apps/web/src/design/PAGE_MAP.md) — which of
+  three shapes each of the 61 routes takes, and which ground (ink for staff,
+  warm canvas for family and public) it sits on
+- `design-system/index.html` — browsable index of the foundation, component, and
+  screen previews. Open it before designing a new surface.
+- [docs/BRAND_DESIGN_BRIEF.md](docs/BRAND_DESIGN_BRIEF.md) — for generating
+  **external** visuals (posters, social cards, grant covers) in tools that can't
+  read CSS. The only document allowed to restate hex values, and it is transcribed
+  from `ppbf.css` rather than being independent.
+
+The retro spec set below predates the shipped design system.
+[docs/RETRO_DESIGN_SYSTEM.md](docs/RETRO_DESIGN_SYSTEM.md) is **superseded** — its
+tokens and components are dead and its `[data-theme="retro"]` coexistence plan was
+never built; it is kept only as the rationale the Eight Laws came from. Its three
+companions are functional rather than visual specs and were never verified against
+the code, so treat them as proposals: [docs/USABILITY_SPEC_RETRO.md](docs/USABILITY_SPEC_RETRO.md),
+[docs/STAMP_AND_LEDGER_SCHEMA.md](docs/STAMP_AND_LEDGER_SCHEMA.md),
+[docs/FLOOR_FLOWS_SPARRING_ATTENDANCE.md](docs/FLOOR_FLOWS_SPARRING_ATTENDANCE.md).
 
 Note: `API_DOCS.md` and `QUALITY_CHECKLIST.md` were archived — both described
 a planned/aspirational state (a placeholder endpoint list and a governance

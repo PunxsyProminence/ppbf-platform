@@ -30,12 +30,19 @@ export default function FeatureSurface({
     { label: 'Member Access', href: '/login' },
   ].filter((link, index, all) => all.findIndex((item) => item.href === link.href) === index);
 
+  /* No room is applied here, deliberately. FeatureSurface renders the warm
+     canvas ground, and a .room--* sets a wall image as well as a colour; this
+     sheet is unlayered while Tailwind's utilities sit in a layer, so the room
+     wins and puts a plank or cork wall behind content coloured for cream.
+     Verified by measurement, not assumed. Rooms belong on the ink surfaces until
+     this content is converted — the same conclusion RoleStandaloneView reached
+     for its family branch. */
   return (
     <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-10 lg:px-10">
         <header className="flex flex-col gap-4 border-b-[3px] border-[var(--black)] pb-6 md:flex-row md:items-end md:justify-between">
           <div className="space-y-3">
-            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--red-primary)]">{eyebrow}</p>
+            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[color:var(--brass-800)]">{eyebrow}</p>
             <h1 className="font-display text-4xl tracking-tight text-[var(--black)] md:text-5xl">{title}</h1>
             <p className="max-w-3xl text-sm leading-6 text-[var(--gray-dark)] md:text-base">{description}</p>
           </div>
@@ -77,7 +84,7 @@ export default function FeatureSurface({
                   <Link
                     key={item.href}
                     href={item.href}
-                    className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-sm text-[var(--black)] transition hover:bg-[var(--olive-dark)] hover:text-[var(--white)]"
+                    className="flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-sm text-[var(--black)] transition hover:bg-[var(--olive-dark)] hover:text-[var(--white)]"
                   >
                     {item.label}
                   </Link>
@@ -85,7 +92,7 @@ export default function FeatureSurface({
               </div>
             </section>
 
-            <section className="border-[3px] border-[var(--black)] bg-[var(--red-primary)] p-6 text-sm text-[var(--white)] shadow-[var(--shadow-md)]">
+            <section className="border-[3px] border-[var(--black)] bg-[var(--brass-800)] p-6 text-sm text-[var(--white)] shadow-[var(--shadow-md)]">
               <h2 className="font-display text-lg tracking-tight text-[var(--white)]">Front-end status</h2>
               <p className="mt-3 leading-6 text-[var(--white-off)]">
                 This route is a live scaffold for one of the missing capability surfaces. It is intentionally simple,

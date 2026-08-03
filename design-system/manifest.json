@@ -1,0 +1,318 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "name": "PPBF Design System — Leather & Brass",
+  "description": "A skeuomorphic design system for the Punxsutawney Prominence Boxing Foundation platform. The platform is a building; every screen is a room, and every panel in it is a real object. Zero external assets: all texture is generated from SVG feTurbulence data URIs and layered gradients, so a floor kiosk renders with no network.",
+  "license": "MIT",
+  "generatedBy": "design-system/build-manifest.mjs",
+  "entryPoints": {
+    "stylesheet": "ppbf.css",
+    "fonts": "fonts.css",
+    "sound": "ppbf-sound.js",
+    "gallery": "index.html",
+    "documentation": "README.md"
+  },
+  "paths": {
+    "previewsReference": "../ppbf.css",
+    "stylesheetImports": "./fonts.css",
+    "fontsReference": "fonts/*.woff2",
+    "absolutePaths": "none",
+    "externalRequests": "none"
+  },
+  "laws": [
+    "Brass is the chassis, never the message.",
+    "Saturated colour means safety or status. Nothing else may use it.",
+    "Colour is never the only channel — glyph + uppercase label, always.",
+    "Six voices, each with a job. Display is wood type, not stencil.",
+    "Kiosk-first sizing — 55px targets, 19.1px type on the gym floor.",
+    "Every screen is a room, and every panel in it is a real object.",
+    "Refusal is a stamp, not an error toast.",
+    "Proportion descends from φ. Nothing is sized by eye."
+  ],
+  "rooms": [
+    {
+      "class": "room--office",
+      "name": "office"
+    },
+    {
+      "class": "room--floor",
+      "name": "floor"
+    },
+    {
+      "class": "room--board",
+      "name": "board"
+    },
+    {
+      "class": "room--file",
+      "name": "file"
+    },
+    {
+      "class": "room--clinic",
+      "name": "clinic"
+    },
+    {
+      "class": "room--night",
+      "name": "night"
+    }
+  ],
+  "type": {
+    "displayVoice": "Alfa Slab One",
+    "faces": [
+      "Alfa Slab One",
+      "Oswald",
+      "Special Elite",
+      "Caveat",
+      "UnifrakturCook"
+    ],
+    "files": [
+      "alfa-slab-one-400.woff2",
+      "caveat-var.woff2",
+      "oswald-var.woff2",
+      "special-elite-400.woff2",
+      "unifrakturcook-700.woff2"
+    ],
+    "totalBytes": 186032,
+    "licence": "SIL OFL 1.1 — all faces free and self-hosted, no CDN"
+  },
+  "tokenCounts": {
+    "total": 98,
+    "type": 9,
+    "space": 7,
+    "motionDurations": 6,
+    "motionEasings": 5,
+    "fonts": 8
+  },
+  "tokens": {
+    "--hide-950": "#14100D",
+    "--hide-900": "#1E1712",
+    "--hide-800": "#2A1F18",
+    "--hide-700": "#3B2C21",
+    "--hide-600": "#4A3728",
+    "--hide-500": "#5C4632",
+    "--brass-900": "#4A340B",
+    "--brass-800": "#6B4E12",
+    "--brass-700": "#8C6B1F",
+    "--brass-600": "#A98126",
+    "--brass-500": "#B8912F",
+    "--brass-400": "#D4AF4A",
+    "--brass-300": "#E8CE7A",
+    "--brass-200": "#F2E2A8",
+    "--bone-100": "#F7F1E1",
+    "--bone-200": "#EFE6D0",
+    "--bone-300": "#DCCFB2",
+    "--bone-400": "#B5A688",
+    "--paper": "#F4EBD4",
+    "--paper-2": "#E6DABE",
+    "--canvas-warm": "#EFE4C8",
+    "--slate-board": "#1C2420",
+    "--chalk": "#E6E3D6",
+    "--chalk-dim": "#9FA79C",
+    "--cork": "#C08E4E",
+    "--cork-dark": "#96682F",
+    "--wood-900": "#1F1409",
+    "--wood-800": "#2E1D0E",
+    "--wood-700": "#422A15",
+    "--wood-600": "#5A3A1E",
+    "--wood-500": "#7A5029",
+    "--wood-300": "#9C6B3A",
+    "--brick-900": "#2A1712",
+    "--brick-700": "#4A251C",
+    "--brick-500": "#6B3A2A",
+    "--mortar": "#6E6255",
+    "--lamp": "#FFE9B8",
+    "--lamp-hot": "#FFF6DF",
+    "--cleared": "#3F7D4E",
+    "--monitor": "#2E6E96",
+    "--restricted": "#C05A1E",
+    "--locked": "#A81E22",
+    "--cleared-deep": "#366A42",
+    "--monitor-deep": "#2A6488",
+    "--restricted-deep": "#9A4818",
+    "--locked-deep": "#A81E22",
+    "--stamp-red": "#A81E22",
+    "--stamp-green": "#2F7A3E",
+    "--patina-900": "#262418",
+    "--patina-700": "#46421F",
+    "--patina-500": "#6B6430",
+    "--patina-300": "#8E8548",
+    "--patina-100": "#B5AA6E",
+    "--rust-900": "#241009",
+    "--rust-700": "#3E1B12",
+    "--rust-500": "#5C2A1C",
+    "--rust-300": "#7A4130",
+    "--font-display": "\"Alfa Slab One\", Impact, Haettenschweiler, \"Arial Narrow Bold\", serif",
+    "--font-stencil": "var(--font-display)",
+    "--font-ui": "\"Oswald\", \"Inter\", ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif",
+    "--font-body": "\"Inter\", ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif",
+    "--font-type": "\"Special Elite\", \"Courier Prime\", Courier, monospace",
+    "--font-hand": "\"Caveat\", \"Segoe Print\", \"Bradley Hand\", \"Chalkboard SE\", cursive",
+    "--font-data": "ui-monospace, SFMono-Regular, \"SF Mono\", Menlo, Consolas, monospace",
+    "--font-gothic": "\"UnifrakturCook\", \"Cloister Black\", \"Old English Text MT\", serif",
+    "--phi": "1.618",
+    "--phi-inv": "0.618",
+    "--phi-2": "2.618",
+    "--root-phi": "1.272",
+    "--t-xs": "11.8px",
+    "--t-sm": "15px",
+    "--t-md": "19.1px",
+    "--t-lg": "24.3px",
+    "--t-xl": "30.9px",
+    "--t-2xl": "39.3px",
+    "--t-3xl": "50px",
+    "--t-4xl": "63.6px",
+    "--t-5xl": "80.9px",
+    "--s1": "3px",
+    "--s5": "21px",
+    "--r-sm": "5px",
+    "--split-minor": "38.2%",
+    "--split-major": "61.8%",
+    "--tap": "55px",
+    "--focus": "0 0 0 3px rgba(212, 175, 74, .55)",
+    "--m-instant": "55ms",
+    "--m-quick": "89ms",
+    "--m-base": "144ms",
+    "--m-settle": "233ms",
+    "--m-travel": "377ms",
+    "--m-swing": "610ms",
+    "--e-stamp": "cubic-bezier(.2, .9, .1, 1)",
+    "--e-settle": "cubic-bezier(.16, .84, .28, 1)",
+    "--e-drawer": "cubic-bezier(.45, .05, .35, 1)",
+    "--e-lever": "cubic-bezier(.6, .04, .78, .9)",
+    "--e-swing": "cubic-bezier(.34, 1.56, .64, 1)",
+    "--grain": "<generated SVG data URI>",
+    "--grain-fine": "<generated SVG data URI>"
+  },
+  "previews": [
+    {
+      "path": "foundations/corridor.html",
+      "group": "Foundations",
+      "name": "Corridor & Card Catalog",
+      "subtitle": "How you walk a building of 63 surfaces: room-level navigation, and a ⌘K drawer of index cards",
+      "bytes": 12715
+    },
+    {
+      "path": "foundations/materials.html",
+      "group": "Foundations",
+      "name": "Materials",
+      "subtitle": "Leather, brass, slate, cork, paper — and the stamp pad",
+      "bytes": 16390
+    },
+    {
+      "path": "foundations/matter.html",
+      "group": "Foundations",
+      "name": "Matter",
+      "subtitle": "The display voice, paper as stock × age × soil × damage, light that shadows obey, placement, the seal, discoverables",
+      "bytes": 22033
+    },
+    {
+      "path": "foundations/motion.html",
+      "group": "Foundations",
+      "name": "Motion & Sound",
+      "subtitle": "Fibonacci durations, five physical easings, pending states, the brass focus ring, and synthesized gym sound",
+      "bytes": 21991
+    },
+    {
+      "path": "foundations/palette.html",
+      "group": "Foundations",
+      "name": "Palette",
+      "subtitle": "Hide, brass and bone ramps + the four-rung status ladder",
+      "bytes": 9932
+    },
+    {
+      "path": "foundations/patterns.html",
+      "group": "Foundations",
+      "name": "Patterns & UX",
+      "subtitle": "Persistent notifications, form undo, empty states, command reference, print parity",
+      "bytes": 17950
+    },
+    {
+      "path": "foundations/proportion.html",
+      "group": "Foundations",
+      "name": "Proportion — φ",
+      "subtitle": "√φ type ladder, Fibonacci space, the golden section",
+      "bytes": 12234
+    },
+    {
+      "path": "foundations/rooms.html",
+      "group": "Foundations",
+      "name": "Rooms",
+      "subtitle": "Law 6: six rooms, each supplying a wall, a light and a shadow — plank, brick, wainscot, cork, cabinetry, ink",
+      "bytes": 17418
+    },
+    {
+      "path": "foundations/training-card.html",
+      "group": "Foundations",
+      "name": "Training Card",
+      "subtitle": "One stamp per logged session, milestone seals on the Fibonacci series — a record, not a score, and deliberately not a streak",
+      "bytes": 9880
+    },
+    {
+      "path": "components/forms.html",
+      "group": "Components",
+      "name": "Forms",
+      "subtitle": "Checkboxes, PIN entry grid, signature line, and a contact-risk acknowledgment",
+      "bytes": 8236
+    },
+    {
+      "path": "components/instruments.html",
+      "group": "Components",
+      "name": "Instruments",
+      "subtitle": "Brass gauges, workload satchels, capability tiles, badges, controls",
+      "bytes": 11134
+    },
+    {
+      "path": "components/surfaces.html",
+      "group": "Components",
+      "name": "Surfaces",
+      "subtitle": "Chalkboard schedule, cork board, leather tag navigation, governance banner",
+      "bytes": 10326
+    },
+    {
+      "path": "screens/athlete-kiosk.html",
+      "group": "Screens",
+      "name": "Athlete Kiosk",
+      "subtitle": "Gym-floor check-in: cleared and locked states, 19.1px type, 55px targets",
+      "bytes": 7654
+    },
+    {
+      "path": "screens/board-workspace.html",
+      "group": "Screens",
+      "name": "Board Workspace",
+      "subtitle": "Seat binder rail, governance metrics, k-anonymity suppression in context",
+      "bytes": 9108
+    },
+    {
+      "path": "screens/capability-console.html",
+      "group": "Screens",
+      "name": "Capability Console",
+      "subtitle": "Admin grid -- worn leather, patina brass, ledger tape",
+      "bytes": 7092
+    },
+    {
+      "path": "screens/coach-review-queue.html",
+      "group": "Screens",
+      "name": "Coach Review Queue",
+      "subtitle": "Layer 10 decision queue + Shadow refusal protocol (Layer 20)",
+      "bytes": 9035
+    },
+    {
+      "path": "screens/guardian-portal.html",
+      "group": "Screens",
+      "name": "Guardian Portal",
+      "subtitle": "Warm canvas -- minor lookup, waiver renewal, on-canvas proof",
+      "bytes": 5991
+    },
+    {
+      "path": "screens/public-onboarding.html",
+      "group": "Screens",
+      "name": "Public Onboarding",
+      "subtitle": "Warm canvas — vintage enrollment intake",
+      "bytes": 6544
+    }
+  ],
+  "counts": {
+    "previews": 18,
+    "foundations": 9,
+    "components": 3,
+    "screens": 6
+  }
+}

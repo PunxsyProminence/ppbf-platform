@@ -1,0 +1,394 @@
+<!-- @dsCard group="Foundations" name="Motion & Sound" subtitle="Fibonacci durations, five physical easings, pending states, the brass focus ring, and synthesized gym sound" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Motion &amp; Sound — PPBF</title>
+<link rel="stylesheet" href="../ppbf.css">
+<style>
+  body.ppbf { padding: var(--s6); max-width: 1180px; margin: 0 auto; }
+  h1 { font-family: var(--font-display); font-size: var(--t-2xl); color: var(--bone-100);
+       text-shadow: 0 2px 0 rgba(0,0,0,.6); margin: 0 0 var(--s3); text-transform: uppercase; }
+  h2.sect { font-family: var(--font-display); font-size: var(--t-lg); color: var(--brass-300);
+            margin: var(--s7) 0 var(--s3); padding-bottom: var(--s3); text-transform: uppercase;
+            border-bottom: 1px solid rgba(212,175,74,.28); }
+  h3.sub { font: 650 12px/1 var(--font-data); letter-spacing: .12em; text-transform: uppercase;
+           color: var(--brass-400); margin: var(--s6) 0 var(--s4); }
+  .note { color: var(--bone-300); font-size: var(--t-sm); line-height: 1.65; max-width: 76ch; margin: 0 0 var(--s5); }
+  .note b { color: var(--bone-100); }
+  code { font-family: var(--font-data); font-size: .92em; color: var(--brass-200); }
+
+  .panel { border: 1px solid rgba(212,175,74,.18); border-radius: var(--r-lg); padding: var(--s5);
+           background: linear-gradient(135deg, rgba(42,31,24,.55), rgba(30,23,18,.7)); margin-bottom: var(--s5); }
+
+  table.scale { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.scale th { text-align: left; font: 650 10px/1 var(--font-data); letter-spacing: .1em;
+                   text-transform: uppercase; color: var(--brass-400); padding: 0 var(--s4) var(--s3) 0;
+                   border-bottom: 1px solid rgba(212,175,74,.2); }
+  table.scale td { padding: var(--s3) var(--s4) var(--s3) 0; color: var(--bone-300);
+                   border-bottom: 1px dashed rgba(212,175,74,.1); vertical-align: middle; }
+  table.scale td.tok { font-family: var(--font-data); color: var(--brass-200); white-space: nowrap; }
+  table.scale td.ms  { font-family: var(--font-data); color: var(--bone-100); text-align: right; white-space: nowrap; }
+
+  /* A bar that runs the duration under test, so a number becomes a felt length. */
+  .runner { position: relative; height: 13px; background: rgba(0,0,0,.34); border-radius: 8px;
+            overflow: hidden; min-width: 144px; }
+  .runner i { position: absolute; inset: 0 auto 0 0; width: 34px; border-radius: 8px;
+              background: linear-gradient(90deg, var(--brass-700), var(--brass-300)); }
+  .demo-on .runner i { animation: run-across var(--dur) var(--ease) forwards; }
+  /* Comes to rest flush against the right edge. Translating by the full track
+     width would carry the 34px pip clean off the end, leaving every finished
+     bar looking empty — which is the opposite of showing how long it took. */
+  @keyframes run-across { to { translate: calc(var(--runner-w, 144px) - 34px) 0; } }
+
+  .grid2 { display: grid; gap: var(--s5); grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+  .grid3 { display: grid; gap: var(--s4); grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+
+  /* Easing comparison: identical crate, five different curves. */
+  .track { position: relative; height: 46px; border-radius: var(--r-sm);
+           background: repeating-linear-gradient(90deg, rgba(0,0,0,.22) 0 1px, transparent 1px 21px);
+           border: 1px solid rgba(212,175,74,.14); overflow: hidden; }
+  .crate { position: absolute; top: 7px; left: 5px; width: 32px; height: 32px; border-radius: 3px;
+           background-color: var(--hide-700);
+           background-image: var(--grain), linear-gradient(160deg, var(--wood-500), var(--wood-800));
+           background-blend-mode: overlay, normal;
+           box-shadow: inset 0 1px 0 rgba(232,206,122,.2), 0 3px 6px rgba(0,0,0,.5); }
+  .demo-on .crate { animation: shove var(--m-travel) var(--ease) forwards; }
+  @keyframes shove { to { left: calc(100% - 37px); } }
+  .ease-lbl { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s4);
+              margin-bottom: var(--s3); }
+  .ease-lbl b { font-family: var(--font-data); font-size: 11.5px; color: var(--brass-200); }
+  .ease-lbl span { font-size: 11px; color: var(--bone-400); text-align: right; }
+
+  .btn-row { display: flex; gap: var(--s4); flex-wrap: wrap; align-items: center; }
+
+  /* Sound board */
+  .sound-hd { display: flex; align-items: center; justify-content: space-between;
+              gap: var(--s5); flex-wrap: wrap; margin-bottom: var(--s5); }
+  .switch { display: inline-flex; align-items: center; gap: var(--s3); cursor: pointer;
+            font: 650 11px/1 var(--font-data); letter-spacing: .1em; text-transform: uppercase;
+            color: var(--bone-200); }
+  .switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .switch .track-sw { width: 46px; height: 24px; border-radius: 12px; background: rgba(0,0,0,.5);
+                      border: 1px solid rgba(212,175,74,.3); position: relative;
+                      transition: background var(--m-base) var(--e-lever); }
+  .switch .knob { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%;
+                  background: linear-gradient(180deg, var(--brass-200), var(--brass-600));
+                  box-shadow: 0 1px 3px rgba(0,0,0,.6);
+                  transition: translate var(--m-base) var(--e-lever); }
+  .switch input:checked + .track-sw { background: color-mix(in srgb, var(--cleared) 42%, #0C0906); }
+  .switch input:checked + .track-sw .knob { translate: 22px 0; }
+  .switch input:focus-visible + .track-sw { box-shadow: var(--focus); }
+
+  .voice-btn { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s2);
+               text-align: left; min-height: var(--tap); padding: var(--s3) var(--s4);
+               border-radius: var(--r-md); cursor: pointer;
+               border: 1px solid rgba(212,175,74,.24); color: var(--bone-200);
+               background: linear-gradient(180deg, rgba(59,44,33,.9), rgba(30,23,18,.95));
+               transition: border-color var(--m-quick) var(--e-stamp),
+                           translate var(--m-quick) var(--e-stamp); }
+  .voice-btn:hover:not(:disabled) { border-color: var(--brass-400); translate: 0 -1px; }
+  .voice-btn:active:not(:disabled) { translate: 0 1px; }
+  .voice-btn:disabled { opacity: .42; cursor: not-allowed; }
+  .voice-btn b { font-family: var(--font-display); font-size: 14px; letter-spacing: .05em;
+                 text-transform: uppercase; color: var(--bone-100); }
+  .voice-btn span { font-size: 11px; line-height: 1.45; color: var(--bone-400); }
+
+  .rules { margin: 0; padding-left: var(--s6); }
+  .rules li { color: var(--bone-300); font-size: var(--t-sm); line-height: 1.6; margin-bottom: var(--s3); }
+  .rules li b { color: var(--bone-100); }
+
+  .replay { min-height: 38px; padding: 0 var(--s5); font-size: 12px; }
+  .flag { display: inline-block; padding: 2px 8px; border-radius: 3px; font: 650 9.5px/1.6 var(--font-data);
+          letter-spacing: .1em; text-transform: uppercase; }
+  .flag--off { background: rgba(168,30,34,.24); color: var(--locked-ink); border: 1px solid rgba(168,30,34,.5); }
+  .flag--on  { background: rgba(63,125,78,.24); color: var(--cleared-ink); border: 1px solid rgba(63,125,78,.5); }
+</style>
+</head>
+<body class="ppbf room--office light-at--tl light--ambient">
+
+<h1>Motion &amp; Sound</h1>
+<p class="note">
+  Two systems the design system was missing. Motion existed as nine durations picked by eye
+  (<code>.12s</code>, <code>.28s</code>, <code>.34s</code>, <code>.42s</code>, <code>.6s</code>&hellip;)
+  with no relationship to each other or to anything else &mdash; the one axis that escaped
+  <b>Law 8</b>. Sound did not exist at all. Both are now tokens, and both die instantly under
+  <code>prefers-reduced-motion</code>.
+</p>
+
+<!-- ============================================================ DURATION -->
+<h2 class="sect">1 &middot; Duration &mdash; Law 8 applied to time</h2>
+<p class="note">
+  Fibonacci milliseconds, the same series that governs space. A drawer opening and a 21px
+  gutter now descend from one source. Press <b>Run</b> to feel the lengths against each other
+  &mdash; the numbers only mean something side by side.
+</p>
+
+<div class="panel" id="dur-panel">
+  <div class="btn-row" style="margin-bottom: var(--s5)">
+    <button class="btn replay" data-replay="#dur-panel">Run the scale</button>
+    <span class="t-muted" style="font-size:11px;color:var(--bone-400)">55 &middot; 89 &middot; 144 &middot; 233 &middot; 377 &middot; 610</span>
+  </div>
+  <table class="scale">
+    <thead><tr><th>Token</th><th style="text-align:right">ms</th><th>Length</th><th>What moves at this speed</th></tr></thead>
+    <tbody>
+      <tr><td class="tok">--m-instant</td><td class="ms">55</td>
+          <td><div class="runner" style="--dur:55ms;--ease:var(--e-stamp)"><i></i></div></td>
+          <td>A state flip &mdash; pressed, checked. Reads as &ldquo;now&rdquo;.</td></tr>
+      <tr><td class="tok">--m-quick</td><td class="ms">89</td>
+          <td><div class="runner" style="--dur:89ms;--ease:var(--e-stamp)"><i></i></div></td>
+          <td>Hover, focus ring, a small colour shift.</td></tr>
+      <tr><td class="tok">--m-base</td><td class="ms">144</td>
+          <td><div class="runner" style="--dur:144ms;--ease:var(--e-lever)"><i></i></div></td>
+          <td>The default: buttons, tags, tiles.</td></tr>
+      <tr><td class="tok">--m-settle</td><td class="ms">233</td>
+          <td><div class="runner" style="--dur:233ms;--ease:var(--e-settle)"><i></i></div></td>
+          <td>Something with mass arriving &mdash; a sheet, a panel.</td></tr>
+      <tr><td class="tok">--m-travel</td><td class="ms">377</td>
+          <td><div class="runner" style="--dur:377ms;--ease:var(--e-drawer)"><i></i></div></td>
+          <td>Something crossing distance &mdash; a drawer, a peeled corner.</td></tr>
+      <tr><td class="tok">--m-swing</td><td class="ms">610</td>
+          <td><div class="runner" style="--dur:610ms;--ease:var(--e-swing)"><i></i></div></td>
+          <td>A pendulum: gloves, a hung sign, the bell.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============================================================== EASING -->
+<h2 class="sect">2 &middot; Easing &mdash; named for the physics</h2>
+<p class="note">
+  Nothing in this building floats. A stamp is driven down by a hand and stops dead against the
+  paper; a drawer drags on its runners; a hung sign swings past level before it settles.
+  <code>ease</code> describes none of that, which is why every skeuomorphic surface that uses it
+  feels like software. Same crate, same 377ms, five curves.
+</p>
+
+<div class="panel" id="ease-panel">
+  <div class="btn-row" style="margin-bottom: var(--s5)">
+    <button class="btn replay" data-replay="#ease-panel">Shove the crates</button>
+  </div>
+  <div class="grid2">
+    <div>
+      <div class="ease-lbl"><b>--e-stamp</b><span>driven and stopped &mdash; no overshoot, ever</span></div>
+      <div class="track"><div class="crate" style="--ease:var(--e-stamp)"></div></div>
+    </div>
+    <div>
+      <div class="ease-lbl"><b>--e-settle</b><span>mass arriving under friction</span></div>
+      <div class="track"><div class="crate" style="--ease:var(--e-settle)"></div></div>
+    </div>
+    <div>
+      <div class="ease-lbl"><b>--e-drawer</b><span>runners and grit &mdash; reluctant, then steady</span></div>
+      <div class="track"><div class="crate" style="--ease:var(--e-drawer)"></div></div>
+    </div>
+    <div>
+      <div class="ease-lbl"><b>--e-lever</b><span>mechanical linkage, snap at the end</span></div>
+      <div class="track"><div class="crate" style="--ease:var(--e-lever)"></div></div>
+    </div>
+    <div>
+      <div class="ease-lbl"><b>--e-swing</b><span>pendulum &mdash; the one curve allowed past 1</span></div>
+      <div class="track"><div class="crate" style="--ease:var(--e-swing)"></div></div>
+    </div>
+  </div>
+  <p class="note" style="margin:var(--s5) 0 0;font-size:12px">
+    <b>A stamp does not bounce off paper</b> and a latch does not wobble shut, so
+    <code>--e-swing</code> is the only curve here whose output passes 1. Reach for it on things
+    that hang, and nothing else.
+  </p>
+</div>
+
+<!-- ============================================================ PENDING -->
+<h2 class="sect">3 &middot; &ldquo;Working on it&rdquo;</h2>
+<p class="note">
+  The system could say <b>empty</b> and <b>done</b> but had no word for <b>in progress</b>, so a
+  submitted form looked identical to an ignored one &mdash; and the honest user response to that
+  is to press the button again. Every pending state below carries a <b>text cue</b> alongside the
+  motion, because Law 3 does not stop applying just because the channel is animation: a bare
+  spinner is colour-and-motion-only, which is precisely what Law 3 bans.
+</p>
+
+<div class="panel">
+  <h3 class="sub">A control mid-commit</h3>
+  <p class="note" style="font-size:12px">
+    Driven from <code>aria-busy</code>, not a class, so the accessibility tree and the pixels
+    cannot disagree. Pointer events are off while busy, which is what actually stops the
+    double-submit.
+  </p>
+  <div class="btn-row">
+    <button class="btn" id="submit-demo">Submit check-in</button>
+    <span class="working" id="submit-note" hidden>Filing to the ledger</span>
+  </div>
+
+  <h3 class="sub">A record still loading</h3>
+  <p class="note" style="font-size:12px">
+    The paper system does the work: a skeleton here is a real ruled sheet with nothing written on
+    it yet &mdash; which is what the physical world actually gives you while you wait for a file.
+  </p>
+  <div class="grid3">
+    <div>
+      <div class="skeleton skeleton--block"></div>
+      <div class="working" style="margin-top:var(--s3)">Pulling record</div>
+    </div>
+    <div>
+      <div class="skeleton skeleton--line" style="margin-bottom:var(--s3)"></div>
+      <div class="skeleton skeleton--line" style="margin-bottom:var(--s3);width:82%"></div>
+      <div class="skeleton skeleton--line" style="width:64%"></div>
+    </div>
+    <div>
+      <div class="pap pap--ruled age-1 lift-1" style="padding:var(--s4);min-height:calc(var(--s8) * 1.5)">
+        <div style="font:650 10px/1 var(--font-data);letter-spacing:.1em;text-transform:uppercase;color:#6B5B44;margin-bottom:var(--s3)">Arrived</div>
+        <div class="t-typed" style="font-size:12.5px;color:#2A2116;line-height:1.5">
+          Marcus D. &mdash; cleared, RPE 8, 2026-08-01
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================== FOCUS -->
+<h2 class="sect">4 &middot; The brass focus ring</h2>
+<p class="note">
+  <code>--focus</code> existed but only buttons and inputs used it, so tabbing through a room fell
+  through to the browser default on tags, tiles, seals and every link &mdash; a thin blue halo that
+  belongs to no room in this building. One <code>:focus-visible</code> rule now covers anything
+  focusable, and because it is <code>:focus-visible</code> rather than <code>:focus</code>, a mouse
+  click never draws it. <b>Press Tab</b> to walk the row.
+</p>
+<div class="panel">
+  <div class="btn-row">
+    <a href="#" class="tag">A link</a>
+    <button class="btn">A button</button>
+    <button class="btn btn--ghost">A ghost</button>
+    <button class="btn--lever">&#8630; A lever</button>
+    <input class="input" style="max-width:220px" placeholder="An input">
+    <span class="stamp stamp--press" tabindex="0" role="button">Stampable</span>
+  </div>
+</div>
+
+<!-- ============================================================== SOUND -->
+<h2 class="sect">5 &middot; Sound &mdash; synthesized, opt-in</h2>
+<p class="note">
+  <b>Zero assets, same as everything else.</b> There is no <code>.mp3</code> or <code>.wav</code> in
+  this repository: every sound below is built from oscillators and filtered noise through the Web
+  Audio API. The kiosk renders on a cold tablet with no network, and that promise does not get an
+  exception for audio. The bell uses <b>inharmonic partials</b> &mdash; 1&thinsp;:&thinsp;2.01&thinsp;:&thinsp;3.04&thinsp;:&thinsp;4.22&thinsp;:&thinsp;5.78 &mdash;
+  because that is what separates struck bronze from a sine beep.
+</p>
+
+<div class="panel">
+  <div class="sound-hd">
+    <label class="switch">
+      <input type="checkbox" id="snd-toggle">
+      <span class="track-sw"><span class="knob"></span></span>
+      <span>Sound</span>
+    </label>
+    <span id="snd-state" class="flag flag--off">Off &mdash; default</span>
+  </div>
+
+  <div class="grid3" id="voice-board">
+    <button class="voice-btn" data-voice="bell" disabled>
+      <b>Bell</b><span>The round bell. Struck bronze, long tail.</span></button>
+    <button class="voice-btn" data-voice="stamp" disabled>
+      <b>Stamp</b><span>Driven into paper. Impact, no ring.</span></button>
+    <button class="voice-btn" data-voice="latch" disabled>
+      <b>Latch</b><span>Layer&nbsp;11 engaging. Mechanical, final.</span></button>
+    <button class="voice-btn" data-voice="accept" disabled>
+      <b>Accept</b><span>A check-in cleared. Two notes, a fifth apart.</span></button>
+    <button class="voice-btn" data-voice="refuse" disabled>
+      <b>Refuse</b><span>Layer&nbsp;20 declines. Firm, not shrill.</span></button>
+  </div>
+
+  <h3 class="sub">Five rules, stricter than the visual system's</h3>
+  <ol class="rules">
+    <li><b>Off by default.</b> Always opt-in. Browsers require a user gesture before audio starts,
+        so a page that wants sound has to ask for it.</li>
+    <li><b>Never the only channel.</b> Law 3 does not stop applying because the channel is audio.
+        Every sound accompanies a visible change. A user with the volume down, on a loud floor, or
+        with a hearing impairment loses <em>nothing</em>. Sound is confirmation, never information.</li>
+    <li><b>State changes only.</b> A check-in accepted, a lock engaged, a round bell. Never hover,
+        never focus, never keystrokes &mdash; UI chrome that clicks is how a tool starts feeling like
+        a toy, and this one holds medical clearances.</li>
+    <li><b>The floor is loud.</b> A gym floor at session time drowns a tablet speaker, so floor
+        kiosks should generally leave this off. Sound earns its place on quiet surfaces: the office,
+        the clinic, an after-hours kiosk.</li>
+    <li><b>One at a time, and short.</b> Nothing runs past ~1.2s, and an overlapping call is
+        dropped rather than stacked. A queue of chimes is noise.</li>
+  </ol>
+  <p class="note" style="margin:var(--s5) 0 0;font-size:12px" id="snd-support"></p>
+</div>
+
+<p class="note" style="margin-top:var(--s7);padding-top:var(--s5);border-top:1px dashed rgba(212,175,74,.14);font-size:11px">
+  Every animation on this page is disabled entirely under <code>prefers-reduced-motion: reduce</code>
+  by a single global rule, and the sound system stays silent until explicitly switched on.
+</p>
+
+<!-- A classic script, not a module: browsers block `import` over file:// and
+     these previews are meant to open by double-clicking them off disk. -->
+<script src="../ppbf-sound.js"></script>
+<script>
+  /* ---- replay buttons: restart the animations in a panel on demand ------ */
+  for (const btn of document.querySelectorAll('.replay')) {
+    btn.addEventListener('click', () => {
+      const panel = document.querySelector(btn.dataset.replay);
+      if (!panel) return;
+      panel.classList.remove('demo-on');
+      void panel.offsetWidth;          // force reflow so the animation restarts
+      panel.classList.add('demo-on');
+    });
+  }
+  // Runners need their travel distance in px for the keyframe.
+  const sizeRunners = () => {
+    for (const r of document.querySelectorAll('.runner')) {
+      r.style.setProperty('--runner-w', r.clientWidth + 'px');
+    }
+  };
+  sizeRunners();
+  addEventListener('resize', sizeRunners);
+
+  /* ---- pending state: aria-busy drives everything ---------------------- */
+  const submit = document.getElementById('submit-demo');
+  const note   = document.getElementById('submit-note');
+  submit.addEventListener('click', () => {
+    if (submit.getAttribute('aria-busy') === 'true') return;
+    submit.setAttribute('aria-busy', 'true');
+    note.hidden = false;
+    setTimeout(() => {
+      submit.removeAttribute('aria-busy');
+      note.hidden = true;
+    }, 2200);
+  });
+
+  /* ---- sound ----------------------------------------------------------- */
+  const snd     = new PPBFSound();
+  const toggle  = document.getElementById('snd-toggle');
+  const state   = document.getElementById('snd-state');
+  const support = document.getElementById('snd-support');
+  const voices  = [...document.querySelectorAll('.voice-btn')];
+
+  const hasWebAudio = !!(window.AudioContext || window.webkitAudioContext);
+  support.textContent = hasWebAudio
+    ? 'Web Audio is available in this browser. The toggle below creates the audio context on your click — never before it.'
+    : 'This browser has no Web Audio support, so the sound system stays silent. Nothing else on the page is affected: that is rule 2 doing its job.';
+  if (!hasWebAudio) toggle.disabled = true;
+
+  function paint(on) {
+    state.textContent = on ? 'On' : 'Off — default';
+    state.className = 'flag ' + (on ? 'flag--on' : 'flag--off');
+    for (const v of voices) v.disabled = !on;
+  }
+  paint(false);
+
+  toggle.addEventListener('change', async () => {
+    const live = await snd.setEnabled(toggle.checked);
+    // If the browser refused to start audio, tell the truth rather than
+    // showing an "on" switch that makes no sound.
+    toggle.checked = live;
+    paint(live);
+  });
+
+  for (const v of voices) {
+    v.addEventListener('click', () => snd.play(v.dataset.voice));
+  }
+</script>
+</body>
+</html>

@@ -7,7 +7,7 @@
 
    Everything in the :root block that follows is an ALIAS. The app's ~61 pages
    style themselves with Tailwind arbitrary values reading these legacy names
-   (`bg-[var(--canvas-tan)]`, `text-[var(--red-primary)]`), so pointing the old
+   (`bg-[var(--canvas-tan)]`, `text-[var(--safety-locked)]`), so pointing the old
    names at design-system values re-themes the whole app without editing a
    single page. Add new work against the ppbf tokens directly (--hide-*,
    --brass-*, --t-*, --s*); the aliases exist to carry the pages that predate
@@ -25,7 +25,13 @@
      materials, but that is a per-surface material choice, not a user toggle. */
   --canvas-tan: var(--canvas-warm);
   --canvas-tan-light: var(--paper);
-  --canvas-tan-dark: var(--hide-600);
+  /* Was --hide-600 (#4A3728), which is a leather tone rather than a darker
+     cream. Every caller reads the name as "the tan, a shade down" and pairs
+     it with dark type, so /public rendered --black on it at 1.68:1 -- the
+     contrast sweep found this, and the mapping is the cause rather than any
+     one page. --paper-2 is the actual darker paper in the ramp and is what
+     the name promises. */
+  --canvas-tan-dark: var(--paper-2);
 
   --olive-dark: var(--patina-900);
   --black: var(--hide-950);
@@ -37,7 +43,7 @@
   /* --- Danger ------------------------------------------------------------
      Was #8b0000, a pure-red that sat badly against brass. Now the Layer 11
      locked rung, which was chosen to stay separable from a gold bezel. */
-  --red-primary: var(--locked);
+  --safety-locked: var(--locked);
   --red-highlight: var(--restricted);
   --red-blood: var(--rust-900);
 
@@ -61,11 +67,16 @@
   --skeleton-bg: var(--paper-2);
 
   /* --- Chrome accent ------------------------------------------------------
-     The app spent the safety red on ordinary furniture: --red-primary aliases
-     to --locked, and 322 call sites across 33 files use it for active tabs,
-     KPI labels and panel borders. That is precisely what Law 2 exists to stop
-     — when the gate's red is also the tab highlight, a locked athlete stops
-     being unmissable.
+     The app spent the safety red on ordinary furniture. The alias above used
+     to be called --red-primary, and under that name 322 call sites across 33
+     files reached for it for active tabs, KPI labels and panel borders —
+     "primary red" reads like a brand colour, so of course they did. That is
+     precisely what Law 2 exists to stop: when the gate's red is also the tab
+     highlight, a locked athlete stops being unmissable.
+
+     It is --safety-locked now, and the name is the enforcement. There is no
+     lint rule here; there is a call site that has to say the word "locked"
+     out loud to use the colour, which makes a wrong use visible in review.
 
      So chrome gets its own accent, and it is brass. A selected tab is a
      control in the "on" position: chassis state, not a claim about a person.
@@ -84,10 +95,51 @@
   --font-body: var(--font-tactical-body), "Segoe UI", "Arial Narrow", Arial, sans-serif;
   --font-mono: var(--font-geist-mono), "Courier New", "Courier", monospace;
 
+  /* ppbf.css names three more faces and only --font-stencil was ever pointed at
+     a real one. --font-ui, --font-data and --font-hand were still the sheet's
+     own system stacks — "Inter", ui-monospace, SFMono-Regular, Consolas,
+     "Segoe Print" — which resolve to whatever a given machine happens to have
+     installed. .t-eyebrow, .t-data and .badge are set in them.
+
+     That is not only a look problem, it is a determinism problem. Text set in a
+     font the repo does not ship wraps at machine-dependent widths, so the same
+     page is a different height on two computers. It is what made the homepage
+     412x3620 here and 412x3680 in CI, and it is why the screenshot baseline had
+     to be switched off. Pointing these at the faces next/font already
+     self-hosts means every glyph on every surface now comes from a file in this
+     repo, and the render stops depending on the machine.
+
+     --font-hand is the exception worth stating out loud. Law 4's fourth voice
+     is chalk — schedules in a gym hand — and no cursive face is loaded, so
+     there is nothing correct to point it at. It takes the body face, which
+     means .t-hand currently renders as ordinary type rather than handwriting.
+     Nothing in the app uses it today; giving the chalk voice back its character
+     means loading a real face, not restoring a system stack. */
+  --font-ui: var(--font-tactical-body), "Segoe UI", "Arial Narrow", Arial, sans-serif;
+  --font-data: var(--font-geist-mono), "Courier New", "Courier", monospace;
+  --font-hand: var(--font-tactical-body), "Segoe UI", "Arial Narrow", Arial, sans-serif;
+
   /* --- Type: was an eyeballed 11/12/15/16/18/24/32/48 ladder with no ratio.
      Now the √φ ladder (Law 8). --text-sm climbing 12px→15px and --text-lg
      16px→19.1px are the two visible jumps; 19.1px is the kiosk floor (Law 5),
-     which the old 16px silently violated on the gym floor. */
+     which the old 16px silently violated on the gym floor.
+
+     These names are not only the app's own. `--text-*` is Tailwind v4's font
+     size namespace, so redefining them here re-points every `text-sm` /
+     `text-lg` in the app — about 1,650 utility sites — at the ladder. That is
+     deliberate, and it works because this :root is UNLAYERED while Tailwind's
+     defaults sit in `@layer theme`: unlayered always wins, whatever the order.
+
+     Line height rides along safely. Tailwind pairs each size with a unitless
+     ratio (`--text-4xl--line-height: calc(2.5 / 2.25)`), not a fixed px, so
+     leading rescales with the size instead of clipping.
+
+     The ladder must stay covered to its end. It previously stopped at
+     --text-4xl, which left --text-5xl on Tailwind's 48px default while
+     --text-4xl had climbed to 50px — so the scale INVERTED. Every 5xl/6xl in
+     this app is a `md:` step-up from text-4xl (The Bell, The Ring, the public
+     landing page), which meant eight of the largest headings got *smaller* on
+     desktop. Any future rung Tailwind exposes needs a line here too. */
   --text-xs: var(--t-xs);
   --text-sm: var(--t-sm);
   --text-base: var(--t-sm);
@@ -96,21 +148,18 @@
   --text-2xl: var(--t-xl);
   --text-3xl: var(--t-2xl);
   --text-4xl: var(--t-3xl);
+  --text-5xl: var(--t-4xl);
+  --text-6xl: var(--t-5xl);
 
-  /* The ladder has to keep climbing past where ppbf.css stops.
-     --t-3xl is 50px and is the top of the design system's scale. Tailwind
-     defines --text-5xl as 48px, and this :root block is UNLAYERED, so it beats
-     Tailwind's @layer theme unconditionally for the names it sets and leaves
-     the names it does not. The result: --text-4xl (50px) was LARGER than
-     --text-5xl (48px), and every `text-4xl md:text-5xl` heading in the app got
-     SMALLER as the viewport got wider.
-
-     Continued here on the same √φ ratio rather than left to Tailwind, so the
-     order is monotonic by construction. If ppbf.css ever grows a --t-4xl,
-     point these at it and delete the literals. */
-  --text-5xl: 63.5px;   /* 50 × √φ */
-  --text-6xl: 80.9px;   /* 50 × φ   */
-  --text-7xl: 102.8px;  /* 50 × φ√φ */
+  /* Nothing uses 7xl–9xl today, so they get no named rung in ppbf.css. They
+     still have to be covered: left on Tailwind's defaults, text-7xl (72px)
+     would render smaller than the bridged text-6xl (80.9px) — the same
+     inversion, waiting for whoever reaches for it first. Continuing the √φ
+     generator inline keeps the scale monotonic without inventing ladder rungs
+     for sizes no screen asks for. */
+  --text-7xl: calc(var(--t-5xl) * var(--root-phi));
+  --text-8xl: calc(var(--t-5xl) * var(--root-phi) * var(--root-phi));
+  --text-9xl: calc(var(--t-5xl) * var(--root-phi) * var(--root-phi) * var(--root-phi));
 
   --leading-tight: 1.2;
   --leading-normal: 1.5;
@@ -263,20 +312,54 @@ h6 {
   line-height: var(--leading-tight);
 }
 
+/* These two rules were the single largest Law 2 violation in the codebase, and
+   the cheapest to fix: between them they painted EVERY link and EVERY keyboard
+   focus ring in the app with --safety-locked, the gate's "may not participate"
+   red. Not 340 call sites -- two rules, reaching every page at once.
+
+   Links and focus rings are chassis. They report where you are and what you can
+   press. Neither says anything about an athlete, so both are brass now. */
 @layer base {
   a {
-    color: var(--red-primary);
+    color: var(--accent-quiet);
     text-decoration: none;
   }
 
   a:hover {
-    color: var(--red-highlight);
+    color: var(--accent);
     text-decoration: underline;
+  }
+
+  /* Brass-800 is 6.1:1 on canvas and 7.7:1 on paper, but only 2.45:1 on the ink
+     materials -- Law 6 gives the app two grounds, so a single link colour cannot
+     serve both. Dark materials take the light end of the same ramp (10.4:1 on
+     leather). Buttons and nav links carry their own text-[color:...] utilities,
+     which beat this layer; what is left here is the raw inline link, which is
+     exactly what should look like a link. */
+  .mat-leather a,
+  .mat-leather--raised a,
+  .mat-leather--worn a,
+  .mat-brass--dark a,
+  .mat-slate a {
+    color: var(--brass-300);
+  }
+
+  .mat-leather a:hover,
+  .mat-leather--raised a:hover,
+  .mat-leather--worn a:hover,
+  .mat-brass--dark a:hover,
+  .mat-slate a:hover {
+    color: var(--brass-200);
   }
 }
 
+/* Brass-700 is the only rung on the ramp that clears the 3:1 non-text minimum
+   against all three grounds a ring can land on -- canvas 3.92:1, white 4.96:1,
+   ink 3.82:1. Every lighter rung fails on canvas (brass-400 is 1.66:1) and
+   every darker one fails on ink (brass-800 is 2.45:1), so this is not a taste
+   pick; it is the one value that works everywhere. */
 :focus-visible {
-  outline: var(--border-medium) solid var(--red-primary);
+  outline: var(--border-medium) solid var(--brass-700);
   outline-offset: 2px;
 }
 
@@ -286,12 +369,11 @@ h6 {
   box-shadow: var(--shadow-sm);
 }
 
-.tactical-panel-dark {
-  background: var(--gray-dark);
-  color: var(--white-off);
-  border: var(--border-medium) solid var(--black);
-  box-shadow: var(--shadow-sm);
-}
+/* .tactical-panel-dark, .tactical-chip(-critical), .tactical-btn(-critical),
+   .tactical-input and .tactical-alert-critical were removed: all six had zero
+   uses in the app and each duplicated a ppbf.css component that does the job
+   properly — use .btn / .btn--danger, .input / .field, .badge and .frame
+   instead. .tactical-panel stays because 6 call sites still use it. */
 
 .tactical-chip {
   display: inline-block;
@@ -305,7 +387,7 @@ h6 {
 }
 
 .tactical-chip-critical {
-  background: var(--red-primary);
+  background: var(--safety-locked);
   color: var(--white);
   border-color: var(--black);
 }
@@ -332,7 +414,7 @@ h6 {
 }
 
 .tactical-btn-critical {
-  background: var(--red-primary);
+  background: var(--safety-locked);
   color: var(--white);
 }
 
@@ -351,20 +433,20 @@ h6 {
 }
 
 .tactical-input:focus {
-  border-color: var(--red-primary);
+  border-color: var(--safety-locked);
   box-shadow: 0 0 0 2px rgba(139, 0, 0, 0.15);
 }
 
 .tactical-alert-critical {
-  background: #f0d6d6;
-  color: var(--red-primary);
-  border: var(--border-medium) solid var(--red-primary);
+  background: var(--locked-ink);
+  color: var(--safety-locked);
+  border: var(--border-medium) solid var(--safety-locked);
   padding: var(--space-3);
 }
 
 /* ---------- Retro components (work in both themes) ---------- */
 
-.stamp {
+.stamp-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -377,52 +459,52 @@ h6 {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #f5e6c8;
+  color: var(--bone-200);
   box-shadow: var(--shadow-md);
   cursor: pointer;
   user-select: none;
   transition: transform 80ms ease, box-shadow 80ms ease;
 }
 
-.stamp:active {
+.stamp-button:active {
   transform: translate(2px, 2px);
   box-shadow: 1px 1px 0 var(--black);
 }
 
-.stamp:focus-visible {
-  outline: 2px solid var(--red-primary);
+.stamp-button:focus-visible {
+  outline: 2px solid var(--safety-locked);
   outline-offset: 3px;
 }
 
-.stamp--static {
+.stamp-button--static {
   cursor: default;
   pointer-events: none;
 }
 
-.stamp--cleared {
+.stamp-button--cleared {
   background: var(--stamp-cleared);
-  border-color: #2a3518;
+  border-color: color-mix(in_srgb,var(--cleared)_14%,var(--hide-950));
 }
 
-.stamp--hold {
+.stamp-button--hold {
   background: var(--stamp-hold);
-  border-color: #6a4e1a;
+  border-color: var(--brass-800);
 }
 
-.stamp--restricted,
-.stamp--escalate {
+.stamp-button--restricted,
+.stamp-button--escalate {
   background: var(--stamp-restricted);
-  border-color: #4a0000;
+  border-color: var(--hide-800);
 }
 
-.stamp--present {
+.stamp-button--present {
   background: var(--stamp-present);
-  border-color: #1a2e24;
+  border-color: color-mix(in_srgb,var(--cleared)_14%,var(--hide-950));
 }
 
-.stamp--neutral {
+.stamp-button--neutral {
   background: var(--stamp-neutral);
-  border-color: #2a2018;
+  border-color: var(--hide-800);
 }
 
 .brass-plate {
@@ -477,7 +559,7 @@ h6 {
 }
 
 .leather-tag.is-active {
-  box-shadow: inset 0 -3px 0 var(--red-primary), var(--shadow-sm);
+  box-shadow: inset 0 -3px 0 var(--safety-locked), var(--shadow-sm);
 }
 
 .paper-ticket {
@@ -556,7 +638,7 @@ h6 {
 
 .ledger-tape__entries li {
   padding: 4px 0;
-  border-bottom: 1px dashed rgba(26, 18, 11, 0.25);
+  border-bottom: 1px dashed color-mix(in oklab, var(--hide-950) 25%, transparent);
   line-height: 1.4;
 }
 
@@ -645,7 +727,7 @@ h6 {
   font-size: 10px;
   padding: 2px 6px;
   background: var(--stamp-restricted);
-  color: #f5e6c8;
+  color: var(--bone-200);
   border: 1px solid var(--black);
   font-family: var(--font-mono);
   letter-spacing: 0.06em;
@@ -653,7 +735,7 @@ h6 {
 
 /* Floor-use: larger stamps on small screens */
 @media (max-width: 768px) {
-  .stamp {
+  .stamp-button {
     min-height: 56px;
     min-width: 56px;
     padding: 10px 16px;
@@ -669,16 +751,97 @@ h6 {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .stamp,
+  .stamp-button,
   .brass-plate,
   .mechanical-lock__keys button {
     transition: none;
   }
 
-  .stamp:active,
+  .stamp-button:active,
   .brass-plate:active,
   .mechanical-lock__keys button:active {
     transform: none;
   }
 }
 
+/* ---------------------------------------------------------------------------
+   Tailwind's own spacing and radius scales, put on Fibonacci (Law 8).
+
+   This block has to be @theme, not :root. The `--text-*` bridge above works
+   from :root because Tailwind emits `.text-sm{font-size:var(--text-sm)}` and
+   any :root definition wins the cascade. Spacing is different: Tailwind emits
+   `.p-4{padding:calc(var(--spacing) * 4)}`, a computed value with no per-step
+   variable to override. Declaring `--spacing-4` in @theme changes what Tailwind
+   GENERATES -- the utility becomes `.p-4{padding:var(--spacing-4)}` -- so this
+   is a build-time change, and it is the only lever that reaches these.
+
+   Values are nearest-Fibonacci, not index-to-index. Tailwind's scale is linear
+   (step x 4px) and Fibonacci is exponential, so mapping step 6 to the 6th term
+   would take it 24px -> 34px while step 4 went 16px -> 13px, stretching the top
+   of the scale and inverting relationships that pages depend on. Snapping each
+   step to its nearest Fibonacci value keeps every change under 25% and lands on
+   exactly the --s1..--s8 set the design system already publishes.
+
+   THE STEPS DELIBERATELY LEFT OUT MATTER MORE THAN THE ONES INCLUDED.
+
+   A --spacing-N key is shared by every family that reads the scale, so p-11 and
+   h-11 cannot be given different values. Sizing families are not spacing: they
+   set how big a thing IS. Crosstabbing all 3,784 call sites by family, the
+   size-dominant steps turn out to be disjoint from the spacing-dominant ones,
+   so the split is clean -- but only if the size-dominant steps are left alone:
+
+     step 11  =  44px, and all 135 uses are h-11 on form fields and buttons.
+                 That is the WCAG 2.5.5 minimum target, chosen on purpose.
+                 Nearest Fibonacci is 34px, which would put every one of those
+                 135 controls under the accessibility floor. NOT BRIDGED.
+     step 20+ =  80px and up, all sizing. Nearest Fibonacci is 89px/144px, which
+                 would resize layout boxes by up to 62%. NOT BRIDGED.
+
+   Step 9 is bridged despite being sizing-only, for monotonicity: left at 36px
+   it would have landed above the bridged step 10 (34px), so mt-10 would render
+   tighter than mt-9. Its 14 sites move 36px -> 34px.
+
+   The result stays monotonic across the join: ...8(34) 9(34) 10(34) 11(44)
+   12(55) 16(55) 20(80)...
+   --------------------------------------------------------------------------- */
+@theme {
+  --spacing-0\.5: 3px;   /* 2px  */
+  --spacing-1:    3px;   /* 4px  */
+  --spacing-1\.5: 5px;   /* 6px  */
+  --spacing-2:    5px;   /* 8px  */
+  --spacing-2\.5: 8px;   /* 10px */
+  --spacing-3:    8px;   /* 12px */
+  --spacing-3\.5: 13px;  /* 14px */
+  --spacing-4:    13px;  /* 16px */
+  --spacing-5:    21px;  /* 20px */
+  --spacing-6:    21px;  /* 24px */
+  --spacing-7:    34px;  /* 28px */
+  --spacing-8:    34px;  /* 32px */
+  --spacing-9:    34px;  /* 36px */
+  --spacing-10:   34px;  /* 40px */
+  --spacing-12:   55px;  /* 48px */
+  --spacing-16:   55px;  /* 64px */
+
+  /* Radius, on the same nearest-Fibonacci rule as the spacing above rather than
+     mapping Tailwind's rung NAMES onto the design system's --r-* names.
+
+     Name-mapping was the first attempt and it was visibly wrong. It sent
+     rounded-xl from 12px to --r-xl's 21px, and since the app's fields and
+     buttons are 44-48px tall, a 21px corner is nearly half their height: every
+     input on the PIN-change screen rendered as a capsule. That is a soft
+     consumer look, not leather and brass. Fibonacci only offers 3/5/8/13/21/34
+     in the useful radius range -- six values for eight Tailwind rungs -- so
+     something has to give, and it should be the unused rungs, not the geometry.
+
+     sm and md share 5px. Neither has a call site, so the flat spot costs
+     nothing; every rung the app actually uses stays distinct and moves by no
+     more than a third. */
+  --radius-xs:  3px;   /* 2px  */
+  --radius-sm:  5px;   /* 4px  */
+  --radius-md:  5px;   /* 6px  */
+  --radius-lg:  8px;   /* 8px, exact */
+  --radius-xl:  13px;  /* 12px */
+  --radius-2xl: 21px;  /* 16px */
+  --radius-3xl: 34px;  /* 24px */
+  --radius-4xl: 55px;  /* 32px */
+}

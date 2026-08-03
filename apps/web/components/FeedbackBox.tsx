@@ -97,20 +97,23 @@ export default function FeedbackBox() {
         aria-expanded={isOpen}
         aria-controls={panelId}
         /*
-          Same geometry as every other control on this bar -- min-h-[var(--tap)]
-          is 55px -- because this is the control a child taps to say someone
-          hurt them, and it was the smallest thing in the header at 28.5px.
+          The design-system control class, raised to the header's own geometry.
 
-          The WCAG sweep that raised "every interactive target" edited this very
-          file: it took the two buttons INSIDE the opened panel from 40px and
-          42px to 44px, and never touched the one that opens it. So the two
-          controls behind the door met the floor and the door did not.
+          Two fixes met here. main moved this button onto `.btn btn--ghost`,
+          which is the right idiom and carries ppbf.css's 44px floor. But every
+          other control on this bar -- Triage, Operations, Dashboard, Logout --
+          uses GlobalRoleHeader's CONTROL constant at min-h-[var(--tap)], 55px.
+          A 44px button beside four 55px ones is both harder to hit and visibly
+          the odd one out, so the class comes from main and the height matches
+          its siblings.
 
-          Not min-h-[44px]. Its four siblings here (Triage, Operations, the
-          notification bell, Logout) are all --tap, and a 44px control beside
-          four 55px ones is both harder to hit and visibly the odd one out.
+          Worth the fuss because this is the control a child taps to say someone
+          hurt them, it sits on every authenticated route, and it was 28.5px --
+          the smallest thing in the header. The WCAG sweep that claimed "every
+          interactive target" edited this exact file, raised the two buttons
+          INSIDE the panel, and never touched the one that opens it.
         */
-        className="inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.32)] bg-[rgba(0,0,0,.26)] px-[var(--s4)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.14em] text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-400)] hover:text-[color:var(--bone-100)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+        className="btn btn--ghost min-h-[var(--tap)] px-[var(--s4)] text-[length:var(--t-xs)]"
       >
         Tell Us
       </button>
@@ -118,34 +121,34 @@ export default function FeedbackBox() {
       {isOpen ? (
         <div
           id={panelId}
-          className="absolute right-0 z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-4 shadow-[var(--shadow-md)]"
+          className="absolute right-0 z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] border border-[color:rgba(212,175,74,.28)] mat-leather p-4 shadow-[var(--shadow-md)]"
         >
-          <h2 className="font-display text-lg tracking-tight text-[var(--black)]">Tell us anything</h2>
-          <p className="mt-1 text-xs leading-5 text-[var(--gray-dark)]">
+          <h2 className="font-display text-lg tracking-tight">Tell us anything</h2>
+          <p className="mt-1 text-xs leading-5 opacity-80">
             What is broken, what is annoying, what you wish this did, or anything else on your mind.
           </p>
 
           {acknowledgement ? (
             <div className="mt-4 space-y-3">
-              <p className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-3 text-sm leading-6 text-[var(--black)]">
+              <p className="border border-[color:rgba(212,175,74,.28)] mat-leather p-3 text-sm leading-6">
                 {acknowledgement}
               </p>
               <button
                 type="button"
                 onClick={() => setAcknowledgement('')}
-                className="min-h-[44px] w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--black)]"
+                className="min-h-[44px] w-full border border-[color:rgba(212,175,74,.28)] mat-leather px-3 text-xs font-bold uppercase tracking-[0.08em]"
               >
                 Say something else
               </button>
             </div>
           ) : (
             <div className="mt-3 space-y-3">
-              <label className="block text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--gray-dark)]">
+              <label className="block text-[11px] font-mono uppercase tracking-[0.14em] opacity-80">
                 This is about
                 <select
                   value={kind}
                   onChange={(event) => setKind(event.target.value)}
-                  className="mt-1 h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-2 text-sm normal-case tracking-normal text-[var(--black)]"
+                  className="mt-1 h-11 w-full border border-[color:rgba(212,175,74,.28)] mat-leather px-2 text-sm normal-case tracking-normal"
                 >
                   {FEEDBACK_KINDS.map((item) => (
                     <option key={item.value} value={item.value}>
@@ -155,26 +158,26 @@ export default function FeedbackBox() {
                 </select>
               </label>
 
-              <label className="block text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--gray-dark)]">
+              <label className="block text-[11px] font-mono uppercase tracking-[0.14em] opacity-80">
                 In your own words
                 <textarea
                   value={text}
                   maxLength={BODY_MAX_LENGTH}
                   onChange={(event) => setText(event.target.value)}
                   placeholder="Type it however it comes out."
-                  className="mt-1 h-32 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-2 text-sm normal-case tracking-normal text-[var(--black)]"
+                  className="mt-1 h-32 w-full border border-[color:rgba(212,175,74,.28)] mat-leather px-3 py-2 text-sm normal-case tracking-normal"
                 />
               </label>
 
               {errorMessage ? (
-                <p className="text-sm font-semibold text-[var(--red-primary)]">{errorMessage}</p>
+                <p className="text-sm font-semibold text-[color:var(--brass-600)]">{errorMessage}</p>
               ) : null}
 
               <button
                 type="button"
                 disabled={isSending || !text.trim()}
                 onClick={() => void send()}
-                className="min-h-[44px] w-full border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[var(--white)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="min-h-[44px] w-full border border-[color:rgba(212,175,74,.28)] btn px-4 text-sm font-black uppercase tracking-[0.12em] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isSending ? 'Sending...' : 'Send'}
               </button>

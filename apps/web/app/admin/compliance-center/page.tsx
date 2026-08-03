@@ -86,26 +86,26 @@ export default function AdminComplianceCenterPage() {
   const getSeverityColor = (severity: string) => {
     switch (severity) {
       case 'critical':
-        return 'bg-[#fce8e6]';
+        return 'bg-[color-mix(in_srgb,var(--locked)_12%,var(--paper))]';
       case 'high':
-        return 'bg-[#fff3cd]';
+        return 'bg-[var(--bone-100)]';
       case 'medium':
-        return 'bg-[#e3f2fd]';
+        return 'bg-[var(--monitor-ink)]';
       default:
-        return 'bg-[#f1f8e9]';
+        return 'bg-[var(--cleared-ink)]';
     }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'new':
-        return 'text-[#d32f2f]';
+        return 'text-[var(--locked-ink)]';
       case 'escalated':
-        return 'text-[#f57c00]';
+        return 'text-[var(--restricted-ink)]';
       case 'resolved':
-        return 'text-[#388e3c]';
+        return 'text-[var(--cleared-ink)]';
       default:
-        return 'text-[#1976d2]';
+        return 'text-[var(--monitor-ink)]';
     }
   };
 
@@ -167,15 +167,16 @@ export default function AdminComplianceCenterPage() {
       routeLabel="/admin/compliance-center"
       allowedRoles={['admin']}
       showShellHeader={false}
+      room="clinic"
     >
       <div className="space-y-6">
         <header className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-5">
           <p className="text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--brass-300)]">Compliance Management</p>
           <h1 className="mt-2 text-3xl font-black text-[color:var(--bone-100)]">Compliance Center</h1>
           <p className="mt-2 text-sm text-[color:var(--bone-300)]">Review, manage, and escalate athlete compliance violations.</p>
-          {errorMessage ? <p className="mt-2 text-xs text-[#f0c4c4]">{errorMessage}</p> : null}
+          {errorMessage ? <p className="mt-2 text-xs text-[var(--locked-ink)]">{errorMessage}</p> : null}
           {!errorMessage && !isLoading && !dataAuthoritative ? (
-            <p className="mt-2 text-xs text-[#f0c4c4]">Compliance metrics are unavailable and intentionally not shown as zero.</p>
+            <p className="mt-2 text-xs text-[var(--locked-ink)]">Compliance metrics are unavailable and intentionally not shown as zero.</p>
           ) : null}
         </header>
 
@@ -185,25 +186,25 @@ export default function AdminComplianceCenterPage() {
             <p className="text-xs text-[color:var(--bone-300)]">Total</p>
             <p className="text-2xl font-bold text-[color:var(--bone-100)]">{metricValue(metrics.total)}</p>
           </div>
-          <div className="border-2 border-[#fce8e6] bg-[var(--hide-900)] p-3 text-center">
-            <p className="text-xs text-[#d32f2f]">Critical</p>
+          <div className="border-2 border-[color-mix(in_srgb,var(--locked)_12%,var(--paper))] bg-[var(--hide-900)] p-3 text-center">
+            <p className="text-xs text-[var(--locked-ink)]">Critical</p>
             <p className="text-2xl font-bold text-[color:var(--bone-100)]">{metricValue(metrics.critical)}</p>
           </div>
-          <div className="border-2 border-[#fff3cd] bg-[var(--hide-900)] p-3 text-center">
-            <p className="text-xs text-[#f57c00]">High</p>
+          <div className="border-2 border-[var(--bone-100)] bg-[var(--hide-900)] p-3 text-center">
+            <p className="text-xs text-[var(--restricted-ink)]">High</p>
             <p className="text-2xl font-bold text-[color:var(--bone-100)]">{metricValue(metrics.high)}</p>
           </div>
-          <div className="border-2 border-[#e3f2fd] bg-[var(--hide-900)] p-3 text-center">
-            <p className="text-xs text-[#1976d2]">Medium</p>
+          <div className="border-2 border-[var(--monitor-ink)] bg-[var(--hide-900)] p-3 text-center">
+            <p className="text-xs text-[var(--monitor-ink)]">Medium</p>
             <p className="text-2xl font-bold text-[color:var(--bone-100)]">{metricValue(metrics.medium)}</p>
           </div>
-          <div className="border-2 border-[#f1f8e9] bg-[var(--hide-900)] p-3 text-center">
-            <p className="text-xs text-[#388e3c]">Low</p>
+          <div className="border-2 border-[var(--cleared-ink)] bg-[var(--hide-900)] p-3 text-center">
+            <p className="text-xs text-[var(--cleared-ink)]">Low</p>
             <p className="text-2xl font-bold text-[color:var(--bone-100)]">{metricValue(metrics.low)}</p>
           </div>
         </section>
 
-        <section className="flex flex-wrap items-center gap-3 border border-[color:var(--hide-600)] bg-[#121212] p-3">
+        <section className="flex flex-wrap items-center gap-3 border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-3">
           <div className="flex flex-wrap gap-2">
             {['all', 'new', 'acknowledged', 'escalated', 'resolved'].map((status) => (
               <button
@@ -211,8 +212,8 @@ export default function AdminComplianceCenterPage() {
                 onClick={() => setStatusFilter(status)}
                 className={`border-2 px-3 py-1 text-xs font-bold uppercase ${
                   statusFilter === status
-                    ? 'border-[color:var(--brass-300)] bg-[#2a1a1a] text-[color:var(--brass-300)]'
-                    : 'border-[color:var(--hide-600)] bg-[var(--hide-950)] text-[#8b7355]'
+                    ? 'border-[color:var(--brass-300)] bg-[var(--hide-800)] text-[color:var(--brass-300)]'
+                    : 'border-[color:var(--hide-600)] bg-[var(--hide-950)] text-[var(--bone-400)]'
                 }`}
               >
                 {status}
@@ -233,7 +234,7 @@ export default function AdminComplianceCenterPage() {
               <option value="low">Low</option>
             </select>
           </div>
-          <div className="ml-auto text-xs text-[#9a8a7a]">
+          <div className="ml-auto text-xs text-[var(--bone-400)]">
             Showing {dataAuthoritative ? filteredViolations.length : '--'} of {dataAuthoritative ? violations.length : '--'}
           </div>
         </section>
@@ -245,7 +246,7 @@ export default function AdminComplianceCenterPage() {
           </h2>
           <div className="space-y-3">
             {filteredViolations.length === 0 ? (
-              <div className="border border-[color:var(--hide-600)] bg-[var(--hide-900)] px-4 py-5 text-sm text-[#9a8a7a]">
+              <div className="border border-[color:var(--hide-600)] bg-[var(--hide-900)] px-4 py-5 text-sm text-[var(--bone-400)]">
                 No violations match the current filters. Try setting Status to &quot;all&quot; and Severity to &quot;all&quot;.
               </div>
             ) : (
@@ -265,16 +266,16 @@ export default function AdminComplianceCenterPage() {
                         </span>
                       </div>
                       <p className="text-sm font-semibold text-[color:var(--hide-900)]">Athlete: {v.athlete_id}</p>
-                      <p className="text-xs text-[#333333]">Rule: {v.rule_id}</p>
-                      <p className="mt-1 text-xs text-[#444444]">
+                      <p className="text-xs text-[var(--hide-700)]">Rule: {v.rule_id}</p>
+                      <p className="mt-1 text-xs text-[var(--hide-600)]">
                         {new Date(v.created_at).toLocaleString()}
                       </p>
-                      {v.description && <p className="mt-2 text-sm text-[#222222]">{v.description}</p>}
+                      {v.description && <p className="mt-2 text-sm text-[var(--hide-800)]">{v.description}</p>}
                     </div>
                     {v.status === 'new' || v.status === 'acknowledged' ? (
                       <button
                         onClick={() => setSelectedViolation(v)}
-                        className="border-2 border-[color:var(--hide-900)] bg-[#fce8e6] px-3 py-2 text-xs font-bold text-[color:var(--hide-900)]"
+                        className="border-2 border-[color:var(--hide-900)] bg-[color-mix(in_srgb,var(--locked)_12%,var(--paper))] px-3 py-2 text-xs font-bold text-[color:var(--hide-900)]"
                       >
                         Escalate
                       </button>
@@ -308,13 +309,13 @@ export default function AdminComplianceCenterPage() {
               <div className="flex gap-3">
                 <button
                   onClick={handleEscalate}
-                  className="flex-1 border-2 border-[color:var(--brass-700)] bg-[#2a1a1a] py-2 text-xs font-bold text-[color:var(--brass-300)]"
+                  className="flex-1 border-2 border-[color:var(--brass-700)] bg-[var(--hide-800)] py-2 text-xs font-bold text-[color:var(--brass-300)]"
                 >
                   Escalate
                 </button>
                 <button
                   onClick={() => setSelectedViolation(null)}
-                  className="flex-1 border-2 border-[color:var(--hide-600)] bg-[var(--hide-950)] py-2 text-xs font-bold text-[#8b7355]"
+                  className="flex-1 border-2 border-[color:var(--hide-600)] bg-[var(--hide-950)] py-2 text-xs font-bold text-[var(--bone-400)]"
                 >
                   Cancel
                 </button>
@@ -324,7 +325,7 @@ export default function AdminComplianceCenterPage() {
         )}
 
         <div className="flex flex-wrap gap-3">
-          <Link href="/admin" className="border-2 border-[color:var(--brass-700)] bg-[#2a1a1a] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)]">
+          <Link href="/admin" className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-800)] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)]">
             Back to Admin
           </Link>
         </div>

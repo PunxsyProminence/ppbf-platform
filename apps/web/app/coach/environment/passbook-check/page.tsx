@@ -14,7 +14,7 @@ export default function PassbookCheckPage() {
         </header>
 
         <div className="grid gap-5 px-10 py-7">
-          <p className="max-w-[640px] font-mono text-xs font-bold uppercase tracking-[0.14em] text-[color:var(--locked)]">
+          <p className="max-w-[640px] font-mono text-xs font-bold uppercase tracking-[0.14em] text-[color:var(--locked-ink)]">
             PLANNED | NOT YET IMPLEMENTED
           </p>
           <p className="max-w-[640px] text-sm leading-6 text-[color:var(--bone-400)]">
@@ -24,7 +24,7 @@ export default function PassbookCheckPage() {
             wired to a real source.
           </p>
 
-          <section className="grid max-w-[640px] gap-3 border-4 border-[#3d2817] bg-[var(--hide-900)] p-5">
+          <section className="grid max-w-[640px] gap-3 border-4 border-[var(--hide-700)] bg-[var(--hide-900)] p-5">
             <label htmlFor="usa-boxing-id" className="font-semibold text-[color:var(--bone-200)]">
               Athlete USA Boxing ID
             </label>
