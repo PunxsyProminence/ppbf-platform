@@ -102,6 +102,14 @@ beforeAll(async () => {
   const migrateClient = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
   await migrateClient.connect();
   await migrateClient.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8'));
+  // pilot.auth_rate_limit_buckets used to arrive here by accident: rateLimit.ts
+  // issued `create table if not exists` from inside the request path, so the
+  // first call in this suite created it. That DDL is gone -- an unauthenticated
+  // login request must not create relations -- and the table is a migration
+  // now, applied here the same way every other environment applies it.
+  await migrateClient.query(
+    await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_rate_limit_migration.sql'), 'utf8'),
+  );
   await migrateClient.end();
 
   process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(TEST_DB_NAME);
@@ -270,6 +278,55 @@ describe('durable auth rate limiting against real Postgres', () => {
       expect(row?.n).toBe(0);
     } finally {
       process.env.PPBF_DURABLE_RATE_LIMIT = 'true';
+    }
+  });
+
+  // The migration has to produce the shape the runtime DDL used to, or an
+  // environment built the sanctioned way gets a table the writes cannot use.
+  // Every durable write is `insert ... on conflict (bucket_key) do update`,
+  // which needs the primary key -- a table with the right four columns and no
+  // key would look migrated and fail every write at runtime.
+  test('the migration produces the shape the writes require', async () => {
+    const key = await db.queryOne<{ contype: string; def: string }>(
+      `select contype, pg_get_constraintdef(oid) as def
+       from pg_constraint
+       where conrelid = to_regclass('pilot.auth_rate_limit_buckets')
+         and contype = 'p'`,
+    );
+    expect(key?.def).toContain('bucket_key');
+
+    const blockedUntil = await db.queryOne<{ is_nullable: string; data_type: string }>(
+      `select is_nullable, data_type
+       from information_schema.columns
+       where table_schema = 'pilot'
+         and table_name = 'auth_rate_limit_buckets'
+         and column_name = 'blocked_until'`,
+    );
+    expect(blockedUntil?.is_nullable).toBe('NO');
+    expect(blockedUntil?.data_type).toBe('timestamp with time zone');
+  });
+
+  // The property that makes deleting the runtime DDL safe.
+  //
+  // rateLimit.ts no longer creates the table, so an environment that has not
+  // applied the migration will hit a missing relation on every durable call.
+  // withDurableClient swallows that and returns null, and every caller reads
+  // null as "fall back to the in-memory limiter". If it ever read null as
+  // "deny", an unmigrated deploy would lock every athlete out of the platform
+  // on a table that is only a guard.
+  test('a missing table degrades to the volatile limiter instead of denying', async () => {
+    await db.query('alter table pilot.auth_rate_limit_buckets rename to auth_rate_limit_buckets_hidden');
+    try {
+      const key = 'pin_account:no-table-1';
+
+      // The durable half cannot answer, and the caller is not denied.
+      await expect(rateLimit.checkDurableRateLimit(key)).resolves.toMatchObject({ isLimited: false });
+
+      // Recording still returns a usable volatile backoff rather than throwing.
+      const result = await rateLimit.recordDurableFailedAttempt(key);
+      expect(result.delayMs).toBeGreaterThanOrEqual(0);
+    } finally {
+      await db.query('alter table pilot.auth_rate_limit_buckets_hidden rename to auth_rate_limit_buckets');
     }
   });
 });

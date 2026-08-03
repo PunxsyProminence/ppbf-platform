@@ -5,6 +5,7 @@ import Link from 'next/link';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import type { DrillLibraryResponse, PilotDrill } from '@/src/server/pilot/drills';
 
 // The gym's drill library, written by the coaches who teach it.
 //
@@ -13,15 +14,12 @@ import { apiBase } from '@/lib/apiBase';
 // assignment carried only the name a coach typed, and two coaches assigning the
 // same drill produced two unrelated strings.
 
-interface Drill {
-  drill_id: string;
-  name: string;
-  category: string;
-  focus: string;
-  cues: string[];
-  difficulty: string;
-  active_flag: boolean;
-}
+// The server's own row type, not a restatement of it. The restatement had two
+// drifts at once: it read the list under `drills` when the route sends `items`,
+// and it declared `active_flag` where the route sends `active`. The first made
+// the library render empty; the second was dead weight waiting to do the same.
+// Type-only import, so nothing server-side is pulled into this client bundle.
+type Drill = PilotDrill;
 
 const DIFFICULTIES = ['beginner', 'intermediate', 'advanced', 'elite'] as const;
 
@@ -50,8 +48,13 @@ function CoachDrillLibrary() {
         credentials: 'include',
       });
       if (!response.ok) throw new Error('The drill library could not be loaded.');
-      const payload = (await response.json()) as { drills?: Drill[] };
-      setDrills(payload.drills ?? []);
+      // Typed from the route's own response contract rather than restated
+      // here. It was restated here, as `drills`, and the route has always sent
+      // `items` -- so the library rendered empty from the day it shipped. Route
+      // tests and component tests both passed; nothing covered the seam, which
+      // is the only place the defect lived.
+      const payload = (await response.json()) as Partial<DrillLibraryResponse>;
+      setDrills(payload.items ?? []);
       setLoadError('');
     } catch (error) {
       setDrills([]);

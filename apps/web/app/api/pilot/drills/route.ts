@@ -10,6 +10,7 @@ import {
   listDrills,
   updateDrill,
   type DrillDifficulty,
+  type DrillLibraryResponse,
 } from '@/src/server/pilot/drills';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
@@ -100,7 +101,16 @@ export async function GET(request: NextRequest) {
 
     const items = await listDrills(principal.organizationId, { includeRetired });
 
-    return NextResponse.json({ ok: true, organization_id: principal.organizationId, items });
+    // Typed against the shape both clients import, so renaming a key here is a
+    // compile error there rather than a library that silently renders empty.
+    // Typed against the shape both clients import, so renaming a key here is a
+    // compile error there rather than a library that silently renders empty.
+    const body: DrillLibraryResponse = {
+      ok: true,
+      organization_id: principal.organizationId,
+      items,
+    };
+    return NextResponse.json(body);
   } catch (error) {
     return jsonError(error);
   }
