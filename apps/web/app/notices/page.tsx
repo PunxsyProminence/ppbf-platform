@@ -419,7 +419,15 @@ function NoticesAuthoringPage() {
           </div>
         </section>
 
-        <div className="mt-8">
+        <div className="mt-8 flex flex-wrap gap-3">
+          {/* The two-second version of this page: the boards as they hang on
+              the dashboards, one line each, writable in place. Same table, same
+              endpoints, same rows -- see app/chalkboard/page.tsx. The link is
+              here because a coach with something to say opens this page, and a
+              route nobody can reach is a dead feature. */}
+          <Link href="/chalkboard" className="btn btn--ghost">
+            The boards, as they hang
+          </Link>
           <Link
             href="/operations"
             className="btn btn--ghost"

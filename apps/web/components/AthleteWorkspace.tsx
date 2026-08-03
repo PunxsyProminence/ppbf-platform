@@ -4,6 +4,8 @@ import Link from 'next/link';
 import React, { type FormEvent, useCallback, useEffect, useState } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
 import AthleteAchievements from './AthleteAchievements';
+import Chalkboard from './Chalkboard';
+import GymWallModule from './GymWallModule';
 import PersonalGoalBoard from './PersonalGoalBoard';
 import type { RabbitHoleLessonItem } from './RabbitHole';
 import { ANCHOR_KEY_OPTIONS, anchorLabel } from './rabbitHoleAnchorLabels';
@@ -1341,12 +1343,19 @@ export default function AthleteWorkspace() {
           heading="Gym Notices"
           className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]"
         />
-        <AnnouncementBanner
-          placement="athlete_workspace"
-          kind="motivation"
-          heading="From the Gym"
-          className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]"
-        />
+
+        {/* The chalkboard REPLACES the paper "From the Gym" card that used to
+            sit here. Same table, same placement, same kind ('motivation') --
+            what changed is the object. A line somebody wrote by hand was being
+            rendered as a clean UI card with a heading on it; it is slate and
+            chalk now, and it shows one line rather than a list, because that is
+            what a board by the door holds. See Chalkboard.tsx. */}
+        <Chalkboard placement="athlete_workspace" />
+
+        {/* Photographs of the room, not of the people in it. Empty today, and
+            designed to be: see GymWallModule.tsx for why a shared dashboard
+            module cannot carry a member's portrait under profileVisibility.ts. */}
+        <GymWallModule className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s5)]" />
 
         <div className={PANEL}>
           <p className="t-eyebrow">Daily Reminder</p>
@@ -1384,6 +1393,20 @@ export default function AthleteWorkspace() {
             who mentors whom. Complete for every programme: what somebody's
             programme does not include is absent, never greyed out. */}
         <AthleteAchievements athleteId={backendAthleteId} />
+
+        {/* Two things that leave the screen. A route nobody can reach is a dead
+            feature, and neither of these has a home anywhere else. */}
+        <div className={PANEL}>
+          <p className="t-eyebrow">Off the screen</p>
+          <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
+            <Link href="/print" className="btn btn--ghost min-h-[var(--tap)]">
+              Print your card
+            </Link>
+            <Link href="/names" className="btn btn--ghost min-h-[var(--tap)]">
+              The Wall of Names
+            </Link>
+          </div>
+        </div>
 
         <details className={PANEL}>
           <summary className="t-label cursor-pointer">What&apos;s Coming</summary>

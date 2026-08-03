@@ -424,20 +424,34 @@ describe('authored announcements on the athlete workspace', () => {
     );
   });
 
+  /* CHANGED DELIBERATELY (Phase 4, community surfaces).
+     The 'motivation' kind used to render as a paper card headed "From the Gym".
+     It renders on the chalkboard now -- same table, same placement, same kind,
+     different object (see Chalkboard.tsx). So the heading is gone on purpose
+     and the assertions below moved onto the board, which is a stronger check:
+     the previous ones would have passed on a heading with nothing under it. */
   test('live motivational copy is drawn where the athlete will see it', async () => {
     liveAnnouncements = [announcement()];
-    await renderWorkspace();
+    const { container } = render(<AthleteWorkspace />);
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     expect(await screen.findByText('Hands up, chin down.')).toBeTruthy();
-    expect(screen.getByText('From the Gym')).toBeTruthy();
+    expect(container.querySelector('.chalkboard')?.getAttribute('data-state')).toBe('written');
+    // The paper card it replaced is gone, not sitting beside it.
+    expect(screen.queryByText('From the Gym')).toBeNull();
   });
 
   test('an item placed elsewhere is not drawn here', async () => {
     liveAnnouncements = [announcement({ placement: 'coach_workspace', message: 'Coaches only.' })];
-    await renderWorkspace();
+    const { container } = render(<AthleteWorkspace />);
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     expect(screen.queryByText('Coaches only.')).toBeNull();
-    expect(screen.queryByText('From the Gym')).toBeNull();
+    expect(container.querySelector('.chalkboard')?.getAttribute('data-state')).toBe('blank');
   });
 
   test('nothing live leaves no heading and no empty box behind', async () => {
@@ -445,6 +459,10 @@ describe('authored announcements on the athlete workspace', () => {
 
     expect(screen.queryByText('From the Gym')).toBeNull();
     expect(screen.queryByText('Gym Notices')).toBeNull();
+    // The board is still hanging there, unwritten. A chalkboard with nothing on
+    // it is an object, not an empty box -- unlike the notice banner above,
+    // which correctly renders nothing at all when nothing is live.
+    expect(screen.getByText('Nothing on the board.')).toBeTruthy();
   });
 
   test('a failed announcements read leaves the rest of the workspace working', async () => {
@@ -452,6 +470,9 @@ describe('authored announcements on the athlete workspace', () => {
     await renderWorkspace();
 
     expect(screen.queryByText('From the Gym')).toBeNull();
+    // A board that could not be read is a blank board, and says nothing about
+    // its own plumbing on top of the page's real work.
+    expect(screen.getByText('Nothing on the board.')).toBeTruthy();
     expect(screen.getByText('Current Readiness')).toBeTruthy();
     expect(await screen.findByRole('button', { name: 'Check In' })).toBeTruthy();
   });

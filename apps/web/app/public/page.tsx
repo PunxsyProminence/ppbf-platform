@@ -2,8 +2,10 @@
 
 import Link from 'next/link';
 import { useEffect, useState, type SyntheticEvent } from 'react';
+import PhotoSlot from '@/components/PhotoSlot';
 import ShadowChatButton from '@/components/ShadowChatButton';
 import { readRoleSession, subscribeRoleSession } from '@/components/roleSession';
+import { GYM_STAFF_CARDS, gymPhotoSlotsFor, gymPhotoSrc } from '@/src/shared/gymPhotos';
 import { apiBase } from '@/lib/apiBase';
 
 type VisitorType =
@@ -442,6 +444,71 @@ export default function PublicPortalPage() {
           </div>
         </section>
 
+        {/* THE ROOM.
+            Frames, hung, mostly empty -- and that is the honest state, not a
+            build that has not finished. The owner is taking these photographs
+            and has none yet, so every frame is a real frame waiting for a real
+            picture rather than a stock image of somebody else's gym or a grey
+            rectangle that reads as a broken CDN. See src/shared/gymPhotos.ts
+            for how a photograph actually gets in here. */}
+        <section id="the-room" className="mt-6 border-[3px] border-[color:rgba(107,78,18,.28)] mat-paper p-5 shadow-[var(--shadow-sm)]">
+          <h2 className="text-[length:var(--t-md)] font-black text-[color:var(--hide-950)]">WHAT IT LOOKS LIKE IN HERE</h2>
+          <p className="mt-3 max-w-4xl text-[length:var(--t-sm)] leading-7 text-[color:var(--hide-800)]">
+            {gymPhotoSlotsFor('public').some((slot) => gymPhotoSrc(slot.file) !== null)
+              ? 'Photographs of this gym. Not a stock photo of a different gym in a different state.'
+              : 'These frames are empty because nobody has taken the photographs yet, and we would rather show you an empty frame than a stock photo of somebody else’s gym. Until they are up: come and look at the real thing. You do not need an appointment and you do not need to call first.'}
+          </p>
+          <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {gymPhotoSlotsFor('public').map((slot) => (
+              <PhotoSlot key={slot.key} slot={slot} shape="wide" />
+            ))}
+          </div>
+        </section>
+
+        {/* THE PEOPLE.
+            A parent seeing a coach's face matters more than any paragraph, so
+            the photograph is the point of this section and the words are the
+            caption. Exactly one person is named, because exactly one is known:
+            /public has said "Jason Neale is head coach" since the Phase 1
+            rewrite and nobody has typed in another. Inventing plausible
+            coaches to fill a grid would be a lie on the page a parent reads
+            before deciding whether to trust this place with their kid. */}
+        <section id="who-coaches" className="mt-6 border-[3px] border-[color:rgba(107,78,18,.28)] mat-paper p-5 shadow-[var(--shadow-sm)]">
+          <h2 className="text-[length:var(--t-md)] font-black text-[color:var(--hide-950)]">WHO WOULD BE COACHING YOUR KID</h2>
+          <p className="mt-3 max-w-4xl text-[length:var(--t-sm)] leading-7 text-[color:var(--hide-800)]">
+            You should know the face of whoever is going to be working with your kid before you leave them here. Ask
+            to meet them. Stay and watch the whole session. Both of those are normal and neither of them is rude.
+          </p>
+          <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {GYM_STAFF_CARDS.map((person) => (
+              <article key={person.key} className="border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] mat-paper p-4">
+                <PhotoSlot
+                  slot={{
+                    key: person.key,
+                    title: person.name,
+                    caption: person.role,
+                    file: person.photo,
+                    alt: person.alt,
+                    surfaces: ['public'],
+                  }}
+                  shape="tall"
+                />
+                {person.bio ? (
+                  <p className="mt-3 text-[length:var(--t-sm)] leading-6 text-[color:var(--hide-800)]">{person.bio}</p>
+                ) : (
+                  <p className="mt-3 text-[length:var(--t-sm)] leading-6 text-[color:var(--hide-800)]">
+                    Nothing written here yet. Come in and ask him yourself.
+                  </p>
+                )}
+              </article>
+            ))}
+          </div>
+          <p className="mt-4 max-w-4xl text-[length:var(--t-sm)] leading-7 text-[color:var(--hide-800)]">
+            Other coaches and volunteers work here too, and they are not listed yet because nobody has put their
+            names and photographs up. That is a gap on this page, not a gap in the gym.
+          </p>
+        </section>
+
         <section className="mt-6 border-[3px] border-[color:rgba(107,78,18,.28)] mat-paper p-5 shadow-[var(--shadow-sm)]">
           <h2 className="text-[length:var(--t-md)] font-black text-[color:var(--hide-950)]">WHAT THIS PAGE IS</h2>
           <p className="mt-3 text-[length:var(--t-sm)] leading-7 text-[color:var(--hide-800)]">
@@ -701,6 +768,8 @@ export default function PublicPortalPage() {
                 promised something the destination did not contain. The hrefs
                 and section ids are unchanged. */}
             {[
+              { label: 'The room', href: '/public#the-room' },
+              { label: 'Who coaches', href: '/public#who-coaches' },
               { label: 'Which one is you', href: '/public#volunteer-recruitment' },
               { label: 'Get in touch', href: '/public#interest-intake' },
               { label: 'Programs', href: '/public#partner-engagement' },

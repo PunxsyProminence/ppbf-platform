@@ -4,7 +4,9 @@ import Link from 'next/link';
 import React, { useState, useEffect } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
 import AthleteAchievements from './AthleteAchievements';
+import Chalkboard from './Chalkboard';
 import FightCard from './FightCard';
+import GymWallModule from './GymWallModule';
 import ProfilePortrait from './ProfilePortrait';
 import { ParentSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
@@ -326,12 +328,17 @@ export default function ParentHub() {
           heading="Gym Notices"
           className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]"
         />
-        <AnnouncementBanner
-          placement="everywhere"
-          kind="motivation"
-          heading="From the Gym"
-          className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]"
-        />
+
+        {/* The chalkboard REPLACES the paper "From the Gym" card. Same rows,
+            same placement ('everywhere' -- the vocabulary still names no parent
+            surface), same kind ('motivation'). What changed is that a line
+            somebody wrote by hand now looks like one. See Chalkboard.tsx. */}
+        <Chalkboard placement="everywhere" />
+
+        {/* The room, not the people in it. Empty until somebody photographs the
+            gym; a parent will never see another family's child here, because
+            this module has no path to member media at all. */}
+        <GymWallModule className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)]" />
 
         <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]">
           <p className="t-label">Family Commitment</p>
@@ -504,6 +511,26 @@ export default function ParentHub() {
                   Both the portrait and the ring name on it have already been
                   through the visibility gate server-side. */}
               {childCard && <FightCard card={childCard} />}
+
+              {/* The paper version. Scoped to the child currently selected, and
+                  the print route re-checks the guardian link server-side before
+                  it renders anything -- a link is not an authorisation. */}
+              {activeChildId && (
+                <div className="mat-paper rounded-[var(--r-md)] p-[var(--s4)]">
+                  <p className="t-label">For the fridge</p>
+                  <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
+                    <Link
+                      href={`/print?athlete_id=${encodeURIComponent(activeChildId)}`}
+                      className="btn btn--ghost"
+                    >
+                      Print their card and certificate
+                    </Link>
+                    <Link href="/names" className="btn btn--ghost">
+                      The Wall of Names
+                    </Link>
+                  </div>
+                </div>
+              )}
 
               <HelpPanel
                 title="Child Overview"
