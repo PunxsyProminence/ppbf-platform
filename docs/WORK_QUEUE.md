@@ -11,6 +11,15 @@ a content-screen refusal of footage of a minor.
 This file exists so that stops happening. It is the queue and the ownership
 record. **Read it before starting anything; claim what you take.**
 
+> ⚠️ **Staleness warning, added 2026-08-03.** This queue was last substantially
+> rewritten 2026-08-01 and `main` has moved a long way since. A session B pass
+> checked the "ready to build" candidates one by one and found **most of them
+> already fixed** — along with two stale claims and one item ("an athlete record
+> cannot be corrected") that describes a screen which now exists with tests.
+> **Verify any item against the code before building it.** The duplicated work this
+> file was created to prevent is now at least as likely to come from trusting it as
+> from ignoring it.
+
 Goal for this stretch: the platform is going to be used for **supervised
 real-world testing with coaches and their own children**. That is the bar to
 build against — real minors' data, informed adults present, failures
@@ -133,21 +142,46 @@ Ordered by a floor-readiness trace run 2026-08-01.
 
 ### Honesty sweep before real families see it
 
-- [ ] **Fabricated donations** in `RevenueFundingCenter.tsx` — "Community Donor
-      A, $250" and "Sponsor Family B, $75" with no placeholder marker, so a
-      treasurer reads $325 of giving that does not exist.
-- [ ] **`scripts/data/` ships five invented minors** with real-looking dates of
-      birth, in the exact folder the seed guide says to put the real roster in.
+> **Re-verified against the code 2026-08-03 (session B). Four of these are already
+> done.** Evidence below each. Only `/public` is still open, and it is owner-blocked
+> rather than unclaimed — do not go looking for the other four.
+
+- [x] ~~**Fabricated donations** in `RevenueFundingCenter.tsx`~~ — ✅ **already done.**
+      `grep -rn "Community Donor\|Sponsor Family" apps/` returns nothing; the strings
+      are gone from the codebase. The file now states plainly: "No payment processor
+      is connected. This application does not currently process real payments."
+- [x] ~~**`scripts/data/` ships five invented minors**~~ — ✅ **already done.** The
+      folder holds only `*.example.csv`, and the rows are unmistakably placeholder:
+      `EXAMPLE-001, EXAMPLE Athlete One, 2010-01-01, EXAMPLE guardian 000-000-0001`.
+      No real-looking name or date of birth remains.
 - [ ] **`/public` advertises seven programs and seven FAQ answers**, hardcoded.
       That is the page a Punxsutawney family lands on. Read it once and confirm
       it matches what PPBF actually runs; changing it needs a deploy today.
-- [ ] **Two platform-owner routes return a full roster of minors' names**
-      (`athlete-pin-directory`, `athlete-accounts`), contradicting the boundary
-      `access.ts` states three files away.
+      **Still open, and blocked on the owner, not on engineering.** Confirmed still
+      hardcoded: `programCards` at `app/public/page.tsx:62`, FAQ answers from :110.
+      Nobody in a code session can tell whether these seven programs are what PPBF
+      runs — and inventing plausible replacements is the exact failure this sweep
+      exists to catch. Needs someone who knows the organization to read it and say.
+- [x] ~~**Two platform-owner routes return a full roster of minors' names**~~ —
+      ✅ **already done, with tests.** Both `athlete-pin-directory` and
+      `athlete-accounts` carry `requireRole(principal, ['organization_admin'])`
+      followed by an explicit `isOrganizationAdminRole` re-check, and each has a
+      test asserting the platform owner gets 403 and no roster is read.
+      A platform owner cannot slip through on the `is_platform_owner` flag either:
+      it is orthogonal to `role` in the schema, but the only path that sets it
+      (`auth.ts:939`) writes `role = 'platform_owner'` in the same statement, in both
+      the insert and the update branch — so `requireRole` refuses them.
+      Swept the other routes that return athlete names while checking:
+      `admin/export/roster` has the same double-check, and `athletes/list` omits
+      `platform_owner` from its allow-list and scopes rows per role (athlete → own
+      record, parent → guardian-linked only). No leak found.
 - [ ] **Rabbit Hole seed content** — re-author the original Biomechanics lesson
       through the real path so the feature ships with something in it.
-- [ ] **`drillsPersistence.pg.test.ts` runs nowhere.** No `test:migrations:*`
-      script names it, so a 397-line Postgres suite never executes.
+      *(Not verified either way by session B.)*
+- [x] ~~**`drillsPersistence.pg.test.ts` runs nowhere.**~~ — ✅ **already done.**
+      `apps/web/package.json:84` defines `test:migrations:drills-persistence`
+      pointing at that exact file, and the aggregate `test:migrations` (line 40)
+      calls it. CI runs the aggregate (`ci.yml:53`), so the suite does execute.
 
 ## In progress — claimed
 
@@ -192,10 +226,22 @@ needed, but **session A should confirm** before either branch merges, because
 `apps/web/components/AthleteWorkspace.tsx`,
 `apps/web/src/server/pilot/{staffProvisioning,access,drills,feedback,rabbitHoles}.ts`.
 
-Good unclaimed candidates: the honesty sweep (fabricated donations, the example
-minors in `scripts/data/`, `/public` program copy), the two platform-owner routes
-returning minors' names, and `drillsPersistence.pg.test.ts` running nowhere.
-(Per-athlete starting PIN is done — see above.)
+~~Good unclaimed candidates: the honesty sweep, the two platform-owner routes,
+and `drillsPersistence.pg.test.ts`.~~
+
+**This list was checked item by item on 2026-08-03 and every candidate on it is
+now closed except one.** Per-athlete starting PIN was genuinely open and is done
+(session B). Fabricated donations, the invented minors, the platform-owner routes,
+and the drills-persistence suite were all **already fixed** before that session
+started — see the evidence under each above.
+
+The only one still open is **`/public` program and FAQ copy**, and it is blocked on
+someone who knows what PPBF actually runs, not on engineering capacity.
+
+Anyone picking up work from this file should re-verify against the code first. This
+queue was last substantially rewritten 2026-08-01 and `main` has moved a long way
+since — including consent capture, which a separate fix list also wrongly recorded
+as missing.
 
 ### Stale entries in this queue, verified 2026-08-03
 
