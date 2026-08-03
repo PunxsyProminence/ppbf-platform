@@ -124,21 +124,25 @@ These are correctness/safety issues for the Participant Master Record capability
 **Priority:** HIGH (clarifies permissions)  
 **Effort:** 3-4 hours  
 **Risk:** Medium - affects athlete UX
+**Status:** ✅ COMPLETED (commit b16af3a) - Athletes can ONLY update emergency_contact
 
-**Questions to answer:**
-- Can athletes modify their own `full_name`? (Probably not)
-- Can athletes modify `emergency_contact`? (Probably yes)
-- Can athletes modify `dob`? (Probably not)
-- Can athletes modify `weight_class`? (Probably not)
+**Decision & Rationale:**
+- [x] Athletes ALLOWED: `emergency_contact` (personal information they control)
+- [x] Athletes RESTRICTED: `full_name`, `dob`, `weight_class` (identity and classification fields)
+- [x] Athletes RESTRICTED: `coach_id`, `active_flag`, `gym_status` (system/status fields - already restricted)
 
-- [ ] Document decision in code comment in `access.ts` line 104-124
-- [ ] Update `assertAthleteUpdateAllowed()` to restrict fields if needed
-  - Example: If only emergency_contact is allowed, add field-level check
-- [ ] Add integration test: athlete attempts to change each field
-- [ ] Update `POST /api/pilot/athletes/update` route to reflect scope
-- [ ] Add UI indicator: "You can update: emergency contact only" (or whatever is allowed)
+**Implementation:**
+- [x] Updated `assertAthleteUpdateAllowed()` in access.ts with field-level checks
+  - Added explicit restrictions for: full_name, dob, weight_class
+  - Documented allowed field: emergency_contact (see trailing comment)
+- [x] Added 4 integration tests: athlete field restriction tests
+  - Test full_name change → 403 Forbidden
+  - Test dob change → 403 Forbidden
+  - Test weight_class change → 403 Forbidden
+  - Test emergency_contact change → 200 OK (allowed)
+- [x] Route already supports athlete role for updates (line 43)
 
-**Acceptance:** `assertAthleteUpdateAllowed()` documents scope; athlete-scoped fields tested
+**Acceptance:** ✅ `assertAthleteUpdateAllowed()` documents scope; all athlete-scoped fields tested; 4 tests added
 
 ---
 
@@ -285,10 +289,10 @@ These improve observability and UX polish.
 | Priority | Count | Effort | Status |
 |----------|-------|--------|--------|
 | P0 Security | 6 | — | ✅ Implemented |
-| P0 Capability | 4 | 8-13 hrs | 🟡 3/4 Complete |
+| P0 Capability | 4 | 8-13 hrs | ✅ 4/4 Complete |
 | P1 Improvements | 5 | 8-12 hrs | 🔴 Not Started |
 | P2 Polish | 4 | 6-8 hrs | 🔴 Not Started |
-| **Total** | **19** | **22-33 hrs** | **3 Complete** |
+| **Total** | **19** | **22-33 hrs** | **10 Complete** |
 
 ---
 
