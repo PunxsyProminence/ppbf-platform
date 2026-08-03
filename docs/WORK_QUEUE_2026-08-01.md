@@ -272,6 +272,13 @@ Carried from 07-31 and not yet decided. Listed for completeness, not queued:
 - Athlete goal category and progress are read by the UI and stored nowhere — confirmed:
   `pilot.goals` carries `title`, `target_date`, `metric`, `status` and no category or
   progress column (`infra/azure/pilot_slice_postgres.sql:77`).
+  **WIP (remote)** — claimed 2026-08-03 on `claude/workflow-task-n49qv2`. This is item **11**
+  in the 08-03 capability build plan's Phase 1. Tracing it before writing code found it is
+  worse than filed on both halves: the athlete *picks* a category in the create form
+  (`AthleteWorkspace.tsx:1747`) and it is never sent — `validateGoalPayload`'s
+  `assertOnlyAllowedKeys` would reject it if it were — so every stored goal reloads as
+  **"Boxing"** regardless of what the athlete chose, and the progress bar at `:1839` renders a
+  filled-width affordance from a number no column holds and no path writes.
 
 ---
 
