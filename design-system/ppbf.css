@@ -819,39 +819,6 @@ body.ppbf.on-canvas {
   color: var(--bone-100); text-align: center;
   text-shadow: 0 3px 0 rgba(0,0,0,.6), 0 0 26px rgba(232,206,122,.16);
 }
-/* Workspace shell — Athlete, Coach and Parent -----------------------------
-   Those three workspaces share one set of tab and panel styles through
-   uiStyles.ts, and they do NOT share a ground: Law 6 puts the two family
-   workspaces on canvas and the coach's console on ink. A single Tailwind string
-   cannot serve both, and the version that existed served neither -- it painted
-   paper panels under bone-and-brass type, so the coach's own review queue read
-   at 2.01:1.
-
-   So they are components, and the ground chooses the material, exactly the way
-   it already does for .btn and .t-*. A workspace that changes ground changes
-   with it and nothing at the call site has to know. */
-.wk-panel {
-  border: 2px solid var(--hide-950);
-  background-color: var(--hide-900);
-  padding: var(--s5);
-}
-.on-canvas .wk-panel { background-color: var(--paper); }
-
-.wk-tabs {
-  border: 2px solid var(--hide-950);
-  background-color: var(--hide-800);
-}
-.on-canvas .wk-tabs { background-color: var(--canvas-warm); }
-
-.wk-tab {
-  border-color: var(--hide-950);
-  background-color: var(--hide-700);
-  color: var(--bone-300);
-}
-.wk-tab:hover { background-color: var(--hide-600); color: var(--bone-100); }
-.on-canvas .wk-tab { background-color: var(--paper); color: var(--hide-800); }
-.on-canvas .wk-tab:hover { background-color: var(--paper-2); color: var(--hide-950); }
-
 .plaque {
   display: inline-block; padding: 7px 16px; border-radius: var(--r-sm);
   background-color: rgba(0,0,0,.4);
@@ -928,7 +895,7 @@ body.ppbf.on-canvas {
   /* Hardware reads as a rule on paper, not as a filled bar. The stamp is
      deliberately not in this list: its border is currentColor, so blacking it
      would leave a red legend inside a black box instead of one red mark. */
-  .frame, .tile, .wk-panel, .plaque, .badge {
+  .frame, .tile, .plaque, .badge {
     border-color: #000 !important;
   }
 
@@ -958,6 +925,6 @@ body.ppbf.on-canvas {
   a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 10px; }
 
   /* Keep a record from breaking across a fold mid-row. */
-  tr, .tile, .frame, .wk-panel, .badge, .stamp { break-inside: avoid; }
+  tr, .tile, .frame, .badge, .stamp { break-inside: avoid; }
   thead { display: table-header-group; }
 }

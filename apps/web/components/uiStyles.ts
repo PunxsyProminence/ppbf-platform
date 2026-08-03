@@ -1,12 +1,18 @@
 /**
  * UI Styles Registry
  *
+ * These surfaces were authored in cream while the workspaces that fill them
+ * -- Athlete, Coach, Parent -- write ink-authored type into them: --bone-400
+ * captions and --brass-300 headings. That pairing measured 1.31:1 and 2.01:1,
+ * on a page a coach reads mid-session from a floor tablet. The panels are
+ * leather now, which is the ground the content was already written for.
+ *
  * Backs the tabs, mode switches and panel shells in the Athlete, Coach and
  * Parent workspaces, which makes it the highest-reach style file in the app.
  *
  * Chrome vs. status
  * -----------------
- * Selected tabs and modes used to be painted in --safety-locked, which aliases
+ * Selected tabs and modes used to be painted in --red-primary, which aliases
  * to --locked: the safety gate's "this athlete may not participate" red. Law 2
  * reserves saturated colour for safety state, and a selected tab is not one —
  * when the gate's red is also the tab highlight, a locked athlete stops being
@@ -20,15 +26,6 @@
  * ------
  * - --accent / --accent-ink : chrome accent (brass). Never a status.
  * - --black, --canvas-tan*  : ground and ink, aliased onto design-system values
- *
- * Ground
- * ------
- * The tab and panel shells are ppbf component classes (.wk-tabs, .wk-tab,
- * .wk-panel) rather than Tailwind strings, because these three workspaces do
- * not share a ground: Law 6 puts Athlete and Parent on canvas and Coach on ink.
- * One hardcoded fill served neither -- it put paper panels under bone-and-brass
- * type, and the coach's review queue read at 2.01:1. The sheet picks the
- * material from the ground now, the way it already does for .btn.
  * - --status-*              : the safety ladder. --status-danger and
  *                             --status-info were referenced here for a long
  *                             time without being defined anywhere; they exist
@@ -37,18 +34,18 @@
  */
 
 export const ui = {
-  tabContainer: 'wk-tabs',
+  tabContainer: 'mat-leather rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)]',
   tabRow: 'flex flex-wrap gap-1 p-2',
   tabButtonBase:
     'inline-flex min-h-[44px] items-center px-3 py-2 text-xs font-semibold uppercase transition border-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]',
-  tabButtonActive: 'bg-[var(--accent)] border-[var(--black)] text-[var(--accent-ink)]',
-  tabButtonInactive: 'wk-tab',
+  tabButtonActive: 'bg-[var(--accent)] border-[color:var(--brass-600)] text-[color:var(--accent-ink)]',
+  tabButtonInactive: 'border-[color:rgba(212,175,74,.28)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-400)] hover:text-[color:var(--bone-100)]',
   modeButtonBase:
     'inline-flex min-h-[44px] items-center px-4 py-2 font-mono font-bold text-xs border-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]',
-  modeButtonActive: 'bg-[var(--accent)] border-[var(--black)] text-[var(--accent-ink)]',
-  modeButtonInactive: 'wk-tab',
-  panel: 'wk-panel',
-  panelSpaced: 'wk-panel space-y-4',
+  modeButtonActive: 'bg-[var(--accent)] border-[color:var(--brass-600)] text-[color:var(--accent-ink)]',
+  modeButtonInactive: 'border-[color:rgba(212,175,74,.28)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-400)] hover:text-[color:var(--bone-100)]',
+  panel: 'mat-leather--raised rounded-[var(--r-md)] p-[var(--s5)]',
+  panelSpaced: 'mat-leather--raised rounded-[var(--r-md)] p-[var(--s5)] space-y-[var(--s4)]',
 
   /* Status badges. Law 3: colour is never the only channel, so callers pair
      these with the state's glyph and uppercase label rather than relying on
@@ -63,7 +60,7 @@ export const ui = {
   // Error state button (with retry) — red here is correct: it is destructive
   // or it is reporting a real failure.
   errorButton:
-    'inline-flex min-h-[44px] items-center bg-[var(--status-danger)] text-[var(--bone-100)] hover:opacity-80 transition border-2 border-[var(--black)] px-3 py-2 text-xs font-semibold uppercase',
+    'inline-flex min-h-[44px] items-center bg-[var(--status-danger)] text-[var(--bone-100)] hover:opacity-80 transition border-2 border-[color:var(--locked)] px-3 py-2 text-xs font-semibold uppercase',
   errorContainer: 'border-2 border-[var(--status-danger)] bg-[var(--status-danger)]/10 p-4 rounded',
   errorText: 'text-[var(--status-danger)] font-semibold',
 
