@@ -17,10 +17,11 @@ jest.mock('next/link', () => ({
   },
 }));
 
+import { GOAL_CATEGORIES } from '@/src/server/pilot/contracts';
 import { FORMULA_UNITS, OBSERVATION_KINDS } from '@/src/server/pilot/formulas/types';
 import type { AnnouncementItem } from './AnnouncementBanner';
 import type { RabbitHoleLessonItem } from './RabbitHole';
-import AthleteWorkspace from './AthleteWorkspace';
+import AthleteWorkspace, { SMART_GOAL_CATEGORIES } from './AthleteWorkspace';
 
 type FetchCall = { url: string; method: string; body: Record<string, unknown> };
 
@@ -35,6 +36,8 @@ let rabbitHolesFail = false;
 let storedSessions: Array<Record<string, unknown>> = [];
 let sessionListFails = false;
 let sessionUpdateFails = false;
+let storedGoals: Array<Record<string, unknown>> = [];
+let goalUpdateFails = false;
 
 // pilot.sessions stores date as `date` and rpe as `numeric`, so node-postgres
 // hands back a timestamp and a string. Both are sent straight back by
@@ -101,6 +104,8 @@ beforeEach(() => {
   storedSessions = [];
   sessionListFails = false;
   sessionUpdateFails = false;
+  storedGoals = [];
+  goalUpdateFails = false;
 
   global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -139,7 +144,12 @@ beforeEach(() => {
       return jsonResponse(sessionUpdateFails ? { error: 'Internal server error' } : { ok: true }, !sessionUpdateFails);
     }
     if (url.includes('/api/pilot/goals/list')) {
-      return jsonResponse({ items: [] });
+      return jsonResponse({ items: storedGoals });
+    }
+    // Must be matched before the bare /api/pilot/goals branch below, which is
+    // held open on purpose for the double-click test.
+    if (url.includes('/api/pilot/goals/update')) {
+      return jsonResponse(goalUpdateFails ? { error: 'Internal server error' } : { ok: true }, !goalUpdateFails);
     }
     if (url.includes('/api/pilot/floor-plans')) {
       return jsonResponse({ items: [] });
@@ -530,5 +540,170 @@ describe('the rabbit holes tab', () => {
 
     expect(await screen.findByText(/could not be loaded right now/)).toBeTruthy();
     expect(screen.queryByText(/have not published a rabbit hole yet/)).toBeNull();
+  });
+});
+
+// Goal category and progress were read off every row this screen displayed and
+// stored in no column, so the component supplied both: `item.category ||
+// 'Boxing'` and `item.progress_percent || 0`. Every goal in the gym therefore
+// rendered as an untouched boxing goal, above a progress bar drawn from the
+// zero. The columns landed on 2026-08-03; these tests are the guard against the
+// substitutions coming back, in either direction.
+function storedGoal(overrides: Record<string, unknown> = {}) {
+  return {
+    goal_id: 'goal_1',
+    athlete_id: 'ath_test',
+    title: 'Land 100 clean jabs',
+    target_date: '2026-09-01',
+    metric: '100 reps logged',
+    status: 'active',
+    category: null,
+    progress_percent: null,
+    created_at: '2026-08-01T17:05:00.000Z',
+    updated_at: '2026-08-01T17:05:00.000Z',
+    ...overrides,
+  };
+}
+
+async function openGoals() {
+  await renderWorkspace();
+  openTab('Goals');
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
+
+describe('goal category and progress say only what the row says', () => {
+  test('a goal with no stored category is not presented as a Boxing goal', async () => {
+    storedGoals = [storedGoal()];
+    await openGoals();
+
+    expect(await screen.findByText('No category')).toBeTruthy();
+    expect(screen.queryByText('Boxing')).toBeNull();
+  });
+
+  // Asserted through the value element rather than by text, because the
+  // reporting control's own options are the strings '0%' through '100%' and
+  // 'Not reported yet' -- a bare getByText would match the control that sets
+  // the value as readily as the readout that shows it.
+  test('a goal with no stored progress reads as unreported and draws no bar', async () => {
+    storedGoals = [storedGoal()];
+    await openGoals();
+
+    expect((await screen.findByTestId('goal-progress-value-goal_1')).textContent).toContain('Not reported yet');
+    expect(screen.queryByTestId('goal-progress-bar-goal_1')).toBeNull();
+  });
+
+  // The other half of the same rule. A real report of 0 is a statement the
+  // athlete made, and it has to look different from never having been asked.
+  test('a reported 0% is shown as 0% with a bar, not as unreported', async () => {
+    storedGoals = [storedGoal({ progress_percent: 0 })];
+    await openGoals();
+
+    expect((await screen.findByTestId('goal-progress-value-goal_1')).textContent).toContain('0%');
+    expect((await screen.findByTestId('goal-progress-value-goal_1')).textContent).not.toContain('Not reported yet');
+    expect(screen.getByTestId('goal-progress-bar-goal_1')).toBeTruthy();
+  });
+
+  test('a stored category and percentage are shown as stored', async () => {
+    storedGoals = [storedGoal({ category: 'Academics', progress_percent: 40 })];
+    await openGoals();
+
+    expect(await screen.findByText('Academics')).toBeTruthy();
+    expect((await screen.findByTestId('goal-progress-value-goal_1')).textContent).toContain('40%');
+  });
+});
+
+describe('the category the athlete picks is the category that is sent', () => {
+  test('creating a goal posts the chosen category', async () => {
+    await openGoals();
+    fireEvent.click(screen.getByRole('button', { name: '+ New SMART Goal' }));
+
+    fireEvent.change(screen.getByPlaceholderText('Goal title'), { target: { value: 'Read a chapter a night' } });
+    fireEvent.change(screen.getByPlaceholderText('Success metric'), { target: { value: 'chapters logged' } });
+    fireEvent.change(document.querySelector('input[type="date"]') as HTMLInputElement, { target: { value: '2026-09-01' } });
+    fireEvent.change(screen.getByLabelText('Goal category'), { target: { value: 'Academics' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create Goal' }));
+    await act(async () => {
+      resolveGoalPost?.(null);
+      await Promise.resolve();
+    });
+
+    const [created] = postedTo('/api/pilot/goals');
+    expect(created.body.category).toBe('Academics');
+    // Not 0. A goal created a second ago has no progress report, and 0 would be
+    // a report saying no progress has been made.
+    expect(created.body.progress_percent).toBeUndefined();
+  });
+
+  test('the form offers exactly the categories the API accepts', () => {
+    expect([...SMART_GOAL_CATEGORIES]).toEqual([...GOAL_CATEGORIES]);
+  });
+
+  test.each(['Weight Loss', 'Weight Gain'])('%s is not offered, and the form says where it goes instead', async (category) => {
+    await openGoals();
+    fireEvent.click(screen.getByRole('button', { name: '+ New SMART Goal' }));
+
+    const options = Array.from(
+      (screen.getByLabelText('Goal category') as HTMLSelectElement).options,
+    ).map((option) => option.value);
+    expect(options).not.toContain(category);
+    expect(screen.getByText(/plan you build with your coach/)).toBeTruthy();
+  });
+});
+
+describe('reporting progress writes it', () => {
+  test('choosing a percentage posts the whole goal with the new value', async () => {
+    storedGoals = [storedGoal({ category: 'Recovery' })];
+    await openGoals();
+
+    fireEvent.change(await screen.findByLabelText('Report progress for Land 100 clean jabs'), {
+      target: { value: '60' },
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const [update] = postedTo('/api/pilot/goals/update');
+    expect(update.body.progress_percent).toBe(60);
+    // The route writes the record it is handed, so everything else has to make
+    // the round trip untouched or the report silently clears it.
+    expect(update.body).toMatchObject({
+      goal_id: 'goal_1',
+      title: 'Land 100 clean jabs',
+      metric: '100 reps logged',
+      category: 'Recovery',
+      status: 'active',
+      created_at: '2026-08-01T17:05:00.000Z',
+    });
+  });
+
+  test('clearing the report sends null rather than 0', async () => {
+    storedGoals = [storedGoal({ progress_percent: 60 })];
+    await openGoals();
+
+    fireEvent.change(await screen.findByLabelText('Report progress for Land 100 clean jabs'), {
+      target: { value: '' },
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(postedTo('/api/pilot/goals/update')[0].body.progress_percent).toBeNull();
+  });
+
+  test('a failed write puts the previous value back rather than leaving the new one on screen', async () => {
+    goalUpdateFails = true;
+    storedGoals = [storedGoal({ progress_percent: 20 })];
+    await openGoals();
+
+    fireEvent.change(await screen.findByLabelText('Report progress for Land 100 clean jabs'), {
+      target: { value: '90' },
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('goal-progress-value-goal_1').textContent).toContain('20%');
+    });
+    expect(screen.getByTestId('goal-progress-value-goal_1').textContent).not.toContain('90%');
   });
 });
