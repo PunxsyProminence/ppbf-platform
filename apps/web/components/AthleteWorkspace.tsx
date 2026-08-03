@@ -9,6 +9,7 @@ import { AthleteSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummar
 import ShadowChatButton from './ShadowChatButton';
 import TrainingCard, { type TrainingSession } from './TrainingCard';
 import { cx } from './uiStyles';
+import useGymSound from './useGymSound';
 import { apiBase } from '@/lib/apiBase';
 
 type TabID = 'my-dashboard' | 'athlete-floor' | 'smart-goals' | 'tracks' | 'assessments' | 'bio-checkin' | 'drill-library' | 'rabbit-holes' | 'message-coach' | 'schedule-session' | 'shadow';
@@ -539,6 +540,13 @@ export default function AthleteWorkspace() {
   const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [lastWorkoutBuildNote, setLastWorkoutBuildNote] = useState<string | null>(null);
+
+  /* The gym's own noises, off unless this browser opted in. play() is safe to
+     call unconditionally: it returns false and does nothing when sound is off,
+     which is the default and is what a loud floor kiosk stays on. Every call
+     below sits beside a visible change that already carries the whole message,
+     so the volume being down costs nothing. */
+  const { play } = useGymSound();
 
   const currentReadiness: ReadinessLevel = getReadinessLevel(readinessToTrain);
   const checkInTime = activeSessionRecord ? new Date(activeSessionRecord.createdAt).toLocaleString() : null;
@@ -1077,6 +1085,13 @@ export default function AthleteWorkspace() {
         });
         setNotesSaveState(checkInNotes.trim() ? 'saved' : 'idle');
         setBackendSyncMessage("You are checked in. Today's work is on your floor.");
+        // Accepted — two notes rising a fifth. It confirms the line above and
+        // the floor that just filled with today's work; it never carries
+        // anything they do not.
+        play('accept');
+        // The card gains an open box for the session just started. Without
+        // this it still showed yesterday's card until the next page load.
+        void loadTrainingCard();
       } else {
         const payload = (await sessionResponse.json().catch(() => ({ error: 'That check-in did not take.' }))) as { error?: string };
         setBackendSyncMessage(`${payload.error || 'That check-in did not take.'} `
@@ -1147,6 +1162,11 @@ export default function AthleteWorkspace() {
       // Re-read rather than trust the write: the recent list below and the
       // "are you still checked in" question are both answered from the server.
       await loadStoredSessions();
+      // And the card, which is where a completed session actually lands. This
+      // was missing, so the count only moved on the next page load — which is
+      // also why crossing a milestone could never produce a moment: the card
+      // was never looking when it happened.
+      await loadTrainingCard();
     } catch (error) {
       // Nothing is cleared on a failure. The session is still open and the
       // notes are still in the box, so the athlete can try again instead of
@@ -1340,8 +1360,13 @@ export default function AthleteWorkspace() {
 
         {/* The training card. One stamp per session row from the ledger -- a
             record the athlete accumulates, so there is something to come back
-            to. Cumulative, never a streak: see TrainingCard.tsx. */}
-        <TrainingCard sessions={trainingSessions} />
+            to. Cumulative, never a streak: see TrainingCard.tsx.
+
+            The athlete id scopes the ceremony's record of which seals have
+            already been pressed. This is a shared gym tablet: without it, the
+            first athlete to open their card on one would silence the next
+            athlete's first milestone. */}
+        <TrainingCard sessions={trainingSessions} athleteId={backendAthleteId ?? undefined} />
 
         <details className={PANEL}>
           <summary className="t-label cursor-pointer">What&apos;s Coming</summary>

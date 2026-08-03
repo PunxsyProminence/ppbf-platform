@@ -1,6 +1,9 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
+
+import { useMilestoneCeremony } from './milestoneCeremony';
+import useGymSound from './useGymSound';
 
 /**
  * THE TRAINING CARD — the punch card an athlete accumulates.
@@ -29,6 +32,18 @@ import { useMemo } from 'react';
  *
  * LAW 3 HOLDS. Every stamp carries its date and RPE as text in the
  * accessibility tree, so the card is not a wall of colour to a screen reader.
+ *
+ * THE MILESTONE CEREMONY. Crossing a milestone used to produce nothing: the
+ * seal earned at 13 sessions was already in the DOM at 12, one opacity step
+ * away, so the card counted but never marked. It now presses: the seal is
+ * driven down onto the card under --e-stamp, whose whole physics is arriving
+ * and stopping dead, a line of type says in words what was earned, and the
+ * bell rings for anyone who has turned sound on. A stamp coming down on paper
+ * and nothing else — no confetti, no bounce. This is a boxing gym.
+ *
+ * The ceremony fires on the CROSSING, once, never on the state. That detection
+ * and its "first sighting seeds rather than celebrates" rule live in
+ * milestoneCeremony.ts, apart from the rendering and tested on their own.
  */
 
 /** The subset of PilotSession this card needs (src/server/pilot/contracts.ts). */
@@ -53,12 +68,20 @@ export interface TrainingCardProps {
   athleteName?: string;
   /** Cap the impressions drawn. The count always reflects every session. */
   maxStamps?: number;
+  /**
+   * Scopes the record of which seals have already been pressed. A gym tablet is
+   * shared, and without it the first card opened on one would silence the next
+   * athlete's first milestone. Optional so the card still renders before the
+   * identity resolves — it just files the record under an unknown athlete.
+   */
+  athleteId?: string;
 }
 
 export default function TrainingCard({
   sessions,
   athleteName,
   maxStamps = 60,
+  athleteId,
 }: TrainingCardProps) {
   const { completed, ordered, shown, truncated } = useMemo(() => {
     const completedCount = sessions.filter((s) => s.completed_flag).length;
@@ -74,6 +97,26 @@ export default function TrainingCard({
   }, [sessions, maxStamps]);
 
   const nextMilestone = MILESTONES.find((m) => m > completed) ?? null;
+
+  /* The bell. play() is safe to call unconditionally — it returns false and
+     does nothing when sound is off, which is the default and stays the default
+     on every floor kiosk. Rule 2 of the sound system is what makes that
+     acceptable: the press and the line of type below carry the whole message
+     with the volume down. */
+  const { play } = useGymSound();
+  const ring = useCallback(() => { play('bell'); }, [play]);
+
+  /* Hooks run before the empty-card return below, so the order is stable.
+     `active` is the ledger having been read at all: an empty card is "nobody
+     has said yet", and seeding a record from it would make the first real read
+     look like several milestones crossing at once. */
+  const pressed = useMilestoneCeremony({
+    count: completed,
+    milestones: MILESTONES,
+    athleteId,
+    active: ordered.length > 0,
+    onCross: ring,
+  });
 
   if (ordered.length === 0) {
     return (
@@ -137,13 +180,29 @@ export default function TrainingCard({
         })}
       </div>
 
+      {/* The ceremony, in words. This is the channel that carries the whole
+          message on its own: it is here for the athlete whose volume is down,
+          whose browser blocked audio, who asked for reduced motion, or who is
+          reading the card with a screen reader — role="status" announces it.
+          The bell and the press are confirmation of this line, never a
+          substitute for it. */}
+      {pressed !== null && (
+        <p className="tcard-earned" role="status">
+          <b>{pressed} sessions</b>
+          <span>Sealed. It never comes off the card.</span>
+        </p>
+      )}
+
       <div className="tcard-seals">
         {MILESTONES.map((m) => {
           const earned = completed >= m;
           return (
             <div
               key={m}
-              className={`tcard-seal-slot${earned ? '' : ' tcard-seal-slot--unearned'}`}
+              className={
+                `tcard-seal-slot${earned ? '' : ' tcard-seal-slot--unearned'}`
+                + (pressed === m ? ' tcard-seal-slot--pressed' : '')
+              }
             >
               <Seal count={m} earned={earned} />
               <span className="tcard-seal-lbl">

@@ -1130,3 +1130,460 @@ h6 {
     translate: none;
   }
 }
+
+/* ============================================================== THE WALL ===
+   Scoped entirely to [data-surface="wall"], the marker app/wall/layout.tsx
+   puts on its subtree. Nothing here can reach another page: no other element
+   in the app carries that attribute, and every rule below is either descended
+   from it or a class name (.marquee, .wall-*) with no other consumer. That is
+   the whole reason this is a surface block and not a set of loose utilities --
+   the wall's type is three rungs above anything a desk uses, and a stray
+   selector would be very loud somewhere else.
+
+   ON .marquee. The Phase 2 roadmap records that `.marquee` "already exists in
+   the design system with zero consumers -- it was anticipated and never
+   built". Half of that is right: it was anticipated. It was never written.
+   design-system/ppbf.css carries no .marquee rule of any kind (grep it), so
+   the class was a prose promise, and this is where the promise is kept. It
+   lives here rather than in ppbf.css because it is presently one screen's
+   component; promoting it into the design system is a reasonable later move
+   once a second surface wants a travelling sign.
+
+   READ AT DISTANCE. Every size below comes off the φ ladder, which globals.css
+   continues past --text-6xl with a √φ generator. --text-6xl (80.9px) is the
+   BODY size on this screen. Nothing on the wall is smaller than --t-lg, and
+   the two things that are that small -- the eyebrow and the freshness stamp --
+   are the two things nobody needs to read from across the room.
+
+   BURN-IN. A television showing one layout for twelve hours will retain it.
+   Three defences, in order of how much they matter:
+     1. .wall-board drifts. A twenty-minute cycle moving the entire board a few
+        pixels in a slow ellipse means no edge sits on the same pixel column
+        for more than a moment. It is far below the threshold at which a person
+        notices anything moved.
+     2. The marquee travels continuously, which covers the brightest band.
+     3. No large flat field of maximum luminance anywhere: the ground is the
+        brick room, the type is bone rather than white, and the panels have no
+        filled backgrounds at all.
+   All of it stands down under prefers-reduced-motion, which also covers the
+   accessibility case where the drift itself would be the problem. */
+
+.wall-room {
+  /* .room ships padding and min-height:100%; a television is full bleed. */
+  padding: 0;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+[data-surface="wall"] {
+  /* Landscape, and only landscape. This is a 16:9 panel bolted to a wall. */
+  --wall-ink: var(--bone-100);
+  --wall-ink-quiet: var(--bone-300);
+  --wall-rule: rgba(212, 175, 74, .30);
+}
+
+[data-surface="wall"] .wall-board {
+  color: var(--wall-ink);
+  animation: wall-drift 1200s linear infinite;
+}
+
+@keyframes wall-drift {
+  0%   { transform: translate3d(0, 0, 0); }
+  25%  { transform: translate3d(9px, 5px, 0); }
+  50%  { transform: translate3d(4px, 10px, 0); }
+  75%  { transform: translate3d(-7px, 4px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+
+/* --- Masthead ------------------------------------------------------------ */
+
+[data-surface="wall"] .wall-eyebrow {
+  margin: 0;
+  font-family: var(--font-mono, var(--font-data));
+  font-size: var(--t-lg);
+  letter-spacing: .34em;
+  text-transform: uppercase;
+  color: var(--brass-300);
+}
+
+[data-surface="wall"] .wall-day {
+  margin: var(--s2) 0 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: .02em;
+  color: var(--wall-ink);
+}
+
+[data-surface="wall"] .wall-date {
+  margin: var(--s2) 0 0;
+  font-family: var(--font-ui);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--bone-300);
+}
+
+[data-surface="wall"] .wall-clock {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  line-height: .9;
+  /* Tabular figures: without them the whole clock jumps sideways once a
+     minute as a 1 replaces a 0, which on a 130px glyph is a visible twitch
+     from across the room. */
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  color: var(--brass-200);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, .55);
+}
+
+/* --- Panels -------------------------------------------------------------- */
+
+[data-surface="wall"] .wall-heading {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s4);
+  margin: 0 0 var(--s4);
+  padding-bottom: var(--s3);
+  border-bottom: 3px solid var(--wall-rule);
+  font-family: var(--font-mono, var(--font-data));
+  font-size: var(--t-xl);
+  font-weight: 600;
+  letter-spacing: .26em;
+  text-transform: uppercase;
+  color: var(--brass-300);
+}
+
+[data-surface="wall"] .wall-count {
+  margin-left: auto;
+  font-family: var(--font-display);
+  font-size: var(--t-2xl);
+  letter-spacing: 0;
+  color: var(--bone-200);
+  font-variant-numeric: tabular-nums;
+}
+
+[data-surface="wall"] .wall-quiet {
+  margin: var(--s5) 0 0;
+  font-family: var(--font-ui);
+  font-weight: 400;
+  line-height: 1.15;
+  color: var(--bone-400);
+}
+
+[data-surface="wall"] .wall-floor-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: var(--s3) var(--s6);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  /* No scrollbar, ever. The server caps the list; anything past the cap is
+     reported as a count by .wall-more, and this clips the remainder rather
+     than growing a bar nobody can reach. */
+  overflow: hidden;
+}
+
+[data-surface="wall"] .wall-name {
+  font-family: var(--font-display);
+  font-weight: 400;
+  line-height: 1.05;
+  letter-spacing: .01em;
+  color: var(--wall-ink);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, .5);
+}
+
+/* The floor list steps DOWN the φ ladder as the room fills, rather than
+   overflowing and clipping the last row silently. A busy youth class with full
+   names consented would otherwise run past the bottom of the panel, and
+   overflow:hidden would hide the fact rather than report it.
+
+   Three rungs, all still far above any desk size: --text-6xl (80.9px) is the
+   roomy case, then --t-4xl (63.6px), then --t-3xl (50px), which on a 55-inch
+   panel is roughly a 1.5-inch glyph and reads comfortably from across a gym.
+   The Tailwind size class on the element is the roomy rung; these override it,
+   which is why they name the surface as well as the class. */
+[data-surface="wall"] .wall-floor-list[data-density="dense"] .wall-name {
+  font-size: var(--t-4xl);
+}
+[data-surface="wall"] .wall-floor-list[data-density="packed"] .wall-name {
+  font-size: var(--t-3xl);
+}
+
+[data-surface="wall"] .wall-more {
+  align-self: flex-end;
+  font-family: var(--font-ui);
+  color: var(--bone-400);
+}
+
+[data-surface="wall"] .wall-session-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: hidden;
+}
+
+[data-surface="wall"] .wall-session {
+  display: grid;
+  grid-template-columns: min-content 1fr;
+  grid-template-areas: "time title" "time meta";
+  column-gap: var(--s4);
+  padding-left: var(--s4);
+  border-left: 6px solid var(--wall-rule);
+}
+
+[data-surface="wall"] .wall-session-time {
+  grid-area: time;
+  align-self: center;
+  font-family: var(--font-display);
+  line-height: 1;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--brass-200);
+}
+
+[data-surface="wall"] .wall-session-title {
+  grid-area: title;
+  font-family: var(--font-ui);
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--wall-ink);
+}
+
+[data-surface="wall"] .wall-session-meta {
+  grid-area: meta;
+  font-family: var(--font-mono, var(--font-data));
+  font-size: var(--t-lg);
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--bone-400);
+}
+
+/* A session running right now is the one fact on this panel worth marking, and
+   it is marked with brightness and a rule -- not with a saturated hue. Law 2
+   keeps saturated colour for safety state, and "class in progress" is not one.
+   The two states below both restate themselves in words (.wall-session-meta
+   prints "On now" / "Cancelled"), so neither is colour alone. */
+[data-surface="wall"] .wall-session--now {
+  border-left-color: var(--brass-300);
+}
+[data-surface="wall"] .wall-session--now .wall-session-meta {
+  color: var(--brass-300);
+}
+[data-surface="wall"] .wall-session--done {
+  opacity: .48;
+}
+[data-surface="wall"] .wall-session--cancelled .wall-session-title {
+  text-decoration: line-through;
+  text-decoration-thickness: 3px;
+}
+[data-surface="wall"] .wall-session--cancelled {
+  opacity: .55;
+}
+
+/* --- The marquee --------------------------------------------------------- */
+
+.marquee {
+  position: relative;
+  flex-shrink: 0;
+  overflow: hidden;
+  padding: var(--s4) 0;
+  border-top: 3px solid var(--wall-rule);
+  border-bottom: 3px solid var(--wall-rule);
+  background-image:
+    linear-gradient(180deg, rgba(0, 0, 0, .42), rgba(0, 0, 0, .16)),
+    radial-gradient(120% 180% at 50% -60%, rgba(212, 175, 74, .18), transparent 70%);
+}
+
+/* The bulbs on the sign board. Drawn, not imaged, like every other material in
+   this system: one radial gradient tiled along the edge is a row of lamps.
+   (repeating-radial-gradient would draw concentric rings, not a row -- it
+   repeats outward from a centre, which is not what a marquee's edge is.) */
+.marquee::before,
+.marquee::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 5px;
+  background-image: radial-gradient(circle, var(--brass-300) 0 2px, transparent 2.5px);
+  background-size: 21px 5px;
+  background-repeat: repeat-x;
+  opacity: .55;
+  pointer-events: none;
+}
+.marquee::before { top: 0; }
+.marquee::after  { bottom: 0; }
+
+.marquee-track {
+  display: flex;
+  width: max-content;
+  animation: marquee-travel var(--marquee-secs, 48s) linear infinite;
+}
+
+/* min-width is what makes a ONE-NAME marquee work. Without it a single
+   crossing produces a track narrower than the screen, and the -50% loop below
+   snaps it back before it has travelled anywhere. At a screen wide per run the
+   name enters from the right, crosses, and leaves -- which is what a marquee
+   does -- and the loop stays seamless because run two is still exactly run
+   one's width. */
+.marquee-run {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-around;
+  gap: var(--s7);
+  min-width: 100vw;
+  margin: 0;
+  padding: 0 calc(var(--s7) / 2);
+  list-style: none;
+}
+
+.marquee-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s4);
+  white-space: nowrap;
+}
+
+.marquee-mark { color: var(--brass-300); font-size: var(--t-2xl); }
+
+.marquee-name {
+  font-family: var(--font-display);
+  font-size: calc(var(--t-5xl) * var(--root-phi));
+  line-height: 1;
+  color: var(--bone-100);
+  text-shadow: 0 3px 0 rgba(0, 0, 0, .5);
+}
+
+.marquee-count {
+  font-family: var(--font-display);
+  font-size: calc(var(--t-5xl) * var(--root-phi));
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--brass-200);
+}
+
+.marquee-unit {
+  font-family: var(--font-mono, var(--font-data));
+  font-size: var(--t-xl);
+  letter-spacing: .24em;
+  text-transform: uppercase;
+  color: var(--bone-400);
+}
+
+/* Two identical runs sit side by side, so translating exactly half the track
+   lands the second run where the first started: a seam-free loop with no
+   JavaScript and no measurement. */
+@keyframes marquee-travel {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(-50%, 0, 0); }
+}
+
+.marquee--idle {
+  display: flex;
+  justify-content: center;
+}
+
+.marquee-idle-line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s5);
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--t-3xl);
+  letter-spacing: .12em;
+  color: var(--bone-400);
+}
+
+.marquee-idle-label {
+  font-family: var(--font-mono, var(--font-data));
+  font-size: var(--t-lg);
+  letter-spacing: .3em;
+  text-transform: uppercase;
+  color: var(--brass-300);
+}
+
+/* --- Standing screen ----------------------------------------------------- */
+
+[data-surface="wall"] .wall-standing-crest,
+.wall-board .wall-standing-crest {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: calc(var(--t-5xl) * var(--root-phi) * var(--root-phi));
+  line-height: 1;
+  letter-spacing: .08em;
+  color: var(--brass-400);
+  opacity: .8;
+}
+
+[data-surface="wall"] .wall-standing-line,
+.wall-board .wall-standing-line {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-weight: 400;
+  color: var(--bone-300);
+}
+
+/* --- Foot rule ----------------------------------------------------------- */
+
+[data-surface="wall"] .wall-notice {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s4);
+  margin: 0;
+  font-family: var(--font-hand);
+  line-height: 1.1;
+  color: var(--bone-100);
+  /* One line. A staff member who writes a paragraph gets a legible sentence
+     rather than a wall of chalk, and the layout cannot be pushed off screen by
+     a long post. */
+  overflow: hidden;
+}
+
+[data-surface="wall"] .wall-notice-msg {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-surface="wall"] .wall-notice-by {
+  flex-shrink: 0;
+  font-family: var(--font-ui);
+  font-size: var(--t-xl);
+  color: var(--bone-400);
+}
+
+/* The bone ramp ends at --bone-400 (there is no --bone-500), so "quieter than
+   tertiary" is opacity on the last rung rather than an invented token. */
+[data-surface="wall"] .wall-notice--empty {
+  color: var(--bone-400);
+  opacity: .72;
+}
+
+[data-surface="wall"] .wall-stamp {
+  flex-shrink: 0;
+  margin: 0;
+  font-family: var(--font-mono, var(--font-data));
+  font-size: var(--t-lg);
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: var(--bone-400);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Motion stands down -------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  [data-surface="wall"] .wall-board { animation: none; }
+  /* The marquee stops and becomes a list. It cannot simply freeze mid-travel:
+     a paused track leaves half a name off the edge of the screen, so the
+     transform is cleared and the run wraps instead. */
+  .marquee-track { animation: none; width: 100%; flex-wrap: wrap; justify-content: center; }
+  .marquee-track .marquee-run:last-child { display: none; }
+  .marquee-run { flex-wrap: wrap; justify-content: center; }
+}

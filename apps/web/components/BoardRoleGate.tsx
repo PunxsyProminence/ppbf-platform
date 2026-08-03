@@ -10,6 +10,7 @@ import {
   type AuthoritativePilotSessionPayload,
 } from './roleSession';
 import { readBoardSeatsFromSession, type BoardSeatSlug } from '@/app/board/boardWorkspaceConfig';
+import useGymSound from './useGymSound';
 import { apiBase } from '@/lib/apiBase';
 
 export interface BoardSession {
@@ -113,6 +114,21 @@ export default function BoardRoleGate({
 
     return () => controller.abort();
   }, [retryNonce, router]);
+
+  /* Law 7: a refusal is static ink that sits until somebody acts on it, and
+     the stamp below is the whole message on its own. This is the same impact
+     in the audio channel — a rubber stamp driven into paper, the physics of
+     --e-stamp — fired by the stamp appearing rather than by the fetch failing,
+     so the sound and the ink are the same event. Silent unless this browser
+     opted in, which a board member at a desk plausibly has and a floor kiosk
+     has not. */
+  const { play } = useGymSound();
+  const refused = gate.status === 'retryable';
+  useEffect(() => {
+    if (refused) {
+      play('stamp');
+    }
+  }, [refused, play]);
 
   if (gate.status !== 'authorized') {
     return (

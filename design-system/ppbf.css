@@ -2302,6 +2302,72 @@ body.ppbf.on-canvas {
    exists to prevent. A milestone you have not reached is unearned, not locked. */
 .tcard-seal-slot--unearned { opacity: .3; filter: grayscale(1); }
 
+/* --- THE MILESTONE CEREMONY ----------------------------------------------
+   Crossing a milestone used to produce nothing. The seal an athlete earns at
+   13 sessions was already sitting in the DOM at 12, one opacity step away, so
+   the card counted but never marked. This is the moment that was missing.
+
+   A STAMP COMING DOWN ON PAPER, and nothing else. --e-stamp is named for the
+   physics — driven by a hand, stopped dead against the paper, no overshoot —
+   so the seal arrives from above (large, unlanded, out of focus), lands, and
+   holds. No bounce, no spin, no confetti: this is a boxing gym, and a card an
+   athlete earns over months does not deserve a slot-machine.
+
+   IT ANIMATES BACK TO THE RESTING STATE, never to a held one. There is no
+   animation-fill-mode here on purpose: this sheet cancels every animation
+   under prefers-reduced-motion (see the global rule above), and a ceremony
+   built on `forwards` would leave the seal frozen mid-press for exactly the
+   people who asked for less movement. Written this way, cancelling the
+   animation leaves the seal simply where it belongs, instantly — and the
+   .tcard-earned line below still says what was earned, in words. */
+.tcard-seal-slot--pressed > svg {
+  transform-origin: 50% 50%;
+  animation: tcard-press var(--m-settle) var(--e-stamp);
+}
+@keyframes tcard-press {
+  from { scale: 1.75; opacity: 0; filter: blur(1.5px); }
+  to   { scale: 1;    opacity: 1; filter: none; }
+}
+
+/* The ink spreading where it landed: the slot's ground darkens on impact and
+   settles back. Shorter than the press, so it reads as the paper taking the
+   ink rather than as a second animation. */
+.tcard-seal-slot--pressed { animation: tcard-bite var(--m-travel) var(--e-settle); }
+@keyframes tcard-bite {
+  from { background-color: color-mix(in srgb, var(--hide-900) 22%, transparent); }
+  to   { background-color: transparent; }
+}
+
+/* What was earned, in words — the channel that carries the whole message on
+   its own. Law 3 does not stop applying because the other two channels are a
+   bell and a movement: with the volume down, with reduced motion, or through a
+   screen reader, this line still says it. */
+.tcard-earned {
+  /* No top margin: the impression grid above already ends on var(--s5), and
+     the seals row below opens with its own dashed rule. */
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s2) var(--s4);
+  margin: 0 0 var(--s5); padding: var(--s3) var(--s4);
+  border: 1px solid color-mix(in srgb, var(--hide-900) 28%, transparent);
+  border-left: 4px solid color-mix(in srgb, var(--hide-900) 72%, transparent);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background-color: color-mix(in srgb, var(--hide-900) 6%, transparent);
+  background-image: var(--grain-fine);
+  background-blend-mode: overlay;
+}
+.tcard-earned > b {
+  font-family: var(--font-display); text-transform: uppercase;
+  font-size: var(--t-md); letter-spacing: .05em; line-height: 1;
+  color: var(--hide-900);
+}
+.tcard-earned > span {
+  font: 650 9.5px/1.5 var(--font-data); letter-spacing: .14em;
+  text-transform: uppercase; color: var(--hide-600);
+}
+/* Any `display` declaration outranks the UA's [hidden] rule, so a caller that
+   toggles this line with the attribute rather than by unmounting it would find
+   it permanently visible. Cheap to close, invisible to get wrong. */
+.tcard-earned[hidden] { display: none; }
+
 .tcard-legend { display: flex; gap: var(--s5); flex-wrap: wrap; margin-top: var(--s4);
                 font: 400 10.5px/1.5 var(--font-ui); color: #6B5B44; }
 .tcard-legend i { font-style: normal; display: inline-block; width: 11px; height: 11px;
