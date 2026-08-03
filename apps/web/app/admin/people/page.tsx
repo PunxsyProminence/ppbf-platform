@@ -6,9 +6,6 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
-// A plain constant with no server dependencies, so a client component can
-// import it and the admin copy can never drift from what the server sets.
-import { DEFAULT_FIRST_LOGIN_PIN } from '@/src/server/pilot/pinPolicy';
 import { GYM_STATUS_CHOICES, GYM_STATUS_OPTIONS, type GymStatus } from '@/src/shared/athleteConstants';
 
 interface Member {
@@ -236,7 +233,10 @@ function PeopleConsoleContent() {
   // The just-created account, so the confirmation panel can tell the admin
   // exactly what to say to the athlete. Nothing secret lives here -- the
   // starting PIN is the same for everyone and is safe to re-display.
-  const [createdAthlete, setCreatedAthlete] = useState<{ accountId: string } | null>(null);
+  // startingPin is readable exactly once, in the response that created the
+  // account -- it is hashed server-side and cannot be fetched back. Held in
+  // component state only, never persisted, and cleared with the panel.
+  const [createdAthlete, setCreatedAthlete] = useState<{ accountId: string; startingPin: string } | null>(null);
 
   const load = useCallback(async () => {
     setError('');
@@ -576,7 +576,11 @@ function PeopleConsoleContent() {
         body: JSON.stringify({ account_id: accountId, athlete_id: recordId }),
       });
 
-      const createPayload = (await createResponse.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      const createPayload = (await createResponse.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        starting_pin?: string;
+      };
       if (!createResponse.ok || !createPayload.ok) {
         // The original bug's error message, reached now only when linking to a
         // record that is supposed to already exist. Say which id was missing
@@ -595,10 +599,20 @@ function PeopleConsoleContent() {
       const createdAccountId = accountId;
       resetAthleteForm();
 
-      // No code to mint and nothing further to go wrong: the account is live
-      // on the shared starting PIN, and the athlete is forced to replace it
-      // the first time they sign in.
-      setCreatedAthlete({ accountId: createdAccountId });
+      // The account is live on a starting PIN issued for this athlete, and they
+      // are forced to replace it the first time they sign in.
+      //
+      // This response is the only place that PIN is readable. If the server did
+      // not return one, say so rather than showing a blank or a stale shared
+      // value -- an admin who reads out the wrong PIN gets a locked-out child and
+      // no explanation. A reset issues a fresh one.
+      if (!createPayload.starting_pin) {
+        throw new Error(
+          `Account "${createdAccountId}" was created, but its starting PIN did not come back, so there is nothing to hand the athlete. Use “Reset to starting PIN” on their row to issue a new one.`,
+        );
+      }
+
+      setCreatedAthlete({ accountId: createdAccountId, startingPin: createPayload.starting_pin });
 
       await load();
       setTab('people');
@@ -628,10 +642,19 @@ function PeopleConsoleContent() {
   }
 
   /**
-   * Put an existing athlete back on the starting PIN. This is the recovery
-   * path for "I forgot my PIN" -- it replaces issuing a fresh activation
-   * code, and lands the account in exactly the state a new one starts in, so
-   * the athlete is forced to choose a new PIN on their next sign-in.
+   * Issue a fresh starting PIN to an existing athlete. This is the recovery
+   * path for "I forgot my PIN" -- it lands the account in exactly the state a
+   * new one starts in, so the athlete is forced to choose a new PIN on their
+   * next sign-in.
+   *
+   * The body deliberately carries no `pin`: the server issues one and returns
+   * it. This used to send the shared 123456 from the client, and there is no
+   * shared value to send any more.
+   *
+   * The result goes to the same panel a new account uses rather than to a
+   * transient notice. The issued PIN cannot be read back, so the one surface
+   * showing it must be the one with a "written it down" acknowledgement, not a
+   * line of text that the next action clears.
    */
   async function handleResetToStartingPin(accountId: string) {
     setBusy(true);
@@ -642,15 +665,22 @@ function PeopleConsoleContent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ account_id: accountId, mode: 'reset', pin: DEFAULT_FIRST_LOGIN_PIN }),
+        body: JSON.stringify({ account_id: accountId, mode: 'reset' }),
       });
-      const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      const payload = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        starting_pin?: string;
+      };
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error || 'Could not reset that PIN');
       }
-      setNotice(
-        `${accountId} is back on the starting PIN ${DEFAULT_FIRST_LOGIN_PIN}. They will have to choose a new one when they sign in.`,
-      );
+      if (!payload.starting_pin) {
+        throw new Error(
+          `${accountId}'s PIN was reset, but the new PIN did not come back, so there is nothing to hand the athlete. Reset it again to issue another.`,
+        );
+      }
+      setCreatedAthlete({ accountId, startingPin: payload.starting_pin });
       await load();
     } catch (resetError) {
       setError(resetError instanceof Error ? resetError.message : 'Could not reset that PIN');
@@ -697,18 +727,19 @@ function PeopleConsoleContent() {
           </div>
         </header>
 
-        {/* What to tell the athlete. Unlike the activation code this replaced,
-            nothing here is secret or one-shot -- the starting PIN is the same
-            for everyone and can be re-read at any time, so this panel is a
-            convenience rather than a last chance. */}
+        {/* What to tell the athlete. This IS a last chance: the starting PIN is
+            generated per athlete and hashed on the way into the database, so once
+            this panel is dismissed nothing can read it back. Losing it is
+            recoverable only by issuing a new one from the row's reset action. */}
         {createdAthlete && (
           <section className="rounded-2xl border-2 border-[color:var(--brass-600)] bg-white p-5 shadow-[var(--shadow-md)]">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-black">{createdAthlete.accountId} can sign in now</h2>
                 <p className="mt-1 text-sm text-[var(--gray-dark)]">
-                  Tell them these two things. They will have to choose their own PIN the first time they sign in, and
-                  you will never see what they pick.
+                  Write these down or hand them over now — the PIN is shown only here, and cannot be looked up again.
+                  They will have to choose their own PIN the first time they sign in, and you will never see what they
+                  pick.
                 </p>
               </div>
               <button
@@ -716,7 +747,7 @@ function PeopleConsoleContent() {
                 onClick={() => setCreatedAthlete(null)}
                 className="min-h-[44px] rounded-full border border-[rgba(0,0,0,0.14)] px-4 text-xs font-bold uppercase tracking-[0.1em]"
               >
-                Done
+                Done — I have written it down
               </button>
             </div>
 
@@ -727,13 +758,13 @@ function PeopleConsoleContent() {
               </div>
               <div className="rounded-xl border border-[rgba(0,0,0,0.12)] bg-[var(--canvas-tan-light)] px-4 py-3">
                 <dt className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--gray-dark)]">Starting PIN</dt>
-                <dd className="mt-1 font-mono text-xl font-black tracking-[0.2em]">{DEFAULT_FIRST_LOGIN_PIN}</dd>
+                <dd className="mt-1 font-mono text-xl font-black tracking-[0.2em]">{createdAthlete.startingPin}</dd>
               </div>
             </dl>
 
             <p className="mt-3 text-xs leading-5 text-[var(--gray-dark)]">
-              The starting PIN is the same for every new athlete, so it is not a secret. It cannot be used to see
-              anything — the only screen it opens is the one that asks them to replace it.
+              This PIN belongs to this athlete alone. It cannot be used to see anything — the only screen it opens is
+              the one that asks them to replace it — but treat it as theirs and do not post it where others can read it.
             </p>
           </section>
         )}
@@ -811,15 +842,15 @@ function PeopleConsoleContent() {
                   {pendingAthletes.length} athlete{pendingAthletes.length === 1 ? '' : 's'} cannot sign in yet
                 </p>
                 <p className="mt-1 text-sm text-[var(--gray-dark)]">
-                  Give them their sign-in ID and the starting PIN {DEFAULT_FIRST_LOGIN_PIN}. If they have forgotten
-                  where they are, “Reset to starting PIN” on their row puts them back to it.
+                  Each of them has their own starting PIN, shown once when their account was created. If that PIN was
+                  not written down, “Reset to starting PIN” on their row issues a new one and shows it.
                 </p>
                 {/* Two screens can put an athlete back on a working PIN, and
                     the difference matters: only this one forces the athlete to
                     replace it at next sign-in. */}
                 <p className="mt-2 text-xs text-[var(--gray-dark)]">
-                  Resetting here always uses the shared starting PIN and forces a change at next sign-in. To set a
-                  custom 6-digit PIN instead, use the{' '}
+                  Resetting here issues a fresh random PIN and forces a change at next sign-in. To set a custom 6-digit
+                  PIN instead, use the{' '}
                   <Link href="/admin/pin" className="font-semibold underline">
                     PIN console
                   </Link>

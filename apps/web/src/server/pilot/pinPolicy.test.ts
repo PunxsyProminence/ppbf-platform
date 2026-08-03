@@ -1,6 +1,6 @@
 import {
-  DEFAULT_FIRST_LOGIN_PIN,
   DEFAULT_PIN_LENGTH,
+  LEGACY_SHARED_FIRST_LOGIN_PIN,
   assertChosenPinAllowed,
   validatePinPolicy,
 } from './pinPolicy';
@@ -52,26 +52,24 @@ describe('PIN policy', () => {
     });
   });
 
-  // The distinction this file already draws, now load-bearing for the weak-PIN
-  // rule: the platform ISSUES the bootstrap PIN (admin reset), and a person
-  // CHOOSES their own. validatePinPolicy sits on the issuing path.
-  describe('the issued bootstrap PIN', () => {
-    test('validatePinPolicy accepts it, so the admin reset flow keeps working', () => {
-      // It is a sequential run, so without the explicit carve-out the new
-      // weak-PIN rule would have broken every PIN reset.
-      expect(() => validatePinPolicy(DEFAULT_FIRST_LOGIN_PIN)).not.toThrow();
+  // Starting PINs are generated per athlete now, and the generator screens its
+  // own output through validatePinPolicy. Nothing legitimate issues a weak PIN,
+  // so the carve-out that used to exempt the shared 123456 is gone.
+  describe('the retired shared starting PIN', () => {
+    test('validatePinPolicy now rejects it as the ascending run it always was', () => {
+      expect(() => validatePinPolicy(LEGACY_SHARED_FIRST_LOGIN_PIN)).toThrow('too easy to guess');
     });
 
-    test('assertChosenPinAllowed still refuses it when somebody picks it', () => {
-      expect(() => assertChosenPinAllowed(DEFAULT_FIRST_LOGIN_PIN))
-        .toThrow('starting PIN everyone is given');
+    test('assertChosenPinAllowed refuses it as well, with its own message', () => {
+      expect(() => assertChosenPinAllowed(LEGACY_SHARED_FIRST_LOGIN_PIN))
+        .toThrow('old shared starting PIN');
     });
 
     test('an athlete choosing their own PIN faces both checks', () => {
-      // The change-PIN path runs both. Neither alone is sufficient:
-      // assertChosenPinAllowed blocks only the default, validatePinPolicy
-      // blocks the rest of the guessable space.
-      expect(() => assertChosenPinAllowed('111111')).not.toThrow();
+      // The change-PIN path runs both, and neither alone is sufficient:
+      // assertChosenPinAllowed blocks re-choosing the issued PIN,
+      // validatePinPolicy blocks the rest of the guessable space.
+      expect(() => assertChosenPinAllowed('111111', '284917')).not.toThrow();
       expect(() => validatePinPolicy('111111')).toThrow('too easy to guess');
     });
   });

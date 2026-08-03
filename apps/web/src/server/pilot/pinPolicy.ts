@@ -1,49 +1,87 @@
+import { randomInt } from 'node:crypto';
+
 export const DEFAULT_PIN_LENGTH = 6;
 
 /**
- * The PIN every new athlete account starts on.
+ * @deprecated Nothing issues this any more. Kept only so the message below can
+ * name it, and so an operator searching for "123456" finds this explanation.
  *
- * This is a bootstrap credential, not a secret: it is public knowledge by
- * design, so an admin can say it out loud instead of shepherding a one-time
- * activation code. What stops it being a way in is accounts.must_change_pin --
- * while that flag is set requirePrincipal refuses every route except the PIN
- * change itself, so a session opened with this PIN can read nothing about the
- * athlete. It satisfies validatePinPolicy below, so no caller needs a special
- * case for it.
+ * This used to be the PIN every new athlete account started on: one shared,
+ * published value, relying on accounts.must_change_pin to make it harmless.
+ * The flag did its job -- a session on the starting PIN could read nothing --
+ * but it never closed the window between an admin creating the account and the
+ * athlete first signing in. During that window, `ath-001` + `123456` was a
+ * guess anyone could make, and provisioning forty accounts a week ahead of a
+ * pilot widened it forty-fold.
  *
- * It is still guessable for the window between the admin creating the account
- * and the athlete first signing in. Shortening that window is an operational
- * matter -- create the account when you are with the athlete, not in a batch
- * the week before.
- *
- * The invariant that makes all of the above true: this PIN is only ever written
- * alongside must_change_pin = true. Any path where a PIN is CHOSEN rather than
- * issued must refuse it -- see assertChosenPinAllowed.
+ * Starting PINs are now generated per athlete -- see generateStartingPin.
  */
-export const DEFAULT_FIRST_LOGIN_PIN = '123456';
+export const LEGACY_SHARED_FIRST_LOGIN_PIN = '123456';
+
+/**
+ * A starting PIN for one athlete account.
+ *
+ * Uses randomInt (CSPRNG) rather than Math.random: this is a credential, and
+ * Math.random is both predictable from prior outputs and seeded per process, so
+ * a batch of accounts provisioned in one run would be correlated.
+ *
+ * Rejects the same trivially-guessable shapes a person choosing a PIN is
+ * refused. Not because the generator is likely to produce one -- it is a few
+ * hundred values out of a million -- but because "the platform issued me 111111"
+ * is indistinguishable to an operator from a bug, and because those shapes are
+ * exactly what an attacker guesses first.
+ *
+ * Still paired with must_change_pin = true. That invariant has not changed and
+ * must not: this PIN is issued, never chosen, and the athlete replaces it on
+ * first sign-in.
+ */
+export function generateStartingPin(): string {
+  // Bounded rather than `while (true)`: the rejected set is a tiny fraction of
+  // the space, so exhausting this many draws means the generator is broken, and
+  // looping forever inside a request handler would turn that into a hang.
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    let pin = '';
+    for (let digit = 0; digit < DEFAULT_PIN_LENGTH; digit += 1) {
+      pin += String(randomInt(10));
+    }
+
+    if (!isTriviallyGuessablePin(pin)) {
+      return pin;
+    }
+  }
+
+  throw new Error('Could not generate a starting PIN');
+}
 
 /**
  * Refuses a PIN that someone is choosing for themselves, as opposed to one the
  * platform issues as a bootstrap credential.
  *
- * Deliberately NOT folded into validatePinPolicy: the admin PIN-reset flow
- * legitimately sets DEFAULT_FIRST_LOGIN_PIN, and validatePinPolicy is on that
- * path. The distinction is not the value, it is whether must_change_pin is being
- * set with it.
+ * Now that starting PINs are generated per athlete there is no single value to
+ * refuse, and the shape rules in validatePinPolicy already reject the old shared
+ * `123456` as an ascending run. What remains worth refusing explicitly is an
+ * athlete "changing" their PIN to the one they were just issued: that clears
+ * must_change_pin while leaving the account on a credential their admin has
+ * seen, written down, and possibly read aloud.
  *
- * Without this, an athlete could change their PIN back to the starting PIN,
- * which clears must_change_pin and leaves the account reachable by anyone who
- * knows the sign-in ID -- on a PIN that is published in this file and printed in
- * the admin UI. It is also the first PIN anyone would guess.
+ * Callers pass the CURRENT pin because only they have it -- changeOwnPin has
+ * already taken it from the athlete to authenticate the change, so comparing
+ * here costs nothing and needs no database read.
  *
  * The message has to lead with "PIN" like the ones in validatePinPolicy:
  * jsonError maps that prefix to a 400 carrying the text, and anything else to a
  * 500 "Internal server error", which would tell the athlete nothing about why
  * their chosen PIN was refused.
  */
-export function assertChosenPinAllowed(pin: string): void {
-  if (pin.trim() === DEFAULT_FIRST_LOGIN_PIN) {
-    throw new Error('PIN cannot be the starting PIN everyone is given. Choose a different one.');
+export function assertChosenPinAllowed(pin: string, currentPin?: string): void {
+  const normalized = pin.trim();
+
+  if (currentPin !== undefined && normalized === currentPin.trim()) {
+    throw new Error('PIN cannot be the one you were given to sign in with. Choose a different one.');
+  }
+
+  if (normalized === LEGACY_SHARED_FIRST_LOGIN_PIN) {
+    throw new Error('PIN cannot be the old shared starting PIN. Choose a different one.');
   }
 }
 
@@ -55,11 +93,12 @@ export function assertChosenPinAllowed(pin: string): void {
  * it is the few dozen patterns a person actually picks -- which is why this
  * matters more than the digit count.
  *
- * DEFAULT_FIRST_LOGIN_PIN is deliberately NOT rejected here. The admin
- * PIN-reset flow legitimately issues it, and validatePinPolicy sits on that
- * path; refusing it would break the reset. What stops it being a way in is
- * must_change_pin, plus assertChosenPinAllowed refusing it on the path where
- * somebody CHOOSES their own -- the same split this file already draws.
+ * The old shared `123456` used to be exempted here, because the admin reset flow
+ * issued it and validatePinPolicy sits on that path. Generated starting PINs are
+ * screened through these same rules before they are ever issued, so nothing
+ * legitimate needs the exemption any more -- and without it `123456` is caught as
+ * the ascending run it always was, on every path, including an admin trying to
+ * set it by hand from the PIN console.
  */
 function isTriviallyGuessablePin(pin: string): boolean {
   // All one digit: 000000, 111111, ...
@@ -101,8 +140,8 @@ export function validatePinPolicy(pin: string): void {
   }
 
   // Checked after the shape rules so the message a caller sees is the most
-  // specific one, and skipped for the issued bootstrap PIN as described above.
-  if (normalized !== DEFAULT_FIRST_LOGIN_PIN && isTriviallyGuessablePin(normalized)) {
+  // specific one. No value is exempt -- see the note on isTriviallyGuessablePin.
+  if (isTriviallyGuessablePin(normalized)) {
     throw new Error('That PIN is too easy to guess. Avoid repeated digits, runs, and simple patterns.');
   }
 }

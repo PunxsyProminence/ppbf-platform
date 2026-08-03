@@ -2,10 +2,11 @@ import { NextRequest } from 'next/server';
 
 import { POST } from './route';
 import { createAthleteAccount } from '@/src/server/pilot/auth';
+import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
 
 jest.mock('@/src/server/pilot/auth', () => ({
-  createAthleteAccount: jest.fn().mockResolvedValue(undefined),
+  createAthleteAccount: jest.fn().mockResolvedValue({ startingPin: '428913' }),
 }));
 
 jest.mock('@/src/server/pilot/http', () => ({
@@ -25,6 +26,7 @@ jest.mock('@/src/server/pilot/audit', () => ({
 
 const mockRequireMicrosoftAuthenticatedPrincipal = requireMicrosoftAuthenticatedPrincipal as jest.Mock;
 const mockCreateAthleteAccount = createAthleteAccount as jest.Mock;
+const mockWriteAudit = writePilotAuditEvent as jest.Mock;
 
 function makeRequest(body: Record<string, unknown>): NextRequest {
   return new NextRequest('http://localhost/api/pilot/admin/athlete-accounts', {
@@ -69,7 +71,28 @@ describe('POST /api/pilot/admin/athlete-accounts', () => {
       account_id: 'ath-account-1',
       athlete_id: 'ath-1',
       account_state: 'pending_pin_activation',
+      // The issued PIN is readable exactly once, here. Without it the admin has
+      // no way to tell the athlete what to type, and the account is unusable.
+      starting_pin: '428913',
     });
+  });
+
+  // The PIN is a live credential for a child's account until they replace it,
+  // and audit rows outlive the request and are mirrored into SHADOW.
+  test('never writes the starting PIN into the audit trail', async () => {
+    mockRequireMicrosoftAuthenticatedPrincipal.mockResolvedValueOnce({
+      accountId: 'admin@punxsyprominence.org',
+      role: 'organization_admin',
+      organizationId: 'org-1',
+      athleteId: null,
+      sessionToken: 'token',
+      authProvider: 'microsoft',
+    });
+
+    await POST(makeRequest({ account_id: 'ath-account-1', athlete_id: 'ath-1' }));
+
+    expect(mockWriteAudit).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(mockWriteAudit.mock.calls[0][0])).not.toContain('428913');
   });
 
   // Athlete credentials sit outside the platform-owner tier, the same boundary

@@ -30,7 +30,7 @@ describe('resetAccountPin', () => {
     currentClient.query.mockResolvedValueOnce({ rows: [{ account_id: 'acct-1' }] }); // update ... returning
     currentClient.query.mockResolvedValueOnce({ rows: [] }); // revoke sessions
 
-    await resetAccountPin('acct-1', '123456', 'org-1');
+    await resetAccountPin('acct-1', '428913', 'org-1');
 
     expect(currentClient.query).toHaveBeenCalledTimes(2);
     const [updateSql, updateParams] = currentClient.query.mock.calls[0];
@@ -53,7 +53,7 @@ describe('resetAccountPin', () => {
     currentClient.query.mockResolvedValueOnce({ rows: [{ account_id: 'acct-1' }] });
     currentClient.query.mockResolvedValueOnce({ rows: [] });
 
-    await resetAccountPin('acct-1', '123456', 'org-1');
+    await resetAccountPin('acct-1', '428913', 'org-1');
 
     const [updateSql] = currentClient.query.mock.calls[0];
     expect(updateSql).toContain('must_change_pin = true');
@@ -63,7 +63,7 @@ describe('resetAccountPin', () => {
     currentClient = fakeClient();
     currentClient.query.mockResolvedValueOnce({ rows: [] }); // update ... returning finds nothing
 
-    await expect(resetAccountPin('acct-1', '123456', 'org-other')).rejects.toThrow(
+    await expect(resetAccountPin('acct-1', '428913', 'org-other')).rejects.toThrow(
       'Not found: no such account, or it cannot be reset',
     );
 
@@ -76,7 +76,7 @@ describe('resetAccountPin', () => {
     currentClient = fakeClient();
     currentClient.query.mockResolvedValueOnce({ rows: [] });
 
-    await expect(resetAccountPin('coach-1', '123456', 'org-1')).rejects.toThrow(
+    await expect(resetAccountPin('coach-1', '428913', 'org-1')).rejects.toThrow(
       'Not found: no such account, or it cannot be reset',
     );
 
@@ -90,7 +90,7 @@ describe('resetAccountPin', () => {
     currentClient = fakeClient();
     currentClient.query.mockResolvedValueOnce({ rows: [] });
 
-    const refusal = await resetAccountPin('acct-1', '123456', 'org-other').catch((error) => error);
+    const refusal = await resetAccountPin('acct-1', '428913', 'org-other').catch((error) => error);
 
     const response = jsonError(refusal);
     expect(response.status).toBe(404);
@@ -104,7 +104,7 @@ describe('resetAccountPin', () => {
     currentClient.query.mockResolvedValueOnce({ rows: [{ account_id: 'acct-1' }] }); // update succeeds
     currentClient.query.mockRejectedValueOnce(new Error('connection lost')); // revoke fails
 
-    await expect(resetAccountPin('acct-1', '123456', 'org-1')).rejects.toThrow('connection lost');
+    await expect(resetAccountPin('acct-1', '428913', 'org-1')).rejects.toThrow('connection lost');
   });
 
   test('rejects policy-invalid PIN values before attempting any write', async () => {
@@ -122,7 +122,7 @@ describe('activateAccountPin', () => {
     currentClient.query.mockResolvedValueOnce({ rows: [] });
     currentClient.query.mockResolvedValueOnce({ rows: [] });
 
-    await activateAccountPin('ath-acct-1', '123456', 'org-1');
+    await activateAccountPin('ath-acct-1', '428913', 'org-1');
 
     expect(currentClient.query).toHaveBeenCalledTimes(3);
     const [updateSql, updateParams] = currentClient.query.mock.calls[0];
@@ -144,7 +144,7 @@ describe('activateAccountPin', () => {
     currentClient = fakeClient();
     currentClient.query.mockResolvedValueOnce({ rows: [] });
 
-    await expect(activateAccountPin('ath-acct-1', '123456', 'org-2')).rejects.toThrow(
+    await expect(activateAccountPin('ath-acct-1', '428913', 'org-2')).rejects.toThrow(
       'Not found: no such account, or it cannot be activated',
     );
     expect(currentClient.query).toHaveBeenCalledTimes(1);

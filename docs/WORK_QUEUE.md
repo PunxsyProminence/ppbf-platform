@@ -113,12 +113,17 @@ Ordered by a floor-readiness trace run 2026-08-01.
       and the notes written for the coach are gone.
 - [ ] **The coach review form cannot be completed.** Its first required field
       is a session ID minted in the *athlete's* browser and shown on no screen.
-- [ ] **Per-athlete starting PIN.** Every account is created on `123456` with a
-      guessable hand-typed sign-in ID. `must_change_pin` genuinely blocks reads
-      and brute-force protection is real, but neither stops someone guessing
-      `ath-001` + `123456` before the child's first sign-in. Creating 40
-      accounts a week early widens that window 40-fold. Interim mitigation:
-      create each account minutes before handing over the credentials.
+- [x] **Per-athlete starting PIN.** ✅ **Done 2026-08-03**, session B, branch
+      `claude/ppbf-platform-audit-w3va0j`. PINs are generated per athlete with a
+      CSPRNG, screened through the same weak-PIN rules a chosen PIN faces, and
+      shown to the admin exactly once. `must_change_pin` is unchanged.
+      **The operational change to brief coaches on:** the PIN is hashed and cannot
+      be looked up again, so it must be written down or handed over while the panel
+      is open. If it is lost, "Reset to starting PIN" issues a fresh one. The
+      interim mitigation below is no longer needed — but note the *sign-in ID* is
+      still guessable (`ath-001`); what changed is that it is now paired with a
+      random PIN instead of a published one.
+      `123456` is now refused on every path, including the PIN console.
 - [ ] **Bulk athlete + guardian import.** `npm run seed:data` cannot start —
       four independent failures (no ts-node, no csv-parse, no root tsconfig for
       its `@/` import, no config file) — and even repaired it writes no logins
@@ -187,10 +192,10 @@ needed, but **session A should confirm** before either branch merges, because
 `apps/web/components/AthleteWorkspace.tsx`,
 `apps/web/src/server/pilot/{staffProvisioning,access,drills,feedback,rabbitHoles}.ts`.
 
-Good unclaimed candidates: per-athlete starting PIN, the honesty sweep
-(fabricated donations, the example minors in `scripts/data/`, `/public`
-program copy), the two platform-owner routes returning minors' names, and
-`drillsPersistence.pg.test.ts` running nowhere.
+Good unclaimed candidates: the honesty sweep (fabricated donations, the example
+minors in `scripts/data/`, `/public` program copy), the two platform-owner routes
+returning minors' names, and `drillsPersistence.pg.test.ts` running nowhere.
+(Per-athlete starting PIN is done — see above.)
 
 ### Stale entries in this queue, verified 2026-08-03
 

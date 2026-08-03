@@ -2,7 +2,12 @@ import type { NextRequest } from 'next/server';
 
 import { jsonError, requirePrincipal, requirePrincipalAllowingPinChange } from './http';
 import { resolvePrincipal } from './auth';
-import { DEFAULT_FIRST_LOGIN_PIN, assertChosenPinAllowed, validatePinPolicy } from './pinPolicy';
+import {
+  LEGACY_SHARED_FIRST_LOGIN_PIN,
+  assertChosenPinAllowed,
+  generateStartingPin,
+  validatePinPolicy,
+} from './pinPolicy';
 import { resolveAuthoritativeRoleSession } from '../../../components/roleSession';
 
 jest.mock('./auth', () => ({
@@ -30,24 +35,63 @@ afterEach(() => {
 
 const request = {} as NextRequest;
 
-describe('the bootstrap PIN itself', () => {
-  test('satisfies the PIN policy, so nothing downstream needs a special case', () => {
-    expect(() => validatePinPolicy(DEFAULT_FIRST_LOGIN_PIN)).not.toThrow();
+// Starting PINs are generated per athlete. The generator is the credential
+// source for every child account, so its output has to satisfy the same policy
+// every other PIN does -- a generator that could emit 111111 would be handing
+// out the first PIN an attacker tries.
+describe('the generated starting PIN', () => {
+  test('always satisfies the PIN policy, so nothing downstream needs a special case', () => {
+    for (let i = 0; i < 500; i += 1) {
+      const pin = generateStartingPin();
+      expect(() => validatePinPolicy(pin)).not.toThrow();
+    }
+  });
+
+  test('is six digits', () => {
+    for (let i = 0; i < 100; i += 1) {
+      expect(generateStartingPin()).toMatch(/^\d{6}$/);
+    }
+  });
+
+  // The whole point of the change: two accounts provisioned in one batch must
+  // not share a PIN. This cannot prove randomness, but a generator returning a
+  // constant -- the bug that would silently recreate the old shared-PIN
+  // problem -- fails it immediately.
+  test('does not return the same PIN every time', () => {
+    const seen = new Set<string>();
+    for (let i = 0; i < 200; i += 1) {
+      seen.add(generateStartingPin());
+    }
+    expect(seen.size).toBeGreaterThan(100);
+  });
+
+  test('never emits the old shared PIN', () => {
+    for (let i = 0; i < 500; i += 1) {
+      expect(generateStartingPin()).not.toBe(LEGACY_SHARED_FIRST_LOGIN_PIN);
+    }
   });
 });
 
-// The starting PIN is published in pinPolicy.ts and printed in the admin UI, so
-// it is only safe while must_change_pin is set with it. validatePinPolicy has to
-// keep accepting it -- the admin "back to the starting PIN" reset sets exactly
-// this value -- so the refusal belongs on the paths where a PIN is CHOSEN.
-describe('the starting PIN can be issued but never chosen', () => {
-  test('validatePinPolicy still accepts it, so admin reset keeps working', () => {
-    expect(() => validatePinPolicy(DEFAULT_FIRST_LOGIN_PIN)).not.toThrow();
+// A PIN the platform ISSUED must not be re-choosable by the athlete: choosing it
+// clears must_change_pin while leaving the account on a credential an admin has
+// seen, written down, and possibly read aloud.
+describe('an issued PIN can never be chosen', () => {
+  test('choosing the PIN you were just issued is refused', () => {
+    expect(() => assertChosenPinAllowed('428913', '428913'))
+      .toThrow('PIN cannot be the one you were given to sign in with. Choose a different one.');
   });
 
-  test('choosing it is refused', () => {
-    expect(() => assertChosenPinAllowed(DEFAULT_FIRST_LOGIN_PIN))
-      .toThrow('PIN cannot be the starting PIN everyone is given. Choose a different one.');
+  test('the old shared PIN is refused outright, with no current PIN needed', () => {
+    expect(() => assertChosenPinAllowed(LEGACY_SHARED_FIRST_LOGIN_PIN))
+      .toThrow('PIN cannot be the old shared starting PIN. Choose a different one.');
+  });
+
+  // It is also now caught one layer earlier, as the ascending run it always
+  // was. The old code exempted it so the admin reset could issue it; nothing
+  // issues it any more, so the exemption is gone.
+  test('the old shared PIN no longer passes the policy either', () => {
+    expect(() => validatePinPolicy(LEGACY_SHARED_FIRST_LOGIN_PIN))
+      .toThrow('That PIN is too easy to guess. Avoid repeated digits, runs, and simple patterns.');
   });
 
   // The refusal is only useful if the athlete sees it. jsonError maps by
@@ -56,7 +100,7 @@ describe('the starting PIN can be issued but never chosen', () => {
   test('the refusal reaches the athlete as a 400 carrying the reason', async () => {
     let refusal: unknown;
     try {
-      assertChosenPinAllowed(DEFAULT_FIRST_LOGIN_PIN);
+      assertChosenPinAllowed('428913', '428913');
     } catch (error) {
       refusal = error;
     }
@@ -64,16 +108,17 @@ describe('the starting PIN can be issued but never chosen', () => {
     const response = jsonError(refusal);
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
-      error: 'PIN cannot be the starting PIN everyone is given. Choose a different one.',
+      error: 'PIN cannot be the one you were given to sign in with. Choose a different one.',
     });
   });
 
-  test('surrounding whitespace does not sneak it past', () => {
-    expect(() => assertChosenPinAllowed(`  ${DEFAULT_FIRST_LOGIN_PIN} `)).toThrow('starting PIN');
+  test('surrounding whitespace does not sneak either past', () => {
+    expect(() => assertChosenPinAllowed('  428913 ', '428913')).toThrow('you were given');
+    expect(() => assertChosenPinAllowed(`  ${LEGACY_SHARED_FIRST_LOGIN_PIN} `)).toThrow('old shared starting PIN');
   });
 
-  test('any other policy-valid PIN is allowed', () => {
-    expect(() => assertChosenPinAllowed('428913')).not.toThrow();
+  test('a genuinely different policy-valid PIN is allowed', () => {
+    expect(() => assertChosenPinAllowed('428913', '571902')).not.toThrow();
   });
 });
 

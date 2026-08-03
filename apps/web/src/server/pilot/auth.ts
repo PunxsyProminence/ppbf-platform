@@ -9,7 +9,7 @@ import { getPilotDefaultOrganizationId, PILOT_SESSION_COOKIE } from './env';
 import { createOpaqueToken, hashPin, hashToken, verifyPin } from './security';
 import { computeSessionExpiry, parseRetentionDays } from './sessionPolicy';
 import { query, queryOne, withTransaction } from './db';
-import { DEFAULT_FIRST_LOGIN_PIN, assertChosenPinAllowed, validatePinPolicy } from './pinPolicy';
+import { assertChosenPinAllowed, generateStartingPin, validatePinPolicy } from './pinPolicy';
 
 /**
  * The single Microsoft identity permitted to hold platform ownership.
@@ -493,13 +493,27 @@ export async function activateAccountPin(accountId: string, pin: string, organiz
   });
 }
 
+/**
+ * Creates a live athlete account on a starting PIN generated for that athlete
+ * alone, and RETURNS that PIN.
+ *
+ * The return value is the only time the PIN is readable. It is hashed on the way
+ * into the database and never recoverable afterwards, so a caller that discards
+ * it has created an account nobody can sign in to -- the admin has no way to
+ * tell the athlete what to type. Every caller must route it to whoever is
+ * standing with the athlete, and must not log or persist it.
+ *
+ * Replaces a shared, published `123456`. See LEGACY_SHARED_FIRST_LOGIN_PIN for
+ * why that had to stop.
+ */
 export async function createAthleteAccount(
   accountId: string,
   athleteId: string,
   organizationIdOrLegacyPin: string,
   maybeOrganizationId?: string,
-): Promise<void> {
+): Promise<{ startingPin: string }> {
   const organizationId = maybeOrganizationId ?? organizationIdOrLegacyPin;
+  const startingPin = generateStartingPin();
 
   await withTransaction(async (client) => {
     const athlete = await client.query<{ athlete_id: string }>(
@@ -540,15 +554,16 @@ export async function createAthleteAccount(
       throw new Error('Account already exists');
     }
 
-    // The account is created live, on the shared bootstrap PIN, rather than
-    // inert and awaiting an activation code. The admin can now tell the
-    // athlete their sign-in ID and the starting PIN in the same breath.
+    // The account is created live, on a bootstrap PIN issued for this athlete,
+    // rather than inert and awaiting an activation code. The admin can still
+    // tell the athlete their sign-in ID and starting PIN in the same breath --
+    // they just read it off the screen instead of reciting a shared constant.
     //
     // Creating it active is only safe because must_change_pin is set:
     // requirePrincipal refuses every route while that flag is true, so the
     // one thing this account can do until the athlete picks their own PIN is
     // pick their own PIN. See http.ts.
-    const bootstrapPinHash = await hashPin(DEFAULT_FIRST_LOGIN_PIN);
+    const bootstrapPinHash = await hashPin(startingPin);
 
     await client.query(
       `insert into pilot.accounts
@@ -566,6 +581,8 @@ export async function createAthleteAccount(
       [accountId, organizationId],
     );
   });
+
+  return { startingPin };
 }
 
 /**
@@ -578,15 +595,11 @@ export async function createAthleteAccount(
  */
 export async function changeOwnPin(accountId: string, currentPin: string, newPin: string): Promise<void> {
   validatePinPolicy(newPin);
-  // Rejecting same-as-current is not enough on its own. An athlete who moved off
-  // the starting PIN and later came back to it would clear must_change_pin while
-  // sitting on a PIN that is published in pinPolicy.ts and printed in the admin
-  // UI -- full access to anyone who knows the sign-in ID.
-  assertChosenPinAllowed(newPin);
-
-  if (currentPin.trim() === newPin.trim()) {
-    throw new Error('PIN must be different from the current PIN');
-  }
+  // Passing currentPin lets this refuse "changing" to the PIN the admin just
+  // issued -- which would clear must_change_pin while leaving the account on a
+  // credential the admin has seen and may have read aloud. The legacy shared
+  // 123456 is refused here too, for athletes still sitting on it.
+  assertChosenPinAllowed(newPin, currentPin);
 
   await withTransaction(async (client) => {
     const account = await client.query<{ pin_hash: string | null; role: PilotRole; active_flag: boolean }>(

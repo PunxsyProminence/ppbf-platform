@@ -119,7 +119,13 @@ export default function ChangePinPage() {
             <label htmlFor="new-pin" className="block text-sm font-semibold">
               Your new PIN
             </label>
-            <p className="mt-1 text-xs text-[var(--gray-dark)]">Exactly 6 digits. Do not use 123456.</p>
+            {/* Naming 123456 was guidance when every athlete started on it.
+                They each get their own starting PIN now, so the thing to say is
+                what the server will actually refuse: the PIN they were handed,
+                and easy patterns generally. */}
+            <p className="mt-1 text-xs text-[var(--gray-dark)]">
+              Exactly 6 digits, and not the PIN you were given. Avoid runs and repeated digits.
+            </p>
             <input
               id="new-pin"
               type="password"
