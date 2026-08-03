@@ -12,7 +12,6 @@ interface FeatureSurfaceProps {
   readonly primaryLinks: Array<{ label: string; href: string }>;
   readonly stats: Array<{ label: string; value: string }>;
   readonly children?: ReactNode;
-  readonly room?: 'office' | 'floor' | 'board' | 'file' | 'clinic' | 'night';
 }
 
 export default function FeatureSurface({
@@ -24,7 +23,6 @@ export default function FeatureSurface({
   primaryLinks,
   stats,
   children,
-  room,
 }: FeatureSurfaceProps) {
   const quickLinks = [
     ...primaryLinks,
@@ -32,8 +30,15 @@ export default function FeatureSurface({
     { label: 'Member Access', href: '/login' },
   ].filter((link, index, all) => all.findIndex((item) => item.href === link.href) === index);
 
+  /* No room is applied here, deliberately. FeatureSurface renders the warm
+     canvas ground, and a .room--* sets a wall image as well as a colour; this
+     sheet is unlayered while Tailwind's utilities sit in a layer, so the room
+     wins and puts a plank or cork wall behind content coloured for cream.
+     Verified by measurement, not assumed. Rooms belong on the ink surfaces until
+     this content is converted — the same conclusion RoleStandaloneView reached
+     for its family branch. */
   return (
-    <main className={`${room ? `room--${room}` : ''} min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]`.trim()}>
+    <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-10 lg:px-10">
         <header className="flex flex-col gap-4 border-b-[3px] border-[var(--black)] pb-6 md:flex-row md:items-end md:justify-between">
           <div className="space-y-3">

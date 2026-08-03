@@ -189,7 +189,7 @@
       "group": "Foundations",
       "name": "Materials",
       "subtitle": "Leather, brass, slate, cork, paper — and the stamp pad",
-      "bytes": 16367
+      "bytes": 16390
     },
     {
       "path": "foundations/matter.html",
@@ -210,7 +210,7 @@
       "group": "Foundations",
       "name": "Palette",
       "subtitle": "Hide, brass and bone ramps + the four-rung status ladder",
-      "bytes": 9909
+      "bytes": 9932
     },
     {
       "path": "foundations/patterns.html",
@@ -224,7 +224,7 @@
       "group": "Foundations",
       "name": "Proportion — φ",
       "subtitle": "√φ type ladder, Fibonacci space, the golden section",
-      "bytes": 12211
+      "bytes": 12234
     },
     {
       "path": "foundations/rooms.html",
@@ -245,63 +245,63 @@
       "group": "Components",
       "name": "Forms",
       "subtitle": "Checkboxes, PIN entry grid, signature line, and a contact-risk acknowledgment",
-      "bytes": 8213
+      "bytes": 8236
     },
     {
       "path": "components/instruments.html",
       "group": "Components",
       "name": "Instruments",
       "subtitle": "Brass gauges, workload satchels, capability tiles, badges, controls",
-      "bytes": 11111
+      "bytes": 11134
     },
     {
       "path": "components/surfaces.html",
       "group": "Components",
       "name": "Surfaces",
       "subtitle": "Chalkboard schedule, cork board, leather tag navigation, governance banner",
-      "bytes": 10303
+      "bytes": 10326
     },
     {
       "path": "screens/athlete-kiosk.html",
       "group": "Screens",
       "name": "Athlete Kiosk",
       "subtitle": "Gym-floor check-in: cleared and locked states, 19.1px type, 55px targets",
-      "bytes": 7246
+      "bytes": 7654
     },
     {
       "path": "screens/board-workspace.html",
       "group": "Screens",
       "name": "Board Workspace",
       "subtitle": "Seat binder rail, governance metrics, k-anonymity suppression in context",
-      "bytes": 9085
+      "bytes": 9108
     },
     {
       "path": "screens/capability-console.html",
       "group": "Screens",
       "name": "Capability Console",
       "subtitle": "Admin grid -- worn leather, patina brass, ledger tape",
-      "bytes": 7069
+      "bytes": 7092
     },
     {
       "path": "screens/coach-review-queue.html",
       "group": "Screens",
       "name": "Coach Review Queue",
       "subtitle": "Layer 10 decision queue + Shadow refusal protocol (Layer 20)",
-      "bytes": 8757
+      "bytes": 9035
     },
     {
       "path": "screens/guardian-portal.html",
       "group": "Screens",
       "name": "Guardian Portal",
-      "subtitle": "Office room -- minor lookup, waiver renewal, stamped proof",
-      "bytes": 5969
+      "subtitle": "Warm canvas -- minor lookup, waiver renewal, on-canvas proof",
+      "bytes": 5991
     },
     {
       "path": "screens/public-onboarding.html",
       "group": "Screens",
       "name": "Public Onboarding",
-      "subtitle": "Office room — vintage enrollment intake, golden-section layout",
-      "bytes": 6547
+      "subtitle": "Warm canvas — vintage enrollment intake",
+      "bytes": 6544
     }
   ],
   "counts": {

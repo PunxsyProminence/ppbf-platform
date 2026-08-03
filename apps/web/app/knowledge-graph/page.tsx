@@ -53,7 +53,6 @@ export default function KnowledgeGraphPage() {
 
   return (
     <FeatureSurface
-      room="file"
       eyebrow="Knowledge Graph"
       title="Concept relationship map"
       description="SHADOW event-derived knowledge projection for observation, pattern, finding, and validated lesson streams."

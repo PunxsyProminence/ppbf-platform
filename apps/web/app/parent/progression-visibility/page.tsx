@@ -71,7 +71,7 @@ export default function ParentProgressionVisibilityPage() {
   );
 
   return (
-    <RoleStandaloneView roleLabel="Parent Hub" routeLabel="/parent/progression-visibility" allowedRoles={['parent']} room="office" showShellHeader={false}>
+    <RoleStandaloneView roleLabel="Parent Hub" routeLabel="/parent/progression-visibility" allowedRoles={['parent']} showShellHeader={false}>
       <div className="space-y-6">
         <header className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-5">
           <p className="text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--brass-300)]">Closed-Loop Progression Intelligence</p>

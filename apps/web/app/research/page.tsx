@@ -189,7 +189,6 @@ export default function ResearchIntakePage() {
 
   return (
     <FeatureSurface
-      room="file"
       eyebrow="Research Intake"
       title="Research Inbox and intake lane"
       description="SHADOW research projection showing requirements, gaps, evidence labels, and review state."

@@ -103,13 +103,33 @@ The six rooms, chosen by what a screen **is** rather than who is looking at it:
 | `.room--clinic` | varnished cabinetry, green banker's shade | medical, clearance, safety |
 | `.room--night` | the ink ground | after hours, locked kiosk |
 
-This supersedes the earlier "two grounds — ink for staff, warm canvas for family"
-formulation. That rule sorted screens by *audience*, which forced dense operational
-surfaces (Shadow, the admin console, the workspaces) onto a near-black ground that no
-reference art ever used, while a governance record and a family record — the same
-object, a sheet of stamped paper — ended up on opposite grounds. Rooms sort by what
-the screen is instead, which is why the audit log and the guardian report can both be
-paper on wood while the after-hours kiosk keeps its ink.
+**Rooms and grounds are different layers, and both ship.** A room supplies the wall,
+the light and the floor shadow. A *ground* (`.on-canvas`, or the default ink) decides the
+ink — how every text voice, link and button restates itself for what it is standing on.
+A room does not replace a ground and cannot substitute for one.
+
+Rooms answer the complaint the two-ground rule earned: sorting by *audience* forced dense
+operational surfaces onto a near-black ground no reference art used, and split a
+governance record from a family record — the same object, a sheet of stamped paper — onto
+opposite grounds. Rooms sort by what the screen *is*, so the audit log and the guardian
+report can both be paper on wood.
+
+But the ink still has to hold. **Rooms are applied on the ink surfaces only**, and that is
+a measured restriction, not a preference:
+
+- `.room--*` sets a background *image* as well as a colour, and this sheet is unlayered
+  while Tailwind's utilities sit in a cascade layer — so a room beats
+  `bg-[var(--canvas-tan)]` and puts a plank or cork wall behind content coloured for cream.
+  Verified by rendering it, not reasoned about.
+- The family surfaces (Guardian, Parent Hub, the athlete workspace) are built from
+  ink-dark panels. Declaring the canvas ground on them restates every component for cream
+  and then renders it on those dark panels — `--brass-800` links at **2.36:1**,
+  `.on-canvas .t-body` at **1.43:1**.
+
+So the family side keeps the warm ground and takes no room until its content is converted,
+and `RoleStandaloneView` ignores a `room` prop on that branch by design. `FeatureSurface`
+takes no room at all for the same reason. Converting that content is the work that unlocks
+rooms there; forcing it early only makes those pages unreadable.
 
 A room sets the wall and the light, and nothing else. It never sets **status** (Laws 2
 and 3 hold in every room), never sets **proportion** (Law 8 likewise), and never

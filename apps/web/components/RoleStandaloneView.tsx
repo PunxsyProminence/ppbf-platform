@@ -100,11 +100,20 @@ export default function RoleStandaloneView({
            guessed. Law 6 does put the family side on canvas, but getting
            there means converting that content first; until then the honest
            change is the eleven staff pages, which this branch verified. */
-        className={
+        /* A room supplies the wall, the light and the floor shadow. It is only
+           applied on the ink branch, and that restriction is load-bearing:
+           .room--* sets a background-image as well as a colour, and this sheet
+           is unlayered while Tailwind's utilities sit in a layer, so a room
+           would beat bg-[var(--canvas-tan)] and put a dark plank wall behind the
+           family branch's dark text. The comment above explains why the family
+           ground is still the warm one; until that content is converted, a room
+           on it would be unreadable rather than merely wrong. */
+        className={[
+          familyGround ? '' : (room ? `room--${room}` : ''),
           familyGround
             ? 'min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]'
-            : 'min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]'
-        }
+            : 'min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]',
+        ].filter(Boolean).join(' ')}
       >
         {showShellHeader && (
           <header className={familyGround ? BAND : BAND_INK}>

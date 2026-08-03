@@ -4,7 +4,7 @@ import BoardSummaryPanel from './BoardSummaryPanel';
 
 export default function BoardHubPage() {
   return (
-    <main className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+    <main className="room--board min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-10 lg:px-10">
         <header className="flex flex-col gap-4 border-b-4 border-[color:var(--brass-700)] pb-6 md:flex-row md:items-end md:justify-between">
           <div className="space-y-3">

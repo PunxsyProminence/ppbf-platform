@@ -6,6 +6,9 @@ import { useSyncExternalStore } from "react";
 import { clearRoleSession, getRoleSessionSnapshot, subscribeRoleSession } from "./roleSession";
 import { apiBase } from '@/lib/apiBase';
 import FeedbackBox from "./FeedbackBox";
+import Corridor from "./Corridor";
+import CardCatalog from "./CardCatalog";
+import CommandsOverlay from "./CommandsOverlay";
 
 // The queue the "Tell Us" box fills is worked by the people who can act on it:
 // a gym's own administrators, and the platform owner reading across gyms.
@@ -86,6 +89,10 @@ export default function GlobalRoleHeader() {
         </div>
 
         <div className="flex flex-wrap items-center gap-[var(--s3)]">
+          {/* Keyed for the same reason as the corridor: a fresh, closed palette
+              on every surface, with no effect writing state on navigation. */}
+          <CardCatalog key={`catalog:${pathname}`} />
+          <CommandsOverlay />
           <FeedbackBox />
           {FEEDBACK_TRIAGE_ROLES.includes(session.role) ? (
             <Link href="/admin/feedback" className={CONTROL_QUIET}>
