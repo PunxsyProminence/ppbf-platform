@@ -53,21 +53,25 @@ These are correctness/safety issues for the Participant Master Record capability
 **Priority:** HIGH (security/consistency)  
 **Effort:** 2-4 hours  
 **Risk:** Medium - prevents invalid states
+**Status:** ✅ COMPLETED (commit c5bddc6)
 
-- [ ] Create `apps/web/src/shared/athleteConstants.ts`
-  - Export: `export const GYM_STATUS_OPTIONS = ['active', 'training', 'inactive'] as const;`
-- [ ] Update `src/server/pilot/validation.ts`
-  - Import `GYM_STATUS_OPTIONS`
-  - Add enum validation: reject unknown values with 400
-  - Error message: `"gym_status must be one of: active, training, inactive"`
-- [ ] Update client forms (People, Athlete Records)
-  - Import `GYM_STATUS_OPTIONS`
-  - Use in dropdown selectors
-- [ ] Add test case for unknown gym_status → 400
-- [ ] Verify existing tests pass
-- [ ] Update SECURITY_AUDIT_REPORT to note fix
+- [x] Create `apps/web/src/shared/athleteConstants.ts`
+  - Exports: `GYM_STATUS_OPTIONS = ['active', 'training', 'inactive']` with GymStatus type
+- [x] Update `src/server/pilot/validation.ts`
+  - Added import and `requireGymStatus()` helper function
+  - Validates against enum; rejects unknown values with 400
+  - Error message: `"Request body field gym_status must be one of: active, training, inactive"`
+- [x] Update client forms (People, Athlete Records)
+  - Removed duplicate GYM_STATUS_OPTIONS from both pages
+  - Updated to use GYM_STATUS_DISPLAY_OPTIONS for labels
+  - Shared constant used for validation consistency
+- [x] Add test case for unknown gym_status → 400
+  - Test added to validation.test.ts
+- [x] Verify existing tests pass
+  - All 2707 tests pass
+- [x] Update PilotAthlete type to use GymStatus
 
-**Acceptance:** Server rejects `gym_status: "unknown"` with 400; UI picker reflects enum
+**Acceptance:** ✅ Server rejects `gym_status: "unknown"` with 400; UI picker reflects enum
 
 ---
 
@@ -281,10 +285,10 @@ These improve observability and UX polish.
 | Priority | Count | Effort | Status |
 |----------|-------|--------|--------|
 | P0 Security | 6 | — | ✅ Implemented |
-| P0 Capability | 4 | 8-13 hrs | 🔴 Not Started |
+| P0 Capability | 4 | 8-13 hrs | 🟡 1/4 Complete |
 | P1 Improvements | 5 | 8-12 hrs | 🔴 Not Started |
 | P2 Polish | 4 | 6-8 hrs | 🔴 Not Started |
-| **Total** | **19** | **22-33 hrs** | — |
+| **Total** | **19** | **22-33 hrs** | **1 Complete** |
 
 ---
 
