@@ -130,15 +130,15 @@ function WorkspaceContent() {
   const roleLabel = session.role ? ROLE_LABELS[session.role] ?? session.role : '';
 
   return (
-    <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
+    <main className="on-canvas min-h-screen">
       <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-8 px-6 py-10 lg:px-10">
-        <header className="flex flex-col gap-4 border-b-[3px] border-[var(--black)] pb-6 md:flex-row md:items-end md:justify-between">
+        <header className="flex flex-col gap-4 border-b-[3px] border-[color:rgba(107,78,18,.28)] pb-6 md:flex-row md:items-end md:justify-between">
           <div className="space-y-3">
             <p className="text-xs font-mono uppercase tracking-[0.35em] text-[color:var(--brass-800)]">Workspace</p>
             <h1 className="font-display text-4xl font-black tracking-tight md:text-5xl">
               {roleLabel ? `${roleLabel} Workspace` : 'Workspace'}
             </h1>
-            <p className="max-w-3xl text-base leading-7 text-[var(--gray-dark)]">
+            <p className="max-w-3xl text-base leading-7 text-[color:var(--hide-800)]">
               Your account is active at the gym. This page holds the notices you can see and the
               surfaces your role can open.
             </p>
@@ -149,57 +149,57 @@ function WorkspaceContent() {
               type="button"
               onClick={() => void handleSignOut()}
               disabled={signingOut}
-              className="min-h-[44px] border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)] disabled:opacity-50"
+              className="btn btn--ghost"
             >
               {signingOut ? 'Signing out...' : 'Sign out'}
             </button>
           </div>
         </header>
 
-        <section className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-sm)]">
+        <section className="mat-paper rounded-[var(--r-lg)] border border-[color:rgba(107,78,18,.28)] p-[var(--s5)]">
           <h2 className="font-display text-xl font-black">Your account</h2>
           <dl className="mt-4 grid gap-4 md:grid-cols-3">
             <div>
-              <dt className="text-[11px] font-mono uppercase tracking-[0.15em] text-[var(--gray-dark)]">Signed in as</dt>
-              <dd className="mt-1 break-all text-sm font-bold text-[var(--black)]">
+              <dt className="text-[length:var(--t-xs)] font-mono uppercase tracking-[0.15em] text-[color:var(--hide-800)]">Signed in as</dt>
+              <dd className="mt-1 break-all text-sm font-bold text-[color:var(--hide-950)]">
                 {session.loading ? 'Loading...' : session.accountId ?? 'Unknown'}
               </dd>
             </div>
             <div>
-              <dt className="text-[11px] font-mono uppercase tracking-[0.15em] text-[var(--gray-dark)]">Role</dt>
-              <dd className="mt-1 text-sm font-bold text-[var(--black)]">
+              <dt className="text-[length:var(--t-xs)] font-mono uppercase tracking-[0.15em] text-[color:var(--hide-800)]">Role</dt>
+              <dd className="mt-1 text-sm font-bold text-[color:var(--hide-950)]">
                 {session.loading ? 'Loading...' : roleLabel || 'Unknown'}
               </dd>
             </div>
             <div>
-              <dt className="text-[11px] font-mono uppercase tracking-[0.15em] text-[var(--gray-dark)]">Organization</dt>
-              <dd className="mt-1 break-all text-sm font-bold text-[var(--black)]">
+              <dt className="text-[length:var(--t-xs)] font-mono uppercase tracking-[0.15em] text-[color:var(--hide-800)]">Organization</dt>
+              <dd className="mt-1 break-all text-sm font-bold text-[color:var(--hide-950)]">
                 {session.loading ? 'Loading...' : session.organizationId ?? 'Unknown'}
               </dd>
             </div>
           </dl>
         </section>
 
-        <section className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-sm)]">
+        <section className="mat-paper rounded-[var(--r-lg)] border border-[color:rgba(107,78,18,.28)] p-[var(--s5)]">
           <h2 className="font-display text-xl font-black">Gym notices</h2>
-          <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
+          <p className="mt-2 text-sm leading-6 text-[color:var(--hide-800)]">
             Posted by coaches, admins, and the board for your organization.
           </p>
 
           {noticesLoading ? (
-            <p className="mt-4 font-mono text-xs uppercase tracking-[0.12em] text-[var(--gray-dark)]">Loading notices...</p>
+            <p className="mt-4 font-mono text-xs uppercase tracking-[0.12em] text-[color:var(--hide-800)]">Loading notices...</p>
           ) : noticesError ? (
-            <p role="status" className="mt-4 border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-2 text-sm text-[var(--black)]">
+            <p role="status" className="mt-4 border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] mat-paper px-3 py-2 text-sm text-[color:var(--hide-950)]">
               {noticesError}
             </p>
           ) : notices.length === 0 ? (
-            <p className="mt-4 text-sm text-[var(--gray-dark)]">No notices have been posted yet.</p>
+            <p className="mt-4 text-sm text-[color:var(--hide-800)]">No notices have been posted yet.</p>
           ) : (
             <ul className="mt-4 space-y-3">
               {notices.map((notice) => (
-                <li key={notice.announcement_id} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-                  <p className="text-sm leading-6 text-[var(--black)]">{notice.message}</p>
-                  <p className="mt-2 text-[11px] font-mono uppercase tracking-[0.12em] text-[var(--gray-dark)]">
+                <li key={notice.announcement_id} className="border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] mat-paper p-4">
+                  <p className="text-sm leading-6 text-[color:var(--hide-950)]">{notice.message}</p>
+                  <p className="mt-2 text-[length:var(--t-xs)] font-mono uppercase tracking-[0.12em] text-[color:var(--hide-800)]">
                     {notice.author_name} · {notice.author_role} · {formatNoticeDate(notice.created_at)}
                   </p>
                 </li>
@@ -212,14 +212,14 @@ function WorkspaceContent() {
           <h2 className="font-display text-xl font-black">What you can open</h2>
           <div className="grid gap-4 md:grid-cols-2">
             {WORKSPACE_SURFACES.map((surface) => (
-              <article key={surface.href} className="flex flex-col justify-between border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-sm)]">
+              <article key={surface.href} className="flex flex-col justify-between border-[3px] border-[color:rgba(107,78,18,.28)] mat-paper p-5 shadow-[var(--shadow-sm)]">
                 <div>
-                  <h3 className="font-display text-lg font-black text-[var(--black)]">{surface.label}</h3>
-                  <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">{surface.description}</p>
+                  <h3 className="font-display text-lg font-black text-[color:var(--hide-950)]">{surface.label}</h3>
+                  <p className="mt-2 text-sm leading-6 text-[color:var(--hide-800)]">{surface.description}</p>
                 </div>
                 <Link
                   href={surface.href}
-                  className="mt-4 inline-flex min-h-[44px] items-center justify-center border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--olive-dark)] hover:text-[var(--white)]"
+                  className="mt-4 inline-flex min-h-[44px] items-center justify-center border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] mat-paper px-4 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[color:var(--hide-950)] transition hover:bg-[var(--olive-dark)] hover:text-[var(--white)]"
                 >
                   Open {surface.label}
                 </Link>
@@ -228,9 +228,9 @@ function WorkspaceContent() {
           </div>
         </section>
 
-        <section className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan)] p-5">
+        <section className="border-[3px] border-[color:rgba(107,78,18,.28)] mat-paper p-5">
           <h2 className="font-display text-xl font-black">Outside this role</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--gray-dark)]">
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[color:var(--hide-800)]">
             Athlete records, class scheduling and attendance, video, intake review, and the admin and
             board consoles are not part of staff or volunteer access. If your work needs one of them,
             ask an organization admin to change your role rather than opening a page that will refuse

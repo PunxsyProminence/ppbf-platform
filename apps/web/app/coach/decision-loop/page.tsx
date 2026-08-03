@@ -81,14 +81,14 @@ async function readJsonOrThrow<T>(response: Response, fallbackMessage: string): 
 }
 
 function statusChipClasses(status: string): string {
-  if (status === 'provisional' || status === 'pending') return 'border-[var(--black)] bg-[var(--canvas-tan-light)]';
+  if (status === 'provisional' || status === 'pending') return 'border-[color:rgba(212,175,74,.28)] mat-leather--raised';
   if (status === 'accepted' || status === 'cleared' || status === 'active' || status === 'match') {
-    return 'border-[var(--black)] bg-[var(--canvas-tan-light)] font-bold';
+    return 'border-[color:rgba(212,175,74,.28)] mat-leather--raised font-bold';
   }
   if (status === 'rejected' || status === 'not_cleared' || status === 'miss') {
-    return 'border-[color:var(--brass-600)] bg-[var(--canvas-tan-light)] text-[color:var(--brass-800)]';
+    return 'border-[color:var(--brass-600)] mat-leather--raised text-[color:var(--brass-400)]';
   }
-  return 'border-[var(--gray-dark)] bg-[var(--canvas-tan-light)] text-[var(--gray-dark)]';
+  return 'border-[color:rgba(212,175,74,.28)] mat-leather--raised text-[color:var(--bone-400)]';
 }
 
 export default function DecisionLoopReviewPage() {
@@ -308,12 +308,12 @@ export default function DecisionLoopReviewPage() {
       allowedRoles={['coach', 'admin']}
       showShellHeader={false}
     >
-      <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
+      <div>
         <div className="mx-auto w-full max-w-6xl px-6 py-10 lg:px-10">
-          <header className="space-y-3 border-b-[3px] border-[var(--black)] pb-6">
-            <p className="text-xs font-mono uppercase tracking-[0.18em] text-[color:var(--brass-800)]">Coach Workspace</p>
+          <header className="space-y-3 border-b-[3px] border-[color:rgba(212,175,74,.28)] pb-6">
+            <p className="text-xs font-mono uppercase tracking-[0.18em] text-[color:var(--brass-400)]">Coach Workspace</p>
             <h1 className="font-display text-4xl font-black">SHADOW Decision Loop</h1>
-            <p className="max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
+            <p className="max-w-4xl text-sm leading-6 text-[color:var(--bone-400)]">
               Review provisional recommendations, record human decisions, flag near-misses, and evaluate outcomes.
               Every recommendation starts provisional and stays that way until a human accepts or rejects it — silence
               never equals acceptance, and medical/sparring-clearance topics are gated by the athlete&apos;s current
@@ -321,13 +321,13 @@ export default function DecisionLoopReviewPage() {
             </p>
           </header>
 
-          <section className="mt-6 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+          <section className="mt-6 border border-[color:rgba(212,175,74,.28)] rounded-[var(--r-md)] mat-leather--raised p-4">
             <label className="block text-xs font-bold uppercase tracking-[0.1em]">
               Athlete
               <select
                 value={athleteId}
                 onChange={(event) => setAthleteId(event.target.value)}
-                className="mt-1 h-11 w-full max-w-md border-2 border-[var(--black)] bg-white px-3 text-sm"
+                className="mt-1 h-11 w-full max-w-md border border-[color:rgba(212,175,74,.28)] rounded-[var(--r-md)] mat-leather px-3 text-sm"
               >
                 <option value="">Select an athlete…</option>
                 {athletes.map((athlete) => (
@@ -343,21 +343,21 @@ export default function DecisionLoopReviewPage() {
                 value={athleteId}
                 onChange={(event) => setAthleteId(event.target.value)}
                 placeholder="athlete-id"
-                className="mt-1 h-11 w-full max-w-md border-2 border-[var(--black)] bg-white px-3 text-sm"
+                className="mt-1 h-11 w-full max-w-md border border-[color:rgba(212,175,74,.28)] rounded-[var(--r-md)] mat-leather px-3 text-sm"
               />
             </label>
-            {loading && <p className="mt-2 text-xs text-[var(--gray-dark)]">Loading…</p>}
+            {loading && <p className="mt-2 text-xs text-[color:var(--bone-400)]">Loading…</p>}
             {errorMessage && <p className="mt-2 text-sm font-bold text-[var(--red-primary)]">{errorMessage}</p>}
           </section>
 
           {!athleteId ? (
-            <p className="mt-6 text-sm text-[var(--gray-dark)]">Select or enter an athlete to review their decision loop.</p>
+            <p className="mt-6 text-sm text-[color:var(--bone-400)]">Select or enter an athlete to review their decision loop.</p>
           ) : (
             <div className="mt-6 grid gap-6 xl:grid-cols-2">
               {/* Medical Administrative Status */}
-              <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+              <section className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                 <h2 className="text-lg font-black uppercase tracking-[0.04em]">Medical Administrative Status</h2>
-                <p className="mt-1 text-xs text-[var(--gray-dark)]">
+                <p className="mt-1 text-xs text-[color:var(--bone-400)]">
                   Read-only gate for medically sensitive recommendations/decisions. Setting a new status never clears an
                   existing restriction automatically — each change is its own explicit, human-attributed record.
                 </p>
@@ -369,24 +369,24 @@ export default function DecisionLoopReviewPage() {
                         {medicalStatus.status}
                       </span>
                     </p>
-                    <p className="text-xs text-[var(--gray-dark)]">
+                    <p className="text-xs text-[color:var(--bone-400)]">
                       Set by {medicalStatus.set_by_role} ({medicalStatus.set_by_account_id}) at {medicalStatus.effective_at}
                     </p>
                     {medicalStatus.source_reference && (
-                      <p className="text-xs text-[var(--gray-dark)]">Reference: {medicalStatus.source_reference}</p>
+                      <p className="text-xs text-[color:var(--bone-400)]">Reference: {medicalStatus.source_reference}</p>
                     )}
                   </div>
                 ) : (
-                  <p className="mt-3 text-sm text-[var(--gray-dark)]">No medical administrative status recorded yet.</p>
+                  <p className="mt-3 text-sm text-[color:var(--bone-400)]">No medical administrative status recorded yet.</p>
                 )}
 
-                <form onSubmit={handleSetMedicalStatus} className="mt-4 space-y-2 border-t border-[var(--black)]/20 pt-3">
+                <form onSubmit={handleSetMedicalStatus} className="mt-4 space-y-2 border-t border-[color:rgba(212,175,74,.28)]/20 pt-3">
                   <label className="block text-xs font-bold uppercase tracking-[0.1em]">
                     New status
                     <select
                       value={medicalStatusDraft}
                       onChange={(event) => setMedicalStatusDraft(event.target.value as MedicalStatusValue)}
-                      className="mt-1 h-11 w-full border-2 border-[var(--black)] bg-white px-3 text-sm"
+                      className="input"
                     >
                       <option value="pending">Pending</option>
                       <option value="cleared">Cleared</option>
@@ -400,12 +400,12 @@ export default function DecisionLoopReviewPage() {
                       value={medicalSourceRef}
                       onChange={(event) => setMedicalSourceRef(event.target.value)}
                       placeholder="e.g. physician note, incident id"
-                      className="mt-1 h-11 w-full border-2 border-[var(--black)] bg-white px-3 text-sm"
+                      className="input"
                     />
                   </label>
                   <button
                     type="submit"
-                    className="h-11 border-2 border-[var(--black)] bg-[var(--black)] px-4 text-xs font-bold uppercase tracking-[0.1em] text-white"
+                    className="btn"
                   >
                     Set Status
                   </button>
@@ -413,36 +413,36 @@ export default function DecisionLoopReviewPage() {
               </section>
 
               {/* Recommendations */}
-              <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+              <section className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                 <h2 className="text-lg font-black uppercase tracking-[0.04em]">Recommendations</h2>
-                <p className="mt-1 text-xs text-[var(--gray-dark)]">
+                <p className="mt-1 text-xs text-[color:var(--bone-400)]">
                   Always created provisional. Only a human decision below can move one to accepted or rejected.
                 </p>
                 <div className="mt-3 max-h-[360px] space-y-2 overflow-y-auto">
-                  {recommendations.length === 0 && <p className="text-sm text-[var(--gray-dark)]">No recommendations yet.</p>}
+                  {recommendations.length === 0 && <p className="text-sm text-[color:var(--bone-400)]">No recommendations yet.</p>}
                   {recommendations.map((rec) => (
-                    <article key={rec.recommendation_id} className="border border-[var(--black)]/40 bg-white p-3 text-sm">
+                    <article key={rec.recommendation_id} className="border border-[color:rgba(212,175,74,.28)]/40 mat-leather p-3 text-sm">
                       <p className="font-semibold">{rec.recommendation_text}</p>
-                      <p className="mt-1 text-xs text-[var(--gray-dark)]">Expected: {rec.expected_outcome}</p>
+                      <p className="mt-1 text-xs text-[color:var(--bone-400)]">Expected: {rec.expected_outcome}</p>
                       <p className="mt-1">
                         <span className={`inline-flex border px-2 py-0.5 font-mono text-xs ${statusChipClasses(rec.status)}`}>
                           {rec.status}
                         </span>
-                        <span className="ml-2 text-xs text-[var(--gray-dark)]">expires {rec.expires_at}</span>
+                        <span className="ml-2 text-xs text-[color:var(--bone-400)]">expires {rec.expires_at}</span>
                       </p>
                       {rec.status === 'provisional' && (
                         <div className="mt-2 flex gap-2">
                           <button
                             type="button"
                             onClick={() => void handleDecideRecommendation(rec.recommendation_id, 'accepted')}
-                            className="h-9 border-2 border-[var(--black)] bg-[var(--black)] px-3 text-xs font-bold uppercase text-white"
+                            className="btn"
                           >
                             Accept
                           </button>
                           <button
                             type="button"
                             onClick={() => void handleDecideRecommendation(rec.recommendation_id, 'rejected')}
-                            className="h-9 border-2 border-[color:var(--brass-600)] px-3 text-xs font-bold uppercase text-[color:var(--brass-800)]"
+                            className="h-9 border-2 border-[color:var(--brass-600)] px-3 text-xs font-bold uppercase text-[color:var(--brass-400)]"
                           >
                             Reject
                           </button>
@@ -454,31 +454,31 @@ export default function DecisionLoopReviewPage() {
               </section>
 
               {/* Decisions */}
-              <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+              <section className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                 <h2 className="text-lg font-black uppercase tracking-[0.04em]">Decisions</h2>
-                <p className="mt-1 text-xs text-[var(--gray-dark)]">
+                <p className="mt-1 text-xs text-[color:var(--bone-400)]">
                   A decision always requires a human. It may reference a still-live recommendation, or be logged directly.
                 </p>
                 <div className="mt-3 max-h-[280px] space-y-2 overflow-y-auto">
-                  {decisions.length === 0 && <p className="text-sm text-[var(--gray-dark)]">No decisions recorded yet.</p>}
+                  {decisions.length === 0 && <p className="text-sm text-[color:var(--bone-400)]">No decisions recorded yet.</p>}
                   {decisions.map((decision) => (
-                    <article key={decision.decision_id} className="border border-[var(--black)]/40 bg-white p-3 text-sm">
+                    <article key={decision.decision_id} className="border border-[color:rgba(212,175,74,.28)]/40 mat-leather p-3 text-sm">
                       <p className="font-semibold">{decision.decision_text}</p>
-                      <p className="mt-1 text-xs text-[var(--gray-dark)]">Expected: {decision.expected_outcome}</p>
-                      <p className="mt-1 text-xs text-[var(--gray-dark)]">
+                      <p className="mt-1 text-xs text-[color:var(--bone-400)]">Expected: {decision.expected_outcome}</p>
+                      <p className="mt-1 text-xs text-[color:var(--bone-400)]">
                         By {decision.decided_by_role} at {decision.decided_at}
                       </p>
                       <button
                         type="button"
                         onClick={() => void handleLoadOutcomes(decision.decision_id)}
-                        className="mt-2 h-8 border border-[var(--black)] px-2 text-xs font-bold uppercase"
+                        className="mt-2 h-8 border border-[color:rgba(212,175,74,.28)] px-2 text-xs font-bold uppercase"
                       >
                         Load Outcomes
                       </button>
                       {outcomesByDecision[decision.decision_id] && (
-                        <div className="mt-2 space-y-1 border-t border-[var(--black)]/20 pt-2">
+                        <div className="mt-2 space-y-1 border-t border-[color:rgba(212,175,74,.28)]/20 pt-2">
                           {outcomesByDecision[decision.decision_id].length === 0 ? (
-                            <p className="text-xs text-[var(--gray-dark)]">No outcomes evaluated yet.</p>
+                            <p className="text-xs text-[color:var(--bone-400)]">No outcomes evaluated yet.</p>
                           ) : (
                             outcomesByDecision[decision.decision_id].map((outcome) => (
                               <p key={outcome.outcome_id} className="text-xs">
@@ -495,13 +495,13 @@ export default function DecisionLoopReviewPage() {
                   ))}
                 </div>
 
-                <form onSubmit={handleRecordDecision} className="mt-4 space-y-2 border-t border-[var(--black)]/20 pt-3">
+                <form onSubmit={handleRecordDecision} className="mt-4 space-y-2 border-t border-[color:rgba(212,175,74,.28)]/20 pt-3">
                   <label className="block text-xs font-bold uppercase tracking-[0.1em]">
                     Link to recommendation (optional)
                     <select
                       value={decisionRecommendationId}
                       onChange={(event) => setDecisionRecommendationId(event.target.value)}
-                      className="mt-1 h-11 w-full border-2 border-[var(--black)] bg-white px-3 text-sm"
+                      className="input"
                     >
                       <option value="">None — log directly</option>
                       {actionableRecommendations.map((rec) => (
@@ -516,7 +516,7 @@ export default function DecisionLoopReviewPage() {
                     <textarea
                       value={decisionText}
                       onChange={(event) => setDecisionText(event.target.value)}
-                      className="mt-1 min-h-[72px] w-full border-2 border-[var(--black)] bg-white px-3 py-2 text-sm"
+                      className="mt-1 min-h-[72px] w-full border border-[color:rgba(212,175,74,.28)] rounded-[var(--r-md)] mat-leather px-3 py-2 text-sm"
                     />
                   </label>
                   <label className="block text-xs font-bold uppercase tracking-[0.1em]">
@@ -524,7 +524,7 @@ export default function DecisionLoopReviewPage() {
                     <textarea
                       value={decisionExpectedOutcome}
                       onChange={(event) => setDecisionExpectedOutcome(event.target.value)}
-                      className="mt-1 min-h-[56px] w-full border-2 border-[var(--black)] bg-white px-3 py-2 text-sm"
+                      className="mt-1 min-h-[56px] w-full border border-[color:rgba(212,175,74,.28)] rounded-[var(--r-md)] mat-leather px-3 py-2 text-sm"
                     />
                   </label>
                   <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.1em]">
@@ -537,7 +537,7 @@ export default function DecisionLoopReviewPage() {
                   </label>
                   <button
                     type="submit"
-                    className="h-11 border-2 border-[var(--black)] bg-[var(--black)] px-4 text-xs font-bold uppercase tracking-[0.1em] text-white"
+                    className="btn"
                   >
                     Record Decision
                   </button>
@@ -545,30 +545,30 @@ export default function DecisionLoopReviewPage() {
               </section>
 
               {/* Near-Misses */}
-              <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+              <section className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                 <h2 className="text-lg font-black uppercase tracking-[0.04em]">Near-Misses</h2>
-                <p className="mt-1 text-xs text-[var(--gray-dark)]">
+                <p className="mt-1 text-xs text-[color:var(--bone-400)]">
                   Human-flagged only. Use this when something almost went wrong that a Decision didn&apos;t already cover.
                 </p>
                 <div className="mt-3 max-h-[220px] space-y-2 overflow-y-auto">
-                  {nearMisses.length === 0 && <p className="text-sm text-[var(--gray-dark)]">No near-misses flagged yet.</p>}
+                  {nearMisses.length === 0 && <p className="text-sm text-[color:var(--bone-400)]">No near-misses flagged yet.</p>}
                   {nearMisses.map((nearMiss) => (
-                    <article key={nearMiss.near_miss_id} className="border border-[var(--black)]/40 bg-white p-3 text-sm">
+                    <article key={nearMiss.near_miss_id} className="border border-[color:rgba(212,175,74,.28)]/40 mat-leather p-3 text-sm">
                       <p>{nearMiss.description}</p>
-                      <p className="mt-1 text-xs text-[var(--gray-dark)]">
+                      <p className="mt-1 text-xs text-[color:var(--bone-400)]">
                         Severity: {nearMiss.severity} · {nearMiss.created_at}
                       </p>
                     </article>
                   ))}
                 </div>
 
-                <form onSubmit={handleFlagNearMiss} className="mt-4 space-y-2 border-t border-[var(--black)]/20 pt-3">
+                <form onSubmit={handleFlagNearMiss} className="mt-4 space-y-2 border-t border-[color:rgba(212,175,74,.28)]/20 pt-3">
                   <label className="block text-xs font-bold uppercase tracking-[0.1em]">
                     Description
                     <textarea
                       value={nearMissDescription}
                       onChange={(event) => setNearMissDescription(event.target.value)}
-                      className="mt-1 min-h-[56px] w-full border-2 border-[var(--black)] bg-white px-3 py-2 text-sm"
+                      className="mt-1 min-h-[56px] w-full border border-[color:rgba(212,175,74,.28)] rounded-[var(--r-md)] mat-leather px-3 py-2 text-sm"
                     />
                   </label>
                   <label className="block text-xs font-bold uppercase tracking-[0.1em]">
@@ -576,7 +576,7 @@ export default function DecisionLoopReviewPage() {
                     <select
                       value={nearMissSeverity}
                       onChange={(event) => setNearMissSeverity(event.target.value as NearMissSeverity)}
-                      className="mt-1 h-11 w-full border-2 border-[var(--black)] bg-white px-3 text-sm"
+                      className="input"
                     >
                       <option value="low">Low</option>
                       <option value="moderate">Moderate</option>
@@ -589,7 +589,7 @@ export default function DecisionLoopReviewPage() {
                     <select
                       value={nearMissDecisionId}
                       onChange={(event) => setNearMissDecisionId(event.target.value)}
-                      className="mt-1 h-11 w-full border-2 border-[var(--black)] bg-white px-3 text-sm"
+                      className="input"
                     >
                       <option value="">None</option>
                       {decisions.map((decision) => (
@@ -601,7 +601,7 @@ export default function DecisionLoopReviewPage() {
                   </label>
                   <button
                     type="submit"
-                    className="h-11 border-2 border-[color:var(--brass-600)] px-4 text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--brass-800)]"
+                    className="h-11 border-2 border-[color:var(--brass-600)] px-4 text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--brass-400)]"
                   >
                     Flag Near-Miss
                   </button>
@@ -609,9 +609,9 @@ export default function DecisionLoopReviewPage() {
               </section>
 
               {/* Decision Outcomes */}
-              <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4 xl:col-span-2">
+              <section className="border border-[color:rgba(212,175,74,.28)] rounded-[var(--r-md)] mat-leather--raised p-4 xl:col-span-2">
                 <h2 className="text-lg font-black uppercase tracking-[0.04em]">Evaluate a Decision Outcome</h2>
-                <p className="mt-1 text-xs text-[var(--gray-dark)]">
+                <p className="mt-1 text-xs text-[color:var(--bone-400)]">
                   Always a human judgment: compare the decision&apos;s expected outcome against what actually happened.
                 </p>
                 <form onSubmit={handleEvaluateOutcome} className="mt-3 grid gap-2 md:grid-cols-2">
@@ -620,7 +620,7 @@ export default function DecisionLoopReviewPage() {
                     <select
                       value={outcomeDecisionId}
                       onChange={(event) => setOutcomeDecisionId(event.target.value)}
-                      className="mt-1 h-11 w-full border-2 border-[var(--black)] bg-white px-3 text-sm"
+                      className="input"
                     >
                       <option value="">Select a decision…</option>
                       {decisions.map((decision) => (
@@ -635,7 +635,7 @@ export default function DecisionLoopReviewPage() {
                     <select
                       value={outcomeMatchState}
                       onChange={(event) => setOutcomeMatchState(event.target.value as MatchState)}
-                      className="mt-1 h-11 w-full border-2 border-[var(--black)] bg-white px-3 text-sm"
+                      className="input"
                     >
                       <option value="match">Match</option>
                       <option value="partial">Partial</option>
@@ -649,7 +649,7 @@ export default function DecisionLoopReviewPage() {
                       value={outcomeObservationIds}
                       onChange={(event) => setOutcomeObservationIds(event.target.value)}
                       placeholder="obs-1, obs-2"
-                      className="mt-1 h-11 w-full border-2 border-[var(--black)] bg-white px-3 text-sm"
+                      className="input"
                     />
                   </label>
                   <label className="block text-xs font-bold uppercase tracking-[0.1em] md:col-span-2">
@@ -657,12 +657,12 @@ export default function DecisionLoopReviewPage() {
                     <textarea
                       value={outcomeNotes}
                       onChange={(event) => setOutcomeNotes(event.target.value)}
-                      className="mt-1 min-h-[56px] w-full border-2 border-[var(--black)] bg-white px-3 py-2 text-sm"
+                      className="mt-1 min-h-[56px] w-full border border-[color:rgba(212,175,74,.28)] rounded-[var(--r-md)] mat-leather px-3 py-2 text-sm"
                     />
                   </label>
                   <button
                     type="submit"
-                    className="h-11 w-fit border-2 border-[var(--black)] bg-[var(--black)] px-4 text-xs font-bold uppercase tracking-[0.1em] text-white md:col-span-2"
+                    className="btn"
                   >
                     Evaluate Outcome
                   </button>
@@ -674,13 +674,13 @@ export default function DecisionLoopReviewPage() {
           <div className="mt-8">
             <Link
               href="/coach/review-queue"
-              className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.08em]"
+              className="btn btn--ghost"
             >
               Back to Coach Workspace
             </Link>
           </div>
         </div>
-      </main>
+      </div>
     </RoleStandaloneView>
   );
 }
