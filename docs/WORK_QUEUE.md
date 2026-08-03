@@ -157,6 +157,7 @@ Ordered by a floor-readiness trace run 2026-08-01.
 | Athlete check-out losing notes | session A | `feature/knowledge-and-feedback` |
 | Coach coverage (403 on a covered class) | session A | `feature/knowledge-and-feedback` |
 | Security audit fixes + Capability #2 hardening | session B | `claude/ppbf-platform-audit-w3va0j` |
+| Per-athlete starting PIN | session B | `claude/ppbf-platform-audit-w3va0j` |
 
 ### ⚠️ session B touched two reserved files — read before merging
 
@@ -204,6 +205,11 @@ Two items under *"Needed for a usable first session"* no longer match the code:
 Not edited beyond the notes above, since this file is the shared ownership record
 and rewriting another session's claims is exactly what rule 2 forbids. Flagged for
 whoever owns the next reconciliation.
+
+**Why session B went ahead into `people/page.tsx` anyway:** `git ls-remote origin`
+shows no `feature/knowledge-and-feedback` — the branch holding every session A
+claim is gone, and its work is in `main`. A reservation whose branch no longer
+exists is spent, so the file is treated as free. Recorded rather than assumed.
 
 ---
 
