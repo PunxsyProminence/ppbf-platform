@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { POST } from './route';
-import { insertAthleteIfAbsent } from '@/src/server/pilot/entities';
+import { insertAthleteIfAbsent, getCoachById } from '@/src/server/pilot/entities';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import type { PilotAthlete } from '@/src/server/pilot/contracts';
@@ -16,6 +16,7 @@ jest.mock('@/src/server/pilot/http', () => {
 
 jest.mock('@/src/server/pilot/entities', () => ({
   insertAthleteIfAbsent: jest.fn().mockResolvedValue(true),
+  getCoachById: jest.fn().mockResolvedValue(true),
 }));
 
 jest.mock('@/src/server/pilot/audit', () => ({
@@ -24,6 +25,7 @@ jest.mock('@/src/server/pilot/audit', () => ({
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockInsertAthleteIfAbsent = insertAthleteIfAbsent as jest.Mock;
+const mockGetCoachById = getCoachById as jest.Mock;
 
 function principal(overrides: Partial<PilotPrincipal> = {}): PilotPrincipal {
   return {
@@ -114,5 +116,29 @@ describe('POST /api/pilot/athletes', () => {
 
     expect(response.status).toBe(403);
     expect(mockInsertAthleteIfAbsent).not.toHaveBeenCalled();
+  });
+
+  test('rejects creation with a non-existent coach', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockGetCoachById.mockResolvedValueOnce(false);
+
+    const response = await POST(makeRequest({ ...athletePayload({ coach_id: 'non-existent-coach' }) }));
+
+    expect(response.status).toBe(404);
+    expect(mockInsertAthleteIfAbsent).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toMatchObject({ error: expect.stringContaining('coach not found') });
+  });
+
+  test('allows creation when coach exists', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockGetCoachById.mockResolvedValueOnce(true);
+    mockInsertAthleteIfAbsent.mockResolvedValueOnce(true);
+
+    const payload = athletePayload();
+    const response = await POST(makeRequest({ ...payload }));
+
+    expect(response.status).toBe(200);
+    expect(mockGetCoachById).toHaveBeenCalledWith('org-1', 'coach-1');
+    expect(mockInsertAthleteIfAbsent).toHaveBeenCalledWith('org-1', payload);
   });
 });

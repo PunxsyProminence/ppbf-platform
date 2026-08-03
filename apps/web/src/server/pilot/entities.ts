@@ -5,6 +5,14 @@ export async function getAthleteById(organizationId: string, athleteId: string):
   return queryOne<PilotAthlete>('select * from pilot.athletes where organization_id = $1 and athlete_id = $2', [organizationId, athleteId]);
 }
 
+export async function getCoachById(organizationId: string, accountId: string): Promise<boolean> {
+  const coach = await queryOne<{ account_id: string }>(
+    'select account_id from pilot.accounts where account_id = $1 and organization_id = $2 and role = $3 and active_flag = $4',
+    [accountId, organizationId, 'coach', true],
+  );
+  return coach !== null;
+}
+
 export async function upsertAthlete(organizationId: string, payload: PilotAthlete): Promise<void> {
   await query(
     `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)

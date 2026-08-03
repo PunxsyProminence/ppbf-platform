@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { validateAthletePayload } from '@/src/server/pilot/validation';
-import { insertAthleteIfAbsent } from '@/src/server/pilot/entities';
+import { insertAthleteIfAbsent, getCoachById } from '@/src/server/pilot/entities';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
@@ -17,6 +17,11 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const payload = validateAthletePayload(body);
+
+    const coachExists = await getCoachById(principal.organizationId, payload.coach_id);
+    if (!coachExists) {
+      throw new Error('Not found: coach not found in this organization');
+    }
 
     // Create-only, and enforced by the primary key rather than by a prior
     // read: an "on conflict do update" here would silently overwrite an
