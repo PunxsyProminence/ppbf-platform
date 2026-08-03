@@ -1,17 +1,18 @@
 import { NextRequest } from 'next/server';
 
 import { POST } from './route';
-import { requirePrincipal } from '@/src/server/pilot/http';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { upsertGearProduct } from '@/src/server/pilot/gearCatalog';
 import { getVendorForOrganization } from '@/src/server/pilot/gearVendors';
-import type { PilotPrincipal } from '@/src/server/pilot/auth';
+import { requirePrincipal } from '@/src/server/pilot/http';
 
 /**
- * The vendor half of the gear route. #190's own boundary (the wholesale cost)
- * is covered by gearCatalog.pg.test.ts and the public store's route test; what
- * is new here is the brand, which is public, and the vendor id, which points
- * at a confidential record and must never point outside the caller's gym.
+ * Merged file: the cent and role hardening from #193, and the brand/vendor
+ * cases from the vendor-records slice. Both were written against this route at
+ * the same time and neither set is redundant -- #193 pins the money and the
+ * role boundary, this slice pins the public/confidential split between the
+ * brand on a product and the gym's account with that supplier.
  */
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -26,30 +27,20 @@ jest.mock('@/src/server/pilot/gearCatalog', () => {
 
 jest.mock('@/src/server/pilot/gearVendors', () => ({ getVendorForOrganization: jest.fn() }));
 
-jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn() }));
+jest.mock('@/src/server/pilot/audit', () => ({
+  writePilotAuditEvent: jest.fn(),
+}));
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockUpsert = upsertGearProduct as jest.Mock;
 const mockGetVendor = getVendorForOrganization as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
 
-function principal(over: Partial<PilotPrincipal> = {}): PilotPrincipal {
-  return {
-    accountId: 'admin-1',
-    role: 'organization_admin',
-    organizationId: 'org-1',
-    athleteId: null,
-    sessionToken: 'token',
-    authProvider: 'microsoft',
-    ...over,
-  } as PilotPrincipal;
-}
-
-const GLOVES = {
+const VALID_BODY = {
   product_id: 'gloves-12oz',
-  name: 'Training gloves 12oz',
+  name: 'Training gloves',
   brand: 'Everlast',
-  description: 'Club stock',
+  description: '',
   category: 'gloves',
   vendor_id: 'everlast',
   wholesale_cost_cents: 2000,
@@ -59,25 +50,105 @@ const GLOVES = {
   checkout_url: 'https://checkout.example.test/gloves',
 };
 
-function post(body: Record<string, unknown>) {
-  return POST(new NextRequest('http://localhost/api/pilot/admin/gear', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  }));
+function principal(overrides: Partial<PilotPrincipal> = {}): PilotPrincipal {
+  return {
+    accountId: 'admin-1',
+    role: 'organization_admin',
+    organizationId: 'org-1',
+    athleteId: null,
+    sessionToken: 'token',
+    authProvider: 'microsoft',
+    ...overrides,
+  } as PilotPrincipal;
+}
+
+function post(overrides: Record<string, unknown> = {}) {
+  return POST(
+    new NextRequest('http://localhost/api/pilot/admin/gear', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...VALID_BODY, ...overrides }),
+    }),
+  );
 }
 
 beforeEach(() => {
   jest.resetAllMocks();
   mockRequirePrincipal.mockResolvedValue(principal());
   mockUpsert.mockResolvedValue(undefined);
-  mockAudit.mockResolvedValue(undefined);
   mockGetVendor.mockResolvedValue({ vendor_id: 'everlast', vendor_name: 'Everlast' });
+  mockAudit.mockResolvedValue(undefined);
 });
+
+// ---------------------------------------------------------------------------
+// Money and roles (#193)
+// ---------------------------------------------------------------------------
+
+test.each([
+  ['wholesale_cost_cents', 12.5],
+  ['retail_price_cents', 99.5],
+])('rejects fractional cents in %s', async (field, value) => {
+  const response = await post({ [field]: value });
+  const body = await response.json();
+
+  expect(response.status).toBe(400);
+  expect(body.error).toMatch(/whole number of cents/i);
+  expect(mockUpsert).not.toHaveBeenCalled();
+  expect(mockAudit).not.toHaveBeenCalled();
+});
+
+test('writes whole cents only to the organization from the session', async () => {
+  const response = await post();
+  const body = await response.json();
+
+  expect(response.status).toBe(200);
+  expect(body).toEqual({ ok: true, product_id: 'gloves-12oz' });
+  expect(mockUpsert).toHaveBeenCalledWith(
+    'org-1',
+    expect.objectContaining({
+      wholesale_cost_cents: 2000,
+      retail_price_cents: 4000,
+    }),
+  );
+  expect(mockAudit).toHaveBeenCalledTimes(1);
+});
+
+test('refuses the platform owner and does not write', async () => {
+  mockRequirePrincipal.mockResolvedValue(
+    principal({
+      accountId: 'platform-owner',
+      role: 'platform_owner',
+      organizationId: 'platform',
+    }),
+  );
+
+  const response = await post();
+
+  expect(response.status).toBe(403);
+  expect(mockUpsert).not.toHaveBeenCalled();
+  expect(mockAudit).not.toHaveBeenCalled();
+});
+
+test('refuses a coach and does not write', async () => {
+  // Refused for a different reason than the platform owner above: the cost and
+  // the supplier account are commercial confidence, not coaching information.
+  mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'coach-1', role: 'coach' }));
+
+  const response = await post();
+
+  expect(response.status).toBe(403);
+  expect(mockUpsert).not.toHaveBeenCalled();
+  expect(mockGetVendor).not.toHaveBeenCalled();
+  expect(mockAudit).not.toHaveBeenCalled();
+});
+
+// ---------------------------------------------------------------------------
+// Brand and supplier: the public/confidential split
+// ---------------------------------------------------------------------------
 
 describe('brand and supplier on a product', () => {
   it('saves both, and looks the supplier up within the gym', async () => {
-    const response = await post(GLOVES);
+    const response = await post();
 
     expect(response.status).toBe(200);
     expect(mockGetVendor).toHaveBeenCalledWith('org-1', 'everlast');
@@ -90,20 +161,20 @@ describe('brand and supplier on a product', () => {
   it('accepts a product with no supplier recorded', async () => {
     // A normal state -- most of the catalogue predates the vendor table, and a
     // gym may know what it has before it records where it came from.
-    await post({ ...GLOVES, vendor_id: '' });
+    await post({ vendor_id: '' });
 
     expect(mockGetVendor).not.toHaveBeenCalled();
     expect(mockUpsert).toHaveBeenCalledWith('org-1', expect.objectContaining({ vendor_id: null }));
   });
 
   it('accepts a product with no brand', async () => {
-    await post({ ...GLOVES, brand: '' });
+    await post({ brand: '' });
 
     expect(mockUpsert).toHaveBeenCalledWith('org-1', expect.objectContaining({ brand: '' }));
   });
 
   it('refuses a brand long enough to be a description', async () => {
-    const response = await post({ ...GLOVES, brand: 'E'.repeat(200) });
+    const response = await post({ brand: 'E'.repeat(200) });
     const payload = await response.json();
 
     expect(response.status).toBe(400);
@@ -120,7 +191,7 @@ describe('a product cannot name another gym supplier account', () => {
     // which tells the admin nothing.
     mockGetVendor.mockResolvedValue(null);
 
-    const response = await post(GLOVES);
+    const response = await post();
     const payload = await response.json();
 
     expect(response.status).toBe(400);
@@ -132,28 +203,16 @@ describe('a product cannot name another gym supplier account', () => {
   it('looks the supplier up against the session gym, never a gym named in the body', async () => {
     mockRequirePrincipal.mockResolvedValue(principal({ organizationId: 'org-2' }));
 
-    await post({ ...GLOVES, organization_id: 'org-1' });
+    await post({ organization_id: 'org-1' });
 
     expect(mockGetVendor).toHaveBeenCalledWith('org-2', 'everlast');
     expect(mockUpsert.mock.calls[0]?.[0]).toBe('org-2');
   });
 });
 
-describe('who is refused', () => {
-  it.each(['platform_owner', 'coach'] as const)('refuses %s', async (role) => {
-    mockRequirePrincipal.mockResolvedValue(principal({ role }));
-
-    const response = await post(GLOVES);
-
-    expect(response.status).toBe(403);
-    expect(mockUpsert).not.toHaveBeenCalled();
-    expect(mockGetVendor).not.toHaveBeenCalled();
-  });
-});
-
 describe('the audit trail', () => {
   it('records the supplier id and nothing behind it', async () => {
-    await post(GLOVES);
+    await post();
 
     const event = mockAudit.mock.calls[0][0];
 

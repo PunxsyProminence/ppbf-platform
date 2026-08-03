@@ -225,14 +225,27 @@ describe('the field lists', () => {
     expect(vendorSource).toMatch(/const VENDOR_FIELDS =/);
   });
 
-  it('never selects a vendor column from the public store route', () => {
+  it('never reads a vendor record from the public store route', () => {
     const routeSource = readFileSync(
       path.resolve(__dirname, '../../../app/api/public/store/route.ts'),
       'utf8',
     );
 
-    expect(routeSource).not.toMatch(/gear_vendors/);
-    expect(routeSource).not.toMatch(/gearVendors/);
-    expect(routeSource).not.toMatch(/account_number/);
+    // Comments stripped first. The route's header explains at length why it
+    // does NOT touch the vendor table, and an assertion that cannot tell the
+    // explanation from the thing it warns against fails on its own
+    // documentation -- which is what happened when the note about
+    // pilot.gear_vendors was added.
+    const code = routeSource
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/.*$/gm, '$1');
+
+    expect(code).not.toMatch(/gear_vendors/);
+    expect(code).not.toMatch(/gearVendors/);
+    expect(code).not.toMatch(/account_number/);
+    // The brand is the one thing about a supplier that IS public, so the
+    // assertions above must not be passing simply because the strip ate
+    // everything.
+    expect(code).toMatch(/brand: product\.brand/);
   });
 });

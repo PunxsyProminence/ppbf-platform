@@ -36,7 +36,12 @@ export async function GET(request: NextRequest) {
 
     if (!organizationId) {
       const stores = await listPublicStores();
-      return NextResponse.json({ ok: true, stores });
+      const publicStores = stores.map((store) => ({
+        organization_id: store.organization_id,
+        organization_name: store.organization_name,
+        listed_product_count: store.listed_product_count,
+      }));
+      return NextResponse.json({ ok: true, stores: publicStores });
     }
 
     const products = await listPublicGear(organizationId);
@@ -45,7 +50,28 @@ export async function GET(request: NextRequest) {
     // identically, on purpose. Distinguishing them would turn this into a
     // probe for which organization ids are real, to a caller who has not
     // identified themselves.
-    return NextResponse.json({ ok: true, organization_id: organizationId, products });
+    const publicProducts = products.map((product) => ({
+      product_id: product.product_id,
+      name: product.name,
+      // Public on purpose. The brand printed on the glove -- a different fact
+      // from the gym's ACCOUNT with that brand, which is confidential and
+      // lives in pilot.gear_vendors, which this route does not read.
+      //
+      // This projection is a second allowlist on top of PUBLIC_FIELDS, so a
+      // field has to be named in BOTH to reach a shopper. That is the right
+      // shape, and it is also a trap for anyone widening the public read: add
+      // the column to the query alone and it is selected and then silently
+      // dropped here, so the feature ships doing nothing while every
+      // module-level test still passes. The route test below asserts the
+      // brand survives serialisation for exactly that reason.
+      brand: product.brand,
+      description: product.description,
+      category: product.category,
+      retail_price_cents: product.retail_price_cents,
+      availability: product.availability,
+      checkout_url: product.checkout_url,
+    }));
+    return NextResponse.json({ ok: true, organization_id: organizationId, products: publicProducts });
   } catch (error) {
     return jsonError(error);
   }
