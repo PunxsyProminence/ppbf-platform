@@ -9,6 +9,7 @@ import {
   loadAuthoritativeRoleSession,
 } from './roleSession';
 import type { ClubRole } from './roleRoutes';
+import { groundClasses } from './roleGround';
 import { apiBase } from '@/lib/apiBase';
 
 interface RoleSessionGateProps {
@@ -93,9 +94,9 @@ export default function RoleSessionGate({ allowedRoles, children }: RoleSessionG
 
   if (accessState !== 'authorized') {
     return (
-      <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
+      <main className={`grid min-h-screen place-items-center px-[var(--s5)] ${groundClasses(allowedRoles)}`}>
         <div className="text-center">
-          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--red-primary)]">Secure Session</p>
+          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[color:var(--brass-600)]">Secure Session</p>
           <h1 className="mt-3 font-display text-3xl tracking-tight">
             {accessState === 'retryable' ? 'Unable to verify access' : 'Checking access'}
           </h1>
@@ -103,7 +104,7 @@ export default function RoleSessionGate({ allowedRoles, children }: RoleSessionG
             <button
               type="button"
               onClick={() => setRetryNonce((value) => value + 1)}
-              className="mt-5 min-h-[44px] rounded-full border-2 border-[var(--black)] bg-[var(--red-primary)] px-5 text-sm font-black uppercase tracking-[0.12em] text-white"
+              className="btn mt-[var(--s5)]"
             >
               Retry
             </button>

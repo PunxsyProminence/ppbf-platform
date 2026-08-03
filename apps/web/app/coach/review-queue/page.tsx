@@ -5,7 +5,7 @@ import RoleStandaloneView from '@/components/RoleStandaloneView';
 
 export default function CoachReviewQueuePage() {
   return (
-    <RoleStandaloneView roleLabel="Coach Workspace" routeLabel="/coach/review-queue" allowedRoles={['coach']} showShellHeader={false}>
+    <RoleStandaloneView roleLabel="Coach Workspace" routeLabel="/coach/review-queue" allowedRoles={['coach']} room="floor" showShellHeader={false}>
       <CoachWorkspace />
     </RoleStandaloneView>
   );

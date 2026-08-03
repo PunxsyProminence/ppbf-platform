@@ -6,6 +6,9 @@ import { useSyncExternalStore } from "react";
 import { clearRoleSession, getRoleSessionSnapshot, subscribeRoleSession } from "./roleSession";
 import { apiBase } from '@/lib/apiBase';
 import FeedbackBox from "./FeedbackBox";
+import Corridor from "./Corridor";
+import CardCatalog from "./CardCatalog";
+import CommandsOverlay from "./CommandsOverlay";
 
 // The queue the "Tell Us" box fills is worked by the people who can act on it:
 // a gym's own administrators, and the platform owner reading across gyms.
@@ -20,7 +23,7 @@ const FEEDBACK_TRIAGE_ROLES = ["admin", "platform_owner"];
 
    - Targets were px-3 py-1, about 26px tall. That is under the 44px WCAG floor
      on a bar that ships on every route including phones. They are now --tap.
-   - The role badge was --red-primary, which aliases to --locked: the safety
+   - The role badge was --safety-locked, which aliases to --locked: the safety
      gate's "this athlete may not participate" red. Law 2 reserves saturated
      colour for safety state, and a job title is not one. Role is identity, so
      it wears patina brass and the red goes back to meaning only what it should.
@@ -74,12 +77,37 @@ export default function GlobalRoleHeader() {
       <div className={BAR}>
         <div className="flex items-center gap-[var(--s4)]">
           <span className={EYEBROW}>Session active</span>
-          <span className="mat-brass--patina inline-flex min-h-[var(--s6)] items-center rounded-[var(--r-sm)] px-[var(--s4)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.14em] text-[color:var(--hide-950)]">
+          {/* An engraved plate, not a painted one. This badge was
+              .mat-brass--patina with ink type, which reads fine in a mockup and
+              fails in pixels: patina is a mottled material, and its gradient
+              runs from rgb(72,68,32) to rgb(181,170,110). Sampling the rendered
+              badge put the ink label at 1.91:1 over the dark stops and 8.06:1
+              over the light ones -- legibility that depends on where in the
+              gradient a given role name happens to land.
+
+              A material with a range cannot carry small text. This is
+              ppbf.css's .plaque treatment instead: a recessed dark plate,
+              brass-700 rim, brass-200 legend. Flat ground, one contrast value,
+              and it is still unmistakably brass. Written out rather than using
+              .plaque itself because that class pins 13px through the `font:`
+              shorthand, which would beat the ladder size every other control on
+              this bar uses. */}
+          <span className="inline-flex min-h-[var(--s6)] items-center rounded-[var(--r-sm)] border border-[color:var(--brass-700)] bg-[rgba(0,0,0,.4)] px-[var(--s4)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.14em] text-[color:var(--brass-200)] shadow-[inset_0_1px_0_rgba(232,206,122,.16)]">
             {session.role}
           </span>
+          {/* The corridor: the other 61 routes used to be reachable only by
+              typing a URL. It lives in the header so every surface gets it.
+              Keyed on the pathname so walking through a door leaves it shut --
+              a remount rather than a setState-in-effect, which would cascade a
+              render on every navigation. */}
+          <Corridor key={`corridor:${pathname}`} />
         </div>
 
         <div className="flex flex-wrap items-center gap-[var(--s3)]">
+          {/* Keyed for the same reason as the corridor: a fresh, closed palette
+              on every surface, with no effect writing state on navigation. */}
+          <CardCatalog key={`catalog:${pathname}`} />
+          <CommandsOverlay />
           <FeedbackBox />
           {FEEDBACK_TRIAGE_ROLES.includes(session.role) ? (
             <Link href="/admin/feedback" className={CONTROL_QUIET}>

@@ -129,7 +129,7 @@ export function RabbitHole({ anchor, className }: Readonly<RabbitHoleProps>) {
     <section
       aria-label="Rabbit hole"
       data-testid="rabbit-hole"
-      className={className ?? 'border-l-4 border-[var(--black)] bg-[var(--canvas-tan-light)] p-3'}
+      className={className ?? 'border-l-4 border-[color:color-mix(in_srgb,currentColor_26%,transparent)]  p-3'}
     >
       <button
         type="button"
@@ -137,10 +137,10 @@ export function RabbitHole({ anchor, className }: Readonly<RabbitHoleProps>) {
         aria-expanded={expanded}
         className="flex w-full items-center justify-between text-left"
       >
-        <span className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[var(--black)]">
+        <span className="font-mono text-xs font-bold uppercase tracking-[0.1em]">
           {heading}
         </span>
-        <span className="text-xl text-[var(--black)]">{expanded ? '−' : '+'}</span>
+        <span className="text-xl">{expanded ? '−' : '+'}</span>
       </button>
 
       {expanded && (
@@ -149,27 +149,27 @@ export function RabbitHole({ anchor, className }: Readonly<RabbitHoleProps>) {
             <article
               key={lesson.rabbit_hole_id}
               data-testid="rabbit-hole-lesson"
-              className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-3 text-sm text-[var(--gray-dark)]"
+              className="border border-[color:color-mix(in_srgb,currentColor_26%,transparent)] p-3 text-sm opacity-80"
             >
               {/* Provenance before content: the reader learns who is talking and
                   on what authority before they read the claim. */}
-              <p className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--red-primary)]">
+              <p className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-[color:var(--brass-600)]">
                 Gym coaching · Written by {lesson.author_display_name}
               </p>
-              <h4 className="mt-1 text-sm font-semibold text-[var(--black)]">{lesson.title}</h4>
+              <h4 className="mt-1 text-sm font-semibold">{lesson.title}</h4>
               <p className="mt-2">
-                <span className="font-semibold text-[var(--black)]">Concept: </span>
+                <span className="font-semibold">Concept: </span>
                 {lesson.concept}
               </p>
               {lesson.homework ? (
-                <p className="mt-2 border-l-2 border-[var(--red-primary)] pl-2">
-                  <span className="font-semibold text-[var(--black)]">Homework: </span>
+                <p className="mt-2 border-l-2 border-[color:var(--brass-600)] pl-2">
+                  <span className="font-semibold">Homework: </span>
                   {lesson.homework}
                 </p>
               ) : null}
               {lesson.citation ? (
-                <p className="mt-2 text-xs text-[var(--gray-dark)]">
-                  <span className="font-semibold text-[var(--black)]">Library source: </span>
+                <p className="mt-2 text-xs opacity-80">
+                  <span className="font-semibold">Library source: </span>
                   {lesson.citation.document_name}
                 </p>
               ) : null}

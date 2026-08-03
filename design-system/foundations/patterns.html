@@ -1,0 +1,328 @@
+<!-- @dsCard group="Foundations" name="Patterns & UX" subtitle="Persistent notifications, form undo, empty states, command reference, print parity" -->
+<link rel="stylesheet" href="../ppbf.css">
+<style>
+  body.ppbf { padding: var(--s6); max-width: 1200px; margin: 0 auto; }
+  h1 { font-family: var(--font-stencil); font-size: var(--t-2xl); color: var(--bone-100);
+       text-shadow: 0 2px 0 rgba(0,0,0,.6); margin: 0 0 var(--s3); }
+  h2 { font-family: var(--font-stencil); font-size: var(--t-lg); color: var(--brass-300);
+       margin: var(--s7) 0 var(--s4); padding-bottom: var(--s3); border-bottom: 1px solid rgba(212,175,74,.28); }
+  .pattern { margin-bottom: var(--s8); }
+  .pattern > p { color: var(--bone-300); font-size: var(--t-sm); line-height: 1.6; max-width: 70ch; margin: 0 0 var(--s5); }
+
+  /* Pattern showcase panels */
+  .showcase { border-radius: var(--r-lg); padding: var(--s5); background: linear-gradient(135deg, rgba(42,31,24,.6), rgba(30,23,18,.7));
+              border: 1px solid rgba(212,175,74,.18); margin: var(--s4) 0; }
+
+  .section-note { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--brass-400);
+                  margin: var(--s6) 0 var(--s3); }
+</style>
+
+<body class="ppbf room--office">
+  <h1>UX Patterns & Interactions</h1>
+  <p style="color: var(--bone-300); max-width: 70ch; margin: 0 0 var(--s6);">
+    Five additions to the design system that improve usability without breaking the gym aesthetic.
+    All patterns respect <code>prefers-reduced-motion</code> and are keyboard-accessible.
+  </p>
+
+  <!-- ================================================================ ALERTS === -->
+  <div class="pattern">
+    <h2>1. Persistent Alert Notifications</h2>
+    <p>
+      Critical alerts (clearance needed, lock engaged, system issues) appear as inline banners
+      that live on the page until actively dismissed. <b>Not dismissible toasts.</b> Applies Law 7:
+      refusal is a stamp, not an error toast. Athletes and coaches see them; they don't disappear
+      if you blink.
+    </p>
+
+    <div class="section-note">Example: Coach Review Queue with an incoming alert</div>
+    <div class="showcase" style="display: flex; flex-direction: column; gap: var(--s5);">
+      <div class="alert alert--critical">
+        <div class="alert-icon">⚠</div>
+        <div class="alert-body">
+          <div class="alert-title">Layer 11 Lock Engaged</div>
+          <div class="alert-msg">Marcus D. has been flagged by the safety gate. Return-to-training clearance requires head-coach review.</div>
+          <div class="alert-action"><a href="#">Review clearance request</a></div>
+        </div>
+      </div>
+
+      <div class="alert alert--warning">
+        <div class="alert-icon">⚡</div>
+        <div class="alert-body">
+          <div class="alert-title">Incoming Data</div>
+          <div class="alert-msg">New session data arrived from the floor kiosk. Queue contains 3 pending reviews.</div>
+        </div>
+      </div>
+
+      <div class="alert alert--success">
+        <div class="alert-icon">✓</div>
+        <div class="alert-body">
+          <div class="alert-title">Sync Complete</div>
+          <div class="alert-msg">All changes saved to the continuity ledger. Last sync: 2026-08-01 18:34 EDT.</div>
+        </div>
+      </div>
+
+      <div class="alert alert--info">
+        <div class="alert-icon">ℹ</div>
+        <div class="alert-body">
+          <div class="alert-title">Network Unavailable</div>
+          <div class="alert-msg">The floor kiosk has no connection. Do not close this screen &mdash; a check-in submitted now is not saved.</div>
+        </div>
+      </div>
+    </div>
+
+    <p style="color: var(--bone-400); font-size: 11px; margin-top: var(--s4);">
+      <b>Usage:</b> Use <code>.alert</code> with <code>.alert--critical</code>, <code>.alert--warning</code>,
+      <code>.alert--success</code>, or <code>.alert--info</code>. Place at top of content area or inline near related content.
+      Keyboard-accessible; screen readers announce presence.
+    </p>
+
+    <div class="alert alert--warning" style="margin-top:var(--s5)">
+      <div class="alert-icon">⚠</div>
+      <div class="alert-body">
+        <div class="alert-title">Write only what is true</div>
+        <div class="alert-msg">
+          The network alert above used to read &ldquo;changes will sync when connectivity returns.&rdquo;
+          There is <b>no offline write queue in the platform</b> &mdash; no service worker, no
+          <code>navigator.onLine</code> handling, no pending-write store. A check-in submitted during
+          an outage is lost. Reassuring copy over silent data loss is worse than no copy at all, so
+          the alert now tells the athlete not to close the screen. Restore the softer wording only
+          once a queue actually exists.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================ UNDO === -->
+  <div class="pattern">
+    <h2>2. Form Undo/Redo Levers</h2>
+    <p>
+      Athletes and coaches make mistakes on the kiosk; admins make data-entry errors.
+      Undo/redo buttons styled as physical levers sit near form controls. Click to roll back
+      to the last saved state. Solves the "oops I submitted the wrong RPE" problem without
+      complex recovery flows.
+    </p>
+
+    <div class="section-note">Example: Athlete kiosk form with undo control</div>
+    <div class="showcase">
+      <form style="display: flex; flex-direction: column; gap: var(--s5);">
+        <div>
+          <label style="display: block; font-size: var(--t-sm); color: var(--bone-300); margin-bottom: var(--s3);">
+            How hard was that session?
+          </label>
+          <select style="min-height: 44px; padding: 0 var(--s3); font-size: 14px; border-radius: var(--r-md);
+                         background: rgba(0,0,0,.2); border: 1px solid rgba(212,175,74,.2); color: var(--bone-100);">
+            <option>2 — Light warm-up drills</option>
+            <option>5 — Moderate session pace</option>
+            <option selected>8 — Heavy conditioning threshold</option>
+            <option>10 — Absolute peak output</option>
+          </select>
+        </div>
+
+        <div>
+          <label style="display: block; font-size: var(--t-sm); color: var(--bone-300); margin-bottom: var(--s3);">
+            Notes on your session
+          </label>
+          <textarea style="min-height: 80px; padding: var(--s3); font-size: 13px; border-radius: var(--r-md);
+                           background: rgba(0,0,0,.2); border: 1px solid rgba(212,175,74,.2); color: var(--bone-100);
+                           font-family: inherit;"
+                    placeholder="Optional notes for the coach…"></textarea>
+        </div>
+
+        <div class="undo-redo-group">
+          <button type="button" class="btn--lever" title="Undo the last change">↶ Undo</button>
+          <button type="button" class="btn--lever" title="Redo the last undone change">↷ Redo</button>
+        </div>
+
+        <button type="submit" class="btn" style="width: 100%;">Submit Check-In</button>
+      </form>
+    </div>
+
+    <p style="color: var(--bone-400); font-size: 11px; margin-top: var(--s4);">
+      <b>Usage:</b> Wrap in <code>.undo-redo-group</code>. Use <code>.btn--lever</code> for individual buttons.
+      Connected to form state; rolls back to last <code>saved</code> checkpoint, not every keystroke.
+    </p>
+  </div>
+
+  <!-- ================================================================ EMPTY === -->
+  <div class="pattern">
+    <h2>3. Empty State Guidance</h2>
+    <p>
+      When a list, grid, or panel loads with no data, show what's supposed to go there and what's
+      needed to make it appear. Encourages exploration and explains the flow. Much better than
+      blank space.
+    </p>
+
+    <div class="section-note">Example: Coach Review Queue with no pending reviews</div>
+    <div class="showcase" style="display: flex; gap: var(--s6); align-items: center;">
+      <div style="flex: 1;">
+        <div class="empty">
+          <div class="empty-glyph">📋</div>
+          <div class="empty-title">No Pending Reviews</div>
+          <div class="empty-msg">All athletes on the floor have been cleared. New reviews will appear here when the Layer 10 system flags a check-in.</div>
+          <div class="empty-action">
+            <button class="btn--ghost" style="font-size: 12px; padding: 0 var(--s4); height: 38px;">View Recent History</button>
+            <button class="btn--ghost" style="font-size: 12px; padding: 0 var(--s4); height: 38px;">Refresh Now</button>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex: 1; border-left: 1px dashed rgba(212,175,74,.14); padding-left: var(--s6);">
+        <div class="empty">
+          <div class="empty-glyph">🏃</div>
+          <div class="empty-title">No Athletes Checked In</div>
+          <div class="empty-msg">The kiosk is waiting for someone to scan a card or enter a PIN. Invite athletes to the floor or check the schedule.</div>
+          <div class="empty-action">
+            <button class="btn--ghost" style="font-size: 12px; padding: 0 var(--s4); height: 38px;">View Today's Schedule</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p style="color: var(--bone-400); font-size: 11px; margin-top: var(--s4);">
+      <b>Usage:</b> Use <code>.empty</code> container with <code>.empty-glyph</code>, <code>.empty-title</code>,
+      <code>.empty-msg</code>, and <code>.empty-action</code>. Pair with relevant contextual actions.
+    </p>
+  </div>
+
+  <!-- ================================================================ COMMANDS === -->
+  <div class="pattern">
+    <h2>4. Command Reference Card</h2>
+    <p>
+      A command cheat that pops up on <code>?</code>, styled as a laminated notice posted on the gym
+      wall. <b>It renders from a shortcut registry</b> (<code>shortcuts.ts</code>), not from hand-written
+      markup, so it can only list keys that something actually binds &mdash; see the note below for why
+      that matters.
+    </p>
+
+    <div class="alert alert--warning" style="margin-bottom:var(--s5)">
+      <div class="alert-icon">⚠</div>
+      <div class="alert-body">
+        <div class="alert-title">This card used to be a picture of a feature</div>
+        <div class="alert-msg">
+          The first version listed eight shortcuts &mdash; submit/next, approve/deny, lock/unlock &mdash;
+          and <b>not one of them was bound to anything</b>. That is worse than shipping no card, because
+          a documented key that does nothing teaches a user the keyboard is not worth trying here.
+          The overlay now renders from the registry, and a test asserts every listed entry has an
+          owning component.
+          <br><br>
+          <b>Approve/deny are deliberately absent.</b> The coach's review queue
+          (<code>shadow/review-projection</code>) is read-only, and the only coach decision endpoint
+          (<code>coach-reviews</code>) resolves <code>session_id</code> to a <em>training session</em>
+          while the queue holds <code>intake_case_id</code> &mdash; a different entity. Binding a key to
+          approve would fail validation or, on an ID collision, attach a review to the wrong athlete.
+          Triage needs a coach-facing write endpoint first.
+        </div>
+      </div>
+    </div>
+
+    <div class="section-note">Example: Floating command card in a workspace</div>
+    <div class="showcase" style="position: relative; min-height: 300px; display: flex; align-items: center; justify-content: center;">
+      <div class="commands-sheet" style="animation:none;position:relative;max-width:460px;margin:0 auto">
+        <div class="commands-sheet-hd">
+          <b>Keyboard</b>
+          <span>Everything here is bound. Nothing here is decoration.</span>
+        </div>
+        <section class="commands-scope">
+          <div class="commands-scope-hd">Anywhere</div>
+          <ul class="commands-list">
+            <li class="commands-item"><span class="commands-key">&#8984;K</span>
+              <span class="commands-desc">Open the card catalog &mdash; jump to any surface</span></li>
+            <li class="commands-item"><span class="commands-key">/</span>
+              <span class="commands-desc">Open the card catalog (when not typing in a field)</span></li>
+            <li class="commands-item"><span class="commands-key">?</span>
+              <span class="commands-desc">Show this list of shortcuts</span></li>
+          </ul>
+        </section>
+        <section class="commands-scope">
+          <div class="commands-scope-hd">In a dialog</div>
+          <ul class="commands-list">
+            <li class="commands-item"><span class="commands-key">Esc</span>
+              <span class="commands-desc">Close the catalog, the corridor, or this list</span></li>
+          </ul>
+        </section>
+        <section class="commands-scope">
+          <div class="commands-scope-hd">In a list</div>
+          <ul class="commands-list">
+            <li class="commands-item"><span class="commands-key">&#8593; &#8595;</span>
+              <span class="commands-desc">Move through catalog results</span></li>
+            <li class="commands-item"><span class="commands-key">&#8629;</span>
+              <span class="commands-desc">Open the highlighted result</span></li>
+          </ul>
+        </section>
+        <div class="commands-sheet-ft"><kbd>esc</kbd> or <kbd>?</kbd> to close</div>
+      </div>
+      </div>
+
+      <div style="color: var(--bone-400); text-align: center;">
+        <div style="font-size: 48px; opacity: .3; margin-bottom: var(--s4);">⌨</div>
+        <div style="font-size: var(--t-sm);">Press <code>?</code> to show commands</div>
+      </div>
+    </div>
+
+    <p style="color: var(--bone-400); font-size: 11px; margin-top: var(--s4);">
+      <b>Usage:</b> Use <code>.commands</code> as a floating or drawer component. Contains <code>.commands-list</code>
+      with <code>.commands-item</code> pairs of <code>.commands-key</code> and <code>.commands-desc</code>.
+      Show on <code>?</code> keypress or in an always-visible corner.
+    </p>
+  </div>
+
+  <!-- ================================================================ PRINT === -->
+  <div class="pattern">
+    <h2>5. Print Parity & Paper Rendering</h2>
+    <p>
+      Every screen prints identically to how it renders on screen. A board governance record and a
+      family record are the same stamped sheet — print them and they should look the same.
+      <b>Print this page</b> to see how the room-specific materials (plank wall, desk lamps) disappear
+      and content reorganizes for paper.
+    </p>
+
+    <div class="section-note">Print behaviors per room</div>
+    <div class="showcase" style="font-size: 12px; line-height: 1.6;">
+      <div style="margin-bottom: var(--s5);">
+        <div style="color: var(--brass-300); font-weight: 650; margin-bottom: var(--s2);">All rooms on print:</div>
+        <ul style="margin: 0; padding-left: var(--s6); color: var(--bone-400);">
+          <li>Remove decorative room backgrounds (plank wall, brick wall, cork wall, etc.)</li>
+          <li>Remove light fixtures and shadow effects</li>
+          <li>Print on white background with black text</li>
+          <li>Remove navigation rails, toolbars, and interactive chrome</li>
+          <li>Keep all data visible and legible</li>
+          <li>Preserve stamps and badges (printed as outlined boxes)</li>
+          <li>Convert links and buttons to text with lines (line-through or underline)</li>
+        </ul>
+      </div>
+
+      <div>
+        <div style="color: var(--brass-300); font-weight: 650; margin-bottom: var(--s2);">Room-specific print tweaks:</div>
+        <ul style="margin: 0; padding-left: var(--s6); color: var(--bone-400);">
+          <li><code>.room--office</code> – Ledger tape becomes columnar, plank background disappears</li>
+          <li><code>.room--floor</code> – Kiosk bar and schedule components scale down for 5x8 card stock</li>
+          <li><code>.room--board</code> – Role rail becomes a header; board seat names remain visible</li>
+          <li><code>.room--clinic</code> – Medical clearance stamps remain prominent; green shade disappears</li>
+          <li><code>.room--file</code> – Cork wall and gooseneck disappear; research data stays centered</li>
+          <li><code>.room--night</code> – Ink ground becomes white; locked/refusal data remains legible</li>
+        </ul>
+      </div>
+    </div>
+
+    <div style="margin-top: var(--s5); padding: var(--s4); background: rgba(79,157,94,.08); border-left: 3px solid var(--cleared); border-radius: 0 var(--r-lg) var(--r-lg) 0;">
+      <div style="color: var(--cleared); font: 650 11px/1 var(--font-data); letter-spacing: .08em; text-transform: uppercase; margin-bottom: var(--s2);">✓ Test the print view</div>
+      <div style="color: var(--bone-300); font-size: var(--t-sm);">
+        Right-click → Print, or Cmd+P (Mac) / Ctrl+P (Windows). The design system renders
+        correctly; the real app pages (board, kiosk, admin console) will do the same once their
+        <code>@media print</code> sections are tuned per room.
+      </div>
+    </div>
+
+    <p style="color: var(--bone-400); font-size: 11px; margin-top: var(--s4);">
+      <b>Usage:</b> Add room-specific <code>@media print { }</code> rules. Reference ppbf.css for
+      the base media query structure. Each room should document what appears on paper.
+    </p>
+  </div>
+
+  <div style="margin-top: var(--s8); padding-top: var(--s6); border-top: 1px dashed rgba(212,175,74,.14);">
+    <p style="color: var(--bone-400); font-size: 11px;">
+      All five patterns are zero-asset, keyboard-accessible, and respect <code>prefers-reduced-motion</code>.
+      Integrate by adding the class names to your markup and handling the interactions in your application layer.
+    </p>
+  </div>
+</body>

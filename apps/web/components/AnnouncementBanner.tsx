@@ -188,18 +188,18 @@ export default function AnnouncementBanner({
   return (
     <section
       aria-label={heading ?? KIND_LABELS[kind]}
-      className={className ?? 'rounded-lg border border-[rgba(0,0,0,0.12)] bg-white p-3'}
+      className={className ?? 'rounded-lg border border-[rgba(0,0,0,0.12)]  p-3'}
     >
-      {heading ? <p className="mb-2 text-xs font-semibold text-[var(--black)]">{heading}</p> : null}
+      {heading ? <p className="mb-2 text-xs font-semibold">{heading}</p> : null}
       <div className="space-y-2">
         {items.map((item) => (
           <article
             key={item.announcement_id}
-            className="rounded-2xl border border-[rgba(0,0,0,0.12)] bg-white px-4 py-3 shadow-[var(--shadow-sm)]"
+            className="rounded-2xl border border-[rgba(0,0,0,0.12)] px-4 py-3 shadow-[var(--shadow-sm)]"
           >
-            <p className="text-sm leading-6 text-[var(--black)]">{item.message}</p>
+            <p className="text-sm leading-6">{item.message}</p>
             {withByline ? (
-              <p className="mt-2 text-[11px] font-mono uppercase tracking-[0.08em] text-[var(--gray-medium)]">
+              <p className="mt-2 text-[11px] font-mono uppercase tracking-[0.08em] opacity-60">
                 By {item.author_name} ({item.author_role}) - {formatAnnouncementTime(item.created_at)}
               </p>
             ) : null}
