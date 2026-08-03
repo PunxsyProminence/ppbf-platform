@@ -266,56 +266,107 @@ These improve observability and UX polish.
 
 ### CAP2-P2-001: Status Chip on People List
 **Priority:** LOW (polish)  
-**Effort:** 3-4 hours
+**Effort:** 3-4 hours  
+**Status:** ✅ COMPLETED (commit e3dc50d)
 
-- [ ] Update People list view
-  - Replace multi-line status with single chip
-  - Show: `Active · PIN set` / `Pending PIN` / `Deactivated` / `Guardian · no children`
-- [ ] Test on various screen sizes
-- [ ] Verify accessibility (contrast, screen reader)
+- [x] Status is now a bordered pill (`inline-flex … rounded-full border`) instead
+  of bare uppercase text, so the column is scannable down a roster
+- [x] Tone-driven styling retained: ok / pending / blocked
 
-**Acceptance:** People list shows concise status chips
+**Two deliberate departures from the audit's suggestion:**
+1. **Labels were not shortened to `Guardian · no children`.** The existing
+   wording — "Linked to no athlete — would see nothing" — is carrying a warning,
+   and the audit's own §2 lists surfacing stranded guardians as a strength not to
+   improve away. A terser chip would have cost the meaning.
+2. **`blocked` is muted, not alarm red.** It covers both "Deactivated" (an
+   intended admin action) and the stranded-guardian case. Painting every
+   deactivated member red would cry wolf; the genuine fault already has its own
+   red banner above the list.
+
+**Acceptance:** ✅ Chips render; warning wording preserved
+
+---
+
+### Note on the original audit's premise for P2-1
+The audit described the People list status as "multi-line". It was already a
+single line — the improvement available was chip *styling*, not restructuring.
+Recorded here so the next reader does not go looking for a multi-line layout.
 
 ---
 
 ### CAP2-P2-002: Last Audit Trail on Athlete Record
 **Priority:** LOW (observability)  
-**Effort:** 2-3 hours
+**Effort:** 2-3 hours  
+**Status:** ✅ COMPLETED (commit e3dc50d)
 
-- [ ] Update Athlete Records detail view
-  - Surface latest audit event for that athlete_id
-  - Show: "Last updated by {actor_name} on {date}: {changed_fields}"
-- [ ] Pull from `pilot.audit_events` table
-- [ ] Only show field names (never values for minors)
+- [x] Correction panel reads the newest event via the existing
+  `POST /api/pilot/audit/get` (`entity_type: 'athlete'`, `entity_id`, `limit: 1`)
+  — no new endpoint needed; that route is already org-scoped and admin/coach-gated
+- [x] Renders "Last corrected by {actor} on {date} — changed {fields}", plus
+  "marked inactive / active again" when `active_flag` moved
+- [x] Field names mapped to operator wording (`dob` → "date of birth")
+- [x] **Values are never rendered** — audit details for athlete records hold field
+  names only, and a test asserts the panel contains neither the stored dob nor the
+  emergency contact
+- [x] An unreadable trail says so explicitly rather than rendering as "never
+  corrected" — a silently empty history on an edited record would be a lie
+- [x] Refreshes after a save, so the panel is not one correction behind
 
-**Acceptance:** Athlete record shows "Last corrected by X on date Y"
+**Harness note:** the athletes page test harness had to learn
+`/api/pilot/audit/get`. Without it the new fetch hit the harness's
+`Unexpected fetch` throw and was swallowed by the loader's `catch`, so the suite
+went green while covering nothing.
+
+**Acceptance:** ✅ Panel shows who/when/what, with values withheld and the
+unreadable path handled
 
 ---
 
 ### CAP2-P2-003: DOB Timezone Handling Test
 **Priority:** LOW (regression prevention)  
-**Effort:** 1 hour
+**Effort:** 1 hour  
+**Status:** ✅ COMPLETED (commit e3dc50d)
 
-- [ ] Add unit test for `comparable()` function
-  - Create DOB in one timezone
-  - Parse as Date in another timezone
-  - Verify `comparable()` returns same string
-  - Verify no-op save does not report "changed"
-- [ ] Test file: `apps/web/app/api/pilot/athletes/update/route.test.ts`
+- [x] Added to `apps/web/app/api/pilot/athletes/update/route.test.ts`, exercising
+  `comparable()` through the route (the real audit path) rather than in isolation
+- [x] A no-op save reports **no** dob change in five zones: `UTC`, `Asia/Tokyo`
+  (east), `America/Los_Angeles` (west), `Asia/Kolkata` (half-hour offset) and
+  `Pacific/Kiritimati` (+14)
+- [x] A genuine correction is still reported as changed east of UTC — so the test
+  cannot pass by the helper simply never reporting anything
+- [x] `process.env.TZ` restored after each case
 
-**Acceptance:** Test verifies DOB does not appear changed across timezones
+**These tests have teeth:** a UTC-based helper (`toISOString().slice(0, 10)`)
+fails the Tokyo case, because a Date at Tokyo local midnight is the *previous* day
+in UTC. That is exactly the drift that would put a false "dob corrected" entry in
+the trail on every save.
+
+**Acceptance:** ✅ Verified across five zones, with a positive control
 
 ---
 
 ### CAP2-P2-004: Weight Class Options
 **Priority:** LOW (future)  
-**Effort:** 2 days (requires schema + migration)
+**Effort:** 2 days (requires schema + migration)  
+**Status:** ⏸️ NOT STARTED — deliberately left for a product decision
 
 - [ ] Optional: Extract weight classes to org-specific list
 - [ ] Example values: "Bantam", "Feather", "Light", "Middleweight", "Cruiserweight", "Heavyweight"
 - [ ] Create schema: `pilot.organization_weight_classes` table
 - [ ] Add UI: Organization admin can customize weight classes
 - [ ] Not required for Capability #2 completion
+
+**Why this one was not implemented with the rest of P2.** Unlike every other item
+in this queue it is not a hardening or wording change — it needs a new table, a
+migration, a backfill of existing free-text values, and an answer to a question
+engineering cannot answer alone: **whose vocabulary wins?** Weight classes are set
+by sanctioning bodies and differ by age bracket and ruleset, so the list is a
+governance decision, not a constant. Guessing at it would bake one gym's
+assumptions into the schema for everyone.
+
+Both source documents also class it as optional and out of scope for Capability
+#2 (`DEEP_IMPROVEMENT_AUDIT_CAPABILITY_2.md` §3 P2-5: "Not required now"). Flagged
+rather than silently skipped.
 
 ---
 
@@ -326,8 +377,13 @@ These improve observability and UX polish.
 | P0 Security | 6 | — | ✅ Implemented |
 | P0 Capability | 4 | 8-13 hrs | ✅ 4/4 Complete |
 | P1 Improvements | 5 | 8-12 hrs | ✅ 5/5 Complete |
-| P2 Polish | 4 | 6-8 hrs | 🔴 Not Started |
-| **Total** | **19** | **22-33 hrs** | **15 Complete** |
+| P2 Polish | 4 | 6-8 hrs | ✅ 3/4 — P2-004 deferred |
+| **Total** | **19** | **22-33 hrs** | **18 done, 1 deferred** |
+
+**The one deferred item** is CAP2-P2-004 (org-specific weight classes). It needs a
+schema migration and a governance decision about whose weight-class vocabulary is
+authoritative — both source audits already class it as optional and out of scope
+for Capability #2. See that section for the reasoning.
 
 **Found while implementing (not in the original audit):** the intake promotion
 route was a second, unvalidated write path for `gym_status` — closed under
@@ -349,25 +405,51 @@ constraints P0 added.
 
 ---
 
-## 🚀 Recommended Implementation Order
+## 🚀 Implementation Order — all phases now complete
 
-**Sprint 1 (Security Critical):**
-1. SEC-001 through SEC-006 (all security fixes)
+- ✅ **Phase 1 (Security Critical):** SEC-001 … SEC-006
+- ✅ **Phase 2 (Capability Correctness):** CAP2-P0-001 … CAP2-P0-004
+- ✅ **Phase 3 (Operational):** CAP2-P1-001 … CAP2-P1-005
+- ✅ **Phase 4 (Polish):** CAP2-P2-001 … CAP2-P2-003 — CAP2-P2-004 deferred
 
-**Sprint 2 (Capability Correctness):**
-1. CAP2-P0-001 - Constrain gym_status
-2. CAP2-P0-002 - Clarify coach create rights
-3. CAP2-P0-003 - Validate coach exists
-4. CAP2-P0-004 - Athlete self-update scope
+---
 
-**Sprint 3 (Operational):**
-1. CAP2-P1-001 through CAP2-P1-005 - Friction reduction
+## ⚠️ Still needs a human before deploy
 
-**Sprint 4+ (Polish):**
-1. CAP2-P2-001 through CAP2-P2-003 - Observability
+The security fixes added three startup guards, and **nothing calls them yet.**
+They are exported functions, not wired into a bootstrap path:
+
+- `validateDurableRateLimitConfiguration()` — `src/server/pilot/rateLimit.ts`
+- `validateSslConfiguration()` — `src/server/pilot/db.ts`
+
+Until they are invoked at startup, SEC-003 and SEC-005 protect nothing at runtime.
+`SECURITY_FIXES_APPLIED.md` lists this under "Startup Validation" as a deploy step
+— it is the one outstanding piece of that work, and it needs a decision about
+where this app's startup hook lives.
+
+Also unverified by automated tests: **SEC-006's organization-isolation checklist**
+is a framework of structural assertions and `expect(true).toBe(true)` placeholders,
+not executing coverage. The checklist still has to be walked by hand.
+
+---
+
+## 🔎 Found while implementing, not in the original audit
+
+**The intake promotion route was a second unvalidated write path.**
+`POST /api/pilot/intake/review-action` wrote `promotion.athlete.gym_status`
+straight to `upsertAthlete` with no allow-list check, so an approved intake case
+could store a value the roster form cannot offer and the coach workspace then
+displays verbatim. Closed under CAP2-P1-001, found by the typechecker rather than
+by the audit.
+
+**The lesson for future passes:** the original audit's API surface map covered
+`/api/pilot/athletes*` only. Any constraint added to a roster route should be
+checked against **every** `upsertAthlete` caller, not just the documented one.
 
 ---
 
 **Branch:** `claude/ppbf-platform-audit-w3va0j`  
 **Last Updated:** 2026-08-03  
-**Ready for:** Team review and sprint planning
+**Verification:** 2722 tests passing, `tsc --noEmit` clean  
+**Not verified:** anything requiring a live database (`*.pg.test.ts` are excluded
+from the default suite), or the startup guards above
