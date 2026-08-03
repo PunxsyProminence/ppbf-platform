@@ -31,6 +31,19 @@ interface RosterAthlete {
   account_updated_at: string | null;
 }
 
+/**
+ * One guardian-to-athlete link. This is what a parent account actually reads
+ * through — a parent with no link signs in and resolves no children — so it is
+ * shown on the row rather than left for the family to discover.
+ */
+interface GuardianLink {
+  account_id: string;
+  parent_id: string;
+  athlete_id: string;
+  athlete_full_name: string;
+  relationship_to_athlete: string;
+}
+
 type Tab = 'people' | 'invite-staff' | 'add-athlete';
 
 /**
@@ -45,7 +58,25 @@ const STAFF_ROLES = [
   { value: 'coach', label: 'Coach', blurb: 'Works with assigned athletes; sees their sessions and notes.' },
   { value: 'staff', label: 'Staff', blurb: 'General gym staff without coaching assignments.' },
   { value: 'volunteer', label: 'Volunteer', blurb: 'Limited helper access.' },
-  { value: 'parent', label: 'Parent / Guardian', blurb: 'Sees only the athletes they are linked to.' },
+  {
+    value: 'parent',
+    label: 'Parent / Guardian',
+    blurb: 'Sees only the athletes you link them to below, and nothing else in the gym.',
+  },
+];
+
+/**
+ * pilot.guardian_links.relationship_to_athlete is plain `text`, so the
+ * vocabulary is convention. A fixed list keeps the intake path and this form
+ * writing the same words for the same relationship, and "Other" carries the
+ * cases a list cannot anticipate without inviting free text everywhere.
+ */
+const GUARDIAN_RELATIONSHIPS = [
+  { value: 'mother', label: 'Mother' },
+  { value: 'father', label: 'Father' },
+  { value: 'guardian', label: 'Legal guardian' },
+  { value: 'grandparent', label: 'Grandparent' },
+  { value: 'other', label: 'Other family member' },
 ];
 
 const ATHLETE_MODES: Array<{ value: AthleteMode; label: string; blurb: string }> = [
@@ -81,14 +112,34 @@ function roleLabel(role: string): string {
 }
 
 /**
- * Describes whether a person can actually sign in right now, which is the
- * question an admin is really asking when they look at this list. A row can
- * exist and still be unusable in two very different ways, and they have
- * different fixes.
+ * Describes whether a person can actually sign in AND see the thing their role
+ * exists for, which is the question an admin is really asking when they look
+ * at this list. A row can exist and still be unusable in several very
+ * different ways, and they have different fixes.
+ *
+ * A guardian is the case worth spelling out: a parent account signs in
+ * perfectly well with no guardian link and then resolves no children, so
+ * "Signs in with Microsoft" alone would describe a working account that shows
+ * a family an empty page.
+ *
+ * `guardianLinkCount` is null when the guardian links could not be read at
+ * all, which is reported as unknown rather than as zero.
  */
-function signInStatus(member: Member): { label: string; tone: 'ok' | 'pending' | 'blocked' } {
+function signInStatus(
+  member: Member,
+  guardianLinkCount: number | null,
+): { label: string; tone: 'ok' | 'pending' | 'blocked' } {
   if (!member.active_flag || !member.membership_active) {
     return { label: 'Deactivated', tone: 'blocked' };
+  }
+
+  if (member.role === 'parent') {
+    if (guardianLinkCount === null) {
+      return { label: 'Guardian links could not be read', tone: 'pending' };
+    }
+    if (guardianLinkCount === 0) {
+      return { label: 'Linked to no athlete — would see nothing', tone: 'blocked' };
+    }
   }
 
   if (member.auth_provider === 'microsoft') {
@@ -116,7 +167,7 @@ function WrongRoleNotice() {
   return (
     <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
       <div className="mx-auto max-w-xl space-y-5 text-center">
-        <p className="text-xs font-mono uppercase tracking-[0.3em] text-[var(--red-primary)]">Different Console</p>
+        <p className="text-xs font-mono uppercase tracking-[0.3em] text-[color:var(--brass-800)]">Different Console</p>
         <h1 className="font-display text-3xl font-black">People is managed per gym</h1>
         <p className="text-sm leading-7 text-[var(--gray-dark)]">
           This console belongs to a gym admin — it manages one organization&apos;s coaches, staff, and athletes. As
@@ -125,7 +176,7 @@ function WrongRoleNotice() {
         <div className="flex flex-wrap items-center justify-center gap-3">
           <Link
             href="/admin/organizations"
-            className="inline-flex min-h-[48px] items-center justify-center rounded-full border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-6 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-[var(--red-highlight)]"
+            className="inline-flex min-h-[48px] items-center justify-center rounded-full border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-6 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-[var(--red-highlight)]"
           >
             Organization Provisioning
           </Link>
@@ -144,6 +195,11 @@ function WrongRoleNotice() {
 function PeopleConsoleContent() {
   const [tab, setTab] = useState<Tab>('people');
   const [members, setMembers] = useState<Member[]>([]);
+  const [guardianLinks, setGuardianLinks] = useState<GuardianLink[]>([]);
+  // Distinct from an empty list: the roster read can succeed while the
+  // guardian links are absent, and "no links returned" must never be shown as
+  // "this guardian is linked to nobody".
+  const [guardianLinksAvailable, setGuardianLinksAvailable] = useState(false);
   const [roster, setRoster] = useState<RosterAthlete[]>([]);
   const [rosterAvailable, setRosterAvailable] = useState(false);
   const [organizationId, setOrganizationId] = useState('');
@@ -155,6 +211,16 @@ function PeopleConsoleContent() {
   // Invite staff form
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('coach');
+
+  // Guardian half of a parent invite. The server refuses the parent role
+  // without all three, because the account is only useful attached to a child.
+  const [guardianFullName, setGuardianFullName] = useState('');
+  const [guardianAthleteId, setGuardianAthleteId] = useState('');
+  const [guardianRelationship, setGuardianRelationship] = useState(GUARDIAN_RELATIONSHIPS[0].value);
+
+  // Which guardian link the admin has asked to remove, held so the removal
+  // needs a second, explicit confirmation on the row itself.
+  const [pendingUnlink, setPendingUnlink] = useState<{ accountId: string; athleteId: string } | null>(null);
 
   // Add athlete form. account_id and athlete_id are shared by both modes; the
   // rest of the roster fields are only sent when creating a new record.
@@ -195,6 +261,7 @@ function PeopleConsoleContent() {
       const membersPayload = (await membersResponse.json().catch(() => ({}))) as {
         ok?: boolean;
         members?: Member[];
+        guardian_links?: GuardianLink[];
         organization_id?: string;
         error?: string;
       };
@@ -205,6 +272,16 @@ function PeopleConsoleContent() {
 
       setMembers(membersPayload.members || []);
       setOrganizationId(membersPayload.organization_id || '');
+
+      // Only an actual array counts as an answer. Anything else leaves every
+      // parent row reporting that the links are unknown, which is the truth.
+      if (Array.isArray(membersPayload.guardian_links)) {
+        setGuardianLinks(membersPayload.guardian_links);
+        setGuardianLinksAvailable(true);
+      } else {
+        setGuardianLinks([]);
+        setGuardianLinksAvailable(false);
+      }
 
       // The roster directory is what lets an admin pick an existing athlete
       // instead of typing an id from memory, and it is also how this page
@@ -247,6 +324,47 @@ function PeopleConsoleContent() {
   // exists to serve, and the reason it can be a picker instead of a text box.
   const unlinkedAthletes = useMemo(() => roster.filter((athlete) => !athlete.account_id), [roster]);
 
+  const guardianLinksByAccount = useMemo(() => {
+    const byAccount = new Map<string, GuardianLink[]>();
+    for (const link of guardianLinks) {
+      const existing = byAccount.get(link.account_id);
+      if (existing) {
+        existing.push(link);
+      } else {
+        byAccount.set(link.account_id, [link]);
+      }
+    }
+    return byAccount;
+  }, [guardianLinks]);
+
+  const strandedGuardians = useMemo(
+    () =>
+      guardianLinksAvailable
+        ? members.filter(
+            (member) =>
+              member.role === 'parent'
+              && member.active_flag
+              && member.membership_active
+              && !guardianLinksByAccount.has(member.account_id),
+          )
+        : [],
+    [guardianLinksAvailable, guardianLinksByAccount, members],
+  );
+
+  /**
+   * Why a parent cannot be invited right now, or null when they can.
+   *
+   * A guardian link points at one athlete record, and picking the wrong child
+   * hands an adult another family's records. So the choice is made from the
+   * roster the server returned or not at all — never from an id typed blind
+   * against a roster this page could not read.
+   */
+  const parentInviteBlockedReason = !rosterAvailable
+    ? 'Your gym roster could not be read, so there is no verified list of athletes to link a guardian to. Reload this page and try again.'
+    : roster.length === 0
+      ? 'There are no athlete records in your gym yet. Add the athlete first, then invite their guardian.'
+      : null;
+
   const rosterById = useMemo(() => new Map(roster.map((athlete) => [athlete.athlete_id, athlete])), [roster]);
 
   const trimmedAthleteId = athleteId.trim();
@@ -282,18 +400,45 @@ function PeopleConsoleContent() {
     Boolean(athleteAccountId.trim() && trimmedAthleteId)
     && (athleteMode === 'new' ? newAthleteReady && !collidingAthlete : true);
 
+  // A parent invite is not submittable until the athlete it links to has been
+  // chosen. The server refuses the role without one, and an account created
+  // half way is the exact failure this form exists to prevent.
+  const inviteReady =
+    Boolean(inviteEmail.trim())
+    && (inviteRole !== 'parent'
+      || Boolean(
+        !parentInviteBlockedReason && guardianFullName.trim() && guardianAthleteId && guardianRelationship,
+      ));
+
   async function inviteStaff(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError('');
     setNotice('');
     setBusy(true);
 
+    const email = inviteEmail.trim();
+    const linkedAthleteName = guardianAthleteId
+      ? rosterById.get(guardianAthleteId)?.full_name || guardianAthleteId
+      : '';
+
     try {
       const response = await fetch(`${apiBase()}/api/pilot/admin/staff`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ login_email: inviteEmail.trim(), role: inviteRole }),
+        body: JSON.stringify({
+          login_email: email,
+          role: inviteRole,
+          ...(inviteRole === 'parent'
+            ? {
+                guardian: {
+                  athlete_id: guardianAthleteId,
+                  full_name: guardianFullName.trim(),
+                  relationship_to_athlete: guardianRelationship,
+                },
+              }
+            : {}),
+        }),
       });
 
       const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
@@ -301,14 +446,54 @@ function PeopleConsoleContent() {
         throw new Error(payload.error || 'Could not add that person');
       }
 
+      // Naming the child back is the check on the one mistake this form can
+      // make that nobody else would catch: linking a guardian to the wrong
+      // athlete.
       setNotice(
-        `${inviteEmail.trim()} is now a ${roleLabel(inviteRole)} in your gym. They must also be a guest in the PPBF Microsoft tenant before they can sign in.`,
+        inviteRole === 'parent'
+          ? `${email} is now a guardian of ${linkedAthleteName} and will see that athlete and no one else. They must also be a guest in the PPBF Microsoft tenant before they can sign in.`
+          : `${email} is now a ${roleLabel(inviteRole)} in your gym. They must also be a guest in the PPBF Microsoft tenant before they can sign in.`,
       );
       setInviteEmail('');
+      setGuardianFullName('');
+      setGuardianAthleteId('');
       await load();
       setTab('people');
     } catch (inviteError) {
       setError(inviteError instanceof Error ? inviteError.message : 'Could not add that person');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
+   * Detaches a guardian from one athlete. The server refuses to remove the
+   * last link an account holds, so this cannot be the step that leaves a
+   * family with an account that signs in and shows them nothing.
+   */
+  async function removeGuardianLink(accountId: string, athleteId: string, athleteName: string) {
+    setBusy(true);
+    setError('');
+    setNotice('');
+
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/admin/staff`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ account_id: accountId, athlete_id: athleteId }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || 'Could not remove that guardian link');
+      }
+
+      setPendingUnlink(null);
+      setNotice(`${accountId} can no longer see ${athleteName}.`);
+      await load();
+    } catch (unlinkError) {
+      setError(unlinkError instanceof Error ? unlinkError.message : 'Could not remove that guardian link');
     } finally {
       setBusy(false);
     }
@@ -487,7 +672,7 @@ function PeopleConsoleContent() {
         <header className="rounded-2xl border border-[rgba(0,0,0,0.16)] bg-white p-6 shadow-[var(--shadow-md)]">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">People</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--brass-800)]">People</p>
               <h1 className="mt-2 font-display text-3xl font-black tracking-tight">Manage Your Gym</h1>
               <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
                 Add coaches and staff, and create athlete sign-ins.
@@ -524,7 +709,7 @@ function PeopleConsoleContent() {
             for everyone and can be re-read at any time, so this panel is a
             convenience rather than a last chance. */}
         {createdAthlete && (
-          <section className="rounded-2xl border-2 border-[var(--red-primary)] bg-white p-5 shadow-[var(--shadow-md)]">
+          <section className="rounded-2xl border-2 border-[color:var(--brass-600)] bg-white p-5 shadow-[var(--shadow-md)]">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-black">{createdAthlete.accountId} can sign in now</h2>
@@ -536,7 +721,7 @@ function PeopleConsoleContent() {
               <button
                 type="button"
                 onClick={() => setCreatedAthlete(null)}
-                className="min-h-[40px] rounded-full border border-[rgba(0,0,0,0.14)] px-4 text-xs font-bold uppercase tracking-[0.1em]"
+                className="min-h-[44px] rounded-full border border-[rgba(0,0,0,0.14)] px-4 text-xs font-bold uppercase tracking-[0.1em]"
               >
                 Done
               </button>
@@ -574,7 +759,7 @@ function PeopleConsoleContent() {
         <nav className="flex flex-wrap gap-2 rounded-2xl border border-[rgba(0,0,0,0.12)] bg-white p-2">
           {([
             ['people', `Everyone${members.length ? ` (${members.length})` : ''}`],
-            ['invite-staff', 'Add Coach or Staff'],
+            ['invite-staff', 'Add Coach, Staff Or Guardian'],
             ['add-athlete', 'Add Athlete'],
           ] as Array<[Tab, string]>).map(([key, label]) => (
             <button
@@ -583,7 +768,7 @@ function PeopleConsoleContent() {
               onClick={() => setTab(key)}
               className={`min-h-[44px] flex-1 rounded-xl px-4 text-sm font-bold uppercase tracking-[0.1em] transition ${
                 tab === key
-                  ? 'bg-[var(--red-primary)] text-white'
+                  ? 'bg-[var(--brass-800)] text-white'
                   : 'bg-transparent text-[var(--gray-dark)] hover:bg-[var(--canvas-tan)]'
               }`}
             >
@@ -594,6 +779,39 @@ function PeopleConsoleContent() {
 
         {tab === 'people' && (
           <section className="space-y-4">
+            {/* Accounts provisioned before a guardian link was mandatory. They
+                sign in and see nothing, and nothing else in the product says
+                so. */}
+            {strandedGuardians.length > 0 && (
+              <div className="rounded-2xl border-2 border-[color:var(--brass-600)] bg-[rgba(184,59,52,0.06)] p-4">
+                <p className="text-sm font-bold text-[color:var(--brass-800)]">
+                  {strandedGuardians.length} guardian{strandedGuardians.length === 1 ? '' : 's'} linked to no athlete
+                </p>
+                <p className="mt-1 text-sm text-[var(--gray-dark)]">
+                  {strandedGuardians.length === 1 ? 'This account signs in' : 'These accounts sign in'} successfully and
+                  then {strandedGuardians.length === 1 ? 'shows' : 'show'} no children at all. Add the same email
+                  address again on “Add Coach, Staff Or Guardian”, choose Parent / Guardian, and name their athlete.
+                </p>
+                <ul className="mt-2 space-y-1">
+                  {strandedGuardians.map((guardian) => (
+                    <li key={guardian.account_id} className="truncate font-mono text-xs font-semibold">
+                      {guardian.login_email || guardian.account_id}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {members.some((member) => member.role === 'parent') && !guardianLinksAvailable && (
+              <p
+                role="status"
+                className="rounded-2xl border border-[rgba(0,0,0,0.2)] bg-white px-4 py-3 text-sm text-[var(--gray-dark)]"
+              >
+                Guardian links could not be read, so this list cannot say which children each Parent / Guardian sees.
+                Reload the page to try again.
+              </p>
+            )}
+
             {pendingAthletes.length > 0 && (
               <div className="rounded-2xl border border-[rgba(184,59,52,0.35)] bg-[rgba(184,59,52,0.04)] p-4">
                 <p className="text-sm font-bold">
@@ -619,7 +837,10 @@ function PeopleConsoleContent() {
               ) : (
                 <ul className="divide-y divide-[rgba(0,0,0,0.08)]">
                   {members.map((member) => {
-                    const status = signInStatus(member);
+                    const isGuardian = member.role === 'parent';
+                    const memberLinks = guardianLinksByAccount.get(member.account_id) || [];
+                    const linkCount = !isGuardian ? null : guardianLinksAvailable ? memberLinks.length : null;
+                    const status = signInStatus(member, linkCount);
                     const isPinAthlete = member.auth_provider === 'ppbf_local' && member.role === 'athlete';
 
                     return (
@@ -635,12 +856,84 @@ function PeopleConsoleContent() {
                               status.tone === 'ok'
                                 ? 'text-[var(--cleared)]'
                                 : status.tone === 'pending'
-                                  ? 'text-[var(--red-primary)]'
+                                  ? 'text-[color:var(--brass-800)]'
                                   : 'text-[var(--gray-dark)]'
                             }`}
                           >
                             {status.label}
                           </p>
+
+                          {/* Exactly which children this adult can open. A
+                              guardian row without it says nothing about the
+                              only thing the account does. */}
+                          {isGuardian && guardianLinksAvailable && memberLinks.length > 0 && (
+                            <ul className="mt-2 space-y-1">
+                              {memberLinks.map((link) => {
+                                const confirming =
+                                  pendingUnlink?.accountId === member.account_id
+                                  && pendingUnlink?.athleteId === link.athlete_id;
+
+                                return (
+                                  <li
+                                    key={link.athlete_id}
+                                    className="flex flex-wrap items-center gap-2 text-xs text-[var(--gray-dark)]"
+                                  >
+                                    <span>
+                                      Sees <span className="font-semibold text-[var(--black)]">{link.athlete_full_name}</span>{' '}
+                                      ({link.relationship_to_athlete})
+                                    </span>
+                                    {confirming ? (
+                                      <>
+                                        <button
+                                          type="button"
+                                          disabled={busy}
+                                          onClick={() =>
+                                            void removeGuardianLink(
+                                              member.account_id,
+                                              link.athlete_id,
+                                              link.athlete_full_name,
+                                            )
+                                          }
+                                          className="min-h-[44px] rounded-full border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-3 text-[11px] font-black uppercase tracking-[0.08em] text-white disabled:opacity-50"
+                                        >
+                                          Confirm Remove
+                                        </button>
+                                        <button
+                                          type="button"
+                                          disabled={busy}
+                                          onClick={() => setPendingUnlink(null)}
+                                          className="min-h-[44px] rounded-full border border-[rgba(0,0,0,0.2)] px-3 text-[11px] font-bold uppercase tracking-[0.08em] disabled:opacity-50"
+                                        >
+                                          Keep
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        disabled={busy}
+                                        onClick={() =>
+                                          setPendingUnlink({
+                                            accountId: member.account_id,
+                                            athleteId: link.athlete_id,
+                                          })
+                                        }
+                                        className="min-h-[44px] rounded-full border border-[rgba(0,0,0,0.2)] px-3 text-[11px] font-bold uppercase tracking-[0.08em] disabled:opacity-50"
+                                      >
+                                        Remove
+                                      </button>
+                                    )}
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          )}
+
+                          {isGuardian && guardianLinksAvailable && memberLinks.length === 0 && (
+                            <p className="mt-2 text-xs leading-5 text-[color:var(--brass-800)]">
+                              This guardian resolves no children, so they sign in to an empty page. Invite the same
+                              email address again on “Add Coach, Staff Or Guardian” and name the athlete to repair it.
+                            </p>
+                          )}
                         </div>
 
                         {isPinAthlete && (
@@ -648,7 +941,7 @@ function PeopleConsoleContent() {
                             type="button"
                             disabled={busy}
                             onClick={() => void handleResetToStartingPin(member.account_id)}
-                            className="min-h-[44px] shrink-0 rounded-xl border-2 border-[var(--red-primary)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[var(--red-primary)] transition hover:bg-[rgba(184,59,52,0.06)] disabled:opacity-50"
+                            className="min-h-[44px] shrink-0 rounded-xl border-2 border-[color:var(--brass-600)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[color:var(--brass-800)] transition hover:bg-[rgba(184,59,52,0.06)] disabled:opacity-50"
                           >
                             Reset To Starting PIN
                           </button>
@@ -665,14 +958,14 @@ function PeopleConsoleContent() {
         {tab === 'invite-staff' && (
           <form onSubmit={inviteStaff} className="space-y-4 rounded-2xl border border-[rgba(0,0,0,0.14)] bg-white p-6 shadow-[var(--shadow-sm)]">
             <div>
-              <h2 className="text-lg font-black">Add a coach or staff member</h2>
+              <h2 className="text-lg font-black">Add a coach, staff member, or guardian</h2>
               <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
-                Staff sign in with Microsoft, not a PIN. Enter the Microsoft email address they will use.
+                Adults sign in with Microsoft, not a PIN. Enter the Microsoft email address they will use.
               </p>
             </div>
 
             <div className="rounded-xl border border-[rgba(184,59,52,0.25)] bg-[rgba(184,59,52,0.04)] p-4">
-              <p className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--red-primary)]">Two steps, not one</p>
+              <p className="text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--brass-800)]">Two steps, not one</p>
               <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
                 This form gives them a role in PPBF. If they are outside your Microsoft organization, someone also has to
                 invite them as a guest in Entra ID — until that is done, their sign-in will be rejected.
@@ -690,46 +983,130 @@ function PeopleConsoleContent() {
                 value={inviteEmail}
                 onChange={(event) => setInviteEmail(event.target.value)}
                 placeholder="coach@example.com"
-                className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
               />
             </div>
 
             <fieldset>
               <legend className="text-sm font-semibold">Role</legend>
               <div className="mt-2 space-y-2">
-                {STAFF_ROLES.map((option) => (
-                  <label
-                    key={option.value}
-                    className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${
-                      inviteRole === option.value
-                        ? 'border-[var(--red-primary)] bg-[rgba(184,59,52,0.05)]'
-                        : 'border-[rgba(0,0,0,0.12)] hover:border-[rgba(0,0,0,0.3)]'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="invite-role"
-                      value={option.value}
-                      checked={inviteRole === option.value}
-                      onChange={() => setInviteRole(option.value)}
-                      className="mt-1 accent-[var(--red-primary)]"
-                    />
-                    <span>
-                      <span className="block text-sm font-semibold">{option.label}</span>
-                      <span className="mt-0.5 block text-xs text-[var(--gray-dark)]">{option.blurb}</span>
-                    </span>
-                  </label>
-                ))}
+                {STAFF_ROLES.map((option) => {
+                  const blockedReason = option.value === 'parent' ? parentInviteBlockedReason : null;
+
+                  return (
+                    <label
+                      key={option.value}
+                      className={`flex items-start gap-3 rounded-xl border p-3 transition ${
+                        blockedReason
+                          ? 'cursor-not-allowed border-[rgba(0,0,0,0.12)] opacity-70'
+                          : inviteRole === option.value
+                            ? 'cursor-pointer border-[var(--red-primary)] bg-[rgba(184,59,52,0.05)]'
+                            : 'cursor-pointer border-[rgba(0,0,0,0.12)] hover:border-[rgba(0,0,0,0.3)]'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="invite-role"
+                        value={option.value}
+                        checked={inviteRole === option.value}
+                        disabled={Boolean(blockedReason)}
+                        onChange={() => setInviteRole(option.value)}
+                        className="mt-1 accent-[var(--red-primary)]"
+                      />
+                      <span>
+                        <span className="block text-sm font-semibold">{option.label}</span>
+                        <span className="mt-0.5 block text-xs text-[var(--gray-dark)]">{option.blurb}</span>
+                        {blockedReason && (
+                          <span className="mt-1 block text-xs font-semibold text-[var(--red-primary)]">
+                            {blockedReason}
+                          </span>
+                        )}
+                      </span>
+                    </label>
+                  );
+                })}
               </div>
               <p className="mt-3 text-xs text-[var(--gray-dark)]">
                 Adding another gym admin is a platform-owner action — ask PPBF to do it.
               </p>
             </fieldset>
 
+            {/* A parent account reads the gym through this link and nothing
+                else, so it is captured with the invite rather than left for a
+                screen that does not exist. */}
+            {inviteRole === 'parent' && !parentInviteBlockedReason && (
+              <fieldset className="space-y-4 rounded-xl border border-[rgba(0,0,0,0.12)] p-4">
+                <legend className="px-1 text-xs font-bold uppercase tracking-[0.1em] text-[var(--red-primary)]">
+                  Which child
+                </legend>
+                <p className="text-sm leading-6 text-[var(--gray-dark)]">
+                  A guardian sees only the athletes named here, and this is the only screen that links them. To give a
+                  guardian a second child, add the same email address again and choose the other athlete.
+                </p>
+
+                <div>
+                  <label htmlFor="guardian-full-name" className="block text-sm font-semibold">
+                    Guardian&apos;s full name
+                  </label>
+                  <input
+                    id="guardian-full-name"
+                    type="text"
+                    required
+                    value={guardianFullName}
+                    onChange={(event) => setGuardianFullName(event.target.value)}
+                    placeholder="Dana Johnson"
+                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="guardian-athlete" className="block text-sm font-semibold">
+                    Athlete
+                  </label>
+                  <p className="mt-1 text-xs text-[var(--gray-dark)]">
+                    Check this carefully — it decides whose records this adult can open.
+                  </p>
+                  <select
+                    id="guardian-athlete"
+                    required
+                    value={guardianAthleteId}
+                    onChange={(event) => setGuardianAthleteId(event.target.value)}
+                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  >
+                    <option value="">Choose an athlete...</option>
+                    {roster.map((athlete) => (
+                      <option key={athlete.athlete_id} value={athlete.athlete_id}>
+                        {athlete.full_name} ({athlete.athlete_id})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="guardian-relationship" className="block text-sm font-semibold">
+                    Relationship to the athlete
+                  </label>
+                  <select
+                    id="guardian-relationship"
+                    required
+                    value={guardianRelationship}
+                    onChange={(event) => setGuardianRelationship(event.target.value)}
+                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  >
+                    {GUARDIAN_RELATIONSHIPS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </fieldset>
+            )}
+
             <button
               type="submit"
-              disabled={busy || !inviteEmail.trim()}
-              className="min-h-[50px] w-full rounded-xl border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={busy || !inviteReady}
+              className="min-h-[50px] w-full rounded-xl border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy ? 'Adding...' : 'Add To My Gym'}
             </button>
@@ -754,7 +1131,7 @@ function PeopleConsoleContent() {
                     key={option.value}
                     className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${
                       athleteMode === option.value
-                        ? 'border-[var(--red-primary)] bg-[rgba(184,59,52,0.05)]'
+                        ? 'border-[color:var(--brass-600)] bg-[rgba(184,59,52,0.05)]'
                         : 'border-[rgba(0,0,0,0.12)] hover:border-[rgba(0,0,0,0.3)]'
                     }`}
                   >
@@ -771,7 +1148,7 @@ function PeopleConsoleContent() {
                         // the admin never picked in this mode.
                         setAthleteId('');
                       }}
-                      className="mt-1 accent-[var(--red-primary)]"
+                      className="mt-1 accent-[var(--brass-600)]"
                     />
                     <span>
                       <span className="block text-sm font-semibold">{option.label}</span>
@@ -808,10 +1185,10 @@ function PeopleConsoleContent() {
                     value={athleteId}
                     onChange={(event) => setAthleteId(event.target.value.trim())}
                     placeholder="ath-001"
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                   />
                   {collidingAthlete && (
-                    <p className="mt-2 rounded-xl border border-[var(--red-primary)] bg-[rgba(184,59,52,0.06)] px-3 py-2 text-xs font-semibold text-[var(--red-primary)]">
+                    <p className="mt-2 rounded-xl border border-[color:var(--brass-600)] bg-[rgba(184,59,52,0.06)] px-3 py-2 text-xs font-semibold text-[color:var(--brass-800)]">
                       {collidingAthlete.full_name} already holds record ID {collidingAthlete.athlete_id}. Pick a
                       different ID — or, if that is this same athlete, switch to “Already on the roster”.
                     </p>
@@ -836,7 +1213,7 @@ function PeopleConsoleContent() {
                     value={athleteFullName}
                     onChange={(event) => setAthleteFullName(event.target.value)}
                     placeholder="Alex Johnson"
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                   />
                 </div>
 
@@ -851,7 +1228,7 @@ function PeopleConsoleContent() {
                       required
                       value={athleteDob}
                       onChange={(event) => setAthleteDob(event.target.value)}
-                      className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                      className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                     />
                   </div>
 
@@ -866,7 +1243,7 @@ function PeopleConsoleContent() {
                       value={athleteWeightClass}
                       onChange={(event) => setAthleteWeightClass(event.target.value)}
                       placeholder="middleweight"
-                      className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                      className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                     />
                   </div>
                 </div>
@@ -880,7 +1257,7 @@ function PeopleConsoleContent() {
                     required
                     value={athleteGymStatus}
                     onChange={(event) => setAthleteGymStatus(event.target.value)}
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                   >
                     {GYM_STATUS_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>
@@ -904,7 +1281,7 @@ function PeopleConsoleContent() {
                     value={athleteEmergencyContact}
                     onChange={(event) => setAthleteEmergencyContact(event.target.value)}
                     placeholder="Dana Johnson (mother) 555-0101"
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                   />
                 </div>
 
@@ -915,14 +1292,14 @@ function PeopleConsoleContent() {
                   <p className="mt-1 text-xs text-[var(--gray-dark)]">
                     {coachOptions.length > 0
                       ? 'A coach only sees the athletes assigned to them. Every athlete record has to name one, so pick whoever will be working with them.'
-                      : 'No coaches in your gym yet, and an athlete record has to name one — add a coach on the “Add Coach or Staff” tab, then come back here.'}
+                      : 'No coaches in your gym yet, and an athlete record has to name one — add a coach on the “Add Coach, Staff Or Guardian” tab, then come back here.'}
                   </p>
                   <select
                     id="athlete-coach"
                     required
                     value={athleteCoachId}
                     onChange={(event) => setAthleteCoachId(event.target.value)}
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                   >
                     <option value="">Choose a coach...</option>
                     {coachOptions.map((coach) => (
@@ -936,7 +1313,7 @@ function PeopleConsoleContent() {
             ) : rosterAvailable ? (
               unlinkedAthletes.length === 0 ? (
                 <div className="rounded-xl border border-[rgba(184,59,52,0.25)] bg-[rgba(184,59,52,0.04)] p-4">
-                  <p className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--red-primary)]">
+                  <p className="text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--brass-800)]">
                     Nobody is waiting
                   </p>
                   <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
@@ -959,7 +1336,7 @@ function PeopleConsoleContent() {
                     required
                     value={athleteId}
                     onChange={(event) => setAthleteId(event.target.value)}
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                   >
                     <option value="">Choose an athlete...</option>
                     {unlinkedAthletes.map((athlete) => (
@@ -990,7 +1367,7 @@ function PeopleConsoleContent() {
                   value={athleteId}
                   onChange={(event) => setAthleteId(event.target.value.trim())}
                   placeholder="ath-001"
-                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                 />
               </div>
             )}
@@ -1009,14 +1386,14 @@ function PeopleConsoleContent() {
                 value={athleteAccountId}
                 onChange={(event) => setAthleteAccountId(event.target.value.trim())}
                 placeholder="jsmith"
-                className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
               />
             </div>
 
             <button
               type="submit"
               disabled={busy || !canSubmitAthlete}
-              className="min-h-[50px] w-full rounded-xl border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-[50px] w-full rounded-xl border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy
                 ? 'Creating...'

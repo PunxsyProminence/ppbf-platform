@@ -1,4 +1,5 @@
 <!-- @dsCard group="Screens" name="Athlete Kiosk" subtitle="Gym-floor check-in: cleared and locked states, 19.1px type, 55px targets" -->
+<meta charset="utf-8">
 <link rel="stylesheet" href="../ppbf.css">
 <style>
   body.ppbf { min-height: 100vh; display: flex; flex-direction: column; }
@@ -43,6 +44,11 @@
                    box-shadow: inset 0 0 0 1px rgba(0,0,0,.8); font-family: var(--font-stencil); }
 
   .controls { display: flex; gap: var(--s4); flex-wrap: wrap; margin-top: var(--s6); }
+  /* Law 5 — this screen is the gym floor, so the floor minimum applies to every
+     control on it, not only the ones remembered to carry .btn--kiosk. The locked
+     state's controls inherited the 44px desk default, which put the one working
+     button in the safety-critical state below the tap floor. */
+  .controls .btn { min-height: var(--tap); font-size: var(--t-md); }
 
   .note { font-size: 12.8px; line-height: 1.6; color: var(--bone-400); margin-top: var(--s5); max-width: 70ch; }
 </style>
@@ -128,7 +134,7 @@
 
         <div class="controls">
           <button class="btn btn--ghost" disabled style="opacity: .5; cursor: not-allowed">Submit Check-In</button>
-          <a href="#cleared-state" class="btn btn--ghost" onclick="switchView('cleared-state')" style="text-decoration: none; text-align: center; padding: 0 20px;">
+          <a href="#cleared-state" class="btn btn--ghost" onclick="switchView('cleared-state')" style="text-decoration: none; text-align: center; padding: 0 var(--s5);">
             Unlock (admin)
           </a>
         </div>

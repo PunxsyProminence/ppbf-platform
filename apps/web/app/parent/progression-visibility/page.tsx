@@ -73,13 +73,13 @@ export default function ParentProgressionVisibilityPage() {
   return (
     <RoleStandaloneView roleLabel="Parent Hub" routeLabel="/parent/progression-visibility" allowedRoles={['parent']} room="office" showShellHeader={false}>
       <div className="space-y-6">
-        <header className="border-2 border-[var(--patina-700)] bg-[var(--hide-950)] p-5">
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--brass-300)]">Closed-Loop Progression Intelligence</p>
-          <h1 className="mt-2 text-3xl font-black text-[var(--bone-100)]">Parent Progression Visibility</h1>
-          <p className="mt-2 text-sm text-[var(--bone-300)]">
+        <header className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-5">
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--brass-300)]">Closed-Loop Progression Intelligence</p>
+          <h1 className="mt-2 text-3xl font-black text-[color:var(--bone-100)]">Parent Progression Visibility</h1>
+          <p className="mt-2 text-sm text-[color:var(--bone-300)]">
             Family-facing progression surface for support visibility only.
           </p>
-          <p className="mt-2 text-xs font-mono uppercase tracking-[0.08em] text-[var(--brass-300)]">
+          <p className="mt-2 text-xs font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">
             {capabilityStatus}
           </p>
           {errorMessage ? <p className="mt-2 text-xs text-[var(--locked-ink)]">{errorMessage}</p> : null}
@@ -87,9 +87,9 @@ export default function ParentProgressionVisibilityPage() {
 
         <section className="grid gap-3 md:grid-cols-2">
           {familyPanels.map((panel) => (
-            <article key={panel} className="border-2 border-[var(--patina-700)] bg-[var(--hide-900)] p-4">
-              <p className="text-sm font-semibold text-[var(--bone-200)]">{panel}</p>
-              <p className="mt-1 text-xs font-mono uppercase tracking-[0.08em] text-[var(--brass-300)]">
+            <article key={panel} className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4">
+              <p className="text-sm font-semibold text-[color:var(--bone-200)]">{panel}</p>
+              <p className="mt-1 text-xs font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">
                 {capabilityStatus}
               </p>
             </article>
@@ -97,7 +97,7 @@ export default function ParentProgressionVisibilityPage() {
         </section>
 
         <div className="flex flex-wrap gap-3">
-          <Link href="/parent/dashboard" className="border-2 border-[var(--patina-700)] bg-[var(--rust-900)] px-4 py-2 text-xs font-mono text-[var(--brass-300)]">
+          <Link href="/parent/dashboard" className="border-2 border-[color:var(--brass-700)] bg-[#2a1a1a] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)]">
             Back to Parent Hub
           </Link>
         </div>

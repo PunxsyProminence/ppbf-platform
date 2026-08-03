@@ -253,6 +253,14 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
         responseState: bindingFiltered ? 'filtered' : 'ok',
         handoff,
         citations: binding.citationCatalog.filter((item) => bundleCitationIds.includes(item.evidenceId)),
+        // decision.reasons was computed and dropped, so a filtered background
+        // answer recorded THAT it was withheld and never WHY -- not in the job
+        // output, not on the review ticket. Diagnosing the 0f47b35 gate failure
+        // meant reading the validator and re-deriving the trigger by hand,
+        // because the only artifact was the word 'filtered'. The reasons are
+        // platform-authored strings, so they ride in OUTPUT_LABEL_KEYS below
+        // rather than being re-validated as if the model had written them.
+        ...(bindingFiltered ? { safetyReasons: decision.reasons } : {}),
       };
     }
 
@@ -278,6 +286,9 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
           jobId: job.jobId,
           jobType: job.jobType,
           subjectScoped: Boolean(job.subjectId),
+          // A reviewer opening this ticket saw "replaced by the
+          // post-generation safety boundary" and nothing about which boundary.
+          safetyReasons: (checkedOutput.output.safetyReasons as string[] | undefined) ?? [],
         },
       };
       // The job is already completed above, so a throw here would route to
@@ -396,7 +407,17 @@ function jobFailureCode(error: unknown): string {
 // own \bproven\b evidence-claim trigger, so every answer that earned the top
 // tier (2+ authorized citations) had its entire job output replaced by the
 // safe-filtered text -- the better the evidence, the surer the self-filter.
-const OUTPUT_LABEL_KEYS = new Set(['evidenceTier', 'responseState', 'resultStatus', 'safetyStatus']);
+const OUTPUT_LABEL_KEYS = new Set([
+  'evidenceTier',
+  'responseState',
+  'resultStatus',
+  'safetyStatus',
+  // Same reasoning, one step further: a reason string like "Makes an evidence
+  // or quantitative claim ..." is the validator describing its own verdict. If
+  // the sweep read it back as model prose, recording why an answer was withheld
+  // could itself withhold the answer.
+  'safetyReasons',
+]);
 
 function collectOutputStrings(value: unknown, strings: string[], depth = 0): void {
   if (depth > 8 || strings.length >= 100) return;

@@ -1,4 +1,5 @@
 <!-- @dsCard group="Screens" name="Coach Review Queue" subtitle="Layer 10 decision queue + Shadow refusal protocol (Layer 20)" -->
+<meta charset="utf-8">
 <link rel="stylesheet" href="../ppbf.css">
 <style>
   body.ppbf { min-height: 100vh; display: flex; }
@@ -22,7 +23,10 @@
   .rc-meta { font: 11.5px/1.5 var(--font-data); color: var(--bone-400); letter-spacing: .04em; }
   .rc-body { font-size: 13.5px; line-height: 1.6; color: var(--bone-300); margin: var(--s4) 0; }
   .rc-controls { display: flex; gap: var(--s3); flex-wrap: wrap; margin-top: var(--s4); }
-  .btn-sm { min-height: 38px; padding: 0 var(--s5); font-size: 13px; }
+  /* Compact horizontally, never vertically — Law 5 governs the height even at a
+     desk, because a review control migrates to a floor screen the moment the
+     layout gets tight. Law 8 governs the type: 13px was on no ladder. */
+  .btn-sm { min-height: var(--tap); padding: 0 var(--s5); font-size: var(--t-sm); }
 
   /* Shadow panel — Layer 20 refusal engine */
   .shadow-panel { border-radius: var(--r-lg); padding: var(--s5); position: sticky; top: var(--s5); }
@@ -50,7 +54,7 @@
 
 <body class="ppbf room--floor">
   <nav class="rail">
-    <div class="motto" style="font-size: 22px; margin-bottom: var(--s6)">PPBF</div>
+    <div class="motto" style="font-size: var(--t-lg); margin-bottom: var(--s6)">PPBF</div>
     <a class="tag" href="#" aria-current="page">Review Queue</a>
     <a class="tag" href="#">Athlete Records</a>
     <a class="tag" href="#">Ledger</a>

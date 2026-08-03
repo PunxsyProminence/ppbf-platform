@@ -25,7 +25,13 @@
      materials, but that is a per-surface material choice, not a user toggle. */
   --canvas-tan: var(--canvas-warm);
   --canvas-tan-light: var(--paper);
-  --canvas-tan-dark: var(--hide-600);
+  /* Was --hide-600 (#4A3728), which is a leather tone rather than a darker
+     cream. Every caller reads the name as "the tan, a shade down" and pairs
+     it with dark type, so /public rendered --black on it at 1.68:1 -- the
+     contrast sweep found this, and the mapping is the cause rather than any
+     one page. --paper-2 is the actual darker paper in the ramp and is what
+     the name promises. */
+  --canvas-tan-dark: var(--paper-2);
 
   --olive-dark: var(--patina-900);
   --black: var(--hide-950);
@@ -47,18 +53,35 @@
   --status-critical: var(--locked);
   --status-inactive: var(--hide-600);
 
-  /* uiStyles.ts reads these two names, which nothing defined — so `statusDanger`,
-     `statusInfo`, `errorButton`, `errorContainer` and `errorText` all resolved to
-     an invalid colour and rendered white-on-transparent. --status-danger is an
-     alias of --status-critical (same rung, two names in the codebase); --monitor
-     is the ladder's blue, so info gets that rather than a new colour. */
+  /* uiStyles.ts has always asked for these two names, and neither existed in
+     this sheet or in ppbf.css — flagged in BRAND_DESIGN_BRIEF.md §8 and never
+     closed. Anything reaching for them got an invalid substitution, so a badge
+     rendered white text on a transparent background: invisible on the warm
+     ground. Latent only because the affected exports were unused. */
   --status-danger: var(--locked);
   --status-info: var(--monitor);
 
-  /* SkeletonLoader.tsx read var(--skeleton-bg, #e0e0e0) and nothing defined the
-     name, so every loading placeholder fell back to a light grey that belonged
-     to neither ground. Raised leather is what an empty panel should look like. */
-  --skeleton-bg: var(--hide-700);
+  /* SkeletonLoader carried its own #e0e0e0 fallback, a cold grey with no
+     relationship to anything else on the page. Loading is paper that has not
+     been written on yet. */
+  --skeleton-bg: var(--paper-2);
+
+  /* --- Chrome accent ------------------------------------------------------
+     The app spent the safety red on ordinary furniture: --red-primary aliases
+     to --locked, and 322 call sites across 33 files use it for active tabs,
+     KPI labels and panel borders. That is precisely what Law 2 exists to stop
+     — when the gate's red is also the tab highlight, a locked athlete stops
+     being unmissable.
+
+     So chrome gets its own accent, and it is brass. A selected tab is a
+     control in the "on" position: chassis state, not a claim about a person.
+     Law 1 still holds — brass is what the platform is built from, and it
+     reports nothing about anyone's safety. The red stays for exactly two
+     things: safety state, and destructive actions. */
+  --accent: var(--brass-600);
+  --accent-strong: var(--brass-500);
+  --accent-ink: var(--hide-950);
+  --accent-quiet: var(--brass-800);
 
   /* --font-stencil keeps its next/font wiring — --font-tactical-display is a
      real loaded face, where the design system's fallback chain is not. The

@@ -123,8 +123,8 @@ export default function BoardComplianceMonitoringPage() {
   const nothingToShow = summary?.total.status === 'unavailable';
 
   const severityTiles = [
-    { label: 'Critical', metric: severityCounts?.critical, tone: 'border-2 border-[var(--black)] bg-[var(--locked-ink)] p-4', headingTone: 'text-[var(--red-primary)]' },
-    { label: 'High', metric: severityCounts?.high, tone: 'border-2 border-[var(--black)] bg-[var(--restricted-ink)] p-4', headingTone: 'text-[var(--restricted)]' },
+    { label: 'Critical', metric: severityCounts?.critical, tone: 'border-2 border-[var(--black)] bg-[#fce8e6] p-4', headingTone: 'text-[color:var(--brass-800)]' },
+    { label: 'High', metric: severityCounts?.high, tone: 'border-2 border-[var(--black)] bg-[#fff3cd] p-4', headingTone: 'text-[#ff9800]' },
     { label: 'Medium', metric: severityCounts?.medium, tone: 'border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4', headingTone: '' },
     { label: 'Low', metric: severityCounts?.low, tone: 'border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4', headingTone: '' },
   ];
@@ -142,7 +142,7 @@ export default function BoardComplianceMonitoringPage() {
       <main className="room--clinic min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
         <div className="mx-auto max-w-7xl px-6 py-10 lg:px-10">
           <header className="space-y-3 border-b-[3px] border-[var(--black)] pb-6">
-            <p className="text-xs font-mono uppercase tracking-[0.22em] text-[var(--red-primary)]">Board Workspace</p>
+            <p className="text-xs font-mono uppercase tracking-[0.22em] text-[color:var(--brass-800)]">Board Workspace</p>
             <h1 className="font-display text-4xl font-black">Hand-Filed Compliance Register</h1>
             <p className="max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
               Aggregate counts of compliance violations that staff have filed by hand, with escalation status. The
@@ -163,8 +163,8 @@ export default function BoardComplianceMonitoringPage() {
           </header>
 
           {nothingToShow ? (
-            <section className="mt-6 border-2 border-[var(--red-primary)] bg-[var(--canvas-tan-light)] p-5">
-              <h2 className="text-sm font-black uppercase tracking-[0.08em] text-[var(--red-primary)]">Read this zero correctly</h2>
+            <section className="mt-6 border-2 border-[color:var(--brass-600)] bg-[var(--canvas-tan-light)] p-5">
+              <h2 className="text-sm font-black uppercase tracking-[0.08em] text-[color:var(--brass-800)]">Read this zero correctly</h2>
               <p className="mt-2 max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
                 {isFiltered
                   ? 'No violation with the selected status has been filed, so every count in this view reads as none filed.'
@@ -246,7 +246,7 @@ export default function BoardComplianceMonitoringPage() {
           </section>
 
           <div className="mt-8 flex flex-wrap gap-3">
-            <Link href="/board" className="inline-flex min-h-[42px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.08em]">
+            <Link href="/board" className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.08em]">
               Back to Board Hub
             </Link>
           </div>

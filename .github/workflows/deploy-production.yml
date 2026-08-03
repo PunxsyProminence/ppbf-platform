@@ -104,7 +104,9 @@ jobs:
     env:
       ACR_NAME: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
       ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io
-      RESOURCE_GROUP: rg-ppbf-enterprise-staging
+      # Preferred: explicit production RG secret. Fallback keeps current
+      # behavior for repositories that have not populated the new secret yet.
+      RESOURCE_GROUP: ${{ secrets.AZURE_PRODUCTION_RESOURCE_GROUP || 'rg-ppbf-enterprise-staging' }}
       CONTAINER_APP_NAME: app-ppbf-production
     steps:
       - name: Checkout Source Code

@@ -209,18 +209,18 @@ export default function ResearchIntakePage() {
     >
       <div className="space-y-4">
         {errorMessage ? (
-          <section className="border-2 border-[var(--patina-700)] bg-[var(--hide-900)] p-4 text-sm text-[var(--locked-ink)]">{errorMessage}</section>
+          <section className="border-2 border-[color:var(--brass-700)] bg-[#151515] p-4 text-sm text-[#f0c4c4]">{errorMessage}</section>
         ) : null}
 
         {!errorMessage && items.length === 0 ? (
-          <section className="border-2 border-[var(--patina-700)] bg-[var(--hide-900)] p-4">
-            <p className="text-[12px] font-mono uppercase tracking-[0.18em] text-[var(--brass-300)]">Empty State</p>
-            <p className="mt-2 text-[14px] text-[var(--bone-300)]">No SHADOW research projection items exist for this organization yet.</p>
+          <section className="border-2 border-[color:var(--brass-700)] bg-[#151515] p-4">
+            <p className="text-[12px] font-mono uppercase tracking-[0.18em] text-[color:var(--brass-300)]">Empty State</p>
+            <p className="mt-2 text-[14px] text-[color:var(--bone-300)]">No SHADOW research projection items exist for this organization yet.</p>
           </section>
         ) : null}
 
-        <section className="border-2 border-[var(--patina-700)] bg-[var(--hide-900)] p-4">
-          <p className="text-[12px] font-mono uppercase tracking-[0.18em] text-[var(--brass-300)]">Review State Summary</p>
+        <section className="border-2 border-[color:var(--brass-700)] bg-[#151515] p-4">
+          <p className="text-[12px] font-mono uppercase tracking-[0.18em] text-[color:var(--brass-300)]">Review State Summary</p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {[
               { label: 'Pending', value: counts.pending },
@@ -228,31 +228,31 @@ export default function ResearchIntakePage() {
               { label: 'Rejected', value: counts.rejected },
               { label: 'Promoted', value: counts.promoted },
             ].map((entry) => (
-              <article key={entry.label} className="border border-[var(--hide-500)] bg-[var(--hide-950)] p-3">
-                <p className="text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--bone-400)]">{entry.label}</p>
-                <p className="mt-2 text-2xl font-black text-[var(--bone-200)]">{entry.value}</p>
+              <article key={entry.label} className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-3">
+                <p className="text-[11px] font-mono uppercase tracking-[0.14em] text-[color:var(--bone-400)]">{entry.label}</p>
+                <p className="mt-2 text-2xl font-black text-[color:var(--bone-200)]">{entry.value}</p>
               </article>
             ))}
           </div>
         </section>
 
-        <section className="space-y-3 border-2 border-[var(--patina-700)] bg-[var(--hide-900)] p-4">
-          <p className="text-[12px] font-mono uppercase tracking-[0.18em] text-[var(--brass-300)]">Research Intake Cards</p>
+        <section className="space-y-3 border-2 border-[color:var(--brass-700)] bg-[#151515] p-4">
+          <p className="text-[12px] font-mono uppercase tracking-[0.18em] text-[color:var(--brass-300)]">Research Intake Cards</p>
           {items.map((item) => (
-            <article key={item.event_id} className="border border-[var(--patina-700)] bg-[var(--hide-900)]/70 p-4">
+            <article key={item.event_id} className="border border-[color:var(--brass-700)] bg-[var(--hide-900)]/70 p-4">
               <div className="grid gap-2 md:grid-cols-2">
-                <p className="text-[16px] font-bold text-[var(--bone-200)]">{item.source_event_name}</p>
-                <p className="text-[13px] font-mono uppercase tracking-[0.1em] text-[var(--brass-300)]">Status: {item.review_state}</p>
-                <p className="text-[14px] text-[var(--bone-300)]">Requirement: {item.requirement || 'Not provided'}</p>
-                <p className="text-[14px] text-[var(--bone-300)]">Knowledge Gap: {item.knowledge_gap || 'Not provided'}</p>
-                <p className="text-[14px] text-[var(--bone-300)]">Evidence Label: {item.evidence_label || 'Not provided'}</p>
-                <p className="text-[14px] text-[var(--bone-300)]">Source Status: {item.source_status}</p>
+                <p className="text-[16px] font-bold text-[color:var(--bone-200)]">{item.source_event_name}</p>
+                <p className="text-[13px] font-mono uppercase tracking-[0.1em] text-[color:var(--brass-300)]">Status: {item.review_state}</p>
+                <p className="text-[14px] text-[color:var(--bone-300)]">Requirement: {item.requirement || 'Not provided'}</p>
+                <p className="text-[14px] text-[color:var(--bone-300)]">Knowledge Gap: {item.knowledge_gap || 'Not provided'}</p>
+                <p className="text-[14px] text-[color:var(--bone-300)]">Evidence Label: {item.evidence_label || 'Not provided'}</p>
+                <p className="text-[14px] text-[color:var(--bone-300)]">Source Status: {item.source_status}</p>
               </div>
-              <div className="mt-3 flex items-center justify-between border-t border-[var(--hide-500)] pt-3">
-                <p className="font-mono text-[12px] uppercase tracking-[0.12em] text-[var(--brass-300)]">Next: Evidence Review</p>
+              <div className="mt-3 flex items-center justify-between border-t border-[color:var(--hide-600)] pt-3">
+                <p className="font-mono text-[12px] uppercase tracking-[0.12em] text-[color:var(--brass-300)]">Next: Evidence Review</p>
                 <Link
                   href="/evidence"
-                  className="inline-flex min-h-[44px] items-center border border-[var(--patina-700)] bg-[var(--rust-900)] px-3 text-[12px] font-bold text-[var(--bone-200)] transition hover:border-[var(--brass-500)]"
+                  className="inline-flex min-h-[44px] items-center border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 text-[12px] font-bold text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-300)]"
                 >
                   Move to Evidence -&gt;
                 </Link>
@@ -261,61 +261,61 @@ export default function ResearchIntakePage() {
           ))}
         </section>
 
-        <section className="space-y-3 border-2 border-[var(--patina-700)] bg-[var(--hide-900)] p-4">
-          <p className="text-[12px] font-mono uppercase tracking-[0.18em] text-[var(--brass-300)]">Operational Research Requirements</p>
+        <section className="space-y-3 border-2 border-[color:var(--brass-700)] bg-[#151515] p-4">
+          <p className="text-[12px] font-mono uppercase tracking-[0.18em] text-[color:var(--brass-300)]">Operational Research Requirements</p>
           <form onSubmit={handleCreateRequirement} className="space-y-3">
             <div className="grid gap-3 md:grid-cols-2">
               <input
                 value={requirementDraft.sourceEventName}
                 onChange={(event) => setRequirementDraft((current) => ({ ...current, sourceEventName: event.target.value }))}
-                className="border border-[var(--hide-500)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[var(--bone-200)] outline-none"
+                className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] outline-none"
                 placeholder="Source event name"
               />
               <input
                 value={requirementDraft.sourceEntityType}
                 onChange={(event) => setRequirementDraft((current) => ({ ...current, sourceEntityType: event.target.value }))}
-                className="border border-[var(--hide-500)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[var(--bone-200)] outline-none"
+                className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] outline-none"
                 placeholder="Source entity type"
               />
             </div>
             <input
               value={requirementDraft.sourceEntityId}
               onChange={(event) => setRequirementDraft((current) => ({ ...current, sourceEntityId: event.target.value }))}
-              className="w-full border border-[var(--hide-500)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[var(--bone-200)] outline-none"
+              className="w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] outline-none"
               placeholder="Source entity id"
             />
             <textarea
               value={requirementDraft.researchRequirement}
               onChange={(event) => setRequirementDraft((current) => ({ ...current, researchRequirement: event.target.value }))}
-              className="h-24 w-full border border-[var(--hide-500)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[var(--bone-200)] outline-none"
+              className="h-24 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] outline-none"
               placeholder="Research requirement"
             />
             <textarea
               value={requirementDraft.knowledgeGap}
               onChange={(event) => setRequirementDraft((current) => ({ ...current, knowledgeGap: event.target.value }))}
-              className="h-20 w-full border border-[var(--hide-500)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[var(--bone-200)] outline-none"
+              className="h-20 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] outline-none"
               placeholder="Knowledge gap"
             />
             <div className="flex flex-wrap items-center gap-3">
               <button
                 type="submit"
-                className="inline-flex min-h-[44px] items-center border border-[var(--patina-700)] bg-[var(--rust-900)] px-4 text-[12px] font-bold text-[var(--bone-200)] transition hover:border-[var(--brass-500)]"
+                className="inline-flex min-h-[44px] items-center border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-4 text-[12px] font-bold text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-300)]"
               >
                 Save Requirement
               </button>
-              <p className="text-[12px] text-[var(--bone-300)]">{submitMessage || 'Persist a requirement from evidence or a manual note.'}</p>
+              <p className="text-[12px] text-[color:var(--bone-300)]">{submitMessage || 'Persist a requirement from evidence or a manual note.'}</p>
             </div>
           </form>
           <div className="space-y-2">
             {requirements.map((requirement) => (
-              <article key={requirement.research_requirement_id} className="border border-[var(--hide-500)] bg-[var(--hide-950)] p-3">
+              <article key={requirement.research_requirement_id} className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-[14px] font-bold text-[var(--bone-200)]">{requirement.source_event_name}</p>
-                  <p className="text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--brass-300)]">{requirement.status}</p>
+                  <p className="text-[14px] font-bold text-[color:var(--bone-200)]">{requirement.source_event_name}</p>
+                  <p className="text-[11px] font-mono uppercase tracking-[0.14em] text-[color:var(--brass-300)]">{requirement.status}</p>
                 </div>
-                <p className="mt-2 text-[13px] text-[var(--bone-300)]">{requirement.research_requirement}</p>
-                <p className="mt-1 text-[12px] text-[var(--bone-400)]">Gap: {requirement.knowledge_gap}</p>
-                <p className="mt-1 text-[12px] text-[var(--bone-400)]">
+                <p className="mt-2 text-[13px] text-[color:var(--bone-300)]">{requirement.research_requirement}</p>
+                <p className="mt-1 text-[12px] text-[color:var(--bone-400)]">Gap: {requirement.knowledge_gap}</p>
+                <p className="mt-1 text-[12px] text-[color:var(--bone-400)]">
                   Source: {requirement.source_status} | Confidence: {requirement.source_confidence_tier} | Verification: {requirement.source_verification_state}
                 </p>
                 {requirement.status === 'open' ? (

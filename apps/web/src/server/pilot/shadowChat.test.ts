@@ -467,7 +467,6 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
           const result = validateShadowResponse(response);
           expect(result.filtered).toBe(true);
         });
-
         // The subject alternation was second-person plus 'the athlete', so the
         // same claim in the third person passed clean. Measured 2026-07-31,
         // before the widening: 'The athlete has a rotator cuff injury.'
@@ -507,6 +506,64 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
         ])('still allows %s', (_label, response) => {
           const result = validateShadowResponse(response);
           expect(result.filtered).toBe(false);
+        });
+      });
+
+      describe('a roster count is not a sample size', () => {
+        // The count-noun branch read 'N athletes' as an evidence population
+        // wherever it appeared, so counting people into groups tripped the
+        // same rule as "94% of athletes improve". This failed the staging gate
+        // on 0f47b35: step 14 asks for a four-station circuit for a 60-minute
+        // youth class, and both the answer and its retry were withheld. The
+        // trigger was in the question, not the phrasing, so the one-retry
+        // policy could never clear it.
+        test.each([
+          ['a class split', 'Split the 12 athletes into four groups of three and rotate every eight minutes.'],
+          ['a per-station count', 'Put 3 athletes at each station so nobody waits for a bag.'],
+          ['a station roster', 'Station 1 (Jab mechanics): 4 athletes rotate through in pairs.'],
+          ['a group size', 'Run the circuit in groups of 3 athletes so each one gets a full round.'],
+          ['a participant count', 'With 8 participants you can run two stations in parallel.'],
+          ['a pairing instruction', 'Pair up the 10 athletes; 2 athletes per bag keeps the rotation tight.'],
+        ])('allows %s', (_label, response) => {
+          const result = validateShadowResponse(response, { allowedEvidenceIds: [] });
+          expect(result.filtered).toBe(false);
+        });
+
+        // A sweep of 34 realistic benign answers (2026-08-02) found three more
+        // the first strip still withheld. Planning speech is unbounded, so a
+        // strip alone will always trail it -- hence the assertion-frame layer.
+        // These three are the measured misses.
+        test.each([
+          ['a class cap', 'Keep the beginner class to 8 athletes so you can watch every set of hands.'],
+          ['a coaching ratio', 'One coach for every 6 athletes is what lets you correct faults in real time.'],
+          ['an equipment constraint', 'With only 5 bags and 14 athletes, run two on shadowboxing while three work.'],
+          ['an allocation near an existence verb', 'There are 3 athletes at each station during the circuit.'],
+          ['a capacity statement', 'The Saturday open gym can host 20 athletes comfortably.'],
+        ])('allows %s', (_label, response) => {
+          const result = validateShadowResponse(response, { allowedEvidenceIds: [] });
+          expect(result.filtered).toBe(false);
+        });
+
+        // The assertion-frame layer is the risky direction -- it filters only
+        // on recognised frames, so a missed frame lets an uncited figure
+        // through. An organizational rollup is the load-bearing case.
+        test.each([
+          ['an organizational rollup figure', 'Alpha Boxing has 12 athletes.'],
+          ['a plain population statement', 'There are 30 athletes enrolled this season.'],
+          ['a past population statement', 'There were 45 athletes in the program last year.'],
+          ['a first-person rollup', 'We have 22 athletes across the two evening classes.'],
+          ['a service figure', 'The gym serves 60 athletes a week.'],
+          ['a tracked cohort', 'We tracked 40 participants over eight weeks.'],
+          ['a sample with an outcome', 'In our program 300 athletes improved their guard after this drill.'],
+          ['an out-of framing', '7 out of 10 athletes reported less shoulder soreness.'],
+          ['a participant outcome', '40 participants showed a measurable increase in punch speed.'],
+          ['a distant outcome', '52 athletes, all of them in the beginner tier that season, improved measurably.'],
+          ['a comparison population', 'This is best for 247 similar athletes.'],
+          ['a count of similar cases', 'We saw the same pattern in 12 similar cases.'],
+          ['a count of studies', 'Across 4 studies the effect held.'],
+        ])('still filters %s', (_label, response) => {
+          const result = validateShadowResponse(response, { allowedEvidenceIds: [] });
+          expect(result.filtered).toBe(true);
         });
       });
 

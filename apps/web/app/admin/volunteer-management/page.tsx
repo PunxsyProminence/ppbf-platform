@@ -33,7 +33,7 @@ function VolunteerCard(props: Readonly<VolunteerCardProps>) {
       <p className="text-sm leading-6 text-[var(--gray-dark)]">Availability: {item.availability}</p>
       <p className="text-sm leading-6 text-[var(--gray-dark)]">Certification: {item.certification_status}</p>
       <p className="text-sm leading-6 text-[var(--gray-dark)]">Background Check: {item.background_check_status}</p>
-      <p className="text-sm font-mono uppercase tracking-[0.08em] text-[var(--red-primary)]">Status: {item.status}</p>
+      <p className="text-sm font-mono uppercase tracking-[0.08em] text-[color:var(--brass-800)]">Status: {item.status}</p>
       {item.notes ? <p className="mt-2 text-sm text-[var(--gray-dark)]">{item.notes}</p> : null}
       <div className="mt-3 flex flex-wrap gap-2">
         {volunteerStatuses.map((status) => (
@@ -41,7 +41,7 @@ function VolunteerCard(props: Readonly<VolunteerCardProps>) {
             key={status}
             type="button"
             onClick={() => onStatusChange(item.volunteer_id, status)}
-            className="min-h-[40px] border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-xs font-bold uppercase tracking-[0.08em]"
+            className="min-h-[44px] border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-xs font-bold uppercase tracking-[0.08em]"
           >
             {status}
           </button>
@@ -184,9 +184,9 @@ export default function VolunteerManagementPage() {
       <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
         <div className="mx-auto w-full max-w-6xl px-6 py-10 lg:px-10">
           <header className="space-y-3 border-b-[3px] border-[var(--black)] pb-6">
-            <p className="text-xs font-mono uppercase tracking-[0.18em] text-[var(--red-primary)]">Admin Workspace</p>
+            <p className="text-xs font-mono uppercase tracking-[0.18em] text-[color:var(--brass-800)]">Admin Workspace</p>
             <h1 className="font-display text-4xl font-black">Volunteer Management</h1>
-            <p className="text-sm font-mono uppercase tracking-[0.14em] text-[var(--red-primary)]">LIVE | TABLE-BACKED | BACKEND CONNECTED</p>
+            <p className="text-sm font-mono uppercase tracking-[0.14em] text-[color:var(--brass-800)]">LIVE | TABLE-BACKED | BACKEND CONNECTED</p>
             <p className="max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
               Volunteer roster, status, and availability are now backed by persistent records instead of placeholders.
             </p>
@@ -234,12 +234,12 @@ export default function VolunteerManagementPage() {
             ))}
           </section>
 
-          {message ? <p className="mt-6 text-sm font-semibold text-[var(--red-primary)]">{message}</p> : null}
+          {message ? <p className="mt-6 text-sm font-semibold text-[color:var(--brass-800)]">{message}</p> : null}
 
           <div className="mt-8">
             <Link
               href="/operations"
-              className="inline-flex min-h-[42px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.08em]"
+              className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.08em]"
             >
               Back to Mission Control
             </Link>

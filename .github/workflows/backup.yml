@@ -1,0 +1,347 @@
+# ─────────────────────────────────────────────────────────────────────────
+# Scheduled backup of the `pilot` schema.
+#
+# Before this existed there was no backup of any kind. Losing the database in
+# week three of the pilot would have lost forty children's records outright --
+# rosters, guardians, emergency contacts, every audit row -- with no way to
+# reconstruct them, because the platform is the only place they are written
+# down. That is the one failure on the readiness list that cannot be repaired
+# after the fact, which is why this runs on a clock rather than on request.
+#
+# It reaches Postgres exactly the way apply-migrations.yml does: the same Azure
+# OIDC identity, the same Container App secret lookup, the same derived
+# expected-host guard. No new credential is introduced.
+#
+# WHY THIS JOB DECLARES NO `environment:`
+#   apply-migrations.yml and deploy-production.yml both declare
+#   `environment: production` so a required-reviewer protection rule gates
+#   them. That rule exists and is correct for a mutation. Applied here it would
+#   be fatal: a scheduled run against a protected environment does not run, it
+#   waits for a human to click approve, and is cancelled after thirty days. A
+#   backup that needs a person every night is not a backup. This job therefore
+#   runs unattended, and is safe to leave ungated because it only reads: it
+#   applies no DDL, writes no row, and its single output is a private blob.
+#
+#   The consequence to know about is the OIDC subject. Without `environment:`
+#   the token subject is `repo:<org>/<repo>:ref:refs/heads/main` rather than
+#   `repo:<org>/<repo>:environment:production`. The identity behind
+#   AZURE_CLIENT_ID carries both federated credentials (`github-main` and
+#   `github-production-env`), so this authenticates on the ref credential. A
+#   dispatch from any branch other than the default one will fail to log in,
+#   which is the correct direction to fail in.
+#
+# WHAT IS IN THE DUMP
+#   The whole `pilot` schema, including PIN hashes and every minor's record.
+#   The only control on it is access to the storage account -- the container is
+#   private, and nothing here mints a SAS URL or makes a blob public.
+#
+# WHAT NEVER REACHES THE LOG
+#   Neither connection string (both are masked before they are written
+#   anywhere), and no row content. pg_dump writes to a pipe, never to stdout,
+#   and the verifier emits table names and counts only.
+#
+# RETENTION
+#   90 days, enforced by this workflow after each successful upload, and never
+#   below MIN_BACKUPS_KEPT most recent backups regardless of their age. A daily
+#   dump of a forty-athlete gym is a few megabytes compressed, so 90 days is
+#   a rounding error against the storage account's existing cost.
+# ─────────────────────────────────────────────────────────────────────────
+
+name: backup
+
+on:
+  schedule:
+    # 07:10 UTC daily -- roughly 03:10 America/New_York, after the gym has
+    # closed and well before anyone opens the app.
+    - cron: '10 7 * * *'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Which environment's database to back up
+        required: true
+        default: production
+        type: choice
+        options:
+          - production
+          - staging
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  # One backup at a time per target. Two overlapping dumps would compete for
+  # the same connection budget and write two blobs for the same night.
+  group: backup-${{ inputs.target || 'production' }}
+  cancel-in-progress: false
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      TARGET: ${{ inputs.target || 'production' }}
+      RESOURCE_GROUP: rg-ppbf-enterprise-staging
+      CONTAINER_APP_NAME: ${{ (inputs.target || 'production') == 'production' && 'app-ppbf-production' || 'app-ppbf-staging' }}
+      BACKUP_CONTAINER: ppbf-pilot-backups
+      RETENTION_DAYS: '90'
+      # The prune step will never take the container below this many backups,
+      # whatever the dates say. A clock skew or a date-parsing bug that deleted
+      # every backup is the exact disaster this workflow exists to prevent.
+      MIN_BACKUPS_KEPT: '14'
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Locked Dependencies
+        run: npm ci
+
+      - name: Authenticate via Azure OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Both connection strings come from the target-NAMED Container App, so the
+      # fetch itself is the target guard: you cannot ask Azure for staging's app
+      # and get production's secret. The expected host/database are derived from
+      # the string that was just fetched and parsed exactly as the verifier
+      # parses it, so the verifier's own check is a consistency assertion. Repo
+      # variables PPBF_EXPECTED_POSTGRES_HOSTNAME / PPBF_EXPECTED_POSTGRES_DATABASE
+      # override them when an operator wants an independent check.
+      - name: Resolve Connections
+        env:
+          OVERRIDE_HOST: ${{ vars.PPBF_EXPECTED_POSTGRES_HOSTNAME }}
+          OVERRIDE_DB: ${{ vars.PPBF_EXPECTED_POSTGRES_DATABASE }}
+        run: |
+          set -euo pipefail
+
+          CONN="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-postgres-connection-string \
+            --query value -o tsv)"
+          test -n "$CONN"
+          echo "::add-mask::$CONN"
+          echo "AZURE_POSTGRES_CONNECTION_STRING=$CONN" >> "$GITHUB_ENV"
+
+          STORAGE="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-storage-connection-string \
+            --query value -o tsv)"
+          test -n "$STORAGE"
+          echo "::add-mask::$STORAGE"
+          # az storage reads this variable directly, so the value never appears
+          # as a command-line argument in any later step.
+          echo "AZURE_STORAGE_CONNECTION_STRING=$STORAGE" >> "$GITHUB_ENV"
+
+          DERIVED="$(CONN="$CONN" node -e '
+            const u = new URL(process.env.CONN);
+            const host = u.hostname.toLowerCase();
+            const db = decodeURIComponent(u.pathname.replace(/^\/+/, ""));
+            if (!host || !db) { process.exit(2); }
+            process.stdout.write(host + "\n" + db);
+          ')"
+          HOST="$(printf '%s' "$DERIVED" | sed -n 1p)"
+          DB="$(printf '%s' "$DERIVED" | sed -n 2p)"
+          test -n "$HOST"
+          test -n "$DB"
+
+          echo "PPBF_EXPECTED_POSTGRES_HOSTNAME=${OVERRIDE_HOST:-$HOST}" >> "$GITHUB_ENV"
+          echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
+
+      # pg_dump refuses to run against a server newer than itself, and the
+      # runner image's preinstalled client tracks Ubuntu rather than Azure. Ask
+      # the server what it is and install that exact client, so an Azure major
+      # version upgrade cannot silently end the backups.
+      - name: Read The Server Version
+        run: |
+          set -euo pipefail
+          cd apps/web
+          PROBE="$(node scripts/pilot-export-verify-dump.mjs probe)"
+          echo "$PROBE"
+          MAJOR="$(printf '%s' "$PROBE" | sed -n 's/^server_major: //p')"
+          case "$MAJOR" in
+            ''|*[!0-9]*)
+              echo "::error::Could not read the PostgreSQL major version from the server."
+              exit 1
+              ;;
+          esac
+          echo "SERVER_MAJOR=$MAJOR" >> "$GITHUB_ENV"
+
+      - name: Install The Matching PostgreSQL Client
+        run: |
+          set -euo pipefail
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq "postgresql-client-${SERVER_MAJOR}"
+          PG_DUMP="/usr/lib/postgresql/${SERVER_MAJOR}/bin/pg_dump"
+          test -x "$PG_DUMP"
+          "$PG_DUMP" --version
+          echo "PG_DUMP=$PG_DUMP" >> "$GITHUB_ENV"
+
+      # Plain SQL rather than a custom-format archive on purpose: a restore is
+      # `gunzip -c <file> | psql <target>` with no pg_restore version matching
+      # to get right, and the file can be read and searched by anyone holding
+      # it. --no-owner/--no-privileges so a restore does not depend on the role
+      # names of the server it came from.
+      #
+      # The connection string is passed as an argument because libpq has no
+      # environment variable for a full URI. It is masked in the log, and this
+      # runner is single-use.
+      - name: Dump The Pilot Schema
+        run: |
+          set -euo pipefail
+          STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+          DUMP_DIR="$RUNNER_TEMP/pilot-backup"
+          mkdir -p "$DUMP_DIR"
+          DUMP_PATH="$DUMP_DIR/pilot-$TARGET-$STAMP.sql.gz"
+
+          "$PG_DUMP" \
+            --schema=pilot \
+            --format=plain \
+            --encoding=UTF8 \
+            --no-owner \
+            --no-privileges \
+            --dbname="$AZURE_POSTGRES_CONNECTION_STRING" \
+            | gzip -9 > "$DUMP_PATH"
+
+          # A zero-byte file reported as a successful backup is worse than no
+          # backup, so the first three things checked are that the file exists,
+          # has bytes, and is a readable gzip member.
+          test -s "$DUMP_PATH"
+          gzip -t "$DUMP_PATH"
+
+          DUMP_BYTES="$(stat -c%s "$DUMP_PATH")"
+          echo "DUMP_PATH=$DUMP_PATH" >> "$GITHUB_ENV"
+          echo "DUMP_BYTES=$DUMP_BYTES" >> "$GITHUB_ENV"
+          # Year and month taken from the same stamp as the filename, so a run
+          # that straddles midnight on the first of a month cannot file itself
+          # under one month and name itself for another.
+          echo "BLOB_NAME=pilot-schema/$TARGET/${STAMP:0:4}/${STAMP:4:2}/pilot-$TARGET-$STAMP.sql.gz" >> "$GITHUB_ENV"
+          echo "Compressed dump: $DUMP_BYTES bytes."
+
+      # Reads the dump back and compares it against the live row counts. This is
+      # what makes the step above a backup rather than a file: a dump cut short
+      # mid-table still decompresses cleanly, and a schema-only dump is the
+      # right shape and the wrong content. Nothing is uploaded until this
+      # passes, so the container never accumulates dumps nobody has checked.
+      - name: Verify The Dump Contains The Records
+        run: |
+          set -euo pipefail
+          cd apps/web
+          node scripts/pilot-export-verify-dump.mjs verify --dump "$DUMP_PATH" | tee "$RUNNER_TEMP/verify.txt"
+
+      - name: Upload To Durable Storage
+        run: |
+          set -euo pipefail
+          az storage container create \
+            --name "$BACKUP_CONTAINER" \
+            --public-access off \
+            --only-show-errors \
+            --output none
+
+          az storage blob upload \
+            --container-name "$BACKUP_CONTAINER" \
+            --name "$BLOB_NAME" \
+            --file "$DUMP_PATH" \
+            --content-type application/gzip \
+            --only-show-errors \
+            --output none
+
+          # Round-trip check: what the container reports must be exactly what
+          # was produced locally, or the upload truncated.
+          REMOTE_BYTES="$(az storage blob show \
+            --container-name "$BACKUP_CONTAINER" \
+            --name "$BLOB_NAME" \
+            --query properties.contentLength -o tsv)"
+          if [ "$REMOTE_BYTES" != "$DUMP_BYTES" ]; then
+            echo "::error::Uploaded blob is $REMOTE_BYTES bytes, dump was $DUMP_BYTES bytes."
+            exit 1
+          fi
+          echo "Stored $BACKUP_CONTAINER/$BLOB_NAME ($REMOTE_BYTES bytes)."
+
+      # Runs only after a verified upload, so a failed night never deletes an
+      # older good backup. Oldest first, stopping at the first blob inside the
+      # retention window and at the floor of MIN_BACKUPS_KEPT.
+      - name: Apply Retention
+        run: |
+          set -euo pipefail
+          PREFIX="pilot-schema/$TARGET/"
+          CUTOFF_EPOCH="$(date -u -d "-$RETENTION_DAYS days" +%s)"
+
+          # Sorted in the shell rather than by JMESPath: lastModified comes back
+          # as an ISO-8601 UTC string, which sorts lexicographically, and this
+          # avoids depending on how the CLI renders a datetime for sort_by.
+          az storage blob list \
+            --container-name "$BACKUP_CONTAINER" \
+            --prefix "$PREFIX" \
+            --num-results '*' \
+            --query "[].[name,properties.lastModified]" \
+            -o tsv | sort -k2 > "$RUNNER_TEMP/blobs.tsv"
+
+          REMAINING="$(wc -l < "$RUNNER_TEMP/blobs.tsv" | tr -d ' ')"
+          DELETED=0
+
+          while read -r NAME MODIFIED; do
+            [ -n "$NAME" ] || continue
+            if [ "$REMAINING" -le "$MIN_BACKUPS_KEPT" ]; then
+              break
+            fi
+            BLOB_EPOCH="$(date -u -d "$MODIFIED" +%s 2>/dev/null || echo 0)"
+            if [ "$BLOB_EPOCH" -eq 0 ] || [ "$BLOB_EPOCH" -ge "$CUTOFF_EPOCH" ]; then
+              break
+            fi
+            az storage blob delete \
+              --container-name "$BACKUP_CONTAINER" \
+              --name "$NAME" \
+              --only-show-errors \
+              --output none
+            DELETED=$((DELETED + 1))
+            REMAINING=$((REMAINING - 1))
+          done < "$RUNNER_TEMP/blobs.tsv"
+
+          echo "RETAINED_COUNT=$REMAINING" >> "$GITHUB_ENV"
+          echo "PRUNED_COUNT=$DELETED" >> "$GITHUB_ENV"
+          echo "Retention: kept $REMAINING backups, removed $DELETED older than $RETENTION_DAYS days."
+
+      - name: Record What Was Backed Up
+        if: always()
+        run: |
+          {
+            echo ''
+            echo '### Backup result'
+            echo ''
+            echo "- target: \`$TARGET\`"
+            echo "- outcome: \`${{ job.status }}\`"
+            echo "- destination: \`$BACKUP_CONTAINER/${BLOB_NAME:-(nothing uploaded)}\`"
+            echo "- compressed size: \`${DUMP_BYTES:-0}\` bytes"
+            echo "- retention: **$RETENTION_DAYS days**, never fewer than $MIN_BACKUPS_KEPT backups"
+            echo "- backups now retained: \`${RETAINED_COUNT:-unknown}\` (removed \`${PRUNED_COUNT:-0}\` this run)"
+            echo "- commit: \`${{ github.sha }}\`"
+            echo ''
+            if [ "${{ job.status }}" = "success" ]; then
+              echo 'Verification (counts only -- no row content is captured anywhere in this workflow):'
+              echo ''
+              echo '```'
+              cat "$RUNNER_TEMP/verify.txt" 2>/dev/null || echo '(no verification output captured)'
+              echo '```'
+              echo ''
+              echo "Restore: \`gunzip -c pilot-$TARGET-<stamp>.sql.gz | psql <connection string>\` against an empty database."
+            else
+              echo '**There is no backup for this run.** Nothing was uploaded unless the upload step above succeeded, and a dump that failed verification is never uploaded at all.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

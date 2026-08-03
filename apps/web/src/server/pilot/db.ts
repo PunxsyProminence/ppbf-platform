@@ -1,4 +1,12 @@
-import { Pool, type PoolClient, type QueryResultRow } from 'pg';
+import { Pool, types as pgTypes, type PoolClient, type QueryResultRow } from 'pg';
+
+// A `date` column is a calendar day, not an instant. node-postgres parses one
+// into a JS Date at the SERVER's local midnight, and serializing that to JSON
+// converts it to UTC -- which moves the day backwards for any server east of
+// UTC. A date of birth read on one host and written back from another would
+// silently walk. Handing the string through unchanged keeps a calendar day a
+// calendar day. 1082 is DATE; timestamps are untouched.
+pgTypes.setTypeParser(1082, (value: string) => value);
 
 import { getAzurePostgresConnectionString } from './env';
 

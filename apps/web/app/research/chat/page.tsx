@@ -129,33 +129,33 @@ export default function ResearchQAChatPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[var(--hide-950)] text-[var(--bone-200)]">
+    <main className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
       {/* ROUGH OLD-SCHOOL BOXING HEADER */}
-      <header className="border-b-4 border-[var(--brass-500)] bg-[var(--hide-900)] px-4 py-4 md:px-8 md:py-6">
+      <header className="border-b-4 border-[color:var(--brass-300)] bg-[var(--hide-900)] px-4 py-4 md:px-8 md:py-6">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
           <div>
-            <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-[var(--brass-300)]">Research Lab</p>
-            <h1 className="font-display text-2xl font-black tracking-tight text-[var(--bone-200)] md:text-3xl">The Library</h1>
-            <p className="mt-1 text-xs text-[var(--bone-400)]">Ask. Learn. Document. No fancy talk.</p>
+            <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-[color:var(--brass-300)]">Research Lab</p>
+            <h1 className="font-display text-2xl font-black tracking-tight text-[color:var(--bone-200)] md:text-3xl">The Library</h1>
+            <p className="mt-1 text-xs text-[color:var(--bone-400)]">Ask. Learn. Document. No fancy talk.</p>
           </div>
           <div className="text-right">
-            <p className="font-mono text-[10px] text-[var(--bone-400)]">PPBF Fight Card</p>
-            <p className="text-xs font-bold text-[var(--patina-300)]">LIVE</p>
+            <p className="font-mono text-[10px] text-[color:var(--bone-400)]">PPBF Fight Card</p>
+            <p className="text-xs font-bold text-[color:var(--brass-700)]">LIVE</p>
           </div>
         </div>
       </header>
 
       <div className="mx-auto grid max-w-6xl gap-6 p-4 lg:grid-cols-[1fr_300px] md:p-8">
         {/* CHAT */}
-        <section className="border-4 border-[var(--brass-500)] bg-[var(--hide-950)] p-6 shadow-2xl shadow-black/60">
+        <section className="border-4 border-[color:var(--brass-300)] bg-[var(--hide-950)] p-6 shadow-2xl shadow-black/60">
           {/* Messages */}
           <div className="mb-6 max-h-[500px] space-y-3 overflow-y-auto bg-[var(--hide-950)] p-4 font-mono text-sm">
             {messages.map((msg) => {
-              let messageTone = 'border-2 border-[var(--brass-500)] bg-[var(--hide-800)] text-[var(--bone-200)]';
+              let messageTone = 'border-2 border-[color:var(--brass-300)] bg-[#3a3020] text-[color:var(--bone-200)]';
               if (msg.type === 'user') {
-                messageTone = 'border-2 border-[var(--patina-700)] bg-[var(--rust-700)] text-[var(--patina-300)]';
+                messageTone = 'border-2 border-[color:var(--brass-700)] bg-[#3a2a2a] text-[color:var(--brass-700)]';
               } else if (msg.type === 'system') {
-                messageTone = 'border-2 border-[var(--hide-600)] bg-[var(--hide-900)] text-[var(--bone-400)]';
+                messageTone = 'border-2 border-[color:var(--hide-600)] bg-[var(--hide-900)] text-[color:var(--bone-400)]';
               }
 
               return (
@@ -163,12 +163,12 @@ export default function ResearchQAChatPage() {
                 <div className={`max-w-md px-3 py-2 ${messageTone}`}>
                   <p className="text-xs leading-5">{msg.text}</p>
                   {msg.evidence?.length ? (
-                    <div className="mt-2 border-t border-[var(--hide-500)] pt-2">
-                      <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[var(--brass-300)]">Sources</p>
+                    <div className="mt-2 border-t border-[color:var(--hide-600)] pt-2">
+                      <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[color:var(--brass-300)]">Sources</p>
                       <ul className="mt-1 space-y-1">
                         {msg.evidence.map((item, index) => (
-                          <li key={`${msg.id}-ev-${index}`} className="text-[10px] leading-4 text-[var(--bone-300)]">
-                            <span className="font-semibold text-[var(--bone-200)]">
+                          <li key={`${msg.id}-ev-${index}`} className="text-[10px] leading-4 text-[color:var(--bone-300)]">
+                            <span className="font-semibold text-[color:var(--bone-200)]">
                               {item.sourceTitle} (tier {item.authorityTier}) — {item.documentName}
                             </span>
                             <span className="mt-0.5 block opacity-80">“{item.snippet}”</span>
@@ -179,7 +179,7 @@ export default function ResearchQAChatPage() {
                   ) : null}
                   <div className="mt-1 flex items-center justify-between gap-2">
                     <p className="text-[9px] opacity-50">{msg.timestamp}</p>
-                    {msg.source && <p className="text-[9px] text-[var(--brass-300)]">{msg.source}</p>}
+                    {msg.source && <p className="text-[9px] text-[color:var(--brass-300)]">{msg.source}</p>}
                   </div>
                 </div>
               </div>
@@ -196,12 +196,12 @@ export default function ResearchQAChatPage() {
               onChange={(e) => setUserInput(e.target.value)}
               placeholder="Ask the Library -- answers come only from approved sources"
               disabled={isSearching}
-              className="flex-1 border-2 border-[var(--brass-500)] bg-[var(--hide-900)] px-3 py-2 text-sm text-[var(--bone-200)] placeholder-[var(--bone-400)] outline-none transition focus:border-[var(--brass-500)] focus:bg-[var(--hide-800)]"
+              className="flex-1 border-2 border-[color:var(--brass-300)] bg-[var(--hide-900)] px-3 py-2 text-sm text-[color:var(--bone-200)] placeholder-[#666666] outline-none transition focus:border-[color:var(--brass-300)] focus:bg-[#3a3020]"
             />
             <button
               type="submit"
               disabled={isSearching}
-              className="border-2 border-[var(--brass-500)] bg-[var(--hide-900)] px-4 py-2 text-xs font-mono font-bold text-[var(--brass-300)] transition hover:border-[var(--brass-500)] hover:bg-[var(--hide-800)] hover:text-[var(--bone-200)] disabled:opacity-50"
+              className="border-2 border-[color:var(--brass-300)] bg-[#1f1f1f] px-4 py-2 text-xs font-mono font-bold text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)] hover:bg-[#3a3020] hover:text-[color:var(--bone-200)] disabled:opacity-50"
             >
               {isSearching ? 'Searching…' : 'Ask'}
             </button>
@@ -211,19 +211,19 @@ export default function ResearchQAChatPage() {
         {/* RIGHT PANEL: NOTES & LINKS */}
         <aside className="space-y-4">
           {/* Research Notes */}
-          <section className="border-4 border-[var(--brass-500)] bg-[var(--hide-950)] p-4">
-            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--brass-300)]">Notes</p>
-            <p className="mt-2 text-[10px] leading-4 text-[var(--bone-400)]">Session scratchpad. Nothing typed here is stored.</p>
+          <section className="border-4 border-[color:var(--brass-300)] bg-[#0d0a08] p-4">
+            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--brass-300)]">Notes</p>
+            <p className="mt-2 text-[10px] leading-4 text-[color:var(--bone-400)]">Session scratchpad. Nothing typed here is stored.</p>
             <form onSubmit={handleAddNote} className="mt-3 space-y-2">
               <textarea
                 value={researchNotes}
                 onChange={(e) => setResearchNotes(e.target.value)}
                 placeholder="Write your findings..."
-                className="h-24 w-full border-2 border-[var(--brass-500)] bg-[var(--hide-900)] px-2 py-2 text-xs text-[var(--bone-200)] placeholder-[var(--bone-400)] outline-none transition focus:border-[var(--brass-500)] focus:bg-[var(--hide-800)] font-mono"
+                className="h-24 w-full border-2 border-[color:var(--brass-300)] bg-[var(--hide-900)] px-2 py-2 text-xs text-[color:var(--bone-200)] placeholder-[#666666] outline-none transition focus:border-[color:var(--brass-300)] focus:bg-[#3a3020] font-mono"
               />
               <button
                 type="submit"
-                className="w-full border-2 border-[var(--brass-500)] bg-[var(--hide-900)] px-2 py-1 text-xs font-mono font-bold text-[var(--brass-300)] transition hover:border-[var(--brass-500)] hover:bg-[var(--hide-800)] hover:text-[var(--bone-200)]"
+                className="w-full border-2 border-[color:var(--brass-300)] bg-[#1f1f1f] px-2 py-1 text-xs font-mono font-bold text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)] hover:bg-[#3a3020] hover:text-[color:var(--bone-200)]"
               >
                 Add Note To Transcript
               </button>
@@ -231,44 +231,44 @@ export default function ResearchQAChatPage() {
           </section>
 
           {/* Quick Links */}
-          <section className="border-4 border-[var(--hide-600)] bg-[var(--hide-950)] p-4">
-            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--bone-400)]">Navigate</p>
+          <section className="border-4 border-[color:var(--hide-600)] bg-[var(--hide-950)] p-4">
+            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--bone-400)]">Navigate</p>
             <div className="mt-3 space-y-2">
               <Link
                 href="/research"
-                className="block border-2 border-[var(--hide-600)] bg-[var(--hide-950)] px-2 py-1 text-xs font-mono text-[var(--bone-300)] transition hover:border-[var(--bone-400)] hover:bg-[var(--hide-900)] hover:text-[var(--bone-200)]"
+                className="block border-2 border-[color:var(--hide-600)] bg-[var(--hide-950)] px-2 py-1 text-xs font-mono text-[#b0b0b0] transition hover:border-[color:var(--bone-400)] hover:bg-[var(--hide-900)] hover:text-[color:var(--bone-200)]"
               >
                 Research Intake
               </Link>
               <Link
                 href="/evidence"
-                className="block border-2 border-[var(--hide-600)] bg-[var(--hide-950)] px-2 py-1 text-xs font-mono text-[var(--bone-300)] transition hover:border-[var(--bone-400)] hover:bg-[var(--hide-900)] hover:text-[var(--bone-200)]"
+                className="block border-2 border-[color:var(--hide-600)] bg-[var(--hide-950)] px-2 py-1 text-xs font-mono text-[#b0b0b0] transition hover:border-[color:var(--bone-400)] hover:bg-[var(--hide-900)] hover:text-[color:var(--bone-200)]"
               >
                 Evidence Review
               </Link>
               <Link
                 href="/operations"
-                className="block border-2 border-[var(--hide-600)] bg-[var(--hide-950)] px-2 py-1 text-xs font-mono text-[var(--bone-300)] transition hover:border-[var(--bone-400)] hover:bg-[var(--hide-900)] hover:text-[var(--bone-200)]"
+                className="block border-2 border-[color:var(--hide-600)] bg-[var(--hide-950)] px-2 py-1 text-xs font-mono text-[#b0b0b0] transition hover:border-[color:var(--bone-400)] hover:bg-[var(--hide-900)] hover:text-[color:var(--bone-200)]"
               >
                 Operations Hub
               </Link>
               <Link
                 href="/admin/shadow"
-                className="block border-2 border-[var(--patina-700)] bg-[var(--hide-900)] px-2 py-1 text-xs font-mono text-[var(--patina-300)] transition hover:border-[var(--patina-700)] hover:bg-[var(--rust-700)] hover:text-[var(--brass-300)]"
+                className="block border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-2 py-1 text-xs font-mono text-[color:var(--brass-700)] transition hover:border-[color:var(--brass-700)] hover:bg-[#3a2a2a] hover:text-[color:var(--brass-300)]"
               >
                 SHADOW (Admin)
               </Link>
             </div>
           </section>
 
-          <section className="border-4 border-[var(--hide-600)] bg-[var(--hide-950)] p-4">
-            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--bone-400)]">SHADOW Research Stream</p>
-            {signalError ? <p className="mt-2 text-xs text-[var(--locked-ink)]">{signalError}</p> : null}
-            {!signalError && shadowSignals.length === 0 ? <p className="mt-2 text-xs text-[var(--bone-400)]">No SHADOW research signals available.</p> : null}
+          <section className="border-4 border-[color:var(--hide-600)] bg-[var(--hide-950)] p-4">
+            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--bone-400)]">SHADOW Research Stream</p>
+            {signalError ? <p className="mt-2 text-xs text-[#f0c4c4]">{signalError}</p> : null}
+            {!signalError && shadowSignals.length === 0 ? <p className="mt-2 text-xs text-[color:var(--bone-400)]">No SHADOW research signals available.</p> : null}
             <div className="mt-2 space-y-2">
               {shadowSignals.slice(0, 6).map((signal) => (
-                <div key={signal.event_id} className="border border-[var(--hide-600)] bg-[var(--hide-950)] px-2 py-1 text-[11px] text-[var(--bone-300)]">
-                  <p className="font-semibold text-[var(--bone-200)]">{signal.source_event_name}</p>
+                <div key={signal.event_id} className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-2 py-1 text-[11px] text-[color:var(--bone-300)]">
+                  <p className="font-semibold text-[color:var(--bone-200)]">{signal.source_event_name}</p>
                   <p>Label: {signal.evidence_label || 'none'}</p>
                   <p>Source: {signal.source_status}</p>
                   <p>State: {signal.review_state}</p>

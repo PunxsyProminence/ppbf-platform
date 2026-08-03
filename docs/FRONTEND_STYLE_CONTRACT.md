@@ -1,112 +1,139 @@
 # Frontend Style Contract (PPBF)
 
 ## Purpose
-Lock visual consistency across the app's ~61 routes. This document describes
-conventions and pointers only — it holds no colour values of its own, because a
-second copy of the palette is a second source of truth.
+Lock visual consistency for all current and upcoming frontend work.
 
 ## Source of Truth
-- **[design-system/ppbf.css](../design-system/ppbf.css)** — every token, material,
-  and component class. The single source of truth.
-- [apps/web/app/globals.css](../apps/web/app/globals.css) — `@import`s ppbf.css at
-  line 15, then defines the **legacy alias layer** (see below). Also holds app-only
-  components (`.tactical-*`, `.paper-ticket`, `.ledger-tape`, `.mechanical-lock`,
-  `.brass-plate`, `.leather-tag`, `.gym-locker-tile`).
-- [apps/web/components/uiStyles.ts](../apps/web/components/uiStyles.ts) — a small
-  registry of repeated Tailwind class strings (tabs, mode buttons, panel shells,
-  status badges). A convenience layer over the aliases, **not** a source of values.
-- [design-system/README.md](../design-system/README.md) — the direction and the
-  Eight Laws. Read it before designing anything new.
-- [apps/web/src/design/PAGE_MAP.md](../apps/web/src/design/PAGE_MAP.md) — which of
-  three shapes each route takes, and which ground it sits on.
+- **`design-system/ppbf.css`** — tokens, materials, and components, in one sheet.
+  Everything else derives from it. Read `design-system/README.md` for the Eight
+  Laws and the reasoning; the previews under `design-system/` render against
+  this exact file, so a value cannot drift between the showroom and the app.
+- `apps/web/app/globals.css` — imports the sheet above and aliases the app's
+  legacy variable names onto it. The aliases exist to carry the pages that
+  predate the design system. **Write new work against the ppbf tokens
+  directly** (`--hide-*`, `--brass-*`, `--t-*`, `--s1`…`--s8`).
+- `apps/web/components/uiStyles.ts` — pre-design-system helper, still consumed
+  by unconverted pages. Not a second vocabulary; do not extend it.
 
 ## Visual Language
-1. Theme direction: **"Leather & Brass"** — the back office of a boxing gym run
-   properly for forty years. Skeuomorphic, governance-forward, safety-first.
-2. Palette: **do not restate colour values in code or docs.** Read the tokens.
-   `--hide-*` (leather) · `--brass-*` (chassis) · `--patina-*` / `--rust-*` (grit)
-   · `--bone-*` / `--paper` / `--canvas-warm` (type and paper) · `--chalk` ·
-   `--cork` · and the status ladder `--cleared` / `--monitor` / `--restricted` /
-   `--locked`.
-3. **Two grounds, and the choice is a real decision (Law 6).** Ink
-   (`--hide-950`) for staff and tactical surfaces; warm canvas (`--canvas-warm`,
-   via `.on-canvas`) for family and public ones — Guardian Portal, Public
-   Onboarding. Getting this wrong is the most visible possible error, so
-   `PAGE_MAP.md` records it per route. There is one theme and no `[data-theme]`
-   toggle; ground is a per-surface material choice, not a user preference.
-4. Shape language: hard-edge by default. 2–3px borders, hard-offset shadows,
-   radius only where a real object would have it (`--r-sm` … `--r-xl`, Fibonacci).
-5. Proportion comes from the tokens, never from eye (Law 8). Type `--t-*` (√φ
-   ladder), space `--s1`…`--s8` (Fibonacci), splits `--split-minor` /
-   `--split-major`. No raw px for size or spacing.
-6. Four voices (Law 4): `.t-command` / stencil commands · `.t-body` informs ·
-   `.chalk` / `.t-hand` schedules · `.t-data` records anything auditable.
 
-## The alias layer
-`globals.css`'s `:root` block is **aliases only** — legacy names
-(`--canvas-tan`, `--red-primary`, `--text-sm`, `--space-4`) pointed at
-design-system values. It exists so the pages written before the design system
-re-theme without being edited.
+Skeuomorphic, not flat: every surface is a real object found in a boxing gym's
+back office. The Eight Laws in the design-system README are the contract. The
+four that get broken most often:
 
-1. **New work uses ppbf tokens directly** — `var(--hide-800)`, `var(--t-md)`,
-   `var(--s5)`, `var(--brass-500)`. The aliases are not a second vocabulary to
-   write in.
-2. Do not add new aliases. If a page needs a value, it needs a ppbf token.
-3. `--font-stencil` and `--font-body` are deliberately re-pointed in `globals.css`
-   at the `next/font` faces, which are really loaded where the design system's
-   fallback chain is not. That override is intentional — leave it.
+1. **Brass is the chassis, never the message** (Law 1). Frames, rivets, rope,
+   button faces, the "on" state of a control. Brass never reports a status.
+2. **Saturated colour means safety or status, and nothing else** (Law 2).
+   Green, blue, orange and red belong to a participant's safety state or a
+   queue outcome. In particular `--red-primary` aliases to `--locked` — the
+   safety gate's red — so it must not paint tabs, panel borders, links, or
+   emphasis. Chrome accents use brass.
+3. **Colour is never the only channel** (Law 3). Every state carries a glyph
+   (`✓ ◉ ▲ ✕`) and an uppercase label, so it survives greyscale board packets
+   and every form of colour blindness. Use `.badge`, not an emoji.
+4. **Nothing is sized by eye** (Law 8). Type climbs by √φ (`--t-xs`…`--t-4xl`),
+   space and radius follow Fibonacci (`--s1`…`--s8`, `--r-sm`…`--r-xl`),
+   layout splits at `--split-minor` / `--split-major`.
+
+### Two grounds, one system (Law 6)
+
+| Ground | Where | How |
+|---|---|---|
+| Ink leather | Staff consoles — admin, coach, board, operations | default `ppbf.css` components |
+| Warm canvas | Family-facing — public homepage, login, guardian, onboarding, kiosk | wrap in `.on-canvas` |
+
+`.on-canvas` paints a ground of its own, so put it on the full-bleed wrapper,
+not as a scoping hook on children. It restates every component that was tuned
+against leather; if you find one it has missed, **add the restatement to
+`ppbf.css` next to the others** rather than patching the colour in the page.
 
 ## Components and Patterns
-1. **ppbf.css ships real components. Use them instead of rebuilding a panel out
-   of utilities:** `.frame`, `.tile`, `.badge`, `.btn`, `.plaque`, `.gauge`,
-   `.rivet`, `.rope`, `.note-torn`, `.pin`, `.tag`, `.field`, `.input`, and the
-   `.mat-*` materials.
-2. Use `uiStyles.ts` for the repeated shells it already covers rather than
-   copy-pasting class strings; prefer shared primitives over new ones.
-3. **`.stamp` is defined twice and the collision is deliberate.** ppbf.css's
-   `.stamp` is a *static ink mark* (Law 7); globals.css's `.stamp` is a
-   *clickable button*, and it wins because it is imported later. Do not mix them.
-   For a static refusal or redaction mark, use `.stamp--static` / `.redacted`.
-4. Kiosk-first sizing (Law 5): anything an athlete touches on the gym floor is at
-   least `--tap` (55px) with `--t-md` type — `.btn--kiosk`, `.input--kiosk`.
-   Desks may go smaller; the floor may not.
-5. Keep focus behaviour consistent: `globals.css` sets a global `:focus-visible`
-   outline in `--red-primary`, and `uiStyles.ts` rings match it. Do not introduce
-   a third focus treatment.
+
+Use what the sheet already ships before inventing anything:
+
+- Surfaces — `.mat-leather`, `.mat-paper`, `.mat-slate`, `.mat-cork`, plus
+  `.frame` + `.rivet` for a riveted brass frame around a panel.
+- Controls — `.btn`, `.btn--ghost`, `.btn--danger`, `.btn--kiosk`,
+  `.field` + `.t-label` + `.input`.
+- Status — `.badge` with its four rungs; `.stamp` for a governance refusal
+  (Law 7 — refusal is a stamp, never a dismissible toast); `.redacted` for
+  k-anonymity withholding.
+- Type — four voices (Law 4): `.t-command` orders, `.t-body` informs, `.chalk`
+  schedules, `.t-data` records anything auditable.
+
+Tailwind v4 cannot tell whether `text-[var(--x)]` is a size or a colour and
+silently emits neither. Use `text-[length:var(--x)]` / `text-[color:var(--x)]`.
+
+## Ergonomics
+
+- Anything an athlete touches on the gym floor: `--tap` (55px) targets and
+  `--t-md` (19.1px) type minimum (Law 5). Desks may go smaller; the floor may
+  not. `.btn--kiosk` and `.input--kiosk` do this for you.
+- Keyboard focus is `var(--focus)` and must be visible against the ground it
+  sits on.
+- Every screen must survive a 412px viewport with no horizontal overflow.
 
 ## Drift Guardrails
-1. **Law 1 — brass is the chassis, never the message.** Frames, rivets, bezels,
-   button faces. The moment gold means a status, every frame on the page starts
-   lying. Most load-bearing hardware is `--patina-*`; `--brass-*` is reserved for
-   what would actually see a polishing rag.
-2. **Law 2 — saturated colour means safety or status, nothing else.** The status
-   ladder is the entire colour budget. `--rust-*` is atmosphere and must never
-   read as the ladder.
-3. **Law 3 — colour is never the only channel.** Every state carries a glyph
-   (`✓ ◉ ▲ ✕`) and an uppercase label, so it survives greyscale board-packet
-   printing and every form of colour blindness.
-4. **Law 7 — refusal is a stamp, not a toast.** Layer 20 refusals and Layer 17
-   k-anonymity withholding are ink on the page (`RESEARCH NEEDED`, `REDACTED`),
-   not something dismissible by accident.
-5. No slate/emerald/cyan fragments, and no hex literals on active surfaces —
-   a raw hex is by definition off-system.
-6. No inline style blocks for visual treatment unless the value is dynamic.
-7. Any new route reads `PAGE_MAP.md` for its shape and ground, and references an
-   existing styled route of that shape, before adding classes.
+
+1. No new hardcoded hex values in `apps/web/app` or `apps/web/components`.
+   As of the SHADOW-console pass: **281 hex values and 783 legacy cream tokens
+   across 58 page files**. Those numbers go down, never up. Measure before
+   claiming progress — an earlier version of this file quoted a count taken
+   only across the files being worked on, which read as far more finished than
+   the app was.
+2. No slate/emerald/cyan fragments, and no second palette — there is one look,
+   and no `[data-theme]` toggle. Ground is a per-surface material choice.
+3. Radii come off the Fibonacci scale; arbitrary values like `rounded-[28px]`
+   are drift.
+4. Before styling a new route, open the nearest `design-system/screens/*.html`
+   preview and build from that, rather than copying a neighbouring page that
+   may itself be unconverted.
 
 ## Scope Notes
-1. Active app surfaces live under `apps/web/app` and `apps/web/components`.
-2. Legacy files under `apps/web/src` are out-of-band and should not drive visual
-   decisions — `apps/web/src/design/PAGE_MAP.md` is the exception and is current.
-3. The previews under `design-system/` render against the same `ppbf.css` the app
-   ships, so a value cannot drift between preview and product. Edit the design
-   system there, not by patching a page.
+
+1. Legacy files under `apps/web/src` are out-of-band and must not drive visual
+   decisions.
+2. Active surfaces live under `apps/web/app` and `apps/web/components`.
+3. **The migration is partial, and roughly a third done.** Converted so far:
+   `GlobalRoleHeader`, `/`, `/login`, `/schedule`, `/operations`, `/admin`,
+   `/admin/shadow`, and every shared component under `apps/web/components`.
+   The other 58 page files are not. An unconverted page is not a precedent.
+4. **266 `--red-primary` uses remain**, and that token aliases to `--locked` —
+   the safety gate's red. Every instance examined so far was doing chrome
+   work: eyebrows, selected tabs, caveat notes, a *success* banner, a "not yet
+   implemented" panel. Each one spends a little of the signal that means *this
+   athlete may not participate*. Treat these as the highest-priority drift.
+
+## Checking your work
+
+`npm run sweep` (from `apps/web`, against a running dev server) reads every
+route it is given and reports text that cannot be read against what is behind
+it. It exists because the unit suite cannot see this class of fault: several
+regressions have shipped past 2,600 green tests while being invisible on
+screen — a brass button repainted by a link rule that outranked it, a trigger
+inheriting the body's dark colour onto leather, whole pages rendering
+bone-on-cream after adopting the ink type voices.
+
+A count on its own is not a verdict. Plenty of low-contrast text predates any
+given change, so sweep the same routes against a baseline ref and diff before
+acting — otherwise you will spend an afternoon fixing something you did not
+break. It never fails a build; it reports, and a person decides.
+
+This matters beyond legibility. Law 2 spends saturated colour on a
+participant's safety state and Law 3 requires a glyph and a label so the
+ladder survives greyscale, which makes a contrast regression a governance
+regression rather than a cosmetic one.
 
 ## Done Criteria for New UI Work
-1. Uses ppbf tokens directly; no new aliases and no hex literals.
-2. Sits on the ground `PAGE_MAP.md` assigns it.
-3. Uses ppbf component classes and `uiStyles.ts` patterns rather than rebuilt ones.
-4. Every state carries glyph + label, not colour alone.
-5. Gym-floor surfaces clear `--tap` and `--t-md`.
-6. Keyboard focus is visible and matches the global treatment.
-7. Sizes and spacing come from `--t-*` / `--s*`, not from eye.
+
+1. Every surface is one of the five materials, or it does not ship (Law 6).
+2. Saturated colour appears only for safety state or queue outcome (Law 2);
+   chrome accents are brass (Law 1).
+3. Every state carries a glyph and an uppercase label, not colour alone (Law 3).
+4. Sizes come from the √φ type ladder and the Fibonacci space/radius scales —
+   no eyeballed values (Law 8).
+5. Gym-floor targets clear `--tap` and `--t-md` (Law 5).
+6. Keyboard focus states are visible and consistent.
+7. No horizontal overflow at 412px.
+8. `npm run sweep` shows no new low-contrast nodes against the base branch.
+9. A design-system gap is fixed in `ppbf.css`, not worked around in the page.

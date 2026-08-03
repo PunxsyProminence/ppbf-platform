@@ -188,30 +188,12 @@ const paymentIntegrations: PaymentIntegrationPlaceholder[] = [
   { provider: 'Microsoft / Power Platform Placeholder', status: 'Not Connected', connected: false, notes: 'Future Integration | Requires Backend | Requires Compliance Review', futureBackendRequired: true },
 ];
 
-const initialDonationRecords: DonationRecord[] = [
-  {
-    id: 'don_001',
-    donorName: 'Community Donor A',
-    amount: 250,
-    frequency: 'One-Time',
-    designation: 'Youth Program Support',
-    receiptNeeded: true,
-    status: 'Pledged',
-    notes: 'Awaiting receipt confirmation.',
-    createdAt: '2026-07-12',
-  },
-  {
-    id: 'don_002',
-    donorName: 'Sponsor Family B',
-    amount: 75,
-    frequency: 'Monthly',
-    designation: 'Scholarship Support',
-    receiptNeeded: true,
-    status: 'Active',
-    notes: 'Recurring pledge started.',
-    createdAt: '2026-07-11',
-  },
-];
+// No donation is recorded here, because this platform holds no financial
+// records: every payment integration below reads Not Connected, and the
+// payment capability is a reserved slot that is deliberately not built
+// (docs/PAYMENT_SERVICE_SLOT.md). A seeded donor with a real amount would be
+// read by a treasurer or a board member as money the gym actually received.
+const initialDonationRecords: DonationRecord[] = [];
 
 const tabs: Array<{ id: RevenueFundingTab; label: string }> = [
   { id: 'overview', label: 'Overview' },
@@ -238,24 +220,24 @@ const revenueCapabilities: Array<{ capability: string; state: 'EXISTS' | 'PARTIA
 ];
 
 function capabilityBadgeTone(state: 'EXISTS' | 'PARTIAL' | 'PLACEHOLDER' | 'MISSING'): string {
-  if (state === 'EXISTS') return 'border-[var(--status-ready)] bg-[var(--cleared-ink)] text-[var(--black)]';
-  if (state === 'PARTIAL') return 'border-[var(--status-warning)] bg-[var(--canvas-warm)] text-[var(--black)]';
-  if (state === 'PLACEHOLDER') return 'border-[var(--red-primary)] bg-[var(--locked-ink)] text-[var(--black)]';
-  return 'border-[var(--gray-medium)] bg-[var(--canvas-tan)] text-[var(--black)]';
+  if (state === 'EXISTS') return 'border-[color:var(--brass-600)] bg-[var(--brass-300)] text-[color:var(--hide-950)]';
+  if (state === 'PARTIAL') return 'border-[color:var(--brass-600)] text-[color:var(--brass-300)]';
+  if (state === 'PLACEHOLDER') return 'border-[color:var(--brass-800)] text-[color:var(--bone-400)]';
+  return 'border-[color:rgba(212,175,74,.24)] text-[color:var(--bone-400)]';
 }
 
 function statusTone(status: string): string {
   const normalized = status.toLowerCase();
   if (normalized.includes('active') || normalized.includes('received') || normalized.includes('awarded')) {
-    return 'text-[var(--black)] border-[var(--status-ready)] bg-[var(--cleared-ink)]';
+    return 'border-[color:var(--brass-600)] bg-[var(--brass-300)] text-[color:var(--hide-950)]';
   }
   if (normalized.includes('pending') || normalized.includes('review') || normalized.includes('draft') || normalized.includes('submitted')) {
-    return 'text-[var(--black)] border-[var(--status-warning)] bg-[var(--canvas-warm)]';
+    return 'border-[color:var(--brass-600)] text-[color:var(--brass-300)]';
   }
   if (normalized.includes('past due') || normalized.includes('declined') || normalized.includes('not connected')) {
-    return 'text-[var(--black)] border-[var(--red-primary)] bg-[var(--locked-ink)]';
+    return 'border-[color:var(--brass-800)] text-[color:var(--bone-400)]';
   }
-  return 'text-[var(--black)] border-[var(--gray-medium)] bg-[var(--canvas-tan)]';
+  return 'border-[color:rgba(212,175,74,.24)] text-[color:var(--bone-400)]';
 }
 
 function formatCurrency(value: number): string {
@@ -264,9 +246,9 @@ function formatCurrency(value: number): string {
 
 function SectionCard({ title, children }: Readonly<{ title: string; children: React.ReactNode }>) {
   return (
-    <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
-      <h3 className="text-lg font-bold text-[var(--black)]">{title}</h3>
-      <div className="mt-3 text-base text-[var(--gray-dark)]">{children}</div>
+    <section className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s5)]">
+      <h3 className="t-command">{title}</h3>
+      <div className="t-body mt-[var(--s3)]">{children}</div>
     </section>
   );
 }
@@ -394,58 +376,58 @@ export default function RevenueFundingCenter() {
 
   return (
     <section className="space-y-6">
-      <article className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-sm)]">
-        <p className="text-[14px] font-mono uppercase tracking-[0.14em] text-[var(--red-primary)]">Revenue Operations</p>
-        <h2 className="mt-2 text-[34px] font-black text-[var(--black)]">Revenue & Funding Center</h2>
-        <p className="mt-3 text-base leading-7 text-[var(--gray-dark)]">
+      <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+        <p className="t-eyebrow">Revenue Operations</p>
+        <h2 className="t-command mt-[var(--s3)]">Revenue & Funding Center</h2>
+        <p className="t-body mt-[var(--s3)]">
           Front-end control surface for memberships, donations, sponsors, B2B accounts, wholesale accounts, grants, scholarships, and funding workflows.
         </p>
-        <p className="mt-3 text-sm font-mono uppercase tracking-[0.14em] text-[var(--gray-dark)]">Old Gauze | Sweat | Grit | Grind | Dedication | Motivation</p>
+        <p className="t-label mt-[var(--s3)]">Old Gauze | Sweat | Grit | Grind | Dedication | Motivation</p>
         <div className="mt-4 flex flex-wrap gap-2">
           <Link
             href="/help#revenue-guide"
-            className="inline-flex min-h-[40px] items-center justify-center border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"
+            className="btn btn--ghost"
           >
             HOW THIS WORKS
           </Link>
           <Link
             href="/help#planned-capabilities-guide"
-            className="inline-flex min-h-[40px] items-center justify-center border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"
+            className="btn btn--ghost"
           >
             Planned Systems
           </Link>
         </div>
       </article>
 
-      <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-        <p className="text-sm font-semibold text-[var(--red-primary)]">Mission Funding Mindset</p>
-        <p className="mt-1 text-sm text-[var(--gray-dark)]">Every dollar supports discipline, safety, and long-term growth. Keep the work clean, accountable, and purpose-driven.</p>
+      <section className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+        <p className="t-eyebrow">Mission Funding Mindset</p>
+        <p className="t-body mt-[var(--s2)]">Every dollar supports discipline, safety, and long-term growth. Keep the work clean, accountable, and purpose-driven.</p>
       </section>
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {summaryStrip.map((item) => (
-          <article key={item.label} className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 py-4">
-            <p className="text-[14px] font-mono uppercase tracking-[0.1em] text-[var(--red-primary)]">{item.label}</p>
-            <p className="mt-2 text-[30px] font-black text-[var(--black)]">{item.value}</p>
+          <article key={item.label} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+            <p className="t-eyebrow">{item.label}</p>
+            <p className="t-command mt-[var(--s3)]">{item.value}</p>
           </article>
         ))}
       </section>
 
-      <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-        <h3 className="text-base font-black text-[var(--black)]">Action Center</h3>
-        <p className="mt-1 text-sm text-[var(--gray-dark)]">Triage these items first to keep operations moving.</p>
+      <section className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+        <h3 className="t-command">Action Center</h3>
+        <p className="t-body mt-[var(--s2)]">Triage these items first to keep operations moving.</p>
         <div className="mt-3 grid gap-2">
           {urgentActions.length === 0 ? (
-            <p className="border border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-3 text-sm text-[var(--gray-dark)]">No urgent actions right now.</p>
+            <p className="mat-leather rounded-[var(--r-md)] px-[var(--s4)] py-[var(--s4)] t-body">No urgent actions right now.</p>
           ) : (
             urgentActions.map((item) => (
               <button
                 key={`urgent-${item.id}`}
                 type="button"
                 onClick={() => setActiveTab('treasurer-review')}
-                className="flex min-h-[44px] items-center justify-between gap-3 border border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-2 text-left transition hover:bg-[var(--canvas-tan-dark)]"
+                className="btn btn--ghost w-full justify-between"
               >
-                <span className="text-sm font-semibold text-[var(--black)]">{item.title}</span>
+                <span className="t-command">{item.title}</span>
                 <span className={`border px-2 py-1 text-xs font-semibold ${statusTone(item.status)}`}>{item.status}</span>
               </button>
             ))
@@ -453,17 +435,17 @@ export default function RevenueFundingCenter() {
         </div>
       </section>
 
-      <details className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-        <summary className="cursor-pointer text-base font-black text-[var(--black)]">Capability Visibility (Revenue)</summary>
+      <details className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+        <summary className="cursor-pointer t-command">Capability Visibility (Revenue)</summary>
         <div className="mt-2">
-        <h3 className="text-base font-black text-[var(--black)]">Capability Visibility (Revenue)</h3>
-        <p className="mt-1 text-sm text-[var(--gray-dark)]">Status map is front-end only and intended to improve discoverability and roadmap clarity.</p>
+        <h3 className="t-command">Capability Visibility (Revenue)</h3>
+        <p className="t-body mt-[var(--s2)]">Status map is front-end only and intended to improve discoverability and roadmap clarity.</p>
         <div className="mt-3 grid gap-2 md:grid-cols-2">
           {revenueCapabilities.map((item) => (
             <article key={item.capability} className={`border p-3 ${capabilityBadgeTone(item.state)}`}>
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm font-bold uppercase tracking-[0.06em]">{item.capability}</p>
-                <span className="border border-[var(--black)] bg-[var(--canvas-tan-light)] px-2 py-0.5 text-[10px] font-mono font-bold uppercase">{item.state}</span>
+                <span className="mat-leather rounded-[var(--r-sm)] px-[var(--s3)] py-[2px] t-data uppercase">{item.state}</span>
               </div>
               <p className="mt-2 text-xs leading-5">{item.detail}</p>
               {item.tab ? (
@@ -474,7 +456,7 @@ export default function RevenueFundingCenter() {
                       setActiveTab(item.tab)
                     }
                   }}
-                  className="mt-3 inline-flex min-h-[38px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]"
+                  className="btn btn--ghost"
                 >
                   Open Capability
                 </button>
@@ -482,7 +464,7 @@ export default function RevenueFundingCenter() {
                 <button
                   type="button"
                   disabled
-                  className="mt-3 inline-flex min-h-[38px] cursor-not-allowed items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--red-primary)] opacity-80"
+                  className="btn btn--ghost mt-[var(--s3)] cursor-not-allowed opacity-60 grayscale"
                 >
                   Planned Capability
                 </button>
@@ -493,16 +475,16 @@ export default function RevenueFundingCenter() {
         </div>
       </details>
 
-      <section className="flex flex-wrap gap-2 border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-2">
+      <section className="flex flex-wrap gap-[var(--s3)] mat-leather rounded-[var(--r-md)] p-[var(--s3)]">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             type="button"
             onClick={() => setActiveTab(tab.id)}
-            className={`min-h-[44px] border px-4 text-[14px] font-bold ${
+            className={`min-h-[44px] border px-4 text-[length:var(--t-sm)] font-bold ${
               activeTab === tab.id
-                ? 'border-[var(--black)] bg-[var(--red-primary)] text-[var(--canvas-tan-light)]'
-                : 'border-[var(--black)] bg-[var(--canvas-tan-light)] text-[var(--black)] hover:bg-[var(--canvas-tan-dark)]'
+                ? 'mat-brass--patina border-[color:var(--brass-600)] text-[color:var(--hide-950)]'
+                : 'border-[color:rgba(212,175,74,.28)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-400)]'
             }`}
           >
             {tab.label}
@@ -514,8 +496,8 @@ export default function RevenueFundingCenter() {
         <section className="grid gap-4 lg:grid-cols-2">
           <SectionCard title="Revenue Lane Summary">
             <div className="grid gap-3 md:grid-cols-2">
-              <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-                <p className="text-lg font-bold text-[var(--black)]">Operational Revenue</p>
+              <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="t-command">Operational Revenue</p>
                 <ul className="mt-2 space-y-1 text-base">
                   <li>Memberships</li>
                   <li>Products / Equipment</li>
@@ -523,8 +505,8 @@ export default function RevenueFundingCenter() {
                   <li>B2B Accounts</li>
                 </ul>
               </div>
-              <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-                <p className="text-lg font-bold text-[var(--black)]">Philanthropic / Nonprofit Funding</p>
+              <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="t-command">Philanthropic / Nonprofit Funding</p>
                 <ul className="mt-2 space-y-1 text-base">
                   <li>Donations</li>
                   <li>Sponsors</li>
@@ -538,12 +520,12 @@ export default function RevenueFundingCenter() {
           <SectionCard title="Pending Payment/Funding Items">
             <div className="space-y-2">
               {pendingItems.map((item) => (
-                <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-3">
+                <div key={item.id} className="flex flex-wrap items-center justify-between gap-[var(--s4)] mat-leather rounded-[var(--r-md)] p-[var(--s4)]">
                   <div>
-                    <p className="text-base font-semibold text-[var(--black)]">{item.title}</p>
-                    <p className="text-[14px] text-[var(--gray-dark)]">{item.revenueType} | {item.amountPlaceholder}</p>
+                    <p className="t-command">{item.title}</p>
+                    <p className="t-body">{item.revenueType} | {item.amountPlaceholder}</p>
                   </div>
-                  <span className={`border px-2 py-1 text-[14px] font-semibold ${statusTone(item.status)}`}>{item.status}</span>
+                  <span className={`border px-2 py-1 text-[length:var(--t-sm)] font-semibold ${statusTone(item.status)}`}>{item.status}</span>
                 </div>
               ))}
             </div>
@@ -594,14 +576,14 @@ export default function RevenueFundingCenter() {
         <SectionCard title="Membership Tracking">
           <div className="space-y-3">
             {membershipRows.map((row) => (
-              <div key={row.join('|')} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-                <p className="text-lg font-bold text-[var(--black)]">{row[0]}</p>
-                <p className="text-[14px] text-[var(--gray-dark)]">{row[1]} | Membership Type: {row[2]} | Amount Placeholder: {row[3]}</p>
+              <div key={row.join('|')} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="t-command">{row[0]}</p>
+                <p className="t-body">{row[1]} | Membership Type: {row[2]} | Amount Placeholder: {row[3]}</p>
                 <p className="mt-1 text-base">Status: {row[4]} | Start Date: {row[5]}</p>
                 <p className="mt-1 text-base">Notes: {row[6]} | Admin Review Needed: {row[7]}</p>
               </div>
             ))}
-            <p className="text-[14px] text-[var(--gray-dark)]">Membership types: Youth Athlete, Adult Fitness, Competition Track, Adaptive Training, Family Membership, Scholarship / Waived, Custom.</p>
+            <p className="t-body">Membership types: Youth Athlete, Adult Fitness, Competition Track, Adaptive Training, Family Membership, Scholarship / Waived, Custom.</p>
           </div>
         </SectionCard>
       )}
@@ -609,22 +591,22 @@ export default function RevenueFundingCenter() {
       {activeTab === 'donations' && (
         <SectionCard title="Donation Tracking">
           <div className="space-y-4">
-            <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-              <p className="text-lg font-bold text-[var(--black)]">Add Donation Entry</p>
-              <p className="mt-1 text-[14px] text-[var(--gray-dark)]">Tracks donation intent and review status for operations and treasurer visibility.</p>
+            <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+              <p className="t-command">Add Donation Entry</p>
+              <p className="t-body mt-[var(--s2)]">Tracks donation intent and review status for operations and treasurer visibility.</p>
 
               <div className="mt-3 grid gap-3 md:grid-cols-2">
                 <div>
-                  <label htmlFor="donor-name" className="mb-1 block text-[14px] font-semibold text-[var(--gray-dark)]">Donor Name</label>
+                  <label htmlFor="donor-name" className="t-label mb-[var(--s2)] block">Donor Name</label>
                   <input
                     id="donor-name"
                     value={donorName}
                     onChange={(event) => setDonorName(event.target.value)}
-                    className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-[16px] text-[var(--black)]"
+                    className="input"
                   />
                 </div>
                 <div>
-                  <label htmlFor="donation-amount" className="mb-1 block text-[14px] font-semibold text-[var(--gray-dark)]">Amount (USD)</label>
+                  <label htmlFor="donation-amount" className="t-label mb-[var(--s2)] block">Amount (USD)</label>
                   <input
                     id="donation-amount"
                     type="number"
@@ -632,16 +614,16 @@ export default function RevenueFundingCenter() {
                     step="0.01"
                     value={donationAmount}
                     onChange={(event) => setDonationAmount(event.target.value)}
-                    className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-[16px] text-[var(--black)]"
+                    className="input"
                   />
                 </div>
                 <div>
-                  <label htmlFor="donation-frequency" className="mb-1 block text-[14px] font-semibold text-[var(--gray-dark)]">Frequency</label>
+                  <label htmlFor="donation-frequency" className="t-label mb-[var(--s2)] block">Frequency</label>
                   <select
                     id="donation-frequency"
                     value={donationFrequency}
                     onChange={(event) => setDonationFrequency(event.target.value as DonationFrequency)}
-                    className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-[16px] text-[var(--black)]"
+                    className="input"
                   >
                     <option value="One-Time">One-Time</option>
                     <option value="Monthly">Monthly</option>
@@ -650,24 +632,24 @@ export default function RevenueFundingCenter() {
                   </select>
                 </div>
                 <div>
-                  <label htmlFor="donation-designation" className="mb-1 block text-[14px] font-semibold text-[var(--gray-dark)]">Designation</label>
+                  <label htmlFor="donation-designation" className="t-label mb-[var(--s2)] block">Designation</label>
                   <input
                     id="donation-designation"
                     value={donationDesignation}
                     onChange={(event) => setDonationDesignation(event.target.value)}
-                    className="h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-[16px] text-[var(--black)]"
+                    className="input"
                   />
                 </div>
                 <div className="md:col-span-2">
-                  <label htmlFor="donation-notes" className="mb-1 block text-[14px] font-semibold text-[var(--gray-dark)]">Notes</label>
+                  <label htmlFor="donation-notes" className="t-label mb-[var(--s2)] block">Notes</label>
                   <textarea
                     id="donation-notes"
                     value={donationNotes}
                     onChange={(event) => setDonationNotes(event.target.value)}
-                    className="min-h-[90px] w-full border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-2 text-[16px] text-[var(--black)]"
+                    className="textarea min-h-[89px]"
                   />
                 </div>
-                <label className="flex items-center gap-2 text-[14px] text-[var(--gray-dark)] md:col-span-2">
+                <label className="t-body flex items-center gap-[var(--s3)] md:col-span-2">
                   <input
                     type="checkbox"
                     checked={donationReceiptNeeded}
@@ -681,14 +663,14 @@ export default function RevenueFundingCenter() {
                 <button
                   type="button"
                   onClick={handleAddDonation}
-                  className="h-11 border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 text-[14px] font-bold text-[var(--canvas-tan-light)]"
+                  className="btn"
                 >
                   Add Donation
                 </button>
                 <button
                   type="button"
                   onClick={resetDonationForm}
-                  className="h-11 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-[14px] font-bold text-[var(--black)]"
+                  className="btn btn--ghost"
                 >
                   Reset
                 </button>
@@ -696,21 +678,30 @@ export default function RevenueFundingCenter() {
             </div>
 
             <div className="space-y-3">
+              {donationRecords.length === 0 && (
+                <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                  <p className="text-base font-semibold">No donations are recorded.</p>
+                  <p className="mt-1 text-base">
+                    This platform holds no financial records. Donations, grants and fees live in the
+                    gym&apos;s own books until a payment processor is connected.
+                  </p>
+                </div>
+              )}
               {donationRecords.map((row) => (
-                <div key={row.id} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
+                <div key={row.id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <p className="text-lg font-bold text-[var(--black)]">{row.donorName}</p>
+                      <p className="t-command">{row.donorName}</p>
                       <p className="text-base">Designation: {row.designation} | Amount: {formatCurrency(row.amount)} | Frequency: {row.frequency}</p>
                       <p className="text-base">Receipt Needed: {row.receiptNeeded ? 'Yes' : 'No'} | Added: {row.createdAt}</p>
                       <p className="text-base">Notes: {row.notes}</p>
                     </div>
                     <div className="space-y-2">
-                      <span className={`inline-block border px-2 py-1 text-[14px] font-semibold ${statusTone(row.status)}`}>{row.status}</span>
+                      <span className={`inline-block border px-2 py-1 text-[length:var(--t-sm)] font-semibold ${statusTone(row.status)}`}>{row.status}</span>
                       <select
                         value={row.status}
                         onChange={(event) => updateDonationStatus(row.id, event.target.value as DonationLifecycleStatus)}
-                        className="h-10 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-2 text-[14px] text-[var(--black)]"
+                        className="input"
                       >
                         <option value="Pending Review">Pending Review</option>
                         <option value="Pledged">Pledged</option>
@@ -723,8 +714,8 @@ export default function RevenueFundingCenter() {
               ))}
             </div>
 
-            <p className="text-[14px] text-[var(--gray-dark)]">Donation types supported in this lane: General Donation, Youth Program Support, Equipment Support, Scholarship Support, Facility Support, Event Support.</p>
-            <p className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-3 text-[14px] text-[var(--red-primary)]">Operational tracking only. Payment processing and tax receipt issuance still require backend integration.</p>
+            <p className="t-body">Donation types supported in this lane: General Donation, Youth Program Support, Equipment Support, Scholarship Support, Facility Support, Event Support.</p>
+            <p className="mat-leather rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.24)] p-[var(--s4)] t-body">Operational tracking only. Payment processing and tax receipt issuance still require backend integration.</p>
           </div>
         </SectionCard>
       )}
@@ -733,15 +724,15 @@ export default function RevenueFundingCenter() {
         <SectionCard title="Sponsor Tracking">
           <div className="space-y-3">
             {sponsorRows.map((row) => (
-              <div key={row.join('|')} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-                <p className="text-lg font-bold text-[var(--black)]">{row[0]}</p>
+              <div key={row.join('|')} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="t-command">{row[0]}</p>
                 <p className="text-base">Contact: {row[1]} | Sponsor Type: {row[2]} | Support Type: {row[3]}</p>
                 <p className="text-base">Program Supported: {row[4]} | Status: {row[5]} | Renewal Date: {row[6]}</p>
                 <p className="text-base">Notes: {row[7]}</p>
               </div>
             ))}
-            <p className="text-[14px] text-[var(--gray-dark)]">Sponsor types: Local Business, Community Partner, Veteran Organization, School Partner, Event Sponsor, Equipment Sponsor, General Sponsor.</p>
-            <p className="text-[14px] text-[var(--gray-dark)]">Support types: Financial, Equipment, Services, Facility, Event Support, Volunteer Support.</p>
+            <p className="t-body">Sponsor types: Local Business, Community Partner, Veteran Organization, School Partner, Event Sponsor, Equipment Sponsor, General Sponsor.</p>
+            <p className="t-body">Support types: Financial, Equipment, Services, Facility, Event Support, Volunteer Support.</p>
           </div>
         </SectionCard>
       )}
@@ -750,16 +741,16 @@ export default function RevenueFundingCenter() {
         <SectionCard title="B2B Account Tracking">
           <div className="space-y-3">
             {b2bRows.map((row) => (
-              <div key={row.join('|')} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-                <p className="text-lg font-bold text-[var(--black)]">{row[0]}</p>
+              <div key={row.join('|')} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="t-command">{row[0]}</p>
                 <p className="text-base">Contact: {row[1]} | Account Type: {row[2]} | Lead Status: {row[3]}</p>
                 <p className="text-base">Program Interest: {row[4]} | Estimated Value Placeholder: {row[5]}</p>
                 <p className="text-base">Contract / Agreement: {row[6]} | Next Step: {row[7]}</p>
                 <p className="text-base">Notes: {row[8]}</p>
               </div>
             ))}
-            <p className="text-[14px] text-[var(--gray-dark)]">B2B account types: School, Youth Agency, Municipality, Veterans Organization, Community Organization, Corporate Wellness, Partner Training Center, Athletic Club, Other.</p>
-            <p className="text-[14px] text-[var(--gray-dark)]">Lead statuses: Lead, Contacted, Proposal Needed, Negotiating, Active, Inactive, Closed.</p>
+            <p className="t-body">B2B account types: School, Youth Agency, Municipality, Veterans Organization, Community Organization, Corporate Wellness, Partner Training Center, Athletic Club, Other.</p>
+            <p className="t-body">Lead statuses: Lead, Contacted, Proposal Needed, Negotiating, Active, Inactive, Closed.</p>
           </div>
         </SectionCard>
       )}
@@ -768,15 +759,15 @@ export default function RevenueFundingCenter() {
         <SectionCard title="Wholesale Account Tracking">
           <div className="space-y-3">
             {wholesaleRows.map((row) => (
-              <div key={row.join('|')} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-                <p className="text-lg font-bold text-[var(--black)]">{row[0]}</p>
+              <div key={row.join('|')} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="t-command">{row[0]}</p>
                 <p className="text-base">Account Type: {row[1]} | Contact: {row[2]} | Product Interest: {row[3]}</p>
                 <p className="text-base">Pricing Tier: {row[4]} | Minimum Order: {row[5]} | Status: {row[6]}</p>
                 <p className="text-base">Notes: {row[7]}</p>
               </div>
             ))}
-            <p className="text-[14px] text-[var(--gray-dark)]">Wholesale account types: Retail Partner, Club Partner, School Program, Training / Fitness Facility, Event Vendor, Fundraising Partner.</p>
-            <p className="text-[14px] text-[var(--gray-dark)]">Statuses: Prospect, Active, Pending Review, Needs Quote, Inactive.</p>
+            <p className="t-body">Wholesale account types: Retail Partner, Club Partner, School Program, Training / Fitness Facility, Event Vendor, Fundraising Partner.</p>
+            <p className="t-body">Statuses: Prospect, Active, Pending Review, Needs Quote, Inactive.</p>
           </div>
         </SectionCard>
       )}
@@ -785,14 +776,14 @@ export default function RevenueFundingCenter() {
         <SectionCard title="Grant Pipeline Tracking">
           <div className="space-y-3">
             {grantRows.map((row) => (
-              <div key={row.join('|')} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-                <p className="text-lg font-bold text-[var(--black)]">{row[0]}</p>
+              <div key={row.join('|')} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="t-command">{row[0]}</p>
                 <p className="text-base">Funder: {row[1]} | Program Area: {row[2]} | Amount Placeholder: {row[3]}</p>
                 <p className="text-base">Status: {row[4]} | Due Date: {row[5]} | Restricted Purpose: {row[6]}</p>
                 <p className="text-base">Reporting Required: {row[7]} | Notes: {row[8]}</p>
               </div>
             ))}
-            <p className="text-[14px] text-[var(--gray-dark)]">Program areas: Youth Development, Fitness / Wellness, Veteran-Owned Community Work, Facility, Equipment, Technology, Safety, Education, Adaptive Training.</p>
+            <p className="t-body">Program areas: Youth Development, Fitness / Wellness, Veteran-Owned Community Work, Facility, Equipment, Technology, Safety, Education, Adaptive Training.</p>
           </div>
         </SectionCard>
       )}
@@ -801,15 +792,15 @@ export default function RevenueFundingCenter() {
         <SectionCard title="Scholarship Tracking">
           <div className="space-y-3">
             {scholarshipRows.map((row) => (
-              <div key={row.join('|')} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-                <p className="text-lg font-bold text-[var(--black)]">{row[0]}</p>
+              <div key={row.join('|')} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="t-command">{row[0]}</p>
                 <p className="text-base">Support Type: {row[1]} | Amount Placeholder: {row[2]}</p>
                 <p className="text-base">Sponsor / Funding Source: {row[3]} | Status: {row[4]} | Review Needed: {row[5]}</p>
                 <p className="text-base">Notes: {row[6]}</p>
               </div>
             ))}
-            <p className="text-[14px] text-[var(--gray-dark)]">Support types: Full Scholarship, Partial Scholarship, Participation Support Waiver, Equipment Assistance, Competition Participation Support, Travel Support, Program Support.</p>
-            <p className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-3 text-[14px] text-[var(--red-primary)]">Scholarship tracking is for internal review only and does not expose private financial data to public users.</p>
+            <p className="t-body">Support types: Full Scholarship, Partial Scholarship, Participation Support Waiver, Equipment Assistance, Competition Participation Support, Travel Support, Program Support.</p>
+            <p className="mat-leather rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.24)] p-[var(--s4)] t-body">Scholarship tracking is for internal review only and does not expose private financial data to public users.</p>
           </div>
         </SectionCard>
       )}
@@ -818,15 +809,15 @@ export default function RevenueFundingCenter() {
         <SectionCard title="Products / Equipment Placeholder Catalog">
           <div className="space-y-3">
             {productRows.map((row) => (
-              <div key={row.join('|')} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-                <p className="text-lg font-bold text-[var(--black)]">{row[0]}</p>
+              <div key={row.join('|')} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="t-command">{row[0]}</p>
                 <p className="text-base">Category: {row[1]} | Retail Price Placeholder: {row[2]} | Wholesale Price Placeholder: {row[3]}</p>
                 <p className="text-base">Inventory Placeholder: {row[4]} | Status: {row[5]}</p>
                 <p className="text-base">Notes: {row[6]}</p>
               </div>
             ))}
-            <p className="text-[14px] text-[var(--gray-dark)]">Categories: Gloves, Wraps, Apparel, Training Gear, Club Packages, Fundraiser Items, Wholesale Bundles.</p>
-            <p className="text-[14px] text-[var(--gray-dark)]">No cart, checkout, tax, or shipping logic is implemented in this front-end placeholder.</p>
+            <p className="t-body">Categories: Gloves, Wraps, Apparel, Training Gear, Club Packages, Fundraiser Items, Wholesale Bundles.</p>
+            <p className="t-body">No cart, checkout, tax, or shipping logic is implemented in this front-end placeholder.</p>
           </div>
         </SectionCard>
       )}
@@ -835,14 +826,14 @@ export default function RevenueFundingCenter() {
         <SectionCard title="Payment Settings Placeholder">
           <div className="grid gap-3 md:grid-cols-2">
             {paymentIntegrations.map((integration) => (
-              <article key={integration.provider} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-                <p className="text-lg font-bold text-[var(--black)]">{integration.provider}</p>
-                <p className="mt-2 text-base text-[var(--red-primary)]">{integration.status}</p>
-                <p className="text-[14px] text-[var(--gray-dark)]">{integration.notes}</p>
+              <article key={integration.provider} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="t-command">{integration.provider}</p>
+                <p className="t-body mt-[var(--s3)]">{integration.status}</p>
+                <p className="t-body">{integration.notes}</p>
               </article>
             ))}
           </div>
-          <p className="mt-4 border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-3 text-[14px] text-[var(--red-primary)]">No payment processor is connected. This application does not currently process real payments.</p>
+          <p className="mat-leather rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.24)] p-[var(--s4)] t-body mt-[var(--s4)]">No payment processor is connected. This application does not currently process real payments.</p>
         </SectionCard>
       )}
 
@@ -851,8 +842,8 @@ export default function RevenueFundingCenter() {
           <p className="text-base">Membership Oversight View - Future Board Integration.</p>
           <div className="mt-3 space-y-2">
             {treasurerQueue.map((item) => (
-              <div key={item.join('|')} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-3">
-                <p className="text-lg font-semibold text-[var(--black)]">{item[0]}</p>
+              <div key={item.join('|')} className="mat-leather rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="t-command">{item[0]}</p>
                 <p className="text-base">Category: {item[1]} | Status: {item[2]} | Review Needed: {item[3]}</p>
                 <p className="text-base">Notes: {item[4]}</p>
               </div>
@@ -860,8 +851,8 @@ export default function RevenueFundingCenter() {
             {donationRecords
               .filter((item) => item.status === 'Pending Review' || item.status === 'Pledged')
               .map((item) => (
-                <div key={`treasurer-${item.id}`} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-3">
-                  <p className="text-lg font-semibold text-[var(--black)]">Donation Review - {item.donorName}</p>
+                <div key={`treasurer-${item.id}`} className="mat-leather rounded-[var(--r-md)] p-[var(--s4)]">
+                  <p className="t-command">Donation Review - {item.donorName}</p>
                   <p className="text-base">Category: Donations | Status: {item.status} | Review Needed: Yes</p>
                   <p className="text-base">Amount: {formatCurrency(item.amount)} | Designation: {item.designation}</p>
                 </div>
@@ -870,16 +861,16 @@ export default function RevenueFundingCenter() {
         </SectionCard>
       )}
 
-      <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
-        <h3 className="text-lg font-bold text-[var(--black)]">Compliance Boundary</h3>
-        <p className="mt-2 text-base leading-7 text-[var(--gray-dark)]">
+      <section className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s5)]">
+        <h3 className="t-command">Compliance Boundary</h3>
+        <p className="t-body mt-[var(--s3)]">
           Front-end planning tool only. This screen does not process payments, issue receipts, create invoices, calculate taxes, store card data, or provide legal/financial advice.
         </p>
       </section>
 
-      <details className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-        <summary className="cursor-pointer text-base font-semibold text-[var(--black)]">Local Placeholder Data Structures</summary>
-        <div className="mt-3 space-y-2 text-[14px] text-[var(--gray-dark)]">
+      <details className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+        <summary className="cursor-pointer t-command">Local Placeholder Data Structures</summary>
+        <div className="t-body mt-[var(--s3)] space-y-[var(--s2)]">
           <p>RevenueAccount: id, name, accountType, contactName, emailPlaceholder, phonePlaceholder, category, status, assignedOwner, notes, createdAt, updatedAt.</p>
           <p>RevenueItem: id, title, revenueType, amountPlaceholder, status, relatedAccountId, restrictedPurpose, reviewNeeded, notes.</p>
           <p>DonationRecord: id, donorName, amount, frequency, designation, receiptNeeded, status, notes, createdAt.</p>

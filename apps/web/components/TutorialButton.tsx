@@ -37,16 +37,16 @@ export default function TutorialButton({ anchor, label = 'HOW THIS WORKS', class
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-label="Toggle tutorial quick panel"
-        className={`inline-flex min-h-[40px] items-center justify-center gap-2 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)] ${className ?? ''}`.trim()}
+        className={`inline-flex min-h-[44px] items-center justify-center gap-2 border border-[color:rgba(212,175,74,.28)] mat-leather px-3 text-xs font-mono font-bold uppercase tracking-[0.12em]  transition hover:border-[color:var(--brass-400)] ${className ?? ''}`.trim()}
       >
         <span>{label}</span>
         <span aria-hidden="true">{open ? '[-]' : '[+]'}</span>
       </button>
 
       {open ? (
-        <div className="absolute right-0 top-[calc(100%+6px)] z-50 w-[320px] max-w-[calc(100vw-1.5rem)] border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-3 shadow-[var(--shadow-md)]">
-          <p className="text-xs font-mono uppercase tracking-[0.08em] text-[var(--red-primary)]">Quick Tutorial</p>
-          <div className="mt-2 grid gap-2 text-sm leading-6 text-[var(--gray-dark)]">
+        <div className="absolute right-0 top-[calc(100%+6px)] z-50 w-[320px] max-w-[calc(100vw-1.5rem)] border border-[color:rgba(212,175,74,.28)] mat-leather p-3 shadow-[var(--shadow-md)]">
+          <p className="text-xs font-mono uppercase tracking-[0.08em] text-[color:var(--brass-600)]">Quick Tutorial</p>
+          <div className="mt-2 grid gap-2 text-sm leading-6 opacity-80">
             <p>Use this panel for quick orientation while keeping the workspace visible.</p>
             <p>Open the full tutorial center only when deeper guidance is needed.</p>
           </div>
@@ -54,14 +54,14 @@ export default function TutorialButton({ anchor, label = 'HOW THIS WORKS', class
             <Link
               href={href}
               onClick={() => setOpen(false)}
-              className="inline-flex min-h-[36px] items-center justify-center border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-xs font-mono font-bold uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"
+              className="inline-flex min-h-[44px] items-center justify-center border border-[color:rgba(212,175,74,.28)] mat-leather px-3 text-xs font-mono font-bold uppercase tracking-[0.1em] transition hover:border-[color:var(--brass-400)]"
             >
               Open Full Tutorial
             </Link>
             <button
               type="button"
               onClick={() => setOpen(false)}
-              className="inline-flex min-h-[36px] items-center justify-center border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-xs font-mono font-bold uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"
+              className="inline-flex min-h-[44px] items-center justify-center border border-[color:rgba(212,175,74,.28)] mat-leather px-3 text-xs font-mono font-bold uppercase tracking-[0.1em] transition hover:border-[color:var(--brass-400)]"
             >
               Close
             </button>

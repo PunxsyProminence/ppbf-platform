@@ -52,12 +52,12 @@ interface BoardSummaryPalette {
 
 const palettes: Record<BoardSummaryVariant, BoardSummaryPalette> = {
   hub: {
-    frame: 'border-2 border-[var(--patina-700)] bg-[var(--hide-950)]/80',
-    tile: 'border border-[var(--hide-600)] bg-[var(--hide-950)]',
-    label: 'text-[var(--bone-400)]',
-    value: 'text-[var(--bone-200)]',
-    note: 'text-[var(--bone-300)]',
-    accent: 'text-[var(--brass-300)]',
+    frame: 'border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)]/80',
+    tile: 'border border-[#654535] bg-[var(--hide-900)]',
+    label: 'text-[#8f7f72]',
+    value: 'text-[color:var(--bone-200)]',
+    note: 'text-[#cbb8a8]',
+    accent: 'text-[color:var(--brass-300)]',
   },
   workspace: {
     frame: 'border-2 border-[var(--black)] bg-[var(--canvas-tan-light)]',
@@ -65,7 +65,7 @@ const palettes: Record<BoardSummaryVariant, BoardSummaryPalette> = {
     label: 'text-[var(--gray-dark)]',
     value: 'text-[var(--black)]',
     note: 'text-[var(--gray-dark)]',
-    accent: 'text-[var(--red-primary)]',
+    accent: 'text-[color:var(--brass-800)]',
   },
 };
 

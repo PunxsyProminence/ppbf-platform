@@ -1139,7 +1139,14 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
         {
           success: false,
           state: 'filtered',
-          response: shadowRateLimitMessage(error.retryAfterSeconds),
+          // The Heavy Bag cap throttles one tier, not SHADOW. Saying "too many
+          // SHADOW requests" here would tell a coach the whole assistant is
+          // gone for an hour when Quick Round is still answering -- so the one
+          // limit that is partial says so, and the two that really are total
+          // keep the general wording.
+          response: error.endpointKey === 'heavy_bag'
+            ? `${shadowRateLimitMessage(error.retryAfterSeconds, 'Heavy Bag')} Quick Round questions still work in the meantime.`
+            : shadowRateLimitMessage(error.retryAfterSeconds),
           messageId: `msg_${Date.now()}`,
           createdAt: new Date().toISOString(),
           filtered: true,

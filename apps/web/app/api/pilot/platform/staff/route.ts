@@ -7,6 +7,8 @@ import {
   INVITABLE_STAFF_ROLES,
   isInvitableStaffRole,
   listOrganizationMembers,
+  requireGuardianLinkForParentInvite,
+  type GuardianAthleteLink,
 } from '@/src/server/pilot/staffProvisioning';
 
 export const runtime = 'nodejs';
@@ -50,6 +52,11 @@ export async function POST(request: NextRequest) {
       organization_id?: string;
       login_email?: string;
       role?: string;
+      guardian?: {
+        athlete_id?: string;
+        full_name?: string;
+        relationship_to_athlete?: string;
+      };
       account_id?: string;
     };
 
@@ -65,11 +72,26 @@ export async function POST(request: NextRequest) {
       throw new Error('Unsupported role');
     }
 
+    const guardian: GuardianAthleteLink | undefined = body.guardian
+      ? {
+          athleteId: body.guardian.athlete_id ?? '',
+          fullName: body.guardian.full_name ?? '',
+          relationshipToAthlete: body.guardian.relationship_to_athlete ?? '',
+        }
+      : undefined;
+
+    // The same rule the organization-admin invite holds. A parent account with
+    // no guardian link signs in successfully and sees no children, and the
+    // People console shows it as healthy -- so it has to be impossible from
+    // every surface that can create one, not just the one an admin uses.
+    requireGuardianLinkForParentInvite(role, guardian);
+
     const result = await createOrUpdateMicrosoftStaffAccount({
       loginEmail,
       organizationId,
       role,
       accountIdHint: body.account_id?.trim() || undefined,
+      guardian,
       // This route is platform-owner only and provisions every invitable role,
       // including the organization_admin and board seats an org admin may not
       // touch. Stating that authority is required: the peer-protection guard

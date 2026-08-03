@@ -35,12 +35,43 @@ export function isInvitableStaffRole(role: string): role is InvitableStaffRole {
   return (INVITABLE_STAFF_ROLES as readonly string[]).includes(role);
 }
 
+/**
+ * The athlete an invited guardian is responsible for, and the guardian's own
+ * name for the pilot.parents record.
+ *
+ * Every parent read path resolves a child through pilot.parents joined on
+ * account_id and then pilot.guardian_links -- assertAthleteAccessAllowed in
+ * access.ts and /api/pilot/athletes/list both do exactly that. An account row
+ * on its own therefore signs in successfully and resolves no children at all,
+ * with nothing anywhere reporting a fault. That is why the parent role is not
+ * provisionable without this: the link is written in the same transaction as
+ * the account, so the two cannot exist apart.
+ */
+export interface GuardianAthleteLink {
+  athleteId: string;
+  fullName: string;
+  relationshipToAthlete: string;
+}
+
 export interface StaffProvisionResult {
   accountId: string;
   organizationId: string;
   role: InvitableStaffRole;
   loginEmail: string;
   created: boolean;
+  // The guardian record and link written alongside the account. Null for every
+  // role other than parent, which never has one. Optional so a caller that
+  // only stubs this result for an unrelated assertion need not restate it.
+  guardianLink?: { parentId: string; athleteId: string } | null;
+}
+
+/** One guardian-to-athlete link, as the people console needs to display it. */
+export interface OrganizationGuardianLink {
+  account_id: string;
+  parent_id: string;
+  athlete_id: string;
+  athlete_full_name: string;
+  relationship_to_athlete: string;
 }
 
 export interface OrganizationMember {
@@ -72,6 +103,60 @@ function normalizeEmail(raw: string): string {
   return normalized;
 }
 
+function normalizeGuardian(raw: GuardianAthleteLink): GuardianAthleteLink {
+  const athleteId = raw.athleteId.trim();
+  const fullName = raw.fullName.trim();
+  const relationshipToAthlete = raw.relationshipToAthlete.trim();
+
+  if (!athleteId) {
+    throw new Error('Missing athlete_id: a parent invite has to name the athlete they are the guardian of');
+  }
+
+  if (!fullName) {
+    throw new Error("Missing guardian full_name: the guardian's own name is what pilot.parents records");
+  }
+
+  if (!relationshipToAthlete) {
+    throw new Error('Missing relationship_to_athlete');
+  }
+
+  return { athleteId, fullName, relationshipToAthlete };
+}
+
+/**
+ * Refuses a parent invite that names no athlete.
+ *
+ * A parent account resolves its children through pilot.parents joined on
+ * account_id and then pilot.guardian_links. Without those rows the account
+ * signs in perfectly, lists as healthy, and shows the family nothing -- no
+ * error is raised anywhere, because from the database's point of view the
+ * query simply matched nothing.
+ *
+ * This lives beside createOrUpdateMicrosoftStaffAccount rather than inside it
+ * because one caller legitimately provisions a parent without passing
+ * `guardian`: intake promotion writes pilot.parents and pilot.guardian_links
+ * itself, from the reviewed intake packet, in the same request. Refusing
+ * unconditionally inside provisioning would reject an approved packet.
+ *
+ * Every OTHER surface that invites a parent has to call this first. A surface
+ * that neither passes `guardian` nor writes the link itself is creating the
+ * silent failure.
+ */
+export function requireGuardianLinkForParentInvite(
+  role: InvitableStaffRole,
+  guardian: GuardianAthleteLink | undefined,
+): void {
+  if (role === 'parent' && !guardian) {
+    throw new Error(
+      'Missing guardian link: a parent account is only created together with the athlete they are the guardian of, because a parent with no link signs in successfully and sees no children',
+    );
+  }
+
+  if (role !== 'parent' && guardian) {
+    throw new Error('Forbidden: a guardian link belongs only to the parent role');
+  }
+}
+
 /**
  * Creates or updates a Microsoft-authenticated staff account and its
  * organization membership.
@@ -92,6 +177,18 @@ function normalizeEmail(raw: string): string {
  * have assigned in the first place. It defaults to the narrowest caller
  * (ORG_ADMIN_INVITABLE_ROLES) so a caller that forgets to state its authority
  * gets the least of it, never the most.
+ *
+ * `guardian` is accepted only for the parent role, and when present the
+ * account, the pilot.parents record and the pilot.guardian_links row are one
+ * transaction -- so a guardian provisioned this way can never sign in without
+ * children resolving. Re-inviting the same address with a different athlete
+ * adds a second link rather than replacing the first, which is how a guardian
+ * of two athletes is built up.
+ *
+ * A caller inviting a parent must either pass `guardian` or write the
+ * pilot.parents and pilot.guardian_links rows itself in the same request; see
+ * requireGuardianLinkForParentInvite for why that is enforced by the invite
+ * surfaces rather than here.
  */
 export async function createOrUpdateMicrosoftStaffAccount(params: {
   loginEmail: string;
@@ -99,6 +196,7 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
   role: InvitableStaffRole;
   accountIdHint?: string;
   callerInvitableRoles?: readonly InvitableStaffRole[];
+  guardian?: GuardianAthleteLink;
 }): Promise<StaffProvisionResult> {
   const loginEmail = normalizeEmail(params.loginEmail);
   const organizationId = params.organizationId.trim();
@@ -108,6 +206,12 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
   if (!organizationId) {
     throw new Error('Missing organization_id');
   }
+
+  if (role !== 'parent' && params.guardian) {
+    throw new Error('Forbidden: a guardian link belongs only to the parent role');
+  }
+
+  const guardian = params.guardian ? normalizeGuardian(params.guardian) : null;
 
   // Defense in depth: the type already excludes these, but this module is the
   // privilege boundary, so it re-checks rather than trusting its caller.
@@ -186,7 +290,7 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
     }
   }
 
-  await withTransaction(async (client) => {
+  const guardianLink = await withTransaction(async (client) => {
     await client.query(
       `insert into pilot.accounts (
          account_id,
@@ -232,6 +336,67 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
         [accountId],
       );
     }
+
+    if (!guardian) {
+      return null;
+    }
+
+    // Checked here rather than left to the guardian_links foreign key: a
+    // constraint violation surfaces as an opaque 500, and an admin who
+    // mistyped a record id needs to be told which id had no athlete behind it.
+    // Inside the transaction, so the athlete cannot be removed between the
+    // check and the link.
+    const athlete = await client.query<{ athlete_id: string }>(
+      'select athlete_id from pilot.athletes where organization_id = $1 and athlete_id = $2',
+      [organizationId, guardian.athleteId],
+    );
+
+    if (athlete.rowCount === 0) {
+      throw new Error(`Missing athlete_id: no athlete record "${guardian.athleteId}" in this organization`);
+    }
+
+    // One pilot.parents record per account, reused across invites so a
+    // guardian of two athletes ends up with two links rather than two
+    // guardian records that each resolve half their family.
+    const derivedParentId = `par-${accountId}`;
+    const parentRows = await client.query<{ parent_id: string; account_id: string | null }>(
+      `select parent_id, account_id
+       from pilot.parents
+       where organization_id = $1 and (account_id = $2 or parent_id = $3)
+       order by parent_id asc`,
+      [organizationId, accountId, derivedParentId],
+    );
+
+    const ownRecord = parentRows.rows.find((row) => row.account_id === accountId);
+    if (!ownRecord && parentRows.rows.length > 0) {
+      // The derived id is already held by a different guardian -- linking to
+      // it would hand this account that family's children.
+      throw new Error('Forbidden: guardian record id is already in use by another guardian');
+    }
+
+    const parentId = ownRecord?.parent_id ?? derivedParentId;
+
+    await client.query(
+      `insert into pilot.parents (organization_id, parent_id, account_id, full_name, email)
+       values ($1, $2, $3, $4, $5)
+       on conflict (organization_id, parent_id) do update set
+         account_id = excluded.account_id,
+         full_name = excluded.full_name,
+         email = excluded.email,
+         updated_at = now()`,
+      [organizationId, parentId, accountId, guardian.fullName, loginEmail],
+    );
+
+    await client.query(
+      `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+       values ($1, $2, $3, $4)
+       on conflict (organization_id, parent_id, athlete_id) do update set
+         relationship_to_athlete = excluded.relationship_to_athlete,
+         updated_at = now()`,
+      [organizationId, parentId, guardian.athleteId, guardian.relationshipToAthlete],
+    );
+
+    return { parentId, athleteId: guardian.athleteId };
   });
 
   return {
@@ -240,7 +405,69 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
     role,
     loginEmail,
     created: !existing,
+    guardianLink,
   };
+}
+
+/**
+ * Removes one guardian-to-athlete link.
+ *
+ * Refuses to remove the last one an account holds. A parent account with no
+ * link is precisely the state this module exists to make impossible: it signs
+ * in, reads as healthy, and shows an empty list of children. Correcting a
+ * mislinked guardian is therefore link-the-right-athlete-then-remove, in that
+ * order, and never leaves a family with an account that shows them nothing.
+ */
+export async function removeGuardianLink(params: {
+  organizationId: string;
+  accountId: string;
+  athleteId: string;
+}): Promise<{ parentId: string; athleteId: string }> {
+  const organizationId = params.organizationId.trim();
+  const accountId = params.accountId.trim();
+  const athleteId = params.athleteId.trim();
+
+  if (!organizationId || !accountId || !athleteId) {
+    throw new Error('Missing organization_id, account_id, or athlete_id');
+  }
+
+  return withTransaction(async (client) => {
+    const parentRows = await client.query<{ parent_id: string }>(
+      'select parent_id from pilot.parents where organization_id = $1 and account_id = $2',
+      [organizationId, accountId],
+    );
+
+    if (parentRows.rowCount === 0) {
+      throw new Error('Not found: this account holds no guardian record in your organization');
+    }
+
+    const parentIds = parentRows.rows.map((row) => row.parent_id);
+
+    const links = await client.query<{ parent_id: string; athlete_id: string }>(
+      `select parent_id, athlete_id
+       from pilot.guardian_links
+       where organization_id = $1 and parent_id = any($2::text[])`,
+      [organizationId, parentIds],
+    );
+
+    const target = links.rows.find((row) => row.athlete_id === athleteId);
+    if (!target) {
+      throw new Error('Not found: that athlete is not linked to this guardian');
+    }
+
+    if (links.rowCount === 1) {
+      throw new Error(
+        'Forbidden: this is the only athlete this guardian is linked to, and removing it would leave an account that signs in and sees nothing. Link them to the correct athlete first, then remove this one.',
+      );
+    }
+
+    await client.query(
+      'delete from pilot.guardian_links where organization_id = $1 and parent_id = $2 and athlete_id = $3',
+      [organizationId, target.parent_id, athleteId],
+    );
+
+    return { parentId: target.parent_id, athleteId };
+  });
 }
 
 /**
@@ -278,6 +505,38 @@ export async function listOrganizationMembers(organizationId: string): Promise<O
          else 8
        end,
        a.account_id asc`,
+    [organizationId],
+  );
+}
+
+/**
+ * Every guardian-to-athlete link in an organization, keyed by the guardian's
+ * account.
+ *
+ * The people console pairs this with listOrganizationMembers so a parent row
+ * can state which children it actually resolves. Without it a stranded parent
+ * -- one provisioned before the link became mandatory -- renders as an
+ * ordinary healthy Microsoft account.
+ *
+ * pilot.parents.account_id is nullable, because intake can record a guardian
+ * who has no login. Those rows are excluded rather than shown against a blank
+ * account.
+ */
+export async function listOrganizationGuardianLinks(organizationId: string): Promise<OrganizationGuardianLink[]> {
+  return query<OrganizationGuardianLink>(
+    `select
+       p.account_id,
+       gl.parent_id,
+       gl.athlete_id,
+       ath.full_name as athlete_full_name,
+       gl.relationship_to_athlete
+     from pilot.guardian_links gl
+     join pilot.parents p
+       on p.organization_id = gl.organization_id and p.parent_id = gl.parent_id
+     join pilot.athletes ath
+       on ath.organization_id = gl.organization_id and ath.athlete_id = gl.athlete_id
+     where gl.organization_id = $1 and p.account_id is not null
+     order by p.account_id asc, ath.full_name asc`,
     [organizationId],
   );
 }

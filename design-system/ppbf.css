@@ -567,6 +567,11 @@ body.ppbf {
   font-family: var(--font-stencil); text-transform: uppercase;
   font-size: 15px; letter-spacing: .07em; font-weight: 700;
   border: 0; border-radius: var(--r-md); cursor: pointer;
+  /* A .btn is often an anchor — a router Link, a mailto action. Host apps
+     routinely underline a:hover, and nothing here opposed it, so a brass
+     button grew an underline on hover. Stated once on the component rather
+     than defended per app. */
+  text-decoration: none;
   color: #2A1B04;
   background-image: linear-gradient(180deg,
     var(--brass-200) 0%, var(--brass-400) 38%, var(--brass-600) 78%, var(--brass-800) 100%);
@@ -647,6 +652,38 @@ body.ppbf.on-canvas {
 .on-canvas .t-muted     { color: #6E5B3E; }
 .on-canvas .t-label     { color: #4A3B26; }
 .on-canvas .t-eyebrow   { color: var(--brass-700); }
+/* .t-data was the one voice with no canvas restatement, and it is the voice
+   Law 4 assigns to anything auditable — IDs, timestamps, the registry facts a
+   grant officer checks against a filing. It inherits --bone-200 (#EFE6D0),
+   which is within two points of --canvas-warm (#EFE4C8): on the warm ground
+   the record voice rendered as very nearly invisible text. Found on the
+   public homepage's Nonprofit & Leadership list, the first canvas screen to
+   put records on the page. */
+.on-canvas .t-data      { color: #2A2013; }
+
+/* Links, same reason. The system styles .btn and never a bare anchor, so an
+   inline link on canvas falls through to whatever the host app sets — in the
+   platform that is --red-primary, which aliases to --locked, the safety
+   gate's red. Law 2 spends saturated colour on a participant's safety state
+   and nothing else, so a mailto address cannot wear it. Brass has to be dark
+   here to hold contrast against cream (--brass-800 clears 4.5:1); the leather
+   ground needs the opposite end of the ramp, which is why this is stated per
+   ground rather than once globally.
+
+   Two guards on the selector, both load-bearing:
+
+   :not(.btn) — a .btn is frequently an anchor (a router Link styled as a
+   button, a mailto action). A bare `.on-canvas a` is (0,1,1) and outranks
+   .btn at (0,1,0), so it repainted the brass button's ink with the link
+   colour and, on :hover, underlined it. .btn is the base class on every
+   variant, so excluding it covers ghost, danger and kiosk too.
+
+   :where() — contributes no specificity, keeping this at the weight of a
+   bare element rule so a page can override it without a fight. It still
+   beats the host app's own `a` rule, because that one lives in a cascade
+   layer and this sheet is unlayered. */
+:where(.on-canvas) a:not(.btn)       { color: var(--brass-800); }
+:where(.on-canvas) a:not(.btn):hover { color: #241B12; text-decoration: underline; }
 
 .on-canvas .badge {
   background-color: color-mix(in srgb, var(--badge) 20%, var(--canvas-warm));
@@ -654,6 +691,24 @@ body.ppbf.on-canvas {
   color: color-mix(in srgb, var(--badge) 80%, #241B12);
 }
 .on-canvas .badge i { color: inherit; }
+
+/* .btn--ghost was tuned against leather: bone text on a translucent black, with
+   a brass hairline. Dropped onto canvas it is grey-on-grey — the black wash
+   goes muddy against cream and the bone text loses its ground. Nothing caught
+   it because no route used canvas ground until the athlete kiosk, and the
+   previews never put a ghost button on the warm side. Same button, restated in
+   ink so the secondary action stays readable next to a brass primary. */
+.on-canvas .btn--ghost {
+  background-color: rgba(0,0,0,.045);
+  color: #3A2E1D;
+  border: 1.5px solid rgba(107,78,18,.45);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.5);
+}
+.on-canvas .btn--ghost:hover {
+  border-color: var(--brass-700);
+  color: #241B12;
+  background-color: rgba(0,0,0,.02);
+}
 
 .on-canvas .input, .on-canvas .select, .on-canvas .textarea {
   background-color: var(--paper-2);
@@ -790,7 +845,7 @@ body.ppbf.on-canvas {
 /* ============================================================= LAYOUT ==== */
 .motto {
   font-family: var(--font-stencil); text-transform: uppercase;
-  font-size: clamp(24px, 4vw, 40px); letter-spacing: .06em;
+  font-size: clamp(var(--t-lg), 4vw, var(--t-2xl)); letter-spacing: .06em;
   color: var(--bone-100); text-align: center;
   text-shadow: 0 3px 0 rgba(0,0,0,.6), 0 0 26px rgba(232,206,122,.16);
 }

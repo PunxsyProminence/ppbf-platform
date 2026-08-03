@@ -134,7 +134,7 @@ function WorkspaceContent() {
       <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-8 px-6 py-10 lg:px-10">
         <header className="flex flex-col gap-4 border-b-[3px] border-[var(--black)] pb-6 md:flex-row md:items-end md:justify-between">
           <div className="space-y-3">
-            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--red-primary)]">Workspace</p>
+            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[color:var(--brass-800)]">Workspace</p>
             <h1 className="font-display text-4xl font-black tracking-tight md:text-5xl">
               {roleLabel ? `${roleLabel} Workspace` : 'Workspace'}
             </h1>
@@ -149,7 +149,7 @@ function WorkspaceContent() {
               type="button"
               onClick={() => void handleSignOut()}
               disabled={signingOut}
-              className="min-h-[40px] border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)] disabled:opacity-50"
+              className="min-h-[44px] border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)] disabled:opacity-50"
             >
               {signingOut ? 'Signing out...' : 'Sign out'}
             </button>

@@ -13,6 +13,40 @@ const PIN_LENGTH = DEFAULT_PIN_LENGTH;
 const CODE_LENGTH = 12;
 const PIN_PATTERN = /^\d{6}$/;
 
+/* First contact. A family opens this on a phone, in a car park or a kitchen,
+   holding a code slip a coach handed them -- so it sits on canvas ground (Law
+   6: warm for families, ink for staff) and every target is --tap rather than
+   the 52px and 44px it was built at.
+
+   The cards were bg-white with rounded-2xl and rounded-xl fields: white is not
+   one of the five materials and neither radius is on the Fibonacci scale. They
+   are paper now. The chrome comes off --red-primary, which aliases to --locked
+   -- a Continue button is not a safety state. Red survives only on the genuine
+   refusal, and the success panel takes the ladder's own --cleared instead of a
+   hardcoded #4caf50.
+
+   Sizes are set with Tailwind rather than ppbf's .t-* voices on purpose:
+   globals.css imports ppbf.css after Tailwind, so .t-body and .t-label pin
+   14px and 11px through the `font:` shorthand and silently beat any size
+   utility. .t-command carries no font-size, so it still composes. */
+const EYEBROW =
+  'font-mono text-[length:var(--t-sm)] uppercase tracking-[0.28em] text-[color:var(--brass-800)]';
+const LEDE = 'text-[length:var(--t-md)] leading-[1.55] text-[color:var(--hide-800)]';
+const CARD =
+  'mat-paper flex flex-col gap-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgba(0,0,0,.14)] p-[var(--s6)]';
+const FIELD_LABEL =
+  'block font-mono text-[length:var(--t-sm)] font-semibold uppercase tracking-[0.14em] text-[color:var(--hide-900)]';
+const FIELD_HINT = 'mt-[var(--s3)] text-[length:var(--t-sm)] leading-[1.5] text-[color:var(--hide-700)]';
+const PIN_INPUT =
+  'input input--kiosk mt-[var(--s3)] text-center tracking-[0.35em] font-[family-name:var(--font-mono)]';
+const ALERT =
+  'flex items-start gap-[var(--s3)] rounded-[var(--r-sm)] border-2 border-[color:var(--locked)] ' +
+  'bg-[color-mix(in_srgb,var(--locked)_12%,var(--paper))] px-[var(--s4)] py-[var(--s4)] ' +
+  'text-[length:var(--t-sm)] font-semibold text-[color:var(--hide-950)]';
+const STEP_ON = 'font-bold text-[color:var(--brass-800)]';
+const STEP_OFF = 'text-[color:var(--hide-600)]';
+const DISABLED = 'disabled:cursor-not-allowed disabled:opacity-50';
+
 type Stage = 'code' | 'pin' | 'done';
 
 /**
@@ -125,49 +159,45 @@ function ActivatePageContent() {
   }
 
   return (
-    <main className="min-h-screen bg-[var(--canvas-tan)] px-4 py-10 text-[var(--black)] sm:px-6">
-      <div className="mx-auto w-full max-w-md space-y-6">
-        <header className="space-y-3 text-center">
-          <p className="text-xs font-mono uppercase tracking-[0.3em] text-[var(--red-primary)]">Set Up Your Account</p>
-          <h1 className="font-display text-3xl font-black tracking-tight">Activate Your PPBF Account</h1>
+    <main className="on-canvas min-h-screen px-[var(--s5)] py-[var(--s7)]">
+      <div className="mx-auto flex w-full max-w-[540px] flex-col gap-[var(--s6)]">
+        <header className="flex flex-col gap-[var(--s4)] text-center">
+          <p className={EYEBROW}>Set up your account</p>
+          <h1 className="t-command text-[length:var(--t-xl)]">Activate your PPBF account</h1>
           {stage !== 'done' && (
-            <p className="text-sm leading-6 text-[var(--gray-dark)]">
+            <p className={LEDE}>
               Your gym gave you a one-time code. Enter it, then choose a {PIN_LENGTH}-digit PIN only you know.
             </p>
           )}
         </header>
 
         {stage !== 'done' && (
-          <ol className="flex items-center justify-center gap-3 text-xs font-semibold uppercase tracking-[0.12em]">
-            <li className={stage === 'code' ? 'text-[var(--red-primary)]' : 'text-[var(--gray-dark)]'}>
-              1. Your code
-            </li>
-            <li aria-hidden="true" className="text-[var(--gray-dark)]">→</li>
-            <li className={stage === 'pin' ? 'text-[var(--red-primary)]' : 'text-[var(--gray-dark)]'}>
-              2. Your PIN
-            </li>
+          /* The step marker is real sequence -- you cannot choose a PIN before
+             the code is accepted -- so numbering it says something true. */
+          <ol className="flex items-center justify-center gap-[var(--s4)] font-mono text-[length:var(--t-sm)] uppercase tracking-[0.12em]">
+            <li className={stage === 'code' ? STEP_ON : STEP_OFF}>1. Your code</li>
+            <li aria-hidden="true" className={STEP_OFF}>→</li>
+            <li className={stage === 'pin' ? STEP_ON : STEP_OFF}>2. Your PIN</li>
           </ol>
         )}
 
         {error && (
-          <p
-            role="alert"
-            className="rounded-xl border border-[var(--red-primary)] bg-[rgba(184,59,52,0.06)] px-4 py-3 text-sm font-semibold text-[var(--red-primary)]"
-          >
-            {error}
+          /* Law 3 -- the glyph carries the state alongside the colour, so this
+             survives greyscale and colour blindness. Red is correct here: it is
+             a genuine refusal, not chrome. */
+          <p role="alert" className={ALERT}>
+            <span aria-hidden="true" className="font-bold text-[color:var(--locked)]">✕</span>
+            <span>{error}</span>
           </p>
         )}
 
         {stage === 'code' && (
-          <form
-            onSubmit={goToPinStage}
-            className="space-y-4 rounded-2xl border border-[rgba(0,0,0,0.14)] bg-white p-5 shadow-[var(--shadow-md)]"
-          >
+          <form onSubmit={goToPinStage} className={CARD}>
             <div>
-              <label htmlFor="activation-code" className="block text-sm font-semibold">
+              <label htmlFor="activation-code" className={FIELD_LABEL}>
                 Activation code
               </label>
-              <p className="mt-1 text-xs text-[var(--gray-dark)]">
+              <p className={FIELD_HINT}>
                 12 characters, like ABCD-2345-EFGH. Capital letters and numbers only.
               </p>
               <input
@@ -180,39 +210,32 @@ function ActivatePageContent() {
                 value={code}
                 onChange={(event) => setCode(formatCodeInput(event.target.value))}
                 placeholder="ABCD-2345-EFGH"
-                className="mt-2 min-h-[52px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-center font-mono text-lg tracking-[0.15em] focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                className="input input--kiosk mt-[var(--s3)] text-center tracking-[0.15em] font-[family-name:var(--font-mono)]"
               />
-              <p className="mt-2 text-right text-xs text-[var(--gray-dark)]">
+              <p className={`${FIELD_HINT} text-right`}>
                 {countCodeCharacters(code)} / {CODE_LENGTH}
               </p>
             </div>
 
-            <button
-              type="submit"
-              disabled={!codeComplete}
-              className="min-h-[52px] w-full rounded-xl border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
-            >
+            <button type="submit" disabled={!codeComplete} className={`btn btn--kiosk ${DISABLED}`}>
               Continue
             </button>
           </form>
         )}
 
         {stage === 'pin' && (
-          <form
-            onSubmit={submitActivation}
-            className="space-y-4 rounded-2xl border border-[rgba(0,0,0,0.14)] bg-white p-5 shadow-[var(--shadow-md)]"
-          >
-            <div className="rounded-xl border border-[rgba(0,0,0,0.1)] bg-[var(--canvas-tan-light)] px-3 py-2">
-              <p className="text-xs text-[var(--gray-dark)]">
-                Code <span className="font-mono font-semibold text-[var(--black)]">{code}</span>
+          <form onSubmit={submitActivation} className={CARD}>
+            <div className="rounded-[var(--r-sm)] border border-[color:rgba(0,0,0,.12)] bg-[var(--paper-2)] px-[var(--s4)] py-[var(--s3)]">
+              <p className="text-[length:var(--t-sm)] text-[color:var(--hide-800)]">
+                Code <span className="font-mono font-semibold text-[color:var(--hide-950)]">{code}</span>
               </p>
             </div>
 
             <div>
-              <label htmlFor="new-pin" className="block text-sm font-semibold">
+              <label htmlFor="new-pin" className={FIELD_LABEL}>
                 Choose your PIN
               </label>
-              <p className="mt-1 text-xs text-[var(--gray-dark)]">
+              <p className={FIELD_HINT}>
                 {PIN_LENGTH} numbers. Do not use your birthday. Nobody at the gym can see this.
               </p>
               <input
@@ -223,12 +246,12 @@ function ActivatePageContent() {
                 value={pin}
                 onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, PIN_LENGTH))}
                 placeholder="••••••"
-                className="mt-2 min-h-[52px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 text-center font-mono text-lg tracking-[0.35em] focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                className={PIN_INPUT}
               />
             </div>
 
             <div>
-              <label htmlFor="confirm-pin" className="block text-sm font-semibold">
+              <label htmlFor="confirm-pin" className={FIELD_LABEL}>
                 Type it again
               </label>
               <input
@@ -239,28 +262,32 @@ function ActivatePageContent() {
                 value={confirmPin}
                 onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, '').slice(0, PIN_LENGTH))}
                 placeholder="••••••"
-                className="mt-2 min-h-[52px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 text-center font-mono text-lg tracking-[0.35em] focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                className={PIN_INPUT}
               />
               {confirmPin.length > 0 && !pinsMatch && (
-                <p className="mt-2 text-xs font-semibold text-[var(--red-primary)]">These do not match yet.</p>
+                <p className="mt-[var(--s3)] flex items-center gap-[var(--s2)] text-[length:var(--t-sm)] font-semibold text-[color:var(--restricted)]">
+                  <span aria-hidden="true">▲</span> These do not match yet.
+                </p>
               )}
             </div>
 
             <button
               type="submit"
               disabled={submitting || !pinValid || !pinsMatch}
-              className="min-h-[52px] w-full rounded-xl border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
+              className={`btn btn--kiosk ${DISABLED}`}
             >
-              {submitting ? 'Activating...' : 'Activate My Account'}
+              {submitting ? 'Activating…' : 'Activate my account'}
             </button>
 
+            {/* .btn--ghost on canvas ground -- the combination that rendered
+                grey on grey until ppbf.css grew an .on-canvas rule for it. */}
             <button
               type="button"
               onClick={() => {
                 setStage('code');
                 setError('');
               }}
-              className="min-h-[44px] w-full text-sm font-semibold text-[var(--gray-dark)] underline"
+              className="btn btn--ghost btn--kiosk"
             >
               Back to my code
             </button>
@@ -268,15 +295,23 @@ function ActivatePageContent() {
         )}
 
         {stage === 'done' && (
-          <section className="space-y-5 rounded-2xl border-2 border-[var(--cleared)] bg-[rgba(76,175,80,0.06)] p-6 text-center">
-            <p className="text-4xl" aria-hidden="true">✓</p>
-            <h2 className="font-display text-2xl font-black">You&apos;re all set</h2>
+          /* Day one. This is the first thing the platform ever says to a new
+             athlete, so it gets the cleared rung rather than the hardcoded
+             #4caf50 it used to wear -- the same green the safety gate uses when
+             it says you are good to go. */
+          <section className="mat-paper flex flex-col gap-[var(--s5)] rounded-[var(--r-lg)] border-2 border-[color:var(--cleared)] p-[var(--s6)] text-center">
+            <p className="text-[length:var(--t-3xl)] leading-none text-[color:var(--cleared)]" aria-hidden="true">✓</p>
+            <h2 className="t-command text-[length:var(--t-lg)]">You&rsquo;re all set</h2>
 
             {accountId && (
-              <div className="rounded-xl border border-[rgba(0,0,0,0.12)] bg-white px-4 py-3">
-                <p className="text-xs uppercase tracking-[0.14em] text-[var(--gray-dark)]">Your sign-in ID</p>
-                <p className="mt-1 font-mono text-base font-bold break-all">{accountId}</p>
-                <p className="mt-2 text-xs text-[var(--gray-dark)]">
+              <div className="rounded-[var(--r-sm)] border border-[color:rgba(0,0,0,.12)] bg-[var(--paper-2)] px-[var(--s4)] py-[var(--s4)]">
+                <p className="font-mono text-[length:var(--t-sm)] uppercase tracking-[0.14em] text-[color:var(--hide-800)]">
+                  Your sign-in ID
+                </p>
+                <p className="mt-[var(--s3)] break-all font-mono text-[length:var(--t-md)] font-bold text-[color:var(--hide-950)]">
+                  {accountId}
+                </p>
+                <p className={FIELD_HINT}>
                   Write this down. You will need it with your PIN every time you sign in.
                 </p>
               </div>
@@ -284,24 +319,16 @@ function ActivatePageContent() {
 
             {signedIn ? (
               <>
-                <p className="text-sm leading-6 text-[var(--gray-dark)]">You are already signed in.</p>
-                <Link
-                  href="/athlete/dashboard"
-                  className="inline-flex min-h-[52px] w-full items-center justify-center rounded-xl border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-6 text-sm font-black uppercase tracking-[0.14em] text-white transition hover:bg-[var(--red-highlight)]"
-                >
-                  Go To My Dashboard
+                <p className={LEDE}>You are already signed in.</p>
+                <Link href="/athlete/dashboard" className="btn btn--kiosk">
+                  Go to my dashboard
                 </Link>
               </>
             ) : (
               <>
-                <p className="text-sm leading-6 text-[var(--gray-dark)]">
-                  Your PIN is set. Sign in with your ID and your new PIN.
-                </p>
-                <Link
-                  href="/login"
-                  className="inline-flex min-h-[52px] w-full items-center justify-center rounded-xl border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-6 text-sm font-black uppercase tracking-[0.14em] text-white transition hover:bg-[var(--red-highlight)]"
-                >
-                  Go To Sign In
+                <p className={LEDE}>Your PIN is set. Sign in with your ID and your new PIN.</p>
+                <Link href="/login" className="btn btn--kiosk">
+                  Go to sign in
                 </Link>
               </>
             )}
@@ -309,9 +336,12 @@ function ActivatePageContent() {
         )}
 
         {stage !== 'done' && (
-          <p className="text-center text-xs leading-6 text-[var(--gray-dark)]">
+          <p className="text-center text-[length:var(--t-sm)] leading-[1.6] text-[color:var(--hide-800)]">
             Lost your code or it stopped working? Ask your gym admin for a new one.{' '}
-            <Link href="/login" className="font-semibold underline">
+            <Link
+              href="/login"
+              className="font-semibold text-[color:var(--brass-800)] underline underline-offset-2 hover:text-[color:var(--brass-700)]"
+            >
               Already activated? Sign in
             </Link>
           </p>

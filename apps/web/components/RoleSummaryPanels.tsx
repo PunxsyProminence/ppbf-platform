@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { RabbitHole, type RabbitHoleAnchor } from './RabbitHole';
 import ShadowChatButton from './ShadowChatButton';
 
 interface AthleteSummaryPanelProps {
@@ -45,6 +46,10 @@ interface HelpPanelProps {
   // without one get a real link into live SHADOW chat instead of a dead
   // button -- this used to always be a plain button wired to a no-op.
   onAskShadow?: () => void;
+  // Optional: the vocabulary term this panel is about. Passing one renders any
+  // authored deep-dive lessons written against it. Optional because ~50 call
+  // sites predate it, and an anchor nobody has written about renders nothing.
+  anchor?: RabbitHoleAnchor;
 }
 
 interface RoleSpecificShadowProps {
@@ -54,9 +59,9 @@ interface RoleSpecificShadowProps {
 }
 
 function getAttendanceColor(attendancePercent: number): string {
-  if (attendancePercent >= 90) return 'bg-[var(--cleared-ink)] border-[var(--status-ready)]';
-  if (attendancePercent >= 75) return 'bg-[var(--canvas-warm)] border-[var(--status-warning)]';
-  return 'bg-[var(--locked-ink)] border-[var(--red-primary)]';
+  if (attendancePercent >= 90) return 'bg-[color-mix(in_srgb,var(--cleared)_16%,transparent)] border-[var(--status-ready)]';
+  if (attendancePercent >= 75) return 'bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] border-[var(--status-warning)]';
+  return 'bg-[color-mix(in_srgb,var(--locked)_16%,transparent)] border-[color:var(--locked)]';
 }
 
 // ATHLETE SUMMARY PANEL
@@ -68,9 +73,9 @@ export function AthleteSummaryPanel({
   unreadMessages
 }: Readonly<AthleteSummaryPanelProps>) {
   const readinessColor = {
-    GREEN: 'bg-[var(--cleared-ink)] border-[var(--status-ready)]',
-    YELLOW: 'bg-[var(--canvas-warm)] border-[var(--status-warning)]',
-    RED: 'bg-[var(--locked-ink)] border-[var(--red-primary)]'
+    GREEN: 'bg-[color-mix(in_srgb,var(--cleared)_16%,transparent)] border-[var(--status-ready)]',
+    YELLOW: 'bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] border-[var(--status-warning)]',
+    RED: 'bg-[color-mix(in_srgb,var(--locked)_16%,transparent)] border-[color:var(--locked)]'
   }[readiness];
 
   const readinessText = {
@@ -80,35 +85,35 @@ export function AthleteSummaryPanel({
   }[readiness];
 
   return (
-    <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-5">
+    <div className="mb-[var(--s6)] grid grid-cols-2 gap-[var(--s4)] md:grid-cols-5">
       {/* Readiness */}
       <div className={`border-2 p-4 ${readinessColor}`}>
-        <p className="text-xs font-mono uppercase tracking-widest text-[var(--red-primary)]">Status</p>
-        <p className="mt-2 text-lg font-black text-[var(--black)]">{readinessText}</p>
+        <p className="t-label">Status</p>
+        <p className="t-command mt-[var(--s3)]">{readinessText}</p>
       </div>
 
       {/* Tasks */}
-      <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-        <p className="text-xs font-mono uppercase tracking-widest text-[var(--red-primary)]">Tasks Due</p>
-        <p className="mt-2 text-3xl font-black text-[var(--black)]">{tasksDue}</p>
+      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)]">
+        <p className="t-label">Tasks Due</p>
+        <p className="t-command mt-[var(--s3)]">{tasksDue}</p>
       </div>
 
       {/* Goals */}
-      <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-        <p className="text-xs font-mono uppercase tracking-widest text-[var(--red-primary)]">Active Goals</p>
-        <p className="mt-2 text-3xl font-black text-[var(--black)]">{goalsActive}</p>
+      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)]">
+        <p className="t-label">Active Goals</p>
+        <p className="t-command mt-[var(--s3)]">{goalsActive}</p>
       </div>
 
       {/* Upcoming Session */}
-      <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4 md:col-span-1">
-        <p className="text-xs font-mono uppercase tracking-widest text-[var(--red-primary)]">Next Session</p>
-        <p className="mt-2 text-sm font-semibold text-[var(--black)]">{upcomingSession || 'No session'}</p>
+      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)] md:col-span-1">
+        <p className="t-label">Next Session</p>
+        <p className="t-body mt-[var(--s3)]">{upcomingSession || 'No session'}</p>
       </div>
 
       {/* Messages */}
-      <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-        <p className="text-xs font-mono uppercase tracking-widest text-[var(--red-primary)]">Messages</p>
-        <p className="mt-2 text-3xl font-black text-[var(--black)]">{unreadMessages}</p>
+      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)]">
+        <p className="t-label">Messages</p>
+        <p className="t-command mt-[var(--s3)]">{unreadMessages}</p>
       </div>
     </div>
   );
@@ -122,38 +127,38 @@ export function CoachSummaryPanel({
   reviewsNeeded,
   assignmentsDue
 }: Readonly<CoachSummaryPanelProps>) {
-  const injuryAlert = injuryFlags > 0 ? 'bg-[var(--locked-ink)] border-[var(--red-primary)]' : 'border-[var(--black)] bg-[var(--canvas-tan-light)]';
+  const injuryAlert = injuryFlags > 0 ? 'bg-[color-mix(in_srgb,var(--locked)_16%,transparent)] border-[color:var(--locked)]' : 'border-[color:rgba(212,175,74,.28)] ';
 
   return (
-    <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-5">
+    <div className="mb-[var(--s6)] grid grid-cols-2 gap-[var(--s4)] md:grid-cols-5">
       {/* Session Status */}
-      <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-        <p className="text-xs font-mono uppercase tracking-widest text-[var(--red-primary)]">Session</p>
-        <p className="mt-2 text-sm font-semibold text-[var(--black)]">{sessionStatus}</p>
+      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)]">
+        <p className="t-label">Session</p>
+        <p className="t-body mt-[var(--s3)]">{sessionStatus}</p>
       </div>
 
       {/* Active Athletes */}
-      <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-        <p className="text-xs font-mono uppercase tracking-widest text-[var(--red-primary)]">Athletes</p>
-        <p className="mt-2 text-3xl font-black text-[var(--black)]">{activeAthletes}</p>
+      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)]">
+        <p className="t-label">Athletes</p>
+        <p className="t-command mt-[var(--s3)]">{activeAthletes}</p>
       </div>
 
       {/* Injury Flags */}
       <div className={`border-2 p-4 ${injuryAlert}`}>
-        <p className="text-xs font-mono uppercase tracking-widest text-[var(--red-primary)]">Injuries</p>
-        <p className="mt-2 text-3xl font-black text-[var(--black)]">{injuryFlags}</p>
+        <p className="t-label">Injuries</p>
+        <p className="t-command mt-[var(--s3)]">{injuryFlags}</p>
       </div>
 
       {/* Reviews */}
-      <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-        <p className="text-xs font-mono uppercase tracking-widest text-[var(--red-primary)]">Reviews</p>
-        <p className="mt-2 text-3xl font-black text-[var(--black)]">{reviewsNeeded}</p>
+      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)]">
+        <p className="t-label">Reviews</p>
+        <p className="t-command mt-[var(--s3)]">{reviewsNeeded}</p>
       </div>
 
       {/* Assignments */}
-      <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-        <p className="text-xs font-mono uppercase tracking-widest text-[var(--red-primary)]">Due</p>
-        <p className="mt-2 text-3xl font-black text-[var(--black)]">{assignmentsDue}</p>
+      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)]">
+        <p className="t-label">Due</p>
+        <p className="t-command mt-[var(--s3)]">{assignmentsDue}</p>
       </div>
     </div>
   );
@@ -172,39 +177,39 @@ export function ParentSummaryPanel({
   // through as 0 would color-code an absence of data as the same red
   // "bad attendance" band a genuinely low percentage gets.
   const attendanceColor = attendancePercent === null
-    ? 'bg-[var(--canvas-tan-light)] border-[var(--black)]'
+    ? 'border-[color:rgba(212,175,74,.28)]'
     : getAttendanceColor(attendancePercent);
 
   return (
-    <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-5">
+    <div className="mb-[var(--s6)] grid grid-cols-2 gap-[var(--s4)] md:grid-cols-5">
       {/* Progress */}
-      <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-        <p className="text-xs font-mono uppercase tracking-widest text-[var(--red-primary)]">Progress</p>
-        <p className="mt-2 text-sm font-semibold text-[var(--black)]">{childProgress}</p>
+      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)]">
+        <p className="t-label">Progress</p>
+        <p className="t-body mt-[var(--s3)]">{childProgress}</p>
       </div>
 
       {/* Tasks */}
-      <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-        <p className="text-xs font-mono uppercase tracking-widest text-[var(--red-primary)]">Home Tasks</p>
-        <p className="mt-2 text-3xl font-black text-[var(--black)]">{tasksDue}</p>
+      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)]">
+        <p className="t-label">Home Tasks</p>
+        <p className="t-command mt-[var(--s3)]">{tasksDue}</p>
       </div>
 
       {/* Events */}
-      <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-        <p className="text-xs font-mono uppercase tracking-widest text-[var(--red-primary)]">Upcoming</p>
-        <p className="mt-2 text-3xl font-black text-[var(--black)]">{upcomingEvents}</p>
+      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)]">
+        <p className="t-label">Upcoming</p>
+        <p className="t-command mt-[var(--s3)]">{upcomingEvents}</p>
       </div>
 
       {/* Attendance */}
       <div className={`border-2 p-4 ${attendanceColor}`}>
-        <p className="text-xs font-mono uppercase tracking-widest text-[var(--red-primary)]">Attendance</p>
-        <p className="mt-2 text-3xl font-black text-[var(--black)]">{attendancePercent === null ? 'Unavailable' : `${attendancePercent}%`}</p>
+        <p className="t-label">Attendance</p>
+        <p className="t-command mt-[var(--s3)]">{attendancePercent === null ? 'Unavailable' : `${attendancePercent}%`}</p>
       </div>
 
       {/* Messages */}
-      <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-        <p className="text-xs font-mono uppercase tracking-widest text-[var(--red-primary)]">Messages</p>
-        <p className="mt-2 text-3xl font-black text-[var(--black)]">{unreadMessages}</p>
+      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)]">
+        <p className="t-label">Messages</p>
+        <p className="t-command mt-[var(--s3)]">{unreadMessages}</p>
       </div>
     </div>
   );
@@ -218,39 +223,39 @@ export function AdminSummaryPanel({
   complianceItems,
   pendingReviews
 }: Readonly<AdminSummaryPanelProps>) {
-  const programAlert = programAlerts > 0 ? 'bg-[var(--locked-ink)] border-[var(--red-primary)]' : 'border-[var(--black)] bg-[var(--canvas-tan-light)]';
-  const boardAlert = boardAlerts > 0 ? 'bg-[var(--canvas-warm)] border-[var(--status-warning)]' : 'border-[var(--black)] bg-[var(--canvas-tan-light)]';
+  const programAlert = programAlerts > 0 ? 'bg-[color-mix(in_srgb,var(--locked)_16%,transparent)] border-[color:var(--locked)]' : 'border-[color:rgba(212,175,74,.28)] ';
+  const boardAlert = boardAlerts > 0 ? 'bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] border-[var(--status-warning)]' : 'border-[color:rgba(212,175,74,.28)] ';
 
   return (
-    <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-5">
+    <div className="mb-[var(--s6)] grid grid-cols-2 gap-[var(--s4)] md:grid-cols-5">
       {/* Program Alerts */}
       <div className={`border-2 p-4 ${programAlert}`}>
-        <p className="text-xs font-mono uppercase tracking-widest text-[var(--red-primary)]">Program</p>
-        <p className="mt-2 text-3xl font-black text-[var(--black)]">{programAlerts}</p>
+        <p className="t-label">Program</p>
+        <p className="t-command mt-[var(--s3)]">{programAlerts}</p>
       </div>
 
       {/* Board Alerts */}
       <div className={`border-2 p-4 ${boardAlert}`}>
-        <p className="text-xs font-mono uppercase tracking-widest text-[var(--red-primary)]">Board</p>
-        <p className="mt-2 text-3xl font-black text-[var(--black)]">{boardAlerts}</p>
+        <p className="t-label">Board</p>
+        <p className="t-command mt-[var(--s3)]">{boardAlerts}</p>
       </div>
 
       {/* Open Assignments */}
-      <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-        <p className="text-xs font-mono uppercase tracking-widest text-[var(--red-primary)]">Open</p>
-        <p className="mt-2 text-3xl font-black text-[var(--black)]">{openAssignments}</p>
+      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)]">
+        <p className="t-label">Open</p>
+        <p className="t-command mt-[var(--s3)]">{openAssignments}</p>
       </div>
 
       {/* Compliance */}
-      <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-        <p className="text-xs font-mono uppercase tracking-widest text-[var(--red-primary)]">Compliance</p>
-        <p className="mt-2 text-3xl font-black text-[var(--black)]">{complianceItems}</p>
+      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)]">
+        <p className="t-label">Compliance</p>
+        <p className="t-command mt-[var(--s3)]">{complianceItems}</p>
       </div>
 
       {/* Reviews */}
-      <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-        <p className="text-xs font-mono uppercase tracking-widest text-[var(--red-primary)]">Reviews</p>
-        <p className="mt-2 text-3xl font-black text-[var(--black)]">{pendingReviews}</p>
+      <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] p-[var(--s4)]">
+        <p className="t-label">Reviews</p>
+        <p className="t-command mt-[var(--s3)]">{pendingReviews}</p>
       </div>
     </div>
   );
@@ -262,28 +267,30 @@ export function HelpPanel({
   description,
   usage,
   mistakes,
-  onAskShadow
+  onAskShadow,
+  anchor
 }: Readonly<HelpPanelProps>) {
   const [expanded, setExpanded] = React.useState(false);
 
   return (
-    <div className="border-l-4 border-[var(--red-primary)] bg-[var(--canvas-tan)] p-4">
+    <div className="rounded-[var(--r-md)] border-l-4 border-[color:var(--brass-600)] p-[var(--s4)]">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center justify-between text-left"
+        className="flex min-h-[44px] w-full items-center justify-between text-left"
+        aria-expanded={expanded}
       >
-        <h3 className="text-sm font-semibold text-[var(--red-primary)]">HELP: {title}</h3>
-        <span className="text-xl text-[var(--red-primary)]">{expanded ? '−' : '+'}</span>
+        <h3 className="t-label">HELP: {title}</h3>
+        <span aria-hidden="true" className="text-xl text-[var(--accent-quiet)]">{expanded ? '−' : '+'}</span>
       </button>
 
       {expanded && (
-        <div className="mt-4 space-y-3 text-sm text-[var(--gray-dark)]">
+        <div className="t-body mt-[var(--s4)] space-y-[var(--s3)]">
           <div>
-            <p className="font-semibold text-[var(--black)]">What it is:</p>
+            <p className="t-command">What it is:</p>
             <p>{description}</p>
           </div>
           <div>
-            <p className="font-semibold text-[var(--black)]">How to use:</p>
+            <p className="t-command">How to use:</p>
             <ul className="list-inside list-disc space-y-1">
               {usage.map((item) => (
                 <li key={item}>{item}</li>
@@ -291,17 +298,18 @@ export function HelpPanel({
             </ul>
           </div>
           <div>
-            <p className="font-semibold text-[var(--black)]">Common mistakes:</p>
+            <p className="t-command">Common mistakes:</p>
             <ul className="list-inside list-disc space-y-1">
               {mistakes.map((item) => (
                 <li key={item}>{item}</li>
               ))}
             </ul>
           </div>
+          {anchor ? <RabbitHole anchor={anchor} /> : null}
           {onAskShadow ? (
             <button
               onClick={onAskShadow}
-              className="mt-3 w-full border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 py-2 text-xs font-semibold uppercase text-[var(--canvas-tan-light)] transition hover:brightness-110"
+              className="btn mt-[var(--s3)] w-full"
             >
               ASK SHADOW
             </button>
@@ -309,7 +317,7 @@ export function HelpPanel({
             <ShadowChatButton
               context={title}
               label="ASK SHADOW"
-              className="mt-3 w-full border-[var(--black)] bg-[var(--red-primary)] text-[var(--canvas-tan-light)] hover:brightness-110"
+              className="btn mt-[var(--s3)] w-full"
             />
           )}
         </div>
@@ -331,11 +339,17 @@ export function RoleSpecificShadow({
     admin: 'SHADOW (ADMIN MODE)'
   }[role];
 
+  // Role is identity, not safety state. This map used to spend the ladder on
+  // it -- athlete green, coach the locked red, parent the restricted orange --
+  // which meant a parent's card wore the caution colour and a coach's wore the
+  // one reserved for an athlete who may not participate. Law 2 exists to stop
+  // exactly that. Four brass and patina tones stay just as distinguishable
+  // while claiming nothing about anyone's clearance.
   const borderColor = {
-    athlete: 'border-[var(--status-ready)]',
-    coach: 'border-[var(--red-primary)]',
-    parent: 'border-[var(--status-warning)]',
-    admin: 'border-[var(--black)]'
+    athlete: 'border-[var(--brass-400)]',
+    coach: 'border-[var(--brass-700)]',
+    parent: 'border-[var(--patina-500)]',
+    admin: 'border-[var(--hide-600)]'
   }[role];
 
   // This card intentionally shows no canned question/answer example. A prior
@@ -345,13 +359,13 @@ export function RoleSpecificShadow({
   // from the real chat below/linked here, never a static placeholder that
   // could be mistaken for real guidance about a real athlete.
   return (
-    <div className={`border-l-4 ${borderColor} space-y-3 bg-[var(--canvas-tan-light)] p-4 font-mono text-xs`}>
-      <p className="text-[var(--red-primary)]">&gt; {roleIdentity}</p>
-      <p className="whitespace-pre-wrap text-[var(--black)]">{description}</p>
+    <div className={`border-l-4 ${borderColor} space-y-3  p-4 font-mono text-xs`}>
+      <p className="text-[var(--accent-quiet)]">&gt; {roleIdentity}</p>
+      <p className="t-body whitespace-pre-wrap">{description}</p>
       <ShadowChatButton
         context={chatContext}
         label="Ask SHADOW"
-        className="border-[var(--black)] bg-[var(--canvas-tan-light)] text-[var(--black)] hover:bg-[var(--canvas-tan-dark)]"
+        className="btn btn--ghost"
       />
     </div>
   );
