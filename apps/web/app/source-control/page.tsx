@@ -1,5 +1,6 @@
 import Link from 'next/link';
-import FeatureSurface from '@/components/FeatureSurface';
+import DevelopmentPipelineBanner from '@/components/DevelopmentPipelineBanner';
+import ShadowChatButton from '@/components/ShadowChatButton';
 
 const capabilityStatus = 'PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED';
 
@@ -63,40 +64,68 @@ const automationWorkflowPanels = [
   'Jason Approval',
 ];
 
+const quickLinks = [
+  { label: 'Audit trace', href: '/audit' },
+  { label: 'Research intake', href: '/research' },
+  { label: 'Publication workflow surface', href: '/source-control/publication-workflow' },
+  { label: 'Operations Hub', href: '/operations' },
+  { label: 'Member Access', href: '/login' },
+];
+
+const stats = [
+  { label: 'Current Stage', value: 'Source Control' },
+  { label: 'Next Stage', value: 'Publish to Ecosystem' },
+  { label: 'Promotion Queue', value: 'BACKEND REQUIRED' },
+  { label: 'Canonical Source', value: 'BACKEND REQUIRED' },
+];
+
 export default function SourceControlPage() {
   return (
-    <FeatureSurface
-      eyebrow="Source Control"
-      title="Promotion pipeline and publication lane"
-      description="Shows how cards would move through Draft, Review, Approved, Published, and Archived states before ecosystem release. Every card, version, and count on this page is a sample, not live promotion state."
-      status={capabilityStatus}
-      currentStage="source-control"
-      primaryLinks={[
-        { label: 'Audit trace', href: '/audit' },
-        { label: 'Research intake', href: '/research' },
-        { label: 'Publication workflow surface', href: '/source-control/publication-workflow' },
-      ]}
-      stats={[
-        { label: 'Current Stage', value: 'Source Control' },
-        { label: 'Next Stage', value: 'Publish to Ecosystem' },
-        { label: 'Promotion Queue', value: 'BACKEND REQUIRED' },
-        { label: 'Canonical Source', value: 'BACKEND REQUIRED' },
-      ]}
-    >
-      <div className="space-y-4">
-        <section className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-4">
-          <p className="text-[12px] font-mono uppercase tracking-[0.16em] text-[color:var(--brass-300)]">Promotion State Lanes</p>
-          <p className="mt-1 text-[11px] font-mono uppercase tracking-[0.09em] text-[color:var(--brass-300)]">{capabilityStatus}</p>
-          <div className="mt-3 grid gap-3 xl:grid-cols-5">
+    /* Ink ground (Law 6): source-control is a staff governance table, so it
+       stands on the same leather chassis as /operations rather than the
+       FeatureSurface cream scaffold it launched on. */
+    <main className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+      <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-[var(--s6)] px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
+        <header className="space-y-[var(--s4)] border-b-2 border-[color:var(--brass-700)] pb-[var(--s6)]">
+          <p className="t-eyebrow tracking-[0.35em]">Source Control</p>
+          <h1 className="t-command" style={{ fontSize: 'var(--t-2xl)' }}>
+            Promotion pipeline and publication lane
+          </h1>
+          {/* Law 7: "not built yet" is a declaration, so it is stamped in
+              brass rather than painted in the safety ladder's colours. */}
+          <span className="stamp stamp--brass">{capabilityStatus}</span>
+          <p className="t-body max-w-[80ch]">
+            Shows how cards would move through Draft, Review, Approved, Published, and Archived states before ecosystem release. Every card, version, and count on this page is a sample, not live promotion state.
+          </p>
+          <ShadowChatButton context="Source Control Promotion pipeline and publication lane" />
+        </header>
+
+        <DevelopmentPipelineBanner currentStage="source-control" />
+
+        <section className="grid gap-[var(--s4)] sm:grid-cols-2 xl:grid-cols-4">
+          {stats.map((item) => (
+            <article key={item.label} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+              <p className="t-eyebrow">{item.label}</p>
+              <p className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-md)' }}>{item.value}</p>
+            </article>
+          ))}
+        </section>
+
+        <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Promotion State Lanes</h2>
+          <p className="t-label">{capabilityStatus}</p>
+          <div className="grid gap-[var(--s4)] xl:grid-cols-5">
             {sampleStateLanes.map((lane) => (
-              <article key={lane.state} className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-3">
-                <p className="font-mono text-[12px] uppercase tracking-[0.12em] text-[color:var(--brass-300)]">{lane.state}</p>
-                <div className="mt-2 space-y-2">
+              <article key={lane.state} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="t-eyebrow">{lane.state}</p>
+                <div className="mt-[var(--s3)] space-y-[var(--s3)]">
                   {lane.items.map((item) => (
-                    <div key={item.title} className="border border-[color:var(--brass-700)]/60 bg-[var(--hide-950)] p-2">
-                      <p className="text-[14px] font-semibold text-[color:var(--bone-200)]">{item.title}</p>
-                      <p className="text-[12px] text-[color:var(--bone-300)]">{item.version}</p>
-                      <p className="text-[12px] text-[color:var(--bone-300)]">Canonical: {item.canonical}</p>
+                    <div key={item.title} className="mat-leather rounded-[var(--r-sm)] p-[var(--s3)]">
+                      <p className="t-body font-semibold text-[color:var(--bone-100)]">{item.title}</p>
+                      {/* Versions and canonical state are auditable records —
+                          the mono data voice (Law 4). */}
+                      <p className="t-data mt-[var(--s2)]">{item.version}</p>
+                      <p className="t-data">Canonical: {item.canonical}</p>
                     </div>
                   ))}
                 </div>
@@ -105,64 +134,72 @@ export default function SourceControlPage() {
           </div>
         </section>
 
-        <section className="grid gap-4 lg:grid-cols-2">
-          <article className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)]/60 p-4">
-            <p className="text-[12px] font-mono uppercase tracking-[0.16em] text-[color:var(--brass-300)]">Version History</p>
-            <p className="mt-1 text-[11px] font-mono uppercase tracking-[0.09em] text-[color:var(--brass-300)]">{capabilityStatus}</p>
-            <div className="mt-3 space-y-2">
+        <section className="grid gap-[var(--s4)] lg:grid-cols-2">
+          <article className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+            <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Version History</h2>
+            <p className="t-label">{capabilityStatus}</p>
+            <div className="space-y-[var(--s3)]">
               {sampleVersionHistory.map((entry) => (
-                <div key={entry.version} className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-3 text-[14px] text-[color:var(--bone-300)]">
-                  <p className="font-semibold text-[color:var(--bone-200)]">{entry.version}</p>
-                  <p>{entry.note}</p>
-                  <p>{entry.date}</p>
+                <div key={entry.version} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                  <p className="t-data text-[color:var(--bone-100)]">{entry.version}</p>
+                  <p className="t-body mt-[var(--s2)]">{entry.note}</p>
+                  <p className="t-data mt-[var(--s2)]">{entry.date}</p>
                 </div>
               ))}
             </div>
           </article>
 
-          <article className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)]/60 p-4">
-            <p className="text-[12px] font-mono uppercase tracking-[0.16em] text-[color:var(--brass-300)]">Current Approved Version</p>
-            <p className="mt-1 text-[11px] font-mono uppercase tracking-[0.09em] text-[color:var(--brass-300)]">{capabilityStatus}</p>
-            <div className="mt-3 border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-3">
-              <p className="text-[16px] font-bold text-[color:var(--bone-200)]">v2.1 Readiness warmup protocol</p>
-              <p className="mt-1 text-[14px] text-[color:var(--bone-300)]">Canonical Source: PPBF Development Library / v2.1</p>
+          <article className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+            <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Current Approved Version</h2>
+            <p className="t-label">{capabilityStatus}</p>
+            <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+              <p className="t-command" style={{ fontSize: 'var(--t-md)' }}>v2.1 Readiness warmup protocol</p>
+              <p className="t-data mt-[var(--s3)]">Canonical Source: PPBF Development Library / v2.1</p>
             </div>
           </article>
         </section>
 
-        <section className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-[12px] font-mono uppercase tracking-[0.16em] text-[color:var(--brass-300)]">AUTOMATED PUBLICATION WORKFLOW - PLANNED</p>
-            <Link
-              href="/source-control/publication-workflow"
-              className="inline-flex min-h-[44px] items-center border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 text-[11px] font-mono font-bold uppercase tracking-[0.1em] text-[color:var(--bone-200)]"
-            >
+        <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <div className="flex flex-wrap items-center justify-between gap-[var(--s4)]">
+            <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Automated Publication Workflow - Planned</h2>
+            <Link href="/source-control/publication-workflow" className="btn">
               Open Workflow Surface
             </Link>
           </div>
-          <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-[var(--s4)] md:grid-cols-2 xl:grid-cols-3">
             {automationWorkflowPanels.map((panel) => (
-              <article key={panel} className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-3">
-                <p className="text-[14px] font-semibold text-[color:var(--bone-200)]">{panel}</p>
-                <p className="mt-1 text-[11px] font-mono uppercase tracking-[0.09em] text-[color:var(--brass-300)]">{capabilityStatus}</p>
+              <article key={panel} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="t-body font-semibold text-[color:var(--bone-100)]">{panel}</p>
+                <p className="t-label mt-[var(--s2)]">{capabilityStatus}</p>
               </article>
             ))}
           </div>
         </section>
 
-        <section id="publish" className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-4">
-          <p className="text-[12px] font-mono uppercase tracking-[0.16em] text-[color:var(--brass-300)]">PUBLISH TO ECOSYSTEM</p>
-          <p className="mt-2 text-[16px] leading-7 text-[color:var(--bone-200)]">Mock destination routing only. No live publication logic in this front-end stage.</p>
-          <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <section id="publish" className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Publish to Ecosystem</h2>
+          <p className="t-body max-w-[80ch]">Mock destination routing only. No live publication logic in this front-end stage.</p>
+          <div className="grid gap-[var(--s4)] md:grid-cols-2 xl:grid-cols-3">
             {publishDestinations.map((destination) => (
-              <article key={destination.label} className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-3">
-                <p className="text-[14px] font-semibold text-[color:var(--bone-200)]">{destination.label}</p>
-                <p className="mt-1 font-mono text-[12px] uppercase tracking-[0.1em] text-[color:var(--brass-300)]">Status: {destination.status}</p>
+              <article key={destination.label} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="t-body font-semibold text-[color:var(--bone-100)]">{destination.label}</p>
+                <p className="t-label mt-[var(--s2)]">Status: {destination.status}</p>
               </article>
             ))}
           </div>
         </section>
+
+        <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Quick links</h2>
+          <div className="flex flex-wrap gap-[var(--s4)]">
+            {quickLinks.map((item) => (
+              <Link key={item.href} href={item.href} className="btn btn--ghost">
+                {item.label}
+              </Link>
+            ))}
+          </div>
+        </section>
       </div>
-    </FeatureSurface>
+    </main>
   );
 }

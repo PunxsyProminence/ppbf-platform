@@ -90,6 +90,13 @@ export const BUILDING: readonly Door[] = [
   { href: '/public', label: 'Public Page', room: 'office', roles: OPEN,
     keywords: 'enrollment join intake public onboarding' },
   { href: '/help', label: 'Help', room: 'office', roles: OPEN, keywords: 'support docs how-to faq' },
+  /* The office, not the board room: the board room's doors are a board-only
+     set (cardCatalog.test.tsx asserts a coach never sees it), and this door is
+     open to everybody. A member's own record is an office record. */
+  { href: '/profile', label: 'Your Corner', room: 'office',
+    roles: ['athlete', 'coach', 'parent', 'admin', 'staff', 'volunteer'],
+    keywords: 'profile identity portrait photo ring name nickname corner fight card programme',
+    hint: 'Your portrait, ring name, corner and programme.' },
   { href: '/source-control', label: 'Source Control', room: 'office', roles: OPEN,
     keywords: 'versions publication workflow provenance' },
   { href: '/source-control/publication-workflow', label: 'Publication Workflow', room: 'office',
@@ -113,6 +120,9 @@ export const BUILDING: readonly Door[] = [
     hint: 'Layer 10 — the decision queue.' },
   { href: '/coach/decision-loop', label: 'Decision Loop', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'decisions loop feedback' },
+  { href: '/coach/recognition', label: 'Recognition', room: 'floor', roles: ['coach', 'admin'],
+    keywords: 'praise credit caught being good character mentorship pairing well done',
+    hint: 'Tell an athlete they did well — two taps. And pair mentors with newer athletes.' },
   { href: '/coach/progression-intelligence', label: 'Progression Intelligence', room: 'floor',
     roles: ['coach'], keywords: 'athlete progress load profiles cohort' },
   { href: '/coach/video-analysis', label: 'Video Analysis', room: 'floor',

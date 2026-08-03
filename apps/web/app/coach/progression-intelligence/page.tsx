@@ -6,13 +6,14 @@ import RabbitHole from '@/components/RabbitHole';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 
-// A rabbit hole renders its own light panel, so on this dark surface it keeps
-// that palette and takes only the rule colour and the spacing from the page.
-// Each carries its own top margin rather than sitting in a shared wrapper: two
-// anchors are read per gap and either may have nothing to show, so there must
-// be no container left behind when they do not.
+// A rabbit hole renders as a paper note pinned to the leather panel, so it
+// takes the design system's paper material (which carries its own dark ink)
+// plus a brass rule and the page's spacing. Each carries its own top margin
+// rather than sitting in a shared wrapper: two anchors are read per gap and
+// either may have nothing to show, so there must be no container left behind
+// when they do not.
 const GAP_RABBIT_HOLE_CLASS =
-  'mt-3 border-l-4 border-[color:var(--brass-300)] bg-[var(--canvas-tan-light)] p-3';
+  'mat-paper mt-[var(--s3)] rounded-[var(--r-sm)] border-l-4 border-[color:var(--brass-500)] p-[var(--s3)]';
 
 interface ProgressionGap {
   gap_id: string;
@@ -113,52 +114,54 @@ export default function CoachProgressionIntelligencePage() {
 
   return (
     <RoleStandaloneView roleLabel="Coach Workspace" routeLabel="/coach/progression-intelligence" allowedRoles={['coach']} room="floor" showShellHeader={false}>
-      <div className="space-y-6">
-        <header className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-5">
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--brass-300)]">Closed-Loop Progression Intelligence</p>
-          <h1 className="mt-2 text-3xl font-black text-[color:var(--bone-100)]">Progression Gaps → Drills → Verification</h1>
-          <p className="mt-2 text-sm text-[color:var(--bone-300)]">
+      <div className="space-y-[var(--s5)]">
+        <header className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
+          <p className="t-eyebrow">Closed-Loop Progression Intelligence</p>
+          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Progression Gaps → Drills → Verification</h1>
+          <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
             Detect performance gaps, assign drills, and track athlete completion and progression.
           </p>
-          {errorMessage ? <p className="mt-2 text-xs text-[var(--locked-ink)]">{errorMessage}</p> : null}
+          {errorMessage ? <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--locked-ink)]">{errorMessage}</p> : null}
         </header>
 
         {/* Athlete Selector */}
-        <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4">
-          <label htmlFor="athlete-input" className="block text-sm font-semibold text-[color:var(--bone-200)]">Select Athlete</label>
-          <input
-            id="athlete-input"
-            type="text"
-            placeholder="Enter athlete ID (e.g., athlete-001)"
-            value={selectedAthlete}
-            onChange={(e) => setSelectedAthlete(e.target.value)}
-            className="mt-2 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-2 text-[color:var(--bone-200)] placeholder-[var(--bone-400)]"
-          />
+        <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+          <div className="field">
+            <label htmlFor="athlete-input" className="t-label">Select Athlete</label>
+            <input
+              id="athlete-input"
+              type="text"
+              placeholder="Enter athlete ID (e.g., athlete-001)"
+              value={selectedAthlete}
+              onChange={(e) => setSelectedAthlete(e.target.value)}
+              className="input"
+            />
+          </div>
         </div>
 
         {selectedAthlete && (
           <>
             {/* Progression Gaps Section */}
-            <section className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-bold text-[color:var(--bone-100)]">Progression Gaps ({gaps.length})</h2>
+            <section className="space-y-[var(--s4)]">
+              <div className="flex items-center justify-between gap-[var(--s3)]">
+                <h2 className="t-command text-[length:var(--t-lg)]">Progression Gaps ({gaps.length})</h2>
                 <button
                   onClick={() => setShowGapForm(!showGapForm)}
-                  className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-800)] px-3 py-1 text-xs font-bold text-[color:var(--brass-300)]"
+                  className="btn btn--ghost"
                 >
                   {showGapForm ? 'Cancel' : '+ Add Gap'}
                 </button>
               </div>
 
               {showGapForm && (
-                <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4 space-y-3">
-                  <div>
-                    <label htmlFor="gap-type-select" className="block text-xs font-bold uppercase text-[color:var(--brass-300)]">Gap Type</label>
+                <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
+                  <div className="field">
+                    <label htmlFor="gap-type-select" className="t-label">Gap Type</label>
                     <select
                       id="gap-type-select"
                       value={newGap.gap_type}
                       onChange={(e) => setNewGap({ ...newGap, gap_type: e.target.value })}
-                      className="mt-1 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-2 text-[color:var(--bone-200)]"
+                      className="select"
                     >
                       <option value="technique">Technique</option>
                       <option value="strength">Strength</option>
@@ -168,24 +171,24 @@ export default function CoachProgressionIntelligencePage() {
                       <option value="tactical">Tactical</option>
                     </select>
                   </div>
-                  <div>
-                    <label htmlFor="gap-desc-textarea" className="block text-xs font-bold uppercase text-[color:var(--brass-300)]">Description</label>
+                  <div className="field">
+                    <label htmlFor="gap-desc-textarea" className="t-label">Description</label>
                     <textarea
                       id="gap-desc-textarea"
                       value={newGap.gap_description}
                       onChange={(e) => setNewGap({ ...newGap, gap_description: e.target.value })}
                       placeholder="Describe the performance gap..."
-                      className="mt-1 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-2 text-[color:var(--bone-200)]"
+                      className="textarea"
                       rows={3}
                     />
                   </div>
-                  <div>
-                    <label htmlFor="severity-select" className="block text-xs font-bold uppercase text-[color:var(--brass-300)]">Severity</label>
+                  <div className="field">
+                    <label htmlFor="severity-select" className="t-label">Severity</label>
                     <select
                       id="severity-select"
                       value={newGap.severity}
                       onChange={(e) => setNewGap({ ...newGap, severity: e.target.value })}
-                      className="mt-1 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-2 text-[color:var(--bone-200)]"
+                      className="select"
                     >
                       <option value="low">Low</option>
                       <option value="medium">Medium</option>
@@ -195,26 +198,26 @@ export default function CoachProgressionIntelligencePage() {
                   </div>
                   <button
                     onClick={handleCreateGap}
-                    className="w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-800)] py-2 text-xs font-bold uppercase text-[color:var(--brass-300)]"
+                    className="btn w-full"
                   >
                     Create Gap
                   </button>
                 </div>
               )}
 
-              <div className="space-y-2">
+              <div className="space-y-[var(--s3)]">
                 {gaps.length === 0 ? (
-                  <p className="text-sm text-[var(--bone-400)]">No gaps identified yet.</p>
+                  <p className="t-body text-[color:var(--bone-300)]">No gaps identified yet.</p>
                 ) : (
                   gaps.map((gap) => (
-                    <div key={gap.gap_id} className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-3">
-                      <div className="flex items-start justify-between gap-2">
+                    <div key={gap.gap_id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+                      <div className="flex items-start justify-between gap-[var(--s3)]">
                         <div className="flex-1">
-                          <p className="font-semibold text-[color:var(--bone-200)]">{gap.gap_description}</p>
-                          <div className="mt-1 flex gap-2">
-                            <span className="text-xs font-mono text-[color:var(--brass-300)]">{gap.gap_type}</span>
-                            <span className="text-xs font-mono text-[color:var(--brass-300)]">{gap.severity}</span>
-                            <span className="text-xs font-mono text-[var(--bone-400)]">{gap.status}</span>
+                          <p className="font-semibold text-[color:var(--bone-100)]">{gap.gap_description}</p>
+                          <div className="mt-[var(--s2)] flex flex-wrap gap-[var(--s3)]">
+                            <span className="t-data text-[color:var(--bone-300)]">{gap.gap_type}</span>
+                            <span className="t-data text-[color:var(--bone-300)]">{gap.severity}</span>
+                            <span className="t-data text-[color:var(--bone-400)]">{gap.status}</span>
                           </div>
                         </div>
                       </div>
@@ -237,24 +240,27 @@ export default function CoachProgressionIntelligencePage() {
 
             {/* Drill Assignments Section */}
             <section>
-              <h2 className="mb-4 text-lg font-bold text-[color:var(--bone-100)]">Assigned Drills ({assignments.length})</h2>
-              <div className="space-y-2">
+              <h2 className="t-command mb-[var(--s4)] text-[length:var(--t-lg)]">Assigned Drills ({assignments.length})</h2>
+              <div className="space-y-[var(--s3)]">
                 {assignments.length === 0 ? (
-                  <p className="text-sm text-[var(--bone-400)]">No drills assigned yet.</p>
+                  <p className="t-body text-[color:var(--bone-300)]">No drills assigned yet.</p>
                 ) : (
                   assignments.map((assignment) => (
-                    <div key={assignment.assignment_id} className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-3">
-                      <div className="flex items-start justify-between gap-2">
+                    <div key={assignment.assignment_id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+                      <div className="flex items-start justify-between gap-[var(--s3)]">
                         <div className="flex-1">
-                          <p className="font-semibold text-[color:var(--bone-200)]">{assignment.drill_name}</p>
-                          <p className="text-xs text-[color:var(--bone-300)]">{assignment.drill_description}</p>
-                          <div className="mt-2 bg-[var(--hide-950)] h-2 border border-[color:var(--hide-600)]">
+                          <p className="font-semibold text-[color:var(--bone-100)]">{assignment.drill_name}</p>
+                          <p className="t-muted text-[color:var(--bone-300)]">{assignment.drill_description}</p>
+                          {/* A plain completion meter, not a .gauge: completion
+                              has no danger threshold, so it gets no arc and no
+                              saturated colour (Law 2). */}
+                          <div className="mt-[var(--s3)] h-2 rounded-[var(--r-sm)] bg-[rgba(0,0,0,.4)]">
                             <div
-                              className="h-full bg-[var(--brass-300)]"
+                              className="h-full rounded-[var(--r-sm)] bg-[var(--brass-500)]"
                               style={{ width: `${assignment.completion_percentage}%` }}
                             />
                           </div>
-                          <p className="mt-1 text-xs text-[var(--bone-400)]">{assignment.completion_percentage}% complete</p>
+                          <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">{assignment.completion_percentage}% complete</p>
                         </div>
                       </div>
                     </div>
@@ -265,11 +271,11 @@ export default function CoachProgressionIntelligencePage() {
           </>
         )}
 
-        <div className="flex flex-wrap gap-3">
-          <Link href="/coach/review-queue" className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-800)] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)]">
+        <div className="flex flex-wrap gap-[var(--s3)]">
+          <Link href="/coach/review-queue" className="btn btn--ghost">
             Back to Coach Workspace
           </Link>
-          <Link href="/rabbit-holes" className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-800)] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)]">
+          <Link href="/rabbit-holes" className="btn btn--ghost">
             Write a Rabbit Hole
           </Link>
         </div>

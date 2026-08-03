@@ -183,23 +183,28 @@ function PinManagementPageContent() {
   }
 
   return (
-    <main className="min-h-screen bg-[var(--canvas-tan)] px-4 py-6 text-[var(--black)] sm:px-6">
-      <div className="mx-auto w-full max-w-4xl space-y-5">
-        <header className="rounded-2xl border border-[rgba(0,0,0,0.16)] bg-white p-5 shadow-[var(--shadow-md)]">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--brass-800)]">Gym Admin PIN Control</p>
-          <h1 className="mt-2 text-2xl font-black tracking-tight">Activate or Reset Athlete PIN</h1>
-          <p className="mt-2 text-sm text-[var(--gray-dark)]">
+    <main className="room--office min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s5)] text-[color:var(--bone-200)] sm:px-[var(--s5)]">
+      <div className="mx-auto w-full max-w-4xl space-y-[var(--s5)]">
+        <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <p className="t-eyebrow">Gym Admin PIN Control</p>
+          <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Activate or Reset Athlete PIN</h1>
+          <p className="t-body mt-[var(--s3)]">
             Select an athlete, choose activate or reset, then save a 6-digit PIN. Stored PIN values are never displayed.
           </p>
         </header>
 
-        <div className="grid gap-5 lg:grid-cols-[1.1fr_1fr]">
-          <section className="rounded-2xl border border-[rgba(0,0,0,0.14)] bg-white p-4 shadow-[var(--shadow-sm)]">
-            <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--gray-dark)]">Athlete / User List</h2>
+        <div className="grid gap-[var(--s5)] lg:grid-cols-[1.618fr_1fr]">
+          <section className="frame">
+            <span className="rivet rivet--tl" />
+            <span className="rivet rivet--tr" />
+            <span className="rivet rivet--bl" />
+            <span className="rivet rivet--br" />
+            <div className="frame-in mat-leather p-[var(--s4)]">
+            <h2 className="t-eyebrow">Athlete / User List</h2>
             {loading ? (
-              <p className="mt-4 text-sm">Loading athletes...</p>
+              <p className="t-body mt-[var(--s4)]">Loading athletes...</p>
             ) : (
-              <ul className="mt-3 space-y-2">
+              <ul className="mt-[var(--s3)] space-y-[var(--s2)]">
                 {items.map((item) => {
                   const selected = selectedAthleteId === item.athlete_id;
                   const statusLabel = !item.account_id
@@ -214,32 +219,49 @@ function PinManagementPageContent() {
                       <button
                         type="button"
                         onClick={() => setSelectedAthleteId(item.athlete_id)}
-                        className={`w-full rounded-xl border px-3 py-3 text-left transition ${
+                        className={`w-full rounded-[var(--r-md)] border px-[var(--s3)] py-[var(--s3)] text-left transition ${
                           selected
-                            ? 'border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_8%,white)]'
-                            : 'border-[rgba(0,0,0,0.14)] bg-white hover:border-[rgba(0,0,0,0.3)]'
+                            ? 'mat-leather--raised border-[color:var(--brass-400)] bg-[rgba(212,175,74,.07)]'
+                            : 'mat-leather border-[color:var(--hide-700)] hover:border-[color:var(--brass-700)]'
                         }`}
                       >
-                        <p className="text-sm font-semibold">{item.full_name}</p>
-                        <p className="mt-1 text-xs text-[var(--gray-dark)]">Athlete ID: {item.athlete_id}</p>
-                        <p className="mt-1 text-xs text-[var(--gray-dark)]">Account ID: {item.account_id ?? 'Unlinked'}</p>
-                        <p className="mt-1 text-xs font-semibold uppercase tracking-[0.1em] text-[color:var(--brass-800)]">{statusLabel}</p>
+                        <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{item.full_name}</p>
+                        <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">Athlete ID: {item.athlete_id}</p>
+                        <p className="t-data mt-[var(--s1)] text-[color:var(--bone-400)]">Account ID: {item.account_id ?? 'Unlinked'}</p>
+                        <p className="mt-[var(--s2)]">
+                          {/* Credential states ride the badge ladder: a key
+                              that works is cleared, a pending or missing key
+                              is restricted, a switched-off account is locked. */}
+                          <span
+                            className={`badge ${
+                              statusLabel === 'Active'
+                                ? 'badge--cleared'
+                                : statusLabel === 'Inactive'
+                                  ? 'badge--locked'
+                                  : 'badge--restricted'
+                            }`}
+                          >
+                            <i>{statusLabel === 'Active' ? '✓' : statusLabel === 'Inactive' ? '✕' : '▲'}</i>
+                            {statusLabel}
+                          </span>
+                        </p>
                       </button>
                     </li>
                   );
                 })}
-                {items.length === 0 && <li className="text-sm text-[var(--gray-dark)]">No athletes found in this organization.</li>}
+                {items.length === 0 && <li className="t-body">No athletes found in this organization.</li>}
               </ul>
             )}
+            </div>
           </section>
 
-          <section className="rounded-2xl border border-[rgba(0,0,0,0.14)] bg-white p-4 shadow-[var(--shadow-sm)]">
-            <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--gray-dark)]">PIN Action</h2>
-            <form className="mt-3 space-y-3 border-b border-[rgba(0,0,0,0.1)] pb-4" onSubmit={submitCreateAccount}>
-              <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--gray-dark)]">Create Athlete Account</h3>
-              <p className="text-xs text-[var(--gray-dark)]">Creates a pending account for the selected athlete. Then run Activate PIN.</p>
-              <div>
-                <label htmlFor="create-account-id" className="block text-xs font-semibold uppercase tracking-[0.15em] text-[var(--gray-dark)]">
+          <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s4)]">
+            <h2 className="t-eyebrow">PIN Action</h2>
+            <form className="mt-[var(--s3)] space-y-[var(--s3)] border-b border-[color:var(--hide-600)] pb-[var(--s4)]" onSubmit={submitCreateAccount}>
+              <h3 className="t-command" style={{ fontSize: 'var(--t-sm)' }}>Create Athlete Account</h3>
+              <p className="t-muted">Creates a pending account for the selected athlete. Then run Activate PIN.</p>
+              <div className="field">
+                <label htmlFor="create-account-id" className="t-label">
                   New Account ID
                 </label>
                 <input
@@ -247,50 +269,52 @@ function PinManagementPageContent() {
                   type="text"
                   value={createAccountId}
                   onChange={(event) => setCreateAccountId(event.target.value)}
-                  className="mt-1 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] px-3"
+                  className="input font-mono"
                   placeholder="athlete-account-id"
                 />
               </div>
 
-              {createError && <p className="rounded-lg border border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_6%,white)] px-3 py-2 text-sm" role="alert">{createError}</p>}
-              {createSuccess && <p className="rounded-lg border border-[rgba(16,120,40,0.5)] bg-[rgba(16,120,40,0.1)] px-3 py-2 text-sm">{createSuccess}</p>}
+              {createError && <p className="rounded-[var(--r-md)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--locked-ink)]" role="alert">{createError}</p>}
+              {createSuccess && <p className="rounded-[var(--r-md)] border border-[color:var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_16%,var(--hide-950))] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--cleared-ink)]">✓ {createSuccess}</p>}
 
               <button
                 type="submit"
                 disabled={createBusy || !selectedAthleteId || !!selectedItem?.account_id}
-                className="min-h-[48px] w-full rounded-xl border border-[var(--black)] bg-[var(--black)] px-4 text-sm font-black uppercase tracking-[0.12em] text-white disabled:cursor-not-allowed disabled:opacity-50"
+                className="btn btn--ghost w-full disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {createBusy ? 'Creating...' : 'Create Athlete Account'}
               </button>
             </form>
 
-            <form className="mt-3 space-y-3" onSubmit={submitPinAction}>
-              <fieldset className="space-y-2">
-                <legend className="text-xs font-semibold uppercase tracking-[0.15em] text-[var(--gray-dark)]">Action</legend>
-                <label className="flex items-center gap-2 text-sm">
+            <form className="mt-[var(--s3)] space-y-[var(--s3)]" onSubmit={submitPinAction}>
+              <fieldset className="space-y-[var(--s2)]">
+                <legend className="t-label">Action</legend>
+                <label className="flex items-center gap-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-200)]">
                   <input
                     type="radio"
                     name="pin-mode"
                     value="activate"
                     checked={mode === 'activate'}
                     onChange={() => setMode('activate')}
+                    className="accent-[var(--brass-500)]"
                   />
                   Activate PIN
                 </label>
-                <label className="flex items-center gap-2 text-sm">
+                <label className="flex items-center gap-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-200)]">
                   <input
                     type="radio"
                     name="pin-mode"
                     value="reset"
                     checked={mode === 'reset'}
                     onChange={() => setMode('reset')}
+                    className="accent-[var(--brass-500)]"
                   />
                   Reset PIN
                 </label>
               </fieldset>
 
-              <div>
-                <label htmlFor="pin-value" className="block text-xs font-semibold uppercase tracking-[0.15em] text-[var(--gray-dark)]">
+              <div className="field">
+                <label htmlFor="pin-value" className="t-label">
                   Enter PIN
                 </label>
                 <input
@@ -301,14 +325,14 @@ function PinManagementPageContent() {
                   value={pin}
                   maxLength={DEFAULT_PIN_LENGTH}
                   onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))}
-                  className="mt-1 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] px-3"
+                  className="input font-mono"
                   placeholder="6 digits"
                   autoComplete="new-password"
                 />
               </div>
 
-              <div>
-                <label htmlFor="pin-confirm" className="block text-xs font-semibold uppercase tracking-[0.15em] text-[var(--gray-dark)]">
+              <div className="field">
+                <label htmlFor="pin-confirm" className="t-label">
                   Confirm PIN
                 </label>
                 <input
@@ -319,19 +343,19 @@ function PinManagementPageContent() {
                   value={confirmPin}
                   maxLength={DEFAULT_PIN_LENGTH}
                   onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))}
-                  className="mt-1 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] px-3"
+                  className="input font-mono"
                   placeholder="Repeat 6 digits"
                   autoComplete="new-password"
                 />
               </div>
 
-              {error && <p className="rounded-lg border border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_6%,white)] px-3 py-2 text-sm" role="alert">{error}</p>}
-              {success && <p className="rounded-lg border border-[rgba(16,120,40,0.5)] bg-[rgba(16,120,40,0.1)] px-3 py-2 text-sm">{success}</p>}
+              {error && <p className="rounded-[var(--r-md)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--locked-ink)]" role="alert">{error}</p>}
+              {success && <p className="rounded-[var(--r-md)] border border-[color:var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_16%,var(--hide-950))] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--cleared-ink)]">✓ {success}</p>}
 
               <button
                 type="submit"
                 disabled={saving || !selectedItem?.account_id}
-                className="min-h-[50px] w-full rounded-xl border border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 text-sm font-black uppercase tracking-[0.16em] text-white disabled:cursor-not-allowed disabled:opacity-50"
+                className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {saving ? 'Saving...' : mode === 'activate' ? 'Activate PIN' : 'Reset PIN'}
               </button>
@@ -352,18 +376,15 @@ function PinManagementPageContent() {
  */
 function WrongRoleNotice() {
   return (
-    <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
-      <div className="mx-auto max-w-xl space-y-5 text-center">
-        <p className="text-xs font-mono uppercase tracking-[0.3em] text-[color:var(--brass-800)]">Different Console</p>
-        <h1 className="font-display text-3xl font-black">Athlete PINs are managed per gym</h1>
-        <p className="text-sm leading-7 text-[var(--gray-dark)]">
+    <main className="room--office grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
+      <div className="mx-auto max-w-xl space-y-[var(--s5)] text-center">
+        <p className="t-eyebrow">Different Console</p>
+        <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>Athlete PINs are managed per gym</h1>
+        <p className="t-body">
           This console issues and resets the credentials of individual athletes, which belongs to that
           gym&apos;s administrator. As platform owner you create organizations and appoint their admins.
         </p>
-        <Link
-          href="/admin/platform"
-          className="inline-flex min-h-[44px] items-center rounded-full border-2 border-[var(--black)] bg-white px-5 text-sm font-bold uppercase tracking-[0.1em]"
-        >
+        <Link href="/admin/platform" className="btn btn--ghost">
           Platform console
         </Link>
       </div>

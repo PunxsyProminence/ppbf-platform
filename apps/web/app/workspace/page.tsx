@@ -130,76 +130,80 @@ function WorkspaceContent() {
   const roleLabel = session.role ? ROLE_LABELS[session.role] ?? session.role : '';
 
   return (
-    <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
-      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-8 px-6 py-10 lg:px-10">
-        <header className="flex flex-col gap-4 border-b-[3px] border-[var(--black)] pb-6 md:flex-row md:items-end md:justify-between">
-          <div className="space-y-3">
-            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[color:var(--brass-800)]">Workspace</p>
-            <h1 className="font-display text-4xl font-black tracking-tight md:text-5xl">
+    /* Law 6: a staff/volunteer workspace is a staff surface -- ink leather,
+       the front-office room, not the family canvas it wore before. */
+    <main className="room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+      <div className="mx-auto flex min-h-screen w-full max-w-[1200px] flex-col gap-[var(--s6)] px-[var(--s5)] py-[var(--s6)]">
+        <header className="flex flex-col gap-[var(--s4)] border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)] md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="t-eyebrow">Workspace</p>
+            <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-2xl)' }}>
               {roleLabel ? `${roleLabel} Workspace` : 'Workspace'}
             </h1>
-            <p className="max-w-3xl text-base leading-7 text-[var(--gray-dark)]">
+            <p className="t-body mt-[var(--s3)] max-w-[64ch]">
               Your account is active at the gym. This page holds the notices you can see and the
               surfaces your role can open.
             </p>
           </div>
-          <div className="flex flex-col items-start gap-3 md:items-end">
+          <div className="flex flex-col items-start gap-[var(--s3)] md:items-end">
             <ShadowChatButton context="Workspace" />
             <button
               type="button"
               onClick={() => void handleSignOut()}
               disabled={signingOut}
-              className="min-h-[44px] border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)] disabled:opacity-50"
+              className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
             >
               {signingOut ? 'Signing out...' : 'Sign out'}
             </button>
           </div>
         </header>
 
-        <section className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-sm)]">
-          <h2 className="font-display text-xl font-black">Your account</h2>
-          <dl className="mt-4 grid gap-4 md:grid-cols-3">
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Your Account</h2>
+          {/* Law 4: account identity is an auditable record -- mono voice. */}
+          <dl className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-3">
             <div>
-              <dt className="text-[11px] font-mono uppercase tracking-[0.15em] text-[var(--gray-dark)]">Signed in as</dt>
-              <dd className="mt-1 break-all text-sm font-bold text-[var(--black)]">
+              <dt className="t-label">Signed in as</dt>
+              <dd className="t-data mt-[var(--s2)] break-all">
                 {session.loading ? 'Loading...' : session.accountId ?? 'Unknown'}
               </dd>
             </div>
             <div>
-              <dt className="text-[11px] font-mono uppercase tracking-[0.15em] text-[var(--gray-dark)]">Role</dt>
-              <dd className="mt-1 text-sm font-bold text-[var(--black)]">
+              <dt className="t-label">Role</dt>
+              <dd className="t-data mt-[var(--s2)]">
                 {session.loading ? 'Loading...' : roleLabel || 'Unknown'}
               </dd>
             </div>
             <div>
-              <dt className="text-[11px] font-mono uppercase tracking-[0.15em] text-[var(--gray-dark)]">Organization</dt>
-              <dd className="mt-1 break-all text-sm font-bold text-[var(--black)]">
+              <dt className="t-label">Organization</dt>
+              <dd className="t-data mt-[var(--s2)] break-all">
                 {session.loading ? 'Loading...' : session.organizationId ?? 'Unknown'}
               </dd>
             </div>
           </dl>
         </section>
 
-        <section className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-sm)]">
-          <h2 className="font-display text-xl font-black">Gym notices</h2>
-          <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Gym Notices</h2>
+          <p className="t-muted mt-[var(--s2)]">
             Posted by coaches, admins, and the board for your organization.
           </p>
 
           {noticesLoading ? (
-            <p className="mt-4 font-mono text-xs uppercase tracking-[0.12em] text-[var(--gray-dark)]">Loading notices...</p>
+            <p className="t-label mt-[var(--s4)]">Loading notices...</p>
           ) : noticesError ? (
-            <p role="status" className="mt-4 border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-2 text-sm text-[var(--black)]">
+            <p role="status" className="t-body mt-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.28)] bg-[rgba(0,0,0,.26)] px-[var(--s4)] py-[var(--s3)]">
               {noticesError}
             </p>
           ) : notices.length === 0 ? (
-            <p className="mt-4 text-sm text-[var(--gray-dark)]">No notices have been posted yet.</p>
+            <p className="t-muted mt-[var(--s4)]">No notices have been posted yet.</p>
           ) : (
-            <ul className="mt-4 space-y-3">
+            <ul className="mt-[var(--s4)] space-y-[var(--s3)]">
+              {/* Each notice is a paper slip tacked to the leather board. */}
               {notices.map((notice) => (
-                <li key={notice.announcement_id} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-                  <p className="text-sm leading-6 text-[var(--black)]">{notice.message}</p>
-                  <p className="mt-2 text-[11px] font-mono uppercase tracking-[0.12em] text-[var(--gray-dark)]">
+                <li key={notice.announcement_id} className="mat-paper rounded-[var(--r-sm)] p-[var(--s4)]">
+                  <p className="t-typed text-[length:var(--t-sm)] leading-relaxed">{notice.message}</p>
+                  <p className="mt-[var(--s2)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.12em] text-[color:var(--hide-600)]">
                     {notice.author_name} · {notice.author_role} · {formatNoticeDate(notice.created_at)}
                   </p>
                 </li>
@@ -208,19 +212,16 @@ function WorkspaceContent() {
           )}
         </section>
 
-        <section className="space-y-4">
-          <h2 className="font-display text-xl font-black">What you can open</h2>
-          <div className="grid gap-4 md:grid-cols-2">
+        <section className="space-y-[var(--s4)]">
+          <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>What You Can Open</h2>
+          <div className="grid gap-[var(--s4)] md:grid-cols-2">
             {WORKSPACE_SURFACES.map((surface) => (
-              <article key={surface.href} className="flex flex-col justify-between border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-sm)]">
+              <article key={surface.href} className="mat-leather--raised flex flex-col justify-between rounded-[var(--r-lg)] p-[var(--s5)]">
                 <div>
-                  <h3 className="font-display text-lg font-black text-[var(--black)]">{surface.label}</h3>
-                  <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">{surface.description}</p>
+                  <h3 className="t-command" style={{ fontSize: 'var(--t-sm)' }}>{surface.label}</h3>
+                  <p className="t-body mt-[var(--s3)]">{surface.description}</p>
                 </div>
-                <Link
-                  href={surface.href}
-                  className="mt-4 inline-flex min-h-[44px] items-center justify-center border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--olive-dark)] hover:text-[var(--white)]"
-                >
+                <Link href={surface.href} className="btn btn--ghost mt-[var(--s4)] self-start">
                   Open {surface.label}
                 </Link>
               </article>
@@ -228,9 +229,9 @@ function WorkspaceContent() {
           </div>
         </section>
 
-        <section className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan)] p-5">
-          <h2 className="font-display text-xl font-black">Outside this role</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--gray-dark)]">
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
+          <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Outside This Role</h2>
+          <p className="t-body mt-[var(--s3)] max-w-[64ch]">
             Athlete records, class scheduling and attendance, video, intake review, and the admin and
             board consoles are not part of staff or volunteer access. If your work needs one of them,
             ask an organization admin to change your role rather than opening a page that will refuse

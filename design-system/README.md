@@ -279,6 +279,15 @@ Five rules, stricter than the visual system's:
 5. **One at a time, and short.** Nothing runs past ~1.2s; an overlapping call is dropped rather
    than stacked.
 
+**In the app.** `apps/web/components/useGymSound.ts` is the only seam: one engine shared through
+`useSyncExternalStore`, SSR-safe, and silent rather than broken when a browser or a locked-down
+kiosk refuses to start audio. The opt-in lives on the session bar (`SoundToggle`), which names four
+states rather than two — a preference that has not met a user gesture yet is "waiting", not "on".
+Three voices are wired, each beside a visible change that already carries the whole message:
+`accept` on a check-in the server stored, `bell` on crossing a training-card milestone, `stamp` on
+the board gate's refusal stamp appearing. `latch` confirms the toggle itself. Nothing is bound to
+hover, focus, or a keystroke.
+
 ---
 
 ## UX Patterns — the five

@@ -94,15 +94,16 @@ silently emits neither. Use `text-[length:var(--x)]` / `text-[color:var(--x)]`.
 1. Legacy files under `apps/web/src` are out-of-band and must not drive visual
    decisions.
 2. Active surfaces live under `apps/web/app` and `apps/web/components`.
-3. **The migration is partial, and roughly a third done.** Converted so far:
-   `GlobalRoleHeader`, `/`, `/login`, `/schedule`, `/operations`, `/admin`,
-   `/admin/shadow`, and every shared component under `apps/web/components`.
-   The other 58 page files are not. An unconverted page is not a precedent.
-4. **266 `--red-primary` uses remain**, and that token aliases to `--locked` —
-   the safety gate's red. Every instance examined so far was doing chrome
-   work: eyebrows, selected tabs, caveat notes, a *success* banner, a "not yet
-   implemented" panel. Each one spends a little of the signal that means *this
-   athlete may not participate*. Treat these as the highest-priority drift.
+3. **The migration is complete** as of the golden-era pass (Aug 2026): every
+   route page and shared component under `apps/web/app` and
+   `apps/web/components` speaks the design system. `FeatureSurface` — the old
+   cream scaffold shell — is deleted. New work starts from the contract, not
+   from git archaeology.
+4. **`--red-primary` chrome misuse is purged.** That token aliases to
+   `--locked` — the safety gate's red — and it no longer paints tabs, borders,
+   eyebrows, banners, or "planned" markers anywhere. Planned/not-implemented
+   markers are `.stamp--brass`. Any new saturated red must be the safety gate
+   speaking. Regressions here are the highest-priority drift.
 
 ## Checking your work
 

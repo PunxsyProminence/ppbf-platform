@@ -337,67 +337,69 @@ function BoardSeatsConsole() {
   }
 
   return (
-    <main className="min-h-screen bg-[var(--canvas-tan)] px-4 py-8 text-[var(--black)] sm:px-6">
-      <div className="mx-auto w-full max-w-5xl space-y-6">
-        <header className="rounded-2xl border border-[rgba(0,0,0,0.16)] bg-white p-6 shadow-[var(--shadow-md)]">
-          <div className="flex flex-wrap items-start justify-between gap-4">
+    <main className="room--board min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s6)] text-[color:var(--bone-200)] sm:px-[var(--s5)]">
+      <div className="mx-auto w-full max-w-5xl space-y-[var(--s5)]">
+        <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+          <div className="flex flex-wrap items-start justify-between gap-[var(--s4)]">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--brass-800)]">Governance</p>
-              <h1 className="mt-2 font-display text-3xl font-black tracking-tight">Board Seats</h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--gray-dark)]">
+              <p className="t-eyebrow">Governance</p>
+              <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Board Seats</h1>
+              <p className="t-body mt-[var(--s3)] max-w-2xl">
                 Who holds each of the eight governing seats. {filledSeatCount} of {boardSeatConfigs.length} filled.
                 {organizationId && (
                   <>
-                    {' '}Gym: <span className="font-mono font-semibold text-[var(--black)]">{organizationId}</span>
+                    {' '}Gym: <span className="t-data text-[color:var(--bone-100)]">{organizationId}</span>
                   </>
                 )}
               </p>
             </div>
-            <Link
-              href="/admin"
-              className="inline-flex min-h-[44px] items-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-5 text-sm font-bold uppercase tracking-[0.1em] transition hover:bg-[var(--canvas-tan)]"
-            >
+            <Link href="/admin" className="btn btn--ghost">
               Admin Home
             </Link>
           </div>
         </header>
 
         {error && (
-          <p role="alert" className="rounded-xl border border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_6%,white)] px-4 py-3 text-sm font-semibold text-[var(--safety-locked)]">
+          <p role="alert" className="rounded-[var(--r-md)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-[var(--s4)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[color:var(--locked-ink)]">
             {error}
           </p>
         )}
         {notice && (
-          <p className="rounded-xl border border-[rgba(16,120,40,0.5)] bg-[rgba(16,120,40,0.08)] px-4 py-3 text-sm font-semibold text-[var(--cleared-deep)]">
-            {notice}
+          <p className="rounded-[var(--r-md)] border border-[color:var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_16%,var(--hide-950))] px-[var(--s4)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[color:var(--cleared-ink)]">
+            ✓ {notice}
           </p>
         )}
 
         {rosterAvailable && !canManage && (
-          <p className="rounded-xl border border-[rgba(0,0,0,0.14)] bg-white px-4 py-3 text-sm leading-6 text-[var(--gray-dark)]">
+          <p className="mat-leather--raised rounded-[var(--r-md)] px-[var(--s4)] py-[var(--s3)] text-[length:var(--t-sm)] leading-6 text-[color:var(--bone-300)]">
             You can see the roster but not change it. Seats are assigned by a gym admin, or by the board member holding
             the President seat.
           </p>
         )}
 
-        <section className="overflow-hidden rounded-2xl border border-[rgba(0,0,0,0.14)] bg-white shadow-[var(--shadow-sm)]">
+        <section className="frame">
+          <span className="rivet rivet--tl" />
+          <span className="rivet rivet--tr" />
+          <span className="rivet rivet--bl" />
+          <span className="rivet rivet--br" />
+          <div className="frame-in mat-leather">
           {loading ? (
-            <p className="p-6 text-sm text-[var(--gray-dark)]">Loading the board roster...</p>
+            <p className="t-body p-[var(--s5)]">Loading the board roster...</p>
           ) : (
-            <ul className="divide-y divide-[rgba(0,0,0,0.08)]">
+            <ul className="divide-y divide-[color:var(--hide-700)]">
               {seatRoster.map(({ config, primary, additional }) => (
-                <li key={config.slug} className="px-4 py-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
+                <li key={config.slug} className="px-[var(--s4)] py-[var(--s4)]">
+                  <div className="flex flex-wrap items-start justify-between gap-[var(--s3)]">
                     <div className="min-w-0 flex-1">
-                      <p className="font-semibold">{config.seatLabel}</p>
+                      <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>{config.seatLabel}</p>
                       {primary ? (
-                        <p className="mt-1 text-sm">
-                          <span className="font-mono">{nameFor(primary.account_id)}</span>
-                          <span className="ml-2 text-xs font-bold uppercase tracking-[0.1em] text-[var(--cleared-deep)]">Holds the seat</span>
+                        <p className="mt-[var(--s2)] flex flex-wrap items-center gap-[var(--s2)]">
+                          <span className="t-data text-[color:var(--bone-100)]">{nameFor(primary.account_id)}</span>
+                          <span className="badge badge--cleared"><i>✓</i>Holds the seat</span>
                         </p>
                       ) : (
-                        <p className="mt-1 text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--brass-800)]">
-                          Unfilled
+                        <p className="mt-[var(--s2)]">
+                          <span className="badge badge--restricted"><i>▲</i>Unfilled</span>
                         </p>
                       )}
                     </div>
@@ -407,7 +409,7 @@ function BoardSeatsConsole() {
                         type="button"
                         disabled={busy}
                         onClick={() => void remove(config.slug, primary.account_id)}
-                        className="min-h-[44px] shrink-0 rounded-xl border-2 border-[var(--accent)] bg-white px-3 text-xs font-black uppercase tracking-[0.1em] text-[var(--accent-quiet)] disabled:opacity-50"
+                        className="btn btn--ghost shrink-0 disabled:opacity-50"
                       >
                         Remove
                       </button>
@@ -415,20 +417,20 @@ function BoardSeatsConsole() {
                   </div>
 
                   {additional.length > 0 && (
-                    <ul className="mt-3 space-y-2 border-l-2 border-[rgba(0,0,0,0.1)] pl-3">
+                    <ul className="mt-[var(--s3)] space-y-[var(--s2)] border-l-2 border-[color:var(--hide-600)] pl-[var(--s3)]">
                       {additional.map((holder) => (
-                        <li key={holder.account_id} className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="text-sm text-[var(--gray-dark)]">
-                            <span className="font-mono">{nameFor(holder.account_id)}</span>
-                            <span className="ml-2 text-xs uppercase tracking-[0.1em]">Additional holder</span>
+                        <li key={holder.account_id} className="flex flex-wrap items-center justify-between gap-[var(--s2)]">
+                          <p className="text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                            <span className="t-data">{nameFor(holder.account_id)}</span>
+                            <span className="t-label ml-[var(--s2)]">Additional holder</span>
                           </p>
                           {canManage && (
-                            <div className="flex flex-wrap gap-2">
+                            <div className="flex flex-wrap gap-[var(--s2)]">
                               <button
                                 type="button"
                                 disabled={busy}
                                 onClick={() => void handOver(config.slug, holder.account_id, true)}
-                                className="min-h-[44px] rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-xs font-bold uppercase tracking-[0.1em] disabled:opacity-50"
+                                className="btn btn--ghost disabled:opacity-50"
                               >
                                 {primary ? 'Hand Seat Over' : 'Give The Seat'}
                               </button>
@@ -436,7 +438,7 @@ function BoardSeatsConsole() {
                                 type="button"
                                 disabled={busy}
                                 onClick={() => void remove(config.slug, holder.account_id)}
-                                className="min-h-[44px] rounded-xl border border-[var(--accent)] bg-white px-3 text-xs font-bold uppercase tracking-[0.1em] text-[var(--accent-quiet)] disabled:opacity-50"
+                                className="btn btn--ghost disabled:opacity-50"
                               >
                                 Remove
                               </button>
@@ -450,25 +452,26 @@ function BoardSeatsConsole() {
               ))}
             </ul>
           )}
+          </div>
         </section>
 
         {canManage && (
-          <form onSubmit={assign} className="space-y-5 rounded-2xl border border-[rgba(0,0,0,0.14)] bg-white p-6 shadow-[var(--shadow-sm)]">
+          <form onSubmit={assign} className="mat-leather space-y-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]">
             <div>
-              <h2 className="text-lg font-black">Assign a seat</h2>
-              <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
+              <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Assign a seat</h2>
+              <p className="t-body mt-[var(--s3)]">
                 A seat has one officer of record and any number of additional holders. Seats carry governance
                 responsibility only — nothing here changes what a board member can see, which stays gym-wide figures.
               </p>
             </div>
 
-            <div>
-              <label htmlFor="seat" className="block text-sm font-semibold">Seat</label>
+            <div className="field">
+              <label htmlFor="seat" className="t-label">Seat</label>
               <select
                 id="seat"
                 value={draftSeat}
                 onChange={(event) => setDraftSeat(event.target.value as BoardSeatSlug)}
-                className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+                className="select"
               >
                 {seatRoster.map(({ config, primary }) => (
                   <option key={config.slug} value={config.slug}>
@@ -478,15 +481,15 @@ function BoardSeatsConsole() {
               </select>
             </div>
 
-            <div>
-              <label htmlFor="member" className="block text-sm font-semibold">Member</label>
+            <div className="field">
+              <label htmlFor="member" className="t-label">Member</label>
               {directoryAvailable ? (
                 <select
                   id="member"
                   required
                   value={draftAccountId}
                   onChange={(event) => setDraftAccountId(event.target.value)}
-                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+                  className="select"
                 >
                   <option value="">Choose a member...</option>
                   {memberOptions.map((member) => (
@@ -498,7 +501,7 @@ function BoardSeatsConsole() {
                 </select>
               ) : (
                 <>
-                  <p className="mt-1 text-xs text-[var(--gray-dark)]">
+                  <p className="t-muted mb-[var(--s2)]">
                     Type the sign-in ID of the board member taking the seat.
                   </p>
                   <input
@@ -508,16 +511,16 @@ function BoardSeatsConsole() {
                     value={draftAccountId}
                     onChange={(event) => setDraftAccountId(event.target.value.trim())}
                     placeholder="dana"
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+                    className="input font-mono"
                   />
                 </>
               )}
-              <p className="mt-2 text-xs text-[var(--gray-dark)]">
+              <p className="t-muted mt-[var(--s2)]">
                 Only an active board member of this gym can be seated. Someone new to the board gets their account on
                 the People page first.
               </p>
               {alreadyOnSeat && (
-                <p className="mt-2 rounded-xl border border-[rgba(0,0,0,0.16)] bg-[var(--canvas-tan-light)] px-3 py-2 text-xs font-semibold">
+                <p className="mat-leather--raised mt-[var(--s2)] rounded-[var(--r-md)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-xs)] font-semibold text-[color:var(--bone-200)]">
                   {nameFor(trimmedAccountId)} is already on {seatLabelFor(draftSeat)}. Use the buttons on that seat to
                   change how they hold it.
                 </p>
@@ -525,15 +528,15 @@ function BoardSeatsConsole() {
             </div>
 
             <fieldset>
-              <legend className="text-sm font-semibold">How do they hold it?</legend>
-              <div className="mt-2 space-y-2">
+              <legend className="t-label">How do they hold it?</legend>
+              <div className="mt-[var(--s2)] space-y-[var(--s2)]">
                 {ASSIGNMENT_KINDS.map((option) => (
                   <label
                     key={option.value}
-                    className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${
+                    className={`flex cursor-pointer items-start gap-[var(--s3)] rounded-[var(--r-md)] border p-[var(--s3)] transition ${
                       draftKind === option.value
-                        ? 'border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_5%,white)]'
-                        : 'border-[rgba(0,0,0,0.12)] hover:border-[rgba(0,0,0,0.3)]'
+                        ? 'mat-leather--raised border-[color:var(--brass-400)] bg-[rgba(212,175,74,.07)]'
+                        : 'mat-leather border-[color:var(--hide-700)] hover:border-[color:var(--brass-700)]'
                     }`}
                   >
                     <input
@@ -542,11 +545,11 @@ function BoardSeatsConsole() {
                       value={option.value}
                       checked={draftKind === option.value}
                       onChange={() => setDraftKind(option.value)}
-                      className="mt-1 accent-[var(--brass-600)]"
+                      className="mt-1 accent-[var(--brass-500)]"
                     />
                     <span>
-                      <span className="block text-sm font-semibold">{option.label}</span>
-                      <span className="mt-0.5 block text-xs text-[var(--gray-dark)]">{option.blurb}</span>
+                      <span className="block text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{option.label}</span>
+                      <span className="t-muted mt-[var(--s1)] block">{option.blurb}</span>
                     </span>
                   </label>
                 ))}
@@ -554,17 +557,17 @@ function BoardSeatsConsole() {
             </fieldset>
 
             {primaryConflict && currentPrimary && (
-              <div role="alert" className="space-y-3 rounded-xl border-2 border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_6%,white)] p-4">
-                <p className="text-sm font-semibold text-[var(--safety-locked)]">
-                  {seatLabelFor(draftSeat)} is held by {nameFor(currentPrimary.account_id)}. A seat has one officer of
+              <div role="alert" className="space-y-[var(--s3)] rounded-[var(--r-md)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] p-[var(--s4)]">
+                <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--locked-ink)]">
+                  ▲ {seatLabelFor(draftSeat)} is held by {nameFor(currentPrimary.account_id)}. A seat has one officer of
                   record, so this cannot be a second — choose which one you meant.
                 </p>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-[var(--s2)]">
                   <button
                     type="button"
                     disabled={busy}
                     onClick={() => void handOver(draftSeat, trimmedAccountId, false)}
-                    className="min-h-[44px] rounded-xl border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 text-xs font-black uppercase tracking-[0.1em] text-white disabled:opacity-50"
+                    className="btn disabled:opacity-50"
                   >
                     Hand The Seat Over
                   </button>
@@ -572,12 +575,12 @@ function BoardSeatsConsole() {
                     type="button"
                     disabled={busy}
                     onClick={() => setDraftKind('additional')}
-                    className="min-h-[44px] rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-4 text-xs font-bold uppercase tracking-[0.1em] disabled:opacity-50"
+                    className="btn btn--ghost disabled:opacity-50"
                   >
                     Add As Additional Holder
                   </button>
                 </div>
-                <p className="text-xs leading-5 text-[var(--gray-dark)]">
+                <p className="text-[length:var(--t-xs)] leading-5 text-[color:var(--bone-300)]">
                   Handing the seat over steps {nameFor(currentPrimary.account_id)} back to an additional holder in the
                   same action, so the seat is never held by two people at once.
                 </p>
@@ -587,7 +590,7 @@ function BoardSeatsConsole() {
             <button
               type="submit"
               disabled={busy || !canSubmit}
-              className="min-h-[50px] w-full rounded-xl border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy ? 'Saving...' : 'Assign Seat'}
             </button>
@@ -595,7 +598,7 @@ function BoardSeatsConsole() {
         )}
 
         {/* The one thing a governance surface must not imply. */}
-        <p className="rounded-2xl border border-[rgba(0,0,0,0.12)] bg-white px-5 py-4 text-xs leading-5 text-[var(--gray-dark)]">
+        <p className="mat-leather--raised t-muted rounded-[var(--r-lg)] px-[var(--s5)] py-[var(--s4)]">
           A board seat records an adult board member&apos;s appointment. It carries no athlete record and grants no
           access to one: the board role sees gym-wide figures, and any figure covering fewer than five athletes is
           withheld rather than shown.
@@ -603,10 +606,7 @@ function BoardSeatsConsole() {
 
         {session.role === 'board' && (
           <div>
-            <Link
-              href="/board"
-              className="inline-flex min-h-[44px] items-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-5 text-sm font-bold uppercase tracking-[0.1em] transition hover:bg-[var(--canvas-tan)]"
-            >
+            <Link href="/board" className="btn btn--ghost">
               Board Workspace
             </Link>
           </div>
