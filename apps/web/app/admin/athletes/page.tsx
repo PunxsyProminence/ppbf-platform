@@ -103,7 +103,7 @@ function WrongRoleNotice() {
   return (
     <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
       <div className="mx-auto max-w-xl space-y-5 text-center">
-        <p className="text-xs font-mono uppercase tracking-[0.3em] text-[var(--accent-quiet)]">Different Console</p>
+        <p className="text-xs font-mono uppercase tracking-[0.3em] text-[color:var(--brass-800)]">Different Console</p>
         <h1 className="font-display text-3xl font-black">Athlete records are managed per gym</h1>
         <p className="text-sm leading-7 text-[var(--gray-dark)]">
           This console corrects one organization&apos;s athlete records. As platform owner you create organizations
@@ -112,7 +112,7 @@ function WrongRoleNotice() {
         <div className="flex flex-wrap items-center justify-center gap-3">
           <Link
             href="/admin/organizations"
-            className="inline-flex min-h-[48px] items-center justify-center rounded-full border-2 border-[var(--accent)] bg-[var(--accent-strong)] px-6 text-sm font-black uppercase tracking-[0.12em] text-[var(--accent-ink)] transition hover:bg-[var(--red-highlight)]"
+            className="inline-flex min-h-[48px] items-center justify-center rounded-full border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-6 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-[var(--red-highlight)]"
           >
             Organization Provisioning
           </Link>
@@ -344,7 +344,7 @@ function AthleteRecordsConsoleContent() {
         <header className="rounded-2xl border border-[rgba(0,0,0,0.16)] bg-white p-6 shadow-[var(--shadow-md)]">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--accent-quiet)]">Athlete Records</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--brass-800)]">Athlete Records</p>
               <h1 className="mt-2 font-display text-3xl font-black tracking-tight">Correct An Athlete Record</h1>
               <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
                 Fix anything that was typed wrong when the athlete was added, reassign their coach, and mark an
@@ -386,14 +386,14 @@ function AthleteRecordsConsoleContent() {
             <p className="text-sm text-[var(--gray-dark)]">Loading your athlete records...</p>
           ) : rosterLoad === 'unavailable' ? (
             <div className="space-y-3">
-              <p className="text-sm font-semibold text-[var(--safety-locked)]">
+              <p className="text-sm font-semibold text-[color:var(--brass-800)]">
                 Your athlete records could not be read. That is a problem reaching the app, not a sign that your gym
                 has none, so nothing is listed below.
               </p>
               <button
                 type="button"
                 onClick={() => void load()}
-                className="min-h-[44px] rounded-xl border-2 border-[var(--accent)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[var(--accent-quiet)]"
+                className="min-h-[44px] rounded-xl border-2 border-[color:var(--brass-600)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[color:var(--brass-800)]"
               >
                 Try Again
               </button>
@@ -585,7 +585,7 @@ function AthleteRecordsConsoleContent() {
               <button
                 type="submit"
                 disabled={busy || !hasUnsavedEdits || !draftComplete}
-                className="min-h-[50px] w-full rounded-xl border-2 border-[var(--accent)] bg-[var(--accent-strong)] px-4 text-sm font-black uppercase tracking-[0.14em] text-[var(--accent-ink)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="min-h-[50px] w-full rounded-xl border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {busy ? 'Saving...' : hasUnsavedEdits ? 'Save Correction' : 'Nothing To Save'}
               </button>
@@ -624,7 +624,7 @@ function AthleteRecordsConsoleContent() {
                       type="button"
                       disabled={busy}
                       onClick={() => void toggleActive()}
-                      className="min-h-[48px] flex-1 rounded-xl border-2 border-[var(--accent)] bg-[var(--accent-strong)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[var(--accent-ink)] disabled:opacity-50"
+                      className="min-h-[48px] flex-1 rounded-xl border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 text-sm font-black uppercase tracking-[0.12em] text-white disabled:opacity-50"
                     >
                       {busy ? 'Saving...' : 'Yes, Save It'}
                     </button>

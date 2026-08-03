@@ -205,7 +205,7 @@ export default function PlatformConsole() {
     return (
       <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
         <div className="text-center">
-          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--accent-quiet)]">Checking Access</p>
+          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[color:var(--brass-800)]">Checking Access</p>
           <h1 className="mt-3 font-display text-2xl tracking-tight">Loading...</h1>
         </div>
       </main>
@@ -216,13 +216,13 @@ export default function PlatformConsole() {
     return (
       <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
         <div className="mx-auto max-w-2xl space-y-6 text-center">
-          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--safety-locked)]">Access Denied</p>
+          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[color:var(--brass-800)]">Access Denied</p>
           <h1 className="font-display text-3xl font-black">Platform Owner Access Required</h1>
           <p className="text-sm leading-7 text-[var(--gray-dark)]">
             This console is for PPBF platform administrators only.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
-            <Link href="/login" className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-[var(--accent-strong)] px-6 text-sm font-black uppercase tracking-[0.12em] text-[var(--accent-ink)] transition hover:bg-[var(--red-highlight)]">
+            <Link href="/login" className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-[var(--brass-800)] px-6 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-[var(--red-highlight)]">
               Sign In With Microsoft
             </Link>
             <Link href="/admin" className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-6 text-sm font-black uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]">
@@ -238,7 +238,7 @@ export default function PlatformConsole() {
     <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       <div className="mx-auto w-full max-w-3xl space-y-8 px-6 py-12 lg:px-10">
         <header className="space-y-4 rounded-[28px] border border-[rgba(0,0,0,0.14)] bg-white p-6 shadow-[var(--shadow-md)]">
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--accent-quiet)]">Platform Console</p>
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--brass-800)]">Platform Console</p>
           <h1 className="font-display text-4xl font-black">Omega</h1>
           <p className="text-base leading-7 text-[var(--gray-dark)]">
             View any gym individually here, or see every gym at once in the overview. Reaches across
@@ -341,7 +341,7 @@ export default function PlatformConsole() {
               type="button"
               disabled={isBusy || !selectedOrgId}
               onClick={() => void inviteStaff()}
-              className="h-11 w-full rounded-lg border-2 border-[var(--accent)] bg-[var(--accent-strong)] px-4 font-bold uppercase tracking-[0.1em] text-[var(--accent-ink)] transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-11 w-full rounded-lg border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isBusy ? 'Working...' : 'Send Invite'}
             </button>
@@ -373,7 +373,7 @@ export default function PlatformConsole() {
               type="button"
               disabled={isBusy || !selectedOrgId}
               onClick={() => void createAthleteShell()}
-              className="h-11 w-full rounded-lg border-2 border-[var(--accent)] bg-[var(--accent-strong)] px-4 font-bold uppercase tracking-[0.1em] text-[var(--accent-ink)] transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-11 w-full rounded-lg border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isBusy ? 'Working...' : 'Create Account Shell'}
             </button>

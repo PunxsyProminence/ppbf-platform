@@ -46,9 +46,9 @@ export default function SportsMedicinePage() {
     <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       <div className="mx-auto w-full max-w-6xl px-6 py-10 lg:px-10">
         <header className="space-y-3 border-b-[3px] border-[var(--black)] pb-6">
-          <p className="text-xs font-mono uppercase tracking-[0.18em] text-[var(--accent-quiet)]">Coach Workspace</p>
+          <p className="text-xs font-mono uppercase tracking-[0.18em] text-[color:var(--brass-800)]">Coach Workspace</p>
           <h1 className="font-display text-4xl font-black">Sports Medicine</h1>
-          <p className="text-sm font-mono uppercase tracking-[0.14em] text-[var(--accent-quiet)]">PLANNED | NOT YET IMPLEMENTED</p>
+          <p className="text-sm font-mono uppercase tracking-[0.14em] text-[color:var(--brass-800)]">PLANNED | NOT YET IMPLEMENTED</p>
           <p className="max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
             Front-end scaffold for future sports medicine workflows. No medical automation, diagnosis logic, or backend processing is implemented.
           </p>

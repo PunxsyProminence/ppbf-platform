@@ -238,7 +238,7 @@ function RabbitHoleAuthoringPage() {
     <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       <div className="mx-auto w-full max-w-6xl px-6 py-10 lg:px-10">
         <header className="space-y-3 border-b-[3px] border-[var(--black)] pb-6">
-          <p className="text-xs font-mono uppercase tracking-[0.18em] text-[var(--accent-quiet)]">Gym Coaching</p>
+          <p className="text-xs font-mono uppercase tracking-[0.18em] text-[color:var(--brass-800)]">Gym Coaching</p>
           <h1 className="font-display text-4xl font-black">Rabbit Holes</h1>
           <p className="max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
             A rabbit hole is a concept worth understanding and something to go and do with it. Pick the term it is
@@ -365,7 +365,7 @@ function RabbitHoleAuthoringPage() {
           >
             {isPublishing ? 'Publishing...' : 'Publish'}
           </button>
-          {message ? <p className="text-sm font-semibold text-[var(--black)]">{message}</p> : null}
+          {message ? <p className="text-sm font-semibold text-[color:var(--brass-800)]">{message}</p> : null}
         </section>
 
         <section className="mt-6 space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
@@ -386,7 +386,7 @@ function RabbitHoleAuthoringPage() {
                     <span className={`border-2 px-2 py-0.5 text-[10px] font-mono font-bold uppercase ${STATUS_TONE[lesson.status]}`}>
                       {STATUS_LABELS[lesson.status]}
                     </span>
-                    <span className="text-xs font-mono uppercase tracking-[0.12em] text-[var(--accent-quiet)]">
+                    <span className="text-xs font-mono uppercase tracking-[0.12em] text-[color:var(--brass-800)]">
                       {anchorLabel(lesson.anchor_type, lesson.anchor_key)}
                     </span>
                     <span className="text-xs font-mono uppercase tracking-[0.12em] text-[var(--gray-dark)]">
@@ -396,7 +396,7 @@ function RabbitHoleAuthoringPage() {
                   <p className="mt-2 text-sm font-semibold leading-6 text-[var(--black)]">{lesson.title}</p>
                   <p className="mt-1 text-sm leading-6 text-[var(--gray-dark)]">{lesson.concept}</p>
                   {lesson.homework ? (
-                    <p className="mt-2 border-l-2 border-[var(--accent)] pl-2 text-sm leading-6 text-[var(--gray-dark)]">
+                    <p className="mt-2 border-l-2 border-[color:var(--brass-600)] pl-2 text-sm leading-6 text-[var(--gray-dark)]">
                       Homework: {lesson.homework}
                     </p>
                   ) : null}

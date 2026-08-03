@@ -28,7 +28,7 @@ export default function SetupWizard() {
       <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
         <div className="mx-auto w-full max-w-3xl space-y-6 px-6 py-12 lg:px-10">
           <header className="rounded-[28px] border border-[rgba(0,0,0,0.14)] bg-white p-6 shadow-[var(--shadow-md)]">
-            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--accent-quiet)]">Setup Wizard</p>
+            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--brass-800)]">Setup Wizard</p>
             <h1 className="mt-2 font-display text-3xl font-black">Test Wizard Disabled</h1>
             <p className="mt-3 text-sm leading-6 text-[var(--gray-dark)]">
               This unauthenticated simulation route is disabled by default. Set NEXT_PUBLIC_PPBF_ENABLE_TEST_WIZARD=true only in controlled non-production environments.
@@ -130,7 +130,7 @@ function SetupWizardContent() {
 
         {/* Header */}
         <header className="space-y-4 rounded-[28px] border border-[rgba(0,0,0,0.14)] bg-white p-6 shadow-[var(--shadow-md)]">
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--accent-quiet)]">Setup Wizard</p>
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--brass-800)]">Setup Wizard</p>
           <h1 className="font-display text-4xl font-black">Get Your Gym Online</h1>
           <p className="text-base leading-7 text-[var(--gray-dark)]">
             Follow these 3 simple steps to set up your gym in PPBF and start managing athletes.
@@ -144,15 +144,15 @@ function SetupWizardContent() {
               <div
                 className={`flex h-10 w-10 items-center justify-center rounded-full border-2 font-bold transition ${
                   s < step
-                    ? 'border-[var(--accent)] bg-[var(--accent-strong)] text-[var(--accent-ink)]'
+                    ? 'border-[color:var(--brass-600)] bg-[var(--brass-800)] text-white'
                     : s === step
-                      ? 'border-[var(--accent)] bg-white text-[var(--accent-quiet)]'
+                      ? 'border-[color:var(--brass-600)] bg-white text-[color:var(--brass-800)]'
                       : 'border-[rgba(0,0,0,0.14)] bg-white text-[var(--gray-dark)]'
                 }`}
               >
                 {s < step ? '✓' : s}
               </div>
-              {s < 3 && <div className={`flex-1 h-1 rounded ${s < step ? 'bg-[var(--accent-strong)]' : 'bg-[rgba(0,0,0,0.08)]'}`} />}
+              {s < 3 && <div className={`flex-1 h-1 rounded ${s < step ? 'bg-[var(--brass-800)]' : 'bg-[rgba(0,0,0,0.08)]'}`} />}
             </div>
           ))}
         </div>
@@ -236,7 +236,7 @@ function SetupWizardContent() {
                     setStep(2);
                   }
                 }}
-                className="h-11 w-full rounded-lg border-2 border-[var(--accent)] bg-[var(--accent-strong)] px-4 font-bold uppercase tracking-[0.1em] text-[var(--accent-ink)] transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="h-11 w-full rounded-lg border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isBusy ? 'Creating...' : 'Create Gym & Continue'}
               </button>
@@ -309,7 +309,7 @@ function SetupWizardContent() {
                     setStep(3);
                   }
                 }}
-                className="h-11 w-full rounded-lg border-2 border-[var(--accent)] bg-[var(--accent-strong)] px-4 font-bold uppercase tracking-[0.1em] text-[var(--accent-ink)] transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="h-11 w-full rounded-lg border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isBusy ? 'Creating...' : 'Create Admin Account & Continue'}
               </button>
@@ -334,7 +334,7 @@ function SetupWizardContent() {
             <div className="mt-6 space-y-4">
               <div className="space-y-3">
                 {gymCapabilities.map(({ id, label, description }) => (
-                  <label key={id} className="flex items-start gap-3 rounded-lg border border-[rgba(0,0,0,0.12)] bg-[var(--canvas-tan-light)] p-4 cursor-pointer hover:border-[var(--accent)] transition">
+                  <label key={id} className="flex items-start gap-3 rounded-lg border border-[rgba(0,0,0,0.12)] bg-[var(--canvas-tan-light)] p-4 cursor-pointer hover:border-[color:var(--brass-600)] transition">
                     <input
                       type="checkbox"
                       checked={gymCapabilityAccess[id] ?? false}
@@ -344,7 +344,7 @@ function SetupWizardContent() {
                           [id]: e.target.checked,
                         })
                       }
-                      className="mt-1 h-5 w-5 cursor-pointer accent-[var(--accent-quiet)]"
+                      className="mt-1 h-5 w-5 cursor-pointer accent-[var(--brass-600)]"
                     />
                     <div className="flex-1">
                       <p className="font-semibold text-[var(--black)]">{label}</p>
@@ -364,7 +364,7 @@ function SetupWizardContent() {
                     setStep(4);
                   }
                 }}
-                className="h-11 w-full rounded-lg border-2 border-[var(--accent)] bg-[var(--accent-strong)] px-4 font-bold uppercase tracking-[0.1em] text-[var(--accent-ink)] transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="h-11 w-full rounded-lg border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isBusy ? 'Saving...' : 'Save & Complete Setup'}
               </button>

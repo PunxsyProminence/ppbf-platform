@@ -167,7 +167,7 @@ function WrongRoleNotice() {
   return (
     <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
       <div className="mx-auto max-w-xl space-y-5 text-center">
-        <p className="text-xs font-mono uppercase tracking-[0.3em] text-[var(--accent-quiet)]">Different Console</p>
+        <p className="text-xs font-mono uppercase tracking-[0.3em] text-[color:var(--brass-800)]">Different Console</p>
         <h1 className="font-display text-3xl font-black">People is managed per gym</h1>
         <p className="text-sm leading-7 text-[var(--gray-dark)]">
           This console belongs to a gym admin — it manages one organization&apos;s coaches, staff, and athletes. As
@@ -176,7 +176,7 @@ function WrongRoleNotice() {
         <div className="flex flex-wrap items-center justify-center gap-3">
           <Link
             href="/admin/organizations"
-            className="inline-flex min-h-[48px] items-center justify-center rounded-full border-2 border-[var(--accent)] bg-[var(--accent-strong)] px-6 text-sm font-black uppercase tracking-[0.12em] text-[var(--accent-ink)] transition hover:bg-[var(--red-highlight)]"
+            className="inline-flex min-h-[48px] items-center justify-center rounded-full border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-6 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-[var(--red-highlight)]"
           >
             Organization Provisioning
           </Link>
@@ -672,7 +672,7 @@ function PeopleConsoleContent() {
         <header className="rounded-2xl border border-[rgba(0,0,0,0.16)] bg-white p-6 shadow-[var(--shadow-md)]">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--accent-quiet)]">People</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--brass-800)]">People</p>
               <h1 className="mt-2 font-display text-3xl font-black tracking-tight">Manage Your Gym</h1>
               <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
                 Add coaches and staff, and create athlete sign-ins.
@@ -709,7 +709,7 @@ function PeopleConsoleContent() {
             for everyone and can be re-read at any time, so this panel is a
             convenience rather than a last chance. */}
         {createdAthlete && (
-          <section className="rounded-2xl border-2 border-[var(--accent)] bg-white p-5 shadow-[var(--shadow-md)]">
+          <section className="rounded-2xl border-2 border-[color:var(--brass-600)] bg-white p-5 shadow-[var(--shadow-md)]">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-black">{createdAthlete.accountId} can sign in now</h2>
@@ -768,7 +768,7 @@ function PeopleConsoleContent() {
               onClick={() => setTab(key)}
               className={`min-h-[44px] flex-1 rounded-xl px-4 text-sm font-bold uppercase tracking-[0.1em] transition ${
                 tab === key
-                  ? 'bg-[var(--accent-strong)] text-[var(--accent-ink)]'
+                  ? 'bg-[var(--brass-800)] text-white'
                   : 'bg-transparent text-[var(--gray-dark)] hover:bg-[var(--canvas-tan)]'
               }`}
             >
@@ -856,7 +856,7 @@ function PeopleConsoleContent() {
                               status.tone === 'ok'
                                 ? 'text-[var(--cleared-deep)]'
                                 : status.tone === 'pending'
-                                  ? 'text-[var(--accent-quiet)]'
+                                  ? 'text-[color:var(--brass-800)]'
                                   : 'text-[var(--gray-dark)]'
                             }`}
                           >
@@ -929,7 +929,7 @@ function PeopleConsoleContent() {
                           )}
 
                           {isGuardian && guardianLinksAvailable && memberLinks.length === 0 && (
-                            <p className="mt-2 text-xs leading-5 text-[var(--safety-locked)]">
+                            <p className="mt-2 text-xs leading-5 text-[color:var(--brass-800)]">
                               This guardian resolves no children, so they sign in to an empty page. Invite the same
                               email address again on “Add Coach, Staff Or Guardian” and name the athlete to repair it.
                             </p>
@@ -1106,7 +1106,7 @@ function PeopleConsoleContent() {
             <button
               type="submit"
               disabled={busy || !inviteReady}
-              className="min-h-[50px] w-full rounded-xl border-2 border-[var(--accent)] bg-[var(--accent-strong)] px-4 text-sm font-black uppercase tracking-[0.14em] text-[var(--accent-ink)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-[50px] w-full rounded-xl border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy ? 'Adding...' : 'Add To My Gym'}
             </button>
@@ -1148,7 +1148,7 @@ function PeopleConsoleContent() {
                         // the admin never picked in this mode.
                         setAthleteId('');
                       }}
-                      className="mt-1 accent-[var(--accent-quiet)]"
+                      className="mt-1 accent-[var(--brass-600)]"
                     />
                     <span>
                       <span className="block text-sm font-semibold">{option.label}</span>
@@ -1393,7 +1393,7 @@ function PeopleConsoleContent() {
             <button
               type="submit"
               disabled={busy || !canSubmitAthlete}
-              className="min-h-[50px] w-full rounded-xl border-2 border-[var(--accent)] bg-[var(--accent-strong)] px-4 text-sm font-black uppercase tracking-[0.14em] text-[var(--accent-ink)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-[50px] w-full rounded-xl border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy
                 ? 'Creating...'

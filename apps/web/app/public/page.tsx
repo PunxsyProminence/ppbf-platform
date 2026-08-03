@@ -277,7 +277,7 @@ export default function PublicPortalPage() {
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-10 lg:px-10">
         <header className="flex flex-col gap-4 border-b-[3px] border-[var(--black)] pb-6 md:flex-row md:items-end md:justify-between">
           <div className="space-y-3">
-            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--accent-quiet)]">PUBLIC PORTAL</p>
+            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[color:var(--brass-800)]">PUBLIC PORTAL</p>
             <h1 className="font-display text-4xl tracking-tight text-[var(--black)] md:text-5xl">PPBF Public Entry + Interest Intake</h1>
             <p className="max-w-4xl text-sm leading-7 text-[var(--gray-dark)] md:text-base">
               The public-facing front door for awareness, trust building, community introduction, public interest intake, volunteer recruitment, partner engagement, and future athlete enrollment.
@@ -286,7 +286,7 @@ export default function PublicPortalPage() {
           <div className="flex flex-wrap items-center gap-2">
             <Link
               href="/login"
-              className="inline-flex min-h-[44px] items-center justify-center border-2 border-[var(--black)] bg-[var(--accent-strong)] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--accent-ink)] transition hover:bg-[var(--brass-400)]"
+              className="inline-flex min-h-[44px] items-center justify-center border-2 border-[var(--black)] bg-[var(--brass-800)] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--white)] transition hover:bg-[var(--red-highlight)]"
             >
               Member Login
             </Link>
@@ -320,13 +320,13 @@ export default function PublicPortalPage() {
         </section>
 
         {activeRole === 'admin' && (
-          <section className="mt-6 border-[3px] border-[var(--black)] bg-[var(--hide-800)] p-5 text-[var(--white)] shadow-[var(--shadow-md)]">
+          <section className="mt-6 border-[3px] border-[var(--black)] bg-[var(--brass-800)] p-5 text-[var(--white)] shadow-[var(--shadow-md)]">
             <p className="text-xs font-mono uppercase tracking-[0.24em] text-[var(--canvas-tan-light)]">Admin Editing Mode</p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <p className="text-sm leading-6 text-[var(--white)]">You are viewing the public surface as an admin. Use these links to manage visitor-facing content and announcements.</p>
               <Link
                 href="/admin"
-                className="inline-flex min-h-[44px] items-center justify-center border-2 border-[var(--white)] bg-transparent px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--white)] transition hover:bg-[var(--white)] hover:text-[var(--hide-800)]"
+                className="inline-flex min-h-[44px] items-center justify-center border-2 border-[var(--white)] bg-transparent px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--white)] transition hover:bg-[var(--white)] hover:text-[color:var(--brass-800)]"
               >
                 Open Admin Workspace
               </Link>
@@ -341,7 +341,7 @@ export default function PublicPortalPage() {
         )}
 
         <section className="mt-6 border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-md)]">
-          <p className="text-xs font-mono uppercase tracking-[0.25em] text-[var(--accent-quiet)]">Identity</p>
+          <p className="text-xs font-mono uppercase tracking-[0.25em] text-[color:var(--brass-800)]">Identity</p>
           <div className="mt-4 grid gap-3 md:grid-cols-3">
             {['VETERAN-OWNED', '501(c)(3) PUBLIC CHARITY', 'COMMUNITY IMPACT DRIVEN'].map((item) => (
               <div key={item} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4 text-center">
@@ -370,13 +370,13 @@ export default function PublicPortalPage() {
               // "canvas, one shade down" and keeps the copy at ink contrast.
               const selected = selectedPath === path.visitorType;
               return (
-                <article key={path.title} className={`border-2 p-4 ${selected ? 'border-[var(--accent-quiet)] bg-[var(--paper-2)]' : 'border-[var(--black)] bg-[var(--canvas-tan)]'}`}>
+                <article key={path.title} className={`border-2 p-4 ${selected ? 'border-[color:var(--brass-600)] bg-[var(--canvas-tan-dark)]' : 'border-[var(--black)] bg-[var(--canvas-tan)]'}`}>
                   <p className="text-[18px] font-bold text-[var(--black)]">{path.title}</p>
                   <p className="mt-2 text-[14px] leading-6 text-[var(--gray-dark)]">{path.description}</p>
                   <button
                     type="button"
                     onClick={() => selectPath(path.visitorType)}
-                    className="mt-3 min-h-[44px] border-2 border-[var(--black)] bg-[var(--accent-strong)] px-3 text-[14px] font-bold text-[var(--accent-ink)] transition hover:bg-[var(--brass-400)]"
+                    className="mt-3 min-h-[44px] border-2 border-[var(--black)] bg-[var(--brass-800)] px-3 text-[14px] font-bold text-[var(--white)] transition hover:bg-[var(--red-highlight)]"
                   >
                     Select
                   </button>
@@ -503,17 +503,12 @@ export default function PublicPortalPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="min-h-[44px] border-2 border-[var(--black)] bg-[var(--accent-strong)] px-4 text-[14px] font-bold text-[var(--accent-ink)] transition hover:bg-[var(--brass-400)] disabled:cursor-not-allowed disabled:opacity-60"
+              className="min-h-[44px] border-2 border-[var(--black)] bg-[var(--brass-800)] px-4 text-[14px] font-bold text-[var(--white)] transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? 'Submitting...' : 'Submit Interest'}
             </button>
 
-            {confirmation && (
-              <p className="flex items-start gap-2 text-[14px] font-semibold text-[var(--black)]" role="status">
-                <span aria-hidden="true">✓</span>
-                <span>{confirmation}</span>
-              </p>
-            )}
+            {confirmation && <p className="text-[14px] text-[color:var(--brass-800)]">{confirmation}</p>}
           </form>
         </section>
 
@@ -546,7 +541,7 @@ export default function PublicPortalPage() {
                     className="flex min-h-[44px] w-full items-center justify-between px-4 py-2 text-left"
                   >
                     <span className="text-[16px] font-semibold text-[var(--black)]">{item.question}</span>
-                    <span className="font-mono text-[var(--accent-quiet)]">{expanded ? '−' : '+'}</span>
+                    <span className="font-mono text-[color:var(--brass-800)]">{expanded ? '−' : '+'}</span>
                   </button>
                   {expanded && (
                     <p
@@ -571,7 +566,7 @@ export default function PublicPortalPage() {
 
         <section className="border-[3px] border-[var(--black)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-sm)]">
           <h2 className="text-[20px] font-black text-[var(--black)]">NEXT STEP AFTER SUBMISSION</h2>
-          <div className="mt-3 grid gap-2 text-[14px] font-mono text-[var(--accent-quiet)]">
+          <div className="mt-3 grid gap-2 text-[14px] font-mono text-[color:var(--brass-800)]">
             <p>Interest Submitted</p>
             <p>↓</p>
             <p>Pending Admin Review</p>
@@ -597,7 +592,7 @@ export default function PublicPortalPage() {
                 key={link.label}
                 href={link.href}
                 onClick={() => addTrace('quick link clicked', `${link.label} -> ${link.href}`)}
-                className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--accent-strong)] px-4 text-[14px] font-bold text-[var(--accent-ink)] transition hover:bg-[var(--brass-400)]"
+                className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--brass-800)] px-4 text-[14px] font-bold text-[var(--white)] transition hover:bg-[var(--red-highlight)]"
               >
                 {link.label}
               </a>
@@ -611,7 +606,7 @@ export default function PublicPortalPage() {
             {telemetryTraces.length === 0 && <p className="text-[14px] text-[var(--gray-dark)]">No local traces yet.</p>}
             {telemetryTraces.map((trace, idx) => (
               <div key={`${trace.timestamp}-${idx}`} className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-2 text-[13px] text-[var(--gray-dark)]">
-                <p className="font-mono text-[var(--accent-quiet)]">[{trace.timestamp}]</p>
+                <p className="font-mono text-[color:var(--brass-800)]">[{trace.timestamp}]</p>
                 <p>{trace.event}</p>
                 <p>{trace.detail}</p>
               </div>

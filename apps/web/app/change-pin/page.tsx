@@ -82,7 +82,7 @@ export default function ChangePinPage() {
     <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-4 py-8 text-[var(--black)]">
       <div className="w-full max-w-md space-y-5">
         <header className="rounded-2xl border border-[rgba(0,0,0,0.16)] bg-white p-6 shadow-[var(--shadow-md)]">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--accent-quiet)]">First sign-in</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--brass-800)]">First sign-in</p>
           <h1 className="mt-2 font-display text-3xl font-black tracking-tight">Choose your PIN</h1>
           <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
             You are signed in with the starting PIN your gym gave you. Everyone gets the same one, so pick your own
@@ -153,7 +153,7 @@ export default function ChangePinPage() {
           <button
             type="submit"
             disabled={busy || !currentPin || !newPin || !confirmPin}
-            className="min-h-[50px] w-full rounded-xl border-2 border-[var(--accent-quiet)] bg-[var(--accent-strong)] px-4 text-sm font-black uppercase tracking-[0.14em] text-[var(--accent-ink)] disabled:cursor-not-allowed disabled:opacity-50"
+            className="min-h-[50px] w-full rounded-xl border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy ? 'Saving...' : 'Save My PIN'}
           </button>

@@ -142,7 +142,7 @@ export default function BoardComplianceMonitoringPage() {
       <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
         <div className="mx-auto max-w-7xl px-6 py-10 lg:px-10">
           <header className="space-y-3 border-b-[3px] border-[var(--black)] pb-6">
-            <p className="text-xs font-mono uppercase tracking-[0.22em] text-[var(--accent-quiet)]">Board Workspace</p>
+            <p className="text-xs font-mono uppercase tracking-[0.22em] text-[color:var(--brass-800)]">Board Workspace</p>
             <h1 className="font-display text-4xl font-black">Hand-Filed Compliance Register</h1>
             <p className="max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
               Aggregate counts of compliance violations that staff have filed by hand, with escalation status. The
@@ -163,8 +163,8 @@ export default function BoardComplianceMonitoringPage() {
           </header>
 
           {nothingToShow ? (
-            <section className="mt-6 border-2 border-[var(--accent)] bg-[var(--canvas-tan-light)] p-5">
-              <h2 className="text-sm font-black uppercase tracking-[0.08em] text-[var(--accent-quiet)]">Read this zero correctly</h2>
+            <section className="mt-6 border-2 border-[color:var(--brass-600)] bg-[var(--canvas-tan-light)] p-5">
+              <h2 className="text-sm font-black uppercase tracking-[0.08em] text-[color:var(--brass-800)]">Read this zero correctly</h2>
               <p className="mt-2 max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
                 {isFiltered
                   ? 'No violation with the selected status has been filed, so every count in this view reads as none filed.'
