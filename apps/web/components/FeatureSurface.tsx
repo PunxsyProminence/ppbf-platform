@@ -77,7 +77,7 @@ export default function FeatureSurface({
                   <Link
                     key={item.href}
                     href={item.href}
-                    className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-sm text-[var(--black)] transition hover:bg-[var(--olive-dark)] hover:text-[var(--white)]"
+                    className="flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-3 text-sm text-[var(--black)] transition hover:bg-[var(--olive-dark)] hover:text-[var(--white)]"
                   >
                     {item.label}
                   </Link>

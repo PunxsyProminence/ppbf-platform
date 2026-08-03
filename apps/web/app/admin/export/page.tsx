@@ -115,7 +115,7 @@ export default function RosterExportPage() {
             </button>
 
             {errorMessage ? (
-              <p className="mt-4 border-2 border-[var(--red-primary)] bg-[var(--white-off)] px-3 py-2 text-sm leading-6 text-[var(--red-primary)]">
+              <p className="mt-4 border-2 border-[var(--accent)] bg-[var(--white-off)] px-3 py-2 text-sm leading-6 text-[var(--accent-quiet)]">
                 Nothing was downloaded. {errorMessage}
               </p>
             ) : null}

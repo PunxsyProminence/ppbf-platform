@@ -346,8 +346,8 @@ export default function DecisionLoopReviewPage() {
                 className="mt-1 h-11 w-full max-w-md border border-[color:rgba(212,175,74,.28)] rounded-[var(--r-md)] mat-leather px-3 text-sm"
               />
             </label>
-            {loading && <p className="mt-2 text-xs text-[color:var(--bone-400)]">Loading…</p>}
-            {errorMessage && <p className="mt-2 text-sm font-bold text-[var(--red-primary)]">{errorMessage}</p>}
+            {loading && <p className="mt-2 text-xs text-[var(--gray-dark)]">Loading…</p>}
+            {errorMessage && <p className="mt-2 text-sm font-bold text-[var(--safety-locked)]">{errorMessage}</p>}
           </section>
 
           {!athleteId ? (

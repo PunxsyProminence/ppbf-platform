@@ -177,9 +177,9 @@ function getReadinessLevel(readinessToTrain: number): ReadinessLevel {
 }
 
 function getGoalStatusTone(status: GoalStatus): string {
-  if (status === 'Active') return 'bg-blue-900 text-blue-200';
-  if (status === 'Completed') return 'bg-green-900 text-green-200';
-  return 'bg-yellow-900 text-yellow-200';
+  if (status === 'Active') return 'bg-[color-mix(in_srgb,var(--monitor)_22%,var(--hide-950))] text-[color:var(--monitor-ink)]';
+  if (status === 'Completed') return 'bg-[color-mix(in_srgb,var(--cleared)_22%,var(--hide-950))] text-[color:var(--cleared-ink)]';
+  return 'bg-[color-mix(in_srgb,var(--restricted)_22%,var(--hide-950))] text-[color:var(--restricted-ink)]';
 }
 
 function formatDueTime(checkInAt: Date, offsetMinutes: number): string {
@@ -1422,7 +1422,7 @@ export default function AthleteWorkspace() {
                         max={480}
                         value={sessionDurationMinutes}
                         onChange={(e) => setSessionDurationMinutes(Math.max(1, Number.parseInt(e.target.value, 10) || 0))}
-                        className="w-full h-9 px-3 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus:outline-none"
+                        className="w-full h-9 px-3 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
                       />
                     </div>
                     <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -1508,7 +1508,7 @@ export default function AthleteWorkspace() {
                       onChange={(e) => setCheckInNotes(e.target.value)}
                       placeholder="Session notes for your coach..."
                       aria-label="Session notes for your coach"
-                      className="w-full h-20 px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus:outline-none"
+                      className="w-full h-20 px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
                     />
                     <p className="text-xs text-[color:var(--brass-300)]">
                       {notesSaveState === 'failed'
@@ -1525,7 +1525,7 @@ export default function AthleteWorkspace() {
                       type="button"
                       onClick={() => void handleCheckOut()}
                       disabled={isCheckingOut}
-                      className="w-full bg-red-700 hover:bg-red-800 text-white font-semibold py-2 px-4 transition disabled:opacity-50"
+                      className="w-full bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] hover:bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] text-white font-semibold py-2 px-4 transition disabled:opacity-50"
                     >
                       {isCheckingOut ? 'Checking out...' : 'Check Out'}
                     </button>
@@ -1603,21 +1603,21 @@ export default function AthleteWorkspace() {
               )}
 
               {tasksError && !tasksLoading && (
-                <div className="border-2 border-red-600 bg-red-900/20 p-4 rounded">
+                <div className="border-2 border-[var(--locked)] bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))]/20 p-4 rounded">
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-red-400 font-semibold">Error loading tasks</p>
+                    <p className="text-[color:var(--locked-ink)] font-semibold">Error loading tasks</p>
                     <button
                       onClick={() => {
                         setTasksError(null);
                         void loadFloorTasks();
                       }}
-                      className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition"
+                      className="px-3 py-1 bg-[var(--locked)] hover:bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] text-white text-xs font-semibold uppercase transition"
                       aria-label="Retry loading tasks"
                     >
                       Retry
                     </button>
                   </div>
-                  <p className="text-red-300 text-sm">{tasksError}</p>
+                  <p className="text-[color:var(--locked-ink)] text-sm">{tasksError}</p>
                 </div>
               )}
 
@@ -1648,7 +1648,7 @@ export default function AthleteWorkspace() {
                     <p className="text-sm text-[color:var(--bone-400)] mb-3">{task.description}</p>
                     <div className="flex items-center justify-between text-xs text-[color:var(--bone-400)]">
                       <span>⏰ {task.dueDate}</span>
-                      <span className={`font-semibold ${task.priority === 'High' ? 'text-red-400' : 'text-yellow-600'}`}>
+                      <span className={`font-semibold ${task.priority === 'High' ? 'text-[color:var(--locked-ink)]' : 'text-[color:var(--restricted-deep)]'}`}>
                         {task.priority}
                       </span>
                     </div>
@@ -1701,12 +1701,12 @@ export default function AthleteWorkspace() {
                       value={newGoalTitle}
                       onChange={(e) => setNewGoalTitle(e.target.value)}
                       placeholder="Goal title"
-                      className="px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus:outline-none"
+                      className="px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
                     />
                     <select
                       value={newGoalCategory}
                       onChange={(e) => setNewGoalCategory(e.target.value as SMARTCategory)}
-                      className="px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus:outline-none"
+                      className="px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
                     >
                       {(['Boxing', 'Fitness', 'Weight Loss', 'Weight Gain', 'Academics', 'Attendance', 'Recovery', 'Lifestyle', 'Leadership'] as SMARTCategory[]).map(cat => (
                         <option key={cat} value={cat}>{cat}</option>
@@ -1716,14 +1716,14 @@ export default function AthleteWorkspace() {
                       type="date"
                       value={newGoalTargetDate}
                       onChange={(e) => setNewGoalTargetDate(e.target.value)}
-                      className="px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus:outline-none"
+                      className="px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
                     />
                     <input
                       type="text"
                       value={newGoalSuccessMetric}
                       onChange={(e) => setNewGoalSuccessMetric(e.target.value)}
                       placeholder="Success metric"
-                      className="px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus:outline-none"
+                      className="px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
                     />
                   </div>
                   <div className="flex gap-2">
@@ -1754,21 +1754,21 @@ export default function AthleteWorkspace() {
               )}
 
               {goalsError && !goalsLoading && (
-                <div className="border-2 border-red-600 bg-red-900/20 p-4 rounded">
+                <div className="border-2 border-[var(--locked)] bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))]/20 p-4 rounded">
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-red-400 font-semibold">Error loading goals</p>
+                    <p className="text-[color:var(--locked-ink)] font-semibold">Error loading goals</p>
                     <button
                       onClick={() => {
                         setGoalsError(null);
                         void loadGoals();
                       }}
-                      className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition"
+                      className="px-3 py-1 bg-[var(--locked)] hover:bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] text-white text-xs font-semibold uppercase transition"
                       aria-label="Retry loading goals"
                     >
                       Retry
                     </button>
                   </div>
-                  <p className="text-red-300 text-sm">{goalsError}</p>
+                  <p className="text-[color:var(--locked-ink)] text-sm">{goalsError}</p>
                 </div>
               )}
 
@@ -1836,7 +1836,7 @@ export default function AthleteWorkspace() {
             <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4 animate-fadeIn">
               <h3 className="font-mono font-bold text-[color:var(--brass-300)] uppercase">Assessments</h3>
               <p className="text-[color:var(--bone-400)]">Complete personality tests, surveys, and skill assessments.</p>
-              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked)]">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked-ink)]">
                 PLANNED | NOT YET IMPLEMENTED -- there is no assessment engine behind this tab, so nothing can
                 be started or scored from here yet.
               </p>
@@ -2050,11 +2050,11 @@ export default function AthleteWorkspace() {
               {/* No parent notification exists anywhere in the messaging path --
                   no recipient, address, or delivery step is stored or sent --
                   so this surface cannot claim parent CC is in force. */}
-              <div className="border-2 border-red-600 bg-red-900/20 p-4 space-y-2">
-                <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked)]">
+              <div className="border-2 border-[var(--locked)] bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))]/20 p-4 space-y-2">
+                <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked-ink)]">
                   PLANNED | NOT YET IMPLEMENTED
                 </p>
-                <p className="text-sm text-red-200">🔒 <strong>SafeSport:</strong> messages sent here are logged, but automatic parent carbon copy is not built yet and no coach is notified. Tell a coach or trusted adult in person about anything urgent or unsafe.</p>
+                <p className="text-sm text-[color:var(--locked-ink)]">🔒 <strong>SafeSport:</strong> messages sent here are logged, but automatic parent carbon copy is not built yet and no coach is notified. Tell a coach or trusted adult in person about anything urgent or unsafe.</p>
               </div>
 
               <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-6 space-y-4">
@@ -2066,7 +2066,7 @@ export default function AthleteWorkspace() {
                       id="message-coach-select"
                       value={selectedCoach}
                       onChange={(event) => setSelectedCoach(event.target.value)}
-                      className="w-full px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus:outline-none"
+                      className="w-full px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
                     >
                       <option>Coach Jason (Head Coach)</option>
                       <option>Coach Danielle (Fitness Director)</option>
@@ -2079,7 +2079,7 @@ export default function AthleteWorkspace() {
                       value={coachMessageBody}
                       onChange={(event) => setCoachMessageBody(event.target.value)}
                       placeholder="Type your message..."
-                      className="w-full h-24 px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus:outline-none resize-none"
+                      className="w-full h-24 px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)] resize-none"
                     />
                   </div>
                   {coachMessageStatus ? <p className="text-xs text-[color:var(--brass-300)]">{coachMessageStatus}</p> : null}
@@ -2120,7 +2120,7 @@ export default function AthleteWorkspace() {
                 ]}
               />
 
-              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked)]">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--locked-ink)]">
                 PLANNED | NOT YET IMPLEMENTED -- this tab cannot read the gym&apos;s classes or register you
                 for one. Open the unified scheduler above for live classes and real registration.
               </p>
@@ -2165,21 +2165,21 @@ export default function AthleteWorkspace() {
                 </div>
               </div>
 
-              <div className="bg-yellow-900/20 border-2 border-yellow-700 p-4 text-sm">
-                <p className="text-yellow-200"><strong>Note:</strong> SHADOW cannot answer questions about other athletes, board operations, financial data, or provide medical/legal advice.</p>
+              <div className="bg-[color-mix(in_srgb,var(--restricted)_22%,var(--hide-950))]/20 border-2 border-[var(--restricted)] p-4 text-sm">
+                <p className="text-[color:var(--restricted-ink)]"><strong>Note:</strong> SHADOW cannot answer questions about other athletes, board operations, financial data, or provide medical/legal advice.</p>
               </div>
 
               <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4">
                 <h3 className="font-mono text-xs font-bold uppercase tracking-[0.08em] text-[color:var(--brass-300)]">SHADOW Observation Projection</h3>
                 {shadowObservationError ? (
-                  <div className="mt-2 border border-red-600 bg-red-900/20 p-2 rounded flex items-center justify-between">
-                    <p className="text-xs text-red-400 flex-1">{shadowObservationError}</p>
+                  <div className="mt-2 border border-[var(--locked)] bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))]/20 p-2 rounded flex items-center justify-between">
+                    <p className="text-xs text-[color:var(--locked-ink)] flex-1">{shadowObservationError}</p>
                     <button
                       onClick={() => {
                         setShadowObservationError('');
                         void loadShadowObservations();
                       }}
-                      className="ml-2 px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition flex-shrink-0"
+                      className="ml-2 px-2 py-1 bg-[var(--locked)] hover:bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))] text-white text-xs font-semibold uppercase transition flex-shrink-0"
                       aria-label="Retry loading SHADOW observations"
                     >
                       Retry
@@ -2211,7 +2211,7 @@ export default function AthleteWorkspace() {
               <div className="space-y-3">
                 <div>
                   <label className="block text-sm font-semibold mb-2" htmlFor="pain-type-select">Pain Type</label>
-                  <select id="pain-type-select" value={currentPainType} onChange={(e) => setCurrentPainType(e.target.value as PainType)} className="w-full px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus:outline-none">
+                  <select id="pain-type-select" value={currentPainType} onChange={(e) => setCurrentPainType(e.target.value as PainType)} className="w-full px-3 py-2 bg-[var(--hide-950)] border-2 border-[color:var(--brass-700)] text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]">
                     {(['Sharp', 'Dull', 'Burning', 'Tight', 'Pulling', 'Throbbing', 'Swollen', 'Numbness/Tingling', 'Instability', 'Other'] as PainType[]).map(t => (
                       <option key={t} value={t}>{t}</option>
                     ))}

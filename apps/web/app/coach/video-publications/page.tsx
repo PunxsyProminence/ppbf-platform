@@ -187,7 +187,7 @@ export default function CoachVideoPublicationsPage() {
             <li>3. A passing check approves it; a failing check rejects it.</li>
             <li>4. You publish an approved publication to the research library.</li>
           </ol>
-          {errorMessage ? <p className="mt-3 text-xs text-[#f0c4c4]">{errorMessage}</p> : null}
+          {errorMessage ? <p className="mt-3 text-xs text-[var(--locked-ink)]">{errorMessage}</p> : null}
         </header>
 
         {/* Create Publication Form */}
@@ -196,7 +196,7 @@ export default function CoachVideoPublicationsPage() {
             <h2 className="text-lg font-bold text-[color:var(--bone-100)]">Create Publication</h2>
             <button
               onClick={() => setShowCreateForm(!showCreateForm)}
-              className="border-2 border-[color:var(--brass-700)] bg-[#2a1a1a] px-3 py-1 text-xs font-bold text-[color:var(--brass-300)]"
+              className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-800)] px-3 py-1 text-xs font-bold text-[color:var(--brass-300)]"
             >
               {showCreateForm ? 'Cancel' : '+ New Publication'}
             </button>
@@ -268,7 +268,7 @@ export default function CoachVideoPublicationsPage() {
               </div>
               <button
                 onClick={handleCreatePublication}
-                className="w-full border-2 border-[color:var(--brass-700)] bg-[#2a1a1a] py-2 text-xs font-bold uppercase text-[color:var(--brass-300)]"
+                className="w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-800)] py-2 text-xs font-bold uppercase text-[color:var(--brass-300)]"
               >
                 Create Publication
               </button>
@@ -281,7 +281,7 @@ export default function CoachVideoPublicationsPage() {
           <h2 className="mb-4 text-lg font-bold text-[color:var(--bone-100)]">Publications ({publications.length})</h2>
           <div className="space-y-3">
             {publications.length === 0 ? (
-              <p className="text-sm text-[#9a8a7a]">No publications yet.</p>
+              <p className="text-sm text-[var(--bone-400)]">No publications yet.</p>
             ) : (
               publications.map((pub) => {
                 const cleared = pub.status === 'approved' && pub.compliance_check_status === 'passed';
@@ -312,7 +312,7 @@ export default function CoachVideoPublicationsPage() {
                         <button
                           onClick={() => { void handlePublish(pub.publication_id, pub.video_session_id); }}
                           disabled={publishingId === pub.publication_id}
-                          className="border-2 border-[color:var(--brass-700)] bg-[#2a1a1a] px-3 py-2 text-xs font-bold text-[color:var(--brass-300)] disabled:opacity-50"
+                          className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-800)] px-3 py-2 text-xs font-bold text-[color:var(--brass-300)] disabled:opacity-50"
                         >
                           {publishingId === pub.publication_id ? 'Publishing...' : 'Publish'}
                         </button>
@@ -326,7 +326,7 @@ export default function CoachVideoPublicationsPage() {
         </section>
 
         <div className="flex flex-wrap gap-3">
-          <Link href="/coach/video-analysis" className="border-2 border-[color:var(--brass-700)] bg-[#2a1a1a] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)]">
+          <Link href="/coach/video-analysis" className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-800)] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)]">
             Back to Video Analysis
           </Link>
         </div>

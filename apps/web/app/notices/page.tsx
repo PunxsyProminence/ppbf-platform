@@ -218,7 +218,7 @@ function NoticesAuthoringPage() {
             Coaches and admins write what the app says. Pick the surface it belongs on, give it a window if it should
             only run for a while, and retire it when it is done.
           </p>
-          {loadError ? <p className="text-sm text-[var(--red-primary)]">{loadError}</p> : null}
+          {loadError ? <p className="text-sm text-[color:var(--safety-locked)]">{loadError}</p> : null}
         </header>
 
         <section className="mt-[var(--s5)] space-y-[var(--s3)] mat-paper rounded-[var(--r-md)] border border-[color:rgba(107,78,18,.28)] p-[var(--s4)]">
@@ -338,7 +338,7 @@ function NoticesAuthoringPage() {
               type="button"
               disabled={isPublishing || !canPublish}
               onClick={() => void publish().catch((error) => setMessage(error instanceof Error ? error.message : 'Unable to publish.'))}
-              className="h-11 border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[var(--white)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-11 border border-[color:rgba(107,78,18,.28)] rounded-[var(--r-md)] bg-[var(--accent-strong)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[color:var(--accent-ink)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isPublishing ? 'Publishing...' : 'Publish'}
             </button>

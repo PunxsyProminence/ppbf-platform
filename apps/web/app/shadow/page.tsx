@@ -87,8 +87,8 @@ const NO_SERVER_EVIDENCE_TIER: ShadowEvidenceTier = 'RESEARCH_NEEDED';
 const EVIDENCE_TIER_STYLES: Record<ShadowEvidenceTier, string> = {
   PROVEN: 'border-2 border-[color:var(--brass-300)] bg-black text-[color:var(--bone-100)] shadow-[0_0_18px_rgba(0,0,0,0.9)]',
   EMERGING: 'border-2 border-[color:var(--brass-300)] bg-[var(--hide-800)] text-[color:var(--bone-200)] shadow-[0_0_10px_rgba(0,0,0,0.6)]',
-  EXPERIMENTAL: 'border-2 border-[var(--bone-400)] bg-[var(--patina-900)] text-[var(--bone-200)]',
-  RESEARCH_NEEDED: 'border-2 border-[var(--bone-400)] bg-[var(--hide-500)] text-[color:var(--hide-900)]',
+  EXPERIMENTAL: 'border-2 border-[var(--bone-400)] bg-[var(--hide-700)] text-[var(--bone-300)]',
+  RESEARCH_NEEDED: 'border-2 border-[var(--bone-400)] bg-[var(--bone-400)] text-[color:var(--hide-900)]',
 };
 
 function getEvidenceTierLabel(tier: ShadowEvidenceTier): string {
@@ -1007,7 +1007,7 @@ function ShadowChatPageContent() {
     return (
       <main className="grid min-h-screen place-items-center bg-[var(--hide-950)] px-6 text-[color:var(--bone-200)]">
         <div className="text-center">
-          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[color:var(--locked)]">Secure Session</p>
+          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[color:var(--locked-ink)]">Secure Session</p>
           <h1 className="mt-3 font-display text-3xl tracking-tight">Opening SHADOW</h1>
         </div>
       </main>
@@ -1020,7 +1020,7 @@ function ShadowChatPageContent() {
       <header className="border-b-4 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 py-4 md:px-8 md:py-6">
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-4">
           <div>
-            <p className="text-[length:var(--t-xs)] font-mono uppercase tracking-[0.3em] text-[color:var(--locked)]">{getModeHeadingLabel(mode)}</p>
+            <p className="text-[length:var(--t-xs)] font-mono uppercase tracking-[0.3em] text-[color:var(--locked-ink)]">{getModeHeadingLabel(mode)}</p>
             <h1 className="font-display text-2xl font-black tracking-tight text-[color:var(--bone-200)] md:text-3xl">{heading}</h1>
             <p className="mt-1 text-xs text-[color:var(--bone-400)]">{intro}</p>
           </div>
@@ -1028,11 +1028,11 @@ function ShadowChatPageContent() {
             <div>
               <p className="font-mono text-[length:var(--t-xs)] text-[color:var(--bone-400)]">Role: {roleLabel}</p>
               {context ? <p className="font-mono text-[length:var(--t-xs)] text-[color:var(--bone-400)]">Context: {context}</p> : null}
-              <p className="text-xs font-bold text-[color:var(--locked)]">LIVE</p>
+              <p className="text-xs font-bold text-[color:var(--locked-ink)]">LIVE</p>
             </div>
             <button
               onClick={handleLogout}
-              className="border-2 border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.1em] text-[color:var(--bone-400)] transition hover:border-[color:var(--brass-300)] hover:bg-[var(--hide-700)] hover:text-[color:var(--bone-200)]"
+              className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-800)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.1em] text-[color:var(--bone-400)] transition hover:border-[color:var(--brass-300)] hover:bg-[var(--hide-700)] hover:text-[color:var(--bone-200)]"
             >
               Logout
             </button>
@@ -1041,7 +1041,7 @@ function ShadowChatPageContent() {
       </header>
 
       <div className="mx-auto max-w-4xl p-4 md:p-8">
-        <section className="mb-4 grid gap-3 border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4 text-xs text-[color:var(--bone-300)] md:grid-cols-3">
+        <section className="mb-4 grid gap-3 border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-4 text-xs text-[color:var(--bone-300)] md:grid-cols-3">
           <div>
             <p className="font-mono uppercase tracking-[0.14em] text-[color:var(--brass-300)]">Scope</p>
             <p className="mt-2">{scopeSummary}</p>
@@ -1059,7 +1059,7 @@ function ShadowChatPageContent() {
         {unlockHints.some((hint) => hint.closeToUnlocking) ? (
           <section
             aria-label="SHADOW features close to unlocking"
-            className="mb-4 border-2 border-[color:var(--brass-300)] bg-[var(--hide-900)] p-3 text-xs text-[color:var(--brass-300)]"
+            className="mb-4 border-2 border-[color:var(--brass-300)] bg-[var(--hide-950)] p-3 text-xs text-[color:var(--brass-300)]"
           >
             <p className="font-mono uppercase tracking-[0.14em]">
               {unlockHints.filter((hint) => hint.closeToUnlocking).length} feature
@@ -1085,7 +1085,7 @@ function ShadowChatPageContent() {
               type="button"
               onClick={handleNewChat}
               disabled={isLoading}
-              className="border-2 border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 py-2 text-[length:var(--t-xs)] font-mono font-bold uppercase tracking-[0.12em] text-[color:var(--locked)] transition hover:border-[color:var(--locked)] disabled:opacity-50"
+              className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-800)] px-3 py-2 text-[length:var(--t-xs)] font-mono font-bold uppercase tracking-[0.12em] text-[color:var(--locked-ink)] transition hover:border-[color:var(--locked)] disabled:opacity-50"
             >
               New chat
             </button>
@@ -1112,8 +1112,8 @@ function ShadowChatPageContent() {
                     key={session.conversationId}
                     className={`border transition ${
                       selected
-                        ? 'border-[color:var(--locked)] bg-[var(--rust-900)]'
-                        : 'border-[color:var(--hide-700)] bg-[var(--hide-900)] hover:border-[color:var(--brass-700)]'
+                        ? 'border-[color:var(--locked)] bg-[var(--hide-800)]'
+                        : 'border-[color:var(--hide-700)] bg-[var(--hide-950)] hover:border-[color:var(--brass-700)]'
                     }`}
                   >
                     {renaming ? (
@@ -1170,7 +1170,7 @@ function ShadowChatPageContent() {
                             {session.sessionType.replaceAll('_', ' ')} · {new Date(session.updatedAt).toLocaleDateString()}
                           </span>
                         </button>
-                        <div className="flex items-center gap-3 border-t border-[var(--hide-700)] px-3 py-1.5">
+                        <div className="flex items-center gap-3 border-t border-[var(--hide-800)] px-3 py-1.5">
                           <button
                             type="button"
                             onClick={() => beginRenameSession(session)}
@@ -1185,8 +1185,8 @@ function ShadowChatPageContent() {
                             disabled={busy || isLoading}
                             className={`font-mono text-[length:var(--t-xs)] uppercase tracking-[0.1em] transition disabled:opacity-50 ${
                               armedDelete
-                                ? 'font-bold text-[color:var(--locked)]'
-                                : 'text-[color:var(--bone-400)] hover:text-[color:var(--locked)]'
+                                ? 'font-bold text-[color:var(--locked-ink)]'
+                                : 'text-[color:var(--bone-400)] hover:text-[color:var(--locked-ink)]'
                             }`}
                           >
                             {busy && armedDelete ? 'Deleting…' : armedDelete ? 'Confirm delete' : 'Delete'}
@@ -1215,8 +1215,8 @@ function ShadowChatPageContent() {
           {/* Evidence legend: the tier names are jargon to anyone outside the
               staff register, so every badge's meaning is stated once here and
               repeated as a tooltip on the badge itself. */}
-          <details className="mb-3 border border-[color:var(--hide-600)] bg-[var(--hide-900)] px-3 py-2">
-            <summary className="cursor-pointer text-[length:var(--t-xs)] font-bold uppercase tracking-[0.12em] text-[var(--bone-300)]">
+          <details className="mb-3 border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2">
+            <summary className="cursor-pointer text-[length:var(--t-xs)] font-bold uppercase tracking-[0.12em] text-[var(--bone-400)]">
               What the evidence labels mean
             </summary>
             <ul className="mt-2 space-y-1">
@@ -1238,7 +1238,7 @@ function ShadowChatPageContent() {
                 <div
                   className={`max-w-md px-4 py-3 transition-colors ${
                     msg.type === 'user'
-                      ? 'border-2 border-[color:var(--locked)] bg-[var(--rust-900)] text-[var(--locked-ink)]'
+                      ? 'border-2 border-[color:var(--locked)] bg-[var(--hide-800)] text-[var(--locked-ink)]'
                       : EVIDENCE_TIER_STYLES[msg.evidenceTier ?? NO_SERVER_EVIDENCE_TIER]
                   }`}
                 >
@@ -1300,12 +1300,12 @@ function ShadowChatPageContent() {
                             >&#x1F44D;</button>
                             <button
                               onClick={() => void sendFeedback(msg.id, false, msg.tier, msg.tier)}
-                              className="border border-[var(--hide-700)] px-2 py-0.5 text-[length:var(--t-xs)] text-[var(--bone-400)] hover:border-[color:var(--locked)] hover:text-[color:var(--locked)] transition"
+                              className="border border-[var(--hide-700)] px-2 py-0.5 text-[length:var(--t-xs)] text-[var(--bone-400)] hover:border-[color:var(--locked)] hover:text-[color:var(--locked-ink)] transition"
                               title="Not helpful"
                             >&#x1F44E;</button>
                           </div>
                         ) : msg.feedbackSent ? (
-                          <p className="text-[length:var(--t-xs)] text-[var(--cleared)] font-mono">✓ Feedback</p>
+                          <p className="text-[length:var(--t-xs)] text-[var(--patina-700)] font-mono">✓ Feedback</p>
                         ) : null}
                       </div>
                     </div>
@@ -1348,7 +1348,7 @@ function ShadowChatPageContent() {
                 title={heavyBagMode ? 'Switch to Quick Round' : 'Switch to Heavy Bag Session (deep reasoning)'}
                 className={`border-2 px-3 py-3 text-[length:var(--t-xs)] font-mono font-bold uppercase tracking-[0.1em] transition ${
                   heavyBagMode
-                    ? 'border-[color:var(--locked)] bg-[var(--rust-900)] text-[color:var(--locked)]'
+                    ? 'border-[color:var(--locked)] bg-[var(--rust-900)] text-[color:var(--locked-ink)]'
                     : 'border-[color:var(--hide-600)] bg-[var(--hide-900)] text-[var(--bone-400)] hover:border-[color:var(--brass-700)]'
                 }`}
               >
@@ -1360,7 +1360,7 @@ function ShadowChatPageContent() {
                 title="Queue this Heavy Bag question for background processing -- the answer is added to this conversation when ready, instead of holding the page for the full generation."
                 className={`flex cursor-pointer items-center gap-1 border-2 px-2 text-[length:var(--t-xs)] font-mono font-bold uppercase tracking-[0.1em] transition ${
                   backgroundHeavyBag
-                    ? 'border-[color:var(--brass-300)] bg-[var(--patina-900)] text-[color:var(--brass-300)]'
+                    ? 'border-[color:var(--brass-300)] bg-[var(--hide-700)] text-[color:var(--brass-300)]'
                     : 'border-[color:var(--hide-600)] bg-[var(--hide-900)] text-[var(--bone-400)] hover:border-[color:var(--brass-700)]'
                 }`}
               >
@@ -1380,12 +1380,12 @@ function ShadowChatPageContent() {
               onChange={(e) => setUserInput(e.target.value)}
               disabled={Boolean(restoringSessionId)}
               placeholder="What do you need to know?"
-              className="flex-1 border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 py-3 text-sm text-[color:var(--bone-200)] placeholder-[var(--bone-400)] outline-none transition focus:border-[color:var(--locked)] focus:bg-[var(--rust-900)]"
+              className="flex-1 border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 py-3 text-sm text-[color:var(--bone-200)] placeholder-[var(--bone-400)] outline-none transition focus:border-[color:var(--locked)] focus:bg-[var(--hide-800)]"
             />
             <button
               type="submit"
               disabled={isLoading || Boolean(restoringSessionId)}
-              className="border-2 border-[color:var(--brass-700)] bg-[var(--rust-900)] px-6 py-3 text-xs font-mono font-bold text-[color:var(--locked)] transition hover:border-[color:var(--locked)] hover:bg-[var(--hide-700)] hover:text-[var(--locked-ink)] disabled:opacity-50"
+              className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-800)] px-6 py-3 text-xs font-mono font-bold text-[color:var(--locked-ink)] transition hover:border-[color:var(--locked)] hover:bg-[var(--hide-700)] hover:text-[var(--locked-ink)] disabled:opacity-50"
             >
               {isLoading ? '...' : 'Ask'}
             </button>
@@ -1394,7 +1394,7 @@ function ShadowChatPageContent() {
 
         {/* NAV LINKS */}
         <div className="mt-6 flex flex-wrap gap-3">
-          <ShadowChatButton context="SHADOW" label="SHADOW CHAT" className="border-[color:var(--brass-700)] bg-[var(--hide-900)] text-[color:var(--brass-300)] hover:border-[color:var(--brass-300)] hover:bg-[var(--rust-900)]" />
+          <ShadowChatButton context="SHADOW" label="SHADOW CHAT" className="border-[color:var(--brass-700)] bg-[var(--hide-900)] text-[color:var(--brass-300)] hover:border-[color:var(--brass-300)] hover:bg-[var(--hide-800)]" />
           <Link
             href="/research/chat"
             className="border-2 border-[color:var(--brass-300)] bg-[var(--hide-900)] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)] hover:bg-[var(--hide-800)]"
@@ -1409,7 +1409,7 @@ function ShadowChatPageContent() {
           </Link>
           <Link
             href="/admin/shadow"
-            className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 py-2 text-xs font-mono text-[color:var(--locked)] transition hover:border-[color:var(--locked)] hover:bg-[var(--rust-900)]"
+            className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 py-2 text-xs font-mono text-[color:var(--locked-ink)] transition hover:border-[color:var(--locked)] hover:bg-[var(--hide-800)]"
           >
             The Office
           </Link>
@@ -1421,25 +1421,25 @@ function ShadowChatPageContent() {
           </Link>
           <Link
             href="/coach/video-analysis"
-            className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)] hover:bg-[var(--rust-900)]"
+            className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)] hover:bg-[var(--hide-800)]"
           >
             AI Video Analysis (Planned)
           </Link>
           <Link
             href="/board/compliance-monitoring"
-            className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)] hover:bg-[var(--rust-900)]"
+            className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)] hover:bg-[var(--hide-800)]"
           >
             Compliance Monitoring (Planned)
           </Link>
           <Link
             href="/athlete/progression-intelligence"
-            className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)] hover:bg-[var(--rust-900)]"
+            className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)] hover:bg-[var(--hide-800)]"
           >
             Progression Intelligence (Planned)
           </Link>
           <Link
             href="/source-control/publication-workflow"
-            className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)] hover:bg-[var(--rust-900)]"
+            className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)] transition hover:border-[color:var(--brass-300)] hover:bg-[var(--hide-800)]"
           >
             Publication Workflow (Planned)
           </Link>
@@ -1451,7 +1451,7 @@ function ShadowChatPageContent() {
 
 export default function ShadowChatPage() {
   return (
-    <Suspense fallback={<main className="grid min-h-screen place-items-center bg-[var(--hide-950)] px-6 text-[color:var(--bone-200)]"><div className="text-center"><p className="text-xs font-mono uppercase tracking-[0.35em] text-[color:var(--locked)]">SHADOW</p><h1 className="mt-3 font-display text-3xl tracking-tight">Loading scope</h1></div></main>}>
+    <Suspense fallback={<main className="grid min-h-screen place-items-center bg-[var(--hide-950)] px-6 text-[color:var(--bone-200)]"><div className="text-center"><p className="text-xs font-mono uppercase tracking-[0.35em] text-[color:var(--locked-ink)]">SHADOW</p><h1 className="mt-3 font-display text-3xl tracking-tight">Loading scope</h1></div></main>}>
       <ShadowChatPageContent />
     </Suspense>
   );

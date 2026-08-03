@@ -190,7 +190,7 @@ export default function VolunteerManagementPage() {
             <p className="max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
               Volunteer roster, status, and availability are now backed by persistent records instead of placeholders.
             </p>
-            {errorMessage ? <p className="text-sm text-[var(--red-primary)]">{errorMessage}</p> : null}
+            {errorMessage ? <p className="text-sm text-[var(--safety-locked)]">{errorMessage}</p> : null}
           </header>
 
           <section className="mt-6 grid gap-4 md:grid-cols-3">
@@ -222,7 +222,7 @@ export default function VolunteerManagementPage() {
               type="button"
               disabled={isCreating || !draft.full_name.trim()}
               onClick={() => void handleCreateVolunteer().catch((error) => setMessage(error instanceof Error ? error.message : 'Unable to create volunteer.'))}
-              className="h-11 border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[var(--white)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-11 border-2 border-[var(--black)] bg-[var(--accent-strong)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[var(--accent-ink)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isCreating ? 'Creating...' : 'Create Volunteer'}
             </button>

@@ -72,7 +72,7 @@ export default function KnowledgeGraphPage() {
     >
       <div className="space-y-4">
         {errorMessage ? (
-          <section className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)]/60 p-4 text-sm text-[#f0c4c4]">{errorMessage}</section>
+          <section className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)]/60 p-4 text-sm text-[var(--locked-ink)]">{errorMessage}</section>
         ) : null}
 
         {!errorMessage && nodes.length === 0 ? (

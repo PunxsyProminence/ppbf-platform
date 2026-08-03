@@ -123,8 +123,8 @@ export default function BoardComplianceMonitoringPage() {
   const nothingToShow = summary?.total.status === 'unavailable';
 
   const severityTiles = [
-    { label: 'Critical', metric: severityCounts?.critical, tone: 'border-2 border-[var(--black)] bg-[#fce8e6] p-4', headingTone: 'text-[color:var(--brass-800)]' },
-    { label: 'High', metric: severityCounts?.high, tone: 'border-2 border-[var(--black)] bg-[#fff3cd] p-4', headingTone: 'text-[#ff9800]' },
+    { label: 'Critical', metric: severityCounts?.critical, tone: 'border-2 border-[var(--black)] bg-[color-mix(in_srgb,var(--locked)_12%,var(--paper))] p-4', headingTone: 'text-[var(--safety-locked)]' },
+    { label: 'High', metric: severityCounts?.high, tone: 'border-2 border-[var(--black)] bg-[var(--bone-100)] p-4', headingTone: 'text-[var(--restricted)]' },
     { label: 'Medium', metric: severityCounts?.medium, tone: 'border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4', headingTone: '' },
     { label: 'Low', metric: severityCounts?.low, tone: 'border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4', headingTone: '' },
   ];
@@ -156,9 +156,9 @@ export default function BoardComplianceMonitoringPage() {
                   ? `Read ${measuredAt}`
                   : 'Read time unknown'}
             </p>
-            {errorMessage ? <p className="text-sm text-[var(--red-primary)]">{errorMessage}</p> : null}
+            {errorMessage ? <p className="text-sm text-[var(--safety-locked)]">{errorMessage}</p> : null}
             {!errorMessage && !isLoading && !summary ? (
-              <p className="text-sm text-[var(--red-primary)]">The register could not be read, so no counts are shown. This is a failed read, not an empty register.</p>
+              <p className="text-sm text-[var(--safety-locked)]">The register could not be read, so no counts are shown. This is a failed read, not an empty register.</p>
             ) : null}
           </header>
 
