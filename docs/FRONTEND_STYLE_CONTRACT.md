@@ -76,7 +76,11 @@ silently emits neither. Use `text-[length:var(--x)]` / `text-[color:var(--x)]`.
 ## Drift Guardrails
 
 1. No new hardcoded hex values in `apps/web/app` or `apps/web/components`.
-   512 remain across 44 unconverted files; that number goes down, never up.
+   As of the SHADOW-console pass: **281 hex values and 783 legacy cream tokens
+   across 58 page files**. Those numbers go down, never up. Measure before
+   claiming progress — an earlier version of this file quoted a count taken
+   only across the files being worked on, which read as far more finished than
+   the app was.
 2. No slate/emerald/cyan fragments, and no second palette — there is one look,
    and no `[data-theme]` toggle. Ground is a per-surface material choice.
 3. Radii come off the Fibonacci scale; arbitrary values like `rounded-[28px]`
@@ -90,9 +94,35 @@ silently emits neither. Use `text-[length:var(--x)]` / `text-[color:var(--x)]`.
 1. Legacy files under `apps/web/src` are out-of-band and must not drive visual
    decisions.
 2. Active surfaces live under `apps/web/app` and `apps/web/components`.
-3. **The migration is partial.** `GlobalRoleHeader`, `/login` and `/` are on
-   the design system. Most staff consoles are not, and still carry the old
-   flat-panel treatment. An unconverted page is not a precedent.
+3. **The migration is partial, and roughly a third done.** Converted so far:
+   `GlobalRoleHeader`, `/`, `/login`, `/schedule`, `/operations`, `/admin`,
+   `/admin/shadow`, and every shared component under `apps/web/components`.
+   The other 58 page files are not. An unconverted page is not a precedent.
+4. **266 `--red-primary` uses remain**, and that token aliases to `--locked` —
+   the safety gate's red. Every instance examined so far was doing chrome
+   work: eyebrows, selected tabs, caveat notes, a *success* banner, a "not yet
+   implemented" panel. Each one spends a little of the signal that means *this
+   athlete may not participate*. Treat these as the highest-priority drift.
+
+## Checking your work
+
+`npm run sweep` (from `apps/web`, against a running dev server) reads every
+route it is given and reports text that cannot be read against what is behind
+it. It exists because the unit suite cannot see this class of fault: several
+regressions have shipped past 2,600 green tests while being invisible on
+screen — a brass button repainted by a link rule that outranked it, a trigger
+inheriting the body's dark colour onto leather, whole pages rendering
+bone-on-cream after adopting the ink type voices.
+
+A count on its own is not a verdict. Plenty of low-contrast text predates any
+given change, so sweep the same routes against a baseline ref and diff before
+acting — otherwise you will spend an afternoon fixing something you did not
+break. It never fails a build; it reports, and a person decides.
+
+This matters beyond legibility. Law 2 spends saturated colour on a
+participant's safety state and Law 3 requires a glyph and a label so the
+ladder survives greyscale, which makes a contrast regression a governance
+regression rather than a cosmetic one.
 
 ## Done Criteria for New UI Work
 
@@ -105,4 +135,5 @@ silently emits neither. Use `text-[length:var(--x)]` / `text-[color:var(--x)]`.
 5. Gym-floor targets clear `--tap` and `--t-md` (Law 5).
 6. Keyboard focus states are visible and consistent.
 7. No horizontal overflow at 412px.
-8. A design-system gap is fixed in `ppbf.css`, not worked around in the page.
+8. `npm run sweep` shows no new low-contrast nodes against the base branch.
+9. A design-system gap is fixed in `ppbf.css`, not worked around in the page.

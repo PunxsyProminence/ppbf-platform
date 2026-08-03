@@ -84,7 +84,8 @@
     "test:migrations:drills-persistence": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/drillsPersistence.pg.test.ts --testTimeout=180000",
     "test:migrations:guardian-invite-link": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/guardianInviteLink.pg.test.ts --testTimeout=180000",
     "test:migrations:durable-rate-limit": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/durableRateLimit.pg.test.ts --testTimeout=180000",
-    "test:migrations:assistant-idempotency": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/assistantMessageIdempotency.pg.test.ts --testTimeout=180000"
+    "test:migrations:assistant-idempotency": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/assistantMessageIdempotency.pg.test.ts --testTimeout=180000",
+    "sweep": "node scripts/contrast-sweep.mjs"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.28.0",
