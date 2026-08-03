@@ -113,21 +113,23 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
     [accountId],
   );
 
-  if (!data?.active_flag) {
+  // Always verify the PIN against a hash to maintain constant-time behavior.
+  // If the account doesn't exist, use a dummy hash that will never match.
+  // This prevents timing-based account enumeration attacks.
+  const pinHashToVerify = data?.pin_hash || 'scrypt$dummy$' + '0'.repeat(128);
+  const pinIsValid = await verifyPin(pin, pinHashToVerify);
+
+  if (!data?.active_flag || !pinIsValid) {
+    return null;
+  }
+
+  // If account doesn't exist or PIN is invalid, return null
+  if (!data) {
     return null;
   }
 
   const organizationId = data.organization_id || getPilotDefaultOrganizationId();
   if (!data.is_platform_owner && data.organization_status && data.organization_status !== 'active') {
-    return null;
-  }
-
-  if (!data.pin_hash) {
-    return null;
-  }
-
-  const pinIsValid = await verifyPin(pin, data.pin_hash);
-  if (!pinIsValid) {
     return null;
   }
 

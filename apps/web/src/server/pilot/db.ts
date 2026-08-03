@@ -17,6 +17,23 @@ export interface SslOverride {
   disableSslFlag?: string;
 }
 
+/**
+ * Validates that PostgreSQL SSL cannot be disabled outside of test environments.
+ * Throws on startup if a non-test environment attempts to disable SSL.
+ */
+export function validateSslConfiguration(): void {
+  const nodeEnv = process.env.NODE_ENV;
+  const disableSslFlag = process.env.PPBF_POSTGRES_DISABLE_SSL;
+
+  if (nodeEnv !== 'test' && disableSslFlag === 'true') {
+    throw new Error(
+      'FATAL: Cannot disable PostgreSQL SSL in non-test environments. '
+      + 'Database credentials and queries must be protected by TLS. '
+      + `Current NODE_ENV=${nodeEnv}, PPBF_POSTGRES_DISABLE_SSL=${disableSslFlag}`
+    );
+  }
+}
+
 // Azure Postgres always requires TLS in production and staging. The only
 // opt-out is this exact combination -- NODE_ENV must be the unmistakable
 // 'test' value, AND the explicit disable flag must be set -- so a stray or

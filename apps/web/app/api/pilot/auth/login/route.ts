@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { loginWithAccountIdAndPin } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { PILOT_SESSION_COOKIE } from '@/src/server/pilot/env';
-import { jsonError } from '@/src/server/pilot/http';
+import { jsonError, shouldUseCookieSecureFlag } from '@/src/server/pilot/http';
 import {
   getClientIp,
   checkRateLimit,
@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
     response.cookies.set(PILOT_SESSION_COOKIE, loginResult.token, {
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      secure: shouldUseCookieSecureFlag(request),
       path: '/',
       maxAge: SESSION_ABSOLUTE_LIFETIME_SECONDS,
     });

@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { logoutWithToken } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { PILOT_SESSION_COOKIE } from '@/src/server/pilot/env';
-import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { jsonError, requirePrincipal, shouldUseCookieSecureFlag } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
 
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     response.cookies.set(PILOT_SESSION_COOKIE, '', {
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      secure: shouldUseCookieSecureFlag(request),
       path: '/',
       maxAge: 0,
     });

@@ -35,6 +35,19 @@ function durableRateLimitEnabled(): boolean {
 }
 
 /**
+ * Validates that durable rate limiting is configured in production.
+ * Throws on startup if production deployment lacks durable rate limit protection.
+ */
+export function validateDurableRateLimitConfiguration(): void {
+  if (process.env.NODE_ENV === 'production' && !durableRateLimitEnabled()) {
+    throw new Error(
+      'FATAL: Production deployment requires PPBF_DURABLE_RATE_LIMIT=true. '
+      + 'Without durable rate limiting, PIN brute-force protection does not persist across process restarts.'
+    );
+  }
+}
+
+/**
  * Runs durable rate-limit work on the SHARED POOL, and never throws.
  *
  * Two problems with what this used to do. It opened a brand-new pg Client

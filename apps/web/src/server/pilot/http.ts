@@ -7,6 +7,25 @@ import { ShadowRuntimeUnavailableError } from './shadowRuntimeError';
 import { MedicalStatusBlockedError } from './shadowRecommendations';
 
 /**
+ * Determines whether cookies should be sent over secure (HTTPS-only) channels.
+ * Uses the actual request protocol to detect HTTPS, accounting for proxies that
+ * set x-forwarded-proto headers.
+ */
+export function shouldUseCookieSecureFlag(request: NextRequest): boolean {
+  // Check x-forwarded-proto for proxy-detected protocol
+  const forwardedProto = request.headers.get('x-forwarded-proto');
+  if (forwardedProto === 'https') {
+    return true;
+  }
+  if (forwardedProto === 'http') {
+    return false;
+  }
+
+  // Fall back to request protocol
+  return request.nextUrl.protocol === 'https:';
+}
+
+/**
  * The default gate for every authenticated route.
  *
  * It deliberately refuses an account that is still on its bootstrap PIN. New

@@ -49,22 +49,27 @@ export function readBootstrapKeyHeader(headers: Headers): string {
 
 // Compares the operator key in constant time: a length-independent byte
 // comparison would leak the expected key one character at a time to a caller
-// that can time the response.
+// that can time the response. Uses dummy keys with consistent lengths to prevent
+// timing attacks that could leak key presence or length information.
 export function bootstrapKeyMatches(headers: Headers, expectedKey: string | undefined): boolean {
   const provided = readBootstrapKeyHeader(headers);
   const expected = expectedKey?.trim() || '';
 
-  if (!provided || !expected) {
+  // Use dummy values with consistent lengths to prevent timing attacks
+  // that could leak information about whether keys are present or their length
+  const expectedOrDummy = expected || 'x'.repeat(64);
+  const providedOrDummy = provided || 'y'.repeat(64);
+
+  try {
+    const providedBuffer = Buffer.from(providedOrDummy, 'utf8');
+    const expectedBuffer = Buffer.from(expectedOrDummy, 'utf8');
+
+    // Timing-safe comparison handles both length and content in constant time
+    return timingSafeEqual(providedBuffer, expectedBuffer);
+  } catch {
+    // Buffer creation shouldn't fail, but fail safely if it does
     return false;
   }
-
-  const providedBuffer = Buffer.from(provided, 'utf8');
-  const expectedBuffer = Buffer.from(expected, 'utf8');
-  if (providedBuffer.length !== expectedBuffer.length) {
-    return false;
-  }
-
-  return timingSafeEqual(providedBuffer, expectedBuffer);
 }
 
 export function createOpaqueToken(): string {
