@@ -67,6 +67,58 @@ describe('the wholesale cost never reaches a public response', () => {
   });
 });
 
+/**
+ * "Everlast" is two facts with opposite audiences. As a brand on a glove it is
+ * public and the store should say so -- the word is stamped on the product
+ * either way. As the gym's Everlast ACCOUNT (account number, discount tier,
+ * net terms, rep) it is confidential, exactly like the wholesale cost.
+ *
+ * These tests hold both halves. A test that only asserted absence would pass
+ * just as well against a store that had lost the brand entirely.
+ */
+describe('the brand is public and the supplier account is not', () => {
+  it('selects the brand', async () => {
+    await get('?organization_id=org-1');
+
+    expect(String(mockQuery.mock.calls[0][0])).toMatch(/brand/);
+  });
+
+  it('selects nothing about the supplier account', async () => {
+    await get('?organization_id=org-1');
+    const sql = String(mockQuery.mock.calls[0][0]);
+
+    // Not the id, not the table, not a join to it. The id alone would say
+    // which supplier a gym buys from and is the handle on everything else.
+    expect(sql).not.toMatch(/vendor/i);
+    expect(sql).not.toMatch(/gear_vendors/i);
+    expect(sql).not.toMatch(/account_number/i);
+    expect(sql).not.toMatch(/\bjoin\b/i);
+  });
+
+  it('hands the shopper the brand and nothing that came from a vendor row', async () => {
+    mockQuery.mockResolvedValue([
+      {
+        product_id: 'gloves-12oz',
+        name: 'Training gloves 12oz',
+        brand: 'Everlast',
+        description: '',
+        category: 'gloves',
+        retail_price_cents: 4000,
+        availability: 'in_stock',
+        checkout_url: 'https://example.test/buy',
+      },
+    ]);
+
+    const body = await (await get('?organization_id=org-1')).json();
+    const serialized = JSON.stringify(body);
+
+    expect(body.products[0].brand).toBe('Everlast');
+    expect(serialized).not.toMatch(/vendor/i);
+    expect(serialized).not.toMatch(/account/i);
+    expect(serialized).not.toMatch(/discount/i);
+  });
+});
+
 describe('multi-store', () => {
   // There is no default organization and no "the" store. Without a gym named,
   // this is the index of gyms that have one.

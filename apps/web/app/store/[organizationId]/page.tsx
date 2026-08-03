@@ -27,6 +27,13 @@ import { apiBase } from '@/lib/apiBase';
 interface StoreProduct {
   product_id: string;
   name: string;
+  /**
+   * The brand printed on the product, and public on purpose: a parent buying
+   * gloves wants to know they are Everlast. This is NOT the gym's Everlast
+   * account -- that is a separate, confidential record the route behind this
+   * page does not select and this page has no field for.
+   */
+  brand: string;
   description: string;
   category: string;
   retail_price_cents: number;
@@ -117,6 +124,11 @@ export default function GymStorePage({ params }: { params: Promise<{ organizatio
                 <p className="text-[11px] font-mono uppercase tracking-[0.12em] text-[var(--gray-dark)]">
                   {product.category}
                 </p>
+                {product.brand ? (
+                  <p className="mt-1 text-[11px] font-mono uppercase tracking-[0.12em] text-[color:var(--brass-800)]">
+                    {product.brand}
+                  </p>
+                ) : null}
                 <h2 className="mt-1 font-display text-lg font-black tracking-tight">{product.name}</h2>
                 {product.description ? (
                   <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">{product.description}</p>
