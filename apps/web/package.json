@@ -71,6 +71,8 @@
     "pilot:apply-drills": "node scripts/pilot-apply-drills-migration.mjs",
     "pilot:apply-rate-limit": "node scripts/pilot-apply-rate-limit-migration.mjs",
     "pilot:apply-gear": "node scripts/pilot-apply-gear-migration.mjs",
+    "pilot:apply-profile-identity": "node scripts/pilot-apply-profile-identity-migration.mjs",
+    "pilot:apply-achievements": "node scripts/pilot-apply-achievements-migration.mjs",
     "test:migrations:video-sessions": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/videoSessionsMigration.pg.test.ts --testTimeout=180000",
     "test:migrations:video-scan": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/videoScanPromotion.pg.test.ts --testTimeout=180000",
     "pilot:apply-film-study-proposals": "node scripts/pilot-apply-film-study-proposals-migration.mjs",

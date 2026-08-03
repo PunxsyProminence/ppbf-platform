@@ -44,3 +44,15 @@ export function getWallDisplayNameMode(): string | undefined {
 export function getWallTimeZone(): string {
   return process.env.PPBF_WALL_TIMEZONE?.trim() || 'America/New_York';
 }
+
+/**
+ * Where member portraits live. A container of its own, deliberately not the
+ * SHADOW or video one: those two hand out read-only SAS URLs, and a signed URL
+ * to a child's photograph is a bearer token for that child's face. Nothing
+ * mints a SAS against this container -- the bytes are read server-side by an
+ * authorized request and streamed, the same stance downloadPilotVideoFile
+ * takes for a minor's footage.
+ */
+export function getPilotProfileContainerName(): string {
+  return process.env.PPBF_PILOT_PROFILE_CONTAINER?.trim() || 'ppbf-pilot-profile';
+}

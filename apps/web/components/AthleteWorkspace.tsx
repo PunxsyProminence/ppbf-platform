@@ -3,8 +3,11 @@
 import Link from 'next/link';
 import React, { type FormEvent, useCallback, useEffect, useState } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
+import AthleteAchievements from './AthleteAchievements';
+import PersonalGoalBoard from './PersonalGoalBoard';
 import type { RabbitHoleLessonItem } from './RabbitHole';
 import { ANCHOR_KEY_OPTIONS, anchorLabel } from './rabbitHoleAnchorLabels';
+import ProfileHeader from './ProfileHeader';
 import { AthleteSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
 import TrainingCard, { type TrainingSession } from './TrainingCard';
@@ -1326,6 +1329,11 @@ export default function AthleteWorkspace() {
           </div>
         </div>
 
+        {/* The athlete's own fight card. Self-contained: it fetches its own
+            data and renders nothing until it has some, so this is the single
+            insertion the profile layer makes into this file. */}
+        <ProfileHeader />
+
         {/* Notices are posted paper on the leather wall. */}
         <AnnouncementBanner
           placement="athlete_workspace"
@@ -1367,6 +1375,15 @@ export default function AthleteWorkspace() {
             first athlete to open their card on one would silence the next
             athlete's first milestone. */}
         <TrainingCard sessions={trainingSessions} athleteId={backendAthleteId ?? undefined} />
+
+        {/* Everything the card cannot count. The card measures attendance, and
+            attendance is one of four programmes this gym runs -- a fitness-only
+            member and a kid here for the mentorship both had a progression
+            system that was measuring somebody else's sport. This panel carries
+            what a coach said, the conditioning / craft / community path, and
+            who mentors whom. Complete for every programme: what somebody's
+            programme does not include is absent, never greyed out. */}
+        <AthleteAchievements athleteId={backendAthleteId} />
 
         <details className={PANEL}>
           <summary className="t-label cursor-pointer">What&apos;s Coming</summary>
@@ -1772,6 +1789,16 @@ export default function AthleteWorkspace() {
                   ]}
                 />
               </div>
+
+              {/* YOUR OWN WORDS FIRST, THE SMART FORM SECOND.
+                  The form below asks for a category from a picklist of boxing
+                  metrics, a deadline, and a success metric -- four required
+                  fields before somebody is allowed to want something. "Show up
+                  on the days I don't want to" cannot be typed into it. This
+                  board asks for a sentence, and it extends the same pilot.goals
+                  table rather than replacing it, so the measurable conditioning
+                  target a coach wants still has its form. */}
+              <PersonalGoalBoard athleteId={backendAthleteId} />
 
               <button
                 onClick={() => setShowGoalForm(!showGoalForm)}

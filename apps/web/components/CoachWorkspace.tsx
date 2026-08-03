@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
+import ProfilePortrait from './ProfilePortrait';
 import { CoachSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
 import { cx, ui } from './uiStyles';
@@ -40,6 +41,21 @@ interface Athlete {
   readiness: 'GREEN' | 'YELLOW' | 'RED' | 'UNKNOWN';
   injuryFlag: boolean | null;
   attendance: 'Present' | 'Late' | 'Excused' | 'Absent' | 'Unknown';
+
+  /* Identity, from /api/pilot/profile/roster. Optional because the roster
+     renders correctly without it -- the profile read is a second request and a
+     coach whose profile table has not been migrated yet still gets their list,
+     with a plate for every face.
+
+     THE CORNER IS DELIBERATELY NOT HERE. A member's corner tints their OWN
+     surfaces and nothing else. On a roster it would sit inches from a readiness
+     dot and an injury badge, which is exactly where a personal preference
+     starts being read as a safety state (Law 2) -- the failure the corner
+     tokens were designed around. Faces and names, yes. Dye, no. */
+  accountId?: string | null;
+  initials?: string;
+  ringName?: string | null;
+  photoAvailable?: boolean;
 }
 
 // A block template only. There is no live-session backend, so a block has no
@@ -482,6 +498,40 @@ export default function CoachWorkspace() {
         injuryFlag: null,
         attendance: 'Unknown'
       }));
+
+      // Faces, from the profile roster. Best-effort and separate on purpose:
+      // this call applies the portrait visibility gate per athlete server-side,
+      // so a coach browsing athletes who are not theirs gets plates for them --
+      // and if the call fails outright, every athlete falls back to a plate,
+      // which is a finished object rather than a broken row.
+      try {
+        const facesResponse = await fetch(`${apiBase()}/api/pilot/profile/roster`, {
+          method: 'GET',
+          credentials: 'include',
+        });
+        if (facesResponse.ok) {
+          const faces = (await facesResponse.json()) as {
+            items?: Array<{
+              athlete_id: string;
+              account_id: string | null;
+              initials: string;
+              ring_name: string | null;
+              photo_available: boolean;
+            }>;
+          };
+          const byAthlete = new Map((faces.items ?? []).map((face) => [face.athlete_id, face]));
+          for (const athlete of athleteList) {
+            const face = byAthlete.get(athlete.id);
+            if (!face) continue;
+            athlete.accountId = face.account_id;
+            athlete.initials = face.initials;
+            athlete.ringName = face.ring_name;
+            athlete.photoAvailable = face.photo_available;
+          }
+        }
+      } catch {
+        // Plates for everyone. Nothing about the roster is degraded by it.
+      }
 
       setAthletes(athleteList);
       setSelectedAthleteId((current) => current || athleteList[0]?.id || current);
@@ -1052,15 +1102,46 @@ export default function CoachWorkspace() {
                             : 'bg-[rgba(0,0,0,.28)] border-[color:rgba(212,175,74,.22)] hover:border-[color:var(--brass-500)]'
                         }`}
                       >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <div
+                        {/* A face, then the name. A coach who works with twenty
+                            people recognises them by face long before they read
+                            a name; the column of strings this replaces made the
+                            person holding the tablet do a lookup the room had
+                            already done for them.
+
+                            Everyone has a portrait here whether or not they have
+                            a photograph -- the brass plate with their initials is
+                            the same object in the same frame, so no row looks
+                            unfinished and no row advertises that a photograph
+                            exists but is being withheld. */}
+                        <div className="flex items-center justify-between gap-[var(--s3)]">
+                          <div className="flex items-center gap-[var(--s3)] min-w-0">
+                            <ProfilePortrait
+                              accountId={athlete.accountId ?? null}
+                              initials={athlete.initials ?? '—'}
+                              name={athlete.name}
+                              photoAvailable={Boolean(athlete.photoAvailable)}
+                              size="sm"
+                              decorative
+                            />
+                            <span className="min-w-0">
+                              <span className="block truncate font-semibold">{athlete.name}</span>
+                              {athlete.ringName && (
+                                <span className="block truncate font-[family-name:var(--font-hand)] text-[length:var(--t-sm)] text-[color:var(--brass-300)]">
+                                  &ldquo;{athlete.ringName}&rdquo;
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                          {/* The safety column, kept as its own block on the far
+                              side of the row. Identity on the left, state on the
+                              right, and nothing personal painted onto either. */}
+                          <span className="flex flex-none items-center gap-2">
+                            <span
                               className={`w-2 h-2 rounded-full ${readinessDotClass(athlete.readiness)}`}
                               title={athlete.readiness === 'UNKNOWN' ? 'Readiness not tracked' : `Readiness: ${athlete.readiness}`}
-                            ></div>
-                            <span className="font-semibold">{athlete.name}</span>
-                          </div>
-                          <span className="t-muted">{athlete.attendance}</span>
+                            ></span>
+                            <span className="t-muted">{athlete.attendance}</span>
+                          </span>
                         </div>
                         {athlete.injuryFlag && (
                           <p className="mt-[var(--s2)]"><StatusBadge tone="locked" label="Injury flag active" /></p>

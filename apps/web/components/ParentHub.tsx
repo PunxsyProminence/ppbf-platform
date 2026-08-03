@@ -3,8 +3,12 @@
 import Link from 'next/link';
 import React, { useState, useEffect } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
+import AthleteAchievements from './AthleteAchievements';
+import FightCard from './FightCard';
+import ProfilePortrait from './ProfilePortrait';
 import { ParentSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
+import type { FightCardPayload } from './profileClient';
 import { cx } from './uiStyles';
 import { apiBase } from '@/lib/apiBase';
 
@@ -16,6 +20,15 @@ interface Child {
   track: string;
   attendancePercent: number | null;
   currentProgress: string | null;
+
+  /* Identity. A guardian is inside their own child's circle, so a released
+     portrait reaches them -- and only their own children's, because the server
+     resolves the guardian link per athlete before it decides anything (see
+     profileVisibility.ts). Another family's child is not in this list at all,
+     and would render a plate even if they were. */
+  accountId: string | null;
+  initials: string;
+  photoAvailable: boolean;
 }
 
 interface HomeAssignment {
@@ -117,6 +130,11 @@ export default function ParentHub() {
 
   // Real API: Children (athletes accessible to parent)
   const [children, setChildren] = useState<Child[]>([]);
+  // The active child's fight card, fetched per selection. Fetched rather than
+  // assembled here because the server decides what a guardian may see -- the
+  // ring name and the coach's face on it have both been through the visibility
+  // gate before they arrive.
+  const [childCard, setChildCard] = useState<FightCardPayload | null>(null);
   const [childrenLoading, setChildrenLoading] = useState(true);
   const [childrenError, setChildrenError] = useState<string | null>(null);
   const [childrenRetryNonce, setChildrenRetryNonce] = useState(0);
@@ -164,9 +182,37 @@ export default function ParentHub() {
             track: 'Unavailable',
             attendancePercent: null,
             currentProgress: null,
+            accountId: null,
+            initials: '\u2014',
+            photoAvailable: false,
           };
         });
-        
+
+        // One card per child, from the route that runs the visibility gate.
+        // A guardian has one or two children, so this is one or two requests --
+        // and going through /profile/card rather than a roster read is the
+        // point: the roster route is staff-only, and a guardian must reach a
+        // child's identity through the guardian link and nothing else.
+        //
+        // Best-effort: a failure leaves the child on the brass plate, which is
+        // a finished object rather than a broken row.
+        await Promise.all(childList.map(async (child) => {
+          try {
+            const cardResponse = await fetch(
+              `${apiBase()}/api/pilot/profile/card?athlete_id=${encodeURIComponent(child.id)}`,
+              { method: 'GET', credentials: 'include' },
+            );
+            if (!cardResponse.ok) return;
+            const payload = (await cardResponse.json()) as { card?: FightCardPayload };
+            if (!payload.card) return;
+            child.accountId = payload.card.accountId;
+            child.initials = payload.card.initials;
+            child.photoAvailable = payload.card.photoAvailable;
+          } catch {
+            // Plate.
+          }
+        }));
+
         setChildren(childList);
         // Functional update so the default selection does not read activeChildId
         // here: depending on it would refetch the whole roster and re-show the
@@ -180,6 +226,34 @@ export default function ParentHub() {
       }
     })();
   }, [childrenRetryNonce]);
+
+  /* The active child's card, refetched on every switch. Refetched rather than
+     cached from the list read so a ring name a coach cleared thirty seconds ago
+     is gone the next time the guardian looks at it -- a takedown that survives
+     only until the next full page load is not a takedown. */
+  useEffect(() => {
+    if (!activeChildId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setChildCard(null);
+      return;
+    }
+    void (async () => {
+      try {
+        const response = await fetch(
+          `${apiBase()}/api/pilot/profile/card?athlete_id=${encodeURIComponent(activeChildId)}`,
+          { method: 'GET', credentials: 'include' },
+        );
+        if (!response.ok) {
+          setChildCard(null);
+          return;
+        }
+        const payload = (await response.json()) as { card?: FightCardPayload };
+        setChildCard(payload.card ?? null);
+      } catch {
+        setChildCard(null);
+      }
+    })();
+  }, [activeChildId]);
 
   const activeChild = children.find(c => c.id === activeChildId);
   const tasksDue = homeAssignments.filter(a => a.status !== 'Completed').length;
@@ -327,9 +401,18 @@ export default function ParentHub() {
                 onClick={() => setActiveChildId(child.id)}
                 className={cx(
                   TAB_BASE,
+                  'gap-[var(--s3)] pl-[var(--s2)]',
                   activeChildId === child.id ? TAB_ACTIVE : TAB_INACTIVE,
                 )}
               >
+                <ProfilePortrait
+                  accountId={child.accountId}
+                  initials={child.initials}
+                  name={child.name}
+                  photoAvailable={child.photoAvailable}
+                  size="sm"
+                  decorative
+                />
                 {child.name}
               </button>
             ))}
@@ -410,6 +493,17 @@ export default function ParentHub() {
                   </button>
                 </div>
               </section>
+
+              {/* The child's own card, on the family ground. Same component and
+                  same materials the athlete sees on their own surface -- a
+                  guardian looking at their kid's card is looking at the kid's
+                  card, not at a parent-flavoured summary of it.
+
+                  It carries the coach's name and face, which is the answer to
+                  the question a guardian actually has: who is with my child.
+                  Both the portrait and the ring name on it have already been
+                  through the visibility gate server-side. */}
+              {childCard && <FightCard card={childCard} />}
 
               <HelpPanel
                 title="Child Overview"
@@ -775,6 +869,26 @@ export default function ParentHub() {
             <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)] animate-fadeIn">
               <h3 className="t-label">Progress & Achievements</h3>
               <p className="t-body">Track skill development and milestone achievements.</p>
+
+              {/* THE SAME ACHIEVEMENTS, SAID TO SOMEBODY WHO WAS NOT IN THE ROOM.
+                  Not a simplified subset and not a different set of facts: the
+                  identical rows the athlete sees, rendered with each entry's
+                  family wording. A parent does not parse RPE or "slip and
+                  return", and translating that is not talking down -- it is
+                  answering the question they actually have, which is whether
+                  their kid is showing up, sticking with it, helping anyone, and
+                  getting stronger.
+
+                  READ-ONLY, and the ceremony is silent here: the bell belongs to
+                  the person who earned the thing. */}
+              {activeChildId && (
+                <AthleteAchievements
+                  athleteId={activeChildId}
+                  athleteName={activeChild?.name}
+                  audience="family"
+                  allowProgramChange={false}
+                />
+              )}
 
               <details className="rounded-[var(--r-md)] border border-[color:rgba(0,0,0,.14)] bg-[var(--paper-2)] p-[var(--s4)]">
                 <summary className="t-body cursor-pointer font-semibold">Parent-Support Visibility Placeholder</summary>

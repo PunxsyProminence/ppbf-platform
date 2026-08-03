@@ -200,7 +200,11 @@ describe('athlete workspace honesty', () => {
 
     fireEvent.change(screen.getByPlaceholderText('Goal title'), { target: { value: 'Land 100 clean jabs' } });
     fireEvent.change(screen.getByPlaceholderText('Success metric'), { target: { value: '100 reps logged' } });
-    const targetDate = document.querySelector('input[type="date"]') as HTMLInputElement;
+    // By label, not `input[type="date"]`: the Goals tab now carries two date
+    // fields -- this form's required target date, and the optional one on the
+    // own-words board above it, where most goals have no date at all. The old
+    // selector took whichever came first in the DOM.
+    const targetDate = screen.getByLabelText('Goal target date') as HTMLInputElement;
     fireEvent.change(targetDate, { target: { value: '2026-09-01' } });
 
     const createGoal = screen.getByRole('button', { name: 'Create Goal' });
@@ -223,7 +227,11 @@ describe('athlete workspace honesty', () => {
 
     fireEvent.change(screen.getByPlaceholderText('Goal title'), { target: { value: 'Land 100 clean jabs' } });
     fireEvent.change(screen.getByPlaceholderText('Success metric'), { target: { value: '100 reps logged' } });
-    const targetDate = document.querySelector('input[type="date"]') as HTMLInputElement;
+    // By label, not `input[type="date"]`: the Goals tab now carries two date
+    // fields -- this form's required target date, and the optional one on the
+    // own-words board above it, where most goals have no date at all. The old
+    // selector took whichever came first in the DOM.
+    const targetDate = screen.getByLabelText('Goal target date') as HTMLInputElement;
     fireEvent.change(targetDate, { target: { value: '2026-09-01' } });
 
     fireEvent.click(screen.getByRole('button', { name: 'Create Goal' }));
