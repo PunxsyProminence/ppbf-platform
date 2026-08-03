@@ -102,18 +102,21 @@ These are correctness/safety issues for the Participant Master Record capability
 **Priority:** HIGH (prevents orphaned records)  
 **Effort:** 2-3 hours  
 **Risk:** Low - catches edge case
+**Status:** ✅ COMPLETED (commit 25a4ea0)
 
-- [ ] Add helper in `src/server/pilot/entities.ts`: `getCoachById(organizationId, accountId)`
-  - Query: `select account_id from pilot.accounts where account_id = $1 and organization_id = $2 and role = 'coach' and active_flag = true`
-  - Return: boolean or coach record
-- [ ] Update `POST /api/pilot/athletes` (route.ts line 30)
-  - Before `insertAthleteIfAbsent()`, check coach exists
-  - If not: throw `new Error('Not found: coach not found in this organization')`
-- [ ] Add test: coach exists → create succeeds; coach missing → 404
-- [ ] Update error message in http.ts to map "coach not found" → 404
-- [ ] Add integration test calling create with non-existent coach
+- [x] Add helper in `src/server/pilot/entities.ts`: `getCoachById(organizationId, accountId)`
+  - Returns boolean: checks if coach is active in organization
+  - Query: validates role='coach' and active_flag=true
+- [x] Update `POST /api/pilot/athletes` before `insertAthleteIfAbsent()`
+  - Calls `getCoachById()` to verify coach exists
+  - Throws: `'Not found: coach not found in this organization'`
+- [x] Add tests: coach exists → 200 success; coach missing → 404
+  - Test: `rejects creation with a non-existent coach` → 404
+  - Test: `allows creation when coach exists` → 200
+- [x] Error handling: existing 'Not found' prefix already maps to 404 in http.ts
+  - No changes needed - error message already caught by line 123
 
-**Acceptance:** POST /api/pilot/athletes with non-existent coach_id returns 404 "coach not found"
+**Acceptance:** ✅ POST /api/pilot/athletes with non-existent coach_id returns 404 "coach not found"
 
 ---
 
@@ -282,10 +285,10 @@ These improve observability and UX polish.
 | Priority | Count | Effort | Status |
 |----------|-------|--------|--------|
 | P0 Security | 6 | — | ✅ Implemented |
-| P0 Capability | 4 | 8-13 hrs | 🟡 2/4 Complete |
+| P0 Capability | 4 | 8-13 hrs | 🟡 3/4 Complete |
 | P1 Improvements | 5 | 8-12 hrs | 🔴 Not Started |
 | P2 Polish | 4 | 6-8 hrs | 🔴 Not Started |
-| **Total** | **19** | **22-33 hrs** | **2 Complete** |
+| **Total** | **19** | **22-33 hrs** | **3 Complete** |
 
 ---
 
