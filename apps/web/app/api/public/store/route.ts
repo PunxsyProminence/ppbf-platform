@@ -36,7 +36,12 @@ export async function GET(request: NextRequest) {
 
     if (!organizationId) {
       const stores = await listPublicStores();
-      return NextResponse.json({ ok: true, stores });
+      const publicStores = stores.map((store) => ({
+        organization_id: store.organization_id,
+        organization_name: store.organization_name,
+        listed_product_count: store.listed_product_count,
+      }));
+      return NextResponse.json({ ok: true, stores: publicStores });
     }
 
     const products = await listPublicGear(organizationId);
@@ -45,7 +50,16 @@ export async function GET(request: NextRequest) {
     // identically, on purpose. Distinguishing them would turn this into a
     // probe for which organization ids are real, to a caller who has not
     // identified themselves.
-    return NextResponse.json({ ok: true, organization_id: organizationId, products });
+    const publicProducts = products.map((product) => ({
+      product_id: product.product_id,
+      name: product.name,
+      description: product.description,
+      category: product.category,
+      retail_price_cents: product.retail_price_cents,
+      availability: product.availability,
+      checkout_url: product.checkout_url,
+    }));
+    return NextResponse.json({ ok: true, organization_id: organizationId, products: publicProducts });
   } catch (error) {
     return jsonError(error);
   }

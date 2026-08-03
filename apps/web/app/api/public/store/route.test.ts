@@ -48,6 +48,7 @@ describe('the wholesale cost never reaches a public response', () => {
         description: '',
         category: 'general',
         retail_price_cents: 4000,
+        wholesale_cost_cents: 2000,
         availability: 'in_stock',
         checkout_url: 'https://example.test/buy',
       },
@@ -58,6 +59,16 @@ describe('the wholesale cost never reaches a public response', () => {
 
     expect(serialized).not.toMatch(/wholesale/i);
     expect(serialized).not.toMatch(/cost/i);
+    expect(body.products[0].wholesale_cost_cents).toBeUndefined();
+    expect(body.products[0]).toEqual({
+      product_id: 'p-1',
+      name: 'Gloves',
+      description: '',
+      category: 'general',
+      retail_price_cents: 4000,
+      availability: 'in_stock',
+      checkout_url: 'https://example.test/buy',
+    });
     expect(body.products[0].retail_price_cents).toBe(4000);
   });
 

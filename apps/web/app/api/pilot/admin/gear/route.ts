@@ -33,7 +33,10 @@ function toCents(value: unknown): number {
   // that multiplies by 100 is how a catalogue acquires off-by-one-cent prices
   // (12.99 * 100 is 1298.9999999999998). The client does the conversion once,
   // deliberately, and sends whole cents.
-  return typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : NaN;
+  if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isInteger(value)) {
+    return NaN;
+  }
+  return value;
 }
 
 export async function GET(request: NextRequest) {

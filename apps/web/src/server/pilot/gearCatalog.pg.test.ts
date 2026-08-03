@@ -204,7 +204,8 @@ describe('gear catalogue against real Postgres', () => {
     expect(orgTwo.find((p) => p.product_id === 'gloves-12oz')?.wholesale_cost_cents).toBe(1500);
     // Same product_id in both gyms, which the composite key allows and a
     // product_id-only key would have collided.
-    expect(orgOne).toHaveLength(orgOne.length);
+    expect(orgOne.filter((p) => p.product_id === 'gloves-12oz')).toHaveLength(1);
+    expect(orgTwo.filter((p) => p.product_id === 'gloves-12oz')).toHaveLength(1);
   });
 
   it('lists only gyms that actually have something on sale', async () => {
