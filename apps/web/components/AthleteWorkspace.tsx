@@ -580,7 +580,7 @@ export default function AthleteWorkspace() {
           credentials: 'include',
           signal: controller.signal,
         });
-        if (!response.ok) throw new Error('Drill library could not be loaded.');
+        if (!response.ok) throw new Error('The drill library did not load.');
 
         // `items`, not `drills` -- same seam defect as the coach library.
         const payload = (await response.json()) as {
@@ -607,7 +607,7 @@ export default function AthleteWorkspace() {
       } catch (error) {
         if (controller.signal.aborted) return;
         setDrills([]);
-        setDrillsError(error instanceof Error ? error.message : 'Drill library could not be loaded.');
+        setDrillsError(error instanceof Error ? error.message : 'The drill library did not load.');
       } finally {
         if (!controller.signal.aborted) setDrillsLoading(false);
       }
@@ -629,7 +629,7 @@ export default function AthleteWorkspace() {
         `${apiBase()}/api/pilot/goals/list?athlete_id=${encodeURIComponent(backendAthleteId)}`,
         { method: 'GET', credentials: 'include' }
       );
-      if (!response.ok) throw new Error('Failed to load goals');
+      if (!response.ok) throw new Error('Your goals did not load. Try again.');
 
       const data = (await response.json()) as { items?: Array<{ goal_id: string; title: string; category?: string; target_date?: string; metric?: string; progress_percent?: number; status?: string }> };
       const items = data.items || [];
@@ -651,7 +651,7 @@ export default function AthleteWorkspace() {
       }));
       setSmartGoals(goals);
     } catch (error) {
-      setGoalsError(error instanceof Error ? error.message : 'Failed to load goals');
+      setGoalsError(error instanceof Error ? error.message : 'Your goals did not load. Try again.');
     } finally {
       setGoalsLoading(false);
     }
@@ -714,7 +714,7 @@ export default function AthleteWorkspace() {
         method: 'GET',
         credentials: 'include',
       });
-      if (!response.ok) throw new Error('Failed to load floor plan');
+      if (!response.ok) throw new Error('Your floor did not load. Try again.');
 
       const data = (await response.json()) as {
         items?: Array<{
@@ -746,10 +746,10 @@ export default function AthleteWorkspace() {
 
       setFloorTasks(planTasks);
       if (planTasks.length === 0) {
-        setBackendSyncMessage('No backend floor tasks are currently assigned.');
+        setBackendSyncMessage("Nothing on your floor yet. Check in and today's work gets built.");
       }
     } catch (error) {
-      setTasksError(error instanceof Error ? error.message : 'Failed to load floor plan');
+      setTasksError(error instanceof Error ? error.message : 'Your floor did not load. Try again.');
       setFloorTasks([]);
     } finally {
       setTasksLoading(false);
@@ -771,14 +771,14 @@ export default function AthleteWorkspace() {
       });
 
       if (!response.ok) {
-        throw new Error('Unable to load SHADOW observation stream.');
+        throw new Error("SHADOW's notes did not load.");
       }
 
       const payload = (await response.json()) as { items?: ShadowObservationItem[] };
       setShadowObservations(payload.items ?? []);
       setShadowObservationError('');
     } catch (error) {
-      setShadowObservationError(error instanceof Error ? error.message : 'Unable to load SHADOW observation stream.');
+      setShadowObservationError(error instanceof Error ? error.message : "SHADOW's notes did not load.");
     }
   }, []);
 
@@ -916,7 +916,7 @@ export default function AthleteWorkspace() {
     if (!backendAthleteId) {
       // There is no local goal store -- goals exist only in pilot.goals -- so
       // without a backend session nothing is written anywhere.
-      setBackendSyncMessage('Goal was not saved. Backend athlete session not found - sign in again and retry.');
+      setBackendSyncMessage("That goal did not save. You are not signed in right now -- sign in again and put it back up.");
       return;
     }
 
@@ -943,8 +943,8 @@ export default function AthleteWorkspace() {
       });
 
       if (!response.ok) {
-        const payload = (await response.json().catch(() => ({ error: 'Goal persistence failed' }))) as { error?: string };
-        setBackendSyncMessage(payload.error || 'Goal persistence failed');
+        const payload = (await response.json().catch(() => ({ error: "That goal did not take. Try it again." }))) as { error?: string };
+        setBackendSyncMessage(payload.error || "That goal did not take. Try it again.");
         return;
       }
 
@@ -967,9 +967,9 @@ export default function AthleteWorkspace() {
       setNewGoalTargetDate('');
       setNewGoalSuccessMetric('');
       setShowGoalForm(false);
-      setBackendSyncMessage('Goal persisted to pilot backend.');
+      setBackendSyncMessage("Goal's on the board. Now go work it.");
     } catch (error) {
-      setBackendSyncMessage(error instanceof Error ? error.message : 'Goal persistence failed');
+      setBackendSyncMessage(error instanceof Error ? error.message : "That goal did not take. Try it again.");
     } finally {
       setIsCreatingGoal(false);
     }
@@ -1012,13 +1012,13 @@ export default function AthleteWorkspace() {
       })),
     };
 
-    setLastWorkoutBuildNote(`Workout auto-generated on check-in (${readiness} readiness).`);
+    setLastWorkoutBuildNote(`Built from your check-in. You came in ${readiness}.`);
     setActiveTab('athlete-floor');
 
     if (!backendAthleteId) {
       setIsCheckingIn(false);
-      setBackendSyncMessage('Session generated locally. Backend athlete session not found, '
-        + 'so nothing was stored and there is no session to check out of.');
+      setBackendSyncMessage("Your workout is built, but nothing was saved -- you are not signed in. "
+        + "There is no session to check out of, so tell a coach you are here.");
       return;
     }
 
@@ -1076,15 +1076,15 @@ export default function AthleteWorkspace() {
           createdAt: now.toISOString(),
         });
         setNotesSaveState(checkInNotes.trim() ? 'saved' : 'idle');
-        setBackendSyncMessage('Session check-in persisted to pilot backend.');
+        setBackendSyncMessage("You are checked in. Today's work is on your floor.");
       } else {
-        const payload = (await sessionResponse.json().catch(() => ({ error: 'Session persistence failed' }))) as { error?: string };
-        setBackendSyncMessage(`${payload.error || 'Session persistence failed'} `
-          + 'Nothing was stored, so there is no session to check out of. Tell a coach you are here.');
+        const payload = (await sessionResponse.json().catch(() => ({ error: 'That check-in did not take.' }))) as { error?: string };
+        setBackendSyncMessage(`${payload.error || 'That check-in did not take.'} `
+          + "Nothing was saved, so there is no session to check out of. Tell a coach you are here.");
       }
     } catch (error) {
-      setBackendSyncMessage(`${error instanceof Error ? error.message : 'Session persistence failed'} `
-        + 'Nothing was stored, so there is no session to check out of. Tell a coach you are here.');
+      setBackendSyncMessage(`${error instanceof Error ? error.message : 'That check-in did not take.'} `
+        + "Nothing was saved, so there is no session to check out of. Tell a coach you are here.");
     } finally {
       setIsCheckingIn(false);
     }
@@ -1142,8 +1142,8 @@ export default function AthleteWorkspace() {
       setCheckInNotes('');
       setNotesSaveState('idle');
       setBackendSyncMessage(notes
-        ? 'Check-out saved. Your session notes are on the session record for your coach.'
-        : 'Check-out saved to pilot backend.');
+        ? "Logged. What you wrote is on the session for your coach to read."
+        : "Logged. That one is on your card.");
       // Re-read rather than trust the write: the recent list below and the
       // "are you still checked in" question are both answered from the server.
       await loadStoredSessions();
@@ -1153,8 +1153,8 @@ export default function AthleteWorkspace() {
       // watching the screen empty itself.
       const detail = error instanceof Error && error.message ? `: ${error.message}` : '.';
       setBackendSyncMessage(
-        `Check-out did not save and you are still checked in${detail} `
-        + 'Try Check Out again, and tell a coach anything they need to know.',
+        `That did not take and you are still checked in${detail} `
+        + "Hit Check Out again, and tell a coach anything they need to know.",
       );
     } finally {
       setIsCheckingOut(false);
@@ -1221,13 +1221,14 @@ export default function AthleteWorkspace() {
       };
 
       setPainSaveMessage(payload.painReport?.coachNotified
-        ? 'Pain report saved and raised for coach review.'
-        : 'Pain report saved to your record. No coach review was raised for it -- '
-          + 'tell a coach in person.');
+        ? 'Logged, and flagged for a coach to look at.'
+        : 'Logged on your record. No coach was flagged for it, so tell one in person.');
 
       setShowPainModal(false);
     } catch (error) {
-      setPainSaveMessage(error instanceof Error ? error.message : 'Pain report save failed.');
+      setPainSaveMessage(error instanceof Error
+        ? error.message
+        : 'That pain report did not save. Report it again, and tell a coach in person.');
     } finally {
       setIsSavingPain(false);
     }
@@ -1261,8 +1262,8 @@ export default function AthleteWorkspace() {
       });
 
       if (!response.ok) {
-        const payload = (await response.json().catch(() => ({ error: 'Message delivery failed.' }))) as { error?: string };
-        throw new Error(payload.error || 'Message delivery failed.');
+        const payload = (await response.json().catch(() => ({ error: 'That message did not send. Try it again.' }))) as { error?: string };
+        throw new Error(payload.error || 'That message did not send. Try it again.');
       }
 
       setCoachMessageBody('');
@@ -1271,10 +1272,10 @@ export default function AthleteWorkspace() {
       // by SHADOW. No coach is notified and none ever sees it, so saying so
       // would be a promise the system does not keep.
       setCoachMessageStatus(
-        `Saved to your SHADOW conversation for ${selectedCoach}. SHADOW will respond there -- open SHADOW Chat to read it. This does not notify ${selectedCoach} directly.`,
+        `Saved to your SHADOW conversation for ${selectedCoach}. SHADOW answers there -- open SHADOW Chat to read it. ${selectedCoach} is not notified.`,
       );
     } catch (error) {
-      setCoachMessageStatus(error instanceof Error ? error.message : 'Message delivery failed.');
+      setCoachMessageStatus(error instanceof Error ? error.message : 'That message did not send. Try it again.');
     } finally {
       setIsSendingCoachMessage(false);
     }
@@ -1322,7 +1323,7 @@ export default function AthleteWorkspace() {
         <div className={PANEL}>
           <p className="t-eyebrow">Daily Reminder</p>
           <p className="mt-[var(--s2)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Show up. Do the hard rounds. Own the details. Progress is earned through consistent grit and disciplined effort.</p>
-          {backendSyncMessage ? <p className="mt-[var(--s3)] t-data" style={{ fontSize: 'var(--t-xs)' }} role="status">Backend Sync: {backendSyncMessage}</p> : null}
+          {backendSyncMessage ? <p className="mt-[var(--s3)] t-data" style={{ fontSize: 'var(--t-xs)' }} role="status">{backendSyncMessage}</p> : null}
         </div>
 
         {/* ROLE SUMMARY PANEL */}
@@ -1343,20 +1344,20 @@ export default function AthleteWorkspace() {
         <TrainingCard sessions={trainingSessions} />
 
         <details className={PANEL}>
-          <summary className="t-label cursor-pointer">Critical Capability Surfaces</summary>
+          <summary className="t-label cursor-pointer">What&apos;s Coming</summary>
           <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
             <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">AI/ML Video Analysis - Planned</p>
-              <p className="t-muted mt-[var(--s2)]">Video feedback and comparison are front-end placeholders only.</p>
+              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Video Analysis - Not Built Yet</p>
+              <p className="t-muted mt-[var(--s2)]">The screens are drawn. Nothing behind them works yet.</p>
               <Link href="/athlete/video-analysis" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
-                Open Athlete Video Surface
+                Open Video Analysis
               </Link>
             </article>
             <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Closed-Loop Progression Intelligence - Planned</p>
-              <p className="t-muted mt-[var(--s2)]">Recommendation and scoring logic are not automated in this pass.</p>
+              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Automatic Progress Tracking - Not Built Yet</p>
+              <p className="t-muted mt-[var(--s2)]">Your coach still decides what comes next. Nothing here scores you on its own.</p>
               <Link href="/athlete/progression-intelligence" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
-                Open Progression Intelligence
+                Open Progress Tracking
               </Link>
             </article>
           </div>
@@ -1571,14 +1572,14 @@ export default function AthleteWorkspace() {
                     />
                     <p className="text-[length:var(--t-sm)] text-[color:var(--bone-300)]" role="status">
                       {notesSaveState === 'failed'
-                        ? 'Your notes are not saved yet -- the app could not reach your session record. Keep this tab open and keep typing; it will try again.'
+                        ? 'Your notes are not saved yet -- this screen could not reach your session. Keep the tab open and keep writing; it will keep trying.'
                         : notesSaveState === 'saving'
                           ? 'Saving your notes...'
                           : notesStored
-                            ? 'Saved to your session record. Your notes survive closing this tab.'
+                            ? 'Saved. What you wrote stays put, even if this tab closes.'
                             : notesDraft
                               ? 'Not saved yet.'
-                              : 'Anything you write here is saved to your session record as you go.'}
+                              : 'Anything you write here saves as you go.'}
                     </p>
                     <button
                       type="button"
@@ -1616,7 +1617,7 @@ export default function AthleteWorkspace() {
                           <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>{session.date}</span>
                           {' - '}
                           {AUTO_CHECK_IN_NOTE_PATTERN.test(session.notes)
-                            ? 'No notes were written for this session.'
+                            ? 'No notes on this one.'
                             : session.notes}
                         </li>
                       ))}
@@ -1632,7 +1633,7 @@ export default function AthleteWorkspace() {
             <div className="space-y-6 animate-fadeIn">
               {lastWorkoutBuildNote && (
                 <div className={PANEL}>
-                  <p className="t-eyebrow">Workout Wiring</p>
+                  <p className="t-eyebrow">Today&apos;s Work</p>
                   <p className="mt-[var(--s2)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">{lastWorkoutBuildNote}</p>
                 </div>
               )}
@@ -1643,7 +1644,7 @@ export default function AthleteWorkspace() {
                   'Review all tasks for the day',
                   'Mark tasks complete as you finish them',
                   'Link tasks to your active SMART goals',
-                  'Upload evidence or notes for accountability'
+                  'Write down what you did and how it felt'
                 ]}
                 mistakes={[
                   'Overlooking tasks marked as High priority',
@@ -1662,7 +1663,7 @@ export default function AthleteWorkspace() {
                 <div className="alert alert--critical" role="alert">
                   <span className="alert-icon" aria-hidden="true">✕</span>
                   <div className="alert-body">
-                    <p className="alert-title">Error loading tasks</p>
+                    <p className="alert-title">Could not load your floor</p>
                     <p className="alert-msg">{tasksError}</p>
                     <div className="alert-action">
                       <button
@@ -1720,7 +1721,7 @@ export default function AthleteWorkspace() {
 
               {!tasksLoading && !tasksError && floorTasks.length === 0 && (
                 <div className={`${PANEL} text-center`}>
-                  <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">No backend floor tasks are available for this athlete yet.</p>
+                  <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Nothing on your floor yet. Check in and today&apos;s work gets built.</p>
                 </div>
               )}
             </div>
@@ -1820,7 +1821,7 @@ export default function AthleteWorkspace() {
                 <div className="alert alert--critical" role="alert">
                   <span className="alert-icon" aria-hidden="true">✕</span>
                   <div className="alert-body">
-                    <p className="alert-title">Error loading goals</p>
+                    <p className="alert-title">Could not load your goals</p>
                     <p className="alert-msg">{goalsError}</p>
                     <div className="alert-action">
                       <button
@@ -1840,7 +1841,7 @@ export default function AthleteWorkspace() {
 
               {!goalsLoading && smartGoals.length === 0 && !goalsError && (
                 <div className={`${PANEL} text-center`}>
-                  <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">No goals yet. Create one to get started!</p>
+                  <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Nothing on the board yet. Put up one goal and we&apos;ll track it.</p>
                 </div>
               )}
 
@@ -1907,8 +1908,7 @@ export default function AthleteWorkspace() {
               {/* Not-built-yet is a statement of fact, not a refusal or a safety
                   state — the label voice, never the safety gate's red (Law 2). */}
               <p className="t-label">
-                PLANNED | NOT YET IMPLEMENTED -- there is no assessment engine behind this tab, so nothing can
-                be started or scored from here yet.
+                NOT BUILT YET -- there is nothing behind this tab, so nothing here can start or score anything.
               </p>
               <div className="space-y-[var(--s4)]">
                 <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
@@ -1980,7 +1980,7 @@ export default function AthleteWorkspace() {
 
                 {expandedCheckIn && (
                   <div className="space-y-[var(--s4)] pt-[var(--s4)] border-t-2 border-[color:var(--brass-700)]">
-                    <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Additional detailed metrics available below...</p>
+                    <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">None of this is built yet. Here is what is coming:</p>
                     <div className="text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-400)]">
                       <p>• Resting Heart Rate, HRV, Blood Pressure</p>
                       <p>• Upper/Lower Body Soreness by location</p>
@@ -2021,9 +2021,9 @@ export default function AthleteWorkspace() {
                 <div className="alert alert--critical" role="alert">
                   <span className="alert-icon" aria-hidden="true">✕</span>
                   <div className="alert-body">
-                    <p className="alert-title">Failed</p>
+                    <p className="alert-title">Could not load the drills</p>
                     <p className="alert-msg">{drillsError}</p>
-                    <p className="alert-msg mt-[var(--s2)]">This is a failure to load, not an empty library.</p>
+                    <p className="alert-msg mt-[var(--s2)]">The gym&apos;s drills are still there. This screen just could not reach them.</p>
                   </div>
                 </div>
               )}
@@ -2105,7 +2105,7 @@ export default function AthleteWorkspace() {
                 description="Write a question for your coach. It is recorded in your own SHADOW conversation and answered by SHADOW -- it is not delivered to the coach."
                 usage={[
                   'Be clear and specific in questions',
-                  'Messages are logged for accountability',
+                  'Everything you send here is kept',
                   'Open SHADOW Chat to read the response',
                   'Speak to a coach in person for anything urgent'
                 ]}
@@ -2123,8 +2123,8 @@ export default function AthleteWorkspace() {
               <div className="alert alert--warning">
                 <span className="alert-icon" aria-hidden="true">▲</span>
                 <div className="alert-body">
-                  <p className="alert-title">Planned | Not Yet Implemented</p>
-                  <p className="alert-msg"><strong>SafeSport:</strong> messages sent here are logged, but automatic parent carbon copy is not built yet and no coach is notified. Tell a coach or trusted adult in person about anything urgent or unsafe.</p>
+                  <p className="alert-title">Not Built Yet</p>
+                  <p className="alert-msg"><strong>SafeSport:</strong> what you send here is kept, but your parent is not automatically copied and no coach is notified. Tell a coach or a trusted adult in person about anything urgent or unsafe.</p>
                 </div>
               </div>
 
@@ -2190,8 +2190,8 @@ export default function AthleteWorkspace() {
 
               {/* Statement of fact, not a refusal or safety state (Law 2). */}
               <p className="t-label">
-                PLANNED | NOT YET IMPLEMENTED -- this tab cannot read the gym&apos;s classes or register you
-                for one. Open the unified scheduler above for live classes and real registration.
+                NOT BUILT YET -- this tab cannot see the gym&apos;s classes or sign you up for one. Open the
+                scheduler above for real classes and real sign-ups.
               </p>
             </div>
           )}
@@ -2217,8 +2217,8 @@ export default function AthleteWorkspace() {
                 <div>
                   <p className="t-label">SHADOW Chat</p>
                   <p className="mt-[var(--s2)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
-                    In-workspace chat is not available here yet. Open the full SHADOW chat to ask a
-                    question and get a real response.
+                    You cannot chat with SHADOW from this screen yet. Open the full SHADOW chat to ask a
+                    question and get a real answer.
                   </p>
                 </div>
 
@@ -2240,12 +2240,12 @@ export default function AthleteWorkspace() {
               </div>
 
               <div className={PANEL}>
-                <h3 className="t-label">SHADOW Observation Projection</h3>
+                <h3 className="t-label">What SHADOW Has Noticed</h3>
                 {shadowObservationError ? (
                   <div className="alert alert--critical" role="alert">
                     <span className="alert-icon" aria-hidden="true">✕</span>
                     <div className="alert-body">
-                      <p className="alert-title">Failed</p>
+                      <p className="alert-title">Could not load SHADOW&apos;s notes</p>
                       <p className="alert-msg">{shadowObservationError}</p>
                       <div className="alert-action">
                         <button
@@ -2263,7 +2263,7 @@ export default function AthleteWorkspace() {
                   </div>
                 ) : null}
                 {!shadowObservationError && shadowObservations.length === 0 ? (
-                  <p className="t-muted mt-[var(--s3)]">No SHADOW observations available yet.</p>
+                  <p className="t-muted mt-[var(--s3)]">SHADOW has not noticed anything yet. Keep training and checking in.</p>
                 ) : null}
                 <div className="mt-[var(--s3)] space-y-[var(--s3)]">
                   {shadowObservations.slice(0, 6).map((item) => (

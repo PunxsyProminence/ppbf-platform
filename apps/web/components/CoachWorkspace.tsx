@@ -1023,7 +1023,24 @@ export default function CoachWorkspace() {
                     </div>
                   )}
 
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {/* The roster kept a cap; Open Tasks below did not, and the
+                      difference is the grid, not the list. This panel shares a
+                      md:grid row with Today's Session, so an uncapped roster
+                      stretches that row to whatever the session's enrolment
+                      happens to be and leaves the session card floating in a
+                      column of empty leather. The list is also genuinely
+                      unbounded -- a club-wide roster, not a session's worth.
+
+                      What was wrong was the number. max-h-48 is 192px: four
+                      athlete rows, on a desktop with a thousand pixels of room,
+                      so a coach with a twenty-athlete session was scrolling a
+                      porthole inside a page that was already scrolling. The cap
+                      is viewport-relative now and it grows with the screen --
+                      55vh (Fibonacci) on a tablet, the golden major at 61.8vh
+                      from lg up. On a 900px laptop that is ~495px, ten or
+                      twelve athletes rather than four; on the gym tablet it
+                      still stops short of eating the panel. */}
+                  <div className="space-y-2 max-h-[55vh] lg:max-h-[61.8vh] overflow-y-auto">
                     {athletes.map(athlete => (
                       <button
                         type="button"
@@ -1056,7 +1073,19 @@ export default function CoachWorkspace() {
                 {/* Open Tasks */}
                 <div className="md:col-span-2 mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
                   <h3 className="t-eyebrow">Open Tasks</h3>
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {/* Cap removed outright rather than raised. This panel is
+                      md:col-span-2 and it is the last thing in the grid, so
+                      there is nothing underneath it for a long list to push
+                      off-screen: growing costs the page height it was always
+                      going to cost, and the page scroll already handles that.
+                      What the 192px window bought instead was a scroll trap --
+                      a nested scroller with no visible edge, inside a scrolling
+                      page, hiding the fourth task onward from a coach who has
+                      no reason to suspect there is a fourth task. Whether the
+                      work list is finished is exactly the question this panel
+                      exists to answer, and it cannot answer it through a
+                      porthole. */}
+                  <div className="space-y-2">
                     {coachTasks.filter(t => t.status !== 'Completed').map(task => (
                       <div key={task.id} className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
                         <div className="flex justify-between items-start mb-[var(--s3)] gap-[var(--s3)]">

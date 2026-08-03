@@ -747,6 +747,35 @@ h6 {
   letter-spacing: 0.06em;
 }
 
+/* ---------------------------------------------------------------------------
+   Panels that open in place.
+
+   A row that expands its detail panel with no transition reads as "did
+   anything happen?" -- the content is simply there, and the eye has nothing
+   to follow from the button it just pressed to the thing that appeared. The
+   design system already names the motion for this exact case: --m-settle is
+   "something with mass arriving -- a sheet, a panel", and --e-settle is its
+   easing. Both are read from ppbf.css rather than restated, so a change to
+   the system's motion feel reaches this too.
+
+   The travel is --s2 (5px), one rung of the Fibonacci scale: enough to be a
+   direction, not enough to be a slide. `both` holds the from-state during any
+   delay so the panel never flashes at full opacity first.
+
+   No reduced-motion guard is needed here -- ppbf.css already kills every
+   animation globally under prefers-reduced-motion, and the panel still opens,
+   just instantly. */
+.panel-settle {
+  animation: panel-settle var(--m-settle) var(--e-settle) both;
+}
+
+@keyframes panel-settle {
+  from {
+    opacity: 0;
+    translate: 0 calc(var(--s2) * -1);
+  }
+}
+
 /* Floor-use: larger stamps on small screens */
 @media (max-width: 768px) {
   .stamp-button {
@@ -858,4 +887,246 @@ h6 {
   --radius-2xl: 21px;  /* 16px */
   --radius-3xl: 34px;  /* 24px */
   --radius-4xl: 55px;  /* 32px */
+}
+
+/* ---------------------------------------------------------------------------
+   BUTTON HIERARCHY
+
+   ppbf.css owns the buttons and stays the source of truth. Nothing below
+   re-declares one: .btn is the brass primary, .btn--ghost the quiet outline,
+   .btn--danger the destructive red, .btn--kiosk the 55px floor control,
+   .btn--lever the form-history lever, and .btn[aria-busy] the mid-commit
+   state. What follows closes the four gaps the system left open, in the order
+   they bite.
+
+   1. THE VARIANTS LOSE THEIR IDENTITY ON HOVER.
+
+      `.btn:hover` sets `background-image` at (0,2,0). `.btn--ghost` and
+      `.btn--danger` set theirs at (0,1,0), and their own :hover rules restyle
+      border, colour and background-COLOR without ever mentioning
+      background-image. So the brass primary gradient wins the moment a
+      pointer lands on either of them: a ghost button lights up brass, and a
+      destructive Delete turns into the most primary-looking control on the
+      screen at exactly the moment the cursor is over it. Neither variant can
+      defend itself, because the property that overwrites them is one they
+      never set.
+
+      That is one bug reaching every secondary and every destructive action in
+      the app at once, and it is most of what "buttons are inconsistent" means
+      here -- the tiers are right at rest and collapse under the pointer.
+      Restated per variant below, which is the smallest fix that keeps a tier
+      looking like its tier for the whole of a hover.
+
+   2. THERE IS NO MIDDLE TIER.
+
+      Between brass ("do this") and ghost ("you may") the system offers
+      nothing, so every second-rank action -- Save Draft beside Publish,
+      Export beside Approve, Retry beside Resolve -- had to pick between
+      shouting and disappearing, and the app's answer was almost always ghost.
+      That is how important actions ended up rendering as the lowest-ranked
+      control on the page. .btn--secondary is an oiled-leather face with a
+      brass hairline: unmistakably a control with weight, and unmistakably not
+      the brass one.
+
+   3. NOTHING TRANSITIONS, AND THE PRESS HAS NO TIME IN IT.
+
+      The system names its own motion for precisely this -- --m-quick for a
+      hover, --m-instant for a state flip, --e-lever for a mechanical linkage,
+      --e-stamp for something driven down and stopped dead -- and the buttons
+      never read any of it, so every state change is a hard cut. .btn--lever
+      already does it correctly and is the model. A control in this aesthetic
+      has mass: it should come up over ~89ms and drop onto its seat in ~55ms.
+      The travel and the inset shadow are ppbf.css's; only the timing is new.
+
+   4. THERE IS NO DISABLED STATE AT ALL.
+
+      .btn--lever has one. .btn does not. A disabled brass button was
+      pixel-identical to a live one, still lit under the pointer, still
+      carrying the drop shadow that says "pressable". It is FLATTENED here
+      rather than merely dimmed -- the shadow that lifts it off the page is
+      removed, so it stops looking like an object you can push -- and hover
+      and press are neutralised rather than left to fight it.
+
+      One appearance for all four tiers, deliberately: a disabled control has
+      no rank, because there is no action to rank. [aria-disabled] rides
+      alongside :disabled throughout, because a .btn is frequently an anchor
+      and an <a> has no :disabled to match.
+
+   Two mechanical notes that the whole block depends on:
+
+   - This sheet is UNLAYERED and @imports ppbf.css at its top, so every rule
+     here is later in source order than the rule it has to beat. Each selector
+     below is written at or above the specificity of its ppbf.css counterpart,
+     and wins the tie on order. Nothing uses !important.
+   - Law 6's second ground is not optional. Every rule that names a colour has
+     an .on-canvas restatement, for the same reason ppbf.css restates
+     .btn--ghost there: a leather face and bone type on cream paper is a grey
+     smear, and a dimmed dark slab reads as a hole in the page rather than as
+     a control that is switched off.
+   --------------------------------------------------------------------------- */
+
+/* (3) Timing. ppbf.css already decides WHAT moves; this decides how long it
+   takes. box-shadow and translate run at --m-instant so the press is perceived
+   as "now" -- a stamp does not ease onto paper -- while colour and surface
+   changes take the --m-quick hover beat. Under prefers-reduced-motion,
+   ppbf.css's global `* { transition: none !important }` removes all of it. */
+.btn {
+  transition:
+    background-image var(--m-quick) var(--e-lever),
+    background-color var(--m-quick) var(--e-lever),
+    border-color var(--m-quick) var(--e-stamp),
+    color var(--m-quick) var(--e-stamp),
+    box-shadow var(--m-instant) var(--e-stamp),
+    translate var(--m-instant) var(--e-stamp);
+}
+
+/* (1) Ghost keeps its own surface through the hover. ppbf.css sets everything
+   else about this state on both grounds already -- border, colour, wash -- and
+   background-image is the single property it forgot, so that is the only
+   property stated here. */
+.btn--ghost:hover {
+  background-image: none;
+}
+
+/* (1) Danger keeps being danger. A destructive action must not be able to
+   render in the chassis colour, hovered or not (Law 2: saturated colour is
+   safety and destruction, and brass is neither). Built from --locked rather
+   than from a second red so the button and the badge reporting the same state
+   cannot disagree; hover lifts the face toward bone, which is a lamp coming up
+   on the same object, not a different colour. */
+.btn--danger:hover {
+  background-image: linear-gradient(180deg,
+    color-mix(in srgb, var(--locked) 66%, var(--bone-100)) 0%,
+    color-mix(in srgb, var(--locked) 94%, var(--bone-100)) 55%,
+    var(--locked) 100%);
+}
+
+/* (2) The middle tier. Leather, not brass: the material the chassis is bolted
+   to rather than the chassis itself, with a brass hairline so it still reads
+   as hardware. It sits visibly below .btn and visibly above .btn--ghost at a
+   glance, which is the whole job. .btn sets `border: 0`, so the hairline has
+   to be restated rather than added to. */
+.btn--secondary {
+  border: 1px solid var(--brass-700);
+  color: var(--bone-200);
+  background-color: var(--hide-800);
+  background-image: linear-gradient(180deg,
+    var(--hide-600) 0%, var(--hide-800) 62%, var(--hide-900) 100%);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--brass-300) 16%, transparent),
+    0 2px 5px rgba(0, 0, 0, .45);
+  text-shadow: none;
+}
+
+.btn--secondary:hover {
+  border-color: var(--brass-400);
+  color: var(--bone-100);
+  background-image: linear-gradient(180deg,
+    var(--hide-500) 0%, var(--hide-700) 62%, var(--hide-800) 100%);
+}
+
+/* The canvas restatement. Inverted material -- paper with a brass edge --
+   because the leather face above goes muddy on cream and bone type loses its
+   ground on it, which is the identical failure ppbf.css documents for
+   .btn--ghost. */
+.on-canvas .btn--secondary {
+  border: 1px solid var(--brass-700);
+  color: var(--hide-900);
+  background-color: var(--paper-2);
+  background-image: linear-gradient(180deg, var(--paper) 0%, var(--paper-2) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .6),
+    0 1px 3px rgba(0, 0, 0, .18);
+}
+
+.on-canvas .btn--secondary:hover {
+  border-color: var(--brass-800);
+  color: var(--hide-950);
+  background-image: linear-gradient(180deg, var(--bone-100) 0%, var(--paper) 100%);
+}
+
+/* (3) The press, on both new surfaces. ppbf.css's .btn:active already drives
+   every variant 1px down into an inset shadow; secondary only needs its
+   hairline to darken with it, so the edge does not stay lit while the face
+   goes into shadow. */
+.btn--secondary:active {
+  border-color: var(--brass-800);
+}
+
+/* (4) Disabled. Every state that could otherwise repaint it is enumerated in
+   the selector rather than trusted to lose the cascade: :hover still matches a
+   disabled button in every current browser, and aria-disabled anchors are
+   fully interactive as far as CSS is concerned, so :active matches them too.
+   Flat -- no gradient, no drop shadow, no bevel, no travel -- because the
+   thing that makes these buttons look pressable is the light on a raised face,
+   and a control that cannot be pressed should not have it. */
+.btn:disabled,
+.btn:disabled:hover,
+.btn:disabled:active,
+.btn[aria-disabled="true"],
+.btn[aria-disabled="true"]:hover,
+.btn[aria-disabled="true"]:active {
+  cursor: not-allowed;
+  color: var(--bone-400);
+  border-color: color-mix(in srgb, var(--brass-800) 50%, transparent);
+  background-image: none;
+  background-color: color-mix(in srgb, var(--hide-600) 62%, transparent);
+  box-shadow: none;
+  text-shadow: none;
+  translate: none;
+}
+
+.on-canvas .btn:disabled,
+.on-canvas .btn:disabled:hover,
+.on-canvas .btn:disabled:active,
+.on-canvas .btn[aria-disabled="true"],
+.on-canvas .btn[aria-disabled="true"]:hover,
+.on-canvas .btn[aria-disabled="true"]:active {
+  color: color-mix(in srgb, var(--hide-800) 58%, var(--paper-2));
+  border-color: color-mix(in srgb, var(--hide-800) 24%, transparent);
+  background-color: color-mix(in srgb, var(--hide-600) 14%, var(--paper-2));
+}
+
+/* --- Table density --------------------------------------------------------
+
+   The row-action button: Edit / Void / Resend, three to a cell, in a table
+   that has to show twenty rows at once. Written by hand at each call site so
+   far, and written small -- min-h-[32px] px-2 -- which is under every floor
+   this app has and is why it needs a name instead.
+
+   The floor here is 44px, not --tap, and that is the rule this file already
+   set out above rather than an exception to it: 55px is the GYM FLOOR number,
+   for a child in gloves on a cracked tablet, and it is scoped to
+   [data-surface="kiosk"] precisely so it does not push dense admin tables
+   around for people sitting at a desk. So a compact button gives up padding
+   and type size -- the two things that cost horizontal room in a cell -- and
+   gives up no height at all.
+
+   On a kiosk surface it goes to --tap anyway. `[data-surface="kiosk"] button`
+   is (0,1,1) and already outranks .btn--compact at (0,1,0), so a <button>
+   needs nothing; the rule below is for the anchors, since that selector only
+   names real controls and a .btn is often an <a>. */
+.btn--compact {
+  min-height: 44px;
+  padding: 0 var(--s3);
+  gap: var(--s2);
+  font-size: var(--t-xs);
+  letter-spacing: .09em;
+}
+
+[data-surface="kiosk"] .btn--compact {
+  min-height: var(--tap);
+  font-size: var(--t-sm);
+  padding: 0 var(--s4);
+}
+
+/* The 1px press travel is motion, and it is the one part of this block that
+   ppbf.css's global reduced-motion rule cannot reach: that rule cancels
+   transitions and animations, and a `translate` on :active is neither. The
+   button still reports the press through its inset shadow. Same call this file
+   already makes for .stamp-button and .brass-plate. */
+@media (prefers-reduced-motion: reduce) {
+  .btn:active {
+    translate: none;
+  }
 }

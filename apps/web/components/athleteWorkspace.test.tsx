@@ -230,7 +230,7 @@ describe('athlete workspace honesty', () => {
 
     // Nothing is written anywhere without a session, so the message must not
     // imply the goal survived.
-    await waitFor(() => expect(screen.getByText(/Goal was not saved/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/That goal did not save/)).toBeTruthy());
     expect(screen.queryByText(/saved locally/i)).toBeNull();
     expect(fetchCalls.some((call) => call.url.endsWith('/api/pilot/goals'))).toBe(false);
   });
@@ -251,7 +251,7 @@ describe('athlete safety reporting', () => {
     painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true, severity: 'high' } });
     await openPainReport();
 
-    await screen.findByText(/raised for coach review/);
+    await screen.findByText(/flagged for a coach to look at/);
     const [observation] = postedTo('/api/pilot/shadow/formulas/observations');
     expect(OBSERVATION_KINDS).toContain(observation.body.kind);
     expect(FORMULA_UNITS).toContain(observation.body.unit);
@@ -362,7 +362,7 @@ describe('an open session across a reload', () => {
       // Still open: this is a draft save, not an early check-out.
       completed_flag: false,
     }));
-    expect(await screen.findByText(/Saved to your session record/)).toBeTruthy();
+    expect(await screen.findByText(/What you wrote stays put/)).toBeTruthy();
   });
 
   test('a failed check-out leaves the session open and the notes on screen', async () => {
