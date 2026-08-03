@@ -36,7 +36,16 @@ branches in this repo have repeatedly been many commits behind — verify agains
   three shapes each of the 61 routes takes, and which ground (ink for staff,
   warm canvas for family and public) it sits on
 - `design-system/index.html` — browsable index of the foundation, component, and
-  screen previews. Open it before designing a new surface.
+  screen previews. Open it before designing a new surface. These are hand-authored
+  mockups of the language, not pictures of the shipped pages.
+- `npm run shots` → `apps/web/page-shots/gallery.html` — the shipped pages themselves.
+  Photographs all 68 routes at two widths, each opened as the role that opens that
+  door, and lays the prints out on one contact sheet grouped by room. Flags redirects,
+  horizontal overflow, and routes the building map does not list. Prints for a person
+  to judge, not a pixel baseline — see
+  [apps/web/scripts/page-shots.ts](apps/web/scripts/page-shots.ts) for why that
+  distinction matters here. Output is gitignored; re-run it rather than trusting an
+  old sheet.
 - [docs/BRAND_DESIGN_BRIEF.md](docs/BRAND_DESIGN_BRIEF.md) — for generating
   **external** visuals (posters, social cards, grant covers) in tools that can't
   read CSS. The only document allowed to restate hex values, and it is transcribed
