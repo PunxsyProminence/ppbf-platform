@@ -1315,6 +1315,11 @@ export default function AthleteWorkspace() {
           unreadMessages={0}
         />
 
+        {/* The training card. One stamp per session row from the ledger -- a
+            record the athlete accumulates, so there is something to come back
+            to. Cumulative, never a streak: see TrainingCard.tsx. */}
+        <TrainingCard sessions={trainingSessions} />
+
         <details className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4">
           <summary className="cursor-pointer text-xs font-mono uppercase tracking-[0.12em] text-[color:var(--brass-300)]">Critical Capability Surfaces</summary>
           <div className="mt-3 grid gap-3 md:grid-cols-2">
