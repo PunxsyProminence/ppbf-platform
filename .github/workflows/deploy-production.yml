@@ -37,6 +37,14 @@ on:
         description: "Type CONFIRMED to attest all database migrations this commit depends on are already applied to production"
         required: true
         type: string
+      allow_rollback:
+        description: "Deploying a commit OLDER than what production runs? Choose YES. Leave NO otherwise."
+        required: false
+        default: "NO"
+        type: choice
+        options:
+          - "NO"
+          - "YES"
 
 permissions:
   id-token: write
@@ -109,8 +117,13 @@ jobs:
       RESOURCE_GROUP: ${{ secrets.AZURE_PRODUCTION_RESOURCE_GROUP || 'rg-ppbf-enterprise-staging' }}
       CONTAINER_APP_NAME: app-ppbf-production
     steps:
+      # Full history: the rollback guard below asks whether the commit being
+      # deployed is an ANCESTOR of the one production already runs, and the
+      # default shallow clone cannot answer that.
       - name: Checkout Source Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Authenticate via Azure OIDC
         uses: azure/login@v2
@@ -127,6 +140,106 @@ jobs:
             echo "::error::release digest '$RELEASE_DIGEST' was not found in ACR for ppbf-frontend."
             exit 1
           fi
+
+      # ─────────────────────────────────────────────────────────────────────
+      # Refuse a rollback nobody asked for.
+      #
+      # WHY THIS EXISTS. On 2026-08-03 two production promotions sat at the
+      # approval gate at once: a fresh one carrying thirteen fixes, and a stale
+      # one dispatched five hours earlier for an older commit. Both were
+      # approved within two minutes of each other. The stale one ran FIRST and
+      # repointed production at the older image; the newer one happened to land
+      # ninety seconds later and won. Had the clicks landed the other way round,
+      # production would have been serving a build from before every fix -- a
+      # dead drill library, an open child-account boundary, DDL back on the
+      # login path -- and NOTHING would have said so, because in the run list a
+      # successful rollback is indistinguishable from a successful deploy.
+      #
+      # `confirm_sha` did not help and could not: it compares the input against
+      # the commit this workflow checked out, so a stale run whose SHA is
+      # internally consistent passes cleanly. Nothing compared what was being
+      # deployed against what was already running.
+      #
+      # WHAT THIS CHECKS. Two independent questions, because either alone has a
+      # blind spot:
+      #
+      #   1. Is the incoming commit an ANCESTOR of the one production runs?
+      #      That is the precise definition of "older" for a linear history,
+      #      and it is what catches the case above.
+      #   2. Failing that -- if the app carries no recorded SHA yet, or the two
+      #      commits are on unrelated branches -- is the incoming IMAGE the one
+      #      already deployed? Then this is a harmless re-apply and says so.
+      #
+      # A deliberate rollback is a legitimate emergency action, so this refuses
+      # rather than forbids: dispatch again with allow_rollback=YES.
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Refuse a Rollback Nobody Asked For
+        env:
+          INCOMING_SHA: ${{ inputs.confirm_sha }}
+          INCOMING_DIGEST: ${{ inputs.release_digest }}
+          ALLOW_ROLLBACK: ${{ inputs.allow_rollback }}
+        run: |
+          set -euo pipefail
+
+          RUNNING_IMAGE="$(az containerapp show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "properties.template.containers[0].image" -o tsv)"
+          RUNNING_DIGEST="${RUNNING_IMAGE##*@}"
+
+          # Recorded by this workflow on every deploy (see --set-env-vars
+          # below). Absent only on an app that has not been deployed since this
+          # guard shipped.
+          RUNNING_SHA="$(az containerapp show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "properties.template.containers[0].env[?name=='PPBF_RELEASE_SHA'].value | [0]" \
+            -o tsv 2>/dev/null || true)"
+
+          echo "running digest : ${RUNNING_DIGEST:-<none>}"
+          echo "incoming digest: ${INCOMING_DIGEST}"
+          echo "running commit : ${RUNNING_SHA:-<not recorded>}"
+          echo "incoming commit: ${INCOMING_SHA}"
+
+          if [ "$RUNNING_DIGEST" = "$INCOMING_DIGEST" ]; then
+            echo "Same image already running. This is a re-apply, not a change."
+            exit 0
+          fi
+
+          if [ -z "$RUNNING_SHA" ]; then
+            echo "::warning::Production carries no PPBF_RELEASE_SHA, so this deploy cannot be" \
+                 "checked for being older than what is running. It will be recorded from now on."
+            exit 0
+          fi
+
+          if ! git cat-file -e "${RUNNING_SHA}^{commit}" 2>/dev/null; then
+            echo "::warning::The commit production runs (${RUNNING_SHA}) is not in this" \
+                 "repository's history -- force-push, or an image built elsewhere. Ancestry" \
+                 "cannot be checked; proceeding on the digest comparison alone."
+            exit 0
+          fi
+
+          if [ "$RUNNING_SHA" = "$INCOMING_SHA" ]; then
+            echo "Same commit, different image -- a rebuild of what is already live. Allowed."
+            exit 0
+          fi
+
+          if git merge-base --is-ancestor "$INCOMING_SHA" "$RUNNING_SHA"; then
+            if [ "$ALLOW_ROLLBACK" = "YES" ]; then
+              echo "::warning::ROLLBACK: ${INCOMING_SHA} is an ancestor of the running" \
+                   "${RUNNING_SHA}. Proceeding because allow_rollback=YES."
+              exit 0
+            fi
+            echo "::error::REFUSING A SILENT ROLLBACK."
+            echo "::error::Production runs ${RUNNING_SHA}. This run would deploy ${INCOMING_SHA}," \
+                 "which is an ANCESTOR of it -- every change between the two would be reverted."
+            echo "::error::If that is what you want, dispatch again with allow_rollback=YES."
+            echo "::error::If it is not, this is probably a stale dispatch that has been sitting" \
+                 "at the approval gate while newer work shipped. Cancel it."
+            exit 1
+          fi
+
+          echo "Incoming commit is not an ancestor of what is running. Proceeding."
 
       # This deploy is digest-only: deploy-staging builds and pushes the image,
       # and this workflow just repoints the production Container App at an
@@ -238,6 +351,7 @@ jobs:
             --resource-group "$RESOURCE_GROUP" \
             --image "${ACR_LOGIN_SERVER}/ppbf-frontend@${{ inputs.release_digest }}" \
             --set-env-vars \
+              PPBF_RELEASE_SHA=${{ inputs.confirm_sha }} \
               AZURE_POSTGRES_CONNECTION_STRING=secretref:azure-postgres-connection-string \
               AZURE_STORAGE_CONNECTION_STRING=secretref:azure-storage-connection-string \
               PPBF_MS_TENANT_ID=secretref:ppbf-ms-tenant-id \
