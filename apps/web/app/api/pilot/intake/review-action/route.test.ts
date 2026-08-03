@@ -5,6 +5,7 @@ import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { createOrUpdateMicrosoftStaffAccount } from '@/src/server/pilot/staffProvisioning';
 import { createOrUpdateAthleteAccount } from '@/src/server/pilot/auth';
+import { upsertAthlete } from '@/src/server/pilot/entities';
 import { getIntakeCaseById } from '@/src/server/pilot/intake';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -59,6 +60,7 @@ const mockStaffProvision = createOrUpdateMicrosoftStaffAccount as jest.MockedFun
 >;
 const mockAthleteAccount = createOrUpdateAthleteAccount as jest.MockedFunction<typeof createOrUpdateAthleteAccount>;
 const mockGetIntakeCase = getIntakeCaseById as jest.MockedFunction<typeof getIntakeCaseById>;
+const mockUpsertAthlete = upsertAthlete as jest.MockedFunction<typeof upsertAthlete>;
 
 function principal(): PilotPrincipal {
   return {
@@ -206,6 +208,20 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
       }),
     });
   }
+
+  // Promotion writes to pilot.athletes with upsertAthlete, bypassing the
+  // roster-create route's validator entirely. Without its own check, an
+  // approved intake case is a way to write a gym_status the roster form
+  // cannot offer and the coach workspace would then display verbatim.
+  test('rejects a gym_status outside the shared vocabulary', async () => {
+    const response = await POST(athletePromoteRequest({ gym_status: 'whatever' }));
+
+    expect(response.status).toBe(400);
+    expect(mockUpsertAthlete).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toEqual({
+      error: 'Request body field gym_status must be one of: active, training, inactive',
+    });
+  });
 
   test('rejects an athlete PIN instead of silently discarding it', async () => {
     // The predecessor of this test asserted the PIN was "provisioned" -- but

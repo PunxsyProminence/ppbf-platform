@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { GYM_STATUS_OPTIONS, isGymStatus } from '@/src/shared/athleteConstants';
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { createOrUpdateAthleteAccount } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
@@ -280,6 +281,13 @@ export async function POST(request: NextRequest) { // NOSONAR
     }
     if (process.env.PPBF_INTAKE_PROMOTION_ENABLED !== 'true') {
       throw new Error('Forbidden: intake promotion is not enabled');
+    }
+
+    // Promotion writes straight to pilot.athletes, so it has to answer to the
+    // same gym_status allow-list the roster-create route does -- otherwise an
+    // approved intake case is a way around it.
+    if (!isGymStatus(promotion.athlete.gym_status)) {
+      throw new Error(`Request body field gym_status must be one of: ${GYM_STATUS_OPTIONS.join(', ')}`);
     }
 
     const athleteCreatedAt = new Date().toISOString();

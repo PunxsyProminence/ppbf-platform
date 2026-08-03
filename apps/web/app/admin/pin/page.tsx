@@ -191,6 +191,17 @@ function PinManagementPageContent() {
           <p className="mt-2 text-sm text-[var(--gray-dark)]">
             Select an athlete, choose activate or reset, then save a 6-digit PIN. Stored PIN values are never displayed.
           </p>
+          {/* Two screens can put an athlete back on a working PIN, and an
+              operator who picks the wrong one hands out a PIN the athlete is
+              not asked to replace. Say which is which on both. */}
+          <p className="mt-2 text-xs text-[var(--gray-dark)]">
+            This sets a custom PIN you choose. To put an athlete back on the shared starting PIN and force them to
+            choose their own at next sign-in, use{' '}
+            <Link href="/admin/people" className="font-semibold underline">
+              People
+            </Link>{' '}
+            instead.
+          </p>
         </header>
 
         <div className="grid gap-5 lg:grid-cols-[1.1fr_1fr]">

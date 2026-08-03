@@ -9,7 +9,7 @@ import { apiBase } from '@/lib/apiBase';
 // A plain constant with no server dependencies, so a client component can
 // import it and the admin copy can never drift from what the server sets.
 import { DEFAULT_FIRST_LOGIN_PIN } from '@/src/server/pilot/pinPolicy';
-import { GYM_STATUS_OPTIONS } from '@/src/shared/athleteConstants';
+import { GYM_STATUS_CHOICES, GYM_STATUS_OPTIONS, type GymStatus } from '@/src/shared/athleteConstants';
 
 interface Member {
   account_id: string;
@@ -91,12 +91,6 @@ const ATHLETE_MODES: Array<{ value: AthleteMode; label: string; blurb: string }>
     label: 'Already on the roster',
     blurb: 'Their record already exists — promoted from an intake application, say — and they only need a way to sign in.',
   },
-];
-
-const GYM_STATUS_DISPLAY_OPTIONS = [
-  { value: 'active', label: 'Active — training and competing' },
-  { value: 'training', label: 'Training — in the gym, not competing yet' },
-  { value: 'inactive', label: 'Inactive — on the roster but not attending' },
 ];
 
 function roleLabel(role: string): string {
@@ -224,7 +218,7 @@ function PeopleConsoleContent() {
   const [athleteFullName, setAthleteFullName] = useState('');
   const [athleteDob, setAthleteDob] = useState('');
   const [athleteWeightClass, setAthleteWeightClass] = useState('');
-  const [athleteGymStatus, setAthleteGymStatus] = useState(GYM_STATUS_OPTIONS[0]);
+  const [athleteGymStatus, setAthleteGymStatus] = useState<GymStatus>(GYM_STATUS_OPTIONS[0]);
   const [athleteEmergencyContact, setAthleteEmergencyContact] = useState('');
   // Starts empty so nothing is submitted until a real coach is chosen:
   // pilot.athletes.coach_id is `not null` and carries a foreign key to
@@ -539,8 +533,13 @@ function PeopleConsoleContent() {
       // raise, and the fix is the opposite too, so it must not read as the
       // same failure. Nothing was written -- the id belongs to someone else.
       if (response.status === 409) {
+        // The server names whoever already holds the id when it can read the
+        // row. Carrying that name through is the difference between "that id
+        // is taken" and "you just typed a teammate's id" -- which is the only
+        // form of this failure the admin can act on without guessing.
+        const heldBy = /belongs to (.+)$/.exec(payload.error ?? '')?.[1];
         throw new Error(
-          `Athlete record "${recordId}" already exists in your gym. Nothing was changed. If that is this same athlete and they only need a login, switch to “Already on the roster”; otherwise give this athlete a different record ID.`,
+          `Athlete record "${recordId}" already exists in your gym${heldBy ? ` — it belongs to ${heldBy}` : ''}. Nothing was changed. If that is this same athlete and they only need a login, switch to “Already on the roster”; otherwise give this athlete a different record ID.`,
         );
       }
       throw new Error(payload.error || 'Could not create that athlete record');
@@ -814,6 +813,17 @@ function PeopleConsoleContent() {
                 <p className="mt-1 text-sm text-[var(--gray-dark)]">
                   Give them their sign-in ID and the starting PIN {DEFAULT_FIRST_LOGIN_PIN}. If they have forgotten
                   where they are, “Reset to starting PIN” on their row puts them back to it.
+                </p>
+                {/* Two screens can put an athlete back on a working PIN, and
+                    the difference matters: only this one forces the athlete to
+                    replace it at next sign-in. */}
+                <p className="mt-2 text-xs text-[var(--gray-dark)]">
+                  Resetting here always uses the shared starting PIN and forces a change at next sign-in. To set a
+                  custom 6-digit PIN instead, use the{' '}
+                  <Link href="/admin/pin" className="font-semibold underline">
+                    PIN console
+                  </Link>
+                  .
                 </p>
               </div>
             )}
@@ -1156,6 +1166,29 @@ function PeopleConsoleContent() {
               </div>
             </fieldset>
 
+            {/* pilot.athletes.coach_id is `not null`, so a gym with no coach
+                cannot create an athlete at all. Saying so up front -- with the
+                way out attached -- beats letting an admin fill in six fields
+                and only then meet an empty required picker at the bottom. */}
+            {athleteMode === 'new' && coachOptions.length === 0 && (
+              <div className="rounded-xl border border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_6%,white)] p-4">
+                <p className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--safety-locked)]">
+                  Add a coach first
+                </p>
+                <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
+                  Every athlete record has to name a coach, and your gym does not have one yet. Add a coach, then come
+                  back — nothing you type here can be saved until then.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setTab('invite-staff')}
+                  className="mt-3 inline-flex min-h-[44px] items-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-5 text-sm font-bold uppercase tracking-[0.1em] transition hover:bg-[var(--canvas-tan)]"
+                >
+                  Add a coach
+                </button>
+              </div>
+            )}
+
             {athleteMode === 'new' ? (
               // Disabled as a block once the record is written: the retry
               // sends only the sign-in half, so an edit here would silently
@@ -1253,10 +1286,10 @@ function PeopleConsoleContent() {
                     id="athlete-gym-status"
                     required
                     value={athleteGymStatus}
-                    onChange={(event) => setAthleteGymStatus(event.target.value)}
+                    onChange={(event) => setAthleteGymStatus(event.target.value as GymStatus)}
                     className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                   >
-                    {GYM_STATUS_DISPLAY_OPTIONS.map((option) => (
+                    {GYM_STATUS_CHOICES.map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
                       </option>

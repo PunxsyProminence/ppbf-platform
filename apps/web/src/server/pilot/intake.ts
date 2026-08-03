@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import type { GymStatus } from '@/src/shared/athleteConstants';
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
 import { getShadowEventTimeline, getShadowReviewProjection } from './shadowReadModels';
@@ -66,7 +67,12 @@ export interface IntakePromotionPayload {
     full_name: string;
     dob: string;
     weight_class: string;
-    gym_status: string;
+    /**
+     * Constrained to the shared vocabulary: promotion writes straight through
+     * to pilot.athletes via upsertAthlete, so an unchecked string here would
+     * be a second create path around the roster validator's allow-list.
+     */
+    gym_status: GymStatus;
     emergency_contact: string;
     coach_id: string;
   };

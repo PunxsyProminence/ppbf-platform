@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { POST } from './route';
-import { insertAthleteIfAbsent, getCoachById } from '@/src/server/pilot/entities';
+import { getAthleteById, getCoachById, insertAthleteIfAbsent } from '@/src/server/pilot/entities';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import type { PilotAthlete } from '@/src/server/pilot/contracts';
@@ -17,6 +17,7 @@ jest.mock('@/src/server/pilot/http', () => {
 jest.mock('@/src/server/pilot/entities', () => ({
   insertAthleteIfAbsent: jest.fn().mockResolvedValue(true),
   getCoachById: jest.fn().mockResolvedValue(true),
+  getAthleteById: jest.fn().mockResolvedValue(null),
 }));
 
 jest.mock('@/src/server/pilot/audit', () => ({
@@ -26,6 +27,7 @@ jest.mock('@/src/server/pilot/audit', () => ({
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockInsertAthleteIfAbsent = insertAthleteIfAbsent as jest.Mock;
 const mockGetCoachById = getCoachById as jest.Mock;
+const mockGetAthleteById = getAthleteById as jest.Mock;
 
 function principal(overrides: Partial<PilotPrincipal> = {}): PilotPrincipal {
   return {
@@ -91,6 +93,7 @@ describe('POST /api/pilot/athletes', () => {
   test('refuses to write over an athlete_id that already exists in the organization', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal());
     mockInsertAthleteIfAbsent.mockResolvedValueOnce(false);
+    mockGetAthleteById.mockResolvedValueOnce(null);
 
     const response = await POST(makeRequest({ ...athletePayload({ athlete_id: 'ath-existing-1' }) }));
 
@@ -98,6 +101,21 @@ describe('POST /api/pilot/athletes', () => {
     // The id has to be echoed back: the admin typed it by hand and needs to
     // know which one collided before they retry.
     await expect(response.json()).resolves.toEqual({ error: 'Athlete record already exists: ath-existing-1' });
+  });
+
+  // "ath-014 is taken" cannot tell a typo that landed on a teammate apart from
+  // a record the admin created themselves last week. The name can.
+  test('names the athlete already holding a colliding athlete_id', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockInsertAthleteIfAbsent.mockResolvedValueOnce(false);
+    mockGetAthleteById.mockResolvedValueOnce(athletePayload({ athlete_id: 'ath-existing-1', full_name: 'Marcus Webb' }));
+
+    const response = await POST(makeRequest({ ...athletePayload({ athlete_id: 'ath-existing-1' }) }));
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: 'Athlete record already exists: ath-existing-1 belongs to Marcus Webb',
+    });
   });
 
   test('rejects a coach attempting to create an athlete (roster management is admin-only)', async () => {

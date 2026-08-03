@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { validateAthletePayload } from '@/src/server/pilot/validation';
-import { insertAthleteIfAbsent, getCoachById } from '@/src/server/pilot/entities';
+import { getAthleteById, getCoachById, insertAthleteIfAbsent } from '@/src/server/pilot/entities';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
@@ -32,7 +32,17 @@ export async function POST(request: NextRequest) {
     // roster UI, where a typo can land on a real teammate.
     const created = await insertAthleteIfAbsent(principal.organizationId, payload);
     if (!created) {
-      throw new Error(`Athlete record already exists: ${payload.athlete_id}`);
+      // Name the athlete already holding the id. The admin hand-typed it, and
+      // "ath-014 is taken" leaves them unable to tell a typo that landed on a
+      // teammate apart from a record they created themselves and forgot. The
+      // read is only reached on a collision, and only inside the caller's own
+      // organization, so it discloses nothing they could not already list.
+      const existing = await getAthleteById(principal.organizationId, payload.athlete_id);
+      throw new Error(
+        existing
+          ? `Athlete record already exists: ${payload.athlete_id} belongs to ${existing.full_name}`
+          : `Athlete record already exists: ${payload.athlete_id}`,
+      );
     }
 
     await writePilotAuditEvent({
