@@ -1,3 +1,5 @@
+import { type GymStatus } from '@/src/shared/athleteConstants';
+
 export type PilotRole =
   | 'platform_owner'
   | 'organization_admin'
@@ -14,7 +16,7 @@ export interface PilotAthlete {
   full_name: string;
   dob: string;
   weight_class: string;
-  gym_status: string;
+  gym_status: GymStatus;
   emergency_contact: string;
   active_flag: boolean;
   coach_id: string;

@@ -9,6 +9,7 @@ import { apiBase } from '@/lib/apiBase';
 // A plain constant with no server dependencies, so a client component can
 // import it and the admin copy can never drift from what the server sets.
 import { DEFAULT_FIRST_LOGIN_PIN } from '@/src/server/pilot/pinPolicy';
+import { GYM_STATUS_OPTIONS } from '@/src/shared/athleteConstants';
 
 interface Member {
   account_id: string;
@@ -92,14 +93,7 @@ const ATHLETE_MODES: Array<{ value: AthleteMode; label: string; blurb: string }>
   },
 ];
 
-/**
- * pilot.athletes.gym_status is plain `text` with no database constraint, so
- * the vocabulary is only held together by convention. These are the values the
- * seed importer documents and the gate scripts write, and the coach workspace
- * displays gym_status verbatim as an athlete's track — a free-text box here
- * would fragment all three.
- */
-const GYM_STATUS_OPTIONS = [
+const GYM_STATUS_DISPLAY_OPTIONS = [
   { value: 'active', label: 'Active — training and competing' },
   { value: 'training', label: 'Training — in the gym, not competing yet' },
   { value: 'inactive', label: 'Inactive — on the roster but not attending' },
@@ -230,7 +224,7 @@ function PeopleConsoleContent() {
   const [athleteFullName, setAthleteFullName] = useState('');
   const [athleteDob, setAthleteDob] = useState('');
   const [athleteWeightClass, setAthleteWeightClass] = useState('');
-  const [athleteGymStatus, setAthleteGymStatus] = useState(GYM_STATUS_OPTIONS[0].value);
+  const [athleteGymStatus, setAthleteGymStatus] = useState(GYM_STATUS_OPTIONS[0]);
   const [athleteEmergencyContact, setAthleteEmergencyContact] = useState('');
   // Starts empty so nothing is submitted until a real coach is chosen:
   // pilot.athletes.coach_id is `not null` and carries a foreign key to
@@ -505,7 +499,7 @@ function PeopleConsoleContent() {
     setAthleteFullName('');
     setAthleteDob('');
     setAthleteWeightClass('');
-    setAthleteGymStatus(GYM_STATUS_OPTIONS[0].value);
+    setAthleteGymStatus(GYM_STATUS_OPTIONS[0]);
     setAthleteEmergencyContact('');
     setAthleteCoachId('');
     setRosterCreatedFor('');
@@ -1259,7 +1253,7 @@ function PeopleConsoleContent() {
                     onChange={(event) => setAthleteGymStatus(event.target.value)}
                     className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                   >
-                    {GYM_STATUS_OPTIONS.map((option) => (
+                    {GYM_STATUS_DISPLAY_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
                       </option>

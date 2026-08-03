@@ -8,6 +8,7 @@ import {
   type PilotGoal,
   type PilotSession,
 } from './contracts';
+import { GYM_STATUS_OPTIONS, type GymStatus } from '@/src/shared/athleteConstants';
 
 function asRecord(payload: unknown): Record<string, unknown> {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
@@ -55,6 +56,14 @@ function requireNumber(value: unknown, field: string): number {
   return value;
 }
 
+function requireGymStatus(value: unknown, field: string): GymStatus {
+  const str = requireString(value, field);
+  if (!GYM_STATUS_OPTIONS.includes(str as GymStatus)) {
+    throw new Error(`Request body field ${field} must be one of: ${GYM_STATUS_OPTIONS.join(', ')}`);
+  }
+  return str as GymStatus;
+}
+
 export function validateAthletePayload(payload: unknown): PilotAthlete {
   const record = asRecord(payload);
   assertOnlyAllowedKeys(record, ATHLETE_FIELDS);
@@ -64,7 +73,7 @@ export function validateAthletePayload(payload: unknown): PilotAthlete {
     full_name: requireString(record.full_name, 'full_name'),
     dob: requireString(record.dob, 'dob'),
     weight_class: requireString(record.weight_class, 'weight_class'),
-    gym_status: requireString(record.gym_status, 'gym_status'),
+    gym_status: requireGymStatus(record.gym_status, 'gym_status'),
     emergency_contact: requireString(record.emergency_contact, 'emergency_contact'),
     active_flag: requireBoolean(record.active_flag, 'active_flag'),
     coach_id: requireString(record.coach_id, 'coach_id'),

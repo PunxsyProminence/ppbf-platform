@@ -107,6 +107,10 @@ describe('a rejected field is reported to the caller as a 400', () => {
   test('a body that is not a JSON object', () => {
     expect(statusOf(() => validateAthletePayload([]))).toBe(400);
   });
+
+  test('an unknown gym_status value', () => {
+    expect(statusOf(() => validateAthletePayload(athletePayload({ gym_status: 'unknown' })))).toBe(400);
+  });
 });
 
 describe('the rejection names the field the caller has to fix', () => {

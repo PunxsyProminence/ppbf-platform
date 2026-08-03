@@ -28,14 +28,7 @@ interface CoachOption {
 
 type RosterLoadState = 'loading' | 'loaded' | 'unavailable';
 
-/**
- * pilot.athletes.gym_status is plain `text` with no database constraint, so
- * the vocabulary is only held together by convention: these are the values the
- * seed importer documents, the gate scripts write, and the roster-create form
- * offers, and the coach workspace displays verbatim as an athlete's track. A
- * free-text box here would fragment all of them.
- */
-const GYM_STATUS_OPTIONS = [
+const GYM_STATUS_DISPLAY_OPTIONS = [
   { value: 'active', label: 'Active - training and competing' },
   { value: 'training', label: 'Training - in the gym, not competing yet' },
   { value: 'inactive', label: 'Inactive - on the roster but not attending' },
@@ -531,10 +524,10 @@ function AthleteRecordsConsoleContent() {
                   {/* A stored value outside the documented vocabulary is kept
                       as an option rather than replaced, so opening a record
                       never silently rewrites it on the next save. */}
-                  {!GYM_STATUS_OPTIONS.some((option) => option.value === selected.gym_status) && (
+                  {!GYM_STATUS_DISPLAY_OPTIONS.some((option) => option.value === selected.gym_status) && (
                     <option value={selected.gym_status}>{selected.gym_status} (as stored)</option>
                   )}
-                  {GYM_STATUS_OPTIONS.map((option) => (
+                  {GYM_STATUS_DISPLAY_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
