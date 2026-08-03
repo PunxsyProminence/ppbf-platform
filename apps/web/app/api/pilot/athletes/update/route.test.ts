@@ -150,6 +150,49 @@ describe('POST /api/pilot/athletes/update', () => {
     expect(mockUpsertAthlete).not.toHaveBeenCalled();
   });
 
+  // The audit trail is what answers "who changed this child's date of birth".
+  // If a no-op save reports dob as corrected, every save adds a false entry and
+  // the trail stops meaning anything -- so the date helper has to survive the
+  // server being in a timezone east of UTC, west of it, and on a half-hour
+  // offset, not just whichever one CI happens to run in.
+  describe('a no-op save never reports a date of birth as changed', () => {
+    const originalTz = process.env.TZ;
+
+    afterEach(() => {
+      process.env.TZ = originalTz;
+    });
+
+    for (const timeZone of ['UTC', 'Asia/Tokyo', 'America/Los_Angeles', 'Asia/Kolkata', 'Pacific/Kiritimati']) {
+      test(`in ${timeZone}`, async () => {
+        process.env.TZ = timeZone;
+
+        // node-postgres hands a `date` column back as a Date at the server's
+        // local midnight, while the request carries the YYYY-MM-DD string.
+        const storedAsLocalMidnight = new Date(2012, 3, 17) as unknown as string;
+
+        mockRequirePrincipal.mockResolvedValueOnce(principal());
+        mockGetAthleteById.mockResolvedValueOnce(athletePayload({ dob: storedAsLocalMidnight }));
+
+        const response = await POST(makeRequest({ ...athletePayload({ dob: '2012-04-17' }) }));
+
+        expect(response.status).toBe(200);
+        expect(mockWriteAudit.mock.calls[0][0].details.changed_fields).toEqual([]);
+      });
+    }
+
+    test('a genuine correction is still reported, in a timezone east of UTC', async () => {
+      process.env.TZ = 'Asia/Tokyo';
+
+      mockRequirePrincipal.mockResolvedValueOnce(principal());
+      mockGetAthleteById.mockResolvedValueOnce(athletePayload({ dob: new Date(2012, 3, 7) as unknown as string }));
+
+      const response = await POST(makeRequest({ ...athletePayload({ dob: '2012-04-17' }) }));
+
+      expect(response.status).toBe(200);
+      expect(mockWriteAudit.mock.calls[0][0].details.changed_fields).toEqual(['dob']);
+    });
+  });
+
   describe('athlete self-update field restrictions', () => {
     const athletePrincipal = principal({ accountId: 'ath-account-1', role: 'athlete', athleteId: 'ath-001', authProvider: 'ppbf_local' });
 

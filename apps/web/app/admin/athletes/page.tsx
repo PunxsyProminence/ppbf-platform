@@ -29,6 +29,76 @@ interface CoachOption {
 
 type RosterLoadState = 'loading' | 'loaded' | 'unavailable';
 
+type AuditLoadState = 'idle' | 'loading' | 'loaded' | 'unavailable';
+
+/**
+ * The last correction made to one athlete record, as the audit trail holds it.
+ *
+ * `changed_fields` is field NAMES only. Audit details for athlete records never
+ * carry values -- these are minors, and the details are mirrored into SHADOW's
+ * event stream -- so this panel can show what moved but never what it moved to.
+ */
+interface AuditSummary {
+  actor: string;
+  when: string;
+  changedFields: string[];
+  activeFlagChange: string | null;
+}
+
+/** Field name as stored in the audit trail -> what an operator calls it. */
+const AUDIT_FIELD_LABELS: Record<string, string> = {
+  full_name: 'name',
+  dob: 'date of birth',
+  weight_class: 'weight class',
+  gym_status: 'gym status',
+  emergency_contact: 'emergency contact',
+  coach_id: 'coach',
+};
+
+function auditFieldLabel(field: string): string {
+  return AUDIT_FIELD_LABELS[field] ?? field;
+}
+
+function normalizeAuditSummary(row: unknown): AuditSummary | null {
+  if (!row || typeof row !== 'object') {
+    return null;
+  }
+
+  const record = row as Record<string, unknown>;
+  const details = (record.details && typeof record.details === 'object' ? record.details : {}) as Record<string, unknown>;
+  const when = readString(record.created_at);
+  if (!when) {
+    return null;
+  }
+
+  const rawFields = Array.isArray(details.changed_fields) ? details.changed_fields : [];
+
+  return {
+    actor: readString(record.actor_account_id) || 'someone whose account is no longer readable',
+    when,
+    changedFields: rawFields.filter((field): field is string => typeof field === 'string'),
+    activeFlagChange: typeof details.active_flag_change === 'string' ? details.active_flag_change : null,
+  };
+}
+
+/**
+ * pilot.audit_events.created_at is a timestamp, so unlike a date of birth it IS
+ * an instant and is correct to render in the reader's local zone.
+ */
+function formatAuditTimestamp(raw: string): string {
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    return raw;
+  }
+  return parsed.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 /**
  * pilot.athletes.dob is a `date` column and node-postgres hands it back as a
  * timestamp, which <input type="date"> silently discards rather than reject.
@@ -137,6 +207,15 @@ function AthleteRecordsConsoleContent() {
   const [draftEmergencyContact, setDraftEmergencyContact] = useState('');
   const [draftCoachId, setDraftCoachId] = useState('');
 
+  // "Who last touched this record, and what did they move" -- the question an
+  // operator opening a child's record to correct it asks first, and the one the
+  // audit trail could already answer but no screen was reading. Null while
+  // loading or when the trail could not be read, which is reported rather than
+  // rendered as "never corrected": a silently empty history on a record that
+  // has been edited is worse than saying the trail is unavailable.
+  const [lastCorrection, setLastCorrection] = useState<AuditSummary | null>(null);
+  const [lastCorrectionState, setLastCorrectionState] = useState<AuditLoadState>('idle');
+
   const load = useCallback(async () => {
     setError('');
 
@@ -197,6 +276,40 @@ function AthleteRecordsConsoleContent() {
     () => roster.find((athlete) => athlete.athlete_id === selectedId) ?? null,
     [roster, selectedId],
   );
+
+  const loadLastCorrection = useCallback(async (athleteId: string) => {
+    setLastCorrectionState('loading');
+    setLastCorrection(null);
+
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/audit/get`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ entity_type: 'athlete', entity_id: athleteId, limit: 1 }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; events?: unknown[] };
+      if (!response.ok || !payload.ok || !Array.isArray(payload.events)) {
+        setLastCorrectionState('unavailable');
+        return;
+      }
+
+      setLastCorrection(payload.events.length > 0 ? normalizeAuditSummary(payload.events[0]) : null);
+      setLastCorrectionState('loaded');
+    } catch {
+      setLastCorrectionState('unavailable');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setLastCorrection(null);
+      setLastCorrectionState('idle');
+      return;
+    }
+    void loadLastCorrection(selectedId);
+  }, [selectedId, loadLastCorrection]);
 
   const visibleRoster = useMemo(() => {
     const needle = filter.trim().toLowerCase();
@@ -286,6 +399,9 @@ function AthleteRecordsConsoleContent() {
       setNotice(successNotice);
       setConfirmingStatusChange(false);
       await load();
+      // The correction just written is the newest audit entry, so the panel
+      // would otherwise still be showing the one before it.
+      void loadLastCorrection(record.athlete_id);
       return true;
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'That correction was not saved.');
@@ -458,6 +574,34 @@ function AthleteRecordsConsoleContent() {
                   The record ID is permanent — every session, goal and review hangs off it, so it cannot be changed
                   here. Everything else can.
                 </p>
+
+                {/* Field names only, never values. The audit trail for an
+                    athlete record deliberately stores no values -- these are
+                    minors and the details are mirrored into SHADOW -- so this
+                    can say a date of birth was corrected but never to what. */}
+                {lastCorrectionState === 'loaded' && lastCorrection && (
+                  <p className="mt-3 rounded-xl border border-[rgba(0,0,0,0.12)] bg-[var(--canvas-tan-light)] px-3 py-2 text-xs leading-5 text-[var(--gray-dark)]">
+                    Last corrected by <span className="font-semibold text-[var(--black)]">{lastCorrection.actor}</span> on{' '}
+                    {formatAuditTimestamp(lastCorrection.when)}
+                    {lastCorrection.changedFields.length > 0 && (
+                      <> — changed {lastCorrection.changedFields.map(auditFieldLabel).join(', ')}</>
+                    )}
+                    {lastCorrection.activeFlagChange && (
+                      <>
+                        {lastCorrection.changedFields.length > 0 ? '; ' : ' — '}
+                        {lastCorrection.activeFlagChange === 'deactivated' ? 'marked inactive' : 'marked active again'}
+                      </>
+                    )}
+                    .
+                  </p>
+                )}
+
+                {lastCorrectionState === 'unavailable' && (
+                  <p className="mt-3 text-xs text-[var(--gray-dark)]">
+                    The correction history for this record could not be read, so this panel cannot say who last changed
+                    it.
+                  </p>
+                )}
               </div>
 
               <div>

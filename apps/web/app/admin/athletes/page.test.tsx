@@ -77,6 +77,23 @@ const staffBody = {
   ],
 };
 
+// The correction panel reads the audit trail for whoever last touched the
+// record. `details` carries field NAMES only -- never values -- because these
+// are minors and audit details are mirrored into SHADOW's event stream.
+const auditBody = {
+  ok: true,
+  events: [
+    {
+      actor_account_id: 'rosa@example.org',
+      actor_role: 'coach',
+      entity_type: 'athlete',
+      entity_id: 'ath-001',
+      details: { changed_fields: ['dob', 'emergency_contact'] },
+      created_at: '2026-07-30T15:04:00.000Z',
+    },
+  ],
+};
+
 function consoleFetch(handler?: (url: string, init?: RequestInit) => Response | undefined) {
   return jest.fn(async (url: string, init?: RequestInit) => {
     const handled = handler?.(String(url), init);
@@ -89,6 +106,9 @@ function consoleFetch(handler?: (url: string, init?: RequestInit) => Response | 
     }
     if (String(url).includes('/api/pilot/admin/staff')) {
       return jsonResponse(staffBody);
+    }
+    if (String(url).includes('/api/pilot/audit/get')) {
+      return jsonResponse(auditBody);
     }
     if (String(url).includes('/api/pilot/athletes/update')) {
       return jsonResponse({ ok: true, athlete_id: 'ath-001' });
@@ -146,6 +166,48 @@ describe('/admin/athletes', () => {
       created_at: '2026-07-01T12:00:00.000Z',
       updated_at: expect.any(String),
     });
+  });
+
+  test('the record says who last corrected it, and which fields — never the values', async () => {
+    const fetchMock = consoleFetch();
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /correct record/i }));
+
+    const summary = await screen.findByText(/last corrected by/i);
+    const text = summary.textContent ?? '';
+    expect(text).toContain('rosa@example.org');
+    // Field names are translated to what an operator calls them, not shown raw.
+    expect(text).toContain('date of birth');
+    expect(text).toContain('emergency contact');
+
+    // The trail is scoped to this athlete, and asks for only the newest entry.
+    const auditCall = fetchMock.mock.calls.find((call) => String(call[0]).includes('/api/pilot/audit/get'));
+    expect(bodyOf(auditCall as [string, RequestInit])).toEqual({
+      entity_type: 'athlete',
+      entity_id: 'ath-001',
+      limit: 1,
+    });
+
+    // Values must never reach this panel: audit details hold field names only,
+    // and this record belongs to a minor.
+    expect(text).not.toContain('2012-04-07');
+    expect(text).not.toContain('Ruth Kellerman');
+  });
+
+  // An empty history on a record that HAS been edited would be a lie, so an
+  // unreadable trail has to say so rather than render as "never corrected".
+  test('an unreadable correction history says so instead of showing nothing', async () => {
+    const fetchMock = consoleFetch((url) =>
+      url.includes('/api/pilot/audit/get') ? jsonResponse({ error: 'nope' }, false, 500) : undefined);
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /correct record/i }));
+
+    expect(await screen.findByText(/history for this record could not be read/i)).not.toBeNull();
+    expect(screen.queryByText(/last corrected by/i)).toBeNull();
   });
 
   test('offboarding writes active_flag false and leaves the rest of the record standing', async () => {

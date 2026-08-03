@@ -855,16 +855,29 @@ function PeopleConsoleContent() {
                             {roleLabel(member.role)}
                             {member.athlete_id && <> · Athlete ID {member.athlete_id}</>}
                           </p>
-                          <p
-                            className={`mt-1 text-xs font-bold uppercase tracking-[0.1em] ${
-                              status.tone === 'ok'
-                                ? 'text-[var(--cleared-deep)]'
-                                : status.tone === 'pending'
-                                  ? 'text-[color:var(--brass-800)]'
-                                  : 'text-[var(--gray-dark)]'
-                            }`}
-                          >
-                            {status.label}
+                          {/* A chip rather than a line of text: a roster is
+                              scanned down the status column, and a bordered
+                              pill is findable in that scan where bare
+                              uppercase prose is not. The wording stays
+                              deliberately long where it is carrying a warning
+                              -- a guardian linked to nobody sees an empty
+                              dashboard, and "Pending" would not say so. The
+                              muted tone for 'blocked' is deliberate too:
+                              deactivation is an intended admin action, and the
+                              one blocked case that is a real fault already has
+                              its own banner above the list. */}
+                          <p className="mt-1.5">
+                            <span
+                              className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.08em] ${
+                                status.tone === 'ok'
+                                  ? 'border-[color-mix(in_srgb,var(--cleared-deep)_35%,white)] bg-[color-mix(in_srgb,var(--cleared-deep)_8%,white)] text-[var(--cleared-deep)]'
+                                  : status.tone === 'pending'
+                                    ? 'border-[color-mix(in_srgb,var(--brass-800)_35%,white)] bg-[color-mix(in_srgb,var(--brass-800)_8%,white)] text-[color:var(--brass-800)]'
+                                    : 'border-[rgba(0,0,0,0.18)] bg-[var(--canvas-tan-light)] text-[var(--gray-dark)]'
+                              }`}
+                            >
+                              {status.label}
+                            </span>
                           </p>
 
                           {/* Exactly which children this adult can open. A
