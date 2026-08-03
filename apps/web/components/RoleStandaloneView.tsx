@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import RoleSessionGate from './RoleSessionGate';
 import ShadowChatButton from './ShadowChatButton';
 import type { ClubRole } from './roleRoutes';
+import { isFamilyGround } from './roleGround';
 
 interface RoleStandaloneViewProps {
   readonly roleLabel: string;
@@ -75,13 +76,6 @@ const LINK_INK =
    call here that could reasonably go the other way -- a coach works off a
    tablet on the gym floor, which is the environment canvas was tuned for --
    and it was made deliberately rather than by default. */
-const FAMILY_ROLES = new Set<ClubRole>(['athlete', 'parent']);
-
-export function isFamilyGround(allowedRoles: readonly ClubRole[]): boolean {
-  // An empty list is not a family surface. Defaulting the unknown case to ink
-  // keeps a misconfigured page off the ground reserved for children's records.
-  return allowedRoles.length > 0 && allowedRoles.every((role) => FAMILY_ROLES.has(role));
-}
 
 export default function RoleStandaloneView({
   roleLabel,

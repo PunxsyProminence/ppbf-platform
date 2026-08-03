@@ -71,7 +71,7 @@ export default function PaymentSetupBubble() {
         <button
           type="button"
           onClick={() => setDismissed(true)}
-          className="min-h-[44px] shrink-0 rounded-full border border-[rgba(0,0,0,0.2)] px-3 text-[10px] font-mono font-bold uppercase tracking-[0.1em] opacity-80 transition hover:"
+          className="min-h-[44px] shrink-0 rounded-[var(--r-pill)] border border-[color:color-mix(in_srgb,currentColor_26%,transparent)] px-[var(--s4)] font-mono text-[length:var(--t-xs)] font-bold uppercase tracking-[0.1em] opacity-80 transition hover:opacity-100"
           aria-label="Hide the payment setup steps until the next page load"
         >
           Hide

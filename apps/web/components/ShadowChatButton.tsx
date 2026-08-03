@@ -86,7 +86,7 @@ export default function ShadowChatButton({ className, label = 'OPEN SHADOW CHAT'
    Dropping each default whose property the caller has already claimed makes the
    override deterministic rather than dependent on Tailwind's sort order. */
 const DEFAULTS: ReadonlyArray<readonly [prefix: RegExp, classes: string]> = [
-  [/(^|\s)(hover:)?bg-/, 'hover:border-[color:var(--brass-400)]'],
+  [/(^|\s)hover:border-/, 'hover:border-[color:var(--brass-400)]'],
   [/(^|\s)text-\[/, 'text-[color:inherit]'],
   [/(^|\s)border-\[/, 'border-[color:color-mix(in_srgb,currentColor_38%,transparent)]'],
 ];

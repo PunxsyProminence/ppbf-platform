@@ -1,4 +1,4 @@
-import { isFamilyGround } from './RoleStandaloneView';
+import { isFamilyGround } from './roleGround';
 import type { ClubRole } from './roleRoutes';
 
 /* Law 6 assigns ink leather to staff surfaces and warm canvas to the
