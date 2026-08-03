@@ -279,12 +279,35 @@ input[type="date"] {
 }
 
 /* Gym-floor surfaces want 55px, not 44 -- a child in gloves, a cracked screen,
-   a phone across the room. ppbf.css reserves --tap for exactly this and gives
-   .btn--kiosk / .input--kiosk to opt in per control.
-   There is deliberately no container rule here yet: no kiosk WRAPPER class
-   exists to hang one on, and inventing a selector that matches nothing would
-   read like athlete surfaces were covered when they are not. Raising the
-   athlete surfaces to --tap needs a real hook and its own change. */
+   a phone across the room, and a loud room. 44px is a desk number.
+
+   ppbf.css has carried .btn--kiosk and .input--kiosk for this all along and
+   they work, but they are opt-in per control: an athlete surface ends up only
+   as tall as the controls somebody remembered to mark, which is how a
+   session-duration input on a child's screen sat at 36px through three
+   accessibility sweeps.
+
+   The hook is app/athlete/layout.tsx, which every athlete route already passes
+   through. It carries `display: contents`, so it marks its subtree without
+   adding a box any page has to be designed around.
+
+   Scoped to /athlete rather than applied globally: 55px everywhere would push
+   dense admin tables around for no gain, and the people using those are at a
+   desk. /activate is the other gym-floor surface and opts in per control with
+   .btn--kiosk today. */
+[data-surface="kiosk"] button,
+[data-surface="kiosk"] [role="button"],
+[data-surface="kiosk"] select,
+[data-surface="kiosk"] input[type="button"],
+[data-surface="kiosk"] input[type="submit"],
+[data-surface="kiosk"] input[type="text"],
+[data-surface="kiosk"] input[type="number"],
+[data-surface="kiosk"] input[type="password"],
+[data-surface="kiosk"] input[type="tel"],
+[data-surface="kiosk"] input[type="search"],
+[data-surface="kiosk"] input[type="date"] {
+  min-height: var(--tap);
+}
 
 body::before {
   content: "";
