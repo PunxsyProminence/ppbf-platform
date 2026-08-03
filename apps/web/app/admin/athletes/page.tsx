@@ -369,12 +369,12 @@ function AthleteRecordsConsoleContent() {
         </header>
 
         {error && (
-          <p role="alert" className="rounded-xl border border-[var(--red-primary)] bg-[rgba(184,59,52,0.06)] px-4 py-3 text-sm font-semibold text-[var(--red-primary)]">
+          <p role="alert" className="rounded-xl border border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_6%,white)] px-4 py-3 text-sm font-semibold text-[var(--safety-locked)]">
             {error}
           </p>
         )}
         {notice && (
-          <p className="rounded-xl border border-[rgba(16,120,40,0.5)] bg-[rgba(16,120,40,0.08)] px-4 py-3 text-sm font-semibold text-[#1b5e20]">
+          <p className="rounded-xl border border-[rgba(16,120,40,0.5)] bg-[rgba(16,120,40,0.08)] px-4 py-3 text-sm font-semibold text-[var(--cleared-deep)]">
             {notice}
           </p>
         )}
@@ -405,7 +405,7 @@ function AthleteRecordsConsoleContent() {
           ) : (
             <>
               {unreadableRows > 0 && (
-                <p className="rounded-xl border border-[color:var(--brass-600)] bg-[rgba(184,59,52,0.06)] px-4 py-3 text-sm font-semibold text-[color:var(--brass-800)]">
+                <p className="rounded-xl border border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_6%,white)] px-4 py-3 text-sm font-semibold text-[var(--safety-locked)]">
                   {unreadableRows} record{unreadableRows === 1 ? '' : 's'} could not be read and {unreadableRows === 1 ? 'is' : 'are'} not
                   listed below. They still exist — this screen cannot correct them.
                 </p>
@@ -421,7 +421,7 @@ function AthleteRecordsConsoleContent() {
                   value={filter}
                   onChange={(event) => setFilter(event.target.value)}
                   placeholder="Name or record ID"
-                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                 />
               </div>
 
@@ -448,7 +448,7 @@ function AthleteRecordsConsoleContent() {
                       <button
                         type="button"
                         onClick={() => openRecord(athlete)}
-                        className="min-h-[44px] shrink-0 rounded-xl border-2 border-[color:var(--brass-600)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[color:var(--brass-800)] transition hover:bg-[rgba(184,59,52,0.06)]"
+                        className="min-h-[44px] shrink-0 rounded-xl border-2 border-[var(--accent)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[var(--accent-quiet)] transition hover:bg-[color-mix(in_srgb,var(--accent)_6%,white)]"
                       >
                         {selectedId === athlete.athlete_id ? 'Editing' : 'Correct Record'}
                       </button>
@@ -482,7 +482,7 @@ function AthleteRecordsConsoleContent() {
                   required
                   value={draftFullName}
                   onChange={(event) => setDraftFullName(event.target.value)}
-                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                 />
               </div>
 
@@ -497,7 +497,7 @@ function AthleteRecordsConsoleContent() {
                     required
                     value={draftDob}
                     onChange={(event) => setDraftDob(event.target.value)}
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                   />
                   <p className="mt-1 text-xs text-[var(--gray-dark)]">Currently stored as {selected.dob}.</p>
                 </div>
@@ -512,7 +512,7 @@ function AthleteRecordsConsoleContent() {
                     required
                     value={draftWeightClass}
                     onChange={(event) => setDraftWeightClass(event.target.value)}
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                   />
                 </div>
               </div>
@@ -526,7 +526,7 @@ function AthleteRecordsConsoleContent() {
                   required
                   value={draftGymStatus}
                   onChange={(event) => setDraftGymStatus(event.target.value)}
-                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                 >
                   {/* A stored value outside the documented vocabulary is kept
                       as an option rather than replaced, so opening a record
@@ -553,7 +553,7 @@ function AthleteRecordsConsoleContent() {
                   required
                   value={draftEmergencyContact}
                   onChange={(event) => setDraftEmergencyContact(event.target.value)}
-                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                 />
               </div>
 
@@ -572,7 +572,7 @@ function AthleteRecordsConsoleContent() {
                   value={draftCoachId}
                   onChange={(event) => setDraftCoachId(event.target.value)}
                   disabled={!coachesAvailable}
-                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)] disabled:opacity-70"
+                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] disabled:opacity-70"
                 >
                   {coachChoices.map((coach) => (
                     <option key={coach.account_id} value={coach.account_id}>
@@ -642,7 +642,7 @@ function AthleteRecordsConsoleContent() {
                 <button
                   type="button"
                   onClick={() => setConfirmingStatusChange(true)}
-                  className="min-h-[48px] w-full rounded-xl border-2 border-[var(--red-primary)] bg-white px-4 text-sm font-black uppercase tracking-[0.12em] text-[var(--red-primary)]"
+                  className="min-h-[48px] w-full rounded-xl border-2 border-[var(--accent)] bg-white px-4 text-sm font-black uppercase tracking-[0.12em] text-[var(--accent-quiet)]"
                 >
                   {selected.active_flag ? 'Deactivate Athlete' : 'Reactivate Athlete'}
                 </button>

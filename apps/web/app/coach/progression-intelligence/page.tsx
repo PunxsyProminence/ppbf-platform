@@ -132,7 +132,7 @@ export default function CoachProgressionIntelligencePage() {
             placeholder="Enter athlete ID (e.g., athlete-001)"
             value={selectedAthlete}
             onChange={(e) => setSelectedAthlete(e.target.value)}
-            className="mt-2 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-2 text-[color:var(--bone-200)] placeholder-[#7a6a5a]"
+            className="mt-2 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-2 text-[color:var(--bone-200)] placeholder-[var(--bone-400)]"
           />
         </div>
 
@@ -144,7 +144,7 @@ export default function CoachProgressionIntelligencePage() {
                 <h2 className="text-lg font-bold text-[color:var(--bone-100)]">Progression Gaps ({gaps.length})</h2>
                 <button
                   onClick={() => setShowGapForm(!showGapForm)}
-                  className="border-2 border-[color:var(--brass-700)] bg-[#2a1a1a] px-3 py-1 text-xs font-bold text-[color:var(--brass-300)]"
+                  className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-800)] px-3 py-1 text-xs font-bold text-[color:var(--brass-300)]"
                 >
                   {showGapForm ? 'Cancel' : '+ Add Gap'}
                 </button>
@@ -195,7 +195,7 @@ export default function CoachProgressionIntelligencePage() {
                   </div>
                   <button
                     onClick={handleCreateGap}
-                    className="w-full border-2 border-[color:var(--brass-700)] bg-[#2a1a1a] py-2 text-xs font-bold uppercase text-[color:var(--brass-300)]"
+                    className="w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-800)] py-2 text-xs font-bold uppercase text-[color:var(--brass-300)]"
                   >
                     Create Gap
                   </button>
@@ -214,7 +214,7 @@ export default function CoachProgressionIntelligencePage() {
                           <div className="mt-1 flex gap-2">
                             <span className="text-xs font-mono text-[color:var(--brass-300)]">{gap.gap_type}</span>
                             <span className="text-xs font-mono text-[color:var(--brass-300)]">{gap.severity}</span>
-                            <span className="text-xs font-mono text-[#7a8a9a]">{gap.status}</span>
+                            <span className="text-xs font-mono text-[var(--bone-400)]">{gap.status}</span>
                           </div>
                         </div>
                       </div>
@@ -266,10 +266,10 @@ export default function CoachProgressionIntelligencePage() {
         )}
 
         <div className="flex flex-wrap gap-3">
-          <Link href="/coach/review-queue" className="border-2 border-[color:var(--brass-700)] bg-[#2a1a1a] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)]">
+          <Link href="/coach/review-queue" className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-800)] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)]">
             Back to Coach Workspace
           </Link>
-          <Link href="/rabbit-holes" className="border-2 border-[color:var(--brass-700)] bg-[#2a1a1a] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)]">
+          <Link href="/rabbit-holes" className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-800)] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)]">
             Write a Rabbit Hole
           </Link>
         </div>

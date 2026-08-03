@@ -185,7 +185,7 @@ export default function ScoutReportPage() {
       <header className="border-b-4 border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 py-4 md:px-8">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
           <div>
-            <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-[color:var(--locked)]">SHADOW Intelligence</p>
+            <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-[color:var(--locked-ink)]">SHADOW Intelligence</p>
             <h1 className="font-display text-2xl font-black tracking-tight text-[color:var(--bone-200)]">Scout Reports</h1>
             <p className="mt-1 text-xs text-[color:var(--bone-400)]">Profile intelligence, Recovery Round jobs, and The Scorecard</p>
           </div>
@@ -200,7 +200,7 @@ export default function ScoutReportPage() {
               type="button"
               disabled
               title="Requires the secure scheduled SHADOW worker"
-              className="border-2 border-[color:var(--hide-600)] bg-[var(--hide-900)] px-4 py-2 text-xs font-mono font-bold text-[#6a5a4a] opacity-60"
+              className="border-2 border-[color:var(--hide-600)] bg-[var(--hide-900)] px-4 py-2 text-xs font-mono font-bold text-[var(--bone-400)] opacity-60"
             >
               Scout Report worker not active
             </button>
@@ -210,12 +210,12 @@ export default function ScoutReportPage() {
 
       <div className="mx-auto max-w-5xl p-4 md:p-8 space-y-6">
         {error ? (
-          <p className="border border-[color:var(--locked)] bg-[#1a0a0a] px-4 py-2 text-xs font-mono text-[color:var(--locked)]">{error}</p>
+          <p className="border border-[color:var(--locked)] bg-[var(--hide-950)] px-4 py-2 text-xs font-mono text-[color:var(--locked-ink)]">{error}</p>
         ) : null}
 
         {/* METRICS DASHBOARD */}
         {scoreboard ? (
-          <section className="border-2 border-[color:var(--brass-700)] bg-[#151515] p-5 space-y-4">
+          <section className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-5 space-y-4">
             <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[color:var(--brass-300)]">Metrics Dashboard — {scoreboard.period}</p>
 
             {/* Tier Distribution */}
@@ -233,7 +233,7 @@ export default function ScoutReportPage() {
                         <span>{label} {count} users</span>
                         <span>{percent}%</span>
                       </div>
-                      <div className="h-1.5 bg-[var(--hide-950)] border border-[#3a2a2a] overflow-hidden">
+                      <div className="h-1.5 bg-[var(--hide-950)] border border-[var(--hide-700)] overflow-hidden">
                         <div
                           className="h-full bg-[var(--brass-300)]"
                           style={{ width: `${percent}%` }}
@@ -249,11 +249,11 @@ export default function ScoutReportPage() {
                 <p className="text-xs font-mono text-[color:var(--bone-400)] mb-2">Effectiveness Metrics</p>
                 <div className="space-y-2">
                   {[
-                    { label: 'Positive Outcome Rate', value: scoreboard.growth.positiveOutcomeRate == null ? 'Unavailable' : `${Math.round(scoreboard.growth.positiveOutcomeRate * 100)}%`, color: 'var(--cleared)' },
+                    { label: 'Positive Outcome Rate', value: scoreboard.growth.positiveOutcomeRate == null ? 'Unavailable' : `${Math.round(scoreboard.growth.positiveOutcomeRate * 100)}%`, color: 'var(--cleared-ink)' },
                     { label: 'Reviewed Recommendation Score', value: scoreboard.effectiveness.avgRecommendationScore == null ? 'Unavailable' : `${scoreboard.effectiveness.avgRecommendationScore}%`, color: 'var(--brass-300)' },
-                    { label: 'Human Escalations', value: scoreboard.safety.escalationsToHuman, color: 'var(--locked)' },
+                    { label: 'Human Escalations', value: scoreboard.safety.escalationsToHuman, color: 'var(--locked-ink)' },
                   ].map(({ label, value, color }) => (
-                    <div key={label} className="flex justify-between border border-[#3a2a2a] bg-[var(--hide-950)] px-3 py-2">
+                    <div key={label} className="flex justify-between border border-[var(--hide-700)] bg-[var(--hide-950)] px-3 py-2">
                       <span className="text-[9px] text-[color:var(--bone-400)]">{label}</span>
                       <span className="text-[9px] font-mono font-bold" style={{ color }}>{value}</span>
                     </div>
@@ -263,7 +263,7 @@ export default function ScoutReportPage() {
             </div>
 
             {/* Engagement Summary */}
-            <div className="border-t border-[#3a2a2a] pt-3">
+            <div className="border-t border-[var(--hide-700)] pt-3">
               <p className="text-xs font-mono text-[color:var(--bone-400)] mb-2">Engagement Summary</p>
               <div className="grid md:grid-cols-3 gap-2">
                 {[
@@ -271,7 +271,7 @@ export default function ScoutReportPage() {
                   { label: 'Daily Active Users', value: scoreboard.engagement.dailyActiveUsers },
                   { label: 'Avg Messages / Session', value: scoreboard.engagement.avgMessagesPerSession?.toFixed(1) ?? 'Unavailable' },
                 ].map(({ label, value }) => (
-                  <div key={label} className="border border-[#3a2a2a] bg-[var(--hide-950)] px-3 py-2 text-center">
+                  <div key={label} className="border border-[var(--hide-700)] bg-[var(--hide-950)] px-3 py-2 text-center">
                     <p className="text-[9px] text-[color:var(--bone-400)]">{label}</p>
                     <p className="mt-1 text-sm font-mono font-bold text-[color:var(--brass-300)]">{value}</p>
                   </div>
@@ -281,7 +281,7 @@ export default function ScoutReportPage() {
 
             {/* Top Topics */}
             {scoreboard.effectiveness.concernedTopics.length > 0 ? (
-              <div className="border-t border-[#3a2a2a] pt-3">
+              <div className="border-t border-[var(--hide-700)] pt-3">
                 <p className="text-xs font-mono text-[color:var(--bone-400)] mb-2">Top Engaged Topics</p>
                 <div className="flex flex-wrap gap-2">
                   {scoreboard.effectiveness.concernedTopics.map((topic, idx) => (
@@ -297,7 +297,7 @@ export default function ScoutReportPage() {
 
         {/* THE SCORECARD */}
         {scoreboard ? (
-          <section className="border-2 border-[color:var(--brass-700)] bg-[#151515] p-5">
+          <section className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-5">
             <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[color:var(--brass-300)]">The Scorecard — {scoreboard.period}</p>
             <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
               {[
@@ -332,7 +332,7 @@ export default function ScoutReportPage() {
         ) : null}
 
         {/* SCOUT REPORTS */}
-        <section className="border-2 border-[color:var(--brass-700)] bg-[#151515] p-5">
+        <section className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-5">
           <div className="flex items-center justify-between gap-3">
             <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[color:var(--brass-300)]">
               Scout Reports ({scoutJobs.length})
@@ -340,7 +340,7 @@ export default function ScoutReportPage() {
           </div>
 
           <div className="mt-3 border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-3">
-            <label htmlFor="generate-focus" className="block text-[10px] font-mono uppercase tracking-[0.14em] text-[#a89478]">
+            <label htmlFor="generate-focus" className="block text-[10px] font-mono uppercase tracking-[0.14em] text-[var(--bone-400)]">
               Generate (optional focus)
             </label>
             <div className="mt-2 flex flex-wrap gap-2">
@@ -351,14 +351,14 @@ export default function ScoutReportPage() {
                 onChange={(event) => setGenerateFocus(event.target.value)}
                 maxLength={500}
                 placeholder="e.g. progress since the last competition cycle"
-                className="min-w-[220px] flex-1 border border-[color:var(--hide-600)] bg-[#151515] px-3 py-2 text-xs text-[color:var(--bone-300)] outline-none focus:border-[color:var(--brass-300)]"
+                className="min-w-[220px] flex-1 border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-xs text-[color:var(--bone-300)] outline-none focus:border-[color:var(--brass-300)]"
                 disabled={generateBusy}
               />
               <button
                 type="button"
                 onClick={() => void requestGeneration('scout_report')}
                 disabled={generateBusy}
-                className="border-2 border-[color:var(--brass-700)] bg-[#2a1a1a] px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-[0.12em] text-[color:var(--locked)] transition hover:border-[color:var(--locked)] disabled:opacity-50"
+                className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-800)] px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-[0.12em] text-[color:var(--locked-ink)] transition hover:border-[color:var(--locked)] disabled:opacity-50"
               >
                 {generateBusy ? 'Queuing…' : 'Generate scout report'}
               </button>
@@ -374,7 +374,7 @@ export default function ScoutReportPage() {
               ) : null}
             </div>
             {generateNotice ? <p role="status" className="mt-2 text-xs text-[color:var(--brass-300)]">{generateNotice}</p> : null}
-            {generateError ? <p role="alert" className="mt-2 text-xs text-[color:var(--locked)]">{generateError}</p> : null}
+            {generateError ? <p role="alert" className="mt-2 text-xs text-[color:var(--locked-ink)]">{generateError}</p> : null}
           </div>
 
           {loadingJobs ? (
@@ -460,7 +460,7 @@ export default function ScoutReportPage() {
                   ) : null}
 
                   {selectedJob?.jobId === job.jobId && job.status === 'failed' ? (
-                    <p className="mt-2 text-[10px] font-mono text-[color:var(--locked)]">Error: {job.error}</p>
+                    <p className="mt-2 text-[10px] font-mono text-[color:var(--locked-ink)]">Error: {job.error}</p>
                   ) : null}
 
                   {selectedJob?.jobId === job.jobId && job.status === 'cancelled' ? (
@@ -476,7 +476,7 @@ export default function ScoutReportPage() {
 
         {/* BOARD SUMMARIES */}
         {canViewOrgMetrics && boardJobs.length > 0 ? (
-          <section className="border-2 border-[color:var(--hide-600)] bg-[#151515] p-5">
+          <section className="border-2 border-[color:var(--hide-600)] bg-[var(--hide-950)] p-5">
             <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[color:var(--brass-300)]">
               Board Summaries ({boardJobs.length})
             </p>
@@ -500,7 +500,7 @@ export default function ScoutReportPage() {
 
         {/* HEAVY BAG HISTORY */}
         {heavyBagJobs.length > 0 ? (
-          <section className="border-2 border-[color:var(--hide-600)] bg-[#151515] p-5">
+          <section className="border-2 border-[color:var(--hide-600)] bg-[var(--hide-950)] p-5">
             <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[color:var(--bone-400)]">
               Heavy Bag Session History ({heavyBagJobs.length})
             </p>
@@ -508,7 +508,7 @@ export default function ScoutReportPage() {
               {heavyBagJobs.slice(0, 10).map((job) => (
                 <div
                   key={job.jobId}
-                  className="flex items-center justify-between border border-[#3a2a2a] bg-[var(--hide-950)] px-3 py-2"
+                  className="flex items-center justify-between border border-[var(--hide-700)] bg-[var(--hide-950)] px-3 py-2"
                 >
                   <div className="flex items-center gap-3">
                     <StatusBadge status={job.status} />
@@ -534,9 +534,9 @@ function StatusBadge({ status }: { readonly status: JobStatusResult['status'] })
   const styles: Record<JobStatusResult['status'], string> = {
     pending:   'text-[color:var(--bone-400)] border-[color:var(--hide-600)]',
     running:   'text-[color:var(--brass-300)] border-[color:var(--brass-300)]',
-    completed: 'text-[#4a8a4a] border-[#4a8a4a]',
-    failed:    'text-[color:var(--locked)] border-[color:var(--locked)]',
-    cancelled: 'text-[#6a5a4a] border-[color:var(--hide-600)]',
+    completed: 'text-[var(--cleared)] border-[var(--cleared)]',
+    failed:    'text-[color:var(--locked-ink)] border-[color:var(--locked)]',
+    cancelled: 'text-[var(--bone-400)] border-[color:var(--hide-600)]',
   };
   return (
     <span className={`border px-2 py-0.5 text-[9px] font-mono uppercase tracking-[0.1em] ${styles[status]}`}>

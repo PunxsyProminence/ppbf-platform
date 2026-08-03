@@ -26,9 +26,9 @@ type ShadowEvidenceTier = 'PROVEN' | 'EMERGING' | 'EXPERIMENTAL' | 'RESEARCH_NEE
 // darker the style, the more evidenced the answer claims to be.
 const EVIDENCE_TIER_STYLES: Record<ShadowEvidenceTier, string> = {
   PROVEN: 'bg-black',
-  EMERGING: 'bg-[var(--patina-900)]',
-  EXPERIMENTAL: 'bg-[var(--hide-800)]',
-  RESEARCH_NEEDED: 'bg-[var(--hide-500)]',
+  EMERGING: 'bg-[var(--hide-800)]',
+  EXPERIMENTAL: 'bg-[var(--hide-700)]',
+  RESEARCH_NEEDED: 'bg-[var(--bone-400)]',
 };
 
 function RestoredBubble({ message }: { readonly message: StoredShadowConversationMessage }) {

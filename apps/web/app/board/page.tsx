@@ -16,9 +16,9 @@ export default function BoardHubPage() {
           </div>
         </header>
 
-        <section className="mt-8 border-2 border-[color:var(--brass-700)] bg-[#121212] p-5">
+        <section className="mt-8 border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-5">
           <h2 className="text-lg font-black text-[color:var(--bone-200)]">Aggregate boundary</h2>
-          <p className="mt-3 max-w-4xl text-sm leading-6 text-[#cbb8a8]">
+          <p className="mt-3 max-w-4xl text-sm leading-6 text-[var(--bone-300)]">
             {BOARD_AGGREGATE_BOUNDARY_STATEMENT}
           </p>
         </section>

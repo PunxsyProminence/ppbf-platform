@@ -970,7 +970,7 @@ export default function AdminCapabilitiesPage() {
                 }}
                 className={`h-11 border px-4 text-[length:var(--t-sm)] font-bold ${
                   activeTab === tab.id
-                    ? 'mat-brass--patina border-[color:var(--brass-600)] text-[color:var(--hide-950)]'
+                    ? 'border-[color:var(--brass-700)] bg-[var(--accent-strong)] text-[color:var(--accent-ink)]'
                     : 'border-[color:var(--hide-700)] bg-[var(--hide-900)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-700)]'
                 }`}
               >
@@ -1089,9 +1089,9 @@ export default function AdminCapabilitiesPage() {
                           <button
                             type="button"
                             onClick={() => setCapabilityStatus(capability.id, isOn ? 'BLOCKED' : 'ACTIVE')}
-                            className={`inline-flex h-10 items-center rounded-full border px-4 text-[length:var(--t-xs)] font-bold uppercase tracking-[0.12em] transition ${
+                            className={`inline-flex min-h-[44px] items-center rounded-full border px-4 text-[length:var(--t-xs)] font-bold uppercase tracking-[0.12em] transition ${
                               isOn
-                                ? 'mat-brass--patina border-[color:var(--brass-600)] text-[color:var(--hide-950)]'
+                                ? 'border-[color:var(--brass-700)] bg-[var(--accent-strong)] text-[color:var(--accent-ink)]'
                                 : 'border-[var(--hide-700)] bg-[var(--hide-900)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-700)]'
                             }`}
                           >
@@ -1118,9 +1118,9 @@ export default function AdminCapabilitiesPage() {
                           <button
                             type="button"
                             onClick={() => toggleGymCapabilityAccess(capability.capabilityId)}
-                            className={`inline-flex h-10 items-center rounded-full border px-4 text-[length:var(--t-xs)] font-bold uppercase tracking-[0.12em] transition ${
+                            className={`inline-flex min-h-[44px] items-center rounded-full border px-4 text-[length:var(--t-xs)] font-bold uppercase tracking-[0.12em] transition ${
                               allowed
-                                ? 'mat-brass--patina border-[color:var(--brass-600)] text-[color:var(--hide-950)]'
+                                ? 'border-[color:var(--brass-700)] bg-[var(--accent-strong)] text-[color:var(--accent-ink)]'
                                 : 'border-[var(--hide-700)] bg-[var(--hide-900)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-700)]'
                             }`}
                           >
@@ -1365,7 +1365,7 @@ export default function AdminCapabilitiesPage() {
                                         onClick={() => toggleCapabilityRole(capability.id, role)}
                                         className={`h-11 border px-3 text-[length:var(--t-xs)] font-bold ${
                                           assigned
-                                            ? 'mat-brass--patina border-[color:var(--brass-600)] text-[color:var(--hide-950)]'
+                                            ? 'border-[color:var(--brass-700)] bg-[var(--accent-strong)] text-[color:var(--accent-ink)]'
                                             : 'border-[color:var(--hide-700)] bg-[var(--hide-900)] text-[color:var(--bone-300)]'
                                         }`}
                                       >
@@ -1503,7 +1503,7 @@ export default function AdminCapabilitiesPage() {
                                         onClick={() => toggleCapabilityRole(capability.id, role)}
                                         className={`h-11 border px-3 text-[length:var(--t-xs)] font-bold ${
                                           assigned
-                                            ? 'mat-brass--patina border-[color:var(--brass-600)] text-[color:var(--hide-950)]'
+                                            ? 'border-[color:var(--brass-700)] bg-[var(--accent-strong)] text-[color:var(--accent-ink)]'
                                             : 'border-[color:var(--hide-700)] bg-[var(--hide-900)] text-[color:var(--bone-300)]'
                                         }`}
                                       >
@@ -1579,7 +1579,7 @@ export default function AdminCapabilitiesPage() {
                       }}
                       className={`h-11 border px-4 text-[length:var(--t-sm)] font-bold ${
                         matrixFilter === option.id
-                          ? 'mat-brass--patina border-[color:var(--brass-600)] text-[color:var(--hide-950)]'
+                          ? 'border-[color:var(--brass-700)] bg-[var(--accent-strong)] text-[color:var(--accent-ink)]'
                           : 'border-[color:var(--hide-700)] bg-[var(--hide-900)] text-[color:var(--bone-300)]'
                       }`}
                     >
@@ -1617,7 +1617,7 @@ export default function AdminCapabilitiesPage() {
                             assignmentClass = 'border-[color:var(--restricted)] bg-[rgba(192,90,30,.22)] text-[color:var(--restricted-ink)]';
                             marker = '⚠';
                           } else if (assigned) {
-                            assignmentClass = 'mat-brass--patina border-[color:var(--brass-600)] text-[color:var(--hide-950)]';
+                            assignmentClass = 'border-[color:var(--brass-700)] bg-[var(--accent-strong)] text-[color:var(--accent-ink)]';
                             marker = '✓';
                           }
                           return (
@@ -1767,7 +1767,7 @@ export default function AdminCapabilitiesPage() {
                             onClick={() => toggleSecondaryRole(role)}
                             className={`h-11 border px-3 text-[length:var(--t-xs)] font-bold ${
                               selected
-                                ? 'mat-brass--patina border-[color:var(--brass-600)] text-[color:var(--hide-950)]'
+                                ? 'border-[color:var(--brass-700)] bg-[var(--accent-strong)] text-[color:var(--accent-ink)]'
                                 : 'border-[color:var(--hide-700)] bg-[var(--hide-900)] text-[color:var(--bone-300)]'
                             }`}
                           >

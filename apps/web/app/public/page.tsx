@@ -363,6 +363,11 @@ export default function PublicPortalPage() {
           <h2 className="text-[length:var(--t-md)] font-black text-[color:var(--hide-950)]">CHOOSE YOUR PATH</h2>
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {pathwayCards.map((path) => {
+              // The selected card used --canvas-tan-dark, which aliases to
+              // --hide-600: leather, not a darker tan. Its dark body copy
+              // landed at 1.43:1 and its title at 1.68:1, so selecting a
+              // pathway made the card unreadable. --paper-2 is the actual
+              // "canvas, one shade down" and keeps the copy at ink contrast.
               const selected = selectedPath === path.visitorType;
               return (
                 <article key={path.title} className={`border-2 p-4 ${selected ? 'border-[color:var(--brass-600)] mat-paper' : 'border-[color:rgba(107,78,18,.28)] mat-paper'}`}>

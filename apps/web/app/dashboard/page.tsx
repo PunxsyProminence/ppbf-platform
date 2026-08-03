@@ -63,7 +63,7 @@ export default function DashboardEntryPage() {
           <button
             type="button"
             onClick={() => setRetryNonce((value) => value + 1)}
-            className="mt-5 min-h-[44px] border border-[color:var(--brass-700)] bg-[#2a1515] px-5 text-sm font-black uppercase tracking-[0.12em] text-[color:var(--bone-200)]"
+            className="mt-5 min-h-[44px] border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-5 text-sm font-black uppercase tracking-[0.12em] text-[color:var(--bone-200)]"
           >
             Retry
           </button>

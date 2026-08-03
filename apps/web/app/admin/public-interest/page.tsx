@@ -21,8 +21,8 @@ interface Submission {
 }
 
 function reviewStateTone(state: ReviewState): string {
-  if (state === 'new') return 'border-[color:var(--brass-700)] bg-[var(--rust-900)] text-[#f2c9c9]';
-  if (state === 'contacted') return 'border-[#4a6b2a] bg-[#1a2a14] text-[#c9e0b4]';
+  if (state === 'new') return 'border-[color:var(--brass-700)] bg-[var(--rust-900)] text-[var(--locked-ink)]';
+  if (state === 'contacted') return 'border-[var(--patina-500)] bg-[color-mix(in_srgb,var(--cleared)_14%,var(--hide-950))] text-[var(--cleared-ink)]';
   return 'border-[color:var(--hide-600)] bg-[var(--hide-900)] text-[color:var(--bone-400)]';
 }
 
@@ -105,7 +105,7 @@ export default function PublicInterestReviewPage() {
               onClick={() => setFilter(state)}
               className={`border-2 px-3 py-1 text-xs font-mono font-bold uppercase tracking-[0.08em] transition ${
                 filter === state
-                  ? 'border-[color:var(--brass-300)] bg-[#2a1a1a] text-[color:var(--brass-300)]'
+                  ? 'border-[color:var(--brass-300)] bg-[var(--hide-800)] text-[color:var(--brass-300)]'
                   : 'border-[color:var(--hide-600)] bg-[var(--hide-950)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-700)]'
               }`}
             >
@@ -114,7 +114,7 @@ export default function PublicInterestReviewPage() {
           ))}
         </div>
 
-        {error ? <p className="border border-[color:var(--brass-700)] bg-[var(--rust-900)] p-3 text-sm text-[#f0c4c4]">{error}</p> : null}
+        {error ? <p className="border border-[color:var(--brass-700)] bg-[var(--rust-900)] p-3 text-sm text-[var(--locked-ink)]">{error}</p> : null}
         {loading ? <p className="text-sm text-[color:var(--bone-300)]">Loading submissions...</p> : null}
         {!loading && items.length === 0 && !error ? (
           <p className="text-sm text-[color:var(--bone-300)]">No submissions match this filter.</p>
@@ -122,7 +122,7 @@ export default function PublicInterestReviewPage() {
 
         <section className="space-y-3">
           {items.map((item) => (
-            <article key={item.submission_id} className="border border-[color:var(--hide-600)] bg-[#151515] p-4">
+            <article key={item.submission_id} className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
@@ -146,7 +146,7 @@ export default function PublicInterestReviewPage() {
                       type="button"
                       disabled={busyId === item.submission_id || item.review_state === state}
                       onClick={() => void setReviewState(item.submission_id, state)}
-                      className="border border-[color:var(--brass-700)] bg-[#211717] px-3 py-1 text-xs font-mono uppercase text-[color:var(--bone-200)] disabled:opacity-50"
+                      className="border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-3 py-1 text-xs font-mono uppercase text-[color:var(--bone-200)] disabled:opacity-50"
                     >
                       Mark {state}
                     </button>

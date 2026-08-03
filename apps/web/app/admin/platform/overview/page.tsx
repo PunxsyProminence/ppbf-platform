@@ -113,7 +113,7 @@ export default function PlatformOverview() {
         </header>
 
         {loading && <p className="text-sm text-[var(--gray-dark)]">Loading...</p>}
-        {loadError && <p className="text-sm text-[var(--red-primary)]">{loadError}</p>}
+        {loadError && <p className="text-sm text-[var(--safety-locked)]">{loadError}</p>}
 
         {!loading && !loadError && (
           <div className="overflow-x-auto rounded-2xl border-2 border-[rgba(0,0,0,0.14)] bg-white">
@@ -135,7 +135,7 @@ export default function PlatformOverview() {
                     <td className="px-4 py-3 font-semibold">{gym.organizationName}</td>
                     <td className="px-4 py-3">{gym.status}</td>
                     {gym.error ? (
-                      <td className="px-4 py-3 text-[var(--red-primary)]" colSpan={4}>{gym.error}</td>
+                      <td className="px-4 py-3 text-[var(--safety-locked)]" colSpan={4}>{gym.error}</td>
                     ) : (
                       <>
                         <td className="px-4 py-3">{metricLabel(gym.board?.activeAthletes)}</td>

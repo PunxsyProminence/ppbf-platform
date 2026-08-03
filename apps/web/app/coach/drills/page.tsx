@@ -204,7 +204,7 @@ function CoachDrillLibrary() {
           </div>
 
           {formError && (
-            <p role="alert" className="mt-4 rounded-lg border-2 border-[var(--red-primary)] bg-[rgba(184,59,52,0.06)] px-3 py-2 text-sm font-semibold text-[var(--red-primary)]">
+            <p role="alert" className="mt-4 rounded-lg border-2 border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_6%,white)] px-3 py-2 text-sm font-semibold text-[var(--safety-locked)]">
               {formError}
             </p>
           )}
@@ -230,8 +230,8 @@ function CoachDrillLibrary() {
           {loading && <p className="mt-3 text-sm text-[var(--gray-dark)]">Loading...</p>}
 
           {!loading && loadError && (
-            <div className="mt-3 rounded-lg border-2 border-[var(--red-primary)] bg-white p-4">
-              <p className="text-sm font-semibold text-[var(--red-primary)]">{loadError}</p>
+            <div className="mt-3 rounded-lg border-2 border-[var(--safety-locked)] bg-white p-4">
+              <p className="text-sm font-semibold text-[var(--safety-locked)]">{loadError}</p>
               <p className="mt-1 text-sm text-[var(--gray-dark)]">
                 This is a failure to load, not an empty library.
               </p>

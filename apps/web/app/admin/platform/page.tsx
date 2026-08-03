@@ -258,15 +258,15 @@ export default function PlatformConsole() {
           <div
             className={`rounded-xl border px-4 py-3 ${
               feedback.kind === 'error'
-                ? 'border-[var(--red-primary)] bg-[rgba(184,59,52,0.05)]'
+                ? 'border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_5%,white)]'
                 : feedback.kind === 'success'
-                  ? 'border-[var(--cleared)] bg-[rgba(76,175,80,0.05)]'
+                  ? 'border-[var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_8%,white)]'
                   : 'border-[var(--gray-medium)] bg-[rgba(0,0,0,0.03)]'
             }`}
           >
             <p
               className={`text-sm font-semibold ${
-                feedback.kind === 'error' ? 'text-[var(--red-primary)]' : feedback.kind === 'success' ? 'text-[var(--cleared)]' : 'text-[var(--gray-dark)]'
+                feedback.kind === 'error' ? 'text-[var(--safety-locked)]' : feedback.kind === 'success' ? 'text-[var(--cleared-deep)]' : 'text-[var(--gray-dark)]'
               }`}
             >
               {feedback.kind === 'error' && '❌ '}
@@ -281,7 +281,7 @@ export default function PlatformConsole() {
           <select
             value={selectedOrgId}
             onChange={(event) => setSelectedOrgId(event.target.value)}
-            className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+            className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
           >
             <option value="">Select a gym...</option>
             {organizations.map((org) => (
@@ -326,12 +326,12 @@ export default function PlatformConsole() {
               value={inviteEmail}
               onChange={(event) => setInviteEmail(event.target.value)}
               placeholder="name@example.org"
-              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
             />
             <select
               value={inviteRole}
               onChange={(event) => setInviteRole(event.target.value)}
-              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
             >
               {INVITABLE_ROLES.map((role) => (
                 <option key={role.value} value={role.value}>{role.label}</option>
@@ -360,14 +360,14 @@ export default function PlatformConsole() {
               value={athleteAccountId}
               onChange={(event) => setAthleteAccountId(event.target.value)}
               placeholder="Account ID (how they'll sign in)"
-              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
             />
             <input
               type="text"
               value={athleteRosterId}
               onChange={(event) => setAthleteRosterId(event.target.value)}
               placeholder="Existing athlete roster ID"
-              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
             />
             <button
               type="button"

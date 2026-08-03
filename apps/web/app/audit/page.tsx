@@ -117,7 +117,7 @@ function AuditTrace() {
             <button
               type="button"
               onClick={retry}
-              className="mt-3 min-h-[44px] border-2 border-[color:var(--brass-300)] bg-[#1f1f1f] px-4 text-xs font-mono font-bold uppercase tracking-[0.14em] text-[color:var(--brass-300)]"
+              className="mt-3 min-h-[44px] border-2 border-[color:var(--brass-300)] bg-[var(--hide-900)] px-4 text-xs font-mono font-bold uppercase tracking-[0.14em] text-[color:var(--brass-300)]"
             >
               Retry loading the audit trail
             </button>
@@ -146,7 +146,7 @@ function AuditTrace() {
           </article>
         ))}
 
-        <div className="border-2 border-[color:var(--brass-700)] bg-[#121212] p-4">
+        <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-4">
           <p className="font-mono text-[12px] uppercase tracking-[0.15em] text-[color:var(--brass-300)]">Flow Direction</p>
           <p className="mt-2 text-[16px] leading-7 text-[color:var(--bone-200)]">Audited items move into Source Control promotion states for controlled publication.</p>
         </div>

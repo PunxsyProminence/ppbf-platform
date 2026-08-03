@@ -97,7 +97,7 @@ export default function ParentProgressionVisibilityPage() {
         </section>
 
         <div className="flex flex-wrap gap-3">
-          <Link href="/parent/dashboard" className="border-2 border-[color:var(--brass-700)] bg-[#2a1a1a] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)]">
+          <Link href="/parent/dashboard" className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-800)] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)]">
             Back to Parent Hub
           </Link>
         </div>

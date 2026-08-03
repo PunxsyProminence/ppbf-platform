@@ -208,17 +208,17 @@ export default function ResearchIntakePage() {
     >
       <div className="space-y-4">
         {errorMessage ? (
-          <section className="border-2 border-[color:var(--brass-700)] bg-[#151515] p-4 text-sm text-[#f0c4c4]">{errorMessage}</section>
+          <section className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-4 text-sm text-[var(--locked-ink)]">{errorMessage}</section>
         ) : null}
 
         {!errorMessage && items.length === 0 ? (
-          <section className="border-2 border-[color:var(--brass-700)] bg-[#151515] p-4">
+          <section className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-4">
             <p className="text-[12px] font-mono uppercase tracking-[0.18em] text-[color:var(--brass-300)]">Empty State</p>
             <p className="mt-2 text-[14px] text-[color:var(--bone-300)]">No SHADOW research projection items exist for this organization yet.</p>
           </section>
         ) : null}
 
-        <section className="border-2 border-[color:var(--brass-700)] bg-[#151515] p-4">
+        <section className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-4">
           <p className="text-[12px] font-mono uppercase tracking-[0.18em] text-[color:var(--brass-300)]">Review State Summary</p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {[
@@ -235,7 +235,7 @@ export default function ResearchIntakePage() {
           </div>
         </section>
 
-        <section className="space-y-3 border-2 border-[color:var(--brass-700)] bg-[#151515] p-4">
+        <section className="space-y-3 border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-4">
           <p className="text-[12px] font-mono uppercase tracking-[0.18em] text-[color:var(--brass-300)]">Research Intake Cards</p>
           {items.map((item) => (
             <article key={item.event_id} className="border border-[color:var(--brass-700)] bg-[var(--hide-900)]/70 p-4">
@@ -260,39 +260,39 @@ export default function ResearchIntakePage() {
           ))}
         </section>
 
-        <section className="space-y-3 border-2 border-[color:var(--brass-700)] bg-[#151515] p-4">
+        <section className="space-y-3 border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-4">
           <p className="text-[12px] font-mono uppercase tracking-[0.18em] text-[color:var(--brass-300)]">Operational Research Requirements</p>
           <form onSubmit={handleCreateRequirement} className="space-y-3">
             <div className="grid gap-3 md:grid-cols-2">
               <input
                 value={requirementDraft.sourceEventName}
                 onChange={(event) => setRequirementDraft((current) => ({ ...current, sourceEventName: event.target.value }))}
-                className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] outline-none"
+                className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
                 placeholder="Source event name"
               />
               <input
                 value={requirementDraft.sourceEntityType}
                 onChange={(event) => setRequirementDraft((current) => ({ ...current, sourceEntityType: event.target.value }))}
-                className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] outline-none"
+                className="border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
                 placeholder="Source entity type"
               />
             </div>
             <input
               value={requirementDraft.sourceEntityId}
               onChange={(event) => setRequirementDraft((current) => ({ ...current, sourceEntityId: event.target.value }))}
-              className="w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] outline-none"
+              className="w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
               placeholder="Source entity id"
             />
             <textarea
               value={requirementDraft.researchRequirement}
               onChange={(event) => setRequirementDraft((current) => ({ ...current, researchRequirement: event.target.value }))}
-              className="h-24 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] outline-none"
+              className="h-24 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
               placeholder="Research requirement"
             />
             <textarea
               value={requirementDraft.knowledgeGap}
               onChange={(event) => setRequirementDraft((current) => ({ ...current, knowledgeGap: event.target.value }))}
-              className="h-20 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] outline-none"
+              className="h-20 w-full border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 py-2 text-sm text-[color:var(--bone-200)] focus-visible:outline-none focus-visible:shadow-[var(--focus)] focus-visible:border-[color:var(--brass-400)]"
               placeholder="Knowledge gap"
             />
             <div className="flex flex-wrap items-center gap-3">
@@ -322,7 +322,7 @@ export default function ResearchIntakePage() {
                     type="button"
                     onClick={() => void handleResolveRequirement(requirement.research_requirement_id)}
                     disabled={resolvingId === requirement.research_requirement_id}
-                    className="mt-3 inline-flex min-h-[44px] items-center border border-[var(--cleared)] bg-[var(--patina-900)] px-3 text-[12px] font-bold text-[var(--cleared-ink)] transition hover:border-[var(--cleared-ink)] disabled:cursor-not-allowed disabled:opacity-60"
+                    className="mt-3 inline-flex min-h-[44px] items-center border border-[var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_14%,var(--hide-950))] px-3 text-[12px] font-bold text-[var(--cleared-ink)] transition hover:border-[var(--cleared-ink)] disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {resolvingId === requirement.research_requirement_id ? 'Resolving...' : 'Mark Resolved'}
                   </button>

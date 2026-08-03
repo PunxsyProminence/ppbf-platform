@@ -205,7 +205,7 @@ export default function SparringTelemetryPage() {
             </div>
             <div className="font-display text-2xl tracking-tight">Combat Telemetry Log</div>
           </div>
-          <div className="inline-flex items-center gap-2 border-2 border-[color:var(--brass-700)] bg-[#3d2817] px-3 py-2 text-xs font-mono text-[color:var(--bone-200)]">
+          <div className="inline-flex items-center gap-2 border-2 border-[color:var(--brass-700)] bg-[var(--hide-700)] px-3 py-2 text-xs font-mono text-[color:var(--bone-200)]">
             SHADOW formula engine surface
           </div>
         </div>
@@ -264,7 +264,7 @@ export default function SparringTelemetryPage() {
                   onChange={(event) => setContactLevel(Number(event.target.value))}
                   style={{ accentColor: 'var(--brass-400)', flex: '1 1 260px' }}
                 />
-                <span className="min-w-[122px] border-2 border-[color:var(--brass-700)] bg-[#3d2817] px-3 py-2 text-center text-sm text-[color:var(--bone-200)]">
+                <span className="min-w-[122px] border-2 border-[color:var(--brass-700)] bg-[var(--hide-700)] px-3 py-2 text-center text-sm text-[color:var(--bone-200)]">
                   {contactLevel}/3 {contactLevelLabel}
                 </span>
               </div>
@@ -330,7 +330,7 @@ export default function SparringTelemetryPage() {
                   value={bodyWeightKg}
                   onChange={(event) => setBodyWeightKg(event.target.value)}
                   placeholder="Leave blank to skip"
-                  className="w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3.5 py-3 text-[color:var(--bone-200)] outline-none transition focus:border-[color:var(--brass-300)] placeholder-[#6a5a4a]"
+                  className="w-full border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3.5 py-3 text-[color:var(--bone-200)] outline-none transition focus:border-[color:var(--brass-300)] placeholder-[var(--bone-400)]"
                 />
               </div>
             </div>
@@ -348,7 +348,7 @@ export default function SparringTelemetryPage() {
                 onChange={(event) => setRecoveryNotes(event.target.value)}
                 maxLength={RECOVERY_NOTES_MAX_LENGTH}
                 placeholder="How the athlete felt afterward, recovery plan, anything the coach should know..."
-                className="w-full h-20 border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3.5 py-3 text-[color:var(--bone-200)] outline-none transition focus:border-[color:var(--brass-300)] placeholder-[#6a5a4a]"
+                className="w-full h-20 border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] px-3.5 py-3 text-[color:var(--bone-200)] outline-none transition focus:border-[color:var(--brass-300)] placeholder-[var(--bone-400)]"
               />
             </div>
 
@@ -361,7 +361,7 @@ export default function SparringTelemetryPage() {
             </button>
           </section>
 
-          <aside className="grid gap-4 border-4 border-[#3d2817] bg-[var(--hide-900)] p-6">
+          <aside className="grid gap-4 border-4 border-[var(--hide-700)] bg-[var(--hide-900)] p-6">
             <div className="grid gap-2">
               <div className="font-mono text-[0.72rem] uppercase tracking-[0.22em] text-[color:var(--brass-300)]">
                 SHADOW formula status
@@ -388,7 +388,7 @@ export default function SparringTelemetryPage() {
               </div>
             </div>
 
-            <div className="border-2 border-[color:var(--brass-700)] bg-[#3d2817] p-3.5 leading-6 text-[color:var(--bone-200)]">
+            <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-700)] p-3.5 leading-6 text-[color:var(--bone-200)]">
               This is Deep-Track: rounds, contact level, punch accuracy, focus attainment, and weight all become real
               inputs to SHADOW&apos;s formula engine (Accuracy, Connect Differential, Contact Exposure, Focus
               Attainment Rate, 7-Day Weight Change) the moment you submit.

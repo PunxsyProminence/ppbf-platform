@@ -92,8 +92,9 @@ export default function ChangePinPage() {
 
         <form onSubmit={submit} className="space-y-4 rounded-2xl border border-[rgba(0,0,0,0.14)] bg-white p-6 shadow-[var(--shadow-sm)]">
           {error && (
-            <p role="alert" className="rounded-xl border border-[var(--red-primary)] bg-[rgba(184,59,52,0.06)] px-4 py-3 text-sm font-semibold text-[var(--red-primary)]">
-              {error}
+            <p role="alert" className="flex items-start gap-2 rounded-xl border border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_8%,white)] px-4 py-3 text-sm font-semibold text-[var(--safety-locked)]">
+              <span aria-hidden="true">✕</span>
+              <span>{error}</span>
             </p>
           )}
 
@@ -110,7 +111,7 @@ export default function ChangePinPage() {
               value={currentPin}
               maxLength={DEFAULT_PIN_LENGTH}
               onChange={(event) => setCurrentPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))}
-              className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono tracking-[0.3em] focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+              className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono tracking-[0.3em] focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
             />
           </div>
 
@@ -128,7 +129,7 @@ export default function ChangePinPage() {
               value={newPin}
               maxLength={DEFAULT_PIN_LENGTH}
               onChange={(event) => setNewPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))}
-              className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono tracking-[0.3em] focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+              className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono tracking-[0.3em] focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
             />
           </div>
 
@@ -145,7 +146,7 @@ export default function ChangePinPage() {
               value={confirmPin}
               maxLength={DEFAULT_PIN_LENGTH}
               onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))}
-              className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono tracking-[0.3em] focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+              className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono tracking-[0.3em] focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
             />
           </div>
 

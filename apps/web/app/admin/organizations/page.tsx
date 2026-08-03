@@ -214,18 +214,18 @@ export default function SetupWizard() {
           <div
             className={`rounded-xl border px-4 py-3 ${
               feedback.kind === 'error'
-                ? 'border-[var(--red-primary)] bg-[rgba(184,59,52,0.05)]'
+                ? 'border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_5%,white)]'
                 : feedback.kind === 'success'
-                  ? 'border-[var(--cleared)] bg-[rgba(76,175,80,0.05)]'
+                  ? 'border-[var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_8%,white)]'
                   : 'border-[var(--gray-medium)] bg-[rgba(0,0,0,0.03)]'
             }`}
           >
             <p
               className={`text-sm font-semibold ${
                 feedback.kind === 'error'
-                  ? 'text-[var(--red-primary)]'
+                  ? 'text-[var(--safety-locked)]'
                   : feedback.kind === 'success'
-                    ? 'text-[var(--cleared)]'
+                    ? 'text-[var(--cleared-deep)]'
                     : 'text-[var(--gray-dark)]'
               }`}
             >
@@ -238,7 +238,7 @@ export default function SetupWizard() {
         <section
           className={`rounded-2xl border-2 p-6 transition ${
             step === 1
-              ? 'border-[color:var(--brass-600)] bg-white shadow-[0_4px_12px_rgba(184,59,52,0.15)]'
+              ? 'border-[var(--accent)] bg-white shadow-[0_4px_12px_color-mix(in_srgb,var(--accent)_15%,white)]'
               : 'border-[rgba(0,0,0,0.14)] bg-white/60 opacity-60'
           }`}
         >
@@ -262,7 +262,7 @@ export default function SetupWizard() {
                   value={gymId}
                   onChange={(e) => setGymId(e.target.value.toLowerCase())}
                   placeholder="golden_boxing"
-                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                 />
               </div>
 
@@ -274,7 +274,7 @@ export default function SetupWizard() {
                   value={gymName}
                   onChange={(e) => setGymName(e.target.value)}
                   placeholder="Golden Boxing Studio"
-                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                 />
               </div>
 
@@ -301,7 +301,7 @@ export default function SetupWizard() {
         <section
           className={`rounded-2xl border-2 p-6 transition ${
             step === 2
-              ? 'border-[color:var(--brass-600)] bg-white shadow-[0_4px_12px_rgba(184,59,52,0.15)]'
+              ? 'border-[var(--accent)] bg-white shadow-[0_4px_12px_color-mix(in_srgb,var(--accent)_15%,white)]'
               : 'border-[rgba(0,0,0,0.14)] bg-white/60 opacity-60'
           }`}
         >
@@ -317,8 +317,8 @@ export default function SetupWizard() {
 
           {step === 2 && (
             <div className="mt-6 space-y-4">
-              <div className="rounded-lg border border-[rgba(184,59,52,0.2)] bg-[rgba(184,59,52,0.05)] p-4">
-                <p className="text-xs font-semibold text-[color:var(--brass-800)] uppercase tracking-[0.1em]">This is two steps, not one</p>
+              <div className="rounded-lg border border-[color-mix(in_srgb,var(--accent)_20%,white)] bg-[color-mix(in_srgb,var(--accent)_5%,white)] p-4">
+                <p className="text-xs font-semibold text-[var(--accent-quiet)] uppercase tracking-[0.1em]">This is two steps, not one</p>
                 <p className="mt-2 text-sm text-[var(--gray-dark)]">
                   Saving here gives this person the gym admin role in PPBF. If their email is outside your Microsoft
                   tenant, you also have to invite them as a guest in Entra ID — sign-in is rejected until both are done.
@@ -332,7 +332,7 @@ export default function SetupWizard() {
                   value={adminEmail}
                   onChange={(e) => setAdminEmail(e.target.value)}
                   placeholder="owner@goldenboxing.org"
-                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[color:var(--brass-600)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
                 />
               </div>
 
@@ -358,7 +358,7 @@ export default function SetupWizard() {
         {/* Step 3: Configure Features */}
         <section
           className={`rounded-2xl border-2 p-6 transition ${
-            step === 3 ? 'border-[color:var(--brass-600)] bg-white shadow-[0_4px_12px_rgba(184,59,52,0.15)]' : 'border-[rgba(0,0,0,0.14)] bg-white/60 opacity-60'
+            step === 3 ? 'border-[var(--accent)] bg-white shadow-[0_4px_12px_color-mix(in_srgb,var(--accent)_15%,white)]' : 'border-[rgba(0,0,0,0.14)] bg-white/60 opacity-60'
           }`}
         >
           <div className="flex-1">
@@ -413,7 +413,7 @@ export default function SetupWizard() {
 
         {/* Complete State */}
         {step === 4 && (
-          <section className="rounded-2xl border-2 border-[var(--cleared)] bg-[rgba(76,175,80,0.05)] p-6 space-y-6">
+          <section className="rounded-2xl border-2 border-[var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_8%,white)] p-6 space-y-6">
             <div className="text-center">
               <p className="text-4xl">🎉</p>
               <h2 className="mt-4 font-display text-2xl font-black">Gym Setup Complete!</h2>

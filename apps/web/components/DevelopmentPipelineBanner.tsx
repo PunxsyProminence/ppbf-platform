@@ -42,12 +42,12 @@ export default function DevelopmentPipelineBanner({ currentStage }: DevelopmentP
                 href={stage.href}
                 className={`inline-flex min-h-[44px] items-center border px-3 py-2 text-[11px] font-mono uppercase tracking-[0.09em] transition ${
                   isCurrent
-                    ? 'border-[color:var(--brass-300)] bg-[#4a1f1f] text-[#f7e6d2]'
+                    ? 'border-[color:var(--brass-300)] bg-[var(--hide-700)] text-[var(--bone-200)]'
                     : isComplete
-                      ? 'border-[color:var(--brass-700)] bg-[#2e1919] text-[#efc4c4]'
+                      ? 'border-[color:var(--brass-700)] bg-[var(--hide-800)] text-[var(--locked-ink)]'
                       : isUpcoming
-                        ? 'border-[color:var(--hide-600)] bg-[#181818] text-[color:var(--bone-300)]'
-                        : 'border-[color:var(--hide-600)] bg-[#181818] text-[color:var(--bone-300)]'
+                        ? 'border-[color:var(--hide-600)] bg-[var(--hide-950)] text-[color:var(--bone-300)]'
+                        : 'border-[color:var(--hide-600)] bg-[var(--hide-950)] text-[color:var(--bone-300)]'
                 }`}
               >
                 {stage.label}

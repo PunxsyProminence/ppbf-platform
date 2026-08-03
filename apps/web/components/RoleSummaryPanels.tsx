@@ -280,7 +280,7 @@ export function HelpPanel({
         aria-expanded={expanded}
       >
         <h3 className="t-label">HELP: {title}</h3>
-        <span aria-hidden="true" className="text-xl text-[var(--accent-quiet)]">{expanded ? '−' : '+'}</span>
+        <span aria-hidden="true" className="text-xl text-[color:var(--brass-400)]">{expanded ? '−' : '+'}</span>
       </button>
 
       {expanded && (
@@ -360,7 +360,7 @@ export function RoleSpecificShadow({
   // could be mistaken for real guidance about a real athlete.
   return (
     <div className={`border-l-4 ${borderColor} space-y-3  p-4 font-mono text-xs`}>
-      <p className="text-[var(--accent-quiet)]">&gt; {roleIdentity}</p>
+      <p className="text-[color:var(--brass-400)]">&gt; {roleIdentity}</p>
       <p className="t-body whitespace-pre-wrap">{description}</p>
       <ShadowChatButton
         context={chatContext}

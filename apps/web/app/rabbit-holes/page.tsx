@@ -29,7 +29,7 @@ interface AuthoredLesson extends RabbitHoleLessonItem {
 }
 
 const STATUS_TONE: Record<AuthoredLesson['status'], string> = {
-  published: 'border-[var(--status-ready)] bg-[#dce7ca]',
+  published: 'border-[var(--status-ready)] bg-[color-mix(in_srgb,var(--cleared)_14%,var(--paper))]',
   retired: 'border-[var(--gray-medium)] bg-[var(--canvas-tan)]',
 };
 
@@ -250,7 +250,7 @@ function RabbitHoleAuthoringPage() {
             What you write here is the gym&apos;s own coaching, published under your name. It is not research, it
             carries no SHADOW evidence tier, and readers are told both.
           </p>
-          {loadError ? <p className="text-sm text-[var(--red-primary)]">{loadError}</p> : null}
+          {loadError ? <p className="text-sm text-[var(--safety-locked)]">{loadError}</p> : null}
         </header>
 
         <section className="mt-6 space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
@@ -293,7 +293,7 @@ function RabbitHoleAuthoringPage() {
           <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-3">
             <h3 className="text-sm font-bold">Already Written For {anchorLabel(anchorType, anchorKey)}</h3>
             {anchorLoadError ? (
-              <p className="mt-2 text-sm text-[var(--red-primary)]">{anchorLoadError}</p>
+              <p className="mt-2 text-sm text-[var(--safety-locked)]">{anchorLoadError}</p>
             ) : publishedHere.length === 0 ? (
               <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
                 Nothing is published against this term yet.
@@ -361,7 +361,7 @@ function RabbitHoleAuthoringPage() {
                 setMessage(error instanceof Error ? error.message : 'Unable to publish.'),
               )
             }
-            className="h-11 border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[var(--white)] disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-11 border-2 border-[var(--black)] bg-[var(--accent-strong)] px-4 text-sm font-black uppercase tracking-[0.12em] text-[var(--accent-ink)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isPublishing ? 'Publishing...' : 'Publish'}
           </button>

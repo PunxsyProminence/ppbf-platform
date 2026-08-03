@@ -53,9 +53,9 @@ const scenarios = [
 ];
 
 function riskClasses(risk: 'Low' | 'Moderate' | 'High') {
-  if (risk === 'Low') return 'border-[var(--cleared)] bg-[var(--patina-900)] text-[var(--cleared-ink)]';
-  if (risk === 'Moderate') return 'border-[var(--brass-600)] bg-[var(--patina-900)] text-[var(--bone-100)]';
-  return 'border-[var(--patina-700)] bg-[var(--rust-900)] text-[var(--locked-ink)]';
+  if (risk === 'Low') return 'border-[var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_14%,var(--hide-950))] text-[var(--cleared-ink)]';
+  if (risk === 'Moderate') return 'border-[var(--brass-500)] bg-[var(--hide-700)] text-[var(--bone-200)]';
+  return 'border-[var(--locked)] bg-[var(--hide-900)] text-[var(--locked-ink)]';
 }
 
 export default function ScenarioSimulatorPage() {
@@ -95,7 +95,7 @@ export default function ScenarioSimulatorPage() {
           </article>
         ))}
 
-        <div className="border-2 border-[color:var(--brass-700)] bg-[#121212] p-4 lg:col-span-2">
+        <div className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-4 lg:col-span-2">
           <p className="font-mono text-[12px] uppercase tracking-[0.15em] text-[color:var(--brass-300)]">Flow Direction</p>
           <p className="mt-2 text-[16px] leading-7 text-[color:var(--bone-200)]">Validated scenarios feed into Audit Trace for governance visibility before Source Control promotion.</p>
         </div>
