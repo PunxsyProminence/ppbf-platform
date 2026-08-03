@@ -416,20 +416,27 @@ constraints P0 added.
 
 ## ⚠️ Still needs a human before deploy
 
-The security fixes added three startup guards, and **nothing calls them yet.**
-They are exported functions, not wired into a bootstrap path:
+- [x] ~~**The startup guards are never called.**~~ ✅ **FIXED.** Wired into
+      `apps/web/instrumentation.ts` — the Next.js instrumentation hook, which already
+      existed for the SHADOW worker and runs once per server start. The checks sit
+      *above* the worker's early return, so they apply in every environment, not only
+      where the worker is enabled. On failure the process logs the reason and exits 1
+      rather than throwing, so a misconfigured server cannot log a fatal and keep
+      serving. Six tests in `instrumentation.test.ts` hold the wiring, and they were
+      verified to fail when the call is removed.
 
-- `validateDurableRateLimitConfiguration()` — `src/server/pilot/rateLimit.ts`
-- `validateSslConfiguration()` — `src/server/pilot/db.ts`
+      **No new configuration needed:** `PPBF_DURABLE_RATE_LIMIT=true` is already set
+      by both deploy workflows, so this asserts existing config. Confirmed before
+      wiring, specifically so this would not arm a deploy failure.
 
-Until they are invoked at startup, SEC-003 and SEC-005 protect nothing at runtime.
-`SECURITY_FIXES_APPLIED.md` lists this under "Startup Validation" as a deploy step
-— it is the one outstanding piece of that work, and it needs a decision about
-where this app's startup hook lives.
+**Still outstanding:** SEC-006's organization-isolation checklist is a framework of
+structural assertions and `expect(true).toBe(true)` placeholders, not executing
+coverage. The checklist still has to be walked by hand — no automated test proves
+those boundaries.
 
-Also unverified by automated tests: **SEC-006's organization-isolation checklist**
-is a framework of structural assertions and `expect(true).toBe(true)` placeholders,
-not executing coverage. The checklist still has to be walked by hand.
+One narrower boundary claim *was* since verified by hand: the two platform-owner
+routes that the work queue listed as leaking minors' names are correctly gated and
+have tests. See `docs/WORK_QUEUE.md` for that evidence.
 
 ---
 

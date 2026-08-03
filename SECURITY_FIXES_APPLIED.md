@@ -223,9 +223,34 @@ NODE_ENV=test
 ```
 
 ### Startup Validation
-- [ ] Add calls to validation functions at app startup
-- [ ] Ensure app fails to start if validation fails
+- [x] Add calls to validation functions at app startup
+  - Wired in `apps/web/instrumentation.ts` (`assertStartupConfiguration`), the
+    Next.js instrumentation hook, which runs once per server start
+  - Placed **above** the SHADOW-worker early return, so the checks apply in every
+    environment rather than only where the worker is enabled
+  - Guarded by `NEXT_RUNTIME === 'nodejs'` with dynamic imports: instrumentation is
+    also evaluated for the edge runtime, where `pg` must never enter the bundle
+- [x] Ensure app fails to start if validation fails
+  - On failure it logs the reason and calls `process.exit(1)` rather than throwing.
+    A throw out of `register()` depends on how the framework treats instrumentation
+    errors, and the unacceptable outcome is a server that logs a fatal
+    misconfiguration and keeps serving — the log would imply the check was holding.
+    Exiting fails the container health gate, which is what "must not start" means.
+- [x] Covered by tests — `apps/web/instrumentation.test.ts` (6 tests)
+  - Both guards invoked on a nodejs start; invoked even with the worker disabled;
+    each failure exits with code 1; the reason reaches the log; the edge runtime
+    touches neither
+  - Verified the tests fail if the wiring is removed (5 of 6 fail; the edge-runtime
+    test correctly still passes, since it asserts the guards are *not* called)
 - [ ] Test failure scenarios in staging
+
+**No new configuration is required.** `PPBF_DURABLE_RATE_LIMIT=true` is already set
+by `deploy-production.yml:377` and `deploy-staging.yml:250`, so this asserts config
+that exists rather than demanding config that does not. The TLS check can only fire
+if `PPBF_POSTGRES_DISABLE_SSL=true` is set outside `NODE_ENV=test`, and
+`resolveSslConfig` already ignores the flag outside test — such a deployment was
+failing at its first query anyway; this moves the failure to boot, where it is
+legible.
 
 ### Post-Deploy Monitoring
 - [ ] Monitor auth error rates for anomalies

@@ -11,14 +11,58 @@
 // are cheap and neither is urgent, so they ride the tick rather than a
 // schedule of their own; the archival sweep enforces its own daily floor.
 //
+// It is also where the platform's fail-closed configuration checks run, ahead of
+// anything else -- see assertStartupConfiguration.
+//
 // Everything is imported dynamically inside the nodejs-runtime branch:
 // instrumentation is also evaluated for the edge runtime, where pg and the
 // rest of the server stack must never be pulled into the bundle.
+
+/**
+ * Configuration that must hold before this process serves a single request.
+ *
+ * Both checks were written as part of the security pass but nothing ever called
+ * them, so they protected nothing at runtime -- an exported function that throws
+ * is not a guard until something invokes it. They run here, ahead of the worker
+ * branch below, so they apply whether or not the SHADOW worker is enabled.
+ *
+ * On failure the process is EXITED rather than left to a thrown error. A throw
+ * out of register() depends on how the framework treats instrumentation errors,
+ * and the one outcome that must not happen is a server that logged a fatal
+ * misconfiguration and then carried on serving -- that is worse than no check,
+ * because the log implies the check is holding. Exiting fails the container's
+ * health gate instead, which is what "must not start" has to mean in practice.
+ *
+ * Neither check can fire on a correctly configured deployment:
+ *   - PPBF_DURABLE_RATE_LIMIT=true is set by deploy-production.yml and
+ *     deploy-staging.yml, so this asserts existing config rather than demanding
+ *     new config.
+ *   - PPBF_POSTGRES_DISABLE_SSL only trips the second check outside NODE_ENV=test,
+ *     and resolveSslConfig already ignores the flag outside test -- so such a
+ *     deployment was failing at its first query anyway. This moves that failure to
+ *     boot, where it is legible.
+ */
+async function assertStartupConfiguration(): Promise<void> {
+  const { validateDurableRateLimitConfiguration } = await import('./src/server/pilot/rateLimit');
+  const { validateSslConfiguration } = await import('./src/server/pilot/db');
+
+  try {
+    validateSslConfiguration();
+    validateDurableRateLimitConfiguration();
+  } catch (error) {
+    console.error('FATAL: refusing to start on an unsafe configuration', {
+      reason: error instanceof Error ? error.message : String(error),
+    });
+    process.exit(1);
+  }
+}
 
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== 'nodejs') {
     return;
   }
+
+  await assertStartupConfiguration();
 
   const { isShadowWorkerEnabled, resolveShadowWorkerIntervalMs, startShadowJobWorker } = await import(
     './src/server/pilot/shadowJobWorker'
