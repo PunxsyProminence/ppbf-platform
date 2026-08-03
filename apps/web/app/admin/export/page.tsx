@@ -93,7 +93,7 @@ export default function RosterExportPage() {
       <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
         <div className="mx-auto w-full max-w-4xl px-6 py-10 lg:px-10">
           <header className="space-y-3 border-b-[3px] border-[var(--black)] pb-6">
-            <p className="text-xs font-mono uppercase tracking-[0.18em] text-[var(--red-primary)]">Admin Workspace</p>
+            <p className="text-xs font-mono uppercase tracking-[0.18em] text-[color:var(--brass-800)]">Admin Workspace</p>
             <h1 className="font-display text-4xl font-black">Take Your Roster With You</h1>
             <p className="max-w-3xl text-sm leading-6 text-[var(--gray-dark)]">
               Downloads every athlete in your gym as a spreadsheet file. It is your record, readable
@@ -109,7 +109,7 @@ export default function RosterExportPage() {
               onClick={() => {
                 void handleDownload();
               }}
-              className="min-h-[48px] w-full border-2 border-[var(--black)] bg-[var(--red-primary)] px-6 text-sm font-black uppercase tracking-[0.12em] text-[var(--white)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-[48px] w-full border-2 border-[var(--black)] bg-[var(--brass-800)] px-6 text-sm font-black uppercase tracking-[0.12em] text-[var(--white)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isWorking ? 'Preparing the file...' : 'Download roster (CSV)'}
             </button>
@@ -147,11 +147,11 @@ export default function RosterExportPage() {
           <section className="mt-8">
             <h2 className="font-display text-xl tracking-tight">What is not in the file</h2>
             <ul className="mt-3 space-y-2 text-sm leading-6 text-[var(--gray-dark)]">
-              <li className="border-l-4 border-[var(--red-primary)] pl-3">
+              <li className="border-l-4 border-[color:var(--brass-600)] pl-3">
                 No PINs, no stored password hashes, and no sign-in tokens. The athlete sign-in ID is
                 included because you need it to rebuild a roster; the credential on it is not.
               </li>
-              <li className="border-l-4 border-[var(--red-primary)] pl-3">
+              <li className="border-l-4 border-[color:var(--brass-600)] pl-3">
                 No medical intake, waivers, attendance, session records, coach reviews or pain
                 reports. Those are held in the database and there is no screen that exports them
                 today.

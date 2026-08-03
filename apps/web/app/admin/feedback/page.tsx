@@ -62,12 +62,12 @@ function SubmissionCard({ item, scope, onTriage }: SubmissionCardProps) {
     <article
       className={
         isSafeguarding
-          ? 'border-[3px] border-[var(--red-primary)] bg-[var(--canvas-tan-light)] p-4 shadow-[var(--shadow-md)]'
+          ? 'border-[3px] border-[color:var(--brass-600)] bg-[var(--canvas-tan-light)] p-4 shadow-[var(--shadow-md)]'
           : 'border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4'
       }
     >
       {isSafeguarding ? (
-        <p className="mb-3 border-2 border-[var(--black)] bg-[var(--red-primary)] px-2 py-1 text-[11px] font-mono font-bold uppercase tracking-[0.14em] text-[var(--white)]">
+        <p className="mb-3 border-2 border-[var(--black)] bg-[var(--brass-800)] px-2 py-1 text-[11px] font-mono font-bold uppercase tracking-[0.14em] text-[var(--white)]">
           Safeguarding — a person must read this
         </p>
       ) : null}
@@ -90,7 +90,7 @@ function SubmissionCard({ item, scope, onTriage }: SubmissionCardProps) {
           </span>
         ) : null}
         <span>{formatWhen(item.created_at)}</span>
-        <span className="text-[var(--red-primary)]">{item.triage_status}</span>
+        <span className="text-[color:var(--brass-800)]">{item.triage_status}</span>
       </div>
 
       <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[var(--black)]">{item.body}</p>
@@ -134,7 +134,7 @@ function SubmissionCard({ item, scope, onTriage }: SubmissionCardProps) {
                 .then(() => setNote(''))
                 .finally(() => setIsSaving(false));
             }}
-            className="min-h-[44px] w-full border-2 border-[var(--black)] bg-[var(--red-primary)] px-4 text-xs font-black uppercase tracking-[0.12em] text-[var(--white)] disabled:cursor-not-allowed disabled:opacity-50"
+            className="min-h-[44px] w-full border-2 border-[var(--black)] bg-[var(--brass-800)] px-4 text-xs font-black uppercase tracking-[0.12em] text-[var(--white)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isSaving ? 'Saving...' : 'Save Triage'}
           </button>
@@ -231,7 +231,7 @@ export default function FeedbackTriagePage() {
       <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
         <div className="mx-auto w-full max-w-5xl px-6 py-10 lg:px-10">
           <header className="space-y-3 border-b-[3px] border-[var(--black)] pb-6">
-            <p className="text-xs font-mono uppercase tracking-[0.18em] text-[var(--red-primary)]">Admin Workspace</p>
+            <p className="text-xs font-mono uppercase tracking-[0.18em] text-[color:var(--brass-800)]">Admin Workspace</p>
             <h1 className="font-display text-4xl font-black">What People Told Us</h1>
             <p className="max-w-3xl text-sm leading-6 text-[var(--gray-dark)]">
               {scope === 'platform'
@@ -243,7 +243,7 @@ export default function FeedbackTriagePage() {
 
           {safeguarding.length > 0 ? (
             <section className="mt-6">
-              <div className="border-[3px] border-[var(--black)] bg-[var(--red-primary)] px-4 py-3">
+              <div className="border-[3px] border-[var(--black)] bg-[var(--brass-800)] px-4 py-3">
                 <h2 className="font-display text-xl tracking-tight text-[var(--white)]">
                   {safeguarding.length === 1
                     ? '1 submission needs a person today'
@@ -289,7 +289,7 @@ export default function FeedbackTriagePage() {
             <p className="mt-8 text-sm leading-6 text-[var(--gray-dark)]">Nobody has sent anything yet.</p>
           ) : null}
 
-          {message ? <p className="mt-6 text-sm font-semibold text-[var(--red-primary)]">{message}</p> : null}
+          {message ? <p className="mt-6 text-sm font-semibold text-[color:var(--brass-800)]">{message}</p> : null}
 
           <div className="mt-8">
             <Link

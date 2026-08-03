@@ -35,7 +35,7 @@ const LIFECYCLE_TONE: Record<AnnouncementLifecycle, string> = {
   live: 'border-[var(--status-ready)] bg-[#dce7ca]',
   scheduled: 'border-[var(--status-warning)] bg-[#efe3c4]',
   expired: 'border-[var(--gray-medium)] bg-[var(--canvas-tan)]',
-  retired: 'border-[var(--red-primary)] bg-[#f1d6d1]',
+  retired: 'border-[color:var(--brass-600)] bg-[#f1d6d1]',
 };
 
 const EMPTY_DRAFT = {
@@ -212,7 +212,7 @@ function NoticesAuthoringPage() {
     <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       <div className="mx-auto w-full max-w-6xl px-6 py-10 lg:px-10">
         <header className="space-y-3 border-b-[3px] border-[var(--black)] pb-6">
-          <p className="text-xs font-mono uppercase tracking-[0.18em] text-[var(--red-primary)]">Gym Communications</p>
+          <p className="text-xs font-mono uppercase tracking-[0.18em] text-[color:var(--brass-800)]">Gym Communications</p>
           <h1 className="font-display text-4xl font-black">Notices and Motivation</h1>
           <p className="max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
             Coaches and admins write what the app says. Pick the surface it belongs on, give it a window if it should
@@ -226,7 +226,7 @@ function NoticesAuthoringPage() {
           <div className="grid gap-3 md:grid-cols-3">
             {liveByPlacement.map((group) => (
               <article key={group.placement} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-3">
-                <p className="text-xs font-mono uppercase tracking-[0.12em] text-[var(--red-primary)]">
+                <p className="text-xs font-mono uppercase tracking-[0.12em] text-[color:var(--brass-800)]">
                   {PLACEMENT_LABELS[group.placement]}
                 </p>
                 {group.items.length === 0 ? (
@@ -332,7 +332,7 @@ function NoticesAuthoringPage() {
               </label>
             ) : null}
             {windowIsBackwards ? (
-              <p className="text-sm text-[var(--red-primary)]">The end time must be after the start time.</p>
+              <p className="text-sm text-[color:var(--brass-800)]">The end time must be after the start time.</p>
             ) : null}
             <button
               type="button"
@@ -342,7 +342,7 @@ function NoticesAuthoringPage() {
             >
               {isPublishing ? 'Publishing...' : 'Publish'}
             </button>
-            {message ? <p className="text-sm font-semibold text-[var(--red-primary)]">{message}</p> : null}
+            {message ? <p className="text-sm font-semibold text-[color:var(--brass-800)]">{message}</p> : null}
           </div>
 
           <div className="space-y-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
@@ -381,7 +381,7 @@ function NoticesAuthoringPage() {
                       <span className={`border-2 px-2 py-0.5 text-[10px] font-mono font-bold uppercase ${LIFECYCLE_TONE[lifecycle]}`}>
                         {LIFECYCLE_LABELS[lifecycle]}
                       </span>
-                      <span className="text-xs font-mono uppercase tracking-[0.12em] text-[var(--red-primary)]">
+                      <span className="text-xs font-mono uppercase tracking-[0.12em] text-[color:var(--brass-800)]">
                         {PLACEMENT_LABELS[item.placement]}
                       </span>
                       <span className="text-xs font-mono uppercase tracking-[0.12em] text-[var(--gray-dark)]">

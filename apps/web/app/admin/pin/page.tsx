@@ -186,7 +186,7 @@ function PinManagementPageContent() {
     <main className="min-h-screen bg-[var(--canvas-tan)] px-4 py-6 text-[var(--black)] sm:px-6">
       <div className="mx-auto w-full max-w-4xl space-y-5">
         <header className="rounded-2xl border border-[rgba(0,0,0,0.16)] bg-white p-5 shadow-[var(--shadow-md)]">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">Gym Admin PIN Control</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--brass-800)]">Gym Admin PIN Control</p>
           <h1 className="mt-2 text-2xl font-black tracking-tight">Activate or Reset Athlete PIN</h1>
           <p className="mt-2 text-sm text-[var(--gray-dark)]">
             Select an athlete, choose activate or reset, then save a 6-digit PIN. Stored PIN values are never displayed.
@@ -216,14 +216,14 @@ function PinManagementPageContent() {
                         onClick={() => setSelectedAthleteId(item.athlete_id)}
                         className={`w-full rounded-xl border px-3 py-3 text-left transition ${
                           selected
-                            ? 'border-[var(--red-primary)] bg-[rgba(184,59,52,0.08)]'
+                            ? 'border-[color:var(--brass-600)] bg-[rgba(184,59,52,0.08)]'
                             : 'border-[rgba(0,0,0,0.14)] bg-white hover:border-[rgba(0,0,0,0.3)]'
                         }`}
                       >
                         <p className="text-sm font-semibold">{item.full_name}</p>
                         <p className="mt-1 text-xs text-[var(--gray-dark)]">Athlete ID: {item.athlete_id}</p>
                         <p className="mt-1 text-xs text-[var(--gray-dark)]">Account ID: {item.account_id ?? 'Unlinked'}</p>
-                        <p className="mt-1 text-xs font-semibold uppercase tracking-[0.1em] text-[var(--red-primary)]">{statusLabel}</p>
+                        <p className="mt-1 text-xs font-semibold uppercase tracking-[0.1em] text-[color:var(--brass-800)]">{statusLabel}</p>
                       </button>
                     </li>
                   );
@@ -331,7 +331,7 @@ function PinManagementPageContent() {
               <button
                 type="submit"
                 disabled={saving || !selectedItem?.account_id}
-                className="min-h-[50px] w-full rounded-xl border border-[var(--red-primary)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.16em] text-white disabled:cursor-not-allowed disabled:opacity-50"
+                className="min-h-[50px] w-full rounded-xl border border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 text-sm font-black uppercase tracking-[0.16em] text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {saving ? 'Saving...' : mode === 'activate' ? 'Activate PIN' : 'Reset PIN'}
               </button>
@@ -354,7 +354,7 @@ function WrongRoleNotice() {
   return (
     <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
       <div className="mx-auto max-w-xl space-y-5 text-center">
-        <p className="text-xs font-mono uppercase tracking-[0.3em] text-[var(--red-primary)]">Different Console</p>
+        <p className="text-xs font-mono uppercase tracking-[0.3em] text-[color:var(--brass-800)]">Different Console</p>
         <h1 className="font-display text-3xl font-black">Athlete PINs are managed per gym</h1>
         <p className="text-sm leading-7 text-[var(--gray-dark)]">
           This console issues and resets the credentials of individual athletes, which belongs to that
