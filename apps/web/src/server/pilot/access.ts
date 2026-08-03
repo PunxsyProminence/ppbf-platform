@@ -103,13 +103,30 @@ export async function assertActorCanAccessAthlete(actor: ActorIdentity, athleteI
 
 export function assertAthleteUpdateAllowed(
   actor: ActorIdentity,
-  before: { coach_id: string; active_flag: boolean; gym_status: string },
-  after: { coach_id: string; active_flag: boolean; gym_status: string },
+  before: {
+    coach_id: string;
+    active_flag: boolean;
+    gym_status: string;
+    full_name?: string;
+    dob?: string;
+    weight_class?: string;
+    emergency_contact?: string;
+  },
+  after: {
+    coach_id: string;
+    active_flag: boolean;
+    gym_status: string;
+    full_name?: string;
+    dob?: string;
+    weight_class?: string;
+    emergency_contact?: string;
+  },
 ): void {
   if (actor.role !== 'athlete') {
     return;
   }
 
+  // Restricted for all athletes: system and identity fields
   if (before.coach_id !== after.coach_id) {
     throw new Error('Forbidden: athlete cannot change coach assignment');
   }
@@ -121,4 +138,19 @@ export function assertAthleteUpdateAllowed(
   if (before.gym_status !== after.gym_status) {
     throw new Error('Forbidden: athlete cannot change gym_status');
   }
+
+  // Restricted for athletes: identity fields (name, DOB) and competition classification
+  if ((before.full_name || '') !== (after.full_name || '')) {
+    throw new Error('Forbidden: athlete cannot change their name');
+  }
+
+  if ((before.dob || '') !== (after.dob || '')) {
+    throw new Error('Forbidden: athlete cannot change their date of birth');
+  }
+
+  if ((before.weight_class || '') !== (after.weight_class || '')) {
+    throw new Error('Forbidden: athlete cannot change their weight class');
+  }
+
+  // Allowed for athletes: emergency contact (personal information they control)
 }

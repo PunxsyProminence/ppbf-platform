@@ -149,4 +149,59 @@ describe('POST /api/pilot/athletes/update', () => {
     expect(response.status).toBe(403);
     expect(mockUpsertAthlete).not.toHaveBeenCalled();
   });
+
+  describe('athlete self-update field restrictions', () => {
+    const athletePrincipal = principal({ accountId: 'ath-account-1', role: 'athlete', athleteId: 'ath-001', authProvider: 'ppbf_local' });
+
+    test('refuses athlete changing their full_name', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(athletePrincipal);
+      mockGetAthleteById.mockResolvedValueOnce(athletePayload());
+
+      const response = await POST(makeRequest({ ...athletePayload({ full_name: 'Different Name' }) }));
+
+      expect(response.status).toBe(403);
+      expect(response.json()).resolves.toEqual(expect.objectContaining({
+        error: expect.stringContaining('name'),
+      }));
+      expect(mockUpsertAthlete).not.toHaveBeenCalled();
+    });
+
+    test('refuses athlete changing their dob', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(athletePrincipal);
+      mockGetAthleteById.mockResolvedValueOnce(athletePayload());
+
+      const response = await POST(makeRequest({ ...athletePayload({ dob: '2013-04-17' }) }));
+
+      expect(response.status).toBe(403);
+      expect(response.json()).resolves.toEqual(expect.objectContaining({
+        error: expect.stringContaining('date of birth'),
+      }));
+      expect(mockUpsertAthlete).not.toHaveBeenCalled();
+    });
+
+    test('refuses athlete changing their weight_class', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(athletePrincipal);
+      mockGetAthleteById.mockResolvedValueOnce(athletePayload());
+
+      const response = await POST(makeRequest({ ...athletePayload({ weight_class: '112' }) }));
+
+      expect(response.status).toBe(403);
+      expect(response.json()).resolves.toEqual(expect.objectContaining({
+        error: expect.stringContaining('weight class'),
+      }));
+      expect(mockUpsertAthlete).not.toHaveBeenCalled();
+    });
+
+    test('allows athlete changing their emergency_contact', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(athletePrincipal);
+      mockGetAthleteById.mockResolvedValueOnce(athletePayload());
+
+      const newContact = 'Sarah Kellerman 814-555-0999';
+      const response = await POST(makeRequest({ ...athletePayload({ emergency_contact: newContact }) }));
+
+      expect(response.status).toBe(200);
+      expect(mockUpsertAthlete).toHaveBeenCalled();
+      expect(mockWriteAudit.mock.calls[0][0].details.changed_fields).toEqual(['emergency_contact']);
+    });
+  });
 });
