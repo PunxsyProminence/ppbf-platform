@@ -934,6 +934,22 @@ export default function AdminCapabilitiesPage() {
                   DRILL LIBRARY
                 </Link>
               )}
+              {/*
+                Linked in the same change that built the screen, deliberately.
+                pilot.waivers and domain-upsert both existed for months with no
+                caller, and two planning documents ended up disagreeing about
+                whether consent capture existed at all -- because from the
+                outside, a capability with no way in is indistinguishable from
+                one that was never built.
+              */}
+              {canManagePeople && (
+                <Link
+                  href="/admin/consent"
+                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[#2a1a1a]"
+                >
+                  CONSENT
+                </Link>
+              )}
               <Link
                 href="/operations"
                 className="inline-flex h-11 items-center border border-[color:var(--hide-600)] bg-[var(--hide-900)] px-4 text-[length:var(--t-sm)] font-bold text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)]"
