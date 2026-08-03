@@ -221,6 +221,10 @@ function PeopleConsoleContent() {
   const [athleteMode, setAthleteMode] = useState<AthleteMode>('new');
   const [athleteAccountId, setAthleteAccountId] = useState('');
   const [athleteId, setAthleteId] = useState('');
+  // Whether the admin has edited the record id themselves. Until they have,
+  // the field shows the next free ath-NNN; afterwards it is theirs, including
+  // when they have deliberately emptied it.
+  const [athleteIdTouched, setAthleteIdTouched] = useState(false);
   const [athleteFullName, setAthleteFullName] = useState('');
   const [athleteDob, setAthleteDob] = useState('');
   const [athleteWeightClass, setAthleteWeightClass] = useState('');
@@ -361,7 +365,44 @@ function PeopleConsoleContent() {
 
   const rosterById = useMemo(() => new Map(roster.map((athlete) => [athlete.athlete_id, athlete])), [roster]);
 
-  const trimmedAthleteId = athleteId.trim();
+  /**
+   * The next unused ath-NNN for this gym.
+   *
+   * Reads the highest existing number and adds one, rather than counting rows:
+   * counting hands out ath-004 to a roster of four that has already used
+   * ath-007, and the create route would refuse it -- safe, but it leaves the
+   * admin typing numbers until one sticks. Ids that do not fit the pattern are
+   * ignored rather than parsed, so a gym mixing conventions still gets a usable
+   * suggestion instead of NaN.
+   */
+  const suggestedAthleteId = useMemo(() => {
+    let highest = 0;
+    for (const athlete of roster) {
+      const match = /^ath-(\d+)$/i.exec(athlete.athlete_id.trim());
+      if (match) {
+        highest = Math.max(highest, Number.parseInt(match[1], 10));
+      }
+    }
+    return `ath-${String(highest + 1).padStart(3, '0')}`;
+  }, [roster]);
+
+  /**
+   * The id actually in the field: the suggestion until the admin touches it,
+   * theirs from then on.
+   *
+   * Derived rather than seeded through an effect. Writing state from an effect
+   * is CI-blocked here (react-hooks/set-state-in-effect) and would also fight
+   * the admin: the roster arrives after first render, so a seeding effect would
+   * overwrite an id they had already started typing.
+   *
+   * `athleteIdTouched` is what makes a DELIBERATELY EMPTY field stay empty. A
+   * plain `athleteId || suggestion` fallback snaps back to the suggestion the
+   * moment someone clears the box to retype it, which reads as the form
+   * fighting them.
+   */
+  const effectiveAthleteId = athleteIdTouched ? athleteId : suggestedAthleteId;
+
+  const trimmedAthleteId = effectiveAthleteId.trim();
 
   // A hand-typed athlete_id that lands on someone already in the roster is the
   // dangerous case: the create route now refuses it, but catching it here
@@ -371,6 +412,40 @@ function PeopleConsoleContent() {
     athleteMode === 'new' && trimmedAthleteId && rosterCreatedFor !== trimmedAthleteId
       ? rosterById.get(trimmedAthleteId)
       : undefined;
+
+  /**
+   * Someone already on the roster under this name.
+   *
+   * THIS is the duplicate that matters, and it is not the one auto-filling an
+   * id solves. Two records can never share an id -- the create route is
+   * create-only and the primary key refuses a second row. What nothing
+   * prevents is the same CHILD entered twice under two different ids, which
+   * leaves one kid holding two sets of sessions, goals and reviews that can
+   * never be added together.
+   *
+   * Auto-filling the id makes that MORE likely, not less: it removes the
+   * moment where an admin types ath-001, finds it taken, and thinks "hold on,
+   * is this the same kid?". So the suggestion and this check ship together.
+   *
+   * NAME ONLY, deliberately. Matching on date of birth too would be far more
+   * precise, and the roster this page reads comes from the athlete PIN
+   * directory -- a credential-adjacent route that was narrowed earlier
+   * precisely because it returns every athlete's name. Adding every child's
+   * birthday to that payload to sharpen a convenience warning is the wrong
+   * trade. A name match is noisier, which is survivable because this warns
+   * and never blocks.
+   */
+  const duplicateAthlete = useMemo(() => {
+    const name = athleteFullName.trim().toLowerCase().replace(/\s+/g, ' ');
+    if (athleteMode !== 'new' || !name) {
+      return undefined;
+    }
+    return roster.find(
+      (athlete) =>
+        athlete.full_name.trim().toLowerCase().replace(/\s+/g, ' ') === name
+        && athlete.athlete_id !== trimmedAthleteId,
+    );
+  }, [roster, athleteMode, athleteFullName, trimmedAthleteId]);
 
   // Once the roster half of the create has been written, the retry only
   // resubmits the sign-in half -- createAthleteRecord is skipped. Editing
@@ -393,6 +468,38 @@ function PeopleConsoleContent() {
   const canSubmitAthlete =
     Boolean(athleteAccountId.trim() && trimmedAthleteId)
     && (athleteMode === 'new' ? newAthleteReady && !collidingAthlete : true);
+
+  /**
+   * Which fields are still holding the submit button down, in the order they
+   * appear on screen.
+   *
+   * The button is gated on EIGHT conditions and used to just grey out. An
+   * admin filled in what looked like the whole form, found the button dead,
+   * and had nothing to work from -- reported as "it won't let me save", which
+   * is exactly what it looks like from the outside. A disabled control that
+   * cannot say why is a dead end, and this form is the one a gym uses to
+   * onboard its first athlete.
+   *
+   * Named after the labels on the fields rather than the state variables, so
+   * the sentence points at something the reader can see.
+   */
+  const missingAthleteFields = useMemo(() => {
+    const missing: string[] = [];
+    if (athleteMode === 'new') {
+      if (!athleteFullName.trim()) missing.push('Full name');
+      if (!athleteDob.trim()) missing.push('Date of birth');
+      if (!athleteWeightClass.trim()) missing.push('Weight class');
+      if (!athleteGymStatus) missing.push('Gym status');
+      if (!athleteEmergencyContact.trim()) missing.push('Emergency contact');
+      if (!athleteCoachId) missing.push('Coach');
+    }
+    if (!trimmedAthleteId) missing.push('Athlete record ID');
+    if (!athleteAccountId.trim()) missing.push('Sign-in ID');
+    return missing;
+  }, [
+    athleteMode, athleteFullName, athleteDob, athleteWeightClass, athleteGymStatus,
+    athleteEmergencyContact, athleteCoachId, trimmedAthleteId, athleteAccountId,
+  ]);
 
   // A parent invite is not submittable until the athlete it links to has been
   // chosen. The server refuses the role without one, and an account created
@@ -496,6 +603,10 @@ function PeopleConsoleContent() {
   function resetAthleteForm() {
     setAthleteAccountId('');
     setAthleteId('');
+    // Back to untouched, so the next athlete gets a fresh suggestion rather
+    // than an empty box -- the roster has just grown by one, so the suggestion
+    // has moved on too.
+    setAthleteIdTouched(false);
     setAthleteFullName('');
     setAthleteDob('');
     setAthleteWeightClass('');
@@ -554,7 +665,11 @@ function PeopleConsoleContent() {
     setBusy(true);
 
     const accountId = athleteAccountId.trim();
-    const recordId = athleteId.trim();
+    // The EFFECTIVE id, not the raw state. Until the admin edits the field it
+    // shows the suggested next ath-NNN while `athleteId` is still empty, so
+    // submitting the raw value here would post an empty athlete_id against a
+    // form that visibly reads ath-005. Same value the button gated on.
+    const recordId = trimmedAthleteId;
 
     // Tracked locally as well as in state because the catch below runs before
     // React has applied setRosterCreatedFor, and it needs to know whether the
@@ -1177,18 +1292,52 @@ function PeopleConsoleContent() {
                     Athlete record ID
                   </label>
                   <p className="t-muted mb-[var(--s2)]">
-                    Permanent id for their record in your roster — every session, goal, and review hangs off it. Short
-                    and unique, like <code>ath-001</code>.
+                    Permanent id for their record in your roster — every session, goal, and review hangs off it.
+                    {athleteIdTouched ? (
+                      <>
+                        {' '}
+                        Short and unique, like <code>ath-001</code>.
+                      </>
+                    ) : (
+                      ` Filled in with the next free one for your gym (${suggestedAthleteId}). Change it if your gym numbers differently.`
+                    )}
                   </p>
                   <input
                     id="athlete-id"
                     type="text"
                     required
-                    value={athleteId}
-                    onChange={(event) => setAthleteId(event.target.value.trim())}
+                    value={effectiveAthleteId}
+                    onChange={(event) => {
+                      setAthleteIdTouched(true);
+                      setAthleteId(event.target.value.trim());
+                    }}
                     placeholder="ath-001"
                     className="input font-mono"
                   />
+                  {/*
+                    The duplicate that actually costs something, and the reason
+                    the suggestion above could not ship alone. Two records can
+                    never share an id -- the create route is create-only and the
+                    primary key refuses it. What nothing prevents is the same
+                    CHILD entered twice under two ids, leaving one kid with two
+                    sets of sessions, goals and reviews that can never be added
+                    together.
+
+                    Auto-filling the id makes that MORE likely, because it
+                    removes the moment where an admin types ath-001, finds it
+                    taken, and thinks "hold on, is this the same kid?".
+
+                    It warns and never blocks: siblings share surnames and twins
+                    share birthdays, so a match on both is a question, not proof.
+                  */}
+                  {duplicateAthlete && (
+                    <p className="mt-2 rounded-xl border border-[color:var(--brass-600)] bg-[color-mix(in_srgb,var(--brass-600)_10%,white)] px-3 py-2 text-xs font-semibold">
+                      {duplicateAthlete.full_name} is already on your roster as {duplicateAthlete.athlete_id}. If that
+                      is this same athlete, switch to “Already on the roster” above rather than adding a second record
+                      — otherwise their sessions, goals and reviews end up split across two. If they are different
+                      people who share a name, carry on.
+                    </p>
+                  )}
                   {collidingAthlete && (
                     <p className="mt-[var(--s2)] rounded-[var(--r-md)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-xs)] font-semibold text-[color:var(--locked-ink)]">
                       ▲ {collidingAthlete.full_name} already holds record ID {collidingAthlete.athlete_id}. Pick a
@@ -1391,6 +1540,21 @@ function PeopleConsoleContent() {
                 className="input font-mono"
               />
             </div>
+
+            {/*
+              A disabled button that cannot say why is a dead end, and this is
+              the form a gym uses to onboard its first athlete. Rendered above
+              the button so it is read before the thing that will not respond,
+              and only while something is actually missing.
+            */}
+            {!busy && missingAthleteFields.length > 0 && (
+              <p
+                aria-live="polite"
+                className="rounded-xl border border-[rgba(0,0,0,0.16)] bg-[color-mix(in_srgb,var(--brass-600)_8%,white)] px-3 py-2 text-xs font-semibold"
+              >
+                Still needed before this can be saved: {missingAthleteFields.join(', ')}.
+              </p>
+            )}
 
             <button
               type="submit"
