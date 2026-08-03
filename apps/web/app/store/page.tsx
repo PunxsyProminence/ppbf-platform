@@ -33,7 +33,7 @@ export default function StoreIndexPage() {
   useEffect(() => {
     void (async () => {
       try {
-        const response = await fetch(`${apiBase()}/api/public/store`, { method: 'GET' });
+        const response = await fetch(`${apiBase()}/api/public/store`, { method: 'GET', credentials: 'omit' });
         const payload = (await response.json().catch(() => ({}))) as {
           error?: string;
           stores?: StoreSummary[];

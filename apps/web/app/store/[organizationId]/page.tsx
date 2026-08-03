@@ -58,7 +58,7 @@ export default function GymStorePage({ params }: { params: Promise<{ organizatio
       try {
         const response = await fetch(
           `${apiBase()}/api/public/store?organization_id=${encodeURIComponent(organizationId)}`,
-          { method: 'GET' },
+          { method: 'GET', credentials: 'omit' },
         );
         const payload = (await response.json().catch(() => ({}))) as {
           error?: string;
