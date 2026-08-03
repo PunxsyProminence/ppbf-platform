@@ -53,10 +53,10 @@ interface BoardSummaryPalette {
 const palettes: Record<BoardSummaryVariant, BoardSummaryPalette> = {
   hub: {
     frame: 'border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)]/80',
-    tile: 'border border-[#654535] bg-[var(--hide-900)]',
-    label: 'text-[#8f7f72]',
+    tile: 'border border-[var(--brass-800)] bg-[var(--hide-900)]',
+    label: 'text-[var(--bone-400)]',
     value: 'text-[color:var(--bone-200)]',
-    note: 'text-[#cbb8a8]',
+    note: 'text-[var(--bone-300)]',
     accent: 'text-[color:var(--brass-300)]',
   },
   workspace: {

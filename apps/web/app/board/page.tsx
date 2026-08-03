@@ -10,15 +10,15 @@ export default function BoardHubPage() {
           <div className="space-y-3">
             <p className="text-xs font-mono uppercase tracking-[0.35em] text-[color:var(--brass-300)]/80">Board Hub</p>
             <h1 className="text-4xl font-black tracking-tight md:text-5xl">One board governance framework</h1>
-            <p className="max-w-4xl text-base leading-7 text-[#cbb8a8] md:text-lg">
+            <p className="max-w-4xl text-base leading-7 text-[var(--bone-300)] md:text-lg">
               Board Hub is the board seat directory, governance control surface, and mission oversight launcher. Every seat opens the same board workspace shell with role-aware visibility for nonprofit governance.
             </p>
           </div>
         </header>
 
-        <section className="mt-8 border-2 border-[color:var(--brass-700)] bg-[#121212] p-5">
+        <section className="mt-8 border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-5">
           <h2 className="text-lg font-black text-[color:var(--bone-200)]">Aggregate boundary</h2>
-          <p className="mt-3 max-w-4xl text-sm leading-6 text-[#cbb8a8]">
+          <p className="mt-3 max-w-4xl text-sm leading-6 text-[var(--bone-300)]">
             {BOARD_AGGREGATE_BOUNDARY_STATEMENT}
           </p>
         </section>

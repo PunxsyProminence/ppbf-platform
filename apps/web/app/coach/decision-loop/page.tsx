@@ -347,7 +347,7 @@ export default function DecisionLoopReviewPage() {
               />
             </label>
             {loading && <p className="mt-2 text-xs text-[var(--gray-dark)]">Loading…</p>}
-            {errorMessage && <p className="mt-2 text-sm font-bold text-[var(--red-primary)]">{errorMessage}</p>}
+            {errorMessage && <p className="mt-2 text-sm font-bold text-[var(--safety-locked)]">{errorMessage}</p>}
           </section>
 
           {!athleteId ? (

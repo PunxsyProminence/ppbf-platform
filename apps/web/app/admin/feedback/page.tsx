@@ -238,7 +238,7 @@ export default function FeedbackTriagePage() {
                 ? 'Every gym, with the person who wrote each one reduced to their role and their gym. This view shows whether a frustration is one person or a pattern; the gym that received a submission is the one that works it.'
                 : 'Everything this gym has been told, newest first, with anything an athlete wrote about being hurt or frightened at the top.'}
             </p>
-            {errorMessage ? <p className="text-sm text-[var(--red-primary)]">{errorMessage}</p> : null}
+            {errorMessage ? <p className="text-sm text-[var(--accent-quiet)]">{errorMessage}</p> : null}
           </header>
 
           {safeguarding.length > 0 ? (

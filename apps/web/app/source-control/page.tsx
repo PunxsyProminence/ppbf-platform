@@ -84,7 +84,7 @@ export default function SourceControlPage() {
       ]}
     >
       <div className="space-y-4">
-        <section className="border-2 border-[color:var(--brass-700)] bg-[#151515] p-4">
+        <section className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-4">
           <p className="text-[12px] font-mono uppercase tracking-[0.16em] text-[color:var(--brass-300)]">Promotion State Lanes</p>
           <p className="mt-1 text-[11px] font-mono uppercase tracking-[0.09em] text-[color:var(--brass-300)]">{capabilityStatus}</p>
           <div className="mt-3 grid gap-3 xl:grid-cols-5">
@@ -93,7 +93,7 @@ export default function SourceControlPage() {
                 <p className="font-mono text-[12px] uppercase tracking-[0.12em] text-[color:var(--brass-300)]">{lane.state}</p>
                 <div className="mt-2 space-y-2">
                   {lane.items.map((item) => (
-                    <div key={item.title} className="border border-[color:var(--brass-700)]/60 bg-[#161616] p-2">
+                    <div key={item.title} className="border border-[color:var(--brass-700)]/60 bg-[var(--hide-950)] p-2">
                       <p className="text-[14px] font-semibold text-[color:var(--bone-200)]">{item.title}</p>
                       <p className="text-[12px] text-[color:var(--bone-300)]">{item.version}</p>
                       <p className="text-[12px] text-[color:var(--bone-300)]">Canonical: {item.canonical}</p>
@@ -130,7 +130,7 @@ export default function SourceControlPage() {
           </article>
         </section>
 
-        <section className="border-2 border-[color:var(--brass-700)] bg-[#151515] p-4">
+        <section className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-[12px] font-mono uppercase tracking-[0.16em] text-[color:var(--brass-300)]">AUTOMATED PUBLICATION WORKFLOW - PLANNED</p>
             <Link
@@ -150,7 +150,7 @@ export default function SourceControlPage() {
           </div>
         </section>
 
-        <section id="publish" className="border-2 border-[color:var(--brass-700)] bg-[#151515] p-4">
+        <section id="publish" className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)] p-4">
           <p className="text-[12px] font-mono uppercase tracking-[0.16em] text-[color:var(--brass-300)]">PUBLISH TO ECOSYSTEM</p>
           <p className="mt-2 text-[16px] leading-7 text-[color:var(--bone-200)]">Mock destination routing only. No live publication logic in this front-end stage.</p>
           <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">

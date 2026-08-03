@@ -67,6 +67,25 @@
   --restricted: #C05A1E;  --restricted-ink:#F6D6B8;
   --locked:     #A81E22;  --locked-ink:    #F3C9C6;
 
+  /* The rung itself is a FILL. As a fill it is fine on either ground, and the
+     -ink variants above are its readable text colour on the ink ground.
+
+     Law 6 gives the app two grounds, so the ladder needs the other half of
+     that pair too. Measured as text on --canvas-warm, three of the four rungs
+     miss the 4.5:1 floor -- cleared 3.90, restricted 3.52, monitor 4.38 -- and
+     only locked clears it at 5.78. A status word set in --cleared on a family
+     surface is not quite readable, which is the worst possible place for it.
+
+     These are the same four hues taken down until each measures ~5:1 on canvas
+     (and 6.3:1+ on paper and white, so they hold on cards too). Use the plain
+     rung for fills and borders, -ink for text on leather, -deep for text on
+     canvas or paper. They stay near-identical in luminance to one another by
+     design; hue separates them, and Law 3 already requires a second channel. */
+  --cleared-deep:    #366A42;
+  --monitor-deep:    #2A6488;
+  --restricted-deep: #9A4818;
+  --locked-deep:     #A81E22;  /* already 5.78:1 on canvas; kept for symmetry */
+
   --stamp-red:  #A81E22;  /* refusal, redaction, destructive */
   --stamp-green:#2F7A3E;  /* approved, compliant */
 
@@ -122,6 +141,7 @@
   --t-2xl: 39.3px;   /* 15 × φ²    · command headers              */
   --t-3xl: 50px;     /* 15 × φ²√φ  · mottos                       */
   --t-4xl: 63.6px;   /* 15 × φ³    · display                      */
+  --t-5xl: 80.9px;   /* 15 × φ³√φ  · hero, one per screen at most */
 
   /* Space + radius — Fibonacci */
   --s1: 3px;  --s2: 5px;  --s3: 8px;  --s4: 13px;
@@ -455,6 +475,34 @@ body.ppbf {
 .stamp--flat    { rotate: 0deg; }
 .stamp--lg      { font-size: 17px; padding: 9px 15px; border-width: 4px; }
 
+/* A stamp is ink pressed into paper, so the colours above are the ones that
+   belong on the warm ground: --stamp-red measures 5.78:1 on canvas. On the
+   leathers the same ink is 1.83:1 to 3.58:1, because a dark pigment on a dark
+   hide is not a stamp, it is a smudge. Both the colour AND the 3px border are
+   currentColor, so the whole mark fades together.
+
+   Law 6 gives the app two grounds and the sheet keeps having to carry both --
+   this is the same pair the status ladder already ships as -ink, and the same
+   shape as the link colours. A stamp on leather reads light, exactly the way
+   .badge--cleared already resolves its own ink. */
+.mat-leather .stamp,
+.mat-leather--raised .stamp,
+.mat-leather--worn .stamp,
+.mat-brass--dark .stamp,
+.mat-slate .stamp             { color: var(--locked-ink); }
+
+.mat-leather .stamp--green,
+.mat-leather--raised .stamp--green,
+.mat-leather--worn .stamp--green,
+.mat-brass--dark .stamp--green,
+.mat-slate .stamp--green      { color: var(--cleared-ink); }
+
+.mat-leather .stamp--brass,
+.mat-leather--raised .stamp--brass,
+.mat-leather--worn .stamp--brass,
+.mat-brass--dark .stamp--brass,
+.mat-slate .stamp--brass      { color: var(--brass-300); }
+
 /* Redaction bar — Layer 17 grant privacy */
 .redacted {
   background-color: #0C0906;
@@ -570,7 +618,10 @@ body.ppbf.on-canvas {
 .on-canvas .t-body      { color: #3A2E1D; }
 .on-canvas .t-muted     { color: #6E5B3E; }
 .on-canvas .t-label     { color: #4A3B26; }
-.on-canvas .t-eyebrow   { color: var(--brass-700); }
+/* brass-700 is the right weight for a rule or a border on canvas, where the
+   floor is 3:1. An eyebrow is 11px text, so it owes 4.5:1 and was delivering
+   3.92. One rung down clears it at 6.10 without changing what the label is. */
+.on-canvas .t-eyebrow   { color: var(--brass-800); }
 /* .t-data was the one voice with no canvas restatement, and it is the voice
    Law 4 assigns to anything auditable — IDs, timestamps, the registry facts a
    grant officer checks against a filing. It inherits --bone-200 (#EFE6D0),
@@ -782,4 +833,98 @@ body.ppbf.on-canvas {
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
+}
+
+/* ---------------------------------------------------------------- PRINT -- */
+/* Board packets, compliance registers and roster exports get printed, and
+   until now they printed the screen: an ink ground is a full page of toner,
+   and most printers drop background colours by default anyway, which left
+   bone type on white -- a blank sheet with the layout faintly visible.
+
+   Paper is its own ground, so this is not a third theme. It is the two grounds
+   collapsing onto the one Law 6 already calls a material: white stock, black
+   ink, and hardware drawn as rules rather than as fills.
+
+   Colour is not thrown away. Law 2 says saturated colour carries safety state,
+   and a printed compliance register is exactly where that has to survive, so
+   the ladder keeps its hue and only darkens enough to read on white. Law 3 is
+   what makes this safe: every status already carries a glyph and an uppercase
+   label, so a greyscale printer loses nothing that matters. */
+@media print {
+  :root {
+    /* The ladder, taken to ink weights. --cleared at 3F7D4E is 4.94:1 on white
+       and --restricted only 4.45:1; the -deep rungs clear 5.7:1, which holds up
+       through a photocopier as well as a printer. */
+    --cleared: var(--cleared-deep);
+    --monitor: var(--monitor-deep);
+    --restricted: var(--restricted-deep);
+  }
+
+  /* Grounds and materials become paper. The texture data URIs and gradients go
+     with them -- they are surface, and a printer renders them as grey mud.
+
+     This is a catch-all rather than a list of the material classes, and it has
+     to be. Grounds are not only set by .mat-* and .on-canvas: RoleStandaloneView
+     paints the staff ground with a Tailwind utility, bg-[var(--hide-950)], so a
+     list of design-system class names left every staff console printing as a
+     full page of near-black. Anything that names a specific class will keep
+     missing the next one somebody writes.
+
+     Nothing is lost by being broad here. The rules below restore colour to the
+     ladder and the stamp through `color` and `border-color`, which this does
+     not touch, and images keep their own pixels. */
+  *:not(img):not(svg):not(canvas):not(video) {
+    background-color: #FFF !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  /* Type that was tuned to glow on leather has to go to ink. The voices keep
+     their family, weight and tracking -- only the colour moves.
+
+     Broad for the same reason the grounds are: bone and brass arrive through
+     Tailwind utilities as often as through .t-*, so an element list keeps
+     missing them. The ladder and the stamp are restored below and win on
+     specificity -- a class beats the universal selector even when both are
+     !important. */
+  *:not(img):not(svg):not(canvas):not(video) {
+    color: #000 !important;
+  }
+
+  /* Hardware reads as a rule on paper, not as a filled bar. The stamp is
+     deliberately not in this list: its border is currentColor, so blacking it
+     would leave a red legend inside a black box instead of one red mark. */
+  .frame, .tile, .plaque, .badge {
+    border-color: #000 !important;
+  }
+
+  /* The ladder still marks the page, as an outline rather than a block of
+     toner, and its own hue survives for anyone printing in colour. */
+  .badge--cleared    { color: var(--cleared) !important;    border-color: var(--cleared) !important; }
+  .badge--monitor    { color: var(--monitor) !important;    border-color: var(--monitor) !important; }
+  .badge--restricted { color: var(--restricted) !important; border-color: var(--restricted) !important; }
+  .badge--locked     { color: var(--locked) !important;     border-color: var(--locked) !important; }
+
+  /* Law 7: a refusal is a stamp, and a stamp is the one thing on the page that
+     must survive being photocopied. It keeps its red and its rotation. */
+  .stamp             { color: var(--stamp-red) !important; }
+  .stamp--green      { color: var(--stamp-green) !important; }
+  .stamp--brass      { color: #000 !important; }
+
+  /* Screen furniture: nothing here means anything on paper. */
+  header[class*="sticky"], .rope, .rivet,
+  button, [role="button"], .btn, .stamp-button,
+  nav, [aria-hidden="true"]:not(.stamp) {
+    display: none !important;
+  }
+
+  /* A printed record has to say where it came from, and a URL that only makes
+     sense while signed in is noise on a board packet. */
+  a { text-decoration: underline !important; }
+  a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 10px; }
+
+  /* Keep a record from breaking across a fold mid-row. */
+  tr, .tile, .frame, .badge, .stamp { break-inside: avoid; }
+  thead { display: table-header-group; }
 }

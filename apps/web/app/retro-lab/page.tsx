@@ -84,7 +84,7 @@ function RetroLabPageContent() {
           </div>
           <div className="brass-scoreboard" role="status">
             <span>{scoreboard}</span>
-            <span className={`stamp stamp--static ${isRetro ? "stamp--cleared" : "stamp--neutral"}`}>
+            <span className={`stamp-button stamp-button--static ${isRetro ? "stamp-button--cleared" : "stamp-button--neutral"}`}>
               {isRetro ? "RETRO ON" : "TACTICAL"}
             </span>
           </div>
@@ -98,7 +98,7 @@ function RetroLabPageContent() {
               <div className="paper-ticket__head">
                 <span className="paper-ticket__id">Sample ticket</span>
                 {caseStamp ? (
-                  <span className={`stamp stamp--static stamp--${caseStamp.toLowerCase()}`}>
+                  <span className={`stamp-button stamp-button--static stamp-button--${caseStamp.toLowerCase()}`}>
                     {caseStamp}
                   </span>
                 ) : null}
@@ -108,15 +108,15 @@ function RetroLabPageContent() {
                 Component sample — this ticket is not a record and decides nothing
               </p>
               <div className="paper-ticket__actions">
-                <button type="button" className="stamp stamp--cleared" onClick={() => stampCase("CLEARED")}>
+                <button type="button" className="stamp-button stamp-button--cleared" onClick={() => stampCase("CLEARED")}>
                   CLEARED
                 </button>
-                <button type="button" className="stamp stamp--hold" onClick={() => stampCase("HOLD")}>
+                <button type="button" className="stamp-button stamp-button--hold" onClick={() => stampCase("HOLD")}>
                   HOLD
                 </button>
                 <button
                   type="button"
-                  className="stamp stamp--restricted"
+                  className="stamp-button stamp-button--restricted"
                   onClick={() => stampCase("RESTRICTED")}
                 >
                   RESTRICTED
@@ -133,7 +133,7 @@ function RetroLabPageContent() {
                     <div className="paper-ticket__head">
                       <strong className="font-display uppercase">{name}</strong>
                       {status ? (
-                        <span className={`stamp stamp--static stamp--${status === "PRESENT" ? "present" : status === "LATE" ? "hold" : "neutral"}`}>
+                        <span className={`stamp-button stamp-button--static stamp-button--${status === "PRESENT" ? "present" : status === "LATE" ? "hold" : "neutral"}`}>
                           {status}
                         </span>
                       ) : (
@@ -143,21 +143,21 @@ function RetroLabPageContent() {
                     <div className="paper-ticket__actions">
                       <button
                         type="button"
-                        className="stamp stamp--present"
+                        className="stamp-button stamp-button--present"
                         onClick={() => stampAttendance(name, "PRESENT")}
                       >
                         PRESENT
                       </button>
                       <button
                         type="button"
-                        className="stamp stamp--hold"
+                        className="stamp-button stamp-button--hold"
                         onClick={() => stampAttendance(name, "LATE")}
                       >
                         LATE
                       </button>
                       <button
                         type="button"
-                        className="stamp stamp--neutral"
+                        className="stamp-button stamp-button--neutral"
                         onClick={() => stampAttendance(name, "ABSENT")}
                       >
                         ABSENT
@@ -203,7 +203,7 @@ function RetroLabPageContent() {
                   <button
                     key={key}
                     type="button"
-                    className="stamp stamp--neutral"
+                    className="stamp-button stamp-button--neutral"
                     disabled={!roundActive}
                     onClick={() => setPunches((p) => ({ ...p, [key]: p[key] + 1 }))}
                   >

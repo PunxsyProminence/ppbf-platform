@@ -82,7 +82,7 @@ export default function ParentProgressionVisibilityPage() {
           <p className="mt-2 text-xs font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">
             {capabilityStatus}
           </p>
-          {errorMessage ? <p className="mt-2 text-xs text-[#f0c4c4]">{errorMessage}</p> : null}
+          {errorMessage ? <p className="mt-2 text-xs text-[var(--locked-ink)]">{errorMessage}</p> : null}
         </header>
 
         <section className="grid gap-3 md:grid-cols-2">
@@ -97,7 +97,7 @@ export default function ParentProgressionVisibilityPage() {
         </section>
 
         <div className="flex flex-wrap gap-3">
-          <Link href="/parent/dashboard" className="border-2 border-[color:var(--brass-700)] bg-[#2a1a1a] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)]">
+          <Link href="/parent/dashboard" className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-800)] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)]">
             Back to Parent Hub
           </Link>
         </div>

@@ -20,7 +20,7 @@ const PIN_PATTERN = /^\d{6}$/;
 
    The cards were bg-white with rounded-2xl and rounded-xl fields: white is not
    one of the five materials and neither radius is on the Fibonacci scale. They
-   are paper now. The chrome comes off --red-primary, which aliases to --locked
+   are paper now. The chrome came off --safety-locked, which aliases to --locked
    -- a Continue button is not a safety state. Red survives only on the genuine
    refusal, and the success panel takes the ladder's own --cleared instead of a
    hardcoded #4caf50.
@@ -265,8 +265,13 @@ function ActivatePageContent() {
                 className={PIN_INPUT}
               />
               {confirmPin.length > 0 && !pinsMatch && (
-                <p className="mt-[var(--s3)] flex items-center gap-[var(--s2)] text-[length:var(--t-sm)] font-semibold text-[color:var(--restricted)]">
-                  <span aria-hidden="true">▲</span> These do not match yet.
+                /* --restricted on paper is 3.74:1 — under the 4.5:1 AA floor for
+                   body text, though comfortably over the 3:1 non-text floor. So
+                   the words take dark ink and the ▲ keeps the caution hue: the
+                   glyph is the second channel Law 3 asks for, and it is the part
+                   the 3:1 rule actually governs. */
+                <p className="mt-[var(--s3)] flex items-center gap-[var(--s2)] text-[length:var(--t-sm)] font-semibold text-[color:var(--hide-900)]">
+                  <span aria-hidden="true" className="text-[color:var(--restricted)]">▲</span> These do not match yet.
                 </p>
               )}
             </div>
