@@ -156,6 +156,29 @@ Ordered by a floor-readiness trace run 2026-08-01.
 | Athlete record correction + deactivation | session A | `feature/knowledge-and-feedback` |
 | Athlete check-out losing notes | session A | `feature/knowledge-and-feedback` |
 | Coach coverage (403 on a covered class) | session A | `feature/knowledge-and-feedback` |
+| Security audit fixes + Capability #2 hardening | session B | `claude/ppbf-platform-audit-w3va0j` |
+
+### ⚠️ session B touched two reserved files — read before merging
+
+Claimed after the fact, which is the wrong order and is on me. Two files on the
+reserved list below were edited on `claude/ppbf-platform-audit-w3va0j`:
+
+- **`apps/web/app/admin/people/page.tsx`** — gym_status now imported from a shared
+  constant, empty-coach CTA banner, PIN-console cross-link, status chips, and the
+  409 collision message naming the athlete.
+- **`apps/web/src/server/pilot/access.ts`** — `assertAthleteUpdateAllowed` gained
+  field-level restrictions (an athlete may change `emergency_contact` and nothing
+  else).
+
+Also adjacent to session A's claimed *"Athlete record correction + deactivation"*:
+that work has **already landed** — `app/admin/athletes/page.tsx` exists with tests
+— so this queue entry is stale. Session B extended that page with a
+last-correction audit panel rather than rebuilding it, per rule 5.
+
+`origin/main` merged into the branch at that point; the merge was clean and the
+combined suite is green (2746 tests, `tsc` clean). No reconciliation appears to be
+needed, but **session A should confirm** before either branch merges, because
+"clean merge + green tests" does not prove the two intents agree.
 
 **Free for the other session** — none of the above, and none of these files:
 `scripts/`, `.github/workflows/`, `apps/web/app/admin/page.tsx`,
@@ -167,6 +190,20 @@ Good unclaimed candidates: per-athlete starting PIN, the honesty sweep
 (fabricated donations, the example minors in `scripts/data/`, `/public`
 program copy), the two platform-owner routes returning minors' names, and
 `drillsPersistence.pg.test.ts` running nowhere.
+
+### Stale entries in this queue, verified 2026-08-03
+
+Two items under *"Needed for a usable first session"* no longer match the code:
+
+- **"An athlete record cannot be corrected or deactivated … has no UI caller"** —
+  it has one. `app/admin/athletes/page.tsx` is a full correction and offboarding
+  screen with test coverage.
+- The reserved-file list still reserves `people/page.tsx` for session A's
+  guardian-invite work, which appears to have landed.
+
+Not edited beyond the notes above, since this file is the shared ownership record
+and rewriting another session's claims is exactly what rule 2 forbids. Flagged for
+whoever owns the next reconciliation.
 
 ---
 
