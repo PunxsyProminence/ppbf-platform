@@ -19,15 +19,12 @@ export default defineConfig({
     trace: 'on-first-retry',
     ...(localChromium ? { launchOptions: { executablePath: localChromium } } : {}),
   },
-  /* Screenshot baselines are committed per-platform, but Chromium's text
-     rasterisation shifts slightly between revisions, so a baseline recorded on
-     one build shows a thin halo of changed pixels against another even when
-     nothing about the page moved. A small ratio absorbs that without absorbing
-     anything real: a font size change, a padding change or a colour change all
-     move far more than 2% of a full-page shot. */
-  expect: {
-    toHaveScreenshot: { maxDiffPixelRatio: 0.02 },
-  },
+  /* There is deliberately no toHaveScreenshot tolerance here because there are
+     no screenshot baselines left to tolerate. The reasoning is written out at
+     the top of e2e/public-homepage.spec.ts; the short version is that Chromium
+     shaping moves wrap points between revisions by roughly the same number of
+     pixels a real regression does, so no ratio separates them. Re-adding a
+     baseline means pinning the browser revision in the container first. */
   projects: [
     {
       name: 'desktop-chromium',

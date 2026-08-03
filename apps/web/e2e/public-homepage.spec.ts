@@ -86,9 +86,13 @@ test.describe('Public homepage', () => {
         for (let node: Element | null = el; node; node = node.parentElement) {
           const cs = getComputedStyle(node);
           if (cs.backgroundImage !== 'none') return null;
-          const alpha = cs.backgroundColor.startsWith('rgba')
-            ? Number(cs.backgroundColor.split(',')[3])
-            : 1;
+          // Parse the alpha rather than splitting on commas. `rgba(0, 0, 0,
+          // 0.043)`.split(',')[3] is " 0.043)" — the closing paren rides along
+          // and Number() gives NaN, so neither the ===1 nor the >0 branch fires
+          // and the walker keeps climbing past a translucent layer. That is the
+          // exact opposite of the refusal this function is supposed to perform.
+          const parts = cs.backgroundColor.match(/[\d.]+/g);
+          const alpha = parts && parts.length > 3 ? Number(parts[3]) : 1;
           if (alpha === 1) return cs.backgroundColor;
           if (alpha > 0) return null;
         }
@@ -121,8 +125,12 @@ test.describe('Public homepage', () => {
         if (el.matches('a[href], button, input:not([type=hidden]), select, textarea')) {
           const r = el.getBoundingClientRect();
           const inline = el.tagName === 'A' && cs.display === 'inline';
-          if (r.height > 0 && r.height < 44 && !inline) {
-            smallTargets.push(`${label} = ${Math.round(r.height)}px`);
+          // 2.5.5 is 44 by 44, not 44 tall. Height alone passes an icon-only
+          // button that is 44 high and 20 wide, which is the shape most likely
+          // to be too small in the first place.
+          const tooSmall = r.height < 44 || r.width < 44;
+          if (r.height > 0 && r.width > 0 && tooSmall && !inline) {
+            smallTargets.push(`${label} = ${Math.round(r.width)}x${Math.round(r.height)}px`);
           }
         }
       }
