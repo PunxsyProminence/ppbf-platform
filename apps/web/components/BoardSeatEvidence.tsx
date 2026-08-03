@@ -92,9 +92,9 @@ export default function BoardSeatEvidence({ seat }: Readonly<{ seat: BoardSeatSl
   // On a safeguarding surface the two look identical and mean opposite things.
   if (failed) {
     return (
-      <article className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
-        <h2 className="text-xl font-black text-[var(--black)]">Records could not be read</h2>
-        <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
+      <article className="border border-[color:rgba(212,175,74,.28)] mat-leather p-5">
+        <h2 className="text-xl font-black">Records could not be read</h2>
+        <p className="mt-2 text-sm leading-6 opacity-80">
           This is a failure to load, not an empty register. Reload to try again.
         </p>
       </article>
@@ -109,29 +109,29 @@ export default function BoardSeatEvidence({ seat }: Readonly<{ seat: BoardSeatSl
     );
 
     return (
-      <article className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
-        <h2 className="text-xl font-black text-[var(--black)]">The standard this gym holds itself to</h2>
-        <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
+      <article className="border border-[color:rgba(212,175,74,.28)] mat-leather p-5">
+        <h2 className="text-xl font-black">The standard this gym holds itself to</h2>
+        <p className="mt-2 text-sm leading-6 opacity-80">
           These rules are written policy. Nothing evaluates them automatically — a violation exists only
           when a coach or admin files one, so this is what the gym has committed to, not evidence it is
           being met.
         </p>
 
         {ordered.length === 0 ? (
-          <p className="mt-4 text-sm leading-6 text-[var(--gray-dark)]">
+          <p className="mt-4 text-sm leading-6 opacity-80">
             This gym has no active compliance rules on record.
           </p>
         ) : (
           <ul className="mt-4 space-y-3">
             {ordered.map((rule) => (
-              <li key={rule.rule_id} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-3">
+              <li key={rule.rule_id} className="border border-[color:rgba(212,175,74,.28)] mat-leather p-3">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <p className="text-base font-black text-[var(--black)]">{rule.rule_name}</p>
-                  <p className="text-[12px] font-mono uppercase tracking-[0.12em] text-[var(--black)]">
+                  <p className="text-base font-black">{rule.rule_name}</p>
+                  <p className="text-[12px] font-mono uppercase tracking-[0.12em] text-[color:var(--brass-600)]">
                     {rule.severity}
                   </p>
                 </div>
-                <p className="mt-1 text-[13px] leading-5 text-[var(--gray-dark)]">
+                <p className="mt-1 text-[13px] leading-5 opacity-80">
                   {rule.rule_category} &middot; escalates to {rule.escalation_level}
                 </p>
               </li>
@@ -145,22 +145,22 @@ export default function BoardSeatEvidence({ seat }: Readonly<{ seat: BoardSeatSl
   if (!notices) return null;
 
   return (
-    <article className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
-      <h2 className="text-xl font-black text-[var(--black)]">Board communications register</h2>
-      <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
+    <article className="border border-[color:rgba(212,175,74,.28)] mat-leather p-5">
+      <h2 className="text-xl font-black">Board communications register</h2>
+      <p className="mt-2 text-sm leading-6 opacity-80">
         Every notice published to this organization, with its author. This is the platform&apos;s only
         standing governance record — it is notices, not minutes, and no resolution or vote is recorded
         anywhere here.
       </p>
 
       {notices.length === 0 ? (
-        <p className="mt-4 text-sm leading-6 text-[var(--gray-dark)]">No notices have been published.</p>
+        <p className="mt-4 text-sm leading-6 opacity-80">No notices have been published.</p>
       ) : (
         <ul className="mt-4 space-y-3">
           {notices.map((notice) => (
-            <li key={notice.announcement_id} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-3">
-              <p className="text-sm leading-6 text-[var(--black)]">{notice.message}</p>
-              <p className="mt-2 text-[12px] font-mono uppercase tracking-[0.12em] text-[var(--gray-dark)]">
+            <li key={notice.announcement_id} className="border border-[color:rgba(212,175,74,.28)] mat-leather p-3">
+              <p className="text-sm leading-6">{notice.message}</p>
+              <p className="mt-2 text-[12px] font-mono uppercase tracking-[0.12em] opacity-80">
                 {notice.author_name} &middot; {notice.author_role} &middot; {formatWhen(notice.created_at)}
               </p>
             </li>

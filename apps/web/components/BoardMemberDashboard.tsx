@@ -118,16 +118,16 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
   // is theirs, so this leaves rather than refusing.
   if (!access.allowed) {
     return (
-      <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
+      <main className="grid min-h-screen place-items-center bg-[var(--hide-950)] px-[var(--s5)] text-[color:var(--bone-200)]">
         <div className="max-w-xl text-center">
-          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--accent-quiet)]">Board Seat</p>
+          <p className="t-eyebrow tracking-[0.35em]">Board Seat</p>
           <h1 className="mt-3 text-3xl font-black tracking-tight">Opening the board hub</h1>
-          <p className="mt-3 text-base leading-7 text-[var(--gray-dark)]">
+          <p className="t-body mt-[var(--s3)]">
             The {seat.seatLabel} workspace opens for the holders of that seat and for the President and Chair. Every board member reaches the same aggregate hub.
           </p>
           <Link
             href="/board"
-            className="mt-5 inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-5 text-sm font-bold uppercase tracking-[0.12em] text-[var(--black)]"
+            className="btn btn--ghost mt-[var(--s5)]"
           >
             Board hub
           </Link>
@@ -137,37 +137,37 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
   }
 
   return (
-    <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
+    <main className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-10 lg:px-10">
-        <header className="flex flex-col gap-4 border-b-2 border-[var(--black)] pb-6 md:flex-row md:items-end md:justify-between">
+        <header className="flex flex-col gap-[var(--s4)] border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)] md:flex-row md:items-end md:justify-between">
           <div className="space-y-3">
-            <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--accent-quiet)]">Board Workspace Framework</p>
+            <p className="t-eyebrow tracking-[0.35em]">Board Workspace Framework</p>
             <h1 className="text-4xl font-black tracking-tight md:text-5xl">{seat.seatLabel} Workspace</h1>
-            <p className="max-w-4xl text-base leading-7 text-[var(--gray-dark)] md:text-lg">One board workspace shell with seat-specific visibility for nonprofit governance, mission stewardship, and strategic oversight.</p>
+            <p className="t-body max-w-[80ch]">One board workspace shell with seat-specific visibility for nonprofit governance, mission stewardship, and strategic oversight.</p>
           </div>
-          <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 py-3 text-sm font-mono text-[var(--accent-quiet)]">{seat.seatLabel}</div>
+          <div className="mat-leather rounded-[var(--r-sm)] border border-[color:rgba(212,175,74,.28)] px-[var(--s4)] py-[var(--s3)] t-data">{seat.seatLabel}</div>
         </header>
 
-        <section className="mt-6 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
-          <p className="text-xs font-mono uppercase tracking-[0.22em] text-[var(--accent-quiet)]">Seat Access</p>
-          <p className="mt-2 text-base leading-7 text-[var(--gray-dark)]">{seatAccessNotice[access.mode]}</p>
-          <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)] mt-[var(--s5)]">
+          <p className="t-eyebrow">Seat Access</p>
+          <p className="t-body mt-[var(--s3)]">{seatAccessNotice[access.mode]}</p>
+          <p className="t-body mt-[var(--s3)]">
             This notice describes what the page displays. Access is decided by the server on every request, and no choice made in this browser widens it.
           </p>
         </section>
 
-        <section className="mt-6 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
-          <h2 className="text-lg font-black text-[var(--black)]">Aggregate boundary</h2>
-          <p className="mt-3 max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)] mt-[var(--s5)]">
+          <h2 className="t-command">Aggregate boundary</h2>
+          <p className="t-body mt-[var(--s3)] max-w-[80ch]">
             {BOARD_AGGREGATE_BOUNDARY_STATEMENT}
           </p>
         </section>
 
-        <section className="mt-6 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
-          <p className="text-xs font-mono uppercase tracking-[0.22em] text-[var(--accent-quiet)]">Nonprofit Identity</p>
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)] mt-[var(--s5)]">
+          <p className="t-eyebrow">Nonprofit Identity</p>
           <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
             {['Veteran-Founded', '501(c)(3) Public Charity', 'Mission-Focused Governance', 'Community Impact Oversight'].map((item) => (
-              <div key={item} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-3 text-[16px] font-semibold text-[var(--black)]">
+              <div key={item} className="mat-leather--raised rounded-[var(--r-md)] px-[var(--s4)] py-[var(--s4)] t-command">
                 {item}
               </div>
             ))}
@@ -178,8 +178,8 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
           <BoardSummaryPanel variant="workspace" heading="Organization Aggregate" />
         </div>
 
-        <section className="mt-6 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
-          <p className="text-xs font-mono uppercase tracking-[0.25em] text-[var(--accent-quiet)]">Governance Modules</p>
+        <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)] mt-[var(--s5)]">
+          <p className="t-eyebrow">Governance Modules</p>
           <div className="mt-4 grid gap-2 sm:grid-cols-3 xl:grid-cols-9">
             {boardWorkspaceTabs.map((tab) => (
               <button
@@ -188,8 +188,8 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
                 onClick={() => setActiveTab(tab)}
                 className={`min-h-[44px] border px-3 text-sm font-bold transition ${
                   activeTab === tab
-                    ? 'border-[var(--black)] bg-[var(--accent-strong)] text-[var(--accent-ink)]'
-                    : 'border-[var(--black)] bg-[var(--canvas-tan)] text-[var(--black)] hover:bg-[var(--canvas-tan-dark)]'
+                    ? 'mat-brass--patina border-[color:var(--brass-600)] text-[color:var(--hide-950)]'
+                    : 'border-[color:rgba(212,175,74,.28)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-400)]'
                 }`}
               >
                 {tab}
@@ -200,44 +200,44 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
 
         <section className="mt-6 grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
           <div className="space-y-6">
-            <article className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
-              <h2 className="text-2xl font-black text-[var(--black)]">{activeTab}</h2>
-              <p className="mt-2 text-base leading-7 text-[var(--gray-dark)]">
+            <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+              <h2 className="t-command">{activeTab}</h2>
+              <p className="t-body mt-[var(--s3)]">
                 Every card states its own condition. A card marked {BOARD_PLANNED_STAMP} describes intended work and has nothing behind it.
               </p>
               <div className="mt-4 grid gap-3 md:grid-cols-3">
                 {cards.map((card) => (
-                  <div key={card.title} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-                    <p className="text-[11px] font-mono uppercase tracking-[0.12em] text-[var(--accent-quiet)]">{cardStatusLabel[card.status]}</p>
-                    <p className="mt-2 text-base font-bold text-[var(--black)]">{card.title}</p>
-                    <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">{card.detail}</p>
+                  <div key={card.title} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                    <p className="t-eyebrow">{cardStatusLabel[card.status]}</p>
+                    <p className="t-command mt-[var(--s3)]">{card.title}</p>
+                    <p className="t-body mt-[var(--s3)]">{card.detail}</p>
                   </div>
                 ))}
               </div>
             </article>
 
-            <article className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
-              <h2 className="text-2xl font-black text-[var(--black)]">Role Description</h2>
-              <p className="mt-2 text-base leading-7 text-[var(--gray-dark)]">{seat.roleDescription}</p>
-              <h3 className="mt-4 text-lg font-black text-[var(--accent-quiet)]">Primary Responsibilities</h3>
-              <ul className="mt-2 space-y-1 text-[15px] leading-7 text-[var(--gray-dark)]">
+            <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+              <h2 className="t-command">Role Description</h2>
+              <p className="t-body mt-[var(--s3)]">{seat.roleDescription}</p>
+              <h3 className="t-command--brass t-command mt-[var(--s4)]">Primary Responsibilities</h3>
+              <ul className="t-body mt-[var(--s3)] space-y-[var(--s1)]">
                 {seat.primaryResponsibilities.map((responsibility) => (
                   <li key={responsibility}>- {responsibility}</li>
                 ))}
               </ul>
             </article>
 
-            <article className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
-              <h2 className="text-2xl font-black text-[var(--black)]">Seat Modules</h2>
-              <p className="mt-2 text-[11px] font-mono uppercase tracking-[0.12em] text-[var(--accent-quiet)]">{BOARD_PLANNED_STAMP}</p>
-              <p className="mt-2 text-base leading-7 text-[var(--gray-dark)]">
+            <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+              <h2 className="t-command">Seat Modules</h2>
+              <p className="t-eyebrow mt-[var(--s3)]">{BOARD_PLANNED_STAMP}</p>
+              <p className="t-body mt-[var(--s3)]">
                 The scope this seat is meant to cover. None of it reads or writes data yet.
               </p>
               <div className="mt-4 grid gap-3 md:grid-cols-2">
                 {modules.map((moduleGroup) => (
-                  <div key={moduleGroup.title} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-                    <p className="text-lg font-black text-[var(--black)]">{moduleGroup.title}</p>
-                    <ul className="mt-2 space-y-1 text-sm leading-6 text-[var(--gray-dark)]">
+                  <div key={moduleGroup.title} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                    <p className="t-command">{moduleGroup.title}</p>
+                    <ul className="t-body mt-[var(--s3)] space-y-[var(--s1)]">
                       {moduleGroup.items.map((item) => (
                         <li key={item}>- {item}</li>
                       ))}
@@ -249,17 +249,17 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
 
             <BoardSeatEvidence seat={seat.slug} />
 
-            <article className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
-              <h2 className="text-2xl font-black text-[var(--black)]">Board intelligence unavailable</h2>
-              <p className="mt-2 text-base leading-7 text-[var(--gray-dark)]">Board chat and generated background summaries remain disabled. Only the authenticated organization-aggregate summary API is available.</p>
+            <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+              <h2 className="t-command">Board intelligence unavailable</h2>
+              <p className="t-body mt-[var(--s3)]">Board chat and generated background summaries remain disabled. Only the authenticated organization-aggregate summary API is available.</p>
               <div className="mt-4 grid gap-3 md:grid-cols-2">
-                <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-                  <p className="text-[13px] font-mono uppercase tracking-[0.14em] text-[var(--accent-quiet)]">Generation status</p>
-                  <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">Disabled. No model call or background Board job is available.</p>
+                <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                  <p className="t-eyebrow">Generation status</p>
+                  <p className="t-body mt-[var(--s3)]">Disabled. No model call or background Board job is available.</p>
                 </div>
-                <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
-                  <p className="text-[13px] font-mono uppercase tracking-[0.14em] text-[var(--accent-quiet)]">Data Boundary</p>
-                  <ul className="mt-2 space-y-1 text-sm leading-6 text-[var(--gray-dark)]">
+                <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                  <p className="t-eyebrow">Data Boundary</p>
+                  <ul className="t-body mt-[var(--s3)] space-y-[var(--s1)]">
                     <li>- Athlete data is not surfaced in board SHADOW.</li>
                     <li>- Coach data is not surfaced in board SHADOW.</li>
                     <li>- Parent records are not surfaced in board SHADOW.</li>
@@ -271,12 +271,12 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
           </div>
 
           <aside className="grid gap-6">
-            <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
-              <h2 className="text-xl font-black text-[var(--black)]">Not stored by this platform</h2>
-              <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
+            <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+              <h2 className="t-command">Not stored by this platform</h2>
+              <p className="t-body mt-[var(--s3)]">
                 None of the following exists as a record here, for this seat or any other. There is no figure to load and none is being withheld.
               </p>
-              <ul className="mt-3 space-y-1 text-sm leading-6 text-[var(--gray-dark)]">
+              <ul className="t-body mt-[var(--s3)] space-y-[var(--s1)]">
                 <li>- Board actions and their status</li>
                 <li>- Policy reviews and due dates</li>
                 <li>- Meeting and compliance calendars</li>
@@ -286,30 +286,30 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
               </ul>
             </section>
 
-            <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
-              <h2 className="text-xl font-black text-[var(--black)]">Workspace Links</h2>
+            <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+              <h2 className="t-command">Workspace Links</h2>
               <div className="mt-4 grid gap-2">
                 {links.map((link) => (
                   <Link
                     key={link.href}
                     href={link.href}
-                    className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-sm font-bold text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"
+                    className="btn btn--ghost"
                   >
                     {link.label}
                   </Link>
                 ))}
                 <Link
                   href="/board/compliance-monitoring"
-                  className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-sm font-bold text-[var(--black)] transition hover:bg-[var(--canvas-tan-dark)]"
+                  className="btn btn--ghost"
                 >
                   Hand-Filed Compliance Register
                 </Link>
               </div>
             </section>
 
-            <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-5">
-              <h2 className="text-lg font-black text-[var(--black)]">One workspace shell</h2>
-              <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
+            <section className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s5)]">
+              <h2 className="t-command">One workspace shell</h2>
+              <p className="t-body mt-[var(--s3)]">
                 Every seat runs the same workspace. What differs between seats is which of them may open a given page, and the seat description on it.
               </p>
             </section>
