@@ -2871,3 +2871,219 @@ body.ppbf.on-canvas {
   background-color: var(--corner-edge);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.18), inset 0 0 0 1px rgba(0,0,0,.45);
 }
+
+/* ====================================================== WORDS ON THE WALL ===
+   Painted lettering on the plaster, not a banner.
+
+   Real gyms have words on the wall, and the reference for them is not signage
+   design: it is somebody with a brush, a stencil kit and a ladder, working
+   directly on a wall that already had forty years of paint on it. So the
+   letterforms are the display voice (heavy slab, ink eroded at the edges) and
+   the paint is WORN — laid over the surface with a soft light-blend so the
+   texture and the shadow of whatever is behind it comes through the colour,
+   the way real paint on rough plaster does.
+
+   NOT BRASS, NOT A SAFETY COLOUR. Law 1 keeps brass for the chassis and Law 2
+   spends the whole saturated budget on the safety ladder. Wall paint is bone,
+   knocked back — it is a message, not hardware, and never a status.
+
+   NO MOTION. Lettering on a wall does not fade in, slide or pulse. It is
+   simply there. (The global prefers-reduced-motion rule earlier in this sheet
+   would stand any of that down anyway; this has none to stand down.)
+
+   Used contextually and never permanently — see WordsOnTheWall.tsx. */
+
+.wallwords {
+  position: relative;
+  margin: var(--s5) 0;
+  padding: var(--s5) var(--s5) var(--s4);
+  /* The stencil bridge, at the edges: a hairline rule top and bottom is what a
+     painted wall legend has instead of a border. Not a box — a box makes it a
+     component, and this is meant to be ON the surface, not standing in front
+     of it. */
+  border-top: 1px solid rgba(239,230,208,.14);
+  border-bottom: 1px solid rgba(239,230,208,.10);
+  text-align: center;
+}
+
+/* The paint. Overlay blending is what makes it read as pigment sitting IN the
+   wall rather than type sitting on top of it: the wall's grain and the lamp's
+   falloff both come through. */
+.wallwords-line {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--t-lg);
+  line-height: 1.22;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  color: var(--bone-200);
+  mix-blend-mode: overlay;
+  /* Wear. The brush did not fully cover, and the wall shows through in places. */
+  opacity: .88;
+  text-shadow: 0 1px 0 rgba(0,0,0,.35);
+}
+
+/* The signature under the lettering. Hand voice (Law 4 — hand annotates),
+   because whoever painted the wall wrote their name at the bottom by hand. */
+.wallwords-by {
+  margin: var(--s3) 0 0;
+  font-family: var(--font-hand);
+  font-size: var(--t-sm);
+  color: var(--bone-400);
+  letter-spacing: .01em;
+}
+.wallwords-by::before { content: "— "; }
+
+/* The aside: a remark about a number, or a year noticed. NOT painted — nobody
+   got a ladder out for this — so it is the record voice at caption size, dry
+   and small, sitting on one line. */
+.wallwords-aside {
+  margin: var(--s4) 0 0;
+  font-family: var(--font-data);
+  font-size: var(--t-xs);
+  letter-spacing: .06em;
+  color: var(--bone-400);
+}
+
+/* Both grounds. Law 6 gives the app ink leather and warm canvas, and overlay
+   paint that works on leather goes invisible on canvas — the blend needs the
+   opposite side (multiply, so the pigment darkens the cream instead of
+   lightening it).
+
+   NO NEW COLOUR IS INTRODUCED HERE. The three values below are the canvas inks
+   this sheet already established in the ON CANVAS section: #2A2013 is .t-data's
+   ink, #6E5B3E is .t-muted's, #4A3B26 is .t-label's. Canvas inks have never had
+   tokens of their own — that is a standing DS gap, logged where .fightcard-*
+   makes the same reuse — so matching the existing values is the only way to
+   stay on the established palette rather than inventing a fourth brown. */
+.on-canvas .wallwords { border-top-color: rgba(42,32,19,.22); border-bottom-color: rgba(42,32,19,.16); }
+.on-canvas .wallwords-line { color: #2A2013; mix-blend-mode: multiply; opacity: .82; text-shadow: none; }
+.on-canvas .wallwords-by { color: #6E5B3E; }
+.on-canvas .wallwords-aside { color: #4A3B26; }
+
+/* ========================================================= BULK SELECTION ===
+   A row that has been picked out of a list, and the tray of things that can be
+   done to the picked rows.
+
+   The selected state is a TAB PULLED FORWARD, not a highlight: the row lifts
+   slightly toward the light and takes a brass edge on the left, the way a card
+   pulled half out of a drawer catches the lamp. A coloured background would
+   have to come out of the safety budget (Law 2), and "selected" is not a
+   safety state.
+
+   Law 3 holds — the brass edge is never the only channel. Every selected row
+   carries a ticked checkbox with its own accessible name, and the tray states
+   the count in words. */
+
+.pickrow { transition: background-color var(--m-base) var(--e-lever); }
+.pickrow--picked {
+  background-color: rgba(212,175,74,.06);
+  box-shadow: inset 3px 0 0 var(--brass-500);
+}
+
+/* The tray. It sits above the list and stays put while the list scrolls under
+   it, because a bulk action whose count has scrolled off screen is how the
+   wrong number gets confirmed. */
+.picktray {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s3);
+  padding: var(--s4) var(--s5);
+  border: 1px solid var(--brass-700);
+  border-radius: var(--r-md);
+  background-color: var(--hide-800);
+  background-image: linear-gradient(180deg, rgba(92,70,50,.55), rgba(20,16,13,.92));
+  box-shadow: inset 0 1px 0 rgba(232,206,122,.14), 0 4px 12px rgba(0,0,0,.5);
+}
+
+/* The count. Record voice, because it is a number that has to be exact and
+   has to be read as exact. */
+.picktray-count {
+  font-family: var(--font-data); font-size: var(--t-sm); font-weight: 650;
+  letter-spacing: .06em; color: var(--brass-200);
+  margin-right: var(--s3);
+}
+
+/* The confirm for something that cannot be taken back. Law 7 — a refusal is a
+   stamp, and so is a demand for confirmation: it sits in the flow and waits,
+   it is not a dialog that a stray click dismisses. The red is --stamp-red,
+   which is the destructive ink and NOT --locked; a bulk delete is not a
+   medical state. */
+.pickconfirm {
+  display: grid; gap: var(--s4);
+  padding: var(--s5);
+  border: 1px solid var(--stamp-red);
+  border-left-width: 4px;
+  border-radius: 0 var(--r-md) var(--r-md) 0;
+  background-color: color-mix(in srgb, var(--stamp-red) 10%, var(--hide-900));
+}
+.pickconfirm-title {
+  margin: 0;
+  font-family: var(--font-ui); font-weight: 650; font-size: var(--t-md);
+  color: var(--bone-100);
+}
+.pickconfirm-body { margin: 0; font-size: var(--t-sm); line-height: 1.55; color: var(--bone-200); }
+.pickconfirm-list {
+  margin: 0; padding: 0; list-style: none;
+  font-family: var(--font-data); font-size: var(--t-xs);
+  color: var(--bone-300); line-height: 1.7;
+}
+.pickconfirm-actions { display: flex; flex-wrap: wrap; gap: var(--s3); }
+
+/* ============================================================ CATALOG ACTS ===
+   The card catalog stopped being a list of doors and started being a list of
+   things you can do. An ACT row is visibly not a door: it carries a verb glyph
+   in a brass bezel instead of a route in mono type, because a row that looks
+   like navigation and instead performs an action is the worst thing a command
+   palette can contain. */
+
+.catalog-act-glyph {
+  display: inline-grid; place-items: center;
+  width: 26px; height: 26px; flex: none;
+  border: 1px solid var(--brass-700); border-radius: var(--r-sm);
+  background-color: rgba(0,0,0,.35);
+  box-shadow: inset 0 1px 0 rgba(232,206,122,.14);
+  color: var(--brass-300); font-size: var(--t-sm); line-height: 1;
+}
+.catalog-act-tag {
+  font-family: var(--font-data); font-size: var(--t-xs);
+  letter-spacing: .12em; text-transform: uppercase;
+  color: var(--brass-300);
+}
+
+/* The gym noticing, in the catalog footer. One dry line, record voice, no
+   colour of its own — it is an observation, not a status. */
+.catalog-notice {
+  flex-basis: 100%;
+  margin-top: var(--s2);
+  font-family: var(--font-data); font-size: var(--t-xs);
+  letter-spacing: .05em; color: var(--bone-400);
+}
+
+/* The bell, rung by hand from the catalog. Rule 2 of the sound system is that
+   sound is never the only channel, so ringing it has to be VISIBLE: the ring-
+   out below is what somebody with the volume down, with audio blocked, or on a
+   loud gym floor sees instead. It is the .bell ring-out from DISCOVERABLES,
+   detached from :active so it can be fired by a state change. */
+.catalog-rung { position: relative; }
+.catalog-rung::after {
+  content: ""; position: absolute; inset: -6px;
+  border: 2px solid var(--brass-300); border-radius: var(--r-sm);
+  animation: ppbf-ringout var(--m-swing) var(--e-settle) forwards;
+  pointer-events: none;
+}
+
+/* The palette must not appear in what it prints.
+
+   The PRINT MEDIA RULES block above says in prose that it hides "the corridor
+   and catalog", but its rule list is `.kiosk-bar, .rail, .shadow-panel,
+   .commands` — the catalog and the corridor were never actually in it. That
+   did not matter while ⌘K only navigated, because nothing inside it could
+   start a print. It matters now: the catalog carries a Print act, so without
+   this the first thing on the page would be the dialog that asked for it.
+
+   Declared here rather than by editing the block above so the two print
+   sections stay as they are documented — that one hides this sheet's transient
+   chrome, and later rules win on any overlap, which is the order wanted. */
+@media print {
+  .catalog, .catalog-hint, .picktray, .pickconfirm { display: none !important; }
+}

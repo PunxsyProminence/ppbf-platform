@@ -14,6 +14,7 @@
 
 import {
   CEREMONY_STORAGE_PREFIX,
+  boxingNumberNote,
   ceremonyStorageKey,
   decideCeremony,
   readSealed,
@@ -178,5 +179,99 @@ describe('the record it keeps', () => {
     window.localStorage.setItem(key, '[5,"13",null,34]');
     resetCeremonyMemory();
     expect(readSealed(key)).toEqual([5, 34]);
+  });
+});
+
+/**
+ * THE BOXING NUMBERS — a remark on a count, and nothing that could become a
+ * second milestone system.
+ *
+ * The risk of adding anything to this file is that it acquires the ability to
+ * observe an absence. These tests are the proof it did not: the new function
+ * takes a cumulative count and returns a line, it keeps no record, and it can
+ * never fire on the same count as a ceremony.
+ */
+describe('boxingNumberNote', () => {
+  it('remarks on 3 — the rounds in an amateur bout', () => {
+    const note = boxingNumberNote(3);
+    expect(note?.count).toBe(3);
+    expect(note?.line).toContain('amateur bout');
+  });
+
+  it('remarks on 12 — championship distance', () => {
+    const note = boxingNumberNote(12);
+    expect(note?.count).toBe(12);
+    expect(note?.line.toLowerCase()).toContain('championship');
+  });
+
+  it('says nothing about any other number, which is almost all of them', () => {
+    for (let count = 0; count <= 250; count += 1) {
+      if (count === 3 || count === 12) continue;
+      expect(boxingNumberNote(count)).toBeNull();
+    }
+  });
+
+  it('is only true on the day — at 4 you did not just do it, you did it last time', () => {
+    expect(boxingNumberNote(3)).not.toBeNull();
+    expect(boxingNumberNote(4)).toBeNull();
+    expect(boxingNumberNote(13)).toBeNull();
+  });
+
+  it('can never collide with a milestone, so two things never fire at once', () => {
+    for (const milestone of M) {
+      expect(boxingNumberNote(milestone)).toBeNull();
+    }
+    for (const remarked of [3, 12]) {
+      expect(M).not.toContain(remarked);
+      // The ceremony may well have something to say at 12 -- the athlete
+      // crossed 5 on the way -- but it can never press a seal FOR 3 or 12,
+      // because neither is on the ladder. That is the collision that matters:
+      // a seal coming down and a remark landing on the same number would read
+      // as one event stuttering.
+      expect(decideCeremony(remarked, [], M).celebrate).not.toBe(remarked);
+    }
+  });
+
+  /* ---------------------------------------------------------------------
+     THE NO-STREAKS INVARIANT, STILL TRUE AFTER THE ADDITION
+  --------------------------------------------------------------------- */
+
+  it('takes a cumulative count and nothing else', () => {
+    // One argument. There is no date to hand it, no history, no last-seen, so
+    // there is nothing in it that could observe a gap, a cadence or an expiry.
+    expect(boxingNumberNote.length).toBe(1);
+  });
+
+  it('gives the identical answer to wildly different histories', () => {
+    // Three sessions this week and three sessions across three years. The
+    // function cannot tell them apart, by construction.
+    expect(boxingNumberNote(3)).toEqual(boxingNumberNote(3));
+  });
+
+  it('keeps no record, so it can never say a second thing on a second look', () => {
+    // Unlike the ceremony, it is pure: looking at it a hundred times leaves
+    // storage exactly as it found it, and nothing accumulates that a later
+    // read could compare against.
+    const before = window.localStorage.length;
+    for (let i = 0; i < 100; i += 1) {
+      boxingNumberNote(3);
+      boxingNumberNote(12);
+    }
+    expect(window.localStorage.length).toBe(before);
+  });
+
+  it('punishes nothing: a count that falls back still gets the same treatment', () => {
+    // A corrected-away session row moves the count down. That must produce a
+    // remark or silence -- never a rebuke.
+    expect(boxingNumberNote(12)).not.toBeNull();
+    expect(boxingNumberNote(11)).toBeNull();
+    expect(boxingNumberNote(3)).not.toBeNull();
+  });
+
+  it('uses none of the vocabulary a streak needs', () => {
+    for (const count of [3, 12]) {
+      const line = boxingNumberNote(count)?.line.toLowerCase() ?? '';
+      expect(line).not.toMatch(/streak|consecutive|in a row|don't break|keep it up|missed|lapsed|expired/);
+    }
   });
 });

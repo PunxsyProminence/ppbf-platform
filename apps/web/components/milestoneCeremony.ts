@@ -33,6 +33,14 @@
  * NO STREAKS ARE POSSIBLE HERE. The only input is a cumulative count. Nothing
  * in this file can observe a gap, a reset, or an absence, so nothing in it can
  * punish one — see the argument in TrainingCard.tsx, which is load-bearing.
+ *
+ * THAT INVARIANT CONSTRAINS WHAT MAY BE ADDED TO THIS FILE, and it is the
+ * reason the anniversary mark and the before-dawn line live in gymNotices.ts
+ * instead. Both of those read a CLOCK, and a file that can read a clock can
+ * subtract two of them, and a file that can subtract two clocks can notice
+ * that somebody has not been in for three weeks. Nothing here may acquire that
+ * ability, so nothing here takes a date. The only number this file has ever
+ * been handed is a count that never goes down.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -154,6 +162,58 @@ export function decideCeremony(
     seeded: false,
     changed: record.length !== known.length,
   };
+}
+
+/* ---------------------------------------------------------------------------
+   THE NUMBERS THAT MEAN SOMETHING IN A BOXING GYM
+
+   The Fibonacci ladder above is the system's arithmetic — 5, 13, 34, 89, 233 —
+   and it is the right ladder because it descends from φ like every other
+   measurement here (Law 8). But it is arithmetic, and two numbers in a boxing
+   gym are not arithmetic:
+
+     3   the rounds in an amateur bout. The first time the count says 3, the
+         athlete has logged the length of a fight.
+     12  championship distance. Nobody in this building is fighting twelve
+         rounds, which is the joke, and it is the gym's joke rather than the
+         software's.
+
+   THIS IS NOT A SECOND MILESTONE SYSTEM. It presses no seal, writes no record,
+   rings no bell and cannot be earned twice, because there is nothing to earn:
+   it is a REMARK on a number, true exactly while the number is that number and
+   gone the day the next session lands. That is why it needs no storage, and
+   needing no storage is why it cannot drift into the crossing logic above.
+
+   Neither 3 nor 12 is on the ladder, so a remark and a ceremony can never fire
+   on the same count. A test pins that.
+
+   IT TAKES A COUNT AND NOTHING ELSE, which is what keeps this file honest —
+   see the NO STREAKS note at the top.
+--------------------------------------------------------------------------- */
+
+export interface BoxingNumberNote {
+  /** The count this remark belongs to. */
+  readonly count: number;
+  /** The remark. One line, dry, and said once. */
+  readonly line: string;
+}
+
+/**
+ * The remark for a session count, or null — which is the answer for almost
+ * every number, and is meant to be.
+ *
+ * Deliberately exact rather than "3 or more": at 4 sessions the athlete has
+ * not just done a bout's worth of rounds, they did that last time. The remark
+ * is only true on the day.
+ */
+export function boxingNumberNote(count: number): BoxingNumberNote | null {
+  if (count === 3) {
+    return { count: 3, line: 'Three. The rounds in an amateur bout — you have logged a whole fight.' };
+  }
+  if (count === 12) {
+    return { count: 12, line: 'Twelve. Championship distance. Nobody here is fighting twelve rounds, but still.' };
+  }
+  return null;
 }
 
 export interface MilestoneCeremonyOptions {

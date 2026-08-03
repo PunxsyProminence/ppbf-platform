@@ -1,9 +1,11 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useMilestoneCeremony } from './milestoneCeremony';
+import { anniversaryMark } from './gymNotices';
 import useGymSound from './useGymSound';
+import WordsOnTheWall, { AnniversaryNote, BoxingNumberNote } from './WordsOnTheWall';
 
 /**
  * THE TRAINING CARD — the punch card an athlete accumulates.
@@ -118,6 +120,26 @@ export default function TrainingCard({
     onCross: ring,
   });
 
+  /* A year at the gym, noticed quietly.
+     Read in an effect rather than during render because it reads a CLOCK, and
+     a value that differs between the server pass and the client pass is a
+     hydration mismatch. It sets state only in the one week a year when there
+     is a mark, so the extra render is not a per-visit cost.
+     The rule itself is in gymNotices.ts — deliberately not in
+     milestoneCeremony.ts, which must never learn to read a date. */
+  const firstSessionDate = ordered.length > 0 ? ordered[0].date : null;
+  const [anniversary, setAnniversary] = useState<string | null>(null);
+  useEffect(() => {
+    if (!firstSessionDate) {
+      return;
+    }
+    const mark = anniversaryMark(firstSessionDate, new Date());
+    if (mark) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setAnniversary(mark.line);
+    }
+  }, [firstSessionDate]);
+
   if (ordered.length === 0) {
     return (
       <div className="pap pap--card age-1 lift-1 tcard">
@@ -192,6 +214,20 @@ export default function TrainingCard({
           <span>Sealed. It never comes off the card.</span>
         </p>
       )}
+
+      {/* Words on the wall, and only at a moment.
+          The source ships EMPTY on purpose — the lines belong to this gym's
+          coaches and nobody else can write them, so this renders nothing at
+          all until the owner adds them (gymSayings.ts says how). It is placed
+          beside the seal rather than at the top of the card because a sign
+          that is always there is wallpaper inside a week. */}
+      {pressed !== null && <WordsOnTheWall context="at-a-milestone" seed={pressed} />}
+
+      {/* The two quiet asides. Both are one dry line and neither can observe
+          an absence: the first is handed a cumulative count, the second a pair
+          of dates it cannot turn into attendance. */}
+      <BoxingNumberNote count={completed} />
+      <AnniversaryNote line={anniversary} />
 
       <div className="tcard-seals">
         {MILESTONES.map((m) => {

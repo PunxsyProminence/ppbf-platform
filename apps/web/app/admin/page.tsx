@@ -16,6 +16,15 @@ import {
   type TrackAssignments,
   type TrackID,
 } from '@/components/trackAssignments';
+import {
+  EMPTY_SELECTION,
+  describeCount,
+  nextSelectAll,
+  pruneToVisible,
+  selectAllState,
+  toggleSelected,
+  type Selection,
+} from '@/components/bulkSelection';
 
 type CapabilityStatus = 'DRAFT' | 'ACTIVE' | 'BLOCKED' | 'ARCHIVED';
 type CapabilityVisibility = 'Internal' | 'Role-Bound' | 'Public Placeholder';
@@ -272,6 +281,39 @@ const INTEGRATION_STUBS = [
 // `missing` is what the board says when a cut comes back empty. The button
 // labels read as commands ("Show Only Draft") and do not fit inside a sentence,
 // so each option carries the noun phrase its own empty state needs.
+/**
+ * WHAT A BULK ACTION MAY BE.
+ *
+ * Split by REVERSIBILITY rather than by what it touches, because that is the
+ * only distinction the confirmation has to carry. A status change writes one
+ * field; a delete takes the record off the registry entirely and there is no
+ * server-side trash to fish it back out of.
+ */
+type BulkAction =
+  | { kind: 'status'; status: CapabilityStatus }
+  | { kind: 'assign'; role: RoleName }
+  | { kind: 'unassign'; role: RoleName }
+  | { kind: 'delete' };
+
+function describeBulkAction(action: BulkAction, count: number): string {
+  const what = describeCount(count);
+  switch (action.kind) {
+    case 'status':
+      return `Set ${what} to ${action.status}`;
+    case 'assign':
+      return `Give ${what} to ${action.role}`;
+    case 'unassign':
+      return `Take ${what} away from ${action.role}`;
+    case 'delete':
+      return `Delete ${what} from the registry`;
+  }
+}
+
+/** Only one of these cannot be walked back by doing the opposite thing. */
+function isDestructive(action: BulkAction): boolean {
+  return action.kind === 'delete';
+}
+
 const MATRIX_FILTER_OPTIONS: Array<{ id: MatrixFilter; label: string; missing: string }> = [
   { id: 'all', label: 'Show All', missing: 'capabilities' },
   { id: 'unassigned', label: 'Show Only Unassigned', missing: 'capabilities without a role' },
@@ -421,6 +463,32 @@ export default function AdminCapabilitiesPage() {
 
   const [expandedCapabilityId, setExpandedCapabilityId] = useState<number | null>(null);
   const [assignmentFocusId, setAssignmentFocusId] = useState<number | null>(null);
+
+  /* ---- multi-select and bulk actions ------------------------------------
+     Nothing in this platform could act on more than one row at a time, so an
+     administrator clearing thirty capabilities cleared them thirty times. The
+     rule for what happens to a selection when the FILTER moves under it is in
+     components/bulkSelection.ts, tested there, and it is the part of this
+     feature that can actually hurt somebody. */
+  const [selection, setSelection] = useState<Selection>(EMPTY_SELECTION);
+  const [pendingBulk, setPendingBulk] = useState<BulkAction | null>(null);
+  const [bulkRole, setBulkRole] = useState<RoleName>('Admin');
+  /**
+   * The one step back.
+   *
+   * The registry is stored as a whole array — the save effect POSTs
+   * `capabilities` entire — so putting the previous array back is a complete,
+   * exact reversal of any bulk action including a delete. That is why an undo
+   * is offered here at all, and it is why it is honest to offer one: this is
+   * not a soft-delete flag pretending to be an undo.
+   *
+   * ITS LIFETIME IS THIS SCREEN. There is no server-side history, so a reload
+   * or a walk to another tab is the end of it. The offer says exactly that
+   * rather than implying a safety net that is not there — the pattern
+   * admin/athletes/page.tsx set, where the reversal and its limits are both
+   * stated in words next to the button.
+   */
+  const [undoOffer, setUndoOffer] = useState<{ label: string; snapshot: Capability[] } | null>(null);
 
   const [editingCapabilityId, setEditingCapabilityId] = useState<number | null>(null);
   const [builderName, setBuilderName] = useState('');
@@ -735,7 +803,139 @@ export default function AdminCapabilitiesPage() {
     logTrace('filter changed', 'All library filters cleared');
   }
 
+  /* ---- the selection, and the filter moving under it ---------------------
+     THE FOOTGUN: tick "select all" across thirty rows, narrow the filter to
+     three, press a bulk button — and thirty rows change while three are on
+     screen. Whichever number the button showed, one of the two numbers the
+     administrator could see was a lie.
+
+     THE RULE, stated once and implemented in bulkSelection.ts: a row that
+     leaves the view leaves the selection. The count beside every button is
+     always the count of rows that will change, and no bulk action can ever
+     touch a record that is not on screen. Narrowing then widening does NOT
+     bring the ticks back — the set is pruned, not merely filtered at render
+     time, because a render-time filter shows the truth while narrowed and
+     then quietly resurrects the hidden ticks, which is the original footgun
+     wearing the fix's clothes. */
+  const visibleIds = useMemo(() => filteredCapabilities.map((item) => item.id), [filteredCapabilities]);
+  const visibleFingerprint = visibleIds.join(',');
+
+  /* Adjusted DURING RENDER rather than in an effect, which is React's own
+     pattern for "state that has to change when something it derives from
+     changes" (useState § storing information from previous renders).
+
+     Not a style preference -- an effect would prune one render LATE, so there
+     would be a committed frame in which the filter has already narrowed to
+     three rows while the tray still says thirty and the delete button still
+     says thirty. That frame is precisely the lie this whole feature exists to
+     prevent, and it is long enough to click. Adjusting here re-renders before
+     anything is painted, so the count and the list are never out of step.
+
+     The comparison is against the previous fingerprint rather than run
+     unconditionally, because an unconditional store during render is an
+     infinite loop. */
+  const [lastVisible, setLastVisible] = useState(visibleFingerprint);
+  if (lastVisible !== visibleFingerprint) {
+    setLastVisible(visibleFingerprint);
+    // pruneToVisible returns the SAME Set when nothing was dropped, so the
+    // common case -- a filter change with nothing ticked -- stores an
+    // identical value and React bails out of it.
+    setSelection((current) => pruneToVisible(current, visibleIds));
+  }
+
+  const selectedIds = useMemo(
+    () => filteredCapabilities.filter((item) => selection.has(item.id)).map((item) => item.id),
+    [filteredCapabilities, selection],
+  );
+  const selectedCount = selectedIds.length;
+  const headerSelectState = selectAllState(selection, visibleIds);
+
+  function applyBulk(action: BulkAction) {
+    const ids = selectedIds;
+    if (ids.length === 0) {
+      return;
+    }
+
+    // Taken BEFORE the change, and a copy of every row rather than the array
+    // itself: the array is replaced by the setter below, but a shallow list of
+    // the same objects would still be the same objects.
+    const snapshot = capabilities.map((item) => ({ ...item }));
+    const chosen = new Set(ids);
+    const nowIso = new Date().toISOString();
+
+    setCapabilities((current) => {
+      if (action.kind === 'delete') {
+        return current.filter((item) => !chosen.has(item.id));
+      }
+
+      return current.map((item) => {
+        if (!chosen.has(item.id)) {
+          return item;
+        }
+
+        if (action.kind === 'status') {
+          return {
+            ...item,
+            status: action.status,
+            // Same derivation single-row edits use, so a row changed in bulk
+            // and a row changed alone end up in identical states.
+            reviewNeeded: action.status === 'DRAFT' || item.assignedRoles.length === 0,
+            updatedAt: nowIso,
+          };
+        }
+
+        const assignedRoles = action.kind === 'assign'
+          ? (item.assignedRoles.includes(action.role) ? item.assignedRoles : [...item.assignedRoles, action.role])
+          : item.assignedRoles.filter((role) => role !== action.role);
+
+        return {
+          ...item,
+          assignedRoles,
+          reviewNeeded: item.status === 'DRAFT' || assignedRoles.length === 0,
+          updatedAt: nowIso,
+        };
+      });
+    });
+
+    if (action.kind === 'delete' && editingCapabilityId !== null && chosen.has(editingCapabilityId)) {
+      // The builder was holding a record that no longer exists.
+      resetBuilder();
+    }
+
+    const label = describeBulkAction(action, ids.length);
+    setUndoOffer({ label, snapshot });
+    setSelection(EMPTY_SELECTION);
+    setPendingBulk(null);
+    logTrace('bulk action', label);
+  }
+
+  /** Destructive actions stop for a confirmation; reversible ones just run and offer the step back. */
+  function requestBulk(action: BulkAction) {
+    if (selectedCount === 0) {
+      return;
+    }
+    if (isDestructive(action)) {
+      setPendingBulk(action);
+      return;
+    }
+    applyBulk(action);
+  }
+
+  function undoBulk() {
+    if (!undoOffer) {
+      return;
+    }
+    setCapabilities(undoOffer.snapshot);
+    logTrace('bulk undone', `Reversed: ${undoOffer.label}`);
+    setUndoOffer(null);
+  }
+
   function updateCapability(id: number, updater: (source: Capability) => Capability) {
+    // Any other edit invalidates the step back. The snapshot is the WHOLE
+    // registry, so an undo taken after unrelated edits would silently revert
+    // those too -- an undo that undoes more than it offered to is worse than
+    // no undo. It is only ever the inverse of the action immediately before it.
+    setUndoOffer(null);
     setCapabilities((current) =>
       current.map((capability) => (capability.id === id ? { ...updater(capability), updatedAt: new Date().toISOString() } : capability)),
     );
@@ -763,6 +963,7 @@ export default function AdminCapabilitiesPage() {
   }
 
   function removeCapability(id: number) {
+    setUndoOffer(null); // see updateCapability
     setCapabilities((current) => current.filter((capability) => capability.id !== id));
     if (editingCapabilityId === id) {
       resetBuilder();
@@ -888,6 +1089,7 @@ export default function AdminCapabilitiesPage() {
         createdAt: nowIso,
         updatedAt: nowIso,
       };
+      setUndoOffer(null); // see updateCapability
       setCapabilities((current) => [nextCapability, ...current]);
       logTrace('capability created', `Created ${nextCapability.capabilityId} - ${nextCapability.name}`);
     }
@@ -1517,6 +1719,7 @@ export default function AdminCapabilitiesPage() {
                 <div className="mt-[var(--s4)] flex flex-wrap items-center justify-between gap-[var(--s4)]">
                   <p className="t-muted">
                     Showing {filteredCapabilities.length} of {capabilities.length} on file.
+                    {selectedCount > 0 && ` ${describeCount(selectedCount)} selected.`}
                   </p>
                   {libraryFiltersActive && (
                     <button type="button" onClick={clearLibraryFilters} className="btn btn--ghost">
@@ -1525,6 +1728,166 @@ export default function AdminCapabilitiesPage() {
                   )}
                 </div>
               </article>
+
+              {/* The step back, offered after a bulk action and only then. It
+                  is a lever from the design system's UNDO/REDO section rather
+                  than a toast: a toast that carries the only way to reverse
+                  thirty deletions is a five-second window on the most
+                  consequential control on the screen. */}
+              {undoOffer && (
+                <article
+                  className="mat-leather flex flex-wrap items-center justify-between gap-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s5)]"
+                  role="status"
+                >
+                  <div>
+                    <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">
+                      Done: {undoOffer.label}.
+                    </p>
+                    <p className="t-muted mt-[var(--s2)]">
+                      Undo puts the registry back exactly as it was a moment ago. It is held on this
+                      screen only — leaving or reloading ends the offer, and any other edit replaces it.
+                    </p>
+                  </div>
+                  <div className="undo-redo-group">
+                    <button type="button" onClick={undoBulk} className="btn--lever">
+                      UNDO
+                    </button>
+                    <button type="button" onClick={() => setUndoOffer(null)} className="btn btn--ghost">
+                      KEEP IT
+                    </button>
+                  </div>
+                </article>
+              )}
+
+              {/* The confirmation for a delete. Law 7 -- a demand for
+                  confirmation is a stamp, not a dialog: it sits in the flow
+                  and waits. Deliberately NOT an overlay with a backdrop,
+                  because a backdrop that closes on a stray click is a
+                  destructive confirmation you can dismiss by accident, and the
+                  two buttons below are the only two ways out. */}
+              {pendingBulk && (
+                <article className="pickconfirm" role="alertdialog" aria-label="Confirm a deletion">
+                  <h3 className="pickconfirm-title">
+                    Delete {describeCount(selectedCount)} from the registry?
+                  </h3>
+                  <p className="pickconfirm-body">
+                    <strong>This one does not come back.</strong> Archiving keeps a capability on file
+                    and out of the way; deleting takes it off the registry, and once this screen is
+                    closed there is nothing left to restore it from. If you only want it out of sight,
+                    cancel and use SET ARCHIVED instead.
+                  </p>
+                  <p className="pickconfirm-body">
+                    {selectedCount === 1 ? 'The record going:' : `All ${selectedCount} records going:`}
+                  </p>
+                  <ul className="pickconfirm-list">
+                    {filteredCapabilities
+                      .filter((item) => selection.has(item.id))
+                      .slice(0, 8)
+                      .map((item) => (
+                        <li key={item.id}>
+                          {item.capabilityId} — {item.name}
+                        </li>
+                      ))}
+                    {selectedCount > 8 && <li>…and {selectedCount - 8} more</li>}
+                  </ul>
+                  <div className="pickconfirm-actions">
+                    {/* Cancel first in the DOM, so the first thing a keyboard
+                        user reaches for -- and the first thing a screen reader
+                        announces after the warning -- is the way out. */}
+                    <button type="button" onClick={() => setPendingBulk(null)} className="btn">
+                      CANCEL
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => applyBulk(pendingBulk)}
+                      className="btn btn--danger"
+                    >
+                      YES, DELETE {describeCount(selectedCount).toUpperCase()}
+                    </button>
+                  </div>
+                </article>
+              )}
+
+              {/* The tray. Sticky, because a count that has scrolled off screen
+                  is how the wrong number gets confirmed. It appears only when
+                  something is selected -- a permanent tray of disabled bulk
+                  buttons is furniture. */}
+              {selectedCount > 0 && (
+                <div className="picktray">
+                  <span className="picktray-count">{describeCount(selectedCount)} selected</span>
+                  <button
+                    type="button"
+                    onClick={() => requestBulk({ kind: 'status', status: 'ACTIVE' })}
+                    className="btn btn--ghost"
+                  >
+                    SET ACTIVE
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => requestBulk({ kind: 'status', status: 'DRAFT' })}
+                    className="btn btn--ghost"
+                  >
+                    SET DRAFT
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => requestBulk({ kind: 'status', status: 'BLOCKED' })}
+                    className="btn btn--ghost"
+                  >
+                    SET BLOCKED
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => requestBulk({ kind: 'status', status: 'ARCHIVED' })}
+                    className="btn btn--ghost"
+                  >
+                    SET ARCHIVED
+                  </button>
+
+                  <label className="flex items-center gap-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                    <span className="sr-only">Role for the two buttons beside this</span>
+                    <select
+                      value={bulkRole}
+                      onChange={(event) => setBulkRole(event.target.value as RoleName)}
+                      className="input"
+                      aria-label="Role to give or take away in bulk"
+                    >
+                      {ROLE_OPTIONS.map((role) => (
+                        <option key={role} value={role}>{role}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => requestBulk({ kind: 'assign', role: bulkRole })}
+                    className="btn btn--ghost"
+                  >
+                    GIVE TO {bulkRole.toUpperCase()}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => requestBulk({ kind: 'unassign', role: bulkRole })}
+                    className="btn btn--ghost"
+                  >
+                    TAKE FROM {bulkRole.toUpperCase()}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => requestBulk({ kind: 'delete' })}
+                    className="btn btn--danger"
+                  >
+                    DELETE {describeCount(selectedCount).toUpperCase()}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelection(EMPTY_SELECTION)}
+                    className="btn btn--ghost"
+                  >
+                    CLEAR SELECTION
+                  </button>
+                </div>
+              )}
 
               {/*
                 Both the phone list and the desk table used to render an empty
@@ -1570,12 +1933,64 @@ export default function AdminCapabilitiesPage() {
                 </article>
               ) : (
               <article className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] p-0">
+                {/* ONE select-all control, above both renderings rather than
+                    one per breakpoint. Both containers are in the DOM at every
+                    width (a media query hides one), so a control inside each
+                    would put two checkboxes with the same accessible name in
+                    the tree and announce the list twice -- the same reason the
+                    empty panel above is shared. */}
+                <div className="flex flex-wrap items-center gap-[var(--s4)] border-b border-[color:var(--hide-700)] px-4 py-3">
+                  <label className="flex min-h-[var(--tap)] cursor-pointer items-center gap-[var(--s3)] text-[length:var(--t-sm)] text-[color:var(--bone-200)]">
+                    <input
+                      type="checkbox"
+                      className="h-5 w-5 accent-[var(--brass-500)]"
+                      checked={headerSelectState === 'all'}
+                      /* Indeterminate is not an attribute -- it is a DOM
+                         property, so it has to be set on the node. An
+                         unchecked box beside "4 selected" reads as a bug and a
+                         checked one is a lie; this is the only honest third
+                         state. */
+                      ref={(node) => {
+                        if (node) node.indeterminate = headerSelectState === 'some';
+                      }}
+                      onChange={() => setSelection((current) => nextSelectAll(current, visibleIds))}
+                      aria-label={`Select all ${describeCount(filteredCapabilities.length)} shown`}
+                    />
+                    <span>
+                      {headerSelectState === 'all' ? 'Deselect all shown' : 'Select all shown'}
+                      {' '}
+                      <span className="t-muted">({filteredCapabilities.length})</span>
+                    </span>
+                  </label>
+                  {selectedCount > 0 && (
+                    <p className="t-muted">
+                      {describeCount(selectedCount)} selected. Selecting is scoped to what the filters
+                      show — change a filter and anything that leaves the list leaves the selection, so
+                      a bulk action can never reach a record you cannot see.
+                    </p>
+                  )}
+                </div>
+
                 <div className="divide-y divide-[var(--hide-700)] lg:hidden">
                   {filteredCapabilities.map((capability) => {
                     const expanded = expandedCapabilityId === capability.id;
                     const assignmentFocused = assignmentFocusId === capability.id;
+                    const picked = selection.has(capability.id);
                     return (
-                      <div key={capability.id} className="space-y-3 px-4 py-4">
+                      <div
+                        key={capability.id}
+                        className={`pickrow space-y-3 px-4 py-4${picked ? ' pickrow--picked' : ''}`}
+                      >
+                        <label className="flex min-h-[var(--tap)] cursor-pointer items-center gap-[var(--s3)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                          <input
+                            type="checkbox"
+                            className="h-5 w-5 accent-[var(--brass-500)]"
+                            checked={picked}
+                            onChange={() => setSelection((current) => toggleSelected(current, capability.id))}
+                            aria-label={`Select ${capability.capabilityId} ${capability.name}`}
+                          />
+                          <span>{picked ? 'Selected' : 'Select'}</span>
+                        </label>
                         <div className="space-y-2">
                           <p className="text-[length:var(--t-xs)] font-mono uppercase tracking-[0.1em] text-[color:var(--brass-300)]">{capability.capabilityId}</p>
                           <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>{capability.name}</h3>
@@ -1697,7 +2112,11 @@ export default function AdminCapabilitiesPage() {
 
                 <div className="hidden overflow-x-auto lg:block">
                   <div className="min-w-[1260px]">
-                    <div className="grid grid-cols-[100px_minmax(200px,1.3fr)_minmax(160px,1fr)_minmax(150px,1fr)_120px_130px_150px_170px] gap-2 border-b border-[color:var(--hide-700)] bg-[var(--hide-900)] px-4 py-3 text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-300)]">
+                    <div className="grid grid-cols-[36px_100px_minmax(200px,1.3fr)_minmax(160px,1fr)_minmax(150px,1fr)_120px_130px_150px_170px] gap-2 border-b border-[color:var(--hide-700)] bg-[var(--hide-900)] px-4 py-3 text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-300)]">
+                      {/* The select-all lives above the table, once. This
+                          column is its header cell and carries only the label
+                          for the ticks below it. */}
+                      <span className="sr-only">Selected</span>
                       <span>ID</span>
                       <span>Capability</span>
                       <span>Category</span>
@@ -1712,9 +2131,22 @@ export default function AdminCapabilitiesPage() {
                   {filteredCapabilities.map((capability) => {
                     const expanded = expandedCapabilityId === capability.id;
                     const assignmentFocused = assignmentFocusId === capability.id;
+                    const picked = selection.has(capability.id);
                     return (
-                      <div key={capability.id} className="bg-[var(--hide-900)]">
-                        <div className="grid grid-cols-[100px_minmax(200px,1.3fr)_minmax(160px,1fr)_minmax(150px,1fr)_120px_130px_150px_170px] gap-2 px-4 py-3 text-[length:var(--t-sm)] text-[color:var(--bone-100)]">
+                      <div
+                        key={capability.id}
+                        className={`pickrow bg-[var(--hide-900)]${picked ? ' pickrow--picked' : ''}`}
+                      >
+                        <div className="grid grid-cols-[36px_100px_minmax(200px,1.3fr)_minmax(160px,1fr)_minmax(150px,1fr)_120px_130px_150px_170px] gap-2 px-4 py-3 text-[length:var(--t-sm)] text-[color:var(--bone-100)]">
+                          <span>
+                            <input
+                              type="checkbox"
+                              className="h-5 w-5 accent-[var(--brass-500)]"
+                              checked={picked}
+                              onChange={() => setSelection((current) => toggleSelected(current, capability.id))}
+                              aria-label={`Select ${capability.capabilityId} ${capability.name}`}
+                            />
+                          </span>
                           <span>{capability.capabilityId}</span>
                           <span>
                             <strong className="block text-[length:var(--t-sm)]">{capability.name}</strong>
