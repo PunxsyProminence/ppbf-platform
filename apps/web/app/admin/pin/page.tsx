@@ -116,7 +116,16 @@ function PinManagementPageContent() {
 
       setPin('');
       setConfirmPin('');
-      setSuccess(mode === 'activate' ? 'PIN activated successfully.' : 'PIN reset successfully. Existing sessions were revoked.');
+      // Both messages now say what the athlete has to do next, because both
+      // paths set must_change_pin: the PIN typed on this screen is one the
+      // administrator knows, so it gets the athlete in once and no further.
+      // Saying only "activated successfully" left an admin telling a kid a
+      // PIN and believing that was the end of it.
+      setSuccess(
+        mode === 'activate'
+          ? 'PIN activated. Tell the athlete this PIN -- they will be asked to choose their own the first time they sign in, and it will not work for anything else until they do.'
+          : 'PIN reset successfully. Existing sessions were revoked, and the athlete will be asked to choose their own PIN on their next sign-in.',
+      );
       setLoading(true);
       await loadDirectory();
     } catch (submitError) {
