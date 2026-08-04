@@ -5,13 +5,17 @@
 
    WHY THIS EXISTS
 
-   There are 68 routes and no way to look at them. Judging a design change
-   meant starting the dev server and clicking through 68 pages by hand, once
-   per viewport, remembering to switch roles on the way — so in practice
-   nobody did it, and a change was judged on the two or three surfaces the
-   author happened to have open. The design system's own previews do not close
-   this gap: design-system/*.html are hand-authored mockups of the language,
-   not photographs of the pages that shipped, and the two drift apart silently.
+   There are getting on for a hundred routes and no way to look at them.
+   Judging a design change meant starting the dev server and clicking through
+   every one by hand, once per viewport, remembering to switch roles on the
+   way — so in practice nobody did it, and a change was judged on the two or
+   three surfaces the author happened to have open. The design system's own
+   previews do not close this gap: design-system/*.html are hand-authored
+   mockups of the language, not photographs of the pages that shipped, and the
+   two drift apart silently.
+
+   Counts are deliberately absent from this header. The first version wrote
+   "68 routes" in four places and main added twelve the same week.
 
    THIS IS NOT A PIXEL BASELINE, AND MUST NOT BECOME ONE.
 
@@ -24,7 +28,7 @@
    That argument is about ASSERTING pixels. It has nothing to say about
    capturing them for a person to look at, which is what this does — nothing
    here compares two images or fails on a difference, and nothing here belongs
-   in CI. A human opens the sheet and sees 68 pages at once. If someone later
+   in CI. A human opens the sheet and sees every page at once. If someone later
    wants to diff these prints automatically, the container must pin the browser
    revision first; read those two files before trying.
 
@@ -37,7 +41,7 @@
 
    A route the map does not name is captured anyway and flagged UNLISTED.
    That is a finding, not an error: the map is what the corridor advertises, so
-   an unlisted surface is one nobody can navigate to. There are 8 today.
+   an unlisted surface is one nobody can navigate to. The run prints how many.
 
    USAGE
 
@@ -195,8 +199,14 @@ function seatForRoute(route: string): string | null {
 
 // ── route discovery ────────────────────────────────────────────────────────
 
-/** Every route the app serves, read off the filesystem so new pages self-enrol. */
-async function discoverRoutes(dir: string, prefix = ''): Promise<string[]> {
+/**
+ * Every route the app serves, read off the filesystem so new pages self-enrol.
+ *
+ * `skipped` collects the dynamic routes this cannot photograph. They are
+ * reported rather than dropped in silence: a sheet that quietly omits a
+ * surface reads as complete coverage when it is not.
+ */
+async function discoverRoutes(dir: string, skipped: string[], prefix = ''): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true });
   const routes: string[] = [];
 
@@ -209,12 +219,20 @@ async function discoverRoutes(dir: string, prefix = ''): Promise<string[]> {
     const { name } = entry;
     // api/ serves no page, and _-prefixed folders are private by convention.
     if (name === 'api' || name.startsWith('_') || name.startsWith('.')) continue;
-    // A dynamic segment needs a real parameter to render; there are none
-    // today, and inventing one would photograph a 404. Route groups are
-    // organisational and contribute nothing to the URL.
-    if (name.startsWith('[')) continue;
+
+    // A dynamic segment needs a real parameter to render, and inventing one
+    // photographs a 404 or somebody else's organization. Giving these real
+    // coverage means seeding an id per segment, which is a fixtures question
+    // rather than a screenshot one -- so they are named in the output and left
+    // for whoever wants to answer it.
+    if (name.startsWith('[')) {
+      skipped.push(`${prefix}/${name}`);
+      continue;
+    }
+
+    // Route groups are organisational and contribute nothing to the URL.
     const segment = name.startsWith('(') && name.endsWith(')') ? '' : `/${name}`;
-    routes.push(...await discoverRoutes(path.join(dir, name), prefix + segment));
+    routes.push(...await discoverRoutes(path.join(dir, name), skipped, prefix + segment));
   }
 
   return routes;
@@ -569,7 +587,8 @@ async function main() {
     return true;
   });
 
-  let routes = (await discoverRoutes(APP_DIR)).sort();
+  const dynamic: string[] = [];
+  let routes = (await discoverRoutes(APP_DIR, dynamic)).sort();
   if (only) routes = routes.filter((r) => only.includes(r));
   if (room) routes = routes.filter((r) => (doorForPath(r)?.room ?? 'office') === room);
 
@@ -583,6 +602,9 @@ async function main() {
   console.log(`${routes.length} route(s) × ${viewports.length} viewport(s) = ${routes.length * viewports.length} print(s).`);
   if (unlisted.length) {
     console.log(`${unlisted.length} not in the building map, so the corridor cannot reach them: ${unlisted.join(', ')}`);
+  }
+  if (dynamic.length) {
+    console.log(`${dynamic.length} dynamic route(s) not photographed, each needs a real id: ${dynamic.sort().join(', ')}`);
   }
 
   // A stale print of a route that no longer exists is worse than no print --

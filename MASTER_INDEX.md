@@ -39,7 +39,7 @@ branches in this repo have repeatedly been many commits behind — verify agains
   screen previews. Open it before designing a new surface. These are hand-authored
   mockups of the language, not pictures of the shipped pages.
 - `npm run shots` → `apps/web/page-shots/gallery.html` — the shipped pages themselves.
-  Photographs all 68 routes at two widths, each opened as the role that opens that
+  Photographs every route at two widths, each opened as the role that opens that
   door, and lays the prints out on one contact sheet grouped by room. Flags redirects,
   horizontal overflow, and routes the building map does not list. Prints for a person
   to judge, not a pixel baseline — see

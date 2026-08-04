@@ -383,7 +383,7 @@ To see the real thing:
 npm run shots            # from the repo root
 ```
 
-`apps/web/scripts/page-shots.ts` photographs all 68 routes at desktop and Pixel 7
+`apps/web/scripts/page-shots.ts` photographs every route at desktop and Pixel 7
 widths and lays the prints out on one contact sheet at
 `apps/web/page-shots/gallery.html` — grouped by room, filterable, click a plate for
 the full-length page. It starts a dev server if one is not already running.
@@ -397,7 +397,9 @@ surface photographs as itself instead of as the login screen.
 It flags three things worth looking at: a page that **redirected** somewhere else, one
 that **overflows** its viewport horizontally, and one the building map does not list
 (**UNLISTED**) — a surface the corridor cannot reach, which is a finding rather than a
-fault of the script.
+fault of the script. Dynamic routes such as `/store/[organizationId]` are named in the
+run's output but not photographed: each needs a real id, which is a fixtures question
+rather than a screenshot one.
 
 **These are prints for a person to judge, not a baseline.** Nothing compares two
 images and nothing fails on a difference. Before adding that, read the header of
