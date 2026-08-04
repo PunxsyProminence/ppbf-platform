@@ -10,7 +10,12 @@
 | Parent original-25 | _unmapped_ |
 
 ## Intent
-_One paragraph: what this module owns and what it must never do._
+Own the organization-scoped read model for one athlete's existing record. The
+Passbook slice assembles identity, attendance, sessions, readiness, goals,
+corner relationships and coach observations, plus progression gaps, without
+creating a second source of truth. It must never infer clinical facts, invent
+status values, or expose an individual athlete to board, public, platform-owner,
+unassigned-coach, or unlinked-guardian audiences.
 
 ## Boundaries
 - Does **not** auto-approve progression, medical, or board decisions.
@@ -18,22 +23,42 @@ _One paragraph: what this module owns and what it must never do._
 - Does **not** invent metrics that are not stored by the platform.
 
 ## Dependencies
-- Upstream: 
-- Downstream: 
-- Related original-25 capability: 
+- Upstream: `pilot.athletes`, `pilot.attendance`, `pilot.sessions`,
+  `pilot.readiness`, `pilot.goals`, `pilot.guardian_links`, `pilot.parents`,
+  `pilot.coach_observations`, `pilot.progression_gaps`; existing session and
+  athlete-access helpers.
+- Downstream: athlete/guardian Passbook surfaces and the coach progression-gap
+  queue.
+- Related original-25 capability: Athlete profile / roster.
 
 ## Acceptance criteria
-- [ ] Data model / tables named
-- [ ] API surface listed (or explicitly none)
-- [ ] Roles that may read / write
-- [ ] Safety / refusal cases
-- [ ] Audit events
-- [ ] UI surface or "API-only"
+- [x] Data model / tables named
+- [x] API surface listed: `GET /api/pilot/passbook?athlete_id=...` and
+  `GET /api/pilot/passbook/gaps`
+- [x] Roles named: organization admin, assigned coach, self athlete, and linked
+  parent may read one book; organization admin and assigned coach may read the
+  open-gap queue; this slice has no write path.
+- [x] Safety / refusal cases: authentication and first-PIN gate inherited from
+  `requirePrincipal`; individual access inherited from
+  `assertActorCanAccessAthlete`; board, public and platform owner receive no
+  individual data; every SQL read is organization-scoped.
+- [x] Audit events: none. This is a read-only slice and creates no state change
+  to audit.
+- [x] API-only. Visual surfaces remain separately owned.
 
 ## Implementation notes
-_Scaffold only. Do not mark active until promotion review._
+Passbook v1 read paths are implemented in `apps/web/src/server/pilot/passbook.ts`.
+Attendance values are normalized only when they match the canonical
+`PRESENT`/`LATE`/`ABSENT` stamp vocabulary; unsupported stored values remain
+visible as schema drift and receive no invented stamp. `gym_status` remains the
+separate roster-membership vocabulary `active`/`training`/`inactive`.
+
+Governance remains inactive pending promotion review. The tracker CSV was not
+updated in this slice because open PR #191 owns that file; it must be sequenced
+after that PR.
 
 ## Audit log
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
+| 2026-08-04 | Codex | Added issue #156 Passbook read-model and API-only slice; governance remains inactive. |
