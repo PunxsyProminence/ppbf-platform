@@ -53,11 +53,43 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as {
       assignment_id?: string;
       athlete_id?: string;
+      completion_id?: string;
       reps_completed?: number;
       notes?: string;
       verify?: boolean;
       verified?: boolean;
     };
+
+    // Coach/admin verifying an existing athlete-logged completion. No new
+    // completion row is written; only the verification_status flips.
+    if (body.completion_id && body.verify !== undefined) {
+      requireRole(principal, ['coach', 'admin', 'organization_admin']);
+
+      if (!body.athlete_id) {
+        throw new Error('Missing athlete_id');
+      }
+
+      await assertActorCanAccessAthlete(principal, body.athlete_id);
+
+      const updated = await verifyCompletion(
+        body.completion_id,
+        principal.accountId,
+        body.verified !== false,
+        principal.organizationId,
+      );
+      if (!updated) {
+        return hiddenNotFound();
+      }
+
+      // Ensure the completion belongs to an assignment for this athlete so a
+      // stolen completion_id from another roster member cannot be verified.
+      const assignment = await getDrillAssignmentById(principal.organizationId, updated.assignment_id);
+      if (!assignment || assignment.athlete_id !== body.athlete_id) {
+        return hiddenNotFound();
+      }
+
+      return NextResponse.json(updated);
+    }
 
     if (!body.assignment_id || !body.athlete_id) {
       throw new Error('Missing assignment_id or athlete_id');
@@ -70,7 +102,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Assignment does not belong to the specified athlete' }, { status: 400 });
     }
 
-    // Record the completion
+    // Record the completion (also recomputes assignment percentage/status).
     const completion = await recordCompletion({
       organizationId: principal.organizationId,
       assignmentId: body.assignment_id,
@@ -79,10 +111,15 @@ export async function POST(request: NextRequest) {
       notes: body.notes,
     });
 
-    // If verification requested (coach only). assertActorCanAccessAthlete
+    // If verification requested on the same write (coach only). assertActorCanAccessAthlete
     // above already confirmed this coach is assigned to body.athlete_id.
     if (body.verify && (principal.role === 'coach' || principal.role === 'admin' || principal.role === 'organization_admin')) {
-      await verifyCompletion(completion.completion_id, principal.accountId, body.verified || false);
+      await verifyCompletion(
+        completion.completion_id,
+        principal.accountId,
+        body.verified || false,
+        principal.organizationId,
+      );
     }
 
     return NextResponse.json(completion, { status: 201 });
