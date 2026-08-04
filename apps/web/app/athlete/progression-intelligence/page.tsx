@@ -442,7 +442,7 @@ export default function AthleteProgressionIntelligencePage() {
                                           <p className="t-muted mt-[var(--s2)]">Completed {completion.reps_completed} reps</p>
                                         )}
                                         {completion.notes && (
-                                          <p className="mt-[var(--s3)] text-[length:var(--t-sm)] italic text-[color:var(--bone-300)]">"{completion.notes}"</p>
+                                          <p className="mt-[var(--s3)] text-[length:var(--t-sm)] italic text-[color:var(--bone-300)]">&ldquo;{completion.notes}&rdquo;</p>
                                         )}
                                         {completion.verified_at && (
                                           <p className="mt-[var(--s2)] text-[length:var(--t-xs)] font-medium text-[color:var(--cleared-ink)]">

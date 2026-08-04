@@ -115,7 +115,16 @@ export default function CoachProgressionIntelligencePage() {
   }, []);
 
   const reloadAthleteData = useCallback(async (athleteId: string) => {
-    if (!athleteId) return;
+    // Clearing lives here rather than in the effect below: setState called
+    // synchronously in an effect body triggers cascading renders, and the lint
+    // rule that blocks CI is pointing at a real problem rather than a style
+    // preference. Deselecting an athlete is just a load of "no athlete".
+    if (!athleteId) {
+      setGaps([]);
+      setAssignments([]);
+      setCompletionsByAssignment({});
+      return;
+    }
     const [gapsRes, assignRes] = await Promise.all([
       fetch(`${apiBase()}/api/pilot/progression/gaps?athlete_id=${encodeURIComponent(athleteId)}`, { credentials: 'include' }),
       fetch(`${apiBase()}/api/pilot/progression/assignments?athlete_id=${encodeURIComponent(athleteId)}`, { credentials: 'include' }),
@@ -147,12 +156,6 @@ export default function CoachProgressionIntelligencePage() {
   }, []);
 
   useEffect(() => {
-    if (!selectedAthlete) {
-      setGaps([]);
-      setAssignments([]);
-      setCompletionsByAssignment({});
-      return;
-    }
     void (async () => {
       try {
         await reloadAthleteData(selectedAthlete);
