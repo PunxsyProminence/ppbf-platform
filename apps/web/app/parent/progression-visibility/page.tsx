@@ -72,34 +72,48 @@ export default function ParentProgressionVisibilityPage() {
 
   return (
     <RoleStandaloneView roleLabel="Parent Hub" routeLabel="/parent/progression-visibility" allowedRoles={['parent']} showShellHeader={false}>
-      <div className="space-y-6">
-        <header className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-5">
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--brass-300)]">Closed-Loop Progression Intelligence</p>
-          <h1 className="mt-2 text-3xl font-black text-[color:var(--bone-100)]">Parent Progression Visibility</h1>
-          <p className="mt-2 text-sm text-[color:var(--bone-300)]">
-            Family-facing progression surface for support visibility only.
-          </p>
-          <p className="mt-2 text-xs font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">
-            {capabilityStatus}
-          </p>
-          {errorMessage ? <p className="mt-2 text-xs text-[var(--locked-ink)]">{errorMessage}</p> : null}
-        </header>
+      {/* Family-facing surface — warm canvas ground (Law 6), paper panels on it. */}
+      <div className="on-canvas min-h-full rounded-[var(--r-lg)] p-[var(--s5)] md:p-[var(--s6)]">
+        <div className="mx-auto w-full max-w-[1080px] space-y-[var(--s6)]">
+          <header className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)]">
+            <p className="t-eyebrow">Closed-Loop Progression Intelligence</p>
+            <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>
+              Parent Progression Visibility
+            </h1>
+            <p className="t-body mt-[var(--s3)]">
+              Family-facing progression surface for support visibility only.
+            </p>
+            <p className="t-label mt-[var(--s3)]">
+              {capabilityStatus}
+            </p>
+            {errorMessage ? (
+              <div
+                className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-[color:var(--locked)] p-[var(--s4)]"
+                style={{ background: 'color-mix(in srgb, var(--locked) 10%, var(--canvas-warm))' }}
+                role="alert"
+              >
+                <span className="badge badge--locked"><i>✕</i>Failed</span>
+                <p className="t-body mt-[var(--s3)]">{errorMessage}</p>
+              </div>
+            ) : null}
+          </header>
 
-        <section className="grid gap-3 md:grid-cols-2">
-          {familyPanels.map((panel) => (
-            <article key={panel} className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4">
-              <p className="text-sm font-semibold text-[color:var(--bone-200)]">{panel}</p>
-              <p className="mt-1 text-xs font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">
-                {capabilityStatus}
-              </p>
-            </article>
-          ))}
-        </section>
+          <section className="grid gap-[var(--s4)] md:grid-cols-2">
+            {familyPanels.map((panel) => (
+              <article key={panel} className="mat-paper rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="t-body font-semibold">{panel}</p>
+                <p className="t-label mt-[var(--s2)]">
+                  {capabilityStatus}
+                </p>
+              </article>
+            ))}
+          </section>
 
-        <div className="flex flex-wrap gap-3">
-          <Link href="/parent/dashboard" className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-800)] px-4 py-2 text-xs font-mono text-[color:var(--brass-300)]">
-            Back to Parent Hub
-          </Link>
+          <div className="flex flex-wrap gap-[var(--s3)]">
+            <Link href="/parent/dashboard" className="btn btn--ghost">
+              Back to Parent Hub
+            </Link>
+          </div>
         </div>
       </div>
     </RoleStandaloneView>

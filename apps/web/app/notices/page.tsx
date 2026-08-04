@@ -218,7 +218,16 @@ function NoticesAuthoringPage() {
             Coaches and admins write what the app says. Pick the surface it belongs on, give it a window if it should
             only run for a while, and retire it when it is done.
           </p>
-          {loadError ? <p className="text-sm text-[color:var(--safety-locked)]">{loadError}</p> : null}
+          {loadError ? (
+            /* Law 3: the failed load carries a glyph and an uppercase label,
+               not the safety red alone. */
+            <div role="alert" className="flex flex-wrap items-center gap-[var(--s3)]">
+              <span className="badge badge--locked">
+                <i>✕</i>Load failed
+              </span>
+              <p className="text-sm text-[color:var(--hide-950)]">{loadError}</p>
+            </div>
+          ) : null}
         </header>
 
         <section className="mt-[var(--s5)] space-y-[var(--s3)] mat-paper rounded-[var(--r-md)] border border-[color:rgba(107,78,18,.28)] p-[var(--s4)]">
@@ -353,7 +362,10 @@ function NoticesAuthoringPage() {
             <p className={`inline-block border-2 px-2 py-1 text-[length:var(--t-xs)] font-mono font-bold uppercase ${LIFECYCLE_TONE[draftLifecycle]}`}>
               {LIFECYCLE_LABELS[draftLifecycle]} - {describeWindow(draftStartsAt, draftEndsAt)}
             </p>
-            <article className="rounded-2xl border border-[rgba(0,0,0,0.12)] bg-white px-4 py-3 shadow-[var(--shadow-sm)]">
+            {/* The preview renders on paper, one of the five materials — the
+                bg-white card it used to be is not (Law 6) — and its radius
+                comes off the Fibonacci scale. */}
+            <article className="mat-paper rounded-[var(--r-md)] border border-[color:rgba(0,0,0,0.12)] px-4 py-3">
               <p className="text-sm leading-6 text-[color:var(--hide-950)]">
                 {draft.message.trim() || 'Nothing written yet, so this surface would render no banner at all.'}
               </p>
@@ -407,7 +419,15 @@ function NoticesAuthoringPage() {
           </div>
         </section>
 
-        <div className="mt-8">
+        <div className="mt-8 flex flex-wrap gap-3">
+          {/* The two-second version of this page: the boards as they hang on
+              the dashboards, one line each, writable in place. Same table, same
+              endpoints, same rows -- see app/chalkboard/page.tsx. The link is
+              here because a coach with something to say opens this page, and a
+              route nobody can reach is a dead feature. */}
+          <Link href="/chalkboard" className="btn btn--ghost">
+            The boards, as they hang
+          </Link>
           <Link
             href="/operations"
             className="btn btn--ghost"

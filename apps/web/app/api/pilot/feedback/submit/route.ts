@@ -46,7 +46,21 @@ export async function POST(request: NextRequest) {
       throw new Error('Unsupported kind');
     }
 
-    const created = await createFeedbackSubmission({
+    // Awaited, so the submission is stored before anyone is told anything --
+    // but NOTHING it returns is sent back, and that is the point.
+    //
+    // createFeedbackSubmission resolves with { submission_id, route }. `route`
+    // is the classifier's verdict: whether these words were read as a child
+    // disclosing harm or as a bug report. Handing it back -- or handing back an
+    // id that could be used to look it up -- would turn this endpoint into an
+    // oracle. Anyone could submit throwaway text and read the response to learn
+    // which phrasings reach a human, including an adult a child might be
+    // disclosing about, sitting beside them while they type.
+    //
+    // So the reply is the same for every submission: it worked, and a person
+    // reads it. If you are here to add the submission id to this response,
+    // that is what it would cost.
+    await createFeedbackSubmission({
       organizationId: principal.organizationId,
       accountId: principal.accountId,
       role: principal.role,

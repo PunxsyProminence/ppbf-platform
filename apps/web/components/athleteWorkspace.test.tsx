@@ -200,7 +200,11 @@ describe('athlete workspace honesty', () => {
 
     fireEvent.change(screen.getByPlaceholderText('Goal title'), { target: { value: 'Land 100 clean jabs' } });
     fireEvent.change(screen.getByPlaceholderText('Success metric'), { target: { value: '100 reps logged' } });
-    const targetDate = document.querySelector('input[type="date"]') as HTMLInputElement;
+    // By label, not `input[type="date"]`: the Goals tab now carries two date
+    // fields -- this form's required target date, and the optional one on the
+    // own-words board above it, where most goals have no date at all. The old
+    // selector took whichever came first in the DOM.
+    const targetDate = screen.getByLabelText('Goal target date') as HTMLInputElement;
     fireEvent.change(targetDate, { target: { value: '2026-09-01' } });
 
     const createGoal = screen.getByRole('button', { name: 'Create Goal' });
@@ -223,14 +227,18 @@ describe('athlete workspace honesty', () => {
 
     fireEvent.change(screen.getByPlaceholderText('Goal title'), { target: { value: 'Land 100 clean jabs' } });
     fireEvent.change(screen.getByPlaceholderText('Success metric'), { target: { value: '100 reps logged' } });
-    const targetDate = document.querySelector('input[type="date"]') as HTMLInputElement;
+    // By label, not `input[type="date"]`: the Goals tab now carries two date
+    // fields -- this form's required target date, and the optional one on the
+    // own-words board above it, where most goals have no date at all. The old
+    // selector took whichever came first in the DOM.
+    const targetDate = screen.getByLabelText('Goal target date') as HTMLInputElement;
     fireEvent.change(targetDate, { target: { value: '2026-09-01' } });
 
     fireEvent.click(screen.getByRole('button', { name: 'Create Goal' }));
 
     // Nothing is written anywhere without a session, so the message must not
     // imply the goal survived.
-    await waitFor(() => expect(screen.getByText(/Goal was not saved/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/That goal did not save/)).toBeTruthy());
     expect(screen.queryByText(/saved locally/i)).toBeNull();
     expect(fetchCalls.some((call) => call.url.endsWith('/api/pilot/goals'))).toBe(false);
   });
@@ -251,7 +259,7 @@ describe('athlete safety reporting', () => {
     painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true, severity: 'high' } });
     await openPainReport();
 
-    await screen.findByText(/raised for coach review/);
+    await screen.findByText(/flagged for a coach to look at/);
     const [observation] = postedTo('/api/pilot/shadow/formulas/observations');
     expect(OBSERVATION_KINDS).toContain(observation.body.kind);
     expect(FORMULA_UNITS).toContain(observation.body.unit);
@@ -362,7 +370,7 @@ describe('an open session across a reload', () => {
       // Still open: this is a draft save, not an early check-out.
       completed_flag: false,
     }));
-    expect(await screen.findByText(/Saved to your session record/)).toBeTruthy();
+    expect(await screen.findByText(/What you wrote stays put/)).toBeTruthy();
   });
 
   test('a failed check-out leaves the session open and the notes on screen', async () => {
@@ -416,20 +424,34 @@ describe('authored announcements on the athlete workspace', () => {
     );
   });
 
+  /* CHANGED DELIBERATELY (Phase 4, community surfaces).
+     The 'motivation' kind used to render as a paper card headed "From the Gym".
+     It renders on the chalkboard now -- same table, same placement, same kind,
+     different object (see Chalkboard.tsx). So the heading is gone on purpose
+     and the assertions below moved onto the board, which is a stronger check:
+     the previous ones would have passed on a heading with nothing under it. */
   test('live motivational copy is drawn where the athlete will see it', async () => {
     liveAnnouncements = [announcement()];
-    await renderWorkspace();
+    const { container } = render(<AthleteWorkspace />);
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     expect(await screen.findByText('Hands up, chin down.')).toBeTruthy();
-    expect(screen.getByText('From the Gym')).toBeTruthy();
+    expect(container.querySelector('.chalkboard')?.getAttribute('data-state')).toBe('written');
+    // The paper card it replaced is gone, not sitting beside it.
+    expect(screen.queryByText('From the Gym')).toBeNull();
   });
 
   test('an item placed elsewhere is not drawn here', async () => {
     liveAnnouncements = [announcement({ placement: 'coach_workspace', message: 'Coaches only.' })];
-    await renderWorkspace();
+    const { container } = render(<AthleteWorkspace />);
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     expect(screen.queryByText('Coaches only.')).toBeNull();
-    expect(screen.queryByText('From the Gym')).toBeNull();
+    expect(container.querySelector('.chalkboard')?.getAttribute('data-state')).toBe('blank');
   });
 
   test('nothing live leaves no heading and no empty box behind', async () => {
@@ -437,6 +459,10 @@ describe('authored announcements on the athlete workspace', () => {
 
     expect(screen.queryByText('From the Gym')).toBeNull();
     expect(screen.queryByText('Gym Notices')).toBeNull();
+    // The board is still hanging there, unwritten. A chalkboard with nothing on
+    // it is an object, not an empty box -- unlike the notice banner above,
+    // which correctly renders nothing at all when nothing is live.
+    expect(screen.getByText('Nothing on the board.')).toBeTruthy();
   });
 
   test('a failed announcements read leaves the rest of the workspace working', async () => {
@@ -444,6 +470,9 @@ describe('authored announcements on the athlete workspace', () => {
     await renderWorkspace();
 
     expect(screen.queryByText('From the Gym')).toBeNull();
+    // A board that could not be read is a blank board, and says nothing about
+    // its own plumbing on top of the page's real work.
+    expect(screen.getByText('Nothing on the board.')).toBeTruthy();
     expect(screen.getByText('Current Readiness')).toBeTruthy();
     expect(await screen.findByRole('button', { name: 'Check In' })).toBeTruthy();
   });

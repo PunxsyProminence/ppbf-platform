@@ -30,6 +30,26 @@ const organizationId = process.env.PILOT_ORG_A_ID || process.env.PPBF_PILOT_DEFA
 
 const athleteAccountId = process.env.PILOT_SHADOW_ATHLETE_ACCOUNT_ID || '';
 const athletePin = process.env.PILOT_SHADOW_ATHLETE_PIN || '';
+
+/**
+ * The PIN the gate's athlete picks for itself, replacing the one the
+ * administrator typed at activation.
+ *
+ * Deliberately NOT a new environment variable. A required env var the deploy
+ * workflow does not set yet fails the gate on its next run for a
+ * configuration reason, and adding it means editing deploy-staging.yml -- a
+ * contested file -- for a value nobody needs to choose.
+ *
+ * Deliberately NOT derived from athletePin either: every arithmetic
+ * transformation of a six-digit number can land on a run, a repeat or a
+ * palindrome, all of which validatePinPolicy refuses, and the failure would
+ * appear as a mysterious gate break rather than as a bad PIN. These are fixed,
+ * checked against every rule in pinPolicy.ts (six digits, no repeated digit,
+ * no ascending or descending run, no short cycle, no doubled pairs, no
+ * palindrome, and not DEFAULT_FIRST_LOGIN_PIN). The second exists only so the
+ * gate still works if a fixture is ever provisioned on the first.
+ */
+const athleteChosenPin = athletePin === '481902' ? '739154' : '481902';
 const athleteId = process.env.PILOT_SHADOW_ATHLETE_ID || '';
 const guardianAccountId = process.env.PILOT_SHADOW_GUARDIAN_ACCOUNT_ID || '';
 const guardianEmail = process.env.PILOT_SHADOW_GUARDIAN_EMAIL || 'guardian@example.org';
@@ -618,14 +638,14 @@ async function run() {
   // with the KNOWN GAP closed -- the account was present with
   // active_flag=false, pin_hash null, and step 10 failed 401.
   //
-  // NOTE for the auth backlog, not fixed here: the promotion payload accepts
-  // athlete.pin and silently discards it. createOrUpdateAthleteAccount takes
-  // it as a parameter literally named organizationIdOrLegacyPin and never
-  // uses it, yet the request returns success -- so a caller believes it set a
-  // credential that was never written. The guardian branch of this same route
-  // handles the equivalent case correctly by throwing "Unsupported
-  // guardian.pin ...". The athlete branch should either honour the PIN (with
-  // must_change_pin = true, since an admin typed it) or refuse it as loudly.
+  // CLOSED, both halves. This note used to say the promotion payload accepted
+  // athlete.pin and silently discarded it, so a caller believed it had set a
+  // credential that was never written, and that the athlete branch should
+  // either honour the PIN with must_change_pin set or refuse it as loudly as
+  // the guardian branch does. Both are now true: review-action throws
+  // "Unsupported athlete.pin ..." rather than discarding it, and
+  // activateAccountPin -- the supported way the PIN does get set -- sets
+  // must_change_pin, which steps 9c and 9d below exercise.
   //
   // Activating here is not a workaround: it is the real administrative flow a
   // promoted athlete goes through, so the gate now covers promote -> activate
@@ -636,10 +656,60 @@ async function run() {
     body: { account_id: athleteAccountId, pin: athletePin, mode: 'activate' },
   });
 
-  console.log('10) Verify athlete login and retrieval');
+  console.log('9c) The activation PIN must not be a usable credential on its own');
+  // An activation PIN is typed by an ADMINISTRATOR, so it is a PIN somebody
+  // other than the athlete knows. activateAccountPin sets must_change_pin for
+  // that reason, and requirePrincipal then refuses every route until the
+  // athlete has replaced it -- so the account can sign in and do exactly one
+  // thing: pick its own PIN.
+  //
+  // Asserted BEFORE the change, and never removed, for the same reason the
+  // approval-before-review refusal above is asserted before reviewing: a guard
+  // that is only ever exercised in its passing direction is a guard nobody
+  // would notice losing. Delete this block and the gate would still go green
+  // with must_change_pin never set at all.
   await athlete.call('/api/pilot/auth/login', {
     method: 'POST',
     body: { account_id: athleteAccountId, pin: athletePin },
+  });
+
+  let refusedOnActivationPin = false;
+  try {
+    await athlete.call('/api/pilot/athletes/get', {
+      method: 'POST',
+      body: { athlete_id: athleteId },
+    });
+  } catch (error) {
+    if (String(error).includes('PIN change required')) {
+      refusedOnActivationPin = true;
+    } else {
+      throw error;
+    }
+  }
+  if (!refusedOnActivationPin) {
+    throw new Error(
+      'An athlete read succeeded while still on the administrator-issued activation PIN. '
+      + 'must_change_pin is not being set by activateAccountPin, so an admin-known credential '
+      + 'grants full athlete access indefinitely.',
+    );
+  }
+
+  console.log('9d) Athlete replaces the activation PIN with one only they know');
+  await athlete.call('/api/pilot/auth/change-pin', {
+    method: 'POST',
+    body: { current_pin: athletePin, new_pin: athleteChosenPin },
+  });
+
+  console.log('10) Verify athlete login and retrieval');
+  // Signing in again rather than reusing the session: changeOwnPin revokes
+  // every session for the account, including the one that called it, and the
+  // route clears the cookie. That is deliberate -- if the activation PIN was
+  // guessed in the window before the athlete first signed in, this is the
+  // moment that intruder's session dies -- so the gate has to walk the same
+  // path a real athlete does.
+  await athlete.call('/api/pilot/auth/login', {
+    method: 'POST',
+    body: { account_id: athleteAccountId, pin: athleteChosenPin },
   });
 
   const athleteSession = await athlete.call('/api/pilot/auth/session', { method: 'POST', body: {} });

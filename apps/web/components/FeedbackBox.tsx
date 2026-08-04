@@ -96,7 +96,24 @@ export default function FeedbackBox() {
         onClick={toggle}
         aria-expanded={isOpen}
         aria-controls={panelId}
-        className="btn btn--ghost px-[var(--s4)] text-[length:var(--t-xs)]"
+        /*
+          The design-system control class, raised to the header's own geometry.
+
+          Two fixes met here. main moved this button onto `.btn btn--ghost`,
+          which is the right idiom and carries ppbf.css's 44px floor. But every
+          other control on this bar -- Triage, Operations, Dashboard, Logout --
+          uses GlobalRoleHeader's CONTROL constant at min-h-[var(--tap)], 55px.
+          A 44px button beside four 55px ones is both harder to hit and visibly
+          the odd one out, so the class comes from main and the height matches
+          its siblings.
+
+          Worth the fuss because this is the control a child taps to say someone
+          hurt them, it sits on every authenticated route, and it was 28.5px --
+          the smallest thing in the header. The WCAG sweep that claimed "every
+          interactive target" edited this exact file, raised the two buttons
+          INSIDE the panel, and never touched the one that opens it.
+        */
+        className="btn btn--ghost min-h-[var(--tap)] px-[var(--s4)] text-[length:var(--t-xs)]"
       >
         Tell Us
       </button>

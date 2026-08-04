@@ -122,11 +122,15 @@ export default function BoardComplianceMonitoringPage() {
   const isFiltered = selectedStatus !== '';
   const nothingToShow = summary?.total.status === 'unavailable';
 
+  // Severity is a safety signal only when a measured count is actually on the
+  // register (Law 2). An empty or suppressed bucket stays neutral leather; a
+  // live critical or high count wears the saturated band with its glyph
+  // (Law 3), the same idiom the coach panel uses for injury flags.
   const severityTiles = [
-    { label: 'Critical', metric: severityCounts?.critical, tone: 'border-2 border-[var(--black)] bg-[color-mix(in_srgb,var(--locked)_12%,var(--paper))] p-4', headingTone: 'text-[var(--safety-locked)]' },
-    { label: 'High', metric: severityCounts?.high, tone: 'border-2 border-[var(--black)] bg-[var(--bone-100)] p-4', headingTone: 'text-[var(--restricted)]' },
-    { label: 'Medium', metric: severityCounts?.medium, tone: 'border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4', headingTone: '' },
-    { label: 'Low', metric: severityCounts?.low, tone: 'border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4', headingTone: '' },
+    { label: 'Critical', metric: severityCounts?.critical, glyph: '✕', tone: 'rounded-[var(--r-md)] border-2 border-[color:var(--locked)] bg-[color-mix(in_srgb,var(--locked)_16%,transparent)] p-[var(--s4)]' },
+    { label: 'High', metric: severityCounts?.high, glyph: '▲', tone: 'rounded-[var(--r-md)] border-2 border-[color:var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] p-[var(--s4)]' },
+    { label: 'Medium', metric: severityCounts?.medium, glyph: null, tone: null },
+    { label: 'Low', metric: severityCounts?.low, glyph: null, tone: null },
   ];
 
   const statusTiles = [
@@ -137,35 +141,52 @@ export default function BoardComplianceMonitoringPage() {
     { label: 'Dismissed', metric: statusCounts?.dismissed },
   ];
 
+  const NEUTRAL_TILE = 'mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]';
+  const VALUE = 'mt-[var(--s3)] font-mono text-[length:var(--t-xl)] font-bold text-[color:var(--bone-100)]';
+
   return (
     <RoleSessionGate allowedRoles={['board']}>
-      <main className="room--clinic min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
-        <div className="mx-auto max-w-7xl px-6 py-10 lg:px-10">
-          <header className="space-y-3 border-b-[3px] border-[var(--black)] pb-6">
-            <p className="text-xs font-mono uppercase tracking-[0.22em] text-[color:var(--brass-800)]">Board Workspace</p>
-            <h1 className="font-display text-4xl font-black">Hand-Filed Compliance Register</h1>
-            <p className="max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
+      {/* The clinic room: this is the safeguarding register, so it stands in
+          the room the sheet gives to clearance and safety, on the ink ground
+          the pattern requires (a room never sits on canvas). */}
+      <main className="room--clinic min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+        <div className="mx-auto max-w-7xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
+          <header className="space-y-[var(--s3)] border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
+            <p className="t-eyebrow tracking-[0.22em]">Board Workspace</p>
+            <h1 className="font-display text-[length:var(--t-2xl)] font-black text-[color:var(--bone-100)]">Hand-Filed Compliance Register</h1>
+            <p className="t-body max-w-[80ch]">
               Aggregate counts of compliance violations that staff have filed by hand, with escalation status. The
               platform runs no violation detector and no screen files into this register, so these figures track
               reporting, not gym conditions.
             </p>
-            <p className="text-[13px] font-mono text-[var(--gray-dark)]">
+            <p className="t-data">
               {isLoading
                 ? 'Loading the register...'
                 : measuredAt
                   ? `Read ${measuredAt}`
                   : 'Read time unknown'}
             </p>
-            {errorMessage ? <p className="text-sm text-[var(--safety-locked)]">{errorMessage}</p> : null}
+            {errorMessage ? (
+              <p className="t-body flex items-center gap-[var(--s2)]">
+                <span aria-hidden="true" className="text-[color:var(--brass-400)]">▲</span>
+                <span>{errorMessage}</span>
+              </p>
+            ) : null}
             {!errorMessage && !isLoading && !summary ? (
-              <p className="text-sm text-[var(--safety-locked)]">The register could not be read, so no counts are shown. This is a failed read, not an empty register.</p>
+              <p className="t-body flex items-center gap-[var(--s2)]">
+                <span aria-hidden="true" className="text-[color:var(--brass-400)]">▲</span>
+                <span>The register could not be read, so no counts are shown. This is a failed read, not an empty register.</span>
+              </p>
             ) : null}
           </header>
 
           {nothingToShow ? (
-            <section className="mt-6 border-2 border-[color:var(--brass-600)] bg-[var(--canvas-tan-light)] p-5">
-              <h2 className="text-sm font-black uppercase tracking-[0.08em] text-[color:var(--brass-800)]">Read this zero correctly</h2>
-              <p className="mt-2 max-w-4xl text-sm leading-6 text-[var(--gray-dark)]">
+            // Paper, because this is a note pinned over the register rather
+            // than a metric: it keeps its own light ground and dark ink in
+            // any room.
+            <section className="mat-paper mt-[var(--s5)] rounded-[var(--r-md)] p-[var(--s5)]">
+              <h2 className="font-display text-[length:var(--t-sm)] font-black uppercase tracking-[0.08em] text-[color:var(--brass-800)]">Read this zero correctly</h2>
+              <p className="mt-[var(--s2)] max-w-[80ch] text-[length:var(--t-sm)] leading-6">
                 {isFiltered
                   ? 'No violation with the selected status has been filed, so every count in this view reads as none filed.'
                   : 'No compliance violation has ever been filed for this organization, so every count on this page reads as none filed.'}
@@ -177,38 +198,56 @@ export default function BoardComplianceMonitoringPage() {
           ) : null}
 
           {/* Severity counts */}
-          <section className="mt-8 space-y-3">
-            <p className="text-sm text-[var(--gray-dark)]">
+          <section className="mt-[var(--s6)] space-y-[var(--s3)]">
+            <p className="t-body">
               {isFiltered
                 ? `Severity across violations with the status "${selectedStatus}" only.`
                 : 'Severity across every violation on the register.'}
             </p>
           </section>
-          <section className="mt-3 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <section className="mt-[var(--s3)] grid gap-[var(--s4)] md:grid-cols-2 lg:grid-cols-4">
             {severityTiles.map((tile) => {
               const display = violationDisplay(tile.metric, minimumCohortSize, isLoading, isFiltered);
+              const suppressed = !isLoading && tile.metric?.status === 'insufficient_data';
+              const flagged = Boolean(
+                tile.tone
+                && !isLoading
+                && tile.metric?.status === 'available'
+                && (tile.metric.count ?? 0) > 0,
+              );
               return (
-                <article key={tile.label} className={tile.tone}>
-                  <h2 className={`text-xs font-bold uppercase tracking-[0.08em] ${tile.headingTone}`}>{tile.label}</h2>
-                  <p className="mt-4 text-4xl font-black">{display.value}</p>
-                  <p className="mt-2 text-[13px] leading-5 text-[var(--gray-dark)]">{display.note}</p>
+                <article key={tile.label} className={flagged && tile.tone ? tile.tone : NEUTRAL_TILE}>
+                  <h2 className="t-label flex items-center gap-[var(--s2)]">
+                    {flagged ? <span aria-hidden="true">{tile.glyph}</span> : null}
+                    <span>{tile.label}</span>
+                  </h2>
+                  {suppressed ? (
+                    // k-anonymity withholding is a static ink stamp (Law 7),
+                    // never an empty cell and never a zero.
+                    <p className="mt-[var(--s3)]">
+                      <span className="stamp stamp--flat">{display.value}</span>
+                    </p>
+                  ) : (
+                    <p className={VALUE}>{display.value}</p>
+                  )}
+                  <p className="t-muted mt-[var(--s2)]">{display.note}</p>
                 </article>
               );
             })}
           </section>
 
           {/* Status Filters */}
-          <section className="mt-8 space-y-4">
-            <h2 className="text-lg font-bold uppercase">Filter by Status</h2>
-            <div className="flex flex-wrap gap-2">
+          <section className="mt-[var(--s6)] space-y-[var(--s4)]">
+            <h2 className="t-command text-[length:var(--t-md)]">Filter by Status</h2>
+            <div className="flex flex-wrap gap-[var(--s2)]">
               {['', 'new', 'acknowledged', 'escalated', 'resolved', 'dismissed'].map((status) => (
                 <button
                   key={status || 'all'}
                   onClick={() => setSelectedStatus(status)}
-                  className={`border-2 px-3 py-1 text-sm font-bold uppercase ${
+                  className={`min-h-[44px] rounded-[var(--r-sm)] border px-[var(--s4)] text-[length:var(--t-sm)] font-bold uppercase transition ${
                     selectedStatus === status
-                      ? 'border-[var(--black)] bg-[var(--black)] text-[var(--canvas-tan)]'
-                      : 'border-[var(--black)] bg-[var(--canvas-tan-light)]'
+                      ? 'mat-brass--patina border-[color:var(--brass-600)] text-[color:var(--hide-950)]'
+                      : 'border-[color:rgba(212,175,74,.32)] bg-[rgba(0,0,0,.26)] text-[color:var(--bone-200)] hover:border-[color:var(--brass-400)]'
                   }`}
                 >
                   {status || 'All'} ({status === ''
@@ -220,33 +259,40 @@ export default function BoardComplianceMonitoringPage() {
           </section>
 
           {/* Aggregate View */}
-          <section className="mt-8 space-y-4">
-            <h2 className="text-lg font-bold uppercase">Status Summary</h2>
-            <p className="text-sm text-[var(--gray-dark)]">
+          <section className="mt-[var(--s6)] space-y-[var(--s4)]">
+            <h2 className="t-command text-[length:var(--t-md)]">Status Summary</h2>
+            <p className="t-body">
               The whole register, regardless of the filter above.
             </p>
-            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
+            <div className="grid gap-[var(--s3)] md:grid-cols-2 lg:grid-cols-5">
               {statusTiles.map((tile) => {
                 const display = violationDisplay(tile.metric, minimumCohortSize, isLoading, false);
+                const suppressed = !isLoading && tile.metric?.status === 'insufficient_data';
                 return (
-                  <article key={tile.label} className="border-2 border-[var(--black)] bg-white p-4">
-                    <p className="text-xs font-bold uppercase tracking-[0.08em]">{tile.label}</p>
-                    <p className="mt-2 text-3xl font-black">{display.value}</p>
-                    <p className="mt-2 text-[13px] leading-5 text-[var(--gray-dark)]">{display.note}</p>
+                  <article key={tile.label} className={NEUTRAL_TILE}>
+                    <p className="t-label">{tile.label}</p>
+                    {suppressed ? (
+                      <p className="mt-[var(--s3)]">
+                        <span className="stamp stamp--flat">{display.value}</span>
+                      </p>
+                    ) : (
+                      <p className={VALUE}>{display.value}</p>
+                    )}
+                    <p className="t-muted mt-[var(--s2)]">{display.note}</p>
                   </article>
                 );
               })}
             </div>
 
-            <p className="text-sm text-[var(--gray-dark)]">
+            <p className="t-body">
               This board view exposes aggregate-only compliance telemetry and excludes athlete-level identifiers. A
               count drawn from fewer than {minimumCohortSize} athletes is suppressed rather than shown, because a small
               count plus a date identifies the athlete behind it. {FILED_BY_HAND_NOTE}
             </p>
           </section>
 
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link href="/board" className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.08em]">
+          <div className="mt-[var(--s6)] flex flex-wrap gap-[var(--s3)]">
+            <Link href="/board" className="btn btn--ghost">
               Back to Board Hub
             </Link>
           </div>

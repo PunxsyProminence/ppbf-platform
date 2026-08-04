@@ -130,6 +130,42 @@ describe('GET /api/pilot/drills', () => {
     await GET(getRequest('?include_retired=true'));
     expect(mockListDrills).toHaveBeenLastCalledWith('org-1', { includeRetired: false });
   });
+
+  // Every test above asserts how listDrills was CALLED. None asserted what the
+  // caller receives, and that gap is the whole reason the library shipped
+  // broken: the route sent `items`, both clients read `drills`, each side's
+  // tests passed, and the drill library rendered empty for every coach and
+  // every athlete from the day it shipped.
+  //
+  // This asserts the body itself. The rows must arrive under the key the
+  // clients actually read.
+  test('answers with the drill rows under `items`, the key both clients read', async () => {
+    const row = {
+      organization_id: 'org-1',
+      drill_id: 'drill-1',
+      name: 'Pivot off the jab',
+      category: 'footwork',
+      focus: 'angle',
+      cues: ['step first', 'hands home'],
+      difficulty: 'beginner',
+      active: true,
+      created_at: '2026-08-01T00:00:00.000Z',
+      updated_at: '2026-08-01T00:00:00.000Z',
+    };
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockListDrills.mockResolvedValueOnce([row]);
+
+    const res = await GET(getRequest());
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.items).toEqual([row]);
+    expect(body.organization_id).toBe('org-1');
+
+    // The rows must not ALSO appear under the key the clients used to read, or
+    // a client could be fixed back to the broken key and still pass.
+    expect(body.drills).toBeUndefined();
+  });
 });
 
 describe('POST /api/pilot/drills', () => {
