@@ -100,6 +100,11 @@ beforeAll(async () => {
   await migrate.connect();
   await migrate.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8'));
   await migrate.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_gear_migration.sql'), 'utf8'));
+  // gear_products.brand is in PUBLIC_FIELDS and gear_products.vendor_id is in
+  // INTERNAL_FIELDS, so both reads in gearCatalog.ts need the columns this
+  // migration adds. The vendor records themselves are covered by
+  // gearVendors.pg.test.ts.
+  await migrate.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_gear_vendors_migration.sql'), 'utf8'));
   await migrate.query(
     `insert into pilot.organizations (organization_id, organization_name, status)
      values ('org-1', 'Punxsy Prominence', 'active'), ('org-2', 'Another Gym', 'active')
@@ -136,8 +141,12 @@ afterAll(async () => {
 const GLOVES = {
   product_id: 'gloves-12oz',
   name: 'Training gloves 12oz',
+  brand: 'Everlast',
   description: 'Club stock',
   category: 'gloves',
+  // No supplier account recorded, which is the normal state for most of a
+  // catalogue. The vendor slice's own suite covers the attributed case.
+  vendor_id: null,
   wholesale_cost_cents: 2000,
   retail_price_cents: 4000,
   listed_publicly: true,

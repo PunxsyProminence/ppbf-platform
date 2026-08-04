@@ -27,8 +27,12 @@ import { apiBase } from '@/lib/apiBase';
 interface GearProduct {
   product_id: string;
   name: string;
+  /** Public. What is printed on the product; the shop shows it. */
+  brand: string;
   description: string;
   category: string;
+  /** Internal. Which supplier account it was bought on, or null. */
+  vendor_id: string | null;
   wholesale_cost_cents: number;
   retail_price_cents: number;
   listed_publicly: boolean;
@@ -36,6 +40,17 @@ interface GearProduct {
   checkout_url: string;
   margin_cents: number;
   margin_percent: number | null;
+}
+
+/**
+ * Just enough of a supplier record to fill the picker. The account number,
+ * discount tier and terms are deliberately not read here -- they belong on
+ * /admin/gear/vendors, which is the one screen that shows them.
+ */
+interface VendorOption {
+  vendor_id: string;
+  vendor_name: string;
+  active: boolean;
 }
 
 const AVAILABILITY = [
@@ -58,13 +73,16 @@ function dollarsToCents(value: string): number {
 
 function GearCatalogueConsole() {
   const [items, setItems] = useState<GearProduct[]>([]);
+  const [vendors, setVendors] = useState<VendorOption[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const [loadError, setLoadError] = useState('');
 
   const [productId, setProductId] = useState('');
   const [name, setName] = useState('');
+  const [brand, setBrand] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('general');
+  const [vendorId, setVendorId] = useState('');
   const [cost, setCost] = useState('');
   const [price, setPrice] = useState('');
   const [listed, setListed] = useState(false);
@@ -95,9 +113,29 @@ function GearCatalogueConsole() {
     }
   }, []);
 
+  // Separate from the catalogue load and deliberately silent on failure: a gym
+  // with no suppliers recorded yet, or a request that fails, should leave the
+  // picker empty rather than block the page that records equipment. Attributing
+  // a product to a supplier is optional.
+  const loadVendors = useCallback(async () => {
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/admin/gear-vendors`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      const payload = (await response.json().catch(() => ({}))) as { vendors?: VendorOption[] };
+      setVendors(response.ok ? payload.vendors ?? [] : []);
+    } catch {
+      setVendors([]);
+    }
+  }, []);
+
   useEffect(() => {
-    void (async () => { await load(); })();
-  }, [load]);
+    void (async () => {
+      await load();
+      await loadVendors();
+    })();
+  }, [load, loadVendors]);
 
   async function save() {
     setIsSaving(true);
@@ -111,8 +149,10 @@ function GearCatalogueConsole() {
         body: JSON.stringify({
           product_id: productId.trim(),
           name: name.trim(),
+          brand: brand.trim(),
           description: description.trim(),
           category: category.trim(),
+          vendor_id: vendorId,
           wholesale_cost_cents: dollarsToCents(cost || '0'),
           retail_price_cents: dollarsToCents(price || '0'),
           listed_publicly: listed,
@@ -127,7 +167,9 @@ function GearCatalogueConsole() {
       setSaved('Saved.');
       setProductId('');
       setName('');
+      setBrand('');
       setDescription('');
+      setVendorId('');
       setCost('');
       setPrice('');
       setCheckoutUrl('');
@@ -161,6 +203,12 @@ function GearCatalogueConsole() {
             Back to admin
           </Link>
           <Link
+            href="/admin/gear/vendors"
+            className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.12em]"
+          >
+            Suppliers
+          </Link>
+          <Link
             href="/store"
             className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.12em]"
           >
@@ -187,6 +235,30 @@ function GearCatalogueConsole() {
                 onChange={(e) => setName(e.target.value)}
                 className="mt-1 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-2 text-sm normal-case tracking-normal"
               />
+            </label>
+            <label className="block text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--gray-dark)]">
+              Brand (shown in the shop)
+              <input
+                type="text" aria-label="Brand" value={brand}
+                onChange={(e) => setBrand(e.target.value)}
+                placeholder="Everlast"
+                className="mt-1 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-2 text-sm normal-case tracking-normal"
+              />
+            </label>
+            <label className="block text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--gray-dark)]">
+              Bought from (never shown)
+              <select
+                aria-label="Bought from" value={vendorId}
+                onChange={(e) => setVendorId(e.target.value)}
+                className="mt-1 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-2 text-sm normal-case tracking-normal"
+              >
+                <option value="">Not recorded</option>
+                {vendors.map((vendor) => (
+                  <option key={vendor.vendor_id} value={vendor.vendor_id}>
+                    {vendor.vendor_name}{vendor.active ? '' : ' (past supplier)'}
+                  </option>
+                ))}
+              </select>
             </label>
             <label className="block text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--gray-dark)]">
               What we pay
@@ -225,6 +297,17 @@ function GearCatalogueConsole() {
               </select>
             </label>
           </div>
+
+          {/* The distinction the whole slice turns on, said where the two
+              fields sit next to each other. An admin who cannot tell them
+              apart is the person who would put the account number in the
+              brand box. */}
+          <p className="mt-4 border-l-4 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-2 text-sm leading-6">
+            <strong>Brand and supplier are different things.</strong> The brand is printed on the
+            product and the shop shows it &mdash; a parent buying gloves wants to know they are
+            Everlast. Who we buy from, on what account and at what discount is ours alone and never
+            leaves this console.
+          </p>
 
           <label className="mt-4 block text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--gray-dark)]">
             Description
@@ -301,7 +384,15 @@ function GearCatalogueConsole() {
                     </span>
                   ) : null}
                 </div>
-                <p className="mt-2"><strong>{item.name}</strong> &middot; {item.product_id}</p>
+                <p className="mt-2">
+                  <strong>{item.name}</strong> &middot; {item.product_id}
+                  {item.brand ? <> &middot; {item.brand}</> : null}
+                </p>
+                <p className="mt-1 text-[11px] font-mono uppercase tracking-[0.12em] text-[var(--gray-dark)]">
+                  {item.vendor_id
+                    ? `From ${vendors.find((v) => v.vendor_id === item.vendor_id)?.vendor_name ?? item.vendor_id}`
+                    : 'Supplier not recorded'}
+                </p>
                 <p className="mt-1 leading-6">
                   Paid {formatMoney(item.wholesale_cost_cents)} &middot; charging {formatMoney(item.retail_price_cents)} &middot;{' '}
                   <strong className={item.margin_cents < 0 ? 'text-[color:var(--rust-500)]' : undefined}>

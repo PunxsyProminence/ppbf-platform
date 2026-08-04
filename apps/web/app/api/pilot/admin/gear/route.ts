@@ -10,6 +10,7 @@ import {
   upsertGearProduct,
   type GearProductInput,
 } from '@/src/server/pilot/gearCatalog';
+import { getVendorForOrganization } from '@/src/server/pilot/gearVendors';
 
 export const runtime = 'nodejs';
 
@@ -72,8 +73,14 @@ export async function POST(request: NextRequest) {
     const input: GearProductInput = {
       product_id: String(body.product_id ?? '').trim(),
       name: String(body.name ?? '').trim(),
+      // Public. The brand printed on the product -- a different fact from the
+      // supplier account below, with the opposite audience.
+      brand: String(body.brand ?? '').trim(),
       description: String(body.description ?? '').trim(),
       category: String(body.category ?? '').trim(),
+      // Internal. Which supplier account it was bought on; null when the gym
+      // has not recorded one, which is a normal state.
+      vendor_id: String(body.vendor_id ?? '').trim() || null,
       wholesale_cost_cents: toCents(body.wholesale_cost_cents),
       retail_price_cents: toCents(body.retail_price_cents),
       listed_publicly: body.listed_publicly === true,
@@ -84,6 +91,16 @@ export async function POST(request: NextRequest) {
     const invalid = gearValidationError(input);
     if (invalid) {
       throw new Error(invalid);
+    }
+
+    // Checked here as well as by the composite foreign key. The key is the
+    // real boundary -- it makes naming another gym's supplier account
+    // impossible rather than merely refused -- but a raw foreign-key violation
+    // reaches jsonError() with no recognized prefix and comes back as a masked
+    // 500 telling the admin the server broke. A named refusal tells them the
+    // supplier is not one of theirs.
+    if (input.vendor_id && !(await getVendorForOrganization(principal.organizationId, input.vendor_id))) {
+      throw new Error('Unsupported vendor: no supplier with that id is recorded for this gym');
     }
 
     await upsertGearProduct(principal.organizationId, input);
@@ -105,6 +122,11 @@ export async function POST(request: NextRequest) {
         listed_publicly: input.listed_publicly,
         availability: input.availability,
         has_checkout_link: input.checkout_url !== '',
+        // The vendor id is recorded because it is an id, and knowing which
+        // supplier a product was attributed to is the point of the audit. The
+        // account number and terms behind that id are not, and never reach
+        // here -- see gear-vendors/route.ts.
+        vendor_id: input.vendor_id,
       },
     });
 

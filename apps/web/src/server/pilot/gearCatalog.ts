@@ -28,18 +28,36 @@ import { query } from './db';
  * report that will not reconcile against a bank statement.
  */
 
-/** What anyone may see. No cost, and no way to derive it. */
+/**
+ * What anyone may see. No cost, no supplier account, and no way to derive
+ * either.
+ *
+ * `brand` is here on purpose and is the only field this list has ever gained.
+ * The brand printed on a glove is public by construction -- a parent buying
+ * gloves wants to know they are Everlast, and the word is stamped on the
+ * product either way. What is confidential is the gym's Everlast ACCOUNT, and
+ * that is a different column (vendor_id) pointing at a different table
+ * (pilot.gear_vendors) which no query in this file touches.
+ */
 const PUBLIC_FIELDS =
-  'product_id, name, description, category, retail_price_cents, availability, checkout_url';
+  'product_id, name, brand, description, category, retail_price_cents, availability, checkout_url';
 
-/** What the gym's own people may see. Cost and margin live only here. */
+/**
+ * What the gym's own people may see. Cost, margin and the supplier account
+ * reference live only here.
+ *
+ * vendor_id is an id, not the account: even an organization admin reads the
+ * account number, discount tier and terms through gearVendors.ts, which is a
+ * separate module with a separate route.
+ */
 const INTERNAL_FIELDS =
-  'product_id, name, description, category, wholesale_cost_cents, retail_price_cents, '
+  'product_id, name, brand, description, category, vendor_id, wholesale_cost_cents, retail_price_cents, '
   + 'listed_publicly, availability, checkout_url, created_at, updated_at';
 
 export interface PublicGearProduct {
   product_id: string;
   name: string;
+  brand: string;
   description: string;
   category: string;
   retail_price_cents: number;
@@ -48,6 +66,7 @@ export interface PublicGearProduct {
 }
 
 export interface InternalGearProduct extends PublicGearProduct {
+  vendor_id: string | null;
   wholesale_cost_cents: number;
   listed_publicly: boolean;
   created_at: string;
@@ -118,8 +137,11 @@ export async function listGearForOrganization(organizationId: string): Promise<I
 export interface GearProductInput {
   product_id: string;
   name: string;
+  brand: string;
   description: string;
   category: string;
+  /** Null when the gym has not recorded which supplier account it was bought on. */
+  vendor_id: string | null;
   wholesale_cost_cents: number;
   retail_price_cents: number;
   listed_publicly: boolean;
@@ -128,6 +150,13 @@ export interface GearProductInput {
 }
 
 const AVAILABILITY = new Set(['in_stock', 'order_only', 'unavailable']);
+
+/**
+ * Long enough for "Everlast Powerlock 2 Pro", short enough that the field is
+ * not a place to paste a description. Bounded because it is free text that
+ * reaches a public page.
+ */
+const MAX_BRAND_LENGTH = 120;
 
 /**
  * Why a product cannot be saved, or empty if it can.
@@ -143,6 +172,11 @@ export function gearValidationError(input: GearProductInput): string {
   }
   if (!input.name.trim()) {
     return 'Missing product name';
+  }
+  // A brand is optional -- plenty of gym equipment is unbranded or the gym does
+  // not care to say -- but if given it goes on a public page, so it is bounded.
+  if (input.brand.trim().length > MAX_BRAND_LENGTH) {
+    return `Unsupported brand: it must be ${MAX_BRAND_LENGTH} characters or fewer`;
   }
   if (!Number.isInteger(input.wholesale_cost_cents) || input.wholesale_cost_cents < 0) {
     return 'Unsupported cost: it must be a whole number of cents, and not negative';
@@ -177,14 +211,16 @@ export async function upsertGearProduct(
 ): Promise<void> {
   await query(
     `insert into pilot.gear_products
-       (organization_id, product_id, name, description, category,
+       (organization_id, product_id, name, brand, description, category, vendor_id,
         wholesale_cost_cents, retail_price_cents, listed_publicly, availability,
         checkout_url, updated_at)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now())
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now())
      on conflict (organization_id, product_id) do update
        set name = excluded.name,
+           brand = excluded.brand,
            description = excluded.description,
            category = excluded.category,
+           vendor_id = excluded.vendor_id,
            wholesale_cost_cents = excluded.wholesale_cost_cents,
            retail_price_cents = excluded.retail_price_cents,
            listed_publicly = excluded.listed_publicly,
@@ -195,8 +231,13 @@ export async function upsertGearProduct(
       organizationId,
       input.product_id.trim(),
       input.name.trim(),
+      input.brand.trim(),
       input.description.trim(),
       input.category.trim() || 'general',
+      // Null, never '': the foreign key is MATCH SIMPLE, so a null means "no
+      // supplier recorded" and is not checked, while '' would be checked and
+      // fail against a vendor that cannot exist.
+      input.vendor_id?.trim() || null,
       input.wholesale_cost_cents,
       input.retail_price_cents,
       input.listed_publicly,
