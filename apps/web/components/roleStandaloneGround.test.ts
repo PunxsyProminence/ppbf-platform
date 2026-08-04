@@ -6,10 +6,15 @@ import type { ClubRole } from './roleRoutes';
    than taking a prop, so the ground cannot drift from the audience — these
    cases pin the rule that makes the derivation safe. */
 describe('isFamilyGround', () => {
-  it('puts athlete and guardian surfaces on the family ground', () => {
-    expect(isFamilyGround(['athlete'])).toBe(true);
+  it('puts parent/guardian surfaces on the family ground', () => {
     expect(isFamilyGround(['parent'])).toBe(true);
-    expect(isFamilyGround(['athlete', 'parent'])).toBe(true);
+  });
+
+  it('keeps athlete surfaces on ink — the floor kiosk (Law 5, PAGE_MAP)', () => {
+    // The golden-era pass moved athlete routes off the family branch: the
+    // athlete dashboard is the floor kiosk, ink by PAGE_MAP, with room walls.
+    expect(isFamilyGround(['athlete'])).toBe(false);
+    expect(isFamilyGround(['athlete', 'parent'])).toBe(false);
   });
 
   it('keeps every staff role on ink', () => {

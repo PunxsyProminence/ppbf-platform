@@ -9,6 +9,7 @@ import FeedbackBox from "./FeedbackBox";
 import Corridor from "./Corridor";
 import CardCatalog from "./CardCatalog";
 import CommandsOverlay from "./CommandsOverlay";
+import SoundToggle from "./SoundToggle";
 
 // The queue the "Tell Us" box fills is worked by the people who can act on it:
 // a gym's own administrators, and the platform owner reading across gyms.
@@ -51,6 +52,19 @@ export default function GlobalRoleHeader() {
   const router = useRouter();
   const pathname = usePathname();
   const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
+
+  /* The wall display stands alone. /wall is a television bolted to the gym
+     floor: no pointer, no keyboard, nobody signed in, and nobody within fifteen
+     feet of it. A sticky session bar there is a strip of furniture that can
+     never be used, and on a screen that runs twelve hours a day it is also a
+     fixed high-contrast band in the same pixels all evening -- the exact shape
+     that burns into a panel.
+
+     This is placed AFTER every hook above deliberately: an early return before
+     useSyncExternalStore would make the hook order depend on the route. */
+  if (pathname === "/wall" || pathname?.startsWith("/wall/")) {
+    return null;
+  }
 
   // Minimal bar pre-auth and on login
   if (!session || pathname === "/login") {
@@ -108,6 +122,13 @@ export default function GlobalRoleHeader() {
               on every surface, with no effect writing state on navigation. */}
           <CardCatalog key={`catalog:${pathname}`} />
           <CommandsOverlay />
+          {/* Sound is opt-in and off by default, and turning it on has to
+              happen inside a click because no browser starts audio otherwise.
+              The bar is where it belongs: on every signed-in surface, so
+              anyone who wants it can find it, and saying one short thing
+              rather than advertising itself. Nothing in this app needs sound
+              to be understood — see useGymSound.ts. */}
+          <SoundToggle />
           <FeedbackBox />
           {FEEDBACK_TRIAGE_ROLES.includes(session.role) ? (
             <Link href="/admin/feedback" className={CONTROL_QUIET}>

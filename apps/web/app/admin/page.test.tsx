@@ -7,7 +7,7 @@
 // edit that was never stored. These cover the two ways that goes wrong.
 
 import type { ReactNode } from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import AdminCapabilitiesPage from './page';
 import { usePilotSession, type PilotSessionState } from '@/components/usePilotSession';
@@ -155,6 +155,49 @@ it('does not resurrect capabilities an administrator archived', async () => {
   // What the gym stored is what gets written back -- not the template.
   expect(saved.capabilities.map((item) => item.capabilityId)).toEqual(['CAP-001']);
   expect(saved.capabilities).toHaveLength(1);
+});
+
+// A table filtered down to nothing used to render as nothing at all, which
+// reads as "the data is gone" rather than "your filters are narrow". The two
+// causes have to stay distinguishable, and the recoverable one has to offer the
+// recovery -- an empty state that does not say which case it is, or that leaves
+// the administrator to hunt down seven filter controls, is the original defect
+// wearing a panel.
+it('tells a filtered-empty library apart from an empty one, and clears back', async () => {
+  const fetchMock = jest.fn(async () => jsonResponse({ ok: true }));
+
+  await renderPage(fetchMock);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Capability Library' }));
+  fireEvent.change(screen.getByPlaceholderText('SEARCH CAPABILITIES'), {
+    target: { value: 'no-capability-is-named-this' },
+  });
+
+  await screen.findByText('No capability matches those filters');
+  expect(screen.queryByText('The library is empty')).toBeNull();
+  expect(document.body.textContent).toContain('Showing 0 of 20 on file.');
+
+  fireEvent.click(screen.getAllByRole('button', { name: 'CLEAR ALL FILTERS' })[0]);
+
+  await waitFor(() => expect(screen.queryByText('No capability matches those filters')).toBeNull());
+  expect(document.body.textContent).toContain('Showing 20 of 20 on file.');
+});
+
+// Background colour alone carried the selection, so the row read as five
+// identical chips. The visual treatment is not assertable here; the programmatic
+// half of the same signal is, and it is what a screen reader gets.
+it('marks the open section on the tab that opened it', async () => {
+  const fetchMock = jest.fn(async () => jsonResponse({ ok: true }));
+
+  await renderPage(fetchMock);
+
+  expect(screen.getByRole('button', { name: 'Overview' }).getAttribute('aria-current')).toBe('true');
+  expect(screen.getByRole('button', { name: 'Assignment Board' }).getAttribute('aria-current')).toBeNull();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Assignment Board' }));
+
+  expect(screen.getByRole('button', { name: 'Assignment Board' }).getAttribute('aria-current')).toBe('true');
+  expect(screen.getByRole('button', { name: 'Overview' }).getAttribute('aria-current')).toBeNull();
 });
 
 it('hides the compliance center from a platform owner and keeps it for a gym admin', async () => {

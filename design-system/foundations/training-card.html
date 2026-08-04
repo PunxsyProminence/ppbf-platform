@@ -129,6 +129,153 @@
   </div>
 </div>
 
+<!-- ============================================================= CEREMONY -->
+<h2 class="sect">Crossing a milestone</h2>
+<p class="note">
+  Crossing one used to produce <b>nothing</b>. The seal an athlete earns at 13 sessions was already
+  sitting in the DOM at 12, one opacity step away, so the card counted but never <em>marked</em>.
+  There was no moment.
+</p>
+<p class="note">
+  <b>A stamp coming down on paper, and nothing else.</b> The seal is driven onto the card under
+  <code>--e-stamp</code>, whose whole physics is arriving and stopping dead; the slot darkens where
+  the ink landed; a line of type says what was earned. No confetti, no bounce, no spin &mdash; this
+  is a boxing gym, and a card earned over months does not deserve a slot machine. If sound is on,
+  the round bell rings once.
+</p>
+<p class="note">
+  <b>The words are the channel that carries it.</b> The press is cancelled outright under
+  <code>prefers-reduced-motion</code> (the sheet's global rule), and the bell is off unless somebody
+  opted in. The <code>.tcard-earned</code> line below is announced through <code>role="status"</code>
+  and says the whole thing on its own, which is what makes the other two channels confirmation
+  rather than information.
+</p>
+<p class="note">
+  <b>It fires on the CROSSING, once.</b> A component sees a state (&ldquo;13 sessions&rdquo;), not an
+  event, and sees it again on every render and every reload &mdash; so what is written down is which
+  seals have already been pressed, and the first sighting of a card <em>seeds that record silently</em>
+  rather than congratulating an athlete for history.
+  See <code>apps/web/components/milestoneCeremony.ts</code>.
+</p>
+
+<div class="stage">
+  <p class="cap">The 13th session lands</p>
+  <section class="pap pap--card age-1 lift-1 tcard" style="max-width:520px">
+    <header class="tcard-hd">
+      <div>
+        <h3 class="tcard-title">Training Card</h3>
+        <div class="tcard-sub">Marcus D. &middot; since Mar 4 2026</div>
+      </div>
+      <div class="tcard-count"><b id="cerCount">12</b><span>sessions logged</span></div>
+    </header>
+    <div class="tcard-grid" role="list" id="cerGrid">
+      <div class="tcard-stamp tcard-stamp--done" style="--ink:.5" role="listitem">5</div>
+      <div class="tcard-stamp tcard-stamp--done" style="--ink:.7" role="listitem">7</div>
+      <div class="tcard-stamp tcard-stamp--done" style="--ink:.6" role="listitem">6</div>
+      <div class="tcard-stamp tcard-stamp--done" style="--ink:.8" role="listitem">8</div>
+      <div class="tcard-stamp tcard-stamp--done" style="--ink:.4" role="listitem">4</div>
+      <div class="tcard-stamp tcard-stamp--done" style="--ink:.9" role="listitem">9</div>
+      <div class="tcard-stamp tcard-stamp--done" style="--ink:.6" role="listitem">6</div>
+      <div class="tcard-stamp tcard-stamp--done" style="--ink:1"  role="listitem">10</div>
+      <div class="tcard-stamp tcard-stamp--done" style="--ink:.3" role="listitem">3</div>
+      <div class="tcard-stamp tcard-stamp--done" style="--ink:.7" role="listitem">7</div>
+      <div class="tcard-stamp tcard-stamp--done" style="--ink:.5" role="listitem">5</div>
+      <div class="tcard-stamp tcard-stamp--done" style="--ink:.8" role="listitem">8</div>
+    </div>
+
+    <p class="tcard-earned" role="status" id="cerNote" hidden>
+      <b>13 sessions</b><span>Sealed. It never comes off the card.</span>
+    </p>
+
+    <div class="tcard-seals">
+      <div class="tcard-seal-slot">
+        <svg width="52" height="52" viewBox="0 0 100 100" role="img" aria-label="5 session milestone, earned">
+          <defs><path id="c5" d="M 50,50 m -34,0 a 34,34 0 1,1 68,0 a 34,34 0 1,1 -68,0"/></defs>
+          <circle cx="50" cy="50" r="46" fill="none" stroke="#241C11" stroke-width="2.5" opacity=".8"/>
+          <circle cx="50" cy="50" r="30" fill="none" stroke="#241C11" stroke-width="1.5" opacity=".55"/>
+          <text font-size="15" font-weight="700" fill="#241C11" letter-spacing="1">
+            <textPath href="#c5" startOffset="50%" text-anchor="middle">PPBF · LOGGED</textPath></text>
+          <text x="50" y="58" text-anchor="middle" font-size="26" font-weight="700" fill="#241C11">5</text>
+        </svg>
+        <span class="tcard-seal-lbl">5</span>
+      </div>
+      <div class="tcard-seal-slot tcard-seal-slot--unearned" id="cerSlot">
+        <svg width="52" height="52" viewBox="0 0 100 100" role="img" aria-label="13 session milestone, not yet earned">
+          <defs><path id="c13" d="M 50,50 m -34,0 a 34,34 0 1,1 68,0 a 34,34 0 1,1 -68,0"/></defs>
+          <circle cx="50" cy="50" r="46" fill="none" stroke="#241C11" stroke-width="2.5" opacity=".8"/>
+          <circle cx="50" cy="50" r="30" fill="none" stroke="#241C11" stroke-width="1.5" opacity=".55"/>
+          <text font-size="15" font-weight="700" fill="#241C11" letter-spacing="1">
+            <textPath href="#c13" startOffset="50%" text-anchor="middle">PPBF · LOGGED</textPath></text>
+          <text x="50" y="58" text-anchor="middle" font-size="26" font-weight="700" fill="#241C11">13</text>
+        </svg>
+        <span class="tcard-seal-lbl" id="cerLbl">13 &middot; to go</span>
+      </div>
+      <p class="tcard-sub" style="margin-left:auto;text-align:right" id="cerToGo">1 more to 13</p>
+    </div>
+    <div class="tcard-legend">
+      <span><i class="is-done"></i>Logged &mdash; the number is effort, 1&ndash;10</span>
+      <span><i class="is-open"></i>Booked, not completed</span>
+    </div>
+  </section>
+
+  <p style="margin-top:var(--s5);display:flex;gap:var(--s4);flex-wrap:wrap;align-items:center">
+    <button class="btn" type="button" id="cerGo">Log the 13th session</button>
+    <button class="btn btn--ghost" type="button" id="cerSound" aria-pressed="false">
+      <span aria-hidden="true">○</span>&nbsp;Sound off
+    </button>
+    <span class="tcard-sub" style="color:var(--bone-400)">Sound is opt-in, and the card says it all without it.</span>
+  </p>
+</div>
+
+<!-- The engine as a classic script, which is why it is one: this file opens by
+     double-clicking it off disk, and a browser blocks `import` over file://. -->
+<script src="../ppbf-sound.js"></script>
+<script>
+(function () {
+  var snd = new PPBFSound();
+  var toggle = document.getElementById('cerSound');
+  var go = document.getElementById('cerGo');
+
+  toggle.addEventListener('click', async function () {
+    // Inside the click, because no browser starts audio outside a gesture.
+    var live = snd.enabled ? await snd.setEnabled(false) : await snd.enable();
+    toggle.setAttribute('aria-pressed', String(live));
+    toggle.innerHTML = live ? '<span aria-hidden="true">◉</span>&nbsp;Sound on'
+                            : '<span aria-hidden="true">○</span>&nbsp;Sound off';
+    if (live) snd.play('latch');
+  });
+
+  go.addEventListener('click', function () {
+    var slot = document.getElementById('cerSlot');
+    var note = document.getElementById('cerNote');
+
+    // The visible change comes first and carries the whole message: a new
+    // impression, the count, the seal earned, the line of type.
+    var stamp = document.createElement('div');
+    stamp.className = 'tcard-stamp tcard-stamp--done';
+    stamp.setAttribute('role', 'listitem');
+    stamp.style.setProperty('--ink', '.7');
+    stamp.textContent = '7';
+    document.getElementById('cerGrid').appendChild(stamp);
+
+    document.getElementById('cerCount').textContent = '13';
+    document.getElementById('cerLbl').textContent = '13';
+    document.getElementById('cerToGo').textContent = '21 more to 34';
+    slot.classList.remove('tcard-seal-slot--unearned');
+    note.hidden = false;
+
+    // Restart the animation on repeat presses, so the preview can be replayed.
+    slot.classList.remove('tcard-seal-slot--pressed');
+    void slot.offsetWidth;
+    slot.classList.add('tcard-seal-slot--pressed');
+
+    // Confirmation, never information. Silent unless somebody opted in above.
+    snd.play('bell');
+    go.textContent = 'Press again';
+  });
+})();
+</script>
+
 <!-- ================================================================= LAWS -->
 <h2 class="sect">What the laws forced</h2>
 <p class="note">

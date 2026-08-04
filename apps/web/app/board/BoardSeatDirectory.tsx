@@ -17,7 +17,7 @@ export default function BoardSeatDirectory() {
   const session = useBoardSession();
 
   return (
-    <section className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+    <section className="mt-[var(--s5)] grid gap-[var(--s4)] md:grid-cols-2 xl:grid-cols-3">
       {boardSeatConfigs.map((seat) => {
         const access = resolveBoardSeatAccess({
           role: session?.role ?? null,
@@ -26,21 +26,21 @@ export default function BoardSeatDirectory() {
         });
 
         return (
-          <article key={seat.slug} className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-950)]/80 p-5">
-            <p className="text-[12px] font-mono uppercase tracking-[0.2em] text-[var(--bone-400)]">Board Seat</p>
-            <h2 className="mt-2 text-2xl font-black text-[color:var(--bone-200)]">{seat.seatLabel}</h2>
+          <article key={seat.slug} className="mat-leather--raised flex flex-col rounded-[var(--r-lg)] p-[var(--s5)]">
+            <p className="t-eyebrow">Board Seat</p>
+            <h2 className="t-command mt-[var(--s2)] text-[length:var(--t-lg)]">{seat.seatLabel}</h2>
 
-            <div className="mt-4 space-y-3">
+            <div className="mt-[var(--s4)] space-y-[var(--s3)]">
               <div>
-                <p className="text-[12px] font-mono uppercase tracking-[0.15em] text-[color:var(--brass-300)]">Role Description</p>
-                <p className="mt-1 text-[15px] leading-6 text-[var(--bone-300)]">{seat.roleDescription}</p>
+                <p className="t-label">Role Description</p>
+                <p className="t-body mt-[var(--s1)]">{seat.roleDescription}</p>
               </div>
 
               <div>
-                <p className="text-[12px] font-mono uppercase tracking-[0.15em] text-[color:var(--brass-300)]">Primary Responsibilities</p>
-                <ul className="mt-1 space-y-1">
+                <p className="t-label">Primary Responsibilities</p>
+                <ul className="mt-[var(--s1)] space-y-[var(--s1)]">
                   {seat.primaryResponsibilities.map((item) => (
-                    <li key={item} className="text-[15px] leading-6 text-[var(--bone-300)]">{item}</li>
+                    <li key={item} className="t-body">{item}</li>
                   ))}
                 </ul>
               </div>
@@ -49,14 +49,24 @@ export default function BoardSeatDirectory() {
             {access.allowed ? (
               <Link
                 href={`/board/${seat.slug}`}
-                className="mt-4 inline-flex min-h-[44px] items-center justify-center border-2 border-[color:var(--brass-700)] bg-[var(--hide-800)] px-4 text-sm font-mono font-bold uppercase tracking-[0.14em] text-[color:var(--bone-200)] transition hover:border-[color:var(--brass-300)] hover:text-[color:var(--brass-300)]"
+                className="btn btn--ghost mt-[var(--s4)] w-full"
               >
                 {access.mode === 'seat-holder' ? 'Open Your Workspace' : 'Open Governance Workspace'}
               </Link>
             ) : (
-              <p className="mt-4 text-[13px] leading-6 text-[var(--bone-400)]">
-                Held by another seat. The president and chair can open any workspace; every other seat opens its own.
-              </p>
+              // Law 7: a governance refusal is a static ink mark, not a
+              // dimmed control or an empty slot where the button would be.
+              <div className="mt-[var(--s4)]">
+                <p>
+                  <span className="stamp stamp--flat">
+                    <span aria-hidden="true">✕ </span>
+                    <span>Seat held</span>
+                  </span>
+                </p>
+                <p className="t-muted mt-[var(--s2)]">
+                  Held by another seat. The president and chair can open any workspace; every other seat opens its own.
+                </p>
+              </div>
             )}
           </article>
         );

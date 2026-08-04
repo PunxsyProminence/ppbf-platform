@@ -460,10 +460,29 @@ export async function activateAccountPin(accountId: string, pin: string, organiz
   const pinHash = await hashPin(pin);
 
   await withTransaction(async (client) => {
+    // must_change_pin is set for the same reason resetAccountPin sets it, and
+    // it was the only one of the three PIN paths that did not. An activation
+    // PIN is typed by an administrator, so it is a PIN somebody other than the
+    // athlete knows -- and until this line, an athlete promoted from intake
+    // signed in on it and was never once asked to replace it. The whole
+    // enforcement chain hangs on this boolean: requirePrincipal refuses every
+    // route while it is set (http.ts), and roleSession.ts and /athlete/sign-in
+    // both send that state to /change-pin. At false, none of it fires.
+    //
+    // Measured before changing it, against real Postgres: createAthleteAccount
+    // left it true, resetAccountPin left it true, and activateAccountPin left
+    // it false because pilot.accounts.must_change_pin defaults to false and
+    // this UPDATE never named it.
+    //
+    // The cost is one extra prompt when an admin activates with the athlete
+    // standing next to them having chosen the PIN themselves. That is the
+    // right trade in a system holding youth records: the alternative is an
+    // admin-known credential that grants full athlete access indefinitely.
     const result = await client.query<{ account_id: string }>(
       `update pilot.accounts
        set pin_hash = $1,
            active_flag = true,
+           must_change_pin = true,
            updated_at = now()
        where account_id = $2
          and organization_id = $3
