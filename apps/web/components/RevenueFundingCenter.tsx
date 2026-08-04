@@ -382,7 +382,9 @@ export default function RevenueFundingCenter() {
         <p className="t-body mt-[var(--s3)]">
           Front-end control surface for memberships, donations, sponsors, B2B accounts, wholesale accounts, grants, scholarships, and funding workflows.
         </p>
-        <p className="t-label mt-[var(--s3)]">Old Gauze | Sweat | Grit | Grind | Dedication | Motivation</p>
+        {/* Motto strip removed; see the note in AthleteWorkspace.tsx. It was
+            least at home here of the four -- a grant officer reading a funding
+            surface is not the audience for the gym's training motto. */}
         <div className="mt-4 flex flex-wrap gap-2">
           <Link
             href="/help#revenue-guide"

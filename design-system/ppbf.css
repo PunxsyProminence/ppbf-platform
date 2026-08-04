@@ -82,7 +82,18 @@
   --brick-900: #2A1712;
   --brick-700: #4A251C;
   --brick-500: #6B3A2A;
-  --mortar:    #6E6255;
+  /* Aged mortar, not new grout. At #6E6255 the joints ran 2.25:1 against
+     brick-700, which draws a lit grid across the whole gym-floor ground --
+     every 37px horizontally and 89px vertically, behind the reading column as
+     well as the margins. Text on that ground measures 8.34:1, so the wall was
+     carrying better than a quarter of the type's own contrast while saying
+     nothing.
+
+     1.75:1 keeps the courses legible as brick -- the wall is still a wall,
+     which is Law 6's whole point -- and stops the joints competing with what
+     stands in front of them. Forty years of a working gym darkens mortar; it
+     does not keep it the colour of fresh grout. */
+  --mortar:    #5C5246;
 
   /* --- Lamp — the practical light ----------------------------------------
      Every surface in this system is lit by a hanging fixture or a gooseneck,
@@ -1962,7 +1973,12 @@ body.ppbf.on-canvas {
 
 .corridor-trigger {
   display: inline-flex; align-items: center; gap: var(--s3);
-  min-height: 34px; padding: 0 var(--s4); cursor: pointer;
+  /* --tap, not the 34px this carried. The corridor is how you reach the other
+     seventy-odd surfaces, it rides the session bar on every authenticated
+     route including phones, and 34px is under the 44px WCAG floor as well as
+     Law 5's own number. It also sat beside 55px siblings, so it was both the
+     hardest control on the bar to hit and visibly the odd one out. */
+  min-height: var(--tap); padding: 0 var(--s4); cursor: pointer;
   border: 1px solid var(--brass-700); border-radius: var(--r-sm);
   background-image: linear-gradient(180deg, rgba(92,70,50,.9), rgba(30,23,18,.95));
   color: var(--bone-200); font: 650 11px/1 var(--font-ui);
@@ -2138,7 +2154,9 @@ body.ppbf.on-canvas {
    the chord. */
 .catalog-hint {
   display: inline-flex; align-items: center; gap: var(--s2);
-  min-height: 30px; padding: 0 var(--s3); cursor: pointer;
+  /* Was 30px -- the smallest target in the application. ⌘K is the keyboard
+     path; this button is the only path for anyone who does not have one. */
+  min-height: var(--tap); padding: 0 var(--s3); cursor: pointer;
   border: 1px solid rgba(212,175,74,.3); border-radius: var(--r-sm);
   background: rgba(12,9,6,.5); color: var(--bone-300);
   font: 650 10px/1 var(--font-ui); letter-spacing: .1em; text-transform: uppercase;
