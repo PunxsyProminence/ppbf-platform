@@ -121,26 +121,32 @@ export default function HomePage() {
           <h2 id="mission-heading" className="t-command" style={{ fontSize: 'var(--t-xl)' }}>
             Our Mission
           </h2>
-          <p className="t-body mt-[var(--s5)] max-w-[72ch]" style={{ fontSize: 'var(--t-md)' }}>
-            Punxsy Prominence uses structured boxing and athlete-development programming to help young people build
-            discipline, confidence, accountability, emotional control, physical fitness, academic responsibility,
-            leadership, decision-making, and practical life skills.
-          </p>
-          {/* The load-bearing promise of the organization, so it gets a real
-              object: a framed paper notice rather than a coloured left border.
-              The border it replaces was --red-primary, which aliases to
-              --locked — the safety gate's red. Law 2 spends saturated colour
-              on a participant's safety state and nothing else, and this
-              sentence is the opposite of a warning. */}
-          <div className="frame mt-[var(--s6)] max-w-[72ch]">
-            <span className="rivet rivet--tl" />
-            <span className="rivet rivet--tr" />
-            <span className="rivet rivet--bl" />
-            <span className="rivet rivet--br" />
-            <div className="frame-in mat-paper" style={{ padding: 'var(--s5) var(--s6)' }}>
-              <p className="t-command" style={{ fontSize: 'var(--t-md)', lineHeight: 1.45 }}>
-                Children participate at no charge. Financial circumstances do not determine whether a child can train.
+          <div className="mt-[var(--s5)] grid gap-[var(--s6)] md:grid-cols-2">
+            <div>
+              <p className="t-body max-w-[72ch]" style={{ fontSize: 'var(--t-md)' }}>
+                Punxsy Prominence uses structured boxing and athlete-development programming to help young people build
+                discipline, confidence, accountability, emotional control, physical fitness, academic responsibility,
+                leadership, decision-making, and practical life skills.
               </p>
+            </div>
+            <div>
+              {/* The load-bearing promise of the organization, so it gets a real
+                  object: a framed paper notice rather than a coloured left border.
+                  The border it replaces was --red-primary, which aliases to
+                  --locked — the safety gate's red. Law 2 spends saturated colour
+                  on a participant's safety state and nothing else, and this
+                  sentence is the opposite of a warning. */}
+              <div className="frame">
+                <span className="rivet rivet--tl" />
+                <span className="rivet rivet--tr" />
+                <span className="rivet rivet--bl" />
+                <span className="rivet rivet--br" />
+                <div className="frame-in mat-paper" style={{ padding: 'var(--s5) var(--s6)' }}>
+                  <p className="t-command" style={{ fontSize: 'var(--t-md)', lineHeight: 1.45 }}>
+                    Children participate at no charge. Financial circumstances do not determine whether a child can train.
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         </section>
