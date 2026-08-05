@@ -19,9 +19,17 @@ Use .\master-runner.ps1 only when you want the top-level sequence runner.
 Use .\ppbf-cli.ps1 status or .\ppbf-cli.ps1 health for quick daily checks.
 
 ## Step 3: Environment
-There is no template to copy. apps/web/.gitignore ignores `.env*`, so every
-environment file is written by hand and none of them are in the repository.
-Create apps/web/.env.local yourself and fill in the Azure pilot values.
+Copy `.env.example` from the repository root to `apps/web/.env.local` and fill
+in the Azure pilot values. Only the names are in the template -- no filled
+environment file is ever committed, because apps/web/.gitignore ignores
+`.env*`.
+
+    cp .env.example apps/web/.env.local
+
+Values for a pilot machine can be read from the staging Container App:
+
+    az containerapp secret list --name app-ppbf-staging \
+      --resource-group rg-ppbf-enterprise-staging --show-values -o tsv
 
 The authoritative list of what a running instance is given is the
 `--set-env-vars` block in .github/workflows/deploy-staging.yml. Locally you need
