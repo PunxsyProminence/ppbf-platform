@@ -418,6 +418,32 @@ describe('POST /api/pilot/shadow/chat trust boundary', () => {
     }));
   });
 
+  test('files a response-volunteered high-risk topic under itself, not the benign request topic', async () => {
+    // The request here classifies as topic 'none' -- nothing about it is
+    // high-risk. The handoff banner was already fixed to prefer the topic the
+    // RESPONSE volunteers, but the persisted message's topic and the human
+    // review queue's category still used the request-only classification, so
+    // a weight-cut answer to a benign question was filed and triaged as
+    // 'general' even though the user saw the weight-cut handoff banner.
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'Cut water weight before the weigh-in.' } }] }),
+    }) as unknown as typeof fetch;
+
+    const response = await POST(postRequest({ message: 'Explain this training concern.' }));
+    const payload = await response.json();
+
+    expect(payload.state).toBe('filtered');
+    expect(payload.handoff).toContain('sports nutritionist');
+    expect(mockAppendConversationExchange).toHaveBeenCalledWith(expect.objectContaining({
+      topic: 'weight_cutting',
+      responseState: 'filtered',
+    }));
+    expect(mockQueueHumanReview).toHaveBeenCalledWith(expect.objectContaining({
+      category: 'weight_cutting',
+    }));
+  });
+
   test('passes only the authorized conversation history before the new user message', async () => {
     mockLoadConversationMessages.mockResolvedValueOnce([
       {

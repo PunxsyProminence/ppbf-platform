@@ -459,12 +459,14 @@ export function validateShadowResponse(
   const citationMatches = [...response.matchAll(/\[E:([^\]\r\n]{1,200})\]/gi)];
   const citationIds: string[] = [];
   let hasInvalidCitation = false;
+  let validCitationOccurrences = 0;
   for (const match of citationMatches) {
     const evidenceId = match[1]?.trim() ?? '';
     if (!allowedEvidenceIds.has(evidenceId)) {
       hasInvalidCitation = true;
       continue;
     }
+    validCitationOccurrences += 1;
     if (!citationIds.includes(evidenceId)) citationIds.push(evidenceId);
   }
   if (/\[E:/i.test(response) && citationMatches.length === 0) {
@@ -474,27 +476,36 @@ export function validateShadowResponse(
     filtered = true;
     reasons.push('Contains an unknown, malformed, or unauthorized evidence citation');
   }
-  const makesEvidenceClaim = (
-    /\b(research|studies?|data|evidence|clinical guidance|literature)\s+(suggests?|shows?|indicates?|demonstrates?|proves?|supports?)\b/i.test(response)
-    // "proven" asserts the platform's TOP evidence tier, and DOCTRINE item 4
-    // forbids using it without verified evidence ids for the exact claim. It
-    // was not a trigger at all, so "this drill is proven to increase punch
-    // power" passed while the same claim framed as "data shows" was filtered --
-    // the framing was policed, the assertion was not.
-    //
-    // \bproven\b does not match "unproven" (no boundary after "un"), so hedged
-    // language stays allowed.
-    || /\b(?:clinically|scientifically|medically)?\s*proven\b/i.test(response)
-  );
+  const evidenceClaimPattern = /\b(research|studies?|data|evidence|clinical guidance|literature)\s+(suggests?|shows?|indicates?|demonstrates?|proves?|supports?)\b|\b(?:clinically|scientifically|medically)?\s*proven\b/gi;
   // The trailing \b after % could never match: '%' and whatever follows it are
   // both non-word characters, so no boundary exists there. Every percentage in
   // every response therefore slipped this check -- "94% of athletes improve"
   // passed, and only the separate "data shows" framing above caught the variant
   // that happened to carry it.
-  const makesQuantifiedEvidenceClaim = /\b\d+(?:\.\d+)?\s*%|\b\d+\s+(?:similar\s+)?(cases?|athletes?|participants?|studies?)\b/i.test(response);
-  if ((makesEvidenceClaim || makesQuantifiedEvidenceClaim) && citationIds.length === 0) {
+  //
+  // \bproven\b does not match "unproven" (no boundary after "un"), so hedged
+  // language stays allowed. "proven" asserts the platform's TOP evidence tier,
+  // and DOCTRINE item 4 forbids using it without verified evidence ids for the
+  // exact claim -- it was not a trigger at all, so "this drill is proven to
+  // increase punch power" passed while the same claim framed as "data shows"
+  // was filtered. The framing was policed, the assertion was not.
+  const quantifiedClaimPattern = /\b\d+(?:\.\d+)?\s*%|\b\d+\s+(?:similar\s+)?(cases?|athletes?|participants?|studies?)\b/gi;
+  // Counted per occurrence, not just a yes/no over the whole response: a
+  // single real citation used to "unlock" the rest of the message, so one
+  // legitimate cited percentage rode alongside an unrelated, completely
+  // fabricated case count with no citation of its own -- e.g. "Attendance is
+  // 94% [E:<real-id>]. Also, 250 similar athletes fully recovered with no
+  // setbacks." had citationIds.length === 1, which was already ">= 1", so
+  // nothing caught the second, uncited claim. Requiring one valid citation
+  // occurrence per claim occurrence closes that gap while still letting the
+  // same evidence id be cited more than once for more than one claim it
+  // actually backs.
+  const evidenceClaimCount = [...response.matchAll(evidenceClaimPattern)].length;
+  const quantifiedClaimCount = [...response.matchAll(quantifiedClaimPattern)].length;
+  const totalEvidenceClaims = evidenceClaimCount + quantifiedClaimCount;
+  if (totalEvidenceClaims > 0 && validCitationOccurrences < totalEvidenceClaims) {
     filtered = true;
-    reasons.push('Makes an evidence or quantitative claim without an exact retrieved evidence citation');
+    reasons.push('Makes more evidence or quantitative claims than it provides exact retrieved evidence citations for');
   }
 
   const hasDeferralLanguage = /professional|medical authority|clinician|doctor|physician|medical evaluation/i.test(response);

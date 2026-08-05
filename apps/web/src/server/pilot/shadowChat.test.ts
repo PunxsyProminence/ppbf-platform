@@ -330,6 +330,32 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
         expect(result.filtered).toBe(false);
         expect(result.citationIds).toEqual([evidenceId]);
       });
+
+      test('filters a second, uncited claim riding on one real citation', () => {
+        // The check used to be a single yes/no over the whole response: any
+        // citation at all satisfied it, no matter how many separate claims the
+        // response made. One real cited percentage let a completely fabricated,
+        // uncited case count and outcome through right next to it.
+        const evidenceId = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
+        const result = validateShadowResponse(
+          `Attendance is 94% across the gym [E:${evidenceId}]. Also, 250 similar `
+          + 'athletes fully recovered using this exact protocol with no setbacks.',
+          { allowedEvidenceIds: [evidenceId] },
+        );
+        expect(result.filtered).toBe(true);
+        expect(result.message).toBe(SHADOW_SAFE_FILTERED_RESPONSE);
+      });
+
+      test('allows the same citation to back more than one claim it actually supports', () => {
+        const evidenceId = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
+        const result = validateShadowResponse(
+          `Attendance is 94% across the gym [E:${evidenceId}]. Research shows this `
+          + `trend held all season [E:${evidenceId}].`,
+          { allowedEvidenceIds: [evidenceId] },
+        );
+        expect(result.filtered).toBe(false);
+        expect(result.citationIds).toEqual([evidenceId]);
+      });
     });
 
     test('allows ordinary non-medical boxing coaching language', () => {
