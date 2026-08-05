@@ -72,23 +72,23 @@ export default function ParentProgressionVisibilityPage() {
   return (
     <RoleStandaloneView roleLabel="Parent Hub" routeLabel="/parent/progression-visibility" allowedRoles={['parent']} showShellHeader={false}>
       <div className="space-y-6">
-        <header className="border-2 border-[#8b4444] bg-[#111111] p-5">
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">Closed-Loop Progression Intelligence</p>
-          <h1 className="mt-2 text-3xl font-black text-[#f2e7da]">Parent Progression Visibility</h1>
-          <p className="mt-2 text-sm text-[#cfbfae]">
+        <header className="tactical-panel p-5">
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--red-primary)]">Closed-Loop Progression Intelligence</p>
+          <h1 className="mt-2 text-3xl font-black text-[var(--black)]">Parent Progression Visibility</h1>
+          <p className="mt-2 text-sm text-[var(--gray-dark)]">
             Family-facing progression surface for support visibility only.
           </p>
-          <p className="mt-2 text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">
+          <p className="mt-2 text-xs font-mono uppercase tracking-[0.08em] text-[var(--red-primary)]">
             {capabilityStatus}
           </p>
-          {errorMessage ? <p className="mt-2 text-xs text-[#f0c4c4]">{errorMessage}</p> : null}
+          {errorMessage ? <p className="mt-2 text-xs text-[var(--red-primary)]">{errorMessage}</p> : null}
         </header>
 
         <section className="grid gap-3 md:grid-cols-2">
           {familyPanels.map((panel) => (
-            <article key={panel} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
-              <p className="text-sm font-semibold text-[#e8d7c6]">{panel}</p>
-              <p className="mt-1 text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">
+            <article key={panel} className="tactical-panel p-4">
+              <p className="text-sm font-semibold text-[var(--black)]">{panel}</p>
+              <p className="mt-1 text-xs font-mono uppercase tracking-[0.08em] text-[var(--red-primary)]">
                 {capabilityStatus}
               </p>
             </article>
@@ -96,10 +96,10 @@ export default function ParentProgressionVisibilityPage() {
         </section>
 
         <div className="flex flex-wrap gap-3">
-          <Link href="/parent/dashboard" className="border-2 border-[#8b4444] bg-[#2a1a1a] px-4 py-2 text-xs font-mono text-[#d4a574]">
+          <Link href="/parent/dashboard" className="border-2 border-[var(--black)] bg-[var(--canvas-tan-dark)] px-4 py-2 text-xs font-mono text-[var(--black)]">
             Back to Parent Hub
           </Link>
-          <Link href="/athlete/progression-intelligence" className="border-2 border-[#4a4a4a] bg-[#1a1a1a] px-4 py-2 text-xs font-mono text-[#b0b0b0]">
+          <Link href="/athlete/progression-intelligence" className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 py-2 text-xs font-mono text-[var(--gray-dark)]">
             Athlete Progression Surface
           </Link>
         </div>

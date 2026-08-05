@@ -168,9 +168,9 @@ const shadowComplianceChecks = [
 ];
 
 function capabilityTone(state: CapabilityState): string {
-  if (state === 'EXISTS') return 'border-[var(--status-ready)] bg-[#dce7ca] text-[var(--black)]';
-  if (state === 'PARTIAL') return 'border-[var(--status-warning)] bg-[#efe3c4] text-[var(--black)]';
-  if (state === 'PLACEHOLDER') return 'border-[var(--red-primary)] bg-[#f1d6d1] text-[var(--black)]';
+  if (state === 'EXISTS') return 'border-[var(--status-ready)] bg-[var(--canvas-tan-light)] text-[var(--black)]';
+  if (state === 'PARTIAL') return 'border-[var(--status-warning)] bg-[var(--canvas-tan-light)] text-[var(--black)]';
+  if (state === 'PLACEHOLDER') return 'border-[var(--red-primary)] bg-[var(--canvas-tan-light)] text-[var(--black)]';
   return 'border-[var(--gray-medium)] bg-[var(--canvas-tan)] text-[var(--black)]';
 }
 

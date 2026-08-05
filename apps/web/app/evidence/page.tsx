@@ -92,7 +92,7 @@ export default function EvidenceReviewPage() {
               action: 'review',
               approvalState,
             })}
-            className="border border-[#8b4444] bg-[#211717] px-3 py-1 text-xs font-mono uppercase text-[#e8d7c6] disabled:opacity-50"
+            className="border-2 border-[var(--black)] bg-[var(--canvas-tan-dark)] px-3 py-1 text-xs font-mono uppercase text-[var(--black)] disabled:opacity-50"
           >
             {approvalState === 'approved' ? 'Approve + verify' : 'Reject'}
           </button>
@@ -108,28 +108,28 @@ export default function EvidenceReviewPage() {
       allowedRoles={['admin']}
     >
       <div className="space-y-6">
-        <header className="border-2 border-[#8b4444] bg-[#111] p-5">
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">SHADOW evidence</p>
-          <h1 className="mt-2 text-3xl font-black text-[#f2e7da]">Evidence Review Queue</h1>
-          <p className="mt-2 text-sm text-[#cfbfae]">
+        <header className="tactical-panel p-5">
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--red-primary)]">SHADOW evidence</p>
+          <h1 className="mt-2 text-3xl font-black text-[var(--black)]">Evidence Review Queue</h1>
+          <p className="mt-2 text-sm text-[var(--gray-dark)]">
             Only approved, verified, fully indexed documents can support SHADOW citations.
           </p>
         </header>
 
-        {error ? <p className="border border-[#8b4444] bg-[#2a1414] p-3 text-sm text-[#f0c4c4]">{error}</p> : null}
+        {error ? <p className="tactical-alert-critical text-sm">{error}</p> : null}
 
         <section className="space-y-3">
-          <h2 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Sources</h2>
-          {queue.sources.length === 0 ? <p className="text-sm text-[#cfbfae]">No sources are awaiting review.</p> : null}
+          <h2 className="font-mono text-sm font-bold uppercase text-[var(--red-primary)]">Sources</h2>
+          {queue.sources.length === 0 ? <p className="text-sm text-[var(--gray-dark)]">No sources are awaiting review.</p> : null}
           {queue.sources.map((source) => (
-            <article key={source.source_id} className="border border-[#5a4a3a] bg-[#151515] p-4">
+            <article key={source.source_id} className="border border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h3 className="font-semibold text-[#f2e7da]">{source.title}</h3>
-                  <p className="text-xs text-[#cfbfae]">
+                  <h3 className="font-semibold text-[var(--black)]">{source.title}</h3>
+                  <p className="text-xs text-[var(--gray-dark)]">
                     {source.publisher || 'Publisher unavailable'} · {source.source_type} · {source.status}
                   </p>
-                  <p className="mt-1 text-xs font-mono text-[#a99a8b]">
+                  <p className="mt-1 text-xs font-mono text-[var(--gray-dark)]">
                     {source.approval_state} / {source.verification_state}
                   </p>
                 </div>
@@ -140,21 +140,21 @@ export default function EvidenceReviewPage() {
         </section>
 
         <section className="space-y-3">
-          <h2 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Documents</h2>
-          {queue.documents.length === 0 ? <p className="text-sm text-[#cfbfae]">No documents are awaiting review.</p> : null}
+          <h2 className="font-mono text-sm font-bold uppercase text-[var(--red-primary)]">Documents</h2>
+          {queue.documents.length === 0 ? <p className="text-sm text-[var(--gray-dark)]">No documents are awaiting review.</p> : null}
           {queue.documents.map((document) => (
-            <article key={document.document_id} className="border border-[#5a4a3a] bg-[#151515] p-4">
+            <article key={document.document_id} className="border border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h3 className="font-semibold text-[#f2e7da]">{document.document_name}</h3>
-                  <p className="text-xs text-[#cfbfae]">
+                  <h3 className="font-semibold text-[var(--black)]">{document.document_name}</h3>
+                  <p className="text-xs text-[var(--gray-dark)]">
                     {document.ingest_state} · {document.chunk_count} indexed chunks
                   </p>
-                  <p className="mt-1 text-xs font-mono text-[#a99a8b]">
+                  <p className="mt-1 text-xs font-mono text-[var(--gray-dark)]">
                     {document.approval_state} / {document.verification_state}
                   </p>
                   {document.extraction_error ? (
-                    <p className="mt-1 text-xs text-[#f0c4c4]">Extraction failed; this document cannot be approved.</p>
+                    <p className="mt-1 text-xs text-[var(--red-primary)]">Extraction failed; this document cannot be approved.</p>
                   ) : null}
                 </div>
                 <div className="space-y-2">
@@ -167,7 +167,7 @@ export default function EvidenceReviewPage() {
                         entityId: document.document_id,
                         action: 'complete_indexing',
                       })}
-                      className="block border border-[#5a4a3a] bg-[#171d21] px-3 py-1 text-xs font-mono uppercase text-[#d4a574] disabled:opacity-50"
+                      className="block border-2 border-[var(--black)] bg-[var(--canvas-tan-dark)] px-3 py-1 text-xs font-mono uppercase text-[var(--black)] disabled:opacity-50"
                     >
                       Confirm index complete
                     </button>
