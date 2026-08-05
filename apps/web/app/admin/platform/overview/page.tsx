@@ -90,7 +90,7 @@ export default function PlatformOverview() {
         <div className="mx-auto max-w-2xl space-y-6 text-center">
           <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--red-primary)]">Access Denied</p>
           <h1 className="font-display text-3xl font-black">Platform Owner Access Required</h1>
-          <Link href="/admin" className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-6 text-sm font-black uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]">
+          <Link href="/admin" className="tactical-btn tactical-btn-ghost border-2 border-[var(--black)]">
             Go To Admin Dashboard
           </Link>
         </div>
@@ -101,13 +101,13 @@ export default function PlatformOverview() {
   return (
     <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       <div className="mx-auto w-full max-w-5xl space-y-8 px-6 py-12 lg:px-10">
-        <header className="space-y-4 rounded-[28px] border border-[rgba(0,0,0,0.14)] bg-white p-6 shadow-[var(--shadow-md)]">
+        <header className="space-y-4 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-md)]">
           <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--red-primary)]">Platform Console</p>
           <h1 className="font-display text-4xl font-black">All Gyms Overview</h1>
           <p className="text-base leading-7 text-[var(--gray-dark)]">
             Every gym on the platform, one row each. Aggregate operational figures only.
           </p>
-          <Link href="/admin/platform" className="inline-flex min-h-[40px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]">
+          <Link href="/admin/platform" className="tactical-btn tactical-btn-ghost border-2 border-[var(--black)]">
             Back To Gym Switcher
           </Link>
         </header>
@@ -116,10 +116,10 @@ export default function PlatformOverview() {
         {loadError && <p className="text-sm text-[var(--red-primary)]">{loadError}</p>}
 
         {!loading && !loadError && (
-          <div className="overflow-x-auto rounded-2xl border-2 border-[rgba(0,0,0,0.14)] bg-white">
+          <div className="overflow-x-auto border-2 border-[var(--black)] bg-[var(--canvas-tan-light)]">
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead>
-                <tr className="border-b border-[rgba(0,0,0,0.1)] text-[10px] uppercase tracking-[0.1em] text-[var(--gray-dark)]">
+                <tr className="border-b border-[var(--black)] text-[10px] uppercase tracking-[0.1em] text-[var(--gray-dark)]">
                   <th className="px-4 py-3">Gym</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Active Athletes</th>
@@ -131,7 +131,7 @@ export default function PlatformOverview() {
               </thead>
               <tbody>
                 {gyms.map((gym) => (
-                  <tr key={gym.organizationId} className="border-b border-[rgba(0,0,0,0.06)] last:border-0">
+                  <tr key={gym.organizationId} className="border-b border-[var(--gray-medium)]/30 last:border-0">
                     <td className="px-4 py-3 font-semibold">{gym.organizationName}</td>
                     <td className="px-4 py-3">{gym.status}</td>
                     {gym.error ? (

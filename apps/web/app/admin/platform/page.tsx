@@ -222,10 +222,10 @@ export default function PlatformConsole() {
             This console is for PPBF platform administrators only.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
-            <Link href="/login" className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-[var(--red-primary)] px-6 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-[var(--red-highlight)]">
+            <Link href="/login" className="tactical-btn tactical-btn-critical">
               Sign In With Microsoft
             </Link>
-            <Link href="/admin" className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-6 text-sm font-black uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]">
+            <Link href="/admin" className="tactical-btn tactical-btn-ghost border-2 border-[var(--black)]">
               Go To Admin Dashboard
             </Link>
           </div>
@@ -237,7 +237,7 @@ export default function PlatformConsole() {
   return (
     <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       <div className="mx-auto w-full max-w-3xl space-y-8 px-6 py-12 lg:px-10">
-        <header className="space-y-4 rounded-[28px] border border-[rgba(0,0,0,0.14)] bg-white p-6 shadow-[var(--shadow-md)]">
+        <header className="space-y-4 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-md)]">
           <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--red-primary)]">Platform Console</p>
           <h1 className="font-display text-4xl font-black">Omega</h1>
           <p className="text-base leading-7 text-[var(--gray-dark)]">
@@ -245,10 +245,10 @@ export default function PlatformConsole() {
             organizations for operational data only -- never medical/PHI records, which stay each gym&apos;s own.
           </p>
           <div className="flex flex-wrap gap-3 pt-2">
-            <Link href="/admin/platform/overview" className="inline-flex min-h-[40px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]">
+            <Link href="/admin/platform/overview" className="tactical-btn tactical-btn-ghost border-2 border-[var(--black)]">
               All Gyms Overview
             </Link>
-            <Link href="/admin/organizations" className="inline-flex min-h-[40px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]">
+            <Link href="/admin/organizations" className="tactical-btn tactical-btn-ghost border-2 border-[var(--black)]">
               Onboard A New Gym
             </Link>
           </div>
@@ -256,17 +256,17 @@ export default function PlatformConsole() {
 
         {feedback && (
           <div
-            className={`rounded-xl border px-4 py-3 ${
+            className={`border-2 px-4 py-3 ${
               feedback.kind === 'error'
-                ? 'border-[var(--red-primary)] bg-[rgba(184,59,52,0.05)]'
+                ? 'border-[var(--red-primary)] bg-[rgba(139,0,0,0.08)]'
                 : feedback.kind === 'success'
-                  ? 'border-[#4caf50] bg-[rgba(76,175,80,0.05)]'
+                  ? 'border-[var(--status-ready)] bg-[rgba(74,93,35,0.08)]'
                   : 'border-[var(--gray-medium)] bg-[rgba(0,0,0,0.03)]'
             }`}
           >
             <p
               className={`text-sm font-semibold ${
-                feedback.kind === 'error' ? 'text-[var(--red-primary)]' : feedback.kind === 'success' ? 'text-[#2e7d32]' : 'text-[var(--gray-dark)]'
+                feedback.kind === 'error' ? 'text-[var(--red-primary)]' : feedback.kind === 'success' ? 'text-[var(--status-ready)]' : 'text-[var(--gray-dark)]'
               }`}
             >
               {feedback.kind === 'error' && '❌ '}
@@ -276,12 +276,12 @@ export default function PlatformConsole() {
           </div>
         )}
 
-        <section className="rounded-2xl border-2 border-[rgba(0,0,0,0.14)] bg-white p-6">
+        <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6">
           <label className="block text-sm font-semibold text-[var(--black)]">Choose A Gym</label>
           <select
             value={selectedOrgId}
             onChange={(event) => setSelectedOrgId(event.target.value)}
-            className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+            className="mt-2 tactical-input"
           >
             <option value="">Select a gym...</option>
             {organizations.map((org) => (
@@ -295,19 +295,19 @@ export default function PlatformConsole() {
 
           {summary && summary.organization_id === selectedOrgId && (
             <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <div className="rounded-lg border border-[rgba(0,0,0,0.1)] p-3">
+              <div className="border border-[var(--black)] p-3">
                 <p className="text-[10px] uppercase tracking-[0.1em] text-[var(--gray-dark)]">Active Athletes</p>
                 <p className="mt-1 text-xl font-black">{metricLabel(summary.board.activeAthletes)}</p>
               </div>
-              <div className="rounded-lg border border-[rgba(0,0,0,0.1)] p-3">
+              <div className="border border-[var(--black)] p-3">
                 <p className="text-[10px] uppercase tracking-[0.1em] text-[var(--gray-dark)]">Sessions (30d)</p>
                 <p className="mt-1 text-xl font-black">{metricLabel(summary.board.trainingSessions30Days)}</p>
               </div>
-              <div className="rounded-lg border border-[rgba(0,0,0,0.1)] p-3">
+              <div className="border border-[var(--black)] p-3">
                 <p className="text-[10px] uppercase tracking-[0.1em] text-[var(--gray-dark)]">Coach Reviews (30d)</p>
                 <p className="mt-1 text-xl font-black">{metricLabel(summary.board.coachReviews30Days)}</p>
               </div>
-              <div className="rounded-lg border border-[rgba(0,0,0,0.1)] p-3">
+              <div className="border border-[var(--black)] p-3">
                 <p className="text-[10px] uppercase tracking-[0.1em] text-[var(--gray-dark)]">SHADOW Uses (30d)</p>
                 <p className="mt-1 text-xl font-black">{summary.growth.totalInteractions}</p>
               </div>
@@ -315,7 +315,7 @@ export default function PlatformConsole() {
           )}
         </section>
 
-        <section className="rounded-2xl border-2 border-[rgba(0,0,0,0.14)] bg-white p-6">
+        <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6">
           <h2 className="text-lg font-bold">Invite Staff Or A Gym Admin</h2>
           <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
             Sends a Microsoft-authenticated invite into the selected gym.
@@ -326,12 +326,12 @@ export default function PlatformConsole() {
               value={inviteEmail}
               onChange={(event) => setInviteEmail(event.target.value)}
               placeholder="name@example.org"
-              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+              className="tactical-input"
             />
             <select
               value={inviteRole}
               onChange={(event) => setInviteRole(event.target.value)}
-              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+              className="tactical-input"
             >
               {INVITABLE_ROLES.map((role) => (
                 <option key={role.value} value={role.value}>{role.label}</option>
@@ -341,14 +341,14 @@ export default function PlatformConsole() {
               type="button"
               disabled={isBusy || !selectedOrgId}
               onClick={() => void inviteStaff()}
-              className="h-11 w-full rounded-lg border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="tactical-btn tactical-btn-critical w-full"
             >
               {isBusy ? 'Working...' : 'Send Invite'}
             </button>
           </div>
         </section>
 
-        <section className="rounded-2xl border-2 border-[rgba(0,0,0,0.14)] bg-white p-6">
+        <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6">
           <h2 className="text-lg font-bold">Prepare An Athlete Account</h2>
           <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
             Creates the login shell only -- no PIN, cannot sign in yet. The gym&apos;s own admin
@@ -360,20 +360,20 @@ export default function PlatformConsole() {
               value={athleteAccountId}
               onChange={(event) => setAthleteAccountId(event.target.value)}
               placeholder="Account ID (how they'll sign in)"
-              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+              className="tactical-input"
             />
             <input
               type="text"
               value={athleteRosterId}
               onChange={(event) => setAthleteRosterId(event.target.value)}
               placeholder="Existing athlete roster ID"
-              className="h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+              className="tactical-input"
             />
             <button
               type="button"
               disabled={isBusy || !selectedOrgId}
               onClick={() => void createAthleteShell()}
-              className="h-11 w-full rounded-lg border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="tactical-btn tactical-btn-critical w-full"
             >
               {isBusy ? 'Working...' : 'Create Account Shell'}
             </button>

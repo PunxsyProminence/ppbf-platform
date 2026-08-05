@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import RoleStandaloneView from '@/components/RoleStandaloneView';
+import { ui, cx } from '@/components/uiStyles';
 
 type ReviewState = 'new' | 'contacted' | 'archived';
 
@@ -20,9 +21,9 @@ interface Submission {
 }
 
 function reviewStateTone(state: ReviewState): string {
-  if (state === 'new') return 'border-[#8b4444] bg-[#2a1414] text-[#f2c9c9]';
-  if (state === 'contacted') return 'border-[#4a6b2a] bg-[#1a2a14] text-[#c9e0b4]';
-  return 'border-[#4a4a4a] bg-[#1a1a1a] text-[#8a8a8a]';
+  if (state === 'new') return 'border-[var(--red-primary)] bg-[var(--red-primary)] text-[var(--white)]';
+  if (state === 'contacted') return 'border-[var(--status-ready)] bg-[var(--status-ready)] text-[var(--white)]';
+  return 'border-[var(--status-inactive)] bg-[var(--status-inactive)] text-[var(--white)]';
 }
 
 export default function PublicInterestReviewPage() {
@@ -84,10 +85,10 @@ export default function PublicInterestReviewPage() {
       allowedRoles={['admin']}
     >
       <div className="space-y-6">
-        <header className="border-2 border-[#8b4444] bg-[#111] p-5">
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">Public Portal</p>
-          <h1 className="mt-2 text-3xl font-black text-[#f2e7da]">Public Interest Submissions</h1>
-          <p className="mt-2 text-sm text-[#cfbfae]">
+        <header className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--red-primary)]">Public Portal</p>
+          <h1 className="mt-2 text-3xl font-black text-[var(--black)]">Public Interest Submissions</h1>
+          <p className="mt-2 text-sm text-[var(--gray-dark)]">
             Real submissions from the public marketing site&apos;s interest-intake form. This is real contact
             information for prospective members, volunteers, and partners -- follow up, then mark each one
             Contacted or Archived.
@@ -100,41 +101,37 @@ export default function PublicInterestReviewPage() {
               key={state}
               type="button"
               onClick={() => setFilter(state)}
-              className={`border-2 px-3 py-1 text-xs font-mono font-bold uppercase tracking-[0.08em] transition ${
-                filter === state
-                  ? 'border-[#d4a574] bg-[#2a1a1a] text-[#d4a574]'
-                  : 'border-[#5a4a3a] bg-[#101010] text-[#cfbfae] hover:border-[#8b4444]'
-              }`}
+              className={cx(ui.tabButtonBase, filter === state ? ui.tabButtonActive : ui.tabButtonInactive)}
             >
               {state}
             </button>
           ))}
         </div>
 
-        {error ? <p className="border border-[#8b4444] bg-[#2a1414] p-3 text-sm text-[#f0c4c4]">{error}</p> : null}
-        {loading ? <p className="text-sm text-[#cfbfae]">Loading submissions...</p> : null}
+        {error ? <p className="tactical-alert-critical text-sm">{error}</p> : null}
+        {loading ? <p className="text-sm text-[var(--gray-dark)]">Loading submissions...</p> : null}
         {!loading && items.length === 0 && !error ? (
-          <p className="text-sm text-[#cfbfae]">No submissions match this filter.</p>
+          <p className="text-sm text-[var(--gray-dark)]">No submissions match this filter.</p>
         ) : null}
 
         <section className="space-y-3">
           {items.map((item) => (
-            <article key={item.submission_id} className="border border-[#5a4a3a] bg-[#151515] p-4">
+            <article key={item.submission_id} className="border border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-semibold text-[#f2e7da]">{item.full_name}</h3>
+                    <h3 className="font-semibold text-[var(--black)]">{item.full_name}</h3>
                     <span className={`border px-2 py-0.5 text-[10px] font-mono font-bold uppercase ${reviewStateTone(item.review_state)}`}>
                       {item.review_state}
                     </span>
                   </div>
-                  <p className="text-xs text-[#cfbfae]">
+                  <p className="text-xs text-[var(--gray-dark)]">
                     {item.email}{item.phone ? ` · ${item.phone}` : ''} · Prefers: {item.preferred_contact_method}
                   </p>
-                  <p className="text-xs text-[#a99a8b]">
+                  <p className="text-xs text-[var(--gray-dark)]">
                     {item.visitor_type} · {item.program_interest} · {new Date(item.created_at).toLocaleString()}
                   </p>
-                  {item.message ? <p className="mt-1 text-xs italic text-[#cfbfae]">&quot;{item.message}&quot;</p> : null}
+                  {item.message ? <p className="mt-1 text-xs italic text-[var(--gray-dark)]">&quot;{item.message}&quot;</p> : null}
                 </div>
                 <div className="flex gap-2">
                   {(['contacted', 'archived'] as const).map((state) => (
@@ -143,7 +140,7 @@ export default function PublicInterestReviewPage() {
                       type="button"
                       disabled={busyId === item.submission_id || item.review_state === state}
                       onClick={() => void setReviewState(item.submission_id, state)}
-                      className="border border-[#8b4444] bg-[#211717] px-3 py-1 text-xs font-mono uppercase text-[#e8d7c6] disabled:opacity-50"
+                      className="tactical-btn text-xs"
                     >
                       Mark {state}
                     </button>
