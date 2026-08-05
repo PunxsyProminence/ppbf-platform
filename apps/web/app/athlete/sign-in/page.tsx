@@ -71,7 +71,7 @@ export default function AthletePinSignInPage() {
 
   return (
     <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-4 py-8 text-[var(--black)]">
-      <div className="w-full max-w-md rounded-2xl border border-[rgba(0,0,0,0.16)] bg-white p-6 shadow-[var(--shadow-md)]">
+      <div className="w-full max-w-md border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-md)]">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">Athlete Sign In</p>
         <h1 className="mt-2 text-2xl font-black tracking-tight">PIN Login</h1>
         <p className="mt-2 text-sm text-[var(--gray-dark)]">Use your athlete Account ID and 6-digit PIN.</p>
@@ -87,7 +87,7 @@ export default function AthletePinSignInPage() {
               value={accountId}
               onChange={(event) => setAccountId(event.target.value)}
               autoComplete="username"
-              className="mt-1 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] px-3"
+              className="mt-1 min-h-[48px] w-full border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3"
               placeholder="athlete-account-id"
             />
           </div>
@@ -108,13 +108,13 @@ export default function AthletePinSignInPage() {
               value={pin}
               onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))}
               autoComplete="current-password"
-              className="mt-1 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] px-3 font-[family-name:var(--font-mono)] tracking-[0.4em]"
+              className="mt-1 min-h-[48px] w-full border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 font-[family-name:var(--font-mono)] tracking-[0.4em]"
               placeholder={`${DEFAULT_PIN_LENGTH} digits`}
             />
           </div>
 
           {error && (
-            <p className="rounded-lg border border-[var(--red-primary)] bg-[rgba(184,59,52,0.06)] px-3 py-2 text-sm" role="alert">
+            <p className="tactical-alert-critical text-sm" role="alert">
               {error}
             </p>
           )}
@@ -122,7 +122,7 @@ export default function AthletePinSignInPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="min-h-[50px] w-full rounded-xl border border-[var(--red-primary)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.16em] text-white disabled:cursor-not-allowed disabled:opacity-50"
+            className="min-h-[50px] w-full border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.16em] text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submitting ? 'Signing in...' : 'Sign In'}
           </button>

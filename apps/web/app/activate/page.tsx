@@ -152,7 +152,7 @@ function ActivatePageContent() {
         {error && (
           <p
             role="alert"
-            className="rounded-xl border border-[var(--red-primary)] bg-[rgba(184,59,52,0.06)] px-4 py-3 text-sm font-semibold text-[var(--red-primary)]"
+            className="tactical-alert-critical text-sm font-semibold"
           >
             {error}
           </p>
@@ -161,7 +161,7 @@ function ActivatePageContent() {
         {stage === 'code' && (
           <form
             onSubmit={goToPinStage}
-            className="space-y-4 rounded-2xl border border-[rgba(0,0,0,0.14)] bg-white p-5 shadow-[var(--shadow-md)]"
+            className="space-y-4 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-md)]"
           >
             <div>
               <label htmlFor="activation-code" className="block text-sm font-semibold">
@@ -180,7 +180,7 @@ function ActivatePageContent() {
                 value={code}
                 onChange={(event) => setCode(formatCodeInput(event.target.value))}
                 placeholder="ABCD-2345-EFGH"
-                className="mt-2 min-h-[52px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-center font-mono text-lg tracking-[0.15em] focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                className="mt-2 min-h-[52px] w-full border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-center font-mono text-lg tracking-[0.15em] focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
               />
               <p className="mt-2 text-right text-xs text-[var(--gray-dark)]">
                 {countCodeCharacters(code)} / {CODE_LENGTH}
@@ -190,7 +190,7 @@ function ActivatePageContent() {
             <button
               type="submit"
               disabled={!codeComplete}
-              className="min-h-[52px] w-full rounded-xl border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-[52px] w-full border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               Continue
             </button>
@@ -200,9 +200,9 @@ function ActivatePageContent() {
         {stage === 'pin' && (
           <form
             onSubmit={submitActivation}
-            className="space-y-4 rounded-2xl border border-[rgba(0,0,0,0.14)] bg-white p-5 shadow-[var(--shadow-md)]"
+            className="space-y-4 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-md)]"
           >
-            <div className="rounded-xl border border-[rgba(0,0,0,0.1)] bg-[var(--canvas-tan-light)] px-3 py-2">
+            <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-2">
               <p className="text-xs text-[var(--gray-dark)]">
                 Code <span className="font-mono font-semibold text-[var(--black)]">{code}</span>
               </p>
@@ -223,7 +223,7 @@ function ActivatePageContent() {
                 value={pin}
                 onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, PIN_LENGTH))}
                 placeholder="••••••"
-                className="mt-2 min-h-[52px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 text-center font-mono text-lg tracking-[0.35em] focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                className="mt-2 min-h-[52px] w-full border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-center font-mono text-lg tracking-[0.35em] focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
               />
             </div>
 
@@ -239,7 +239,7 @@ function ActivatePageContent() {
                 value={confirmPin}
                 onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, '').slice(0, PIN_LENGTH))}
                 placeholder="••••••"
-                className="mt-2 min-h-[52px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 text-center font-mono text-lg tracking-[0.35em] focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                className="mt-2 min-h-[52px] w-full border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-center font-mono text-lg tracking-[0.35em] focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
               />
               {confirmPin.length > 0 && !pinsMatch && (
                 <p className="mt-2 text-xs font-semibold text-[var(--red-primary)]">These do not match yet.</p>
@@ -249,7 +249,7 @@ function ActivatePageContent() {
             <button
               type="submit"
               disabled={submitting || !pinValid || !pinsMatch}
-              className="min-h-[52px] w-full rounded-xl border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-[52px] w-full border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {submitting ? 'Activating...' : 'Activate My Account'}
             </button>
@@ -268,12 +268,12 @@ function ActivatePageContent() {
         )}
 
         {stage === 'done' && (
-          <section className="space-y-5 rounded-2xl border-2 border-[#4caf50] bg-[rgba(76,175,80,0.06)] p-6 text-center">
+          <section className="space-y-5 border-2 border-[var(--status-ready)] bg-[var(--canvas-tan-light)] p-6 text-center">
             <p className="text-4xl" aria-hidden="true">✓</p>
             <h2 className="font-display text-2xl font-black">You&apos;re all set</h2>
 
             {accountId && (
-              <div className="rounded-xl border border-[rgba(0,0,0,0.12)] bg-white px-4 py-3">
+              <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 py-3">
                 <p className="text-xs uppercase tracking-[0.14em] text-[var(--gray-dark)]">Your sign-in ID</p>
                 <p className="mt-1 font-mono text-base font-bold break-all">{accountId}</p>
                 <p className="mt-2 text-xs text-[var(--gray-dark)]">
@@ -287,7 +287,7 @@ function ActivatePageContent() {
                 <p className="text-sm leading-6 text-[var(--gray-dark)]">You are already signed in.</p>
                 <Link
                   href="/athlete/dashboard"
-                  className="inline-flex min-h-[52px] w-full items-center justify-center rounded-xl border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-6 text-sm font-black uppercase tracking-[0.14em] text-white transition hover:bg-[var(--red-highlight)]"
+                  className="inline-flex min-h-[52px] w-full items-center justify-center border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-6 text-sm font-black uppercase tracking-[0.14em] text-white transition hover:bg-[var(--red-highlight)]"
                 >
                   Go To My Dashboard
                 </Link>
@@ -299,7 +299,7 @@ function ActivatePageContent() {
                 </p>
                 <Link
                   href="/login"
-                  className="inline-flex min-h-[52px] w-full items-center justify-center rounded-xl border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-6 text-sm font-black uppercase tracking-[0.14em] text-white transition hover:bg-[var(--red-highlight)]"
+                  className="inline-flex min-h-[52px] w-full items-center justify-center border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-6 text-sm font-black uppercase tracking-[0.14em] text-white transition hover:bg-[var(--red-highlight)]"
                 >
                   Go To Sign In
                 </Link>

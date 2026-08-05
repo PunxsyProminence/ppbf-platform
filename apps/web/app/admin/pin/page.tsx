@@ -121,7 +121,7 @@ function PinManagementPageContent() {
   return (
     <main className="min-h-screen bg-[var(--canvas-tan)] px-4 py-6 text-[var(--black)] sm:px-6">
       <div className="mx-auto w-full max-w-4xl space-y-5">
-        <header className="rounded-2xl border border-[rgba(0,0,0,0.16)] bg-white p-5 shadow-[var(--shadow-md)]">
+        <header className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-md)]">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">Gym Admin PIN Control</p>
           <h1 className="mt-2 text-2xl font-black tracking-tight">Activate or Reset Athlete PIN</h1>
           <p className="mt-2 text-sm text-[var(--gray-dark)]">
@@ -130,7 +130,7 @@ function PinManagementPageContent() {
         </header>
 
         <div className="grid gap-5 lg:grid-cols-[1.1fr_1fr]">
-          <section className="rounded-2xl border border-[rgba(0,0,0,0.14)] bg-white p-4 shadow-[var(--shadow-sm)]">
+          <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4 shadow-[var(--shadow-sm)]">
             <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--gray-dark)]">Athlete / User List</h2>
             {loading ? (
               <p className="mt-4 text-sm">Loading athletes...</p>
@@ -150,10 +150,10 @@ function PinManagementPageContent() {
                       <button
                         type="button"
                         onClick={() => setSelectedAthleteId(item.athlete_id)}
-                        className={`w-full rounded-xl border px-3 py-3 text-left transition ${
+                        className={`w-full border-2 px-3 py-3 text-left transition ${
                           selected
                             ? 'border-[var(--red-primary)] bg-[rgba(184,59,52,0.08)]'
-                            : 'border-[rgba(0,0,0,0.14)] bg-white hover:border-[rgba(0,0,0,0.3)]'
+                            : 'border-[var(--black)] bg-[var(--canvas-tan-light)] hover:border-[var(--red-primary)]'
                         }`}
                       >
                         <p className="text-sm font-semibold">{item.full_name}</p>
@@ -169,7 +169,7 @@ function PinManagementPageContent() {
             )}
           </section>
 
-          <section className="rounded-2xl border border-[rgba(0,0,0,0.14)] bg-white p-4 shadow-[var(--shadow-sm)]">
+          <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4 shadow-[var(--shadow-sm)]">
             <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--gray-dark)]">PIN Action</h2>
             <form className="mt-3 space-y-3" onSubmit={submitPinAction}>
               <fieldset className="space-y-2">
@@ -208,7 +208,7 @@ function PinManagementPageContent() {
                   value={pin}
                   maxLength={DEFAULT_PIN_LENGTH}
                   onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))}
-                  className="mt-1 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] px-3"
+                  className="mt-1 min-h-[48px] w-full border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3"
                   placeholder="6 digits"
                   autoComplete="new-password"
                 />
@@ -226,19 +226,19 @@ function PinManagementPageContent() {
                   value={confirmPin}
                   maxLength={DEFAULT_PIN_LENGTH}
                   onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))}
-                  className="mt-1 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] px-3"
+                  className="mt-1 min-h-[48px] w-full border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3"
                   placeholder="Repeat 6 digits"
                   autoComplete="new-password"
                 />
               </div>
 
-              {error && <p className="rounded-lg border border-[var(--red-primary)] bg-[rgba(184,59,52,0.06)] px-3 py-2 text-sm" role="alert">{error}</p>}
-              {success && <p className="rounded-lg border border-[rgba(16,120,40,0.5)] bg-[rgba(16,120,40,0.1)] px-3 py-2 text-sm">{success}</p>}
+              {error && <p className="tactical-alert-critical text-sm" role="alert">{error}</p>}
+              {success && <p className="border-2 border-[var(--status-ready)] bg-[var(--canvas-tan-light)] px-3 py-2 text-sm font-semibold text-[var(--status-ready)]">{success}</p>}
 
               <button
                 type="submit"
                 disabled={saving || !selectedItem?.account_id}
-                className="min-h-[50px] w-full rounded-xl border border-[var(--red-primary)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.16em] text-white disabled:cursor-not-allowed disabled:opacity-50"
+                className="min-h-[50px] w-full border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.16em] text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {saving ? 'Saving...' : mode === 'activate' ? 'Activate PIN' : 'Reset PIN'}
               </button>
