@@ -382,8 +382,10 @@ function renderGallery(shots: Shot[], capturedAt: string): string {
   /* The sheet renders against the real ppbf.css rather than a copy of its
      values, for the same reason every preview in design-system/ does: a second
      set of numbers is a second thing to drift. Resolved from OUT_DIR because
-     SHOTS_OUT can move the sheet anywhere, and a hardcoded ../../.. renders it
-     unstyled from any other directory. */
+     SHOTS_OUT (via OUT_DIR) can be relocated within WEB_ROOT, and a hardcoded
+     ../../.. renders it unstyled from any other directory. OUT_DIR must be a
+     subdirectory of WEB_ROOT for safety (prevents accidental deletion of broader
+     directories if SHOTS_OUT is misconfigured). */
   const stylesheet = path
     .relative(OUT_DIR, path.resolve(WEB_ROOT, '../../design-system/ppbf.css'))
     .split(path.sep)
