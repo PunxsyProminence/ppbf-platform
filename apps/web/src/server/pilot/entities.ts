@@ -73,6 +73,11 @@ export async function getGoalById(organizationId: string, goalId: string): Promi
   return queryOne<PilotGoal>('select * from pilot.goals where organization_id = $1 and goal_id = $2', [organizationId, goalId]);
 }
 
+// Whole-record semantics, the same as every other field here: what the payload
+// says is what the row becomes. That matters more for category and
+// progress_percent than for the rest, because both are nullable -- a caller
+// that omits them is not leaving them alone, it is clearing them. A client
+// updating one field sends the goal back entire.
 export async function upsertGoal(organizationId: string, payload: PilotGoal): Promise<void> {
   const updated = await query<{ goal_id: string }>(
     `update pilot.goals
@@ -81,7 +86,9 @@ export async function upsertGoal(organizationId: string, payload: PilotGoal): Pr
          target_date = $5,
          metric = $6,
          status = $7,
-         updated_at = $8
+         category = $8,
+         progress_percent = $9,
+         updated_at = $10
      where organization_id = $1 and goal_id = $2
      returning goal_id`,
     [
@@ -92,6 +99,8 @@ export async function upsertGoal(organizationId: string, payload: PilotGoal): Pr
       payload.target_date,
       payload.metric,
       payload.status,
+      payload.category,
+      payload.progress_percent,
       payload.updated_at,
     ],
   );
@@ -101,8 +110,8 @@ export async function upsertGoal(organizationId: string, payload: PilotGoal): Pr
   }
 
   await query(
-    `insert into pilot.goals (organization_id, goal_id, athlete_id, title, target_date, metric, status, created_at, updated_at)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+    `insert into pilot.goals (organization_id, goal_id, athlete_id, title, target_date, metric, status, category, progress_percent, created_at, updated_at)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
     [
       organizationId,
       payload.goal_id,
@@ -111,6 +120,8 @@ export async function upsertGoal(organizationId: string, payload: PilotGoal): Pr
       payload.target_date,
       payload.metric,
       payload.status,
+      payload.category,
+      payload.progress_percent,
       payload.created_at,
       payload.updated_at,
     ],
