@@ -94,9 +94,6 @@ const BADGE_GLYPH: Record<Exclude<BadgeTone, 'neutral'>, string> = {
   locked: '✕',
 };
 
-const NEUTRAL_BADGE =
-  'inline-flex items-center gap-[7px] rounded-[var(--r-pill)] border border-[color:var(--hide-600)] bg-[rgba(0,0,0,.28)] px-[12px] py-[6px] text-[11px] font-bold uppercase tracking-[0.1em] text-[color:var(--bone-300)]';
-
 function statusBadgeTone(status: string): BadgeTone {
   if (status === 'accepted' || status === 'cleared' || status === 'active' || status === 'match') return 'cleared';
   if (status === 'provisional' || status === 'pending' || status === 'partial') return 'restricted';
@@ -108,8 +105,8 @@ function StatusBadge({ status }: { readonly status: string }) {
   const tone = statusBadgeTone(status);
   if (tone === 'neutral') {
     return (
-      <span className={NEUTRAL_BADGE}>
-        <i className="not-italic">◌</i>
+      <span className="badge badge--filed">
+        <i>◌</i>
         {status}
       </span>
     );

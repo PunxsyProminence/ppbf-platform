@@ -46,9 +46,6 @@ interface AssignmentCompletion {
   verified_at?: string;
 }
 
-const NEUTRAL_CHIP_CLASS =
-  'inline-flex items-center gap-[7px] rounded-[var(--r-pill)] border border-[color:rgba(212,175,74,.32)] bg-[rgba(0,0,0,.28)] px-[12px] py-[6px] font-bold uppercase tracking-[0.1em] text-[11px] text-[color:var(--bone-300)]';
-
 const GapBadge = ({ severity }: { severity: string }) => {
   const rungs: Record<string, { className: string; glyph: string }> = {
     critical: { className: 'badge badge--locked', glyph: '✕' },
@@ -86,7 +83,7 @@ const StatusBadge = ({ status, type }: { status: string; type: 'gap' | 'assignme
   const rung = statusRungs[type]?.[status];
   const label = status.replaceAll('_', ' ');
   if (!rung) {
-    return <span className={NEUTRAL_CHIP_CLASS}>{label}</span>;
+    return <span className="badge badge--filed"><i>◌</i>{label}</span>;
   }
   return <span className={rung.className}><i>{rung.glyph}</i>{label}</span>;
 };
