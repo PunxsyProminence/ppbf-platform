@@ -40,19 +40,18 @@ by nature, not by preference.
 
 ---
 
-## Band 0 — open PRs, oldest first
+## Band 0 — ✅ all merged
 
-Four PRs are open right now. Nothing else should start until these are resolved, because
-every one of them touches files later items also touch.
+All four PRs have been merged as of 2026-08-02.
 
-| Id | PR | State | Owner | Action |
-|---|---|---|---|---|
-| 0.1 | [#150](https://github.com/PunxsyProminence/ppbf-platform/pull/150) — reviewer video access, `blocked` administrator | draft, **green, and complete** | VS Code | **Undraft and review.** My first pass called this "unfinished" from its draft flag alone, which was wrong: 851 lines across 7 files, 16 route tests, 6 pg tests, mutation-verified, CI green since 04:39. It is the oldest open branch and it is ready. It also closes a dead end — a video the content screen `blocked` had no exit anywhere in the platform |
-| 0.2 | [#151](https://github.com/PunxsyProminence/ppbf-platform/pull/151) — Law 5 tap floor, design laws rewrite | **ready**, clean | VS Code | Needs a human read on the *laws rewrite*, not the tap fixes. The tap fixes are verified in-browser and are a real accessibility defect (`Engage Medical Lock` rendered at 38px). The laws rewrite has had no audit and says so |
-| 0.3 | [#154](https://github.com/PunxsyProminence/ppbf-platform/pull/154) — Heavy Bag cap, metrics panel error | draft, green | VS Code | Undraft → merge → **deploy**. This is the only item in the queue that changes what a user is charged for |
-| 0.4 | [#153](https://github.com/PunxsyProminence/ppbf-platform/pull/153) — SHADOW surfaces/spec audit | draft, green | Either | Docs only. Merge whenever; blocks nothing |
+| Id | PR | Merged | What |
+|---|---|---|---|
+| 0.1 | [#150](https://github.com/PunxsyProminence/ppbf-platform/pull/150) | 2026-08-02 | Reviewer video access + `blocked` administrator surface |
+| 0.2 | [#151](https://github.com/PunxsyProminence/ppbf-platform/pull/151) | 2026-08-01 | Law 5 tap floor fixes + design laws rewrite |
+| 0.3 | [#154](https://github.com/PunxsyProminence/ppbf-platform/pull/154) | 2026-08-01 | Heavy Bag cap per user + metrics panel error handling |
+| 0.4 | [#153](https://github.com/PunxsyProminence/ppbf-platform/pull/153) | 2026-08-02 | SHADOW surfaces/spec audit (docs) |
 
-0.3 and 0.4 are independent — either order.
+Blocking items resolved. Next work depends on owner decisions (3.2, 4.4) and VS Code runtime verification (4.1-4.3).
 
 ---
 
