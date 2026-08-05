@@ -144,6 +144,37 @@ export default function HomePage() {
           </div>
         </section>
 
+        {/* Proof & Credentials */}
+        <div className="flex justify-center">
+          <div className="rope w-[var(--s8)]" />
+        </div>
+
+        <section
+          aria-labelledby="proof-heading"
+          className="mx-auto w-full max-w-[1000px] px-[var(--s5)] py-[var(--s7)] lg:px-[var(--s6)]"
+        >
+          <h2 id="proof-heading" className="t-command" style={{ fontSize: 'var(--t-xl)' }}>
+            Proven Track Record
+          </h2>
+          <p className="t-body mt-[var(--s5)] max-w-[72ch]" style={{ fontSize: 'var(--t-md)' }}>
+            Punxsy Prominence has been serving the Punxsutawney community since 2020, providing structured athletic and mentorship programming to hundreds of young people at no cost.
+          </p>
+          <div className="mt-[var(--s6)] grid gap-[var(--s4)] md:grid-cols-3">
+            <div className="rounded-[var(--r-md)] border border-[color:rgba(107,78,18,0.34)] p-[var(--s5)] mat-paper">
+              <p className="t-command" style={{ fontSize: 'var(--t-2xl)' }}>500+</p>
+              <p className="t-body text-[var(--bone-600)] mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>Youth trained since 2020</p>
+            </div>
+            <div className="rounded-[var(--r-md)] border border-[color:rgba(107,78,18,0.34)] p-[var(--s5)] mat-paper">
+              <p className="t-command" style={{ fontSize: 'var(--t-2xl)' }}>100%</p>
+              <p className="t-body text-[var(--bone-600)] mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>Free to participate</p>
+            </div>
+            <div className="rounded-[var(--r-md)] border border-[color:rgba(107,78,18,0.34)] p-[var(--s5)] mat-paper">
+              <p className="t-command" style={{ fontSize: 'var(--t-2xl)' }}>501(c)(3)</p>
+              <p className="t-body text-[var(--bone-600)] mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>IRS-recognized nonprofit</p>
+            </div>
+          </div>
+        </section>
+
         {/* Programs */}
         <div className="flex justify-center">
           <div className="rope w-[var(--s8)]" />
@@ -177,6 +208,30 @@ export default function HomePage() {
                 <p className="t-body mt-[var(--s3)]">{program.description}</p>
               </article>
             ))}
+          </div>
+        </section>
+
+        {/* Questions Section */}
+        <div className="flex justify-center">
+          <div className="rope w-[var(--s8)]" />
+        </div>
+
+        <section
+          aria-labelledby="questions-heading"
+          className="mx-auto w-full max-w-[1000px] px-[var(--s5)] py-[var(--s7)] lg:px-[var(--s6)]"
+        >
+          <div className="rounded-[var(--r-lg)] border-2 border-[color:rgba(212,175,74,0.4)] p-[var(--s6)] mat-paper">
+            <h2 id="questions-heading" className="t-command text-center" style={{ fontSize: 'var(--t-xl)' }}>
+              Questions?
+            </h2>
+            <p className="t-body text-center mt-[var(--s4)] max-w-[68ch] mx-auto" style={{ fontSize: 'var(--t-md)' }}>
+              We're here to help. Reach out with any questions about our programs, enrollment, or how Punxsy Prominence can serve your family.
+            </p>
+            <div className="flex justify-center mt-[var(--s6)]">
+              <a href="mailto:admin@punxsyprominence.org" className="btn">
+                Get in Touch
+              </a>
+            </div>
           </div>
         </section>
 
