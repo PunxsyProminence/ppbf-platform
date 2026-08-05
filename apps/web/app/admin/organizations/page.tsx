@@ -223,11 +223,11 @@ export default function SetupWizard() {
         {/* Feedback Message */}
         {feedback && (
           <div
-            className={`rounded-xl border px-4 py-3 ${
+            className={`border px-4 py-3 ${
               feedback.kind === 'error'
                 ? 'border-[var(--red-primary)] bg-[rgba(184,59,52,0.05)]'
                 : feedback.kind === 'success'
-                  ? 'border-[#4caf50] bg-[rgba(76,175,80,0.05)]'
+                  ? 'border-[var(--status-ready)] bg-[rgba(76,175,80,0.05)]'
                   : 'border-[var(--gray-medium)] bg-[rgba(0,0,0,0.03)]'
             }`}
           >
@@ -236,7 +236,7 @@ export default function SetupWizard() {
                 feedback.kind === 'error'
                   ? 'text-[var(--red-primary)]'
                   : feedback.kind === 'success'
-                    ? 'text-[#2e7d32]'
+                    ? 'text-[var(--status-ready)]'
                     : 'text-[var(--gray-dark)]'
               }`}
             >
@@ -424,7 +424,7 @@ export default function SetupWizard() {
 
         {/* Complete State */}
         {step === 4 && (
-          <section className="rounded-2xl border-2 border-[#4caf50] bg-[rgba(76,175,80,0.05)] p-6 space-y-6">
+          <section className="border-2 border-[var(--status-ready)] bg-[rgba(76,175,80,0.05)] p-6 space-y-6">
             <div className="text-center">
               <p className="text-4xl">🎉</p>
               <h2 className="mt-4 font-display text-2xl font-black">Gym Setup Complete!</h2>

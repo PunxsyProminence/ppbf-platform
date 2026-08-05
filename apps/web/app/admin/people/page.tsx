@@ -554,7 +554,7 @@ function PeopleConsoleContent() {
           </p>
         )}
         {notice && (
-          <p className="rounded-xl border border-[rgba(16,120,40,0.5)] bg-[rgba(16,120,40,0.08)] px-4 py-3 text-sm font-semibold text-[#1b5e20]">
+          <p className="border border-[rgba(16,120,40,0.5)] bg-[rgba(16,120,40,0.08)] px-4 py-3 text-sm font-semibold text-[var(--status-ready)]">
             {notice}
           </p>
         )}
@@ -621,7 +621,7 @@ function PeopleConsoleContent() {
                           <p
                             className={`mt-1 text-xs font-bold uppercase tracking-[0.1em] ${
                               status.tone === 'ok'
-                                ? 'text-[#1b5e20]'
+                                ? 'text-[var(--status-ready)]'
                                 : status.tone === 'pending'
                                   ? 'text-[var(--red-primary)]'
                                   : 'text-[var(--gray-dark)]'
@@ -805,7 +805,7 @@ function PeopleConsoleContent() {
                     </p>
                   )}
                   {athleteDetailsLocked && (
-                    <p className="mt-2 text-xs font-semibold text-[#1b5e20]">
+                    <p className="mt-2 text-xs font-semibold text-[var(--status-ready)]">
                       Roster record saved, so these details are locked — they are not resent when you submit again.
                       Finish by giving them a sign-in ID below. To start a different athlete instead, switch modes
                       above and back.
