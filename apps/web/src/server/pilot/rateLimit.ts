@@ -55,9 +55,13 @@ async function withDurableClient<T>(work: (client: PoolClient) => Promise<T>): P
 
   try {
     return await withPoolClient(work);
-  } catch {
+  } catch (error) {
     // Includes connection acquisition, which the previous implementation let
-    // escape. Nothing a rate-limit lookup does is worth failing a login for.
+    // escape. Nothing a rate-limit lookup does is worth failing a login for --
+    // but the flag was ON and a connection string was present, so this is an
+    // unexpected degradation to the weaker limiter, not the ordinary
+    // flag-off path. Worth a line an operator can find, not worth failing on.
+    console.warn('Durable rate limit unavailable, falling back to in-memory limiter', error);
     return null;
   }
 }
