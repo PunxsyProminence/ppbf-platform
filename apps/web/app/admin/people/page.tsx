@@ -125,13 +125,13 @@ function WrongRoleNotice() {
         <div className="flex flex-wrap items-center justify-center gap-3">
           <Link
             href="/admin/organizations"
-            className="inline-flex min-h-[48px] items-center justify-center rounded-full border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-6 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-[var(--red-highlight)]"
+            className="tactical-btn tactical-btn-critical inline-flex min-h-[48px] items-center justify-center px-6 text-sm tracking-[0.12em]"
           >
             Organization Provisioning
           </Link>
           <Link
             href="/admin"
-            className="inline-flex min-h-[48px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-6 text-sm font-black uppercase tracking-[0.12em] transition hover:bg-[var(--canvas-tan)]"
+            className="tactical-btn tactical-btn-ghost inline-flex min-h-[48px] items-center justify-center border-2 border-[var(--black)] px-6 text-sm tracking-[0.12em]"
           >
             Admin Home
           </Link>
@@ -484,7 +484,7 @@ function PeopleConsoleContent() {
   return (
     <main className="min-h-screen bg-[var(--canvas-tan)] px-4 py-8 text-[var(--black)] sm:px-6">
       <div className="mx-auto w-full max-w-5xl space-y-6">
-        <header className="rounded-2xl border border-[rgba(0,0,0,0.16)] bg-white p-6 shadow-[var(--shadow-md)]">
+        <header className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-md)]">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">People</p>
@@ -500,7 +500,7 @@ function PeopleConsoleContent() {
             </div>
             <Link
               href="/admin"
-              className="inline-flex min-h-[44px] items-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-5 text-sm font-bold uppercase tracking-[0.1em] transition hover:bg-[var(--canvas-tan)]"
+              className="tactical-btn tactical-btn-ghost inline-flex min-h-[44px] items-center border-2 border-[var(--black)] px-5 text-sm tracking-[0.1em]"
             >
               Admin Home
             </Link>
@@ -512,7 +512,7 @@ function PeopleConsoleContent() {
             for everyone and can be re-read at any time, so this panel is a
             convenience rather than a last chance. */}
         {createdAthlete && (
-          <section className="rounded-2xl border-2 border-[var(--red-primary)] bg-white p-5 shadow-[var(--shadow-md)]">
+          <section className="border-2 border-[var(--red-primary)] bg-[var(--canvas-tan-light)] p-5 shadow-[var(--shadow-md)]">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-black">{createdAthlete.accountId} can sign in now</h2>
@@ -524,18 +524,18 @@ function PeopleConsoleContent() {
               <button
                 type="button"
                 onClick={() => setCreatedAthlete(null)}
-                className="min-h-[40px] rounded-full border border-[rgba(0,0,0,0.14)] px-4 text-xs font-bold uppercase tracking-[0.1em]"
+                className="min-h-[40px] border-2 border-[var(--black)] px-4 text-xs font-bold uppercase tracking-[0.1em]"
               >
                 Done
               </button>
             </div>
 
             <dl className="mt-4 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-[rgba(0,0,0,0.12)] bg-[var(--canvas-tan-light)] px-4 py-3">
+              <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 py-3">
                 <dt className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--gray-dark)]">Sign-in ID</dt>
                 <dd className="mt-1 font-mono text-xl font-black">{createdAthlete.accountId}</dd>
               </div>
-              <div className="rounded-xl border border-[rgba(0,0,0,0.12)] bg-[var(--canvas-tan-light)] px-4 py-3">
+              <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 py-3">
                 <dt className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--gray-dark)]">Starting PIN</dt>
                 <dd className="mt-1 font-mono text-xl font-black tracking-[0.2em]">{DEFAULT_FIRST_LOGIN_PIN}</dd>
               </div>
@@ -549,7 +549,7 @@ function PeopleConsoleContent() {
         )}
 
         {error && (
-          <p role="alert" className="rounded-xl border border-[var(--red-primary)] bg-[rgba(184,59,52,0.06)] px-4 py-3 text-sm font-semibold text-[var(--red-primary)]">
+          <p role="alert" className="border border-[var(--red-primary)] bg-[rgba(184,59,52,0.06)] px-4 py-3 text-sm font-semibold text-[var(--red-primary)]">
             {error}
           </p>
         )}
@@ -559,7 +559,7 @@ function PeopleConsoleContent() {
           </p>
         )}
 
-        <nav className="flex flex-wrap gap-2 rounded-2xl border border-[rgba(0,0,0,0.12)] bg-white p-2">
+        <nav className="flex flex-wrap gap-2 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-2">
           {([
             ['people', `Everyone${members.length ? ` (${members.length})` : ''}`],
             ['invite-staff', 'Add Coach or Staff'],
@@ -569,7 +569,7 @@ function PeopleConsoleContent() {
               key={key}
               type="button"
               onClick={() => setTab(key)}
-              className={`min-h-[44px] flex-1 rounded-xl px-4 text-sm font-bold uppercase tracking-[0.1em] transition ${
+              className={`min-h-[44px] flex-1 px-4 text-sm font-bold uppercase tracking-[0.1em] transition ${
                 tab === key
                   ? 'bg-[var(--red-primary)] text-white'
                   : 'bg-transparent text-[var(--gray-dark)] hover:bg-[var(--canvas-tan)]'
@@ -583,7 +583,7 @@ function PeopleConsoleContent() {
         {tab === 'people' && (
           <section className="space-y-4">
             {pendingAthletes.length > 0 && (
-              <div className="rounded-2xl border border-[rgba(184,59,52,0.35)] bg-[rgba(184,59,52,0.04)] p-4">
+              <div className="border border-[rgba(184,59,52,0.35)] bg-[rgba(184,59,52,0.04)] p-4">
                 <p className="text-sm font-bold">
                   {pendingAthletes.length} athlete{pendingAthletes.length === 1 ? '' : 's'} cannot sign in yet
                 </p>
@@ -594,7 +594,7 @@ function PeopleConsoleContent() {
               </div>
             )}
 
-            <div className="overflow-hidden rounded-2xl border border-[rgba(0,0,0,0.14)] bg-white shadow-[var(--shadow-sm)]">
+            <div className="overflow-hidden border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] shadow-[var(--shadow-sm)]">
               {loading ? (
                 <p className="p-6 text-sm text-[var(--gray-dark)]">Loading your gym roster...</p>
               ) : members.length === 0 ? (
@@ -605,7 +605,7 @@ function PeopleConsoleContent() {
                   </p>
                 </div>
               ) : (
-                <ul className="divide-y divide-[rgba(0,0,0,0.08)]">
+                <ul className="divide-y divide-[var(--black)]/20">
                   {members.map((member) => {
                     const status = signInStatus(member);
                     const isPinAthlete = member.auth_provider === 'ppbf_local' && member.role === 'athlete';
@@ -636,7 +636,7 @@ function PeopleConsoleContent() {
                             type="button"
                             disabled={busy}
                             onClick={() => void handleResetToStartingPin(member.account_id)}
-                            className="min-h-[44px] shrink-0 rounded-xl border-2 border-[var(--red-primary)] bg-white px-4 text-xs font-black uppercase tracking-[0.1em] text-[var(--red-primary)] transition hover:bg-[rgba(184,59,52,0.06)] disabled:opacity-50"
+                            className="min-h-[44px] shrink-0 border-2 border-[var(--red-primary)] bg-[var(--canvas-tan-light)] px-4 text-xs font-black uppercase tracking-[0.1em] text-[var(--red-primary)] transition hover:bg-[rgba(184,59,52,0.06)] disabled:opacity-50"
                           >
                             Reset To Starting PIN
                           </button>
@@ -651,7 +651,7 @@ function PeopleConsoleContent() {
         )}
 
         {tab === 'invite-staff' && (
-          <form onSubmit={inviteStaff} className="space-y-4 rounded-2xl border border-[rgba(0,0,0,0.14)] bg-white p-6 shadow-[var(--shadow-sm)]">
+          <form onSubmit={inviteStaff} className="space-y-4 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-sm)]">
             <div>
               <h2 className="text-lg font-black">Add a coach or staff member</h2>
               <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
@@ -659,7 +659,7 @@ function PeopleConsoleContent() {
               </p>
             </div>
 
-            <div className="rounded-xl border border-[rgba(184,59,52,0.25)] bg-[rgba(184,59,52,0.04)] p-4">
+            <div className="border border-[rgba(184,59,52,0.25)] bg-[rgba(184,59,52,0.04)] p-4">
               <p className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--red-primary)]">Two steps, not one</p>
               <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
                 This form gives them a role in PPBF. If they are outside your Microsoft organization, someone also has to
@@ -678,7 +678,7 @@ function PeopleConsoleContent() {
                 value={inviteEmail}
                 onChange={(event) => setInviteEmail(event.target.value)}
                 placeholder="coach@example.com"
-                className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                className="mt-2 min-h-[48px] w-full border-2 border-[var(--black)] px-3 focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
               />
             </div>
 
@@ -688,10 +688,10 @@ function PeopleConsoleContent() {
                 {STAFF_ROLES.map((option) => (
                   <label
                     key={option.value}
-                    className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${
+                    className={`flex cursor-pointer items-start gap-3 border p-3 transition ${
                       inviteRole === option.value
                         ? 'border-[var(--red-primary)] bg-[rgba(184,59,52,0.05)]'
-                        : 'border-[rgba(0,0,0,0.12)] hover:border-[rgba(0,0,0,0.3)]'
+                        : 'border-[var(--black)]/30 hover:border-[var(--black)]'
                     }`}
                   >
                     <input
@@ -717,7 +717,7 @@ function PeopleConsoleContent() {
             <button
               type="submit"
               disabled={busy || !inviteEmail.trim()}
-              className="min-h-[50px] w-full rounded-xl border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="tactical-btn tactical-btn-critical min-h-[50px] w-full px-4 text-sm tracking-[0.14em]"
             >
               {busy ? 'Adding...' : 'Add To My Gym'}
             </button>
@@ -725,7 +725,7 @@ function PeopleConsoleContent() {
         )}
 
         {tab === 'add-athlete' && (
-          <form onSubmit={addAthlete} className="space-y-5 rounded-2xl border border-[rgba(0,0,0,0.14)] bg-white p-6 shadow-[var(--shadow-sm)]">
+          <form onSubmit={addAthlete} className="space-y-5 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-sm)]">
             <div>
               <h2 className="text-lg font-black">Add an athlete</h2>
               <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
@@ -740,10 +740,10 @@ function PeopleConsoleContent() {
                 {ATHLETE_MODES.map((option) => (
                   <label
                     key={option.value}
-                    className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${
+                    className={`flex cursor-pointer items-start gap-3 border p-3 transition ${
                       athleteMode === option.value
                         ? 'border-[var(--red-primary)] bg-[rgba(184,59,52,0.05)]'
-                        : 'border-[rgba(0,0,0,0.12)] hover:border-[rgba(0,0,0,0.3)]'
+                        : 'border-[var(--black)]/30 hover:border-[var(--black)]'
                     }`}
                   >
                     <input
@@ -777,7 +777,7 @@ function PeopleConsoleContent() {
               // already-written row orphaned behind a second one.
               <fieldset
                 disabled={athleteDetailsLocked}
-                className="space-y-4 rounded-xl border border-[rgba(0,0,0,0.12)] p-4 disabled:opacity-70"
+                className="space-y-4 border border-[var(--black)] p-4 disabled:opacity-70"
               >
                 <p className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--red-primary)]">Athlete Details</p>
 
@@ -796,10 +796,10 @@ function PeopleConsoleContent() {
                     value={athleteId}
                     onChange={(event) => setAthleteId(event.target.value.trim())}
                     placeholder="ath-001"
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                    className="mt-2 min-h-[48px] w-full border-2 border-[var(--black)] px-3 font-mono focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                   />
                   {collidingAthlete && (
-                    <p className="mt-2 rounded-xl border border-[var(--red-primary)] bg-[rgba(184,59,52,0.06)] px-3 py-2 text-xs font-semibold text-[var(--red-primary)]">
+                    <p className="mt-2 border border-[var(--red-primary)] bg-[rgba(184,59,52,0.06)] px-3 py-2 text-xs font-semibold text-[var(--red-primary)]">
                       {collidingAthlete.full_name} already holds record ID {collidingAthlete.athlete_id}. Pick a
                       different ID — or, if that is this same athlete, switch to “Already on the roster”.
                     </p>
@@ -824,7 +824,7 @@ function PeopleConsoleContent() {
                     value={athleteFullName}
                     onChange={(event) => setAthleteFullName(event.target.value)}
                     placeholder="Alex Johnson"
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                    className="mt-2 min-h-[48px] w-full border-2 border-[var(--black)] px-3 focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                   />
                 </div>
 
@@ -839,7 +839,7 @@ function PeopleConsoleContent() {
                       required
                       value={athleteDob}
                       onChange={(event) => setAthleteDob(event.target.value)}
-                      className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                      className="mt-2 min-h-[48px] w-full border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                     />
                   </div>
 
@@ -854,7 +854,7 @@ function PeopleConsoleContent() {
                       value={athleteWeightClass}
                       onChange={(event) => setAthleteWeightClass(event.target.value)}
                       placeholder="middleweight"
-                      className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                      className="mt-2 min-h-[48px] w-full border-2 border-[var(--black)] px-3 focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                     />
                   </div>
                 </div>
@@ -868,7 +868,7 @@ function PeopleConsoleContent() {
                     required
                     value={athleteGymStatus}
                     onChange={(event) => setAthleteGymStatus(event.target.value)}
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                    className="mt-2 min-h-[48px] w-full border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                   >
                     {GYM_STATUS_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>
@@ -892,7 +892,7 @@ function PeopleConsoleContent() {
                     value={athleteEmergencyContact}
                     onChange={(event) => setAthleteEmergencyContact(event.target.value)}
                     placeholder="Dana Johnson (mother) 555-0101"
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                    className="mt-2 min-h-[48px] w-full border-2 border-[var(--black)] px-3 focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                   />
                 </div>
 
@@ -910,7 +910,7 @@ function PeopleConsoleContent() {
                     required
                     value={athleteCoachId}
                     onChange={(event) => setAthleteCoachId(event.target.value)}
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                    className="mt-2 min-h-[48px] w-full border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                   >
                     <option value="">Choose a coach...</option>
                     {coachOptions.map((coach) => (
@@ -923,7 +923,7 @@ function PeopleConsoleContent() {
               </fieldset>
             ) : rosterAvailable ? (
               unlinkedAthletes.length === 0 ? (
-                <div className="rounded-xl border border-[rgba(184,59,52,0.25)] bg-[rgba(184,59,52,0.04)] p-4">
+                <div className="border border-[rgba(184,59,52,0.25)] bg-[rgba(184,59,52,0.04)] p-4">
                   <p className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--red-primary)]">
                     Nobody is waiting
                   </p>
@@ -947,7 +947,7 @@ function PeopleConsoleContent() {
                     required
                     value={athleteId}
                     onChange={(event) => setAthleteId(event.target.value)}
-                    className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                    className="mt-2 min-h-[48px] w-full border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                   >
                     <option value="">Choose an athlete...</option>
                     {unlinkedAthletes.map((athlete) => (
@@ -978,7 +978,7 @@ function PeopleConsoleContent() {
                   value={athleteId}
                   onChange={(event) => setAthleteId(event.target.value.trim())}
                   placeholder="ath-001"
-                  className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  className="mt-2 min-h-[48px] w-full border-2 border-[var(--black)] px-3 font-mono focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                 />
               </div>
             )}
@@ -997,14 +997,14 @@ function PeopleConsoleContent() {
                 value={athleteAccountId}
                 onChange={(event) => setAthleteAccountId(event.target.value.trim())}
                 placeholder="jsmith"
-                className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.16)] px-3 font-mono focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                className="mt-2 min-h-[48px] w-full border-2 border-[var(--black)] px-3 font-mono focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
               />
             </div>
 
             <button
               type="submit"
               disabled={busy || !canSubmitAthlete}
-              className="min-h-[50px] w-full rounded-xl border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 text-sm font-black uppercase tracking-[0.14em] text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="tactical-btn tactical-btn-critical min-h-[50px] w-full px-4 text-sm tracking-[0.14em]"
             >
               {busy
                 ? 'Creating...'

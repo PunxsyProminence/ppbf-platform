@@ -171,10 +171,10 @@ export default function SetupWizard() {
           </ol>
           <p className="text-xs italic text-[var(--gray-dark)]">If you&apos;re a gym owner (not a platform administrator), contact your PPBF platform administrator for gym setup assistance.</p>
           <div className="flex flex-wrap items-center justify-center gap-3">
-            <Link href="/login" className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-[var(--red-primary)] px-6 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-[var(--red-highlight)]">
+            <Link href="/login" className="tactical-btn tactical-btn-critical inline-flex min-h-[44px] items-center justify-center px-6 text-sm tracking-[0.12em]">
               Sign In With Microsoft
             </Link>
-            <Link href="/admin" className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-6 text-sm font-black uppercase tracking-[0.12em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]">
+            <Link href="/admin" className="tactical-btn tactical-btn-ghost inline-flex min-h-[44px] items-center justify-center border-2 border-[var(--black)] px-6 text-sm tracking-[0.12em]">
               Go To Admin Dashboard
             </Link>
           </div>
@@ -192,7 +192,7 @@ export default function SetupWizard() {
     <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       <div className="mx-auto w-full max-w-3xl space-y-8 px-6 py-12 lg:px-10">
         {/* Header */}
-        <header className="space-y-4 rounded-[28px] border border-[rgba(0,0,0,0.14)] bg-white p-6 shadow-[var(--shadow-md)]">
+        <header className="space-y-4 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-md)]">
           <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--red-primary)]">Setup Wizard</p>
           <h1 className="font-display text-4xl font-black">Get Your Gym Online</h1>
           <p className="text-base leading-7 text-[var(--gray-dark)]">
@@ -205,17 +205,17 @@ export default function SetupWizard() {
           {[1, 2, 3].map((s) => (
             <div key={s} className="flex flex-1 items-center gap-2">
               <div
-                className={`flex h-10 w-10 items-center justify-center rounded-full border-2 font-bold transition ${
+                className={`flex h-10 w-10 items-center justify-center border-2 font-bold transition ${
                   s < step
                     ? 'border-[var(--red-primary)] bg-[var(--red-primary)] text-white'
                     : s === step
-                      ? 'border-[var(--red-primary)] bg-white text-[var(--red-primary)]'
-                      : 'border-[rgba(0,0,0,0.14)] bg-white text-[var(--gray-dark)]'
+                      ? 'border-[var(--red-primary)] bg-[var(--canvas-tan-light)] text-[var(--red-primary)]'
+                      : 'border-[var(--black)] bg-[var(--canvas-tan-light)] text-[var(--gray-dark)]'
                 }`}
               >
                 {s < step ? '✓' : s}
               </div>
-              {s < 3 && <div className={`flex-1 h-1 rounded ${s < step ? 'bg-[var(--red-primary)]' : 'bg-[rgba(0,0,0,0.08)]'}`} />}
+              {s < 3 && <div className={`flex-1 h-1 ${s < step ? 'bg-[var(--red-primary)]' : 'bg-[var(--canvas-tan-dark)]'}`} />}
             </div>
           ))}
         </div>
@@ -228,7 +228,7 @@ export default function SetupWizard() {
                 ? 'border-[var(--red-primary)] bg-[rgba(184,59,52,0.05)]'
                 : feedback.kind === 'success'
                   ? 'border-[var(--status-ready)] bg-[rgba(76,175,80,0.05)]'
-                  : 'border-[var(--gray-medium)] bg-[rgba(0,0,0,0.03)]'
+                  : 'border-[var(--gray-medium)] bg-[var(--white-off)]'
             }`}
           >
             <p
@@ -247,10 +247,10 @@ export default function SetupWizard() {
 
         {/* Step 1: Create Gym */}
         <section
-          className={`rounded-2xl border-2 p-6 transition ${
+          className={`border-2 p-6 transition ${
             step === 1
-              ? 'border-[var(--red-primary)] bg-white shadow-[0_4px_12px_rgba(184,59,52,0.15)]'
-              : 'border-[rgba(0,0,0,0.14)] bg-white/60 opacity-60'
+              ? 'border-[var(--red-primary)] bg-[var(--canvas-tan-light)] shadow-[var(--shadow-md)]'
+              : 'border-[var(--black)] bg-[var(--canvas-tan-light)]/60 opacity-60'
           }`}
         >
           <div className="flex items-start justify-between gap-4">
@@ -273,7 +273,7 @@ export default function SetupWizard() {
                   value={gymId}
                   onChange={(e) => setGymId(e.target.value.toLowerCase())}
                   placeholder="golden_boxing"
-                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  className="mt-2 h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                 />
               </div>
 
@@ -285,7 +285,7 @@ export default function SetupWizard() {
                   value={gymName}
                   onChange={(e) => setGymName(e.target.value)}
                   placeholder="Golden Boxing Studio"
-                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  className="mt-2 h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                 />
               </div>
 
@@ -300,7 +300,7 @@ export default function SetupWizard() {
                     }
                   });
                 }}
-                className="h-11 w-full rounded-lg border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="tactical-btn tactical-btn-critical h-11 w-full px-4 tracking-[0.1em]"
               >
                 {isBusy ? 'Creating...' : 'Create Gym & Continue'}
               </button>
@@ -310,10 +310,10 @@ export default function SetupWizard() {
 
         {/* Step 2: Microsoft-Authenticated Admin Path */}
         <section
-          className={`rounded-2xl border-2 p-6 transition ${
+          className={`border-2 p-6 transition ${
             step === 2
-              ? 'border-[var(--red-primary)] bg-white shadow-[0_4px_12px_rgba(184,59,52,0.15)]'
-              : 'border-[rgba(0,0,0,0.14)] bg-white/60 opacity-60'
+              ? 'border-[var(--red-primary)] bg-[var(--canvas-tan-light)] shadow-[var(--shadow-md)]'
+              : 'border-[var(--black)] bg-[var(--canvas-tan-light)]/60 opacity-60'
           }`}
         >
           <div className="flex items-start justify-between gap-4">
@@ -328,7 +328,7 @@ export default function SetupWizard() {
 
           {step === 2 && (
             <div className="mt-6 space-y-4">
-              <div className="rounded-lg border border-[rgba(184,59,52,0.2)] bg-[rgba(184,59,52,0.05)] p-4">
+              <div className="border border-[rgba(184,59,52,0.2)] bg-[rgba(184,59,52,0.05)] p-4">
                 <p className="text-xs font-semibold text-[var(--red-primary)] uppercase tracking-[0.1em]">This is two steps, not one</p>
                 <p className="mt-2 text-sm text-[var(--gray-dark)]">
                   Saving here gives this person the gym admin role in PPBF. If their email is outside your Microsoft
@@ -343,7 +343,7 @@ export default function SetupWizard() {
                   value={adminEmail}
                   onChange={(e) => setAdminEmail(e.target.value)}
                   placeholder="owner@goldenboxing.org"
-                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
+                  className="mt-2 h-11 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-sm focus:border-[var(--red-primary)] focus:outline-none focus:ring-2 focus:ring-[rgba(184,59,52,0.2)]"
                 />
               </div>
 
@@ -358,7 +358,7 @@ export default function SetupWizard() {
                     }
                   });
                 }}
-                className="h-11 w-full rounded-lg border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="tactical-btn tactical-btn-critical h-11 w-full px-4 tracking-[0.1em]"
               >
                 {isBusy ? 'Saving...' : 'Add Gym Admin & Continue'}
               </button>
@@ -368,8 +368,8 @@ export default function SetupWizard() {
 
         {/* Step 3: Configure Features */}
         <section
-          className={`rounded-2xl border-2 p-6 transition ${
-            step === 3 ? 'border-[var(--red-primary)] bg-white shadow-[0_4px_12px_rgba(184,59,52,0.15)]' : 'border-[rgba(0,0,0,0.14)] bg-white/60 opacity-60'
+          className={`border-2 p-6 transition ${
+            step === 3 ? 'border-[var(--red-primary)] bg-[var(--canvas-tan-light)] shadow-[var(--shadow-md)]' : 'border-[var(--black)] bg-[var(--canvas-tan-light)]/60 opacity-60'
           }`}
         >
           <div className="flex-1">
@@ -383,7 +383,7 @@ export default function SetupWizard() {
             <div className="mt-6 space-y-4">
               <div className="space-y-3">
                 {gymCapabilities.map(({ id, label, description }) => (
-                  <label key={id} className="flex items-start gap-3 rounded-lg border border-[rgba(0,0,0,0.12)] bg-[var(--canvas-tan-light)] p-4 cursor-pointer hover:border-[var(--red-primary)] transition">
+                  <label key={id} className="flex items-start gap-3 border border-[var(--black)] bg-[var(--canvas-tan-light)] p-4 cursor-pointer hover:border-[var(--red-primary)] transition">
                     <input
                       type="checkbox"
                       checked={gymCapabilityAccess[id] ?? false}
@@ -414,7 +414,7 @@ export default function SetupWizard() {
                     }
                   });
                 }}
-                className="h-11 w-full rounded-lg border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="tactical-btn tactical-btn-critical h-11 w-full px-4 tracking-[0.1em]"
               >
                 {isBusy ? 'Saving...' : 'Save & Complete Setup'}
               </button>
@@ -433,7 +433,7 @@ export default function SetupWizard() {
               </p>
             </div>
 
-            <div className="space-y-3 rounded-lg bg-white p-4 border border-[rgba(0,0,0,0.12)]">
+            <div className="space-y-3 bg-[var(--canvas-tan-light)] p-4 border border-[var(--black)]">
               <p className="text-sm font-semibold text-[var(--black)]">Next Steps:</p>
               <ol className="space-y-2 text-sm text-[var(--gray-dark)]">
                 <li><strong>1. Invite the gym admin as an Entra guest</strong> if their email is outside your Microsoft tenant — they cannot sign in until you do</li>
@@ -446,13 +446,13 @@ export default function SetupWizard() {
             <div className="flex flex-col gap-3 sm:flex-row">
               <Link
                 href="/admin/people"
-                className="flex-1 inline-flex h-11 items-center justify-center rounded-lg border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-6 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)]"
+                className="tactical-btn tactical-btn-critical flex-1 h-11 px-6 tracking-[0.1em]"
               >
                 Manage People
               </Link>
               <Link
                 href="/admin"
-                className="flex-1 inline-flex h-11 items-center justify-center rounded-lg border-2 border-[rgba(0,0,0,0.14)] bg-white px-6 font-bold uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]"
+                className="tactical-btn tactical-btn-ghost flex-1 h-11 border-2 border-[var(--black)] px-6 tracking-[0.1em]"
               >
                 Admin Dashboard
               </Link>
