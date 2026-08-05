@@ -142,14 +142,11 @@ const BADGE_GLYPH: Record<Exclude<BadgeTone, 'neutral'>, string> = {
   locked: '✕',
 };
 
-const NEUTRAL_BADGE =
-  'inline-flex items-center gap-[7px] rounded-[var(--r-pill)] border border-[color:var(--hide-600)] bg-[rgba(0,0,0,.28)] px-[12px] py-[6px] text-[11px] font-bold uppercase tracking-[0.1em] text-[color:var(--bone-300)]';
-
 function StatusBadge({ tone, label }: { readonly tone: BadgeTone; readonly label: string }) {
   if (tone === 'neutral') {
     return (
-      <span className={NEUTRAL_BADGE}>
-        <i className="not-italic">◌</i>
+      <span className="badge badge--filed">
+        <i>◌</i>
         {label}
       </span>
     );
@@ -1560,6 +1557,7 @@ export default function CoachWorkspace() {
           {activeTab === 'assessments' && (
             <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)] animate-fadeIn">
               <h3 className="t-eyebrow">Coach Assessments</h3>
+              <p><span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span></p>
               <p className="t-body text-[color:var(--bone-400)]">Evaluate coaching effectiveness, communication, and athlete development.</p>
               <div className="t-body text-[color:var(--bone-400)]">Coming soon: Leadership assessment, communication effectiveness survey, teaching impact evaluation.</div>
             </div>
@@ -1569,6 +1567,7 @@ export default function CoachWorkspace() {
           {activeTab === 'film-study' && (
             <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)] animate-fadeIn">
               <h3 className="t-eyebrow">Film Study</h3>
+              <p><span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span></p>
               <p className="t-body text-[color:var(--bone-400)]">Record observations from training videos and self-evaluations.</p>
               <div className="t-body text-[color:var(--bone-400)]">Coming soon: Video upload, timestamp annotations, technical analysis tools.</div>
               <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
