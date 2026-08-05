@@ -67,9 +67,9 @@ export default function BoardRoleGate({
 
   if (!allowed) {
     return (
-      <main className="grid min-h-screen place-items-center bg-[#0a0a0a] px-6 text-[#e8d7c6]">
+      <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
         <div className="text-center">
-          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[#d4a574]">
+          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--red-primary)]">
             Board Session
           </p>
           <h1 className="mt-3 text-3xl font-black tracking-tight">

@@ -64,21 +64,21 @@ export default function AuditTracePage() {
     >
       <div className="space-y-3">
         {auditTimeline.map((event) => (
-          <article key={`${event.timestamp}-${event.action}`} className="border-2 border-[#8b4444] bg-[#1a1a1a]/60 p-4">
-            <div className="grid gap-2 text-[14px] text-[#cfbfae] md:grid-cols-2">
-              <p><span className="font-semibold text-[#d4a574]">Timestamp:</span> {event.timestamp}</p>
-              <p><span className="font-semibold text-[#d4a574]">User:</span> {event.user}</p>
-              <p><span className="font-semibold text-[#d4a574]">Action:</span> {event.action}</p>
-              <p><span className="font-semibold text-[#d4a574]">Object:</span> {event.object}</p>
-              <p><span className="font-semibold text-[#d4a574]">Reason:</span> {event.reason}</p>
-              <p><span className="font-semibold text-[#d4a574]">Status:</span> {event.status}</p>
+          <article key={`${event.timestamp}-${event.action}`} className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)]/60 p-4">
+            <div className="grid gap-2 text-[14px] text-[var(--gray-dark)] md:grid-cols-2">
+              <p><span className="font-semibold text-[var(--red-primary)]">Timestamp:</span> {event.timestamp}</p>
+              <p><span className="font-semibold text-[var(--red-primary)]">User:</span> {event.user}</p>
+              <p><span className="font-semibold text-[var(--red-primary)]">Action:</span> {event.action}</p>
+              <p><span className="font-semibold text-[var(--red-primary)]">Object:</span> {event.object}</p>
+              <p><span className="font-semibold text-[var(--red-primary)]">Reason:</span> {event.reason}</p>
+              <p><span className="font-semibold text-[var(--red-primary)]">Status:</span> {event.status}</p>
             </div>
           </article>
         ))}
 
-        <div className="border-2 border-[#8b4444] bg-[#121212] p-4">
-          <p className="font-mono text-[12px] uppercase tracking-[0.15em] text-[#d4a574]">Flow Direction</p>
-          <p className="mt-2 text-[16px] leading-7 text-[#e8d7c6]">Audited items move into Source Control promotion states for controlled publication.</p>
+        <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+          <p className="font-mono text-[12px] uppercase tracking-[0.15em] text-[var(--red-primary)]">Flow Direction</p>
+          <p className="mt-2 text-[16px] leading-7 text-[var(--black)]">Audited items move into Source Control promotion states for controlled publication.</p>
         </div>
       </div>
     </FeatureSurface>

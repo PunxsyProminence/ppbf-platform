@@ -88,12 +88,12 @@ export default function BoardComplianceMonitoringPage() {
 
           {/* Metrics Dashboard */}
           <section className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <article className="border-2 border-[var(--black)] bg-[#fce8e6] p-4">
+            <article className="border-2 border-[var(--red-primary)] bg-[var(--red-primary)]/10 p-4">
               <h2 className="text-xs font-bold uppercase tracking-[0.08em] text-[var(--red-primary)]">Critical</h2>
               <p className="mt-4 text-4xl font-black">{metricValue(severityCounts?.critical)}</p>
             </article>
-            <article className="border-2 border-[var(--black)] bg-[#fff3cd] p-4">
-              <h2 className="text-xs font-bold uppercase tracking-[0.08em] text-[#ff9800]">High</h2>
+            <article className="border-2 border-[var(--status-warning)] bg-[var(--status-warning)]/10 p-4">
+              <h2 className="text-xs font-bold uppercase tracking-[0.08em] text-[var(--status-warning)]">High</h2>
               <p className="mt-4 text-4xl font-black">{metricValue(severityCounts?.high)}</p>
             </article>
             <article className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
@@ -130,23 +130,23 @@ export default function BoardComplianceMonitoringPage() {
           <section className="mt-8 space-y-4">
             <h2 className="text-lg font-bold uppercase">Status Summary</h2>
             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
-              <article className="border-2 border-[var(--black)] bg-white p-4">
+              <article className="border-2 border-[var(--black)] bg-[var(--white)] p-4">
                 <p className="text-xs font-bold uppercase tracking-[0.08em]">New</p>
                 <p className="mt-2 text-3xl font-black">{metricValue(statusCounts?.new)}</p>
               </article>
-              <article className="border-2 border-[var(--black)] bg-white p-4">
+              <article className="border-2 border-[var(--black)] bg-[var(--white)] p-4">
                 <p className="text-xs font-bold uppercase tracking-[0.08em]">Acknowledged</p>
                 <p className="mt-2 text-3xl font-black">{metricValue(statusCounts?.acknowledged)}</p>
               </article>
-              <article className="border-2 border-[var(--black)] bg-white p-4">
+              <article className="border-2 border-[var(--black)] bg-[var(--white)] p-4">
                 <p className="text-xs font-bold uppercase tracking-[0.08em]">Escalated</p>
                 <p className="mt-2 text-3xl font-black">{metricValue(statusCounts?.escalated)}</p>
               </article>
-              <article className="border-2 border-[var(--black)] bg-white p-4">
+              <article className="border-2 border-[var(--black)] bg-[var(--white)] p-4">
                 <p className="text-xs font-bold uppercase tracking-[0.08em]">Resolved</p>
                 <p className="mt-2 text-3xl font-black">{metricValue(statusCounts?.resolved)}</p>
               </article>
-              <article className="border-2 border-[var(--black)] bg-white p-4">
+              <article className="border-2 border-[var(--black)] bg-[var(--white)] p-4">
                 <p className="text-xs font-bold uppercase tracking-[0.08em]">Dismissed</p>
                 <p className="mt-2 text-3xl font-black">{metricValue(statusCounts?.dismissed)}</p>
               </article>
