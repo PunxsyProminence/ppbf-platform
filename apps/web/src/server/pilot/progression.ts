@@ -305,34 +305,44 @@ export async function getCompletionById(
   return rows[0] ?? null;
 }
 
+/**
+ * Mark a completion verified or disputed, within one organization.
+ *
+ * organizationId is REQUIRED, and the update is scoped by it. It was briefly
+ * optional, with an unscoped fallback that updated by completion_id alone --
+ * and a completion_id is not a secret, so that path would let a caller in one
+ * gym flip a record belonging to another. Both call sites already passed the
+ * organization, so nothing depended on the fallback; it was a door left open
+ * for whoever forgot the argument next, and nothing would have failed loudly
+ * enough to notice.
+ *
+ * getCompletionById above is the read that answers "whose is this" before the
+ * flip. This scope is the second lock rather than a substitute for it: the read
+ * decides whether the caller may act, and the WHERE clause makes certain the
+ * write lands only where the read looked.
+ *
+ * Returns null when no row matched, which is also what a caller sees when the
+ * completion belongs to a different gym. The route renders that as
+ * hiddenNotFound() rather than a 403, so a probe cannot use the difference
+ * between "does not exist" and "not yours" to enumerate another gym's records.
+ */
 export async function verifyCompletion(
   completionId: string,
   verifiedByAccountId: string,
   verified: boolean,
-  organizationId?: string,
+  organizationId: string,
 ): Promise<AssignmentCompletion | null> {
   const now = new Date().toISOString();
   const status = verified ? 'verified' : 'disputed';
 
-  // Organization scope is preferred so a completion_id from another gym cannot
-  // be flipped by this call. Older call sites may omit it; they still update by
-  // completion_id alone, matching the previous behaviour.
-  if (organizationId) {
-    const result = await query<AssignmentCompletion>(
-      `update pilot.assignment_completions
-       set verification_status = $1, verified_by_account_id = $2, verified_at = $3
-       where completion_id = $4 and organization_id = $5
-       returning completion_id, assignment_id, completed_at, reps_completed, notes, verification_status, verified_at`,
-      [status, verifiedByAccountId, now, completionId, organizationId],
-    );
-    return result[0] ?? null;
-  }
-
-  await query(
-    `update pilot.assignment_completions set verification_status = $1, verified_by_account_id = $2, verified_at = $3 where completion_id = $4`,
-    [status, verifiedByAccountId, now, completionId],
+  const result = await query<AssignmentCompletion>(
+    `update pilot.assignment_completions
+     set verification_status = $1, verified_by_account_id = $2, verified_at = $3
+     where completion_id = $4 and organization_id = $5
+     returning completion_id, assignment_id, completed_at, reps_completed, notes, verification_status, verified_at`,
+    [status, verifiedByAccountId, now, completionId, organizationId],
   );
-  return null;
+  return result[0] ?? null;
 }
 
 export async function getAthleteGaps(
