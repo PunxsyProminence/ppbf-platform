@@ -4,14 +4,21 @@
  * Bulk upload athletes, goals, and sessions data to PostgreSQL
  *
  * Usage:
- *   npx ts-node scripts/seed-data.ts --config scripts/seed-data.config.ts
- *   npx ts-node scripts/seed-data.ts --org ppbf-demo --dry-run
+ *   npm run seed:data:dry                     -- preview, writes nothing
+ *   npm run seed:data                         -- requires PPBF_ALLOW_DESTRUCTIVE_SEED=true
+ *   npm run seed:data -- --config path/to/seed-data.config.ts
  */
 
 import fs from 'fs';
 import path from 'path';
+import { pathToFileURL } from 'url';
 import { parse as csvParse } from 'csv-parse/sync';
-import { query } from '@/src/server/pilot/db';
+// Relative, not '@/...'. That alias is declared in apps/web/tsconfig.json and
+// this file sits outside that project, so the alias resolved for the editor
+// and for nothing else -- `npm run seed:data` died on TS2307 before it read a
+// single row. db.ts pulls in only `pg` and a relative './env', so reaching it
+// directly costs nothing and needs no root tsconfig to exist.
+import { query } from '../apps/web/src/server/pilot/db';
 
 interface SeedConfig {
   organizationId: string;
@@ -82,7 +89,11 @@ async function validateAthleteRow(row: any, org: string): Promise<string[]> {
       `SELECT 1 FROM pilot.accounts WHERE account_id = $1 AND organization_id = $2`,
       [row.coach_id, org]
     );
-    if (coachExists.rowCount === 0) {
+    // .length, not .rowCount: query() returns result.rows, so this was reading
+    // an undefined property on an array. `undefined === 0` is false, so the
+    // check never once fired and a roster naming a coach who does not exist
+    // validated clean and got inserted.
+    if (coachExists.length === 0) {
       errors.push(`Coach not found: ${row.coach_id}`);
     }
   }
@@ -388,8 +399,14 @@ for (let i = 0; i < args.length; i++) {
   if (args[i] === '--dry-run') dryRun = true;
 }
 
-// Import config
-import(path.resolve(configPath))
+// Import config.
+//
+// pathToFileURL, not the bare absolute path: on Windows path.resolve() yields
+// `C:\...`, and the ESM loader reads the drive letter as a URL scheme and
+// refuses it -- "Only URLs with a scheme in: file, data, and node". That made
+// the script unusable on the platform it is developed on, and the failure
+// arrived as a protocol error that says nothing about paths.
+import(pathToFileURL(path.resolve(configPath)).href)
   .then((module) => {
     const config: SeedConfig = module.default;
     if (dryRun) config.options.dryRun = true;
@@ -397,5 +414,11 @@ import(path.resolve(configPath))
   })
   .catch((err) => {
     console.error(`Failed to load config from ${configPath}:`, err.message);
+    if (err instanceof Error && 'code' in err && err.code === 'ERR_MODULE_NOT_FOUND') {
+      console.error(
+        'Copy scripts/seed-data.config.example.ts to scripts/seed-data.config.ts, '
+        + 'or pass --config <path>.',
+      );
+    }
     process.exit(1);
   });
