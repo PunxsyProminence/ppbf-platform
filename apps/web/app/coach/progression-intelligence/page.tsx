@@ -104,25 +104,25 @@ export default function CoachProgressionIntelligencePage() {
   return (
     <RoleStandaloneView roleLabel="Coach Workspace" routeLabel="/coach/progression-intelligence" allowedRoles={['coach']} showShellHeader={false}>
       <div className="space-y-6">
-        <header className="border-2 border-[#8b4444] bg-[#111111] p-5">
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">Closed-Loop Progression Intelligence</p>
-          <h1 className="mt-2 text-3xl font-black text-[#f2e7da]">Progression Gaps → Drills → Verification</h1>
-          <p className="mt-2 text-sm text-[#cfbfae]">
+        <header className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--gray-dark)]">Closed-Loop Progression Intelligence</p>
+          <h1 className="mt-2 text-3xl font-black text-[var(--black)]">Progression Gaps → Drills → Verification</h1>
+          <p className="mt-2 text-sm text-[var(--gray-dark)]">
             Detect performance gaps, assign drills, and track athlete completion and progression.
           </p>
-          {errorMessage ? <p className="mt-2 text-xs text-[#f0c4c4]">{errorMessage}</p> : null}
+          {errorMessage ? <p className="mt-2 text-xs text-[var(--red-primary)]">{errorMessage}</p> : null}
         </header>
 
         {/* Athlete Selector */}
-        <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
-          <label htmlFor="athlete-input" className="block text-sm font-semibold text-[#e8d7c6]">Select Athlete</label>
+        <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+          <label htmlFor="athlete-input" className="block text-sm font-semibold text-[var(--black)]">Select Athlete</label>
           <input
             id="athlete-input"
             type="text"
             placeholder="Enter athlete ID (e.g., athlete-001)"
             value={selectedAthlete}
             onChange={(e) => setSelectedAthlete(e.target.value)}
-            className="mt-2 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-[#e8d7c6] placeholder-[#7a6a5a]"
+            className="mt-2 tactical-input"
           />
         </div>
 
@@ -131,24 +131,24 @@ export default function CoachProgressionIntelligencePage() {
             {/* Progression Gaps Section */}
             <section className="space-y-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-lg font-bold text-[#f2e7da]">Progression Gaps ({gaps.length})</h2>
+                <h2 className="text-lg font-bold text-[var(--black)]">Progression Gaps ({gaps.length})</h2>
                 <button
                   onClick={() => setShowGapForm(!showGapForm)}
-                  className="border-2 border-[#8b4444] bg-[#2a1a1a] px-3 py-1 text-xs font-bold text-[#d4a574]"
+                  className="tactical-btn"
                 >
                   {showGapForm ? 'Cancel' : '+ Add Gap'}
                 </button>
               </div>
 
               {showGapForm && (
-                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 space-y-3">
+                <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4 space-y-3">
                   <div>
-                    <label htmlFor="gap-type-select" className="block text-xs font-bold uppercase text-[#d4a574]">Gap Type</label>
+                    <label htmlFor="gap-type-select" className="block text-xs font-bold uppercase text-[var(--gray-dark)]">Gap Type</label>
                     <select
                       id="gap-type-select"
                       value={newGap.gap_type}
                       onChange={(e) => setNewGap({ ...newGap, gap_type: e.target.value })}
-                      className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-[#e8d7c6]"
+                      className="mt-1 tactical-input"
                     >
                       <option value="technique">Technique</option>
                       <option value="strength">Strength</option>
@@ -159,23 +159,23 @@ export default function CoachProgressionIntelligencePage() {
                     </select>
                   </div>
                   <div>
-                    <label htmlFor="gap-desc-textarea" className="block text-xs font-bold uppercase text-[#d4a574]">Description</label>
+                    <label htmlFor="gap-desc-textarea" className="block text-xs font-bold uppercase text-[var(--gray-dark)]">Description</label>
                     <textarea
                       id="gap-desc-textarea"
                       value={newGap.gap_description}
                       onChange={(e) => setNewGap({ ...newGap, gap_description: e.target.value })}
                       placeholder="Describe the performance gap..."
-                      className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-[#e8d7c6]"
+                      className="mt-1 tactical-input"
                       rows={3}
                     />
                   </div>
                   <div>
-                    <label htmlFor="severity-select" className="block text-xs font-bold uppercase text-[#d4a574]">Severity</label>
+                    <label htmlFor="severity-select" className="block text-xs font-bold uppercase text-[var(--gray-dark)]">Severity</label>
                     <select
                       id="severity-select"
                       value={newGap.severity}
                       onChange={(e) => setNewGap({ ...newGap, severity: e.target.value })}
-                      className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-[#e8d7c6]"
+                      className="mt-1 tactical-input"
                     >
                       <option value="low">Low</option>
                       <option value="medium">Medium</option>
@@ -185,7 +185,7 @@ export default function CoachProgressionIntelligencePage() {
                   </div>
                   <button
                     onClick={handleCreateGap}
-                    className="w-full border-2 border-[#8b4444] bg-[#2a1a1a] py-2 text-xs font-bold uppercase text-[#d4a574]"
+                    className="tactical-btn w-full"
                   >
                     Create Gap
                   </button>
@@ -194,17 +194,17 @@ export default function CoachProgressionIntelligencePage() {
 
               <div className="space-y-2">
                 {gaps.length === 0 ? (
-                  <p className="text-sm text-[#9a8a7a]">No gaps identified yet.</p>
+                  <p className="text-sm text-[var(--gray-dark)]">No gaps identified yet.</p>
                 ) : (
                   gaps.map((gap) => (
-                    <div key={gap.gap_id} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-3">
+                    <div key={gap.gap_id} className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-3">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1">
-                          <p className="font-semibold text-[#e8d7c6]">{gap.gap_description}</p>
+                          <p className="font-semibold text-[var(--black)]">{gap.gap_description}</p>
                           <div className="mt-1 flex gap-2">
-                            <span className="text-xs font-mono text-[#d4a574]">{gap.gap_type}</span>
-                            <span className="text-xs font-mono text-[#d4a574]">{gap.severity}</span>
-                            <span className="text-xs font-mono text-[#7a8a9a]">{gap.status}</span>
+                            <span className="text-xs font-mono text-[var(--red-primary)]">{gap.gap_type}</span>
+                            <span className="text-xs font-mono text-[var(--red-primary)]">{gap.severity}</span>
+                            <span className="text-xs font-mono text-[var(--gray-dark)]">{gap.status}</span>
                           </div>
                         </div>
                       </div>
@@ -216,24 +216,24 @@ export default function CoachProgressionIntelligencePage() {
 
             {/* Drill Assignments Section */}
             <section>
-              <h2 className="mb-4 text-lg font-bold text-[#f2e7da]">Assigned Drills ({assignments.length})</h2>
+              <h2 className="mb-4 text-lg font-bold text-[var(--black)]">Assigned Drills ({assignments.length})</h2>
               <div className="space-y-2">
                 {assignments.length === 0 ? (
-                  <p className="text-sm text-[#9a8a7a]">No drills assigned yet.</p>
+                  <p className="text-sm text-[var(--gray-dark)]">No drills assigned yet.</p>
                 ) : (
                   assignments.map((assignment) => (
-                    <div key={assignment.assignment_id} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-3">
+                    <div key={assignment.assignment_id} className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-3">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1">
-                          <p className="font-semibold text-[#e8d7c6]">{assignment.drill_name}</p>
-                          <p className="text-xs text-[#cfbfae]">{assignment.drill_description}</p>
-                          <div className="mt-2 bg-[#101010] h-2 border border-[#5a4a3a]">
+                          <p className="font-semibold text-[var(--black)]">{assignment.drill_name}</p>
+                          <p className="text-xs text-[var(--gray-dark)]">{assignment.drill_description}</p>
+                          <div className="mt-2 bg-[var(--canvas-tan-dark)] h-2 border border-[var(--black)]">
                             <div
-                              className="h-full bg-[#d4a574]"
+                              className="h-full bg-[var(--red-primary)]"
                               style={{ width: `${assignment.completion_percentage}%` }}
                             />
                           </div>
-                          <p className="mt-1 text-xs text-[#9a8a7a]">{assignment.completion_percentage}% complete</p>
+                          <p className="mt-1 text-xs text-[var(--gray-dark)]">{assignment.completion_percentage}% complete</p>
                         </div>
                       </div>
                     </div>
@@ -245,10 +245,10 @@ export default function CoachProgressionIntelligencePage() {
         )}
 
         <div className="flex flex-wrap gap-3">
-          <Link href="/coach" className="border-2 border-[#8b4444] bg-[#2a1a1a] px-4 py-2 text-xs font-mono text-[#d4a574]">
+          <Link href="/coach" className="tactical-btn">
             Back to Coach Workspace
           </Link>
-          <Link href="/athlete/progression-intelligence" className="border-2 border-[#4a4a4a] bg-[#1a1a1a] px-4 py-2 text-xs font-mono text-[#b0b0b0]">
+          <Link href="/athlete/progression-intelligence" className="tactical-btn tactical-btn-ghost border-2 border-[var(--black)]">
             Athlete Progression View
           </Link>
         </div>

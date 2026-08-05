@@ -127,35 +127,35 @@ export default function CoachVideoPublicationsPage() {
   return (
     <RoleStandaloneView roleLabel="Coach Workspace" routeLabel="/coach/video-publications" allowedRoles={['coach']} showShellHeader={false}>
       <div className="space-y-6">
-        <header className="border-2 border-[#8b4444] bg-[#111111] p-5">
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">Video Management</p>
-          <h1 className="mt-2 text-3xl font-black text-[#f2e7da]">Publication Workflow</h1>
-          <p className="mt-2 text-sm text-[#cfbfae]">
+        <header className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--gray-dark)]">Video Management</p>
+          <h1 className="mt-2 text-3xl font-black text-[var(--black)]">Publication Workflow</h1>
+          <p className="mt-2 text-sm text-[var(--gray-dark)]">
             Publish coaching videos to research library with compliance checks and access controls.
           </p>
-          {errorMessage ? <p className="mt-2 text-xs text-[#f0c4c4]">{errorMessage}</p> : null}
+          {errorMessage ? <p className="mt-2 text-xs text-[var(--red-primary)]">{errorMessage}</p> : null}
         </header>
 
         {/* Create Publication Form */}
         <div>
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-[#f2e7da]">Create Publication</h2>
+            <h2 className="text-lg font-bold text-[var(--black)]">Create Publication</h2>
             <button
               onClick={() => setShowCreateForm(!showCreateForm)}
-              className="border-2 border-[#8b4444] bg-[#2a1a1a] px-3 py-1 text-xs font-bold text-[#d4a574]"
+              className="tactical-btn"
             >
               {showCreateForm ? 'Cancel' : '+ New Publication'}
             </button>
           </div>
 
           {showCreateForm && (
-            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 space-y-3">
+            <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4 space-y-3">
               <div>
-                <label className="block text-xs font-bold uppercase text-[#d4a574]">Select Video</label>
+                <label className="block text-xs font-bold uppercase text-[var(--gray-dark)]">Select Video</label>
                 <select
                   value={selectedVideo}
                   onChange={(e) => setSelectedVideo(e.target.value)}
-                  className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-[#e8d7c6]"
+                  className="mt-1 tactical-input"
                 >
                   <option value="">-- Choose Video --</option>
                   {videos.map((v) => (
@@ -166,31 +166,31 @@ export default function CoachVideoPublicationsPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-bold uppercase text-[#d4a574]">Title</label>
+                <label className="block text-xs font-bold uppercase text-[var(--gray-dark)]">Title</label>
                 <input
                   type="text"
                   value={formData.title}
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                   placeholder="Publication title..."
-                  className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-[#e8d7c6]"
+                  className="mt-1 tactical-input"
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold uppercase text-[#d4a574]">Description</label>
+                <label className="block text-xs font-bold uppercase text-[var(--gray-dark)]">Description</label>
                 <textarea
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   placeholder="Publication description..."
-                  className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-[#e8d7c6]"
+                  className="mt-1 tactical-input"
                   rows={3}
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold uppercase text-[#d4a574]">Publication Type</label>
+                <label className="block text-xs font-bold uppercase text-[var(--gray-dark)]">Publication Type</label>
                 <select
                   value={formData.publication_type}
                   onChange={(e) => setFormData({ ...formData, publication_type: e.target.value })}
-                  className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-[#e8d7c6]"
+                  className="mt-1 tactical-input"
                 >
                   <option value="research_library">Research Library</option>
                   <option value="public_coaching">Public Coaching</option>
@@ -198,18 +198,18 @@ export default function CoachVideoPublicationsPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-bold uppercase text-[#d4a574]">Tags (comma-separated)</label>
+                <label className="block text-xs font-bold uppercase text-[var(--gray-dark)]">Tags (comma-separated)</label>
                 <input
                   type="text"
                   value={formData.tags}
                   onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
                   placeholder="technique, footwork, defense"
-                  className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-[#e8d7c6]"
+                  className="mt-1 tactical-input"
                 />
               </div>
               <button
                 onClick={handleCreatePublication}
-                className="w-full border-2 border-[#8b4444] bg-[#2a1a1a] py-2 text-xs font-bold uppercase text-[#d4a574]"
+                className="tactical-btn w-full"
               >
                 Create Publication
               </button>
@@ -219,22 +219,22 @@ export default function CoachVideoPublicationsPage() {
 
         {/* Publications List */}
         <section>
-          <h2 className="mb-4 text-lg font-bold text-[#f2e7da]">Publications ({publications.length})</h2>
+          <h2 className="mb-4 text-lg font-bold text-[var(--black)]">Publications ({publications.length})</h2>
           <div className="space-y-3">
             {publications.length === 0 ? (
-              <p className="text-sm text-[#9a8a7a]">No publications yet.</p>
+              <p className="text-sm text-[var(--gray-dark)]">No publications yet.</p>
             ) : (
               publications.map((pub) => (
-                <div key={pub.publication_id} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
+                <div key={pub.publication_id} className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
-                      <p className="font-semibold text-[#e8d7c6]">{pub.title}</p>
-                      <p className="text-xs text-[#cfbfae]">{pub.description}</p>
+                      <p className="font-semibold text-[var(--black)]">{pub.title}</p>
+                      <p className="text-xs text-[var(--gray-dark)]">{pub.description}</p>
                       <div className="mt-2 flex gap-2">
-                        <span className="text-xs font-mono px-2 py-1 border border-[#5a4a3a] text-[#d4a574]">
+                        <span className="tactical-chip">
                           {pub.status}
                         </span>
-                        <span className="text-xs font-mono px-2 py-1 border border-[#5a4a3a] text-[#d4a574]">
+                        <span className="tactical-chip">
                           {pub.compliance_check_status}
                         </span>
                       </div>
@@ -242,7 +242,7 @@ export default function CoachVideoPublicationsPage() {
                     {pub.status === 'approved' && (
                       <button
                         onClick={() => handlePublish(pub.publication_id, pub.video_session_id)}
-                        className="border-2 border-[#8b4444] bg-[#2a1a1a] px-3 py-2 text-xs font-bold text-[#d4a574]"
+                        className="tactical-btn"
                       >
                         Publish
                       </button>
@@ -255,7 +255,7 @@ export default function CoachVideoPublicationsPage() {
         </section>
 
         <div className="flex flex-wrap gap-3">
-          <Link href="/coach/video-analysis" className="border-2 border-[#8b4444] bg-[#2a1a1a] px-4 py-2 text-xs font-mono text-[#d4a574]">
+          <Link href="/coach/video-analysis" className="tactical-btn">
             Back to Video Analysis
           </Link>
         </div>
