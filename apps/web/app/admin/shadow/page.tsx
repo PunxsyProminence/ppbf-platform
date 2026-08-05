@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
+import { ui } from '@/components/uiStyles';
 import { apiBase } from '@/lib/apiBase';
 import {
   interpretShadowFeedbackReviewResponse,
@@ -231,12 +232,12 @@ function parsePromotionPayloadFromNotes(notes: string): Record<string, unknown> 
 }
 
 function statusChipClasses(status: IntakeStatus): string {
-  if (status === 'Pending') return 'border-[#8b4444] bg-[#341515] text-[#f0c4c4]';
-  if (status === 'Classified') return 'border-[#a66424] bg-[#2d2214] text-[#f7d9b0]';
-  if (status === 'Staged') return 'border-[#b38a3c] bg-[#2f2817] text-[#f5e3b5]';
-  if (status === 'Approved') return 'border-[#3f8b5b] bg-[#162a1d] text-[#c9f0d7]';
-  if (status === 'Rejected') return 'border-[#a13f3f] bg-[#2c1414] text-[#f2c3c3]';
-  return 'border-[#46809b] bg-[#15242e] text-[#c8e6f2]';
+  if (status === 'Pending') return ui.statusDanger;
+  if (status === 'Classified') return ui.statusWarning;
+  if (status === 'Staged') return ui.statusWarning;
+  if (status === 'Approved') return ui.statusReady;
+  if (status === 'Rejected') return ui.statusDanger;
+  return ui.statusInfo;
 }
 
 function toDataType(value: string): DataType {
@@ -286,10 +287,10 @@ function renderMetricsPanel(
   metricsLoading: boolean,
 ) {
   return (
-    <section className="col-span-full border-2 border-[#3f8b5b]/40 bg-[#0a1a0f] p-4">
+    <section className="col-span-full border-2 border-[var(--status-ready)] bg-[var(--canvas-tan-light)] p-4">
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#c9f0d7]/70">SHADOW Intelligence — Last 30 Days</p>
-        {metricsLoading && <span className="text-xs text-[#c9f0d7]/40">Loading…</span>}
+        <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--gray-dark)]">SHADOW Intelligence — Last 30 Days</p>
+        {metricsLoading && <span className="text-xs text-[var(--gray-dark)]">Loading…</span>}
       </div>
       {growthMetrics ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
@@ -303,14 +304,14 @@ function renderMetricsPanel(
             ['Research Closed', growthMetrics.researchRequirementsClosed],
             ['New Patterns', growthMetrics.newLibraryPatterns],
           ] as [string, string | number][]).map(([label, value]) => (
-            <div key={label} className="border border-[#3f8b5b]/30 bg-[#0f1f14] p-3 text-center">
-              <p className="text-[11px] font-mono uppercase tracking-[0.12em] text-[#c9f0d7]/60">{label}</p>
-              <p className="mt-1 text-xl font-black text-[#c9f0d7]">{value}</p>
+            <div key={label} className="border border-[var(--status-ready)] bg-[var(--canvas-tan)] p-3 text-center">
+              <p className="text-[11px] font-mono uppercase tracking-[0.12em] text-[var(--gray-dark)]">{label}</p>
+              <p className="mt-1 text-xl font-black text-[var(--black)]">{value}</p>
             </div>
           ))}
         </div>
       ) : (
-        <p className="text-xs text-[#c9f0d7]/40">Metrics unavailable</p>
+        <p className="text-xs text-[var(--gray-dark)]">Metrics unavailable</p>
       )}
     </section>
   );
@@ -342,32 +343,32 @@ function renderFeedbackReviewPanel(props: {
     const resolvable = isShadowFeedbackResolvable(item);
 
     return (
-      <article key={`${mode}-${item.feedback_id}`} className="border border-[#3f8b5b]/30 bg-[#0f1f14] p-3">
-        <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-[#c9f0d7]/60">
+      <article key={`${mode}-${item.feedback_id}`} className="border border-[var(--status-ready)] bg-[var(--canvas-tan)] p-3">
+        <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-[var(--gray-dark)]">
           <span>#{item.feedback_id}</span>
           <span>{item.role}</span>
-          <span className={item.helpful ? 'text-[#7fd7a0]' : 'text-[#e39a9a]'}>
+          <span className={item.helpful ? 'text-[var(--status-ready)]' : 'text-[var(--red-primary)]'}>
             {item.helpful ? 'Helpful' : 'Not helpful'}
           </span>
           {item.outcome_signal && <span>{item.outcome_signal}</span>}
           {item.rating != null && <span>Rating {item.rating}</span>}
-          <span className="text-[#c9f0d7]/40">{item.created_at}</span>
+          <span className="text-[var(--gray-dark)]">{item.created_at}</span>
         </div>
 
         {item.comment ? (
-          <p className="mt-2 text-[13px] leading-6 text-[#c9f0d7]/90">{item.comment}</p>
+          <p className="mt-2 text-[13px] leading-6 text-[var(--black)]">{item.comment}</p>
         ) : (
-          <p className="mt-2 text-[13px] italic text-[#c9f0d7]/40">No comment provided.</p>
+          <p className="mt-2 text-[13px] italic text-[var(--gray-dark)]">No comment provided.</p>
         )}
 
         {mode === 'retry' && (
-          <p className="mt-2 text-[12px] leading-5 text-[#e3c99a]">
+          <p className="mt-2 text-[12px] leading-5 text-[var(--status-warning)]">
             Review was recorded, but durable learning promotion did not complete. Retry to finish promoting it.
           </p>
         )}
 
         {!resolvable && (
-          <p className="mt-2 text-[12px] leading-5 text-[#e39a9a]">
+          <p className="mt-2 text-[12px] leading-5 text-[var(--red-primary)]">
             Not reviewable: only feedback correlated to a durable SHADOW message can be promoted
             {item.correlation_type ? ` (this item is “${item.correlation_type}”)` : ' (no correlation recorded)'}.
           </p>
@@ -378,7 +379,7 @@ function renderFeedbackReviewPanel(props: {
             type="button"
             disabled={busy || !resolvable}
             onClick={() => onReview(item, 'approve')}
-            className="border border-[#3f8b5b] px-3 py-1 font-mono text-[11px] uppercase tracking-[0.14em] text-[#c9f0d7] transition hover:bg-[#3f8b5b]/25 disabled:cursor-not-allowed disabled:opacity-40"
+            className="tactical-btn text-[11px] tracking-[0.14em]"
           >
             {busy ? 'Working…' : mode === 'retry' ? 'Retry promotion' : 'Approve for learning'}
           </button>
@@ -387,7 +388,7 @@ function renderFeedbackReviewPanel(props: {
               type="button"
               disabled={busy || !resolvable}
               onClick={() => onReview(item, 'reject')}
-              className="border border-[#8b4444] px-3 py-1 font-mono text-[11px] uppercase tracking-[0.14em] text-[#e8d7c6] transition hover:bg-[#8b4444]/25 disabled:cursor-not-allowed disabled:opacity-40"
+              className="tactical-btn tactical-btn-critical text-[11px] tracking-[0.14em]"
             >
               Reject
             </button>
@@ -398,23 +399,23 @@ function renderFeedbackReviewPanel(props: {
   };
 
   return (
-    <section className="col-span-full border-2 border-[#3f8b5b]/40 bg-[#0a1a0f] p-4">
+    <section className="col-span-full border-2 border-[var(--status-ready)] bg-[var(--canvas-tan-light)] p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#c9f0d7]/70">
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--gray-dark)]">
             SHADOW Learning Review — Human Approval Gate
           </p>
-          <p className="mt-1 text-[13px] leading-6 text-[#c9f0d7]/70">
+          <p className="mt-1 text-[13px] leading-6 text-[var(--gray-dark)]">
             Nothing SHADOW learns from user feedback is applied until it is approved here.
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {loading && <span className="text-xs text-[#c9f0d7]/40">Loading…</span>}
+          {loading && <span className="text-xs text-[var(--gray-dark)]">Loading…</span>}
           <button
             type="button"
             onClick={onRefresh}
             disabled={loading}
-            className="border border-[#3f8b5b]/60 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.14em] text-[#c9f0d7] transition hover:bg-[#3f8b5b]/25 disabled:cursor-not-allowed disabled:opacity-40"
+            className="tactical-btn tactical-btn-ghost border-2 border-[var(--black)] text-[11px] tracking-[0.14em]"
           >
             Refresh
           </button>
@@ -429,32 +430,32 @@ function renderFeedbackReviewPanel(props: {
             ['Satisfaction', `${(summary.satisfaction_rate * 100).toFixed(1)}%`],
             ['Avg Rating', summary.avg_rating != null ? summary.avg_rating.toFixed(2) : '—'],
           ] as [string, string | number][]).map(([label, value]) => (
-            <div key={label} className="border border-[#3f8b5b]/30 bg-[#0f1f14] p-3 text-center">
-              <p className="text-[11px] font-mono uppercase tracking-[0.12em] text-[#c9f0d7]/60">{label}</p>
-              <p className="mt-1 text-xl font-black text-[#c9f0d7]">{value}</p>
+            <div key={label} className="border border-[var(--status-ready)] bg-[var(--canvas-tan)] p-3 text-center">
+              <p className="text-[11px] font-mono uppercase tracking-[0.12em] text-[var(--gray-dark)]">{label}</p>
+              <p className="mt-1 text-xl font-black text-[var(--black)]">{value}</p>
             </div>
           ))}
         </div>
       )}
 
       {error && (
-        <p className="mb-3 border border-[#8b4444] bg-[#1a0f0f] p-3 text-[13px] leading-6 text-[#e8b4b4]">{error}</p>
+        <p className="tactical-alert-critical mb-3 text-[13px] leading-6">{error}</p>
       )}
 
       {retryQueue.length > 0 && (
         <div className="mb-4">
-          <p className="mb-2 text-[11px] font-mono uppercase tracking-[0.14em] text-[#e3c99a]">
+          <p className="mb-2 text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--status-warning)]">
             Promotion retry required ({retryQueue.length})
           </p>
           <div className="space-y-3">{retryQueue.map((item) => renderItem(item, 'retry'))}</div>
         </div>
       )}
 
-      <p className="mb-2 text-[11px] font-mono uppercase tracking-[0.14em] text-[#c9f0d7]/60">
+      <p className="mb-2 text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--gray-dark)]">
         Awaiting review ({reviewQueue.length})
       </p>
       {reviewQueue.length === 0 ? (
-        <p className="text-xs text-[#c9f0d7]/40">
+        <p className="text-xs text-[var(--gray-dark)]">
           {loading ? 'Loading feedback…' : 'No feedback is awaiting human review.'}
         </p>
       ) : (
@@ -1378,7 +1379,7 @@ export default function AdminShadowConsolePage() {
                       <p><span className="font-semibold text-[#d4a574]">Suggested Destination:</span> {item.suggestedDestination}</p>
                       <p>
                         <span className="font-semibold text-[#d4a574]">Status:</span>{' '}
-                        <span className={`inline-flex border px-2 py-0.5 font-mono text-[12px] ${statusChipClasses(item.status)}`}>{item.status}</span>
+                        <span className={`inline-flex font-mono ${statusChipClasses(item.status)}`}>{item.status}</span>
                       </p>
                       <p><span className="font-semibold text-[#d4a574]">Review Needed:</span> {item.reviewNeeded ? 'Yes' : 'No'}</p>
                       <p className="md:col-span-2"><span className="font-semibold text-[#d4a574]">Timestamp:</span> {item.timestamp}</p>
@@ -1606,7 +1607,7 @@ export default function AdminShadowConsolePage() {
                     <div key={`${item.id}-${item.lastUpdatedAt}`} className="border border-[#8b4444]/60 bg-[#151515] p-3 text-[13px] text-[#e8d7c6]">
                       <p className="font-semibold text-[#d4a574]">{item.itemName}</p>
                       <p>
-                        <span className={`inline-flex border px-2 py-0.5 font-mono text-[12px] ${statusChipClasses(item.status)}`}>{item.status}</span>
+                        <span className={`inline-flex font-mono ${statusChipClasses(item.status)}`}>{item.status}</span>
                         <span className="ml-2">- {item.dataType}</span>
                       </p>
                       <p className="font-mono text-[12px] text-[#d4a574]/80">{item.lastUpdatedAt}</p>

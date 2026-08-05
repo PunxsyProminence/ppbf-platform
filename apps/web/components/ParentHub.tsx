@@ -82,15 +82,15 @@ interface ParentResource {
 }
 
 function assignmentCardTone(status: HomeAssignment['status']): string {
-  if (status === 'Completed') return 'bg-green-900/20 border-green-700';
-  if (status === 'In Progress') return 'bg-yellow-900/20 border-yellow-700';
-  return 'bg-[#1a1a1a] border-[#8b4444]';
+  if (status === 'Completed') return 'bg-[var(--canvas-tan-light)] border-[var(--status-ready)]';
+  if (status === 'In Progress') return 'bg-[var(--canvas-tan-light)] border-[var(--status-warning)]';
+  return 'bg-[var(--canvas-tan-light)] border-[var(--black)]';
 }
 
 function assignmentBadgeTone(status: HomeAssignment['status']): string {
-  if (status === 'Completed') return 'bg-green-900 text-green-200';
-  if (status === 'In Progress') return 'bg-yellow-900 text-yellow-200';
-  return 'bg-[#4a4a4a] text-[#8a8a8a]';
+  if (status === 'Completed') return ui.statusReady;
+  if (status === 'In Progress') return ui.statusWarning;
+  return ui.statusInactive;
 }
 
 export default function ParentHub() {
@@ -169,47 +169,47 @@ export default function ParentHub() {
   const activeProgressMilestones = progressMilestones.filter((item) => item.childId === activeChildId);
 
   function milestoneStatusTone(status: ProgressMilestone['status']): string {
-    if (status === 'Achieved') return 'border-green-700 bg-green-900/20 text-green-200';
-    if (status === 'Needs Work') return 'border-yellow-700 bg-yellow-900/20 text-yellow-200';
-    return 'border-[#8b4444] bg-[#1a1a1a] text-[#e8d7c6]';
+    if (status === 'Achieved') return 'border-[var(--status-ready)] bg-[var(--canvas-tan-light)] text-[var(--black)]';
+    if (status === 'Needs Work') return 'border-[var(--status-warning)] bg-[var(--canvas-tan-light)] text-[var(--black)]';
+    return 'border-[var(--black)] bg-[var(--canvas-tan-light)] text-[var(--black)]';
   }
 
   function attendanceStatusTone(status: AttendanceEntry['status']): string {
-    if (status === 'Present') return 'text-green-300';
-    if (status === 'Excused') return 'text-yellow-300';
-    return 'text-red-300';
+    if (status === 'Present') return 'text-[var(--status-ready)]';
+    if (status === 'Excused') return 'text-[var(--status-warning)]';
+    return 'text-[var(--red-primary)]';
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-[#e8d7c6] font-sans">
+    <div className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)] font-sans">
       <div className="max-w-7xl mx-auto p-4 space-y-8">
         {/* HEADER */}
-        <div className="border-b-2 border-[#8b4444] pb-6 space-y-4">
+        <div className="border-b-2 border-[var(--black)] pb-6 space-y-4">
           <div>
-            <p className="text-xs font-mono uppercase tracking-[0.15em] text-[#d4a574]">Parent Support Hub</p>
+            <p className="text-xs font-mono uppercase tracking-[0.15em] text-[var(--red-primary)]">Parent Support Hub</p>
             <h1 className="text-3xl md:text-4xl font-black mt-2">Family Development Dashboard</h1>
-            <p className="text-base text-[#b0a095] mt-2">Support your child&apos;s boxing journey with at-home assignments, family goals, and coach communication.</p>
-            <p className="text-sm font-mono uppercase tracking-[0.14em] text-[#cfbfae] mt-2">Old Gauze | Sweat | Grit | Grind | Dedication | Motivation</p>
+            <p className="text-base text-[var(--gray-dark)] mt-2">Support your child&apos;s boxing journey with at-home assignments, family goals, and coach communication.</p>
+            <p className="text-sm font-mono uppercase tracking-[0.14em] text-[var(--gray-dark)] mt-2">Old Gauze | Sweat | Grit | Grind | Dedication | Motivation</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <ShadowChatButton
               context="Parent Hub"
               label="Open SHADOW Chat"
-              className="border-[#8b4444] bg-[#2a1414] text-[#e8d7c6] hover:bg-[#3a1a1a]"
+              className="border-[var(--black)] bg-[var(--red-primary)] text-[var(--white)] hover:bg-[var(--red-highlight)]"
             />
             <button
               type="button"
               onClick={() => setActiveTab('shadow')}
-              className="min-h-[40px] border-2 border-[#5a4a3a] bg-[#101010] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[#cfbfae] transition hover:border-[#8b4444]"
+              className="min-h-[40px] border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-xs font-mono font-bold uppercase tracking-[0.12em] text-[var(--gray-dark)] transition hover:border-[var(--red-primary)]"
             >
               Open SHADOW Intel Tab
             </button>
           </div>
         </div>
 
-        <div className="border border-[#694838] bg-[#14100d] p-4">
-          <p className="text-sm text-[#d4a574] font-semibold">Family Commitment</p>
-          <p className="mt-1 text-sm text-[#cfbfae]">Consistency at home builds confidence in the gym. Every ride, reminder, and check-in strengthens grit and motivation.</p>
+        <div className="border border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+          <p className="text-sm text-[var(--red-primary)] font-semibold">Family Commitment</p>
+          <p className="mt-1 text-sm text-[var(--gray-dark)]">Consistency at home builds confidence in the gym. Every ride, reminder, and check-in strengthens grit and motivation.</p>
         </div>
 
         {/* ROLE SUMMARY PANEL */}
@@ -222,49 +222,49 @@ export default function ParentHub() {
         />
 
         {!hasLiveChildMetrics && activeChild ? (
-          <div className="border border-[#8b4444] bg-[#14100d] p-3">
-            <p className="text-xs font-mono uppercase tracking-[0.1em] text-[#d4a574]">Data Availability</p>
-            <p className="mt-1 text-sm text-[#cfbfae]">Attendance and progression metrics are hidden until backend-authoritative feeds are available.</p>
+          <div className="border border-[var(--black)] bg-[var(--canvas-tan-light)] p-3">
+            <p className="text-xs font-mono uppercase tracking-[0.1em] text-[var(--red-primary)]">Data Availability</p>
+            <p className="mt-1 text-sm text-[var(--gray-dark)]">Attendance and progression metrics are hidden until backend-authoritative feeds are available.</p>
           </div>
         ) : null}
 
         {/* CHILD SELECTOR */}
         {childrenLoading && (
-          <div className="border-2 border-[#8b4444] bg-[#0f0f0f] p-4 text-center">
-            <p className="text-[#b0a095] text-sm">Loading your children...</p>
+          <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4 text-center">
+            <p className="text-[var(--gray-dark)] text-sm">Loading your children...</p>
             <div className="mt-3 flex justify-center">
-              <div className="animate-spin h-5 w-5 border-2 border-[#d4a574] border-t-transparent rounded-full"></div>
+              <div className="animate-spin h-5 w-5 border-2 border-[var(--red-primary)] border-t-transparent rounded-full"></div>
             </div>
           </div>
         )}
-        
+
         {childrenError && !childrenLoading && (
-          <div className="border-2 border-red-600 bg-red-900/20 p-3 rounded">
+          <div className="tactical-alert-critical">
             <div className="flex items-center justify-between mb-1">
-              <p className="text-red-400 text-sm font-semibold">Error loading children</p>
+              <p className="text-sm font-semibold">Error loading children</p>
               <button
                 onClick={() => {
                   setChildrenError(null);
                   setChildrenRetryNonce((value) => value + 1);
                 }}
-                className="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition"
+                className="px-2 py-0.5 bg-[var(--red-primary)] hover:bg-[var(--red-highlight)] text-white text-xs font-semibold uppercase transition"
                 aria-label="Retry loading children"
               >
                 Retry
               </button>
             </div>
-            <p className="text-red-300 text-xs">{childrenError}</p>
+            <p className="text-xs">{childrenError}</p>
           </div>
         )}
-        
+
         {!childrenLoading && children.length === 0 && !childrenError && (
-          <div className="border-2 border-[#8b4444] bg-[#0f0f0f] p-4 text-center">
-            <p className="text-[#b0a095] text-sm">No children found</p>
+          <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4 text-center">
+            <p className="text-[var(--gray-dark)] text-sm">No children found</p>
           </div>
         )}
-        
+
         {!childrenLoading && children.length > 0 && (
-          <div className="flex flex-wrap gap-2 border-2 border-[#8b4444] bg-[#0f0f0f] p-3">
+          <div className="flex flex-wrap gap-2 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-3">
             {children.map(child => (
               <button
                 key={child.id}
@@ -314,45 +314,45 @@ export default function ParentHub() {
           {/* OVERVIEW */}
           {activeTab === 'overview' && (
             <div className="space-y-6 animate-fadeIn">
-              <section className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
-                <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Quick Actions</h3>
+              <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+                <h3 className="font-mono text-sm font-bold uppercase text-[var(--red-primary)]">Quick Actions</h3>
                 <div className="mt-3 grid gap-2 md:grid-cols-2 lg:grid-cols-4">
                   <ShadowChatButton
                     context="Parent Overview"
                     label="SHADOW Chat"
-                    className="min-h-[44px] border-[#8b4444] bg-[#2a1414] text-[#e8d7c6] hover:bg-[#3a1a1a]"
+                    className="min-h-[44px] border-[var(--black)] bg-[var(--red-primary)] text-[var(--white)] hover:bg-[var(--red-highlight)]"
                   />
                   <Link
                     href="/schedule"
-                    className="min-h-[44px] border border-[#8b4444] bg-[#2a1414] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#e8d7c6] transition hover:bg-[#3a1a1a] inline-flex items-center justify-center"
+                    className="min-h-[44px] border border-[var(--black)] bg-[var(--red-primary)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--white)] transition hover:bg-[var(--red-highlight)] inline-flex items-center justify-center"
                   >
                     Open Scheduler
                   </Link>
                   <button
                     type="button"
                     onClick={() => setActiveTab('home-assignments')}
-                    className="min-h-[44px] border border-[#8b4444] bg-[#2a1414] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#e8d7c6] transition hover:bg-[#3a1a1a]"
+                    className="min-h-[44px] border border-[var(--black)] bg-[var(--red-primary)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--white)] transition hover:bg-[var(--red-highlight)]"
                   >
                     Open Assignments
                   </button>
                   <button
                     type="button"
                     onClick={() => setActiveTab('attendance')}
-                    className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#cfbfae] transition hover:border-[#8b4444]"
+                    className="min-h-[44px] border border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--gray-dark)] transition hover:border-[var(--red-primary)]"
                   >
                     Check Attendance
                   </button>
                   <button
                     type="button"
                     onClick={() => setActiveTab('messages')}
-                    className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#cfbfae] transition hover:border-[#8b4444]"
+                    className="min-h-[44px] border border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--gray-dark)] transition hover:border-[var(--red-primary)]"
                   >
                     View Coach Messages
                   </button>
                   <button
                     type="button"
                     onClick={() => setActiveTab('shadow')}
-                    className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#cfbfae] transition hover:border-[#8b4444]"
+                    className="min-h-[44px] border border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--gray-dark)] transition hover:border-[var(--red-primary)]"
                   >
                     Open SHADOW Intel
                   </button>
@@ -378,24 +378,24 @@ export default function ParentHub() {
               {activeChild && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className={ui.panelSpaced}>
-                    <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Current Status</h3>
+                    <h3 className="font-mono text-sm font-bold uppercase text-[var(--red-primary)]">Current Status</h3>
                     <div className="space-y-3">
                       <div>
-                        <p className="text-xs text-[#b0a095] block mb-1">Child Name</p>
+                        <p className="text-xs text-[var(--gray-dark)] block mb-1">Child Name</p>
                         <p className="text-base font-semibold">{activeChild.name}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-[#b0a095] block mb-1">Current Track</p>
+                        <p className="text-xs text-[var(--gray-dark)] block mb-1">Current Track</p>
                         <p className="text-base font-semibold">{activeChild.track}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-[#b0a095] block mb-1">Progress</p>
+                        <p className="text-xs text-[var(--gray-dark)] block mb-1">Progress</p>
                         <p className="text-base font-semibold">{activeChild.currentProgress || 'Unavailable - awaiting backend progression feed'}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-[#b0a095] block mb-1">Attendance</p>
+                        <p className="text-xs text-[var(--gray-dark)] block mb-1">Attendance</p>
                         {activeChild.attendancePercent !== null ? (
-                          <p className="text-base font-semibold text-green-400">{activeChild.attendancePercent}%</p>
+                          <p className="text-base font-semibold text-[var(--status-ready)]">{activeChild.attendancePercent}%</p>
                         ) : (
                           <p className="text-base font-semibold">Unavailable - not yet tracked</p>
                         )}
@@ -407,22 +407,22 @@ export default function ParentHub() {
                           real billing-adjacent misstatement, not a placeholder.
                           Show unavailable honestly until a real field exists. */}
                       <div>
-                        <p className="text-xs text-[#b0a095] block mb-1">Membership Status</p>
-                        <p className="text-base font-semibold text-[#8a8a8a]">Unavailable - not yet tracked</p>
+                        <p className="text-xs text-[var(--gray-dark)] block mb-1">Membership Status</p>
+                        <p className="text-base font-semibold text-[var(--gray-dark)]">Unavailable - not yet tracked</p>
                       </div>
                       <div>
-                        <p className="text-xs text-[#b0a095] block mb-1">Scholarship Status</p>
-                        <p className="text-base font-semibold text-[#8a8a8a]">Unavailable - not yet tracked</p>
+                        <p className="text-xs text-[var(--gray-dark)] block mb-1">Scholarship Status</p>
+                        <p className="text-base font-semibold text-[var(--gray-dark)]">Unavailable - not yet tracked</p>
                       </div>
                       <div>
-                        <p className="text-xs text-[#b0a095] block mb-1">Community Service Support Status</p>
-                        <p className="text-base font-semibold text-[#8a8a8a]">Unavailable - not yet tracked</p>
+                        <p className="text-xs text-[var(--gray-dark)] block mb-1">Community Service Support Status</p>
+                        <p className="text-base font-semibold text-[var(--gray-dark)]">Unavailable - not yet tracked</p>
                       </div>
                     </div>
                   </div>
 
                   <div className={ui.panelSpaced}>
-                    <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">How to Support</h3>
+                    <h3 className="font-mono text-sm font-bold uppercase text-[var(--red-primary)]">How to Support</h3>
                     <ul className="space-y-2 text-sm">
                       <li className="flex items-start gap-2">
                         <span>✓</span>
@@ -466,12 +466,12 @@ export default function ParentHub() {
                 ]}
               />
 
-              <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4">
-                <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">This Week&apos;s Parent Support Tasks</h3>
-                <p className="max-w-[520px] font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+              <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 space-y-4">
+                <h3 className="font-mono text-sm font-bold uppercase text-[var(--red-primary)]">This Week&apos;s Parent Support Tasks</h3>
+                <p className="max-w-[520px] font-mono text-xs font-bold uppercase tracking-[0.1em] text-[var(--red-primary)]">
                   PLANNED | NOT YET IMPLEMENTED
                 </p>
-                <p className="text-sm text-[#b0a095]">
+                <p className="text-sm text-[var(--gray-dark)]">
                   There is no parent-task assignment feed wired to the backend yet. The checklist and progress
                   bar previously shown here were hardcoded example data, not real tasks -- they have been
                   removed rather than left showing fake completion status. Home assignments from your child&apos;s
@@ -507,15 +507,15 @@ export default function ParentHub() {
 
               <div className="space-y-3">
                 {homeAssignments.map(assignment => (
-                  <div key={assignment.id} className={`border-2 p-4 rounded ${assignmentCardTone(assignment.status)}`}>
+                  <div key={assignment.id} className={`border-2 p-4 ${assignmentCardTone(assignment.status)}`}>
                     <div className="flex justify-between items-start mb-2">
                       <h4 className="font-semibold">{assignment.title}</h4>
-                      <span className={`text-xs px-2 py-1 rounded font-semibold ${assignmentBadgeTone(assignment.status)}`}>
+                      <span className={assignmentBadgeTone(assignment.status)}>
                         {assignment.status}
                       </span>
                     </div>
-                    <p className="text-sm text-[#b0a095] mb-2">{assignment.description}</p>
-                    <p className="text-xs text-[#8a8a8a]">Due: {assignment.dueDate}</p>
+                    <p className="text-sm text-[var(--gray-dark)] mb-2">{assignment.description}</p>
+                    <p className="text-xs text-[var(--gray-dark)]">Due: {assignment.dueDate}</p>
                   </div>
                 ))}
               </div>

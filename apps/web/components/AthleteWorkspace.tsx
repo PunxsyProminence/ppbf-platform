@@ -91,9 +91,10 @@ function getReadinessLevel(readinessToTrain: number): ReadinessLevel {
 }
 
 function getGoalStatusTone(status: GoalStatus): string {
-  if (status === 'Active') return 'bg-blue-900 text-blue-200';
-  if (status === 'Completed') return 'bg-green-900 text-green-200';
-  return 'bg-yellow-900 text-yellow-200';
+  if (status === 'Active') return ui.statusInfo;
+  if (status === 'Completed') return ui.statusReady;
+  if (status === 'Paused') return ui.statusWarning;
+  return ui.statusInactive;
 }
 
 function formatDueTime(checkInAt: Date, offsetMinutes: number): string {
@@ -709,22 +710,22 @@ export default function AthleteWorkspace() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-[#e8d7c6] font-sans">
+    <div className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)] font-sans">
       <div className="max-w-7xl mx-auto p-4 space-y-8">
         {/* HEADER */}
-        <div className="border-b-2 border-[#8b4444] pb-6 space-y-4">
+        <div className="border-b-2 border-[var(--black)] pb-6 space-y-4">
           <div>
-            <p className="text-xs font-mono uppercase tracking-[0.15em] text-[#d4a574]">Athlete Development Workspace</p>
+            <p className="text-xs font-mono uppercase tracking-[0.15em] text-[var(--red-primary)]">Athlete Development Workspace</p>
             <h1 className="text-3xl md:text-4xl font-black mt-2">My Training Dashboard</h1>
-            <p className="text-base text-[#b0a095] mt-2">Track readiness, execute daily work, develop your boxing skills, and achieve SMART goals.</p>
-            <p className="text-sm font-mono uppercase tracking-[0.14em] text-[#cfbfae] mt-2">Old Gauze | Sweat | Grit | Grind | Dedication | Motivation</p>
+            <p className="text-base text-[var(--gray-dark)] mt-2">Track readiness, execute daily work, develop your boxing skills, and achieve SMART goals.</p>
+            <p className="text-sm font-mono uppercase tracking-[0.14em] text-[var(--gray-dark)] mt-2">Old Gauze | Sweat | Grit | Grind | Dedication | Motivation</p>
           </div>
         </div>
 
-        <div className="border border-[#694838] bg-[#14100d] p-4">
-          <p className="text-sm text-[#d4a574] font-semibold">Daily Reminder</p>
-          <p className="mt-1 text-sm text-[#cfbfae]">Show up. Do the hard rounds. Own the details. Progress is earned through consistent grit and disciplined effort.</p>
-          {backendSyncMessage ? <p className="mt-2 text-xs text-[#d4a574]">Backend Sync: {backendSyncMessage}</p> : null}
+        <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+          <p className="text-sm text-[var(--red-primary)] font-semibold">Daily Reminder</p>
+          <p className="mt-1 text-sm text-[var(--gray-dark)]">Show up. Do the hard rounds. Own the details. Progress is earned through consistent grit and disciplined effort.</p>
+          {backendSyncMessage ? <p className="mt-2 text-xs text-[var(--red-primary)]">Backend Sync: {backendSyncMessage}</p> : null}
         </div>
 
         {/* ROLE SUMMARY PANEL */}
@@ -736,20 +737,20 @@ export default function AthleteWorkspace() {
           unreadMessages={0}
         />
 
-        <details className="border-2 border-[#8b4444] bg-[#111111] p-4">
-          <summary className="cursor-pointer text-xs font-mono uppercase tracking-[0.12em] text-[#d4a574]">Critical Capability Surfaces</summary>
+        <details className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+          <summary className="cursor-pointer text-xs font-mono uppercase tracking-[0.12em] text-[var(--red-primary)]">Critical Capability Surfaces</summary>
           <div className="mt-3 grid gap-3 md:grid-cols-2">
-            <article className="border border-[#5a4a3a] bg-[#101010] p-3">
-              <p className="text-sm font-semibold text-[#e8d7c6]">AI/ML Video Analysis - Planned</p>
-              <p className="mt-1 text-xs text-[#cfbfae]">Video feedback and comparison are front-end placeholders only.</p>
-              <Link href="/athlete/video-analysis" className="mt-2 inline-flex border border-[#8b4444] bg-[#2a1414] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[#e8d7c6]">
+            <article className="border border-[var(--black)] bg-[var(--canvas-tan)] p-3">
+              <p className="text-sm font-semibold text-[var(--black)]">AI/ML Video Analysis - Planned</p>
+              <p className="mt-1 text-xs text-[var(--gray-dark)]">Video feedback and comparison are front-end placeholders only.</p>
+              <Link href="/athlete/video-analysis" className="mt-2 inline-flex border border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[var(--black)]">
                 Open Athlete Video Surface
               </Link>
             </article>
-            <article className="border border-[#5a4a3a] bg-[#101010] p-3">
-              <p className="text-sm font-semibold text-[#e8d7c6]">Closed-Loop Progression Intelligence - Planned</p>
-              <p className="mt-1 text-xs text-[#cfbfae]">Recommendation and scoring logic are not automated in this pass.</p>
-              <Link href="/athlete/progression-intelligence" className="mt-2 inline-flex border border-[#8b4444] bg-[#2a1414] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[#e8d7c6]">
+            <article className="border border-[var(--black)] bg-[var(--canvas-tan)] p-3">
+              <p className="text-sm font-semibold text-[var(--black)]">Closed-Loop Progression Intelligence - Planned</p>
+              <p className="mt-1 text-xs text-[var(--gray-dark)]">Recommendation and scoring logic are not automated in this pass.</p>
+              <Link href="/athlete/progression-intelligence" className="mt-2 inline-flex border border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[var(--black)]">
                 Open Progression Intelligence
               </Link>
             </article>
@@ -791,40 +792,40 @@ export default function AthleteWorkspace() {
           {/* MY DASHBOARD */}
           {activeTab === 'my-dashboard' && (
             <div className="space-y-6 animate-fadeIn">
-              <section className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
-                <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Quick Actions</h3>
+              <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+                <h3 className="font-mono text-sm font-bold uppercase text-[var(--red-primary)]">Quick Actions</h3>
                 <div className="mt-3 grid gap-2 md:grid-cols-2 lg:grid-cols-4">
                   <Link
                     href="/schedule"
-                    className="min-h-[44px] border border-[#8b4444] bg-[#2a1414] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#e8d7c6] transition hover:bg-[#3a1a1a] inline-flex items-center justify-center"
+                    className="min-h-[44px] border border-[var(--black)] bg-[var(--canvas-tan-dark)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--black)] transition hover:bg-[var(--olive-dark)] hover:text-[var(--white)] inline-flex items-center justify-center"
                   >
                     Open Scheduler
                   </Link>
                   <button
                     type="button"
                     onClick={() => setActiveTab('bio-checkin')}
-                    className="min-h-[44px] border border-[#8b4444] bg-[#2a1414] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#e8d7c6] transition hover:bg-[#3a1a1a]"
+                    className="min-h-[44px] border border-[var(--black)] bg-[var(--canvas-tan-dark)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--black)] transition hover:bg-[var(--olive-dark)] hover:text-[var(--white)]"
                   >
                     Complete Check-In
                   </button>
                   <button
                     type="button"
                     onClick={() => setActiveTab('athlete-floor')}
-                    className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#cfbfae] transition hover:border-[#8b4444]"
+                    className="min-h-[44px] border border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--gray-dark)] transition hover:border-[var(--red-primary)]"
                   >
                     Open Floor Tasks
                   </button>
                   <button
                     type="button"
                     onClick={() => setActiveTab('smart-goals')}
-                    className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#cfbfae] transition hover:border-[#8b4444]"
+                    className="min-h-[44px] border border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--gray-dark)] transition hover:border-[var(--red-primary)]"
                   >
                     Update Goals
                   </button>
                   <button
                     type="button"
                     onClick={() => setActiveTab('shadow')}
-                    className="min-h-[44px] border border-[#5a4a3a] bg-[#101010] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[#cfbfae] transition hover:border-[#8b4444]"
+                    className="min-h-[44px] border border-[var(--black)] bg-[var(--canvas-tan)] px-3 text-xs font-bold uppercase tracking-[0.08em] text-[var(--gray-dark)] transition hover:border-[var(--red-primary)]"
                   >
                     Ask SHADOW
                   </button>
@@ -852,25 +853,25 @@ export default function AthleteWorkspace() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Readiness Card */}
                 <div className={ui.panel}>
-                  <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574] mb-4">Current Readiness</h3>
+                  <h3 className="font-mono text-sm font-bold uppercase text-[var(--red-primary)] mb-4">Current Readiness</h3>
                   <div className="space-y-4">
                     <div>
-                      <label className="text-sm text-[#b0a095] block mb-2" htmlFor="readiness-sleep-hours">Sleep (hours)</label>
-                      <input id="readiness-sleep-hours" type="range" min="4" max="12" value={sleepHours} onChange={(e) => setSleepHours(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
-                      <p className="text-xs text-[#8a8a8a] mt-1">{sleepHours} hours</p>
+                      <label className="text-sm text-[var(--gray-dark)] block mb-2" htmlFor="readiness-sleep-hours">Sleep (hours)</label>
+                      <input id="readiness-sleep-hours" type="range" min="4" max="12" value={sleepHours} onChange={(e) => setSleepHours(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[var(--gray-medium)] accent-[var(--red-primary)]" />
+                      <p className="text-xs text-[var(--gray-dark)] mt-1">{sleepHours} hours</p>
                     </div>
                     <div>
-                      <label className="text-sm text-[#b0a095] block mb-2" htmlFor="readiness-energy-level">Energy Level (1-10)</label>
-                      <input id="readiness-energy-level" type="range" min="1" max="10" value={energyLevel} onChange={(e) => setEnergyLevel(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
-                      <p className="text-xs text-[#8a8a8a] mt-1">{energyLevel}/10</p>
+                      <label className="text-sm text-[var(--gray-dark)] block mb-2" htmlFor="readiness-energy-level">Energy Level (1-10)</label>
+                      <input id="readiness-energy-level" type="range" min="1" max="10" value={energyLevel} onChange={(e) => setEnergyLevel(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[var(--gray-medium)] accent-[var(--red-primary)]" />
+                      <p className="text-xs text-[var(--gray-dark)] mt-1">{energyLevel}/10</p>
                     </div>
                     <div>
-                      <label className="text-sm text-[#b0a095] block mb-2" htmlFor="readiness-train">Readiness to Train (1-10)</label>
-                      <input id="readiness-train" type="range" min="1" max="10" value={readinessToTrain} onChange={(e) => setReadinessToTrain(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
-                      <p className="text-xs text-[#8a8a8a] mt-1">{readinessToTrain}/10</p>
+                      <label className="text-sm text-[var(--gray-dark)] block mb-2" htmlFor="readiness-train">Readiness to Train (1-10)</label>
+                      <input id="readiness-train" type="range" min="1" max="10" value={readinessToTrain} onChange={(e) => setReadinessToTrain(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[var(--gray-medium)] accent-[var(--red-primary)]" />
+                      <p className="text-xs text-[var(--gray-dark)] mt-1">{readinessToTrain}/10</p>
                     </div>
                     <div>
-                      <label className="text-sm text-[#b0a095] block mb-2" htmlFor="session-duration">Session Duration (minutes)</label>
+                      <label className="text-sm text-[var(--gray-dark)] block mb-2" htmlFor="session-duration">Session Duration (minutes)</label>
                       <input
                         id="session-duration"
                         type="number"
@@ -878,7 +879,7 @@ export default function AthleteWorkspace() {
                         max={480}
                         value={sessionDurationMinutes}
                         onChange={(e) => setSessionDurationMinutes(Math.max(1, Number.parseInt(e.target.value, 10) || 0))}
-                        className="w-full h-9 px-3 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none"
+                        className="tactical-input"
                       />
                     </div>
                     <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -890,16 +891,16 @@ export default function AthleteWorkspace() {
 
                 {/* Pain/Injury Card */}
                 <div className={ui.panel}>
-                  <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574] mb-4">Pain/Soreness Report</h3>
+                  <h3 className="font-mono text-sm font-bold uppercase text-[var(--red-primary)] mb-4">Pain/Soreness Report</h3>
                   <div className="space-y-3">
                     <label className="flex items-center gap-2 text-sm cursor-pointer">
                       <input type="checkbox" checked={injuryFlag} onChange={(e) => setInjuryFlag(e.target.checked)} className="w-4 h-4" />
                       <span>Injury or Pain Flag</span>
                     </label>
                     <div>
-                      <label className="text-sm text-[#b0a095] block mb-2" htmlFor="readiness-soreness">Soreness Level (1-10)</label>
-                      <input id="readiness-soreness" type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
-                      <p className="text-xs text-[#8a8a8a] mt-1">{soreness}/10</p>
+                      <label className="text-sm text-[var(--gray-dark)] block mb-2" htmlFor="readiness-soreness">Soreness Level (1-10)</label>
+                      <input id="readiness-soreness" type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[var(--gray-medium)] accent-[var(--red-primary)]" />
+                      <p className="text-xs text-[var(--gray-dark)] mt-1">{soreness}/10</p>
                     </div>
                     <div className="grid grid-cols-3 gap-2 pt-2">
                       {painLocations.slice(0, 3).map(loc => (
@@ -909,17 +910,17 @@ export default function AthleteWorkspace() {
                             setSelectedPainLocation(loc);
                             setShowPainModal(true);
                           }}
-                          className="text-xs px-2 py-1 border-2 border-[#8b4444] bg-[#0f0f0f] text-[#b0a095] hover:text-[#e8d7c6] transition"
+                          className="text-xs px-2 py-1 border-2 border-[var(--black)] bg-[var(--canvas-tan)] text-[var(--gray-dark)] hover:text-[var(--black)] transition"
                         >
                           {loc}
                         </button>
                       ))}
                     </div>
                     {painSaveMessage ? (
-                      <p className="text-xs text-[#d4a574]">{painSaveMessage}</p>
+                      <p className="text-xs text-[var(--red-primary)]">{painSaveMessage}</p>
                     ) : null}
                     {painLog[0] ? (
-                      <p className="text-xs text-[#8a8a8a]">
+                      <p className="text-xs text-[var(--gray-dark)]">
                         Last report: {painLog[0].location} ({painLog[0].type}, {painLog[0].severity}/10)
                       </p>
                     ) : null}
@@ -928,22 +929,22 @@ export default function AthleteWorkspace() {
               </div>
 
               {/* Session Check-In/Out */}
-              <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6">
-                <h3 className="font-mono text-sm font-bold uppercase text-[#d4a574] mb-4">Session Log</h3>
+              <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6">
+                <h3 className="font-mono text-sm font-bold uppercase text-[var(--red-primary)] mb-4">Session Log</h3>
                 {!sessionActive ? (
-                  <button onClick={handleCheckIn} className="w-full bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold py-2 px-4 transition">
+                  <button onClick={handleCheckIn} className="tactical-btn-critical w-full font-semibold py-2 px-4 transition">
                     ✅ Check In
                   </button>
                 ) : (
                   <div className="space-y-3">
-                    <p className="text-sm text-[#b0a095]">Session active since {checkInTime}</p>
+                    <p className="text-sm text-[var(--gray-dark)]">Session active since {checkInTime}</p>
                     <textarea
                       value={checkInNotes}
                       onChange={(e) => setCheckInNotes(e.target.value)}
                       placeholder="Session notes..."
-                      className="w-full h-20 px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none"
+                      className="tactical-input h-20"
                     />
-                    <button onClick={handleCheckOut} className="w-full bg-red-700 hover:bg-red-800 text-white font-semibold py-2 px-4 transition">
+                    <button onClick={handleCheckOut} className="tactical-btn-critical w-full font-semibold py-2 px-4 transition">
                       ⏹️ Check Out
                     </button>
                   </div>
@@ -956,9 +957,9 @@ export default function AthleteWorkspace() {
           {activeTab === 'athlete-floor' && (
             <div className="space-y-6 animate-fadeIn">
               {lastWorkoutBuildNote && (
-                <div className="border border-[#694838] bg-[#14100d] p-3">
-                  <p className="text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">Workout Wiring</p>
-                  <p className="mt-1 text-sm text-[#cfbfae]">{lastWorkoutBuildNote}</p>
+                <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-3">
+                  <p className="text-xs font-mono uppercase tracking-[0.08em] text-[var(--red-primary)]">Workout Wiring</p>
+                  <p className="mt-1 text-sm text-[var(--gray-dark)]">{lastWorkoutBuildNote}</p>
                 </div>
               )}
               <HelpPanel
@@ -978,30 +979,30 @@ export default function AthleteWorkspace() {
               />
 
               {tasksLoading && (
-                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-8 text-center">
-                  <p className="text-[#b0a095]">Loading your tasks...</p>
+                <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-8 text-center">
+                  <p className="text-[var(--gray-dark)]">Loading your tasks...</p>
                   <div className="mt-4 flex justify-center">
-                    <div className="animate-spin h-6 w-6 border-2 border-[#d4a574] border-t-transparent rounded-full"></div>
+                    <div className="animate-spin h-6 w-6 border-2 border-[var(--red-primary)] border-t-transparent rounded-full"></div>
                   </div>
                 </div>
               )}
 
               {tasksError && !tasksLoading && (
-                <div className="border-2 border-red-600 bg-red-900/20 p-4 rounded">
+                <div className={ui.errorContainer}>
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-red-400 font-semibold">Error loading tasks</p>
+                    <p className={ui.errorText}>Error loading tasks</p>
                     <button
                       onClick={() => {
                         setTasksError(null);
                         void loadFloorTasks();
                       }}
-                      className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition"
+                      className={ui.errorButton}
                       aria-label="Retry loading tasks"
                     >
                       Retry
                     </button>
                   </div>
-                  <p className="text-red-300 text-sm">{tasksError}</p>
+                  <p className={cx(ui.errorText, 'text-sm')}>{tasksError}</p>
                 </div>
               )}
 
@@ -1009,15 +1010,15 @@ export default function AthleteWorkspace() {
                 {floorTasks.map(task => (
                   <div
                     key={task.id}
-                    className={`border-2 p-4 rounded ${
+                    className={`border-2 p-4 ${
                       task.completed
-                        ? 'bg-[#0a2a0a] border-[#4a9a4a]'
-                        : 'bg-[#1a1a1a] border-[#8b4444]'
+                        ? 'bg-[var(--status-ready)]/10 border-[var(--status-ready)]'
+                        : 'bg-[var(--canvas-tan-light)] border-[var(--black)]'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3 mb-3">
                       <div>
-                        <span className="inline-block text-xs font-mono font-bold bg-[#4a4a4a] text-[#8a8a8a] px-2 py-1 mb-2">{task.category}</span>
+                        <span className="inline-block text-xs font-mono font-bold bg-[var(--gray-medium)] text-[var(--white-off)] px-2 py-1 mb-2">{task.category}</span>
                         <h4 className="text-base font-semibold">{task.title}</h4>
                       </div>
                       <input
@@ -1029,10 +1030,10 @@ export default function AthleteWorkspace() {
                         className="w-5 h-5 cursor-pointer"
                       />
                     </div>
-                    <p className="text-sm text-[#b0a095] mb-3">{task.description}</p>
-                    <div className="flex items-center justify-between text-xs text-[#8a8a8a]">
+                    <p className="text-sm text-[var(--gray-dark)] mb-3">{task.description}</p>
+                    <div className="flex items-center justify-between text-xs text-[var(--gray-dark)]">
                       <span>⏰ {task.dueDate}</span>
-                      <span className={`font-semibold ${task.priority === 'High' ? 'text-red-400' : 'text-yellow-600'}`}>
+                      <span className={`font-semibold ${task.priority === 'High' ? 'text-[var(--red-primary)]' : 'text-[var(--gray-dark)]'}`}>
                         {task.priority}
                       </span>
                     </div>
@@ -1041,8 +1042,8 @@ export default function AthleteWorkspace() {
               </div>
 
               {!tasksLoading && !tasksError && floorTasks.length === 0 && (
-                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 text-center">
-                  <p className="text-[#b0a095]">No backend floor tasks are available for this athlete yet.</p>
+                <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 text-center">
+                  <p className="text-[var(--gray-dark)]">No backend floor tasks are available for this athlete yet.</p>
                 </div>
               )}
             </div>
@@ -1071,26 +1072,26 @@ export default function AthleteWorkspace() {
 
               <button
                 onClick={() => setShowGoalForm(!showGoalForm)}
-                className="px-4 py-2 bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold transition"
+                className="tactical-btn-critical px-4 py-2 font-semibold transition"
               >
                 + New SMART Goal
               </button>
 
               {showGoalForm && (
-                <div className="border-2 border-[#d4a574] bg-[#1a1a1a] p-6 space-y-4">
-                  <h3 className="font-mono font-bold text-[#d4a574]">Create SMART Goal</h3>
+                <div className="border-2 border-[var(--red-primary)] bg-[var(--canvas-tan-light)] p-6 space-y-4">
+                  <h3 className="font-mono font-bold text-[var(--red-primary)]">Create SMART Goal</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <input
                       type="text"
                       value={newGoalTitle}
                       onChange={(e) => setNewGoalTitle(e.target.value)}
                       placeholder="Goal title"
-                      className="px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none"
+                      className="tactical-input"
                     />
                     <select
                       value={newGoalCategory}
                       onChange={(e) => setNewGoalCategory(e.target.value as SMARTCategory)}
-                      className="px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none"
+                      className="tactical-input"
                     >
                       {(['Boxing', 'Fitness', 'Weight Loss', 'Weight Gain', 'Academics', 'Attendance', 'Recovery', 'Lifestyle', 'Leadership'] as SMARTCategory[]).map(cat => (
                         <option key={cat} value={cat}>{cat}</option>
@@ -1100,26 +1101,26 @@ export default function AthleteWorkspace() {
                       type="date"
                       value={newGoalTargetDate}
                       onChange={(e) => setNewGoalTargetDate(e.target.value)}
-                      className="px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none"
+                      className="tactical-input"
                     />
                     <input
                       type="text"
                       value={newGoalSuccessMetric}
                       onChange={(e) => setNewGoalSuccessMetric(e.target.value)}
                       placeholder="Success metric"
-                      className="px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none"
+                      className="tactical-input"
                     />
                   </div>
                   <div className="flex gap-2">
                     <button
                       onClick={handleCreateGoal}
-                      className="flex-1 bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold py-2 transition"
+                      className="tactical-btn-critical flex-1 font-semibold py-2 transition"
                     >
                       Create Goal
                     </button>
                     <button
                       onClick={() => setShowGoalForm(false)}
-                      className="flex-1 bg-[#4a4a4a] hover:bg-[#5a5a5a] text-white font-semibold py-2 transition"
+                      className="tactical-btn-ghost border-2 border-[var(--black)] flex-1 font-semibold py-2 transition"
                     >
                       Cancel
                     </button>
@@ -1128,62 +1129,62 @@ export default function AthleteWorkspace() {
               )}
 
               {goalsLoading && (
-                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-8 text-center">
-                  <p className="text-[#b0a095]">Loading your goals...</p>
+                <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-8 text-center">
+                  <p className="text-[var(--gray-dark)]">Loading your goals...</p>
                   <div className="mt-4 flex justify-center">
-                    <div className="animate-spin h-6 w-6 border-2 border-[#d4a574] border-t-transparent rounded-full"></div>
+                    <div className="animate-spin h-6 w-6 border-2 border-[var(--red-primary)] border-t-transparent rounded-full"></div>
                   </div>
                 </div>
               )}
 
               {goalsError && !goalsLoading && (
-                <div className="border-2 border-red-600 bg-red-900/20 p-4 rounded">
+                <div className={ui.errorContainer}>
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-red-400 font-semibold">Error loading goals</p>
+                    <p className={ui.errorText}>Error loading goals</p>
                     <button
                       onClick={() => {
                         setGoalsError(null);
                         void loadGoals();
                       }}
-                      className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition"
+                      className={ui.errorButton}
                       aria-label="Retry loading goals"
                     >
                       Retry
                     </button>
                   </div>
-                  <p className="text-red-300 text-sm">{goalsError}</p>
+                  <p className={cx(ui.errorText, 'text-sm')}>{goalsError}</p>
                 </div>
               )}
 
               {!goalsLoading && smartGoals.length === 0 && !goalsError && (
-                <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-8 text-center">
-                  <p className="text-[#b0a095]">No goals yet. Create one to get started!</p>
+                <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-8 text-center">
+                  <p className="text-[var(--gray-dark)]">No goals yet. Create one to get started!</p>
                 </div>
               )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {smartGoals.map(goal => (
-                  <div key={goal.id} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 space-y-3">
+                  <div key={goal.id} className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4 space-y-3">
                     <div className="flex justify-between items-start">
                       <div>
-                        <span className="inline-block text-xs font-mono font-bold bg-[#4a4a4a] text-[#8a8a8a] px-2 py-1 mb-2">{goal.category}</span>
+                        <span className="inline-block text-xs font-mono font-bold bg-[var(--gray-medium)] text-[var(--white-off)] px-2 py-1 mb-2">{goal.category}</span>
                         <h4 className="text-base font-semibold">{goal.title}</h4>
                       </div>
-                      <span className={`text-xs font-semibold px-2 py-1 rounded ${getGoalStatusTone(goal.status)}`}>
+                      <span className={getGoalStatusTone(goal.status)}>
                         {goal.status}
                       </span>
                     </div>
                     <div className="space-y-2">
                       <div className="flex justify-between text-sm">
-                        <span className="text-[#b0a095]">Progress</span>
+                        <span className="text-[var(--gray-dark)]">Progress</span>
                         <span className="font-semibold">{goal.progressPercent}%</span>
                       </div>
-                      <div className="w-full bg-[#4a4a4a] h-2">
-                        <div className="bg-[#d4a574] h-2" style={{width: `${goal.progressPercent}%`}}></div>
+                      <div className="w-full bg-[var(--gray-medium)] h-2">
+                        <div className="bg-[var(--red-primary)] h-2" style={{width: `${goal.progressPercent}%`}}></div>
                       </div>
                     </div>
-                    <p className="text-sm text-[#b0a095]">Target: {goal.targetDate}</p>
-                    <p className="text-xs text-[#8a8a8a]">{goal.successMetric}</p>
+                    <p className="text-sm text-[var(--gray-dark)]">Target: {goal.targetDate}</p>
+                    <p className="text-xs text-[var(--gray-dark)]">{goal.successMetric}</p>
                   </div>
                 ))}
               </div>
@@ -1192,9 +1193,9 @@ export default function AthleteWorkspace() {
 
           {/* TRACKS - Placeholder */}
           {activeTab === 'tracks' && (
-            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
-              <h3 className="font-mono font-bold text-[#d4a574] uppercase">Track Management</h3>
-              <p className="text-[#b0a095]">View current track assignment and request upgrades as you progress.</p>
+            <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 space-y-4 animate-fadeIn">
+              <h3 className="font-mono font-bold text-[var(--red-primary)] uppercase">Track Management</h3>
+              <p className="text-[var(--gray-dark)]">View current track assignment and request upgrades as you progress.</p>
               {/* Track assignment, membership, scholarship, and support status
                   have no backing column anywhere in the schema -- the track
                   itself would come from pilot.admin_track_assignments, which
@@ -1204,26 +1205,26 @@ export default function AthleteWorkspace() {
                   eligibility-adjacent misstatement, not a placeholder. Show
                   unavailable honestly until real fields exist. Mirrors the same
                   correction already applied in ParentHub.tsx. */}
-              <div className="bg-[#0f0f0f] border-2 border-[#8b4444] p-4 space-y-1">
-                <p className="text-sm"><strong>Current Track:</strong> <span className="text-[#8a8a8a]">Unavailable - not yet tracked</span></p>
-                <p className="text-sm mt-2 text-[#b0a095]"><strong>Program Membership:</strong> <span className="text-[#8a8a8a]">Unavailable - not yet tracked</span></p>
-                <p className="text-sm text-[#b0a095]"><strong>Participation Status:</strong> <span className="text-[#8a8a8a]">Unavailable - not yet tracked</span></p>
-                <p className="text-sm text-[#b0a095]"><strong>Support Status:</strong> <span className="text-[#8a8a8a]">Unavailable - not yet tracked</span></p>
-                <p className="text-sm text-[#b0a095]"><strong>Community Service Credits:</strong> <span className="text-[#8a8a8a]">Unavailable - not yet tracked</span></p>
+              <div className="bg-[var(--canvas-tan)] border-2 border-[var(--black)] p-4 space-y-1">
+                <p className="text-sm"><strong>Current Track:</strong> <span className="text-[var(--gray-dark)]">Unavailable - not yet tracked</span></p>
+                <p className="text-sm mt-2 text-[var(--gray-dark)]"><strong>Program Membership:</strong> <span className="text-[var(--gray-dark)]">Unavailable - not yet tracked</span></p>
+                <p className="text-sm text-[var(--gray-dark)]"><strong>Participation Status:</strong> <span className="text-[var(--gray-dark)]">Unavailable - not yet tracked</span></p>
+                <p className="text-sm text-[var(--gray-dark)]"><strong>Support Status:</strong> <span className="text-[var(--gray-dark)]">Unavailable - not yet tracked</span></p>
+                <p className="text-sm text-[var(--gray-dark)]"><strong>Community Service Credits:</strong> <span className="text-[var(--gray-dark)]">Unavailable - not yet tracked</span></p>
               </div>
             </div>
           )}
 
           {/* ASSESSMENTS - Placeholder */}
           {activeTab === 'assessments' && (
-            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
-              <h3 className="font-mono font-bold text-[#d4a574] uppercase">Assessments</h3>
-              <p className="text-[#b0a095]">Complete personality tests, surveys, and skill assessments.</p>
+            <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 space-y-4 animate-fadeIn">
+              <h3 className="font-mono font-bold text-[var(--red-primary)] uppercase">Assessments</h3>
+              <p className="text-[var(--gray-dark)]">Complete personality tests, surveys, and skill assessments.</p>
               <div className="space-y-3">
-                <div className="border-2 border-[#8b4444] bg-[#0f0f0f] p-4">
+                <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
                   <p className="font-semibold">MBTI Personality Test</p>
-                  <p className="text-sm text-[#b0a095] mt-1">Discover your personality type and learning style.</p>
-                  <button className="mt-3 px-3 py-1 bg-[#8b4444] hover:bg-[#5a2a2a] text-white text-sm transition">Start Assessment</button>
+                  <p className="text-sm text-[var(--gray-dark)] mt-1">Discover your personality type and learning style.</p>
+                  <button className="tactical-btn-critical mt-3 px-3 py-1 text-sm transition">Start Assessment</button>
                 </div>
               </div>
             </div>
@@ -1248,43 +1249,43 @@ export default function AthleteWorkspace() {
                 ]}
               />
 
-              <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-6">
-                <h3 className="font-mono font-bold text-[#d4a574] uppercase">Daily Biological Check-In</h3>
+              <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 space-y-6">
+                <h3 className="font-mono font-bold text-[var(--red-primary)] uppercase">Daily Biological Check-In</h3>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-sm font-semibold text-[#b0a095] block mb-2" htmlFor="bio-sleep-hours">Sleep (4-12 hours)</label>
-                    <input id="bio-sleep-hours" type="range" min="4" max="12" step="0.5" value={sleepHours} onChange={(e) => setSleepHours(Number.parseFloat(e.target.value))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
-                    <p className="text-xs text-[#8a8a8a] mt-1">{sleepHours} hours</p>
+                    <label className="text-sm font-semibold text-[var(--gray-dark)] block mb-2" htmlFor="bio-sleep-hours">Sleep (4-12 hours)</label>
+                    <input id="bio-sleep-hours" type="range" min="4" max="12" step="0.5" value={sleepHours} onChange={(e) => setSleepHours(Number.parseFloat(e.target.value))} className="w-full h-2 bg-[var(--gray-medium)] accent-[var(--red-primary)]" />
+                    <p className="text-xs text-[var(--gray-dark)] mt-1">{sleepHours} hours</p>
                   </div>
                   <div>
-                    <label className="text-sm font-semibold text-[#b0a095] block mb-2" htmlFor="bio-hydration">Hydration (1-10)</label>
-                    <input id="bio-hydration" type="range" min="1" max="10" value={hydrationStatus} onChange={(e) => setHydrationStatus(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
-                    <p className="text-xs text-[#8a8a8a] mt-1">{hydrationStatus}/10</p>
+                    <label className="text-sm font-semibold text-[var(--gray-dark)] block mb-2" htmlFor="bio-hydration">Hydration (1-10)</label>
+                    <input id="bio-hydration" type="range" min="1" max="10" value={hydrationStatus} onChange={(e) => setHydrationStatus(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[var(--gray-medium)] accent-[var(--red-primary)]" />
+                    <p className="text-xs text-[var(--gray-dark)] mt-1">{hydrationStatus}/10</p>
                   </div>
                   <div>
-                    <label className="text-sm font-semibold text-[#b0a095] block mb-2" htmlFor="bio-motivation">Motivation (1-10)</label>
-                    <input id="bio-motivation" type="range" min="1" max="10" value={motivation} onChange={(e) => setMotivation(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
-                    <p className="text-xs text-[#8a8a8a] mt-1">{motivation}/10</p>
+                    <label className="text-sm font-semibold text-[var(--gray-dark)] block mb-2" htmlFor="bio-motivation">Motivation (1-10)</label>
+                    <input id="bio-motivation" type="range" min="1" max="10" value={motivation} onChange={(e) => setMotivation(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[var(--gray-medium)] accent-[var(--red-primary)]" />
+                    <p className="text-xs text-[var(--gray-dark)] mt-1">{motivation}/10</p>
                   </div>
                   <div>
-                    <label className="text-sm font-semibold text-[#b0a095] block mb-2" htmlFor="bio-soreness">Soreness (0-10)</label>
-                    <input id="bio-soreness" type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
-                    <p className="text-xs text-[#8a8a8a] mt-1">{soreness}/10</p>
+                    <label className="text-sm font-semibold text-[var(--gray-dark)] block mb-2" htmlFor="bio-soreness">Soreness (0-10)</label>
+                    <input id="bio-soreness" type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[var(--gray-medium)] accent-[var(--red-primary)]" />
+                    <p className="text-xs text-[var(--gray-dark)] mt-1">{soreness}/10</p>
                   </div>
                 </div>
 
                 <button
                   onClick={() => setExpandedCheckIn(!expandedCheckIn)}
-                  className="w-full px-4 py-2 bg-[#4a4a4a] hover:bg-[#5a5a5a] text-[#e8d7c6] font-semibold transition"
+                  className="tactical-btn-ghost border-2 border-[var(--black)] w-full px-4 py-2 font-semibold transition"
                 >
                   {expandedCheckIn ? '− Collapse' : '+ Expand to Maximum Check-In'}
                 </button>
 
                 {expandedCheckIn && (
-                  <div className="space-y-4 pt-4 border-t-2 border-[#8b4444]">
-                    <p className="text-sm text-[#b0a095]">Additional detailed metrics available below...</p>
-                    <div className="text-xs text-[#8a8a8a]">
+                  <div className="space-y-4 pt-4 border-t-2 border-[var(--black)]">
+                    <p className="text-sm text-[var(--gray-dark)]">Additional detailed metrics available below...</p>
+                    <div className="text-xs text-[var(--gray-dark)]">
                       <p>• Resting Heart Rate, HRV, Blood Pressure</p>
                       <p>• Upper/Lower Body Soreness by location</p>
                       <p>• Mental clarity, focus, stress levels</p>
@@ -1318,29 +1319,29 @@ export default function AthleteWorkspace() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {drills.map(drill => (
-                  <div key={drill.id} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 space-y-3">
+                  <div key={drill.id} className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4 space-y-3">
                     <div className="flex justify-between items-start">
                       <div>
-                        <span className="inline-block text-xs font-mono font-bold bg-[#4a4a4a] text-[#8a8a8a] px-2 py-1 mb-2">{drill.category}</span>
+                        <span className="inline-block text-xs font-mono font-bold bg-[var(--gray-medium)] text-[var(--white-off)] px-2 py-1 mb-2">{drill.category}</span>
                         <h4 className="text-base font-semibold">{drill.name}</h4>
                       </div>
-                      <span className="text-xs font-mono text-[#d4a574]">{drill.minRank}</span>
+                      <span className="text-xs font-mono text-[var(--red-primary)]">{drill.minRank}</span>
                     </div>
-                    <p className="text-sm text-[#b0a095]">{drill.focus}</p>
+                    <p className="text-sm text-[var(--gray-dark)]">{drill.focus}</p>
                     <div className="space-y-1">
-                      <p className="text-xs font-semibold text-[#d4a574]">Coaching Cues:</p>
+                      <p className="text-xs font-semibold text-[var(--red-primary)]">Coaching Cues:</p>
                       <div className="flex flex-wrap gap-1">
                         {drill.cues.map((cue) => (
-                          <span key={`${drill.id}-${cue}`} className="text-xs bg-[#4a4a4a] text-[#8a8a8a] px-2 py-1">⚡ {cue}</span>
+                          <span key={`${drill.id}-${cue}`} className="text-xs bg-[var(--gray-medium)] text-[var(--white-off)] px-2 py-1">⚡ {cue}</span>
                         ))}
                       </div>
                     </div>
                     <button
                       onClick={() => setCompletedDrills({...completedDrills, [drill.id]: !completedDrills[drill.id]})}
-                      className={`w-full py-2 rounded font-semibold transition ${
+                      className={`w-full py-2 font-semibold transition border-2 border-[var(--black)] ${
                         completedDrills[drill.id]
-                          ? 'bg-[#4a9a4a] text-white'
-                          : 'bg-[#4a4a4a] hover:bg-[#5a5a5a] text-[#b0a095]'
+                          ? 'bg-[var(--status-ready)] text-white'
+                          : 'bg-[var(--canvas-tan-dark)] hover:bg-[var(--olive-dark)] hover:text-white text-[var(--black)]'
                       }`}
                     >
                       {completedDrills[drill.id] ? '✅ Drill Complete' : 'Mark Complete'}
@@ -1369,11 +1370,11 @@ export default function AthleteWorkspace() {
                 ]}
               />
 
-              <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
+              <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 space-y-4 animate-fadeIn">
                 <h3 className="font-semibold text-lg">Biomechanics of Kinetic Force Transfer</h3>
-                <p className="text-[#b0a095]"><strong>Concept:</strong> Power does not generate in the shoulders. Force begins with rear-foot ground rotation through hip rotation into target through clean wrist extension.</p>
-                <div className="bg-[#0f0f0f] border-2 border-[#8b4444] p-4">
-                  <p className="text-sm text-[#e8d7c6]"><strong>Homework:</strong> Complete 30 slow shadowboxing crosses, holding full extension for 3 seconds to confirm your rear foot heel is rotated fully outward.</p>
+                <p className="text-[var(--gray-dark)]"><strong>Concept:</strong> Power does not generate in the shoulders. Force begins with rear-foot ground rotation through hip rotation into target through clean wrist extension.</p>
+                <div className="bg-[var(--canvas-tan)] border-2 border-[var(--black)] p-4">
+                  <p className="text-sm text-[var(--black)]"><strong>Homework:</strong> Complete 30 slow shadowboxing crosses, holding full extension for 3 seconds to confirm your rear foot heel is rotated fully outward.</p>
                 </div>
               </div>
             </div>
