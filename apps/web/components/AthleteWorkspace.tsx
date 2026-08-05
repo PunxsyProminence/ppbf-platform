@@ -1327,7 +1327,16 @@ export default function AthleteWorkspace() {
             <p className="t-eyebrow">Athlete Development Workspace</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-2xl)' }}>My Training Dashboard</h1>
             <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Track readiness, execute daily work, develop your boxing skills, and achieve SMART goals.</p>
-            <p className="t-label mt-[var(--s3)]">Old Gauze | Sweat | Grit | Grind | Dedication | Motivation</p>
+            {/* The motto strip is gone from here, from the coach workspace, from
+                the parent hub and from the funding centre -- the same six words
+                at --t-xs, four times, always directly above the fold.
+
+                It is the gym's voice, and the gym already has one on this page:
+                the chalkboard, a few hundred pixels down, where a person writes
+                a line by hand and rubs it out when they feel like it. A motto
+                hardcoded into four component headers is not that. Law 5 also
+                asks for 19.1px on anything an athlete reads on the floor, and
+                this was rendering at roughly half of it. */}
           </div>
         </div>
 
@@ -1352,10 +1361,17 @@ export default function AthleteWorkspace() {
             what a board by the door holds. See Chalkboard.tsx. */}
         <Chalkboard placement="athlete_workspace" />
 
-        {/* Photographs of the room, not of the people in it. Empty today, and
-            designed to be: see GymWallModule.tsx for why a shared dashboard
-            module cannot carry a member's portrait under profileVisibility.ts. */}
-        <GymWallModule className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s5)]" />
+        {/* The gym wall used to hang here, third from the top. It is 421px of
+            empty frames on a page whose Quick Actions -- Open Scheduler,
+            Complete Check-In, Open Floor Tasks -- began at 2123px, so an
+            athlete opening their own training dashboard saw a blank chalkboard
+            and two empty frames above the fold and had to scroll past two full
+            screens to reach anything they could do.
+
+            The wall is ambient by design and correct as an object; it is the
+            room, hung on a wall, waiting for somebody to photograph it. That
+            makes it the last thing on the page rather than the third. It is
+            rendered at the foot of this component now. */}
 
         <div className={PANEL}>
           <p className="t-eyebrow">Daily Reminder</p>
@@ -2387,6 +2403,11 @@ export default function AthleteWorkspace() {
             </div>
           </div>
         )}
+
+        {/* The gym wall, at the foot of the page where ambient furniture
+            belongs. See the note where it used to hang, above the daily
+            reminder. */}
+        <GymWallModule className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s5)]" />
       </div>
     </div>
   );

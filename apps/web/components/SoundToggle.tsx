@@ -27,6 +27,7 @@
  */
 
 import useGymSound, { type GymSoundStatus } from './useGymSound';
+import { CONTROL_QUIET } from './sessionBarControls';
 
 interface Face {
   readonly glyph: string;
@@ -63,12 +64,13 @@ const FACES: Record<GymSoundStatus, Face> = {
   },
 };
 
-/* Brass chassis, matching the other controls on the session bar. The
-   text-[length:...] hint is not optional in Tailwind v4 — text-[var(--x)] emits
-   nothing at all, because the compiler cannot tell a size from a colour. */
-const CONTROL =
-  'btn btn--ghost inline-flex items-center gap-[var(--s2)] min-h-[var(--tap)] px-[var(--s4)] '
-  + 'text-[length:var(--t-xs)] text-[color:var(--bone-200)]';
+/* Muting the gym is a preference, and a preference is the quietest thing on
+   the bar. This used to compose `.btn btn--ghost` and restate the size as
+   text-[length:var(--t-xs)]; ppbf.css is unlayered, so `.btn`'s 15px Alfa Slab
+   One won and the mute button spoke in the display voice on every route. It
+   now shares the bar's control geometry, which composes no unlayered class --
+   see sessionBarControls.ts. */
+const CONTROL = `${CONTROL_QUIET} gap-[var(--s2)]`;
 
 export default function SoundToggle() {
   const { enabled, status, setEnabled, play } = useGymSound();

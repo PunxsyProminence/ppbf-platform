@@ -94,7 +94,8 @@
     "test:migrations:gear-vendors": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/gearVendors.pg.test.ts --testTimeout=180000",
     "test:migrations:activation-pin": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/activationPinExposure.pg.test.ts --testTimeout=180000",
     "test:migrations:assistant-idempotency": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/assistantMessageIdempotency.pg.test.ts --testTimeout=180000",
-    "sweep": "node scripts/contrast-sweep.mjs"
+    "sweep": "node scripts/contrast-sweep.mjs",
+    "shots": "tsx scripts/page-shots.ts"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.28.0",
