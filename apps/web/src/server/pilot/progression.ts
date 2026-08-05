@@ -286,6 +286,25 @@ export async function recordCompletion(params: {
   });
 }
 
+/**
+ * The completion row with its athlete, for authorisation checks that must run
+ * BEFORE any write. Verification needs to know whose completion this is; asking
+ * after the flip means the flip already happened for a completion the caller
+ * had no business touching.
+ */
+export async function getCompletionById(
+  organizationId: string,
+  completionId: string,
+): Promise<{ completion_id: string; assignment_id: string; athlete_id: string } | null> {
+  const rows = await query<{ completion_id: string; assignment_id: string; athlete_id: string }>(
+    `select completion_id, assignment_id, athlete_id
+     from pilot.assignment_completions
+     where organization_id = $1 and completion_id = $2`,
+    [organizationId, completionId],
+  );
+  return rows[0] ?? null;
+}
+
 export async function verifyCompletion(
   completionId: string,
   verifiedByAccountId: string,
