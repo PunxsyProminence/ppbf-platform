@@ -25,6 +25,24 @@ import type { ClubRole } from './roleRoutes';
  * help, the public pages, and a handful of internal surfaces that are still
  * ungated. They are listed as open because that is what the code does; several
  * of them arguably should be gated, which is a separate piece of work.
+ *
+ * ---------------------------------------------------------------------------
+ * WHAT IS DELIBERATELY NOT HERE, so it is not re-added by the next person who
+ * runs `npm run shots` and reads the UNLISTED count as a to-do list:
+ *
+ *   - The way in: `/`, `/login`, `/athlete/sign-in`, `/activate`, `/change-pin`.
+ *     You do not navigate to a sign-in from inside the building; you arrive
+ *     through it. Listing them would put a door to the front step in every
+ *     corridor.
+ *   - `/launch`: a one-line re-export of `/operations`, not a second surface.
+ *     Two doors onto one room is how a catalog starts lying about the size of
+ *     the building.
+ *
+ * Everything else that exists should have a row. Eight surfaces did not, and
+ * `/coach/drills` -- the library a coach assigns drills from -- was one of
+ * them: reachable only by typing the URL, from a page whose whole job is
+ * assigning drills.
+ * ---------------------------------------------------------------------------
  */
 
 export type Room = 'office' | 'floor' | 'board' | 'file' | 'clinic' | 'night';
@@ -90,6 +108,20 @@ export const BUILDING: readonly Door[] = [
   { href: '/public', label: 'Public Page', room: 'office', roles: OPEN,
     keywords: 'enrollment join intake public onboarding' },
   { href: '/help', label: 'Help', room: 'office', roles: OPEN, keywords: 'support docs how-to faq' },
+  { href: '/store', label: 'Equipment Store', room: 'office', roles: OPEN,
+    keywords: 'shop store gear equipment gloves wraps buy price',
+    hint: 'Gyms with a store, and what they sell.' },
+  { href: '/print', label: 'Print Room', room: 'office',
+    roles: ['athlete', 'parent', 'coach', 'admin', 'staff'],
+    keywords: 'print paper sheet card handout pdf export',
+    hint: 'The paper the app makes.' },
+  { href: '/chalkboard', label: 'Chalkboard', room: 'office',
+    roles: ['coach', 'admin', 'board'],
+    keywords: 'chalk board notes plan write session plan',
+    hint: 'What the gym is working on, in chalk.' },
+  { href: '/rabbit-holes', label: 'Rabbit Holes', room: 'office', roles: ['coach', 'admin'],
+    keywords: 'lessons tangents deep dives notes anchors',
+    hint: 'The tangents worth following, anchored to where they came up.' },
   /* The office, not the board room: the board room's doors are a board-only
      set (cardCatalog.test.tsx asserts a coach never sees it), and this door is
      open to everybody. A member's own record is an office record. */
@@ -133,6 +165,16 @@ export const BUILDING: readonly Door[] = [
     roles: ['coach'], keywords: 'intake routing new athlete triage' },
   { href: '/coach/environment/passbook-check', label: 'Passbook Check', room: 'floor',
     roles: ['coach'], keywords: 'usa boxing passbook insurance eligibility verification' },
+  { href: '/coach/drills', label: 'Drill Library', room: 'floor', roles: ['coach', 'admin'],
+    keywords: 'drills library exercises assign technique catalogue',
+    hint: 'The drills a coach assigns from.' },
+  { href: '/wall', label: 'The Wall', room: 'floor', roles: OPEN,
+    keywords: 'television display screen floor tv gym board projector',
+    hint: "The gym's television — put it up on the wall." },
+  { href: '/names', label: 'Wall of Names', room: 'floor',
+    roles: ['athlete', 'coach', 'parent', 'admin', 'staff', 'volunteer', 'board'],
+    keywords: 'names roll honour honor alumni initials years wall',
+    hint: 'Everyone who has trained here — initials and years.' },
   { href: '/simulator', label: 'Simulator', room: 'floor', roles: OPEN,
     keywords: 'scenario model what-if simulate' },
   { href: '/retro-lab', label: 'Retro Lab', room: 'floor', roles: OPEN,
