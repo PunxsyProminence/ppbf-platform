@@ -204,15 +204,22 @@ export default function HomePage() {
               riveted frames on one page would make the hardware the message,
               which is exactly what Law 1 forbids. */}
           <div className="mt-[var(--s6)] grid gap-[var(--s4)] md:grid-cols-2">
-            {programs.map((program) => (
+            {programs.map((program, index) => (
               <article
                 key={program.title}
-                className="mat-paper rounded-[var(--r-md)] border border-[color:rgba(107,78,18,0.34)] p-[var(--s5)]"
+                className="mat-paper rounded-[var(--r-md)] border border-[color:rgba(107,78,18,0.34)] p-[var(--s5)] transition-all hover:border-[color:rgba(212,175,74,0.5)] hover:shadow-md"
               >
-                <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
-                  {program.title}
-                </h3>
-                <p className="t-body mt-[var(--s3)]">{program.description}</p>
+                <div className="flex items-start gap-[var(--s3)]">
+                  <div className="text-[color:var(--brass-500)] text-lg font-bold leading-none mt-0.5 flex-shrink-0">
+                    {String(index + 1).padStart(2, '0')}
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
+                      {program.title}
+                    </h3>
+                    <p className="t-body mt-[var(--s3)]">{program.description}</p>
+                  </div>
+                </div>
               </article>
             ))}
           </div>
