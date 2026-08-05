@@ -110,6 +110,16 @@
   --restricted: #C05A1E;  --restricted-ink:#F6D6B8;
   --locked:     #A81E22;  --locked-ink:    #F3C9C6;
 
+  /* A fifth, deliberately UNSATURATED rung. Law 2 reserves the four rungs
+     above for a safety state or a queue outcome; pages kept needing a chip
+     for something administrative instead — Deactivated, Unfilled, Archived,
+     Unknown — and, lacking this, either borrowed a saturated rung (reading as
+     more urgent than intended) or hand-rolled a one-off neutral chip. At
+     least two files (CoachWorkspace.tsx, decision-loop/page.tsx) already
+     built the identical fix independently. Warm hide tone, not brass — brass
+     is chassis (Law 1) and must never carry status meaning. */
+  --filed:      #6B6355;  --filed-ink:     #E3DDD0;
+
   /* The rung itself is a FILL. As a fill it is fine on either ground, and the
      -ink variants above are its readable text colour on the ink ground.
 
@@ -641,6 +651,10 @@ body.ppbf {
 .badge--monitor    { --badge: var(--monitor);    --badge-ink: var(--monitor-ink); }
 .badge--restricted { --badge: var(--restricted); --badge-ink: var(--restricted-ink); }
 .badge--locked     { --badge: var(--locked);     --badge-ink: var(--locked-ink); }
+/* Administrative, not safety (see --filed above). Use for lifecycle/account
+   states — Deactivated, Unfilled, Archived, Unknown — never for anything
+   Layer 11 or a queue outcome actually gates on. */
+.badge--filed       { --badge: var(--filed);      --badge-ink: var(--filed-ink); }
 
 /* ============================================================ CONTROLS === */
 .btn {
@@ -935,6 +949,36 @@ body.ppbf.on-canvas {
 .tile-glyph { font-size: 30px; line-height: 1; color: var(--brass-300); text-shadow: 0 2px 3px rgba(0,0,0,.7); }
 .tile-name  { font-family: var(--font-stencil); text-transform: uppercase; font-size: 14px; letter-spacing: .07em; color: var(--bone-100); }
 .tile-meta  { font: 650 12px/1 var(--font-data); color: var(--brass-300); }
+
+/* =============================================================== STAT ==== */
+/* A KPI cell: label, one large figure, an optional note. NOT a .tile -- .tile
+   is a navigation object (cursor:pointer, hover lift, dashed inner border);
+   a stat reports a number and leads nowhere, so it carries neither. Every
+   dashboard batch in the golden-era pass hand-composed this same "label +
+   big mono figure + note" shape from raw mat-leather--raised + t-label
+   pieces (see board/coach/admin batch reports); this collects that
+   composition into one class so the next dashboard doesn't re-derive it. */
+.stat {
+  background-color: var(--hide-700);
+  background-image:
+    var(--grain),
+    radial-gradient(120% 100% at 30% 4%, rgba(186,143,86,.30), transparent 56%),
+    linear-gradient(168deg, #4B382A 0%, #34271D 55%, #241B14 100%);
+  background-blend-mode: overlay, screen, normal;
+  box-shadow:
+    inset 0 1px 0 rgba(232,206,122,.16),
+    inset 0 -2px 6px rgba(0,0,0,.55),
+    0 3px 8px rgba(0,0,0,.5);
+  border-radius: var(--r-lg);
+  padding: var(--s4) var(--s5);
+  display: flex; flex-direction: column; gap: var(--s2);
+}
+.stat-label { font-family: var(--font-stencil); text-transform: uppercase;
+              font-size: var(--t-xs); letter-spacing: .09em; color: var(--bone-300); }
+/* font-data + mono figure, matching the workaround boards were already using
+   (composed via text-[length:var(--t-xl)] font-bold) before this existed. */
+.stat-val   { font: 700 var(--t-2xl)/1.1 var(--font-data); color: var(--bone-100); }
+.stat-note  { font: 650 var(--t-xs)/1.2 var(--font-data); color: var(--brass-300); }
 
 /* Leather luggage-tag navigation */
 .tag {
