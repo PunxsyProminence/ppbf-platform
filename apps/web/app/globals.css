@@ -19,6 +19,8 @@
   --status-ready: #4a5d23;
   --status-warning: #8b6914;
   --status-critical: var(--red-primary);
+  --status-danger: var(--red-primary);
+  --status-info: #2c4a5e;
   --status-inactive: var(--gray-medium);
 
   --font-stencil: var(--font-tactical-display), "Impact", "Arial Black", sans-serif;
