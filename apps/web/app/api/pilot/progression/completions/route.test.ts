@@ -211,6 +211,9 @@ describe('POST /api/pilot/progression/completions', () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', athleteId: null }));
     mockQuery
       .mockResolvedValueOnce([
+        { completion_id: 'c1', assignment_id: 'asg-1', athlete_id: 'ath-1' },
+      ]) // getCompletionById ownership check, before any write
+      .mockResolvedValueOnce([
         {
           completion_id: 'c1',
           assignment_id: 'asg-1',
@@ -221,14 +224,29 @@ describe('POST /api/pilot/progression/completions', () => {
           verified_at: '2026-01-02T01:00:00.000Z',
         },
       ]); // verifyCompletion update returning
-    mockQueryOne
-      .mockResolvedValueOnce({ athlete_id: 'ath-1' }) // assertCoachAssignedToAthlete
-      .mockResolvedValueOnce(assignmentRow()); // getDrillAssignmentById ownership check
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // assertCoachAssignedToAthlete
     const res = await POST(
       postRequest({ completion_id: 'c1', athlete_id: 'ath-1', verify: true, verified: true }),
     );
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.verification_status).toBe('verified');
+  });
+
+  test("a completion belonging to a different athlete is refused before any write", async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', athleteId: null }));
+    // The completion exists in this organization, but it is ath-other's. The
+    // old order flipped verification_status first and 404'd after; the row
+    // must now come back untouched, so no update statement may run at all.
+    mockQuery.mockResolvedValueOnce([
+      { completion_id: 'c1', assignment_id: 'asg-2', athlete_id: 'ath-other' },
+    ]); // getCompletionById ownership check
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // assertCoachAssignedToAthlete
+    const res = await POST(
+      postRequest({ completion_id: 'c1', athlete_id: 'ath-1', verify: true, verified: true }),
+    );
+    expect(res.status).toBe(404);
+    const updates = mockQuery.mock.calls.filter(([sql]) => String(sql).includes('update'));
+    expect(updates).toHaveLength(0);
   });
 });

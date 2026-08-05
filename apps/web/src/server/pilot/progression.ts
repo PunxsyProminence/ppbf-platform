@@ -287,6 +287,25 @@ export async function recordCompletion(params: {
 }
 
 /**
+ * The completion row with its athlete, for authorisation checks that must run
+ * BEFORE any write. Verification needs to know whose completion this is; asking
+ * after the flip means the flip already happened for a completion the caller
+ * had no business touching.
+ */
+export async function getCompletionById(
+  organizationId: string,
+  completionId: string,
+): Promise<{ completion_id: string; assignment_id: string; athlete_id: string } | null> {
+  const rows = await query<{ completion_id: string; assignment_id: string; athlete_id: string }>(
+    `select completion_id, assignment_id, athlete_id
+     from pilot.assignment_completions
+     where organization_id = $1 and completion_id = $2`,
+    [organizationId, completionId],
+  );
+  return rows[0] ?? null;
+}
+
+/**
  * Mark a completion verified or disputed, within one organization.
  *
  * organizationId is REQUIRED, and the update is scoped by it. It was briefly
@@ -296,6 +315,11 @@ export async function recordCompletion(params: {
  * organization, so nothing depended on the fallback; it was a door left open
  * for whoever forgot the argument next, and nothing would have failed loudly
  * enough to notice.
+ *
+ * getCompletionById above is the read that answers "whose is this" before the
+ * flip. This scope is the second lock rather than a substitute for it: the read
+ * decides whether the caller may act, and the WHERE clause makes certain the
+ * write lands only where the read looked.
  *
  * Returns null when no row matched, which is also what a caller sees when the
  * completion belongs to a different gym. The route renders that as

@@ -19,18 +19,54 @@ import { apiBase } from '@/lib/apiBase';
 
 type TabID = 'my-dashboard' | 'athlete-floor' | 'smart-goals' | 'tracks' | 'assessments' | 'bio-checkin' | 'drill-library' | 'rabbit-holes' | 'message-coach' | 'schedule-session' | 'shadow';
 type ReadinessLevel = 'GREEN' | 'YELLOW' | 'RED';
-type SMARTCategory = 'Boxing' | 'Fitness' | 'Weight Loss' | 'Weight Gain' | 'Academics' | 'Attendance' | 'Recovery' | 'Lifestyle' | 'Leadership';
+/**
+ * The categories a goal can be filed under, and the mirror of GOAL_CATEGORIES
+ * in src/server/pilot/contracts.ts and the CHECK in
+ * pilot_slice_postgres_goal_category_progress_migration.sql. Exported so
+ * athleteWorkspace.test.tsx can assert the three stay identical -- a value
+ * offered here that the API rejects would fail goal creation outright, and this
+ * component cannot import the server contract to find that out at build time.
+ *
+ * 'Weight Loss' and 'Weight Gain' were offered here until 2026-08-03 and were
+ * never stored: the category was dropped before the request was built. They are
+ * withheld rather than persisted, because filing a minor's weight intent as a
+ * queryable row belongs behind the Privacy-Tier System that does not exist yet.
+ * See the migration header. The replacement is not a blank space -- the form
+ * says where a weight goal does belong, which is a conversation with a coach.
+ */
+export const SMART_GOAL_CATEGORIES = [
+  'Boxing',
+  'Fitness',
+  'Academics',
+  'Attendance',
+  'Recovery',
+  'Lifestyle',
+  'Leadership',
+] as const;
+
+type SMARTCategory = (typeof SMART_GOAL_CATEGORIES)[number];
 type GoalStatus = 'Not Started' | 'Active' | 'Completed' | 'Paused';
 type PainType = 'Sharp' | 'Dull' | 'Burning' | 'Tight' | 'Pulling' | 'Throbbing' | 'Swollen' | 'Numbness/Tingling' | 'Instability' | 'Other';
 
 interface SMARTGoal {
   id: string;
   title: string;
-  category: SMARTCategory;
+  // Null is a goal nobody categorised and a goal nobody has reported progress
+  // on. Both render as unknown rather than as a category and a 0% bar -- until
+  // 2026-08-03 this screen substituted 'Boxing' and 0 for the two columns that
+  // did not exist, so every goal in the gym read as an untouched boxing goal.
+  category: SMARTCategory | null;
   targetDate: string;
   successMetric: string;
-  progressPercent: number;
+  progressPercent: number | null;
   status: GoalStatus;
+  // The two fields a progress report has to send back untouched. /api/pilot/
+  // goals/update takes a whole goal and writes what it is given, so a partial
+  // payload does not leave the rest alone -- it clears it. `status` is held
+  // separately from the display-cased `status` above because the round trip
+  // must return the server's own value, not 'Active' where it wrote 'active'.
+  createdAt: string;
+  statusRaw: string;
   specific: string;
   measurable: string;
   achievable: string;
@@ -509,6 +545,7 @@ export default function AthleteWorkspace() {
 
   const [showGoalForm, setShowGoalForm] = useState(false);
   const [isCreatingGoal, setIsCreatingGoal] = useState(false);
+  const [savingGoalProgressId, setSavingGoalProgressId] = useState<string | null>(null);
   const [newGoalTitle, setNewGoalTitle] = useState('');
   const [newGoalCategory, setNewGoalCategory] = useState<SMARTCategory>('Boxing');
   const [newGoalTargetDate, setNewGoalTargetDate] = useState('');
@@ -644,18 +681,26 @@ export default function AthleteWorkspace() {
       );
       if (!response.ok) throw new Error('Your goals did not load. Try again.');
 
-      const data = (await response.json()) as { items?: Array<{ goal_id: string; title: string; category?: string; target_date?: string; metric?: string; progress_percent?: number; status?: string }> };
+      const data = (await response.json()) as { items?: Array<{ goal_id: string; title: string; category?: string | null; target_date?: string; metric?: string; progress_percent?: number | null; status?: string; created_at?: string }> };
       const items = data.items || [];
 
-      // Convert PilotGoal to SMARTGoal format
+      // Convert PilotGoal to SMARTGoal format.
+      //
+      // Neither null is coerced. `item.category || 'Boxing'` and
+      // `item.progress_percent || 0` are what this did before the columns
+      // existed, and both were claims the row did not support -- the second
+      // doubly so, since `|| 0` also rewrites a real reported 0 into the same
+      // value as "unreported" and then draws a bar from it.
       const goals: SMARTGoal[] = items.map((item) => ({
         id: item.goal_id,
         title: item.title,
-        category: (item.category || 'Boxing') as SMARTCategory,
+        category: (item.category ?? null) as SMARTCategory | null,
         targetDate: item.target_date?.split('T')[0] || '',
         successMetric: item.metric || '',
-        progressPercent: item.progress_percent || 0,
+        progressPercent: item.progress_percent ?? null,
         status: (item.status ? item.status.charAt(0).toUpperCase() + item.status.slice(1).toLowerCase() : 'Not Started') as GoalStatus,
+        createdAt: item.created_at || '',
+        statusRaw: item.status || 'active',
         specific: '',
         measurable: '',
         achievable: '',
@@ -950,6 +995,13 @@ export default function AthleteWorkspace() {
           target_date: newGoalTargetDate,
           metric: newGoalSuccessMetric,
           status: 'active',
+          // The chosen category now actually leaves the browser. It was held in
+          // React state and never sent, and could not have been: the payload
+          // validator rejects unknown fields, so a `category` key would have
+          // 400'd. progress_percent is deliberately absent rather than 0 -- a
+          // goal created a second ago has no progress report, and 0 would be a
+          // report saying no progress has been made.
+          category: newGoalCategory,
           created_at: now,
           updated_at: now,
         }),
@@ -967,8 +1019,10 @@ export default function AthleteWorkspace() {
         category: newGoalCategory,
         targetDate: newGoalTargetDate,
         successMetric: newGoalSuccessMetric,
-        progressPercent: 0,
+        progressPercent: null,
         status: 'Active',
+        createdAt: now,
+        statusRaw: 'active',
         specific: '',
         measurable: '',
         achievable: '',
@@ -985,6 +1039,73 @@ export default function AthleteWorkspace() {
       setBackendSyncMessage(error instanceof Error ? error.message : "That goal did not take. Try it again.");
     } finally {
       setIsCreatingGoal(false);
+    }
+  };
+
+  /**
+   * Report progress against a goal, or withdraw the report.
+   *
+   * Until this existed the progress bar was decoration: no column held a
+   * percentage, nothing wrote one, and the width came from `|| 0`. A bar an
+   * athlete cannot move is worse than no bar, because it reads as a measurement
+   * of them rather than as an empty control.
+   *
+   * `percent` of null clears the report and returns the goal to untracked,
+   * which is not the same as reporting 0. The whole goal goes back on every
+   * call because /api/pilot/goals/update writes the record it is handed.
+   */
+  const handleUpdateGoalProgress = async (goalId: string, percent: number | null) => {
+    const goal = smartGoals.find((candidate) => candidate.id === goalId);
+    if (!goal || !backendAthleteId || savingGoalProgressId) {
+      return;
+    }
+
+    const previous = goal.progressPercent;
+    setSavingGoalProgressId(goalId);
+    // Optimistic, then reverted on failure -- the alternative is a control that
+    // appears not to respond until the round trip lands.
+    setSmartGoals((current) => current.map(
+      (candidate) => (candidate.id === goalId ? { ...candidate, progressPercent: percent } : candidate),
+    ));
+
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/goals/update`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          goal_id: goal.id,
+          athlete_id: backendAthleteId,
+          title: goal.title,
+          target_date: goal.targetDate,
+          metric: goal.successMetric,
+          status: goal.statusRaw,
+          category: goal.category,
+          progress_percent: percent,
+          created_at: goal.createdAt,
+          updated_at: new Date().toISOString(),
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({ error: 'Progress update failed' }))) as { error?: string };
+        setSmartGoals((current) => current.map(
+          (candidate) => (candidate.id === goalId ? { ...candidate, progressPercent: previous } : candidate),
+        ));
+        setBackendSyncMessage(payload.error || 'Progress update failed');
+        return;
+      }
+
+      setBackendSyncMessage(
+        percent === null ? 'Progress report cleared.' : `Progress saved: ${percent}%.`,
+      );
+    } catch (error) {
+      setSmartGoals((current) => current.map(
+        (candidate) => (candidate.id === goalId ? { ...candidate, progressPercent: previous } : candidate),
+      ));
+      setBackendSyncMessage(error instanceof Error ? error.message : 'Progress update failed');
+    } finally {
+      setSavingGoalProgressId(null);
     }
   };
 
@@ -1327,7 +1448,16 @@ export default function AthleteWorkspace() {
             <p className="t-eyebrow">Athlete Development Workspace</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-2xl)' }}>My Training Dashboard</h1>
             <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Track readiness, execute daily work, develop your boxing skills, and achieve SMART goals.</p>
-            <p className="t-label mt-[var(--s3)]">Old Gauze | Sweat | Grit | Grind | Dedication | Motivation</p>
+            {/* The motto strip is gone from here, from the coach workspace, from
+                the parent hub and from the funding centre -- the same six words
+                at --t-xs, four times, always directly above the fold.
+
+                It is the gym's voice, and the gym already has one on this page:
+                the chalkboard, a few hundred pixels down, where a person writes
+                a line by hand and rubs it out when they feel like it. A motto
+                hardcoded into four component headers is not that. Law 5 also
+                asks for 19.1px on anything an athlete reads on the floor, and
+                this was rendering at roughly half of it. */}
           </div>
         </div>
 
@@ -1352,10 +1482,17 @@ export default function AthleteWorkspace() {
             what a board by the door holds. See Chalkboard.tsx. */}
         <Chalkboard placement="athlete_workspace" />
 
-        {/* Photographs of the room, not of the people in it. Empty today, and
-            designed to be: see GymWallModule.tsx for why a shared dashboard
-            module cannot carry a member's portrait under profileVisibility.ts. */}
-        <GymWallModule className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s5)]" />
+        {/* The gym wall used to hang here, third from the top. It is 421px of
+            empty frames on a page whose Quick Actions -- Open Scheduler,
+            Complete Check-In, Open Floor Tasks -- began at 2123px, so an
+            athlete opening their own training dashboard saw a blank chalkboard
+            and two empty frames above the fold and had to scroll past two full
+            screens to reach anything they could do.
+
+            The wall is ambient by design and correct as an object; it is the
+            room, hung on a wall, waiting for somebody to photograph it. That
+            makes it the last thing on the page rather than the third. It is
+            rendered at the foot of this component now. */}
 
         <div className={PANEL}>
           <p className="t-eyebrow">Daily Reminder</p>
@@ -1848,7 +1985,7 @@ export default function AthleteWorkspace() {
                       aria-label="Goal category"
                       className="select input--kiosk"
                     >
-                      {(['Boxing', 'Fitness', 'Weight Loss', 'Weight Gain', 'Academics', 'Attendance', 'Recovery', 'Lifestyle', 'Leadership'] as SMARTCategory[]).map(cat => (
+                      {SMART_GOAL_CATEGORIES.map(cat => (
                         <option key={cat} value={cat}>{cat}</option>
                       ))}
                     </select>
@@ -1868,6 +2005,14 @@ export default function AthleteWorkspace() {
                       className="input input--kiosk"
                     />
                   </div>
+                  {/* The two weight categories this list used to offer are not
+                      here, and this says where that goal goes instead. A stop
+                      that explains itself is the point -- see the migration
+                      header and the owner principle recorded 2026-08-03. */}
+                  <p className="t-muted">
+                    Making weight is a plan you build with your coach, not a goal you set alone —
+                    bring it to them and they will set it up with your guardian.
+                  </p>
                   <div className="flex gap-[var(--s3)]">
                     <button
                       onClick={handleCreateGoal}
@@ -1927,7 +2072,10 @@ export default function AthleteWorkspace() {
                     <div key={goal.id} className={`${PANEL_RAISED} space-y-[var(--s4)]`}>
                       <div className="flex justify-between items-start gap-[var(--s3)]">
                         <div>
-                          <span className="t-label mb-[var(--s3)] inline-block rounded-[var(--r-sm)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s2)]">{goal.category}</span>
+                          {/* Goals created before 2026-08-03 carry no category,
+                              because there was no column to carry it in. Saying so
+                              is honest; the 'Boxing' this used to print was not. */}
+                          <span className="t-label mb-[var(--s3)] inline-block rounded-[var(--r-sm)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s2)]">{goal.category ?? 'No category'}</span>
                           <h4 className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{goal.title}</h4>
                         </div>
                         <span className={statusBadge.className}><i>{statusBadge.glyph}</i>{goal.status}</span>
@@ -1935,12 +2083,37 @@ export default function AthleteWorkspace() {
                       <div className="space-y-[var(--s2)]">
                         <div className="flex justify-between">
                           <span className="t-label">Progress</span>
-                          <span className="t-data" style={{ fontSize: 'var(--t-sm)' }}>{goal.progressPercent}%</span>
+                          <span className="t-data" style={{ fontSize: 'var(--t-sm)' }} data-testid={`goal-progress-value-${goal.id}`}>
+                            {goal.progressPercent === null ? 'Not reported yet' : `${goal.progressPercent}%`}
+                          </span>
                         </div>
-                        {/* Progress is chrome — a brass fill, never a status hue. */}
-                        <div className="h-[8px] w-full rounded-[var(--r-pill)] bg-[rgba(0,0,0,.4)]">
-                          <div className="h-full rounded-[var(--r-pill)] bg-[var(--brass-500)]" style={{width: `${goal.progressPercent}%`}}></div>
-                        </div>
+                        {/* No track at all when nothing has been reported. An empty
+                            bar and a 0% bar look identical, and one of them is a
+                            statement about how the athlete is doing. Progress is
+                            chrome — a brass fill, never a status hue. */}
+                        {goal.progressPercent !== null && (
+                          <div className="h-[8px] w-full rounded-[var(--r-pill)] bg-[rgba(0,0,0,.4)]" data-testid={`goal-progress-bar-${goal.id}`}>
+                            <div className="h-full rounded-[var(--r-pill)] bg-[var(--brass-500)]" style={{width: `${goal.progressPercent}%`}}></div>
+                          </div>
+                        )}
+                        <label className="flex items-center gap-[var(--s2)] t-label">
+                          <span>Report progress</span>
+                          <select
+                            value={goal.progressPercent === null ? '' : String(goal.progressPercent)}
+                            disabled={savingGoalProgressId === goal.id}
+                            onChange={(e) => void handleUpdateGoalProgress(
+                              goal.id,
+                              e.target.value === '' ? null : Number(e.target.value),
+                            )}
+                            aria-label={`Report progress for ${goal.title}`}
+                            className="select input--kiosk"
+                          >
+                            <option value="">Not reported yet</option>
+                            {[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map((step) => (
+                              <option key={step} value={step}>{step}%</option>
+                            ))}
+                          </select>
+                        </label>
                       </div>
                       <p className="text-[length:var(--t-sm)] text-[color:var(--bone-300)]">Target: {goal.targetDate}</p>
                       <p className="t-muted">{goal.successMetric}</p>
@@ -2387,6 +2560,11 @@ export default function AthleteWorkspace() {
             </div>
           </div>
         )}
+
+        {/* The gym wall, at the foot of the page where ambient furniture
+            belongs. See the note where it used to hang, above the daily
+            reminder. */}
+        <GymWallModule className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s5)]" />
       </div>
     </div>
   );

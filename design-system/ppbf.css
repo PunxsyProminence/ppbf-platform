@@ -82,7 +82,18 @@
   --brick-900: #2A1712;
   --brick-700: #4A251C;
   --brick-500: #6B3A2A;
-  --mortar:    #6E6255;
+  /* Aged mortar, not new grout. At #6E6255 the joints ran 2.25:1 against
+     brick-700, which draws a lit grid across the whole gym-floor ground --
+     every 37px horizontally and 89px vertically, behind the reading column as
+     well as the margins. Text on that ground measures 8.34:1, so the wall was
+     carrying better than a quarter of the type's own contrast while saying
+     nothing.
+
+     1.75:1 keeps the courses legible as brick -- the wall is still a wall,
+     which is Law 6's whole point -- and stops the joints competing with what
+     stands in front of them. Forty years of a working gym darkens mortar; it
+     does not keep it the colour of fresh grout. */
+  --mortar:    #5C5246;
 
   /* --- Lamp — the practical light ----------------------------------------
      Every surface in this system is lit by a hanging fixture or a gooseneck,
@@ -261,6 +272,29 @@ body.ppbf {
 /* ============================================================= MATERIALS == */
 
 /* --- Leather ------------------------------------------------------------- */
+/* A ground states its own ink (Law 6).
+   .on-canvas already does this, and the leathers did not: they painted a dark
+   hide and left the ink to whatever an ancestor happened to be saying. Text
+   that carries a type voice (.t-body, .t-command, .badge…) names its own
+   colour and never noticed. Everything else inherited -- and on a page whose
+   ancestor ink is dark, that is dark-on-dark.
+
+   Two surfaces were reading at a ratio no one would call text:
+     - SHADOW chat trigger on /research and /knowledge-graph, 1.32:1, sitting
+       beside .btn--ghost siblings that state their ink and look correct
+     - the raised-leather summary cells inside the on-canvas parent workspace,
+       1.24:1, and the unavailable-feed line inside them at 1.01:1
+
+   The batch notes predicted the second one exactly: the cells "carry their own
+   dark ground so they read anywhere". They carried the ground and not the ink.
+   Stated once here rather than patched per page, which is the same instruction
+   the style contract gives for .on-canvas restatements. */
+.mat-leather,
+.mat-leather--raised,
+.mat-leather--worn {
+  color: var(--bone-200);
+}
+
 .mat-leather {
   background-color: var(--hide-800);
   background-image:
@@ -703,6 +737,12 @@ body.ppbf.on-canvas {
    floor is 3:1. An eyebrow is 11px text, so it owes 4.5:1 and was delivering
    3.92. One rung down clears it at 6.10 without changing what the label is. */
 .on-canvas .t-eyebrow   { color: var(--brass-800); }
+/* The SHADOW prompt line ("> Guardian of …") on the role summary cards. The
+   card is one component rendered on both grounds, so it cannot state a leather
+   brass and be right: --brass-400 measured ~2.9:1 inside the on-canvas parent
+   hub. Same rung swap as the eyebrow above, for the same reason. */
+.prompt-line            { color: var(--brass-400); }
+.on-canvas .prompt-line { color: var(--brass-800); }
 /* .t-data was the one voice with no canvas restatement, and it is the voice
    Law 4 assigns to anything auditable — IDs, timestamps, the registry facts a
    grant officer checks against a filing. It inherits --bone-200 (#EFE6D0),
@@ -711,6 +751,39 @@ body.ppbf.on-canvas {
    public homepage's Nonprofit & Leadership list, the first canvas screen to
    put records on the page. */
 .on-canvas .t-data      { color: #2A2013; }
+
+/* ── Leather islands on a canvas page ──────────────────────────────────────
+   Every rule above repaints a voice in dark ink because the ground under it is
+   cream. That is right until a leather panel is set down on a canvas page --
+   and then the restatement follows the voice onto the dark hide and states
+   dark-on-dark.
+
+   The parent workspace is where this bites: RoleSummaryPanels puts raised
+   leather KPI cells inside the on-canvas hub. The batch notes recorded the
+   assumption -- the cells "carry their own dark ground so they read anywhere"
+   -- and the ground was indeed carried. The ink was not. Measured on
+   /workspace as a parent: the cell labels at 1.24:1, and "Unavailable -
+   awaiting backend progression feed" at 1.01:1, which is not a contrast ratio
+   so much as an absence.
+
+   A leather material is a ground, so it re-restates every voice back to the
+   inks those voices were authored in. Ordered after the canvas block and one
+   class heavier, so the nearer ground wins -- which is what a reader sees. */
+.on-canvas :is(.mat-leather, .mat-leather--raised, .mat-leather--worn) {
+  color: var(--bone-200);
+}
+.on-canvas :is(.mat-leather, .mat-leather--raised, .mat-leather--worn) .t-command,
+.on-canvas :is(.mat-leather, .mat-leather--raised, .mat-leather--worn) .t-painted {
+  color: var(--bone-100); text-shadow: none;
+}
+.on-canvas :is(.mat-leather, .mat-leather--raised, .mat-leather--worn) .t-body  { color: var(--bone-200); }
+.on-canvas :is(.mat-leather, .mat-leather--raised, .mat-leather--worn) .t-muted { color: var(--bone-400); }
+.on-canvas :is(.mat-leather, .mat-leather--raised, .mat-leather--worn) .t-label { color: var(--bone-300); }
+.on-canvas :is(.mat-leather, .mat-leather--raised, .mat-leather--worn) .t-data  { color: var(--bone-200); }
+.on-canvas :is(.mat-leather, .mat-leather--raised, .mat-leather--worn) .t-eyebrow,
+.on-canvas :is(.mat-leather, .mat-leather--raised, .mat-leather--worn) .prompt-line {
+  color: var(--brass-400);
+}
 
 /* Links, same reason. The system styles .btn and never a bare anchor, so an
    inline link on canvas falls through to whatever the host app sets — in the
@@ -1933,8 +2006,25 @@ body.ppbf.on-canvas {
 .empty { text-align: center; padding: var(--s8) var(--s6); color: var(--bone-400); }
 .empty-glyph { font-size: 48px; opacity: .42; margin-bottom: var(--s4); }
 .empty-title { font: 650 14px/1.4 var(--font-ui); letter-spacing: .04em; color: var(--bone-300); margin: 0 0 var(--s3); }
-.empty-msg { font-size: var(--t-sm); line-height: 1.6; margin: 0 0 var(--s5); max-width: 44ch; }
+/* margin-inline auto, not 0: .empty centres its text, but a 44ch block with no
+   side margins still hugs the left edge of the panel, so the message sat off
+   under the left margin while the title above it was centred. Visible on the
+   athlete's empty training card, where the two lines are the whole screen. */
+.empty-msg { font-size: var(--t-sm); line-height: 1.6; margin: 0 auto var(--s5); max-width: 44ch; }
 .empty-action { display: inline-flex; gap: var(--s3); flex-wrap: wrap; justify-content: center; margin-top: var(--s4); }
+
+/* The empty state on paper.
+   The rungs above are bone inks, authored against leather. The athlete's
+   training card is paper on the family canvas, so the one screen a brand-new
+   athlete sees first -- "No sessions on the card yet" -- was rendering at
+   1.38:1, the faintest text on the page. The copy is doing real work there;
+   it needs ink that shows up. Restated here rather than in the component, per
+   the style contract's rule for grounds the sheet has missed. */
+.pap .empty { color: #5C4B33; }
+.pap .empty-title { color: #2E2519; }
+/* Decoration, not text (aria-hidden): a dark glyph needs less veiling than a
+   bone one to sit back on the page. */
+.pap .empty-glyph { opacity: .68; }
 
 /* ====================================================== COMMAND REFERENCE === */
 /* Keyboard shortcuts and command reference card. Styled as a laminated card
@@ -1962,7 +2052,12 @@ body.ppbf.on-canvas {
 
 .corridor-trigger {
   display: inline-flex; align-items: center; gap: var(--s3);
-  min-height: 34px; padding: 0 var(--s4); cursor: pointer;
+  /* --tap, not the 34px this carried. The corridor is how you reach the other
+     seventy-odd surfaces, it rides the session bar on every authenticated
+     route including phones, and 34px is under the 44px WCAG floor as well as
+     Law 5's own number. It also sat beside 55px siblings, so it was both the
+     hardest control on the bar to hit and visibly the odd one out. */
+  min-height: var(--tap); padding: 0 var(--s4); cursor: pointer;
   border: 1px solid var(--brass-700); border-radius: var(--r-sm);
   background-image: linear-gradient(180deg, rgba(92,70,50,.9), rgba(30,23,18,.95));
   color: var(--bone-200); font: 650 11px/1 var(--font-ui);
@@ -2138,7 +2233,9 @@ body.ppbf.on-canvas {
    the chord. */
 .catalog-hint {
   display: inline-flex; align-items: center; gap: var(--s2);
-  min-height: 30px; padding: 0 var(--s3); cursor: pointer;
+  /* Was 30px -- the smallest target in the application. ⌘K is the keyboard
+     path; this button is the only path for anyone who does not have one. */
+  min-height: var(--tap); padding: 0 var(--s3); cursor: pointer;
   border: 1px solid rgba(212,175,74,.3); border-radius: var(--r-sm);
   background: rgba(12,9,6,.5); color: var(--bone-300);
   font: 650 10px/1 var(--font-ui); letter-spacing: .1em; text-transform: uppercase;

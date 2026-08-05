@@ -146,8 +146,13 @@ export default function EvidenceReviewPage() {
           <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
             <span className="text-[color:var(--hide-900)]">Sources</span>
           </h2>
+          {/* The ink goes on a child span, exactly as the heading above does.
+              ppbf.css is unlayered and .t-body states a bone colour, so a
+              Tailwind text-[…] utility on the same element loses the cascade
+              and never lands -- this line was rendering bone-on-cork at
+              2.34:1. A span carries no .t-body of its own, so it wins. */}
           {queue.sources.length === 0 ? (
-            <p className="t-body text-[color:var(--hide-800)]">No sources are awaiting review.</p>
+            <p className="t-body"><span className="text-[color:var(--hide-800)]">No sources are awaiting review.</span></p>
           ) : null}
           {queue.sources.map((source) => {
             const badge = APPROVAL_BADGES[source.approval_state];
@@ -188,7 +193,7 @@ export default function EvidenceReviewPage() {
             <span className="text-[color:var(--hide-900)]">Documents</span>
           </h2>
           {queue.documents.length === 0 ? (
-            <p className="t-body text-[color:var(--hide-800)]">No documents are awaiting review.</p>
+            <p className="t-body"><span className="text-[color:var(--hide-800)]">No documents are awaiting review.</span></p>
           ) : null}
           {queue.documents.map((document) => {
             const badge = APPROVAL_BADGES[document.approval_state];

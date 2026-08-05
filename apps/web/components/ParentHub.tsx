@@ -301,21 +301,15 @@ export default function ParentHub() {
             <p className="t-eyebrow">Parent Support Hub</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-2xl)' }}>Family Development Dashboard</h1>
             <p className="t-body mt-[var(--s3)]">Support your child&apos;s boxing journey with at-home assignments, family goals, and coach communication.</p>
-            <p className="t-label mt-[var(--s3)]">Old Gauze | Sweat | Grit | Grind | Dedication | Motivation</p>
           </div>
-          <div className="flex flex-wrap gap-[var(--s3)]">
-            <ShadowChatButton
-              context="Parent Hub"
-              label="Open SHADOW Chat"
-            />
-            <button
-              type="button"
-              onClick={() => setActiveTab('shadow')}
-              className={`${TAB_BASE} ${TAB_INACTIVE}`}
-            >
-              Open SHADOW Intel Tab
-            </button>
-          </div>
+          {/* Both SHADOW buttons removed, and both destinations kept: the chat
+              is offered by RoleStandaloneView above this component, and the
+              Intel tab is in the tab row below. See the same note in
+              CoachWorkspace.tsx.
+
+              The motto strip went too. A gym's motto belongs on the gym's own
+              voice -- the chalkboard, which is right below this -- not
+              restated in --t-xs chrome at the top of every role's dashboard. */}
         </div>
 
         {/* The placement vocabulary names no parent surface, so this hub asks
@@ -335,10 +329,11 @@ export default function ParentHub() {
             somebody wrote by hand now looks like one. See Chalkboard.tsx. */}
         <Chalkboard placement="everywhere" />
 
-        {/* The room, not the people in it. Empty until somebody photographs the
-            gym; a parent will never see another family's child here, because
-            this module has no path to member media at all. */}
-        <GymWallModule className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)]" />
+        {/* The gym wall moved to the foot of this page for the same reason it
+            moved on the athlete workspace: 421px of empty frames sat third from
+            the top, above everything a parent came here to do. It is ambient
+            furniture and correct as an object -- it is just not what a parent
+            opens this page for. Rendered at the bottom now. */}
 
         <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]">
           <p className="t-label">Family Commitment</p>
@@ -992,6 +987,10 @@ export default function ParentHub() {
             </div>
           )}
         </div>
+
+        {/* The gym wall, at the foot of the page. See the note where it used to
+            hang, above the family commitment card. */}
+        <GymWallModule className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)]" />
       </div>
     </div>
   );

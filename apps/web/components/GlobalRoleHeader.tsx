@@ -10,6 +10,7 @@ import Corridor from "./Corridor";
 import CardCatalog from "./CardCatalog";
 import CommandsOverlay from "./CommandsOverlay";
 import SoundToggle from "./SoundToggle";
+import { CONTROL_EXIT, CONTROL_QUIET } from "./sessionBarControls";
 
 // The queue the "Tell Us" box fills is worked by the people who can act on it:
 // a gym's own administrators, and the platform owner reading across gyms.
@@ -40,13 +41,10 @@ const BAR =
 const EYEBROW =
   "font-mono text-[length:var(--t-xs)] uppercase tracking-[0.32em] text-[color:var(--bone-400)]";
 
-/* Shared geometry for every control on the bar: --tap tall, on the type scale,
-   and a focus ring that is visible against leather. */
-const CONTROL =
-  "inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-sm)] border px-[var(--s4)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.14em] transition " +
-  "focus-visible:outline-none focus-visible:shadow-[var(--focus)]";
-const CONTROL_QUIET = `${CONTROL} border-[color:rgba(212,175,74,.32)] bg-[rgba(0,0,0,.26)] text-[color:var(--bone-200)] hover:border-[color:var(--brass-400)] hover:text-[color:var(--bone-100)]`;
-const CONTROL_EXIT = `${CONTROL} border-[color:var(--rust-500)] bg-[rgba(0,0,0,.26)] text-[color:var(--bone-300)] hover:border-[color:var(--locked)] hover:text-[color:var(--bone-100)]`;
+/* Control geometry now lives in sessionBarControls.ts, because FeedbackBox and
+   SoundToggle render on this same bar and could not reach these constants from
+   here. Both fell back to `.btn` and both had their corrections silently
+   outranked by it -- see that file for the measurements. */
 
 export default function GlobalRoleHeader() {
   const router = useRouter();

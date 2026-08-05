@@ -240,20 +240,44 @@ body {
 
    This is the floor instead. It works on `min-height`, which wins over the
    `height` a numeric utility sets, so an h-9 control lands at 44px without
-   anyone editing it. And because a bare element selector loses to any class,
-   an explicit `min-h-[Npx]` utility still overrides it -- a control that
-   genuinely must be smaller says so at its own call site, which is a decision
-   someone can read, rather than an omission nobody notices.
+   anyone editing it. And an explicit `min-h-[Npx]` utility overrides it -- a
+   control that genuinely must be smaller, or larger, says so at its own call
+   site, which is a decision someone can read rather than an omission nobody
+   notices.
+
+   THE @layer IS LOAD-BEARING. The original reasoning for the override was
+   "a bare element selector loses to any class", which is true of specificity
+   and irrelevant here: this sheet is unlayered and Tailwind's utilities sit in
+   `@layer utilities`, and an unlayered rule beats a layered one whatever the
+   selectors say. So the floor was not a floor -- it was a ceiling that no
+   utility could raise.
+
+   Measured on the session bar, where five controls ask for min-h-[var(--tap)]:
+   Operations and Bell reached 55px, Tell Us, Sound off and Logout sat at 44px.
+   The difference was not the classes, which are identical. It was that the
+   first two are `<a>`, which this rule deliberately does not name, and the
+   other three are `<button>`, which it does. The report-harm control carried a
+   comment explaining it had been raised to --tap for exactly this reason; it
+   had not been.
+
+   Putting the floor in `@layer base` restores what the paragraph above always
+   claimed. Buttons carrying no height class still land on 44px, because
+   nothing else speaks for them. Checked before moving it: one control in the
+   app asks for less than 44px (a min-h-[34px] input on /shadow), and it is an
+   `.input`, which ppbf.css floors at 46px unlayered -- so it does not drop.
 
    Deliberately NOT applied to `a`: a link inside a paragraph is not a target,
    and giving every inline link a 44px box would wreck prose. Links styled as
-   controls carry a class that sets their own geometry.
+   controls carry a class that sets their own geometry -- which is why the two
+   `<a>` controls on the session bar were the only ones getting the height they
+   asked for.
 
    Covers `select` and text-entry inputs too: the donation status select and the
    athlete's own session-duration field were both on the numeric scale, and a
    dropdown you cannot hit is a control you cannot use exactly like a button you
    cannot hit. Checkboxes, radios and hidden inputs are excluded -- a 44px
    checkbox is a layout bug, and their labels are the real target. */
+@layer base {
 button,
 [role="button"],
 select,
@@ -299,6 +323,10 @@ input[type="date"] {
 [data-surface="kiosk"] input[type="date"] {
   min-height: var(--tap);
 }
+}
+/* ^ closes @layer base for the interactive-target floor. Both rules live in
+   the layer together so the kiosk 55px still outranks the 44px default by
+   specificity, while an explicit utility at a call site outranks both. */
 
 body::before {
   content: "";

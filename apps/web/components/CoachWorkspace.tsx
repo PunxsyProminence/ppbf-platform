@@ -354,8 +354,11 @@ export default function CoachWorkspace() {
   const [coachGoals] = useState<CoachGoal[]>([]);
 
   // There is no backend session-status feed yet (see the "Today's Session"
-  // panel below, which shows the same honest state).
-  const sessionStatus = 'Unavailable - not yet tracked';
+  // panel below, which shows the same honest state). Said as a sentence rather
+  // than as a KPI tile reading "Unavailable - not yet tracked": a tile is the
+  // shape of a measurement, and this is the absence of one. CoachSummaryPanel
+  // renders it as a line under the counts.
+  const sessionStatus = 'Live session tracking is not built yet.';
 
   // Attendance/injury/readiness are currently always 'Unknown'/null/'UNKNOWN'
   // (see loadAthletes) -- these counts are real aggregations, but over data
@@ -686,22 +689,21 @@ export default function CoachWorkspace() {
             <p className="t-eyebrow">Coach Development Workspace</p>
             <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)] md:text-[length:var(--t-2xl)]">Live Session Management</h1>
             <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Manage your program floor, develop yourself, and track athlete progress with SMART goals and assessments.</p>
-            <p className="t-label mt-[var(--s3)]">Old Gauze | Sweat | Grit | Grind | Dedication | Motivation</p>
           </div>
-          <div className="flex flex-wrap gap-[var(--s3)]">
-            <ShadowChatButton
-              context="Coach Workspace"
-              label="Open SHADOW Chat"
-              className="btn"
-            />
-            <button
-              type="button"
-              onClick={() => setActiveTab('shadow')}
-              className="btn btn--ghost"
-            >
-              Open SHADOW Intel Tab
-            </button>
-          </div>
+          {/* Two SHADOW buttons used to sit here and both were already on the
+              page. RoleStandaloneView renders a context-carrying Open SHADOW
+              Chat above this component on every standalone route, and the tab
+              row below already has a SHADOW Intel tab -- so a coach opening
+              this queue was offered the same assistant three times before
+              reaching any athlete. Both duplicates are gone; neither
+              destination is.
+
+              The motto line went with them. "Old Gauze | Sweat | Grit | Grind
+              | Dedication | Motivation" rendered at --t-xs on three separate
+              role workspaces, identically, above the fold. Repeated verbatim
+              per role it stops being the gym's voice and becomes chrome, and
+              at that size on leather it also sat under the contrast floor Law
+              3 exists to hold. */}
         </div>
 
         {/* ATHLETE PAIN REPORTS -- deliberately outside the tab switch and above

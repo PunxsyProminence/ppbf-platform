@@ -13,7 +13,17 @@ interface AthleteSummaryPanelProps {
 }
 
 interface CoachSummaryPanelProps {
-  sessionStatus: string;
+  /**
+   * The live session, or null when nothing tracks one yet.
+   *
+   * Null rather than a placeholder string on purpose. This used to arrive as
+   * 'Unavailable - not yet tracked' and render as a KPI tile, which put a tile
+   * whose entire content is "this does not work" at the head of a row of
+   * measurements. A tile is a claim that something was measured; saying so is
+   * a disclosure, and the two do not belong in the same object. The disclosure
+   * survives below the row, in a voice that fits it.
+   */
+  sessionStatus: string | null;
   activeAthletes: number;
   injuryFlags: number;
   reviewsNeeded: number;
@@ -152,14 +162,28 @@ export function CoachSummaryPanel({
 }: Readonly<CoachSummaryPanelProps>) {
   const injuriesFlagged = injuryFlags > 0;
 
-  return (
-    <div className="mb-[var(--s6)] grid grid-cols-2 gap-[var(--s4)] md:grid-cols-5">
-      {/* Session Status */}
-      <div className={KPI_TILE}>
-        <p className="t-label">Session</p>
-        <p className="t-body mt-[var(--s3)]">{sessionStatus}</p>
+  /* A zero is worth reading only once there is somebody it could have counted.
+     "Injuries 0" across a real roster is the good news a coach came to check;
+     the same 0 with nobody assigned is arithmetic on an empty set, and four
+     tiles of it read as a working dashboard with nothing in it rather than as
+     an empty floor. So the counts appear when the roster does, and the empty
+     floor says it is empty in one line. */
+  if (activeAthletes === 0) {
+    return (
+      <div className="mb-[var(--s6)] rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] mat-leather p-[var(--s5)]">
+        <p className="t-label">Your floor</p>
+        <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
+          Nobody is assigned to you yet. Injuries, reviews and assignments start counting here the
+          moment an athlete lands on your roster.
+        </p>
+        {sessionStatus ? <p className="t-muted mt-[var(--s3)]">{sessionStatus}</p> : null}
       </div>
+    );
+  }
 
+  return (
+    <>
+    <div className="mb-[var(--s4)] grid grid-cols-2 gap-[var(--s4)] md:grid-cols-4">
       {/* Active Athletes */}
       <div className={KPI_TILE}>
         <p className="t-label">Athletes</p>
@@ -190,6 +214,13 @@ export function CoachSummaryPanel({
         <p className={KPI_VALUE}>{assignmentsDue}</p>
       </div>
     </div>
+
+    {/* The session disclosure, out of the tile row. It is not a measurement,
+        so it does not get the object that means one. */}
+    {sessionStatus ? (
+      <p className="t-muted mb-[var(--s6)]">{sessionStatus}</p>
+    ) : null}
+    </>
   );
 }
 
@@ -407,7 +438,11 @@ export function RoleSpecificShadow({
   // could be mistaken for real guidance about a real athlete.
   return (
     <div className={`border-l-4 ${borderColor} space-y-[var(--s3)] p-[var(--s4)] font-mono text-[length:var(--t-xs)]`}>
-      <p className="text-[color:var(--brass-400)]">&gt; {roleIdentity}</p>
+      {/* prompt-line, not a stated brass: this card renders on leather for the
+          coach and admin and on canvas inside ParentHub, and --brass-400 is a
+          leather ink -- on cream it measured ~2.9:1. The sheet restates the
+          class per ground the way it does for the type voices. */}
+      <p className="prompt-line">&gt; {roleIdentity}</p>
       <p className="t-body whitespace-pre-wrap">{description}</p>
       <ShadowChatButton
         context={chatContext}

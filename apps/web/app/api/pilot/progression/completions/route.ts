@@ -5,6 +5,7 @@ import {
   recordCompletion,
   verifyCompletion,
   getAssignmentCompletions,
+  getCompletionById,
   getDrillAssignmentById,
 } from '@/src/server/pilot/progression';
 import { hiddenNotFound, requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
@@ -71,6 +72,15 @@ export async function POST(request: NextRequest) {
 
       await assertActorCanAccessAthlete(principal, body.athlete_id);
 
+      // Ownership is checked BEFORE the flip. The previous order updated first
+      // and then 404'd on the mismatch, which hid the response but left the
+      // verification_status changed -- a coach could flip a completion for an
+      // athlete in the same organization but off their roster.
+      const completion = await getCompletionById(principal.organizationId, body.completion_id);
+      if (!completion || completion.athlete_id !== body.athlete_id) {
+        return hiddenNotFound();
+      }
+
       const updated = await verifyCompletion(
         body.completion_id,
         principal.accountId,
@@ -78,13 +88,6 @@ export async function POST(request: NextRequest) {
         principal.organizationId,
       );
       if (!updated) {
-        return hiddenNotFound();
-      }
-
-      // Ensure the completion belongs to an assignment for this athlete so a
-      // stolen completion_id from another roster member cannot be verified.
-      const assignment = await getDrillAssignmentById(principal.organizationId, updated.assignment_id);
-      if (!assignment || assignment.athlete_id !== body.athlete_id) {
         return hiddenNotFound();
       }
 
