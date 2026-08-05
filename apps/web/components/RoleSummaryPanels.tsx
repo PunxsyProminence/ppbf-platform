@@ -438,7 +438,11 @@ export function RoleSpecificShadow({
   // could be mistaken for real guidance about a real athlete.
   return (
     <div className={`border-l-4 ${borderColor} space-y-[var(--s3)] p-[var(--s4)] font-mono text-[length:var(--t-xs)]`}>
-      <p className="text-[color:var(--brass-400)]">&gt; {roleIdentity}</p>
+      {/* prompt-line, not a stated brass: this card renders on leather for the
+          coach and admin and on canvas inside ParentHub, and --brass-400 is a
+          leather ink -- on cream it measured ~2.9:1. The sheet restates the
+          class per ground the way it does for the type voices. */}
+      <p className="prompt-line">&gt; {roleIdentity}</p>
       <p className="t-body whitespace-pre-wrap">{description}</p>
       <ShadowChatButton
         context={chatContext}

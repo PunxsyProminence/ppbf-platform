@@ -25,6 +25,24 @@ import type { ClubRole } from './roleRoutes';
  * help, the public pages, and a handful of internal surfaces that are still
  * ungated. They are listed as open because that is what the code does; several
  * of them arguably should be gated, which is a separate piece of work.
+ *
+ * ---------------------------------------------------------------------------
+ * WHAT IS DELIBERATELY NOT HERE, so it is not re-added by the next person who
+ * runs `npm run shots` and reads the UNLISTED count as a to-do list:
+ *
+ *   - The way in: `/`, `/login`, `/athlete/sign-in`, `/activate`, `/change-pin`.
+ *     You do not navigate to a sign-in from inside the building; you arrive
+ *     through it. Listing them would put a door to the front step in every
+ *     corridor.
+ *   - `/launch`: a one-line re-export of `/operations`, not a second surface.
+ *     Two doors onto one room is how a catalog starts lying about the size of
+ *     the building.
+ *
+ * Everything else that exists should have a row. Eight surfaces did not, and
+ * `/coach/drills` -- the library a coach assigns drills from -- was one of
+ * them: reachable only by typing the URL, from a page whose whole job is
+ * assigning drills.
+ * ---------------------------------------------------------------------------
  */
 
 export type Room = 'office' | 'floor' | 'board' | 'file' | 'clinic' | 'night';
@@ -71,8 +89,13 @@ export const BUILDING: readonly Door[] = [
     keywords: 'system settings internals' },
   { href: '/print', label: 'Print', room: 'office', roles: ['athlete', 'parent', 'coach', 'admin', 'platform_owner', 'staff'],
     keywords: 'print roster cards sheets document', hint: 'Print rosters and session cards.' },
-  { href: '/names', label: 'Name Sync', room: 'office', roles: ['athlete', 'coach', 'parent', 'admin', 'platform_owner', 'staff', 'volunteer', 'board'],
-    keywords: 'names sync directory roster', hint: 'Directory name synchronization.' },
+  /* "Wall of Names", not "Name Sync": the page's own header calls it the Wall
+     of Names and serves initials and years to every signed-in role. There is
+     no synchronizing anything here, and a catalog entry that describes a
+     directory tool sends a coach looking for admin settings. */
+  { href: '/names', label: 'Wall of Names', room: 'office', roles: ['athlete', 'coach', 'parent', 'admin', 'platform_owner', 'staff', 'volunteer', 'board'],
+    keywords: 'names roll honour honor alumni initials years wall directory',
+    hint: 'Everyone who has trained here — initials and years.' },
   { href: '/operations', label: 'Operations Hub', room: 'office', roles: OPEN,
     keywords: 'mission control operations hub', hint: 'Cross-role operational launcher.' },
   { href: '/operations/external-competition', label: 'External Competition', room: 'office', roles: OPEN,
@@ -96,6 +119,9 @@ export const BUILDING: readonly Door[] = [
   { href: '/public', label: 'Public Page', room: 'office', roles: OPEN,
     keywords: 'enrollment join intake public onboarding' },
   { href: '/help', label: 'Help', room: 'office', roles: OPEN, keywords: 'support docs how-to faq' },
+  { href: '/store', label: 'Equipment Store', room: 'office', roles: OPEN,
+    keywords: 'shop store gear equipment gloves wraps buy price',
+    hint: 'Gyms with a store, and what they sell.' },
   /* The office, not the board room: the board room's doors are a board-only
      set (cardCatalog.test.tsx asserts a coach never sees it), and this door is
      open to everybody. A member's own record is an office record. */
@@ -141,12 +167,12 @@ export const BUILDING: readonly Door[] = [
     roles: ['coach'], keywords: 'intake routing new athlete triage' },
   { href: '/coach/environment/passbook-check', label: 'Passbook Check', room: 'floor',
     roles: ['coach'], keywords: 'usa boxing passbook insurance eligibility verification' },
-<<<<<<< HEAD
-  { href: '/coach/drills', label: 'Drills', room: 'floor', roles: ['coach'],
-=======
   { href: '/coach/drills', label: 'Drills', room: 'floor', roles: ['coach', 'admin'],
->>>>>>> origin/main
-    keywords: 'drills exercises techniques practice', hint: 'Drill library and programming.' },
+    keywords: 'drills exercises techniques practice assign library catalogue',
+    hint: 'Drill library and programming.' },
+  { href: '/rabbit-holes', label: 'Rabbit Holes', room: 'floor', roles: ['coach', 'admin'],
+    keywords: 'lessons tangents deep dives notes anchors',
+    hint: 'The tangents worth following, anchored to where they came up.' },
   { href: '/simulator', label: 'Simulator', room: 'floor', roles: OPEN,
     keywords: 'scenario model what-if simulate' },
   { href: '/retro-lab', label: 'Retro Lab', room: 'floor', roles: OPEN,

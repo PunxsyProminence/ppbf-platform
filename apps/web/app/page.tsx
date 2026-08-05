@@ -210,7 +210,11 @@ export default function HomePage() {
                 className="mat-paper rounded-[var(--r-md)] border border-[color:rgba(107,78,18,0.34)] p-[var(--s5)] transition-all hover:border-[color:rgba(212,175,74,0.5)] hover:shadow-md"
               >
                 <div className="flex items-start gap-[var(--s3)]">
-                  <div className="text-[color:var(--brass-500)] text-lg font-bold leading-none mt-0.5 flex-shrink-0">
+                  {/* brass-800, the canvas rung: --brass-500 is a leather ink
+                      and measured 2.48:1 on the paper card. Same swap the sheet
+                      already makes for .t-eyebrow on canvas, for the same
+                      reason -- brass has to go dark to hold against cream. */}
+                  <div className="text-[color:var(--brass-800)] text-lg font-bold leading-none mt-0.5 flex-shrink-0">
                     {String(index + 1).padStart(2, '0')}
                   </div>
                   <div className="flex-1">
