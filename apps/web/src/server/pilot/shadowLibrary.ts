@@ -13,7 +13,8 @@ import { writeShadowTelemetryEvent } from './shadowTelemetry';
 // chunk that merely lost least badly. Deliberately permissive: embeddings
 // separate related from unrelated text well above this line, and the
 // downstream evidence review gates still apply to whatever is returned.
-const SEMANTIC_SCORE_FLOOR = 0.15;
+// Exported so pilotOpsReadiness.ts can report the real value.
+export const SEMANTIC_SCORE_FLOOR = 0.15;
 
 export type ShadowLibrarySourceType =
   | 'peer_reviewed'

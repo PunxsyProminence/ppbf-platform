@@ -7,6 +7,12 @@ import type { PilotRole } from './contracts';
 
 export type ShadowTier = 'quick_round' | 'heavy_bag';
 
+// Hoisted out of classifyRequest so pilotOpsReadiness.ts can report the real
+// values rather than a second, driftable copy. Exporting changes nothing
+// about how they're used below -- these are the same thresholds, just named.
+export const QUICK_ROUND_COMPLEXITY_THRESHOLD = 0.4;
+export const HEAVY_BAG_COMPLEXITY_THRESHOLD = 0.6;
+
 export interface ShadowClassification {
   tier: ShadowTier;
   complexity: number; // 0–1 normalized score
@@ -178,8 +184,8 @@ export function classifyRequest(
   }
 
   // Decision thresholds
-  const quickThreshold = 0.4;
-  const heavyThreshold = 0.6;
+  const quickThreshold = QUICK_ROUND_COMPLEXITY_THRESHOLD;
+  const heavyThreshold = HEAVY_BAG_COMPLEXITY_THRESHOLD;
 
   let tier: ShadowTier;
   let confidence: number;

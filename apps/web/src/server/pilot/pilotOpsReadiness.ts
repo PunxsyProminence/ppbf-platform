@@ -1,5 +1,5 @@
 // pilotOpsReadiness.ts -- answers "why didn't X run?" for the production
-// flags that silently gate SHADOW, video, and rate-limit behavior.
+// flags that silently gate SHADOW, video, ingest, and rate-limit behavior.
 //
 // PPBF_SHADOW_WORKER_ENABLED, PPBF_VIDEO_MALWARE_SCAN / PPBF_VIDEO_CONTENT_SCAN,
 // PPBF_INTAKE_PROMOTION_ENABLED, and PPBF_DURABLE_RATE_LIMIT all default OFF,
@@ -10,8 +10,19 @@
 // without reading source or a database. This module is that one place: pure,
 // synchronous, no I/O, and it echoes back booleans and one-line reasons only
 // -- never a connection string, a key, or any other secret.
+//
+// The `floors` block is read-only reporting of values defined elsewhere
+// (BOARD_MINIMUM_COHORT_SIZE, SEMANTIC_SCORE_FLOOR, the two classifier
+// thresholds). This module imports them rather than re-stating the numbers,
+// so it cannot silently drift from the real constant, and it must never be
+// used to change them -- an ops-readiness report is a mirror, not a dial.
 
+import { BOARD_MINIMUM_COHORT_SIZE } from './boardSummary';
+import { getAzureAiRuntimeConfig } from './azureAiRuntime';
+import { HEAVY_BAG_COMPLEXITY_THRESHOLD, QUICK_ROUND_COMPLEXITY_THRESHOLD } from './shadowClassifier';
+import { isSemanticLibrarySearchEnabled } from './shadowEmbeddings';
 import { isShadowWorkerEnabled } from './shadowJobWorker';
+import { SEMANTIC_SCORE_FLOOR } from './shadowLibrary';
 import { enabledScanGates, isVideoScanConfigured, resolveVideoScanConfig } from './videoScanPolicy';
 
 export interface OpsReadinessFlag {
@@ -24,6 +35,41 @@ export interface PilotOpsReadinessReport {
   videoScan: OpsReadinessFlag & { gates: string[] };
   intakePromotion: OpsReadinessFlag;
   durableRateLimit: OpsReadinessFlag;
+  azureChatConfigured: OpsReadinessFlag;
+  semanticLibrarySearch: OpsReadinessFlag;
+  ingest: OpsReadinessFlag & { mockMode: boolean };
+  postgresConnectionConfigured: OpsReadinessFlag;
+  floors: {
+    boardMinimumCohortSize: number;
+    semanticScoreFloor: number;
+    quickRoundComplexityThreshold: number;
+    heavyBagComplexityThreshold: number;
+  };
+}
+
+// Mirrors the exact set getPipelineConfig() (document-intake/config.ts)
+// requires -- deliberately all-or-nothing, no partial pipeline. That function
+// reads real process.env directly rather than accepting an env parameter, so
+// calling it here would silently ignore whatever env this report was asked
+// to evaluate; checking presence against the SAME env this function received
+// keeps buildPilotOpsReadinessReport's env parameter honest for tests and for
+// any future non-default caller. Names only, never values -- if
+// document-intake/config.ts adds a required variable, add it here too.
+const REQUIRED_DOCUMENT_INGEST_VARS = [
+  'DATAVERSE_ORG_URL',
+  'DATAVERSE_TENANT_ID',
+  'DATAVERSE_CLIENT_ID',
+  'DATAVERSE_CLIENT_SECRET',
+  'GRAPH_TENANT_ID',
+  'GRAPH_CLIENT_ID',
+  'GRAPH_CLIENT_SECRET',
+  'SHAREPOINT_SITE_ID',
+  'SHAREPOINT_DRIVE_ID',
+  'GOOGLE_SERVICE_ACCOUNT_JSON',
+] as const;
+
+function isDocumentIngestConfigured(env: Record<string, string | undefined>): boolean {
+  return REQUIRED_DOCUMENT_INGEST_VARS.every((name) => Boolean(env[name]?.trim()));
 }
 
 export function buildPilotOpsReadinessReport(
@@ -44,6 +90,15 @@ export function buildPilotOpsReadinessReport(
   const durableFlagSet = env.PPBF_DURABLE_RATE_LIMIT === 'true';
   const hasPostgresConnection = Boolean(env.AZURE_POSTGRES_CONNECTION_STRING?.trim());
   const durableActive = durableFlagSet && hasPostgresConnection;
+
+  const azureChatConfigured = getAzureAiRuntimeConfig(env).ok;
+  const semanticEnabled = isSemanticLibrarySearchEnabled(env);
+
+  // Mock mode is a deliberate override -- reported as its own boolean rather
+  // than folded into `enabled`, so "mock mode is on" and "real pipeline is
+  // configured" are never confused with each other in the same field.
+  const ingestMockMode = env.PPBF_INGEST_MOCK_MODE === 'true';
+  const ingestConfigured = ingestMockMode || isDocumentIngestConfigured(env);
 
   return {
     shadowWorker: {
@@ -72,6 +127,39 @@ export function buildPilotOpsReadinessReport(
         : !hasPostgresConnection
           ? 'PPBF_DURABLE_RATE_LIMIT=true but AZURE_POSTGRES_CONNECTION_STRING is unset -- falls back to in-memory.'
           : 'Durable, cross-instance rate limiting is active.',
+    },
+    azureChatConfigured: {
+      enabled: azureChatConfigured,
+      reason: azureChatConfigured
+        ? 'AZURE_AI_ENDPOINT, AZURE_AI_KEY, and AZURE_AI_DEPLOYMENT_NAME are all present -- SHADOW chat can reach the model.'
+        : 'One or more of AZURE_AI_ENDPOINT / AZURE_AI_KEY / AZURE_AI_DEPLOYMENT_NAME is missing -- SHADOW chat cannot reach the model.',
+    },
+    semanticLibrarySearch: {
+      enabled: semanticEnabled,
+      reason: semanticEnabled
+        ? 'AZURE_AI_EMBEDDING_DEPLOYMENT_NAME and the Azure AI endpoint/key are present -- Library search ranks by embedding similarity.'
+        : 'No embedding deployment configured -- Library search runs on keyword matching only.',
+    },
+    ingest: {
+      enabled: ingestConfigured,
+      mockMode: ingestMockMode,
+      reason: ingestMockMode
+        ? 'PPBF_INGEST_MOCK_MODE=true -- document ingest returns mock results and writes nothing to SharePoint, Dataverse, or Drive.'
+        : ingestConfigured
+          ? 'Dataverse, SharePoint/Graph, and Google Drive credentials are all present -- document ingest can run for real.'
+          : 'Document ingest is not in mock mode and at least one required credential (Dataverse, SharePoint/Graph, or Google Drive) is missing -- every real ingest request will fail.',
+    },
+    postgresConnectionConfigured: {
+      enabled: hasPostgresConnection,
+      reason: hasPostgresConnection
+        ? 'AZURE_POSTGRES_CONNECTION_STRING is present.'
+        : 'AZURE_POSTGRES_CONNECTION_STRING is unset.',
+    },
+    floors: {
+      boardMinimumCohortSize: BOARD_MINIMUM_COHORT_SIZE,
+      semanticScoreFloor: SEMANTIC_SCORE_FLOOR,
+      quickRoundComplexityThreshold: QUICK_ROUND_COMPLEXITY_THRESHOLD,
+      heavyBagComplexityThreshold: HEAVY_BAG_COMPLEXITY_THRESHOLD,
     },
   };
 }

@@ -6,6 +6,12 @@ There is a real, verified backup mechanism today. This document does not introdu
 consolidates what `.github/workflows/backup.yml` and `scripts/backup-export.ps1` already do into
 a single place, and adds the drill checklist neither of those is the right place to hold.
 
+**Confirmed running, not assumed running.** Checked against the `backup` workflow's actual run
+history in GitHub Actions on 2026-08-05: four consecutive daily scheduled runs, all `completed` /
+`success` — 2026-08-02, 08-03, 08-04, and 08-05 (09:43 UTC, a few hours before this line was
+written). This is a live status check, not a read of the workflow file's intent; re-check the
+Actions tab for `backup.yml` if this document is read much later than that date.
+
 | | Automated | Manual |
 |---|---|---|
 | Where | `.github/workflows/backup.yml` | `scripts/backup-export.ps1` |
