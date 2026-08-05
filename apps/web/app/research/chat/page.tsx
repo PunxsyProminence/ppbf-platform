@@ -144,33 +144,33 @@ export default function ResearchQAChatPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#0a0a0a] text-[#e8d7c6]">
+    <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       {/* ROUGH OLD-SCHOOL BOXING HEADER */}
-      <header className="border-b-4 border-[#d4a574] bg-[#1a1a1a] px-4 py-4 md:px-8 md:py-6">
+      <header className="border-b-4 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 py-4 md:px-8 md:py-6">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
           <div>
-            <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-[#d4a574]">Research Lab</p>
-            <h1 className="font-display text-2xl font-black tracking-tight text-[#e8d7c6] md:text-3xl">The Library</h1>
-            <p className="mt-1 text-xs text-[#b0a095]">Ask. Learn. Document. No fancy talk.</p>
+            <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-[var(--gray-dark)]">Research Lab</p>
+            <h1 className="font-display text-2xl font-black tracking-tight text-[var(--black)] md:text-3xl">The Library</h1>
+            <p className="mt-1 text-xs text-[var(--gray-dark)]">Ask. Learn. Document. No fancy talk.</p>
           </div>
           <div className="text-right">
-            <p className="font-mono text-[10px] text-[#8a8a8a]">PPBF Fight Card</p>
-            <p className="text-xs font-bold text-[#8b4444]">LIVE</p>
+            <p className="font-mono text-[10px] text-[var(--gray-dark)]">PPBF Fight Card</p>
+            <p className="text-xs font-bold text-[var(--red-primary)]">LIVE</p>
           </div>
         </div>
       </header>
 
       <div className="mx-auto grid max-w-6xl gap-6 p-4 lg:grid-cols-[1fr_300px] md:p-8">
         {/* CHAT */}
-        <section className="border-4 border-[#d4a574] bg-[#0f0f0f] p-6 shadow-2xl shadow-black/60">
+        <section className="border-4 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-lg)]">
           {/* Messages */}
-          <div className="mb-6 max-h-[500px] space-y-3 overflow-y-auto bg-[#050505] p-4 font-mono text-sm">
+          <div className="mb-6 max-h-[500px] space-y-3 overflow-y-auto bg-[var(--canvas-tan)] p-4 font-mono text-sm">
             {messages.map((msg) => {
-              let messageTone = 'border-2 border-[#d4a574] bg-[#3a3020] text-[#e8d7c6]';
+              let messageTone = 'border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] text-[var(--black)]';
               if (msg.type === 'user') {
-                messageTone = 'border-2 border-[#8b4444] bg-[#3a2a2a] text-[#8b4444]';
+                messageTone = 'border-2 border-[var(--black)] bg-[var(--canvas-tan-dark)] text-[var(--red-primary)]';
               } else if (msg.type === 'system') {
-                messageTone = 'border-2 border-[#4a4a4a] bg-[#1a1a1a] text-[#b0a095]';
+                messageTone = 'border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] text-[var(--gray-dark)]';
               }
 
               return (
@@ -179,7 +179,7 @@ export default function ResearchQAChatPage() {
                   <p className="text-xs leading-5">{msg.text}</p>
                   <div className="mt-1 flex items-center justify-between gap-2">
                     <p className="text-[9px] opacity-50">{msg.timestamp}</p>
-                    {msg.source && <p className="text-[9px] text-[#d4a574]">{msg.source}</p>}
+                    {msg.source && <p className="text-[9px] text-[var(--gray-dark)]">{msg.source}</p>}
                   </div>
                 </div>
               </div>
@@ -195,11 +195,11 @@ export default function ResearchQAChatPage() {
               value={userInput}
               onChange={(e) => setUserInput(e.target.value)}
               placeholder="Ask about readiness, work rate, drills, injuries, roles..."
-              className="flex-1 border-2 border-[#d4a574] bg-[#1a1a1a] px-3 py-2 text-sm text-[#e8d7c6] placeholder-[#666666] outline-none transition focus:border-[#d4a574] focus:bg-[#3a3020]"
+              className="tactical-input flex-1"
             />
             <button
               type="submit"
-              className="border-2 border-[#d4a574] bg-[#1f1f1f] px-4 py-2 text-xs font-mono font-bold text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#3a3020] hover:text-[#e8d7c6]"
+              className="tactical-btn"
             >
               Ask
             </button>
@@ -209,18 +209,18 @@ export default function ResearchQAChatPage() {
         {/* RIGHT PANEL: NOTES & LINKS */}
         <aside className="space-y-4">
           {/* Research Notes */}
-          <section className="border-4 border-[#d4a574] bg-[#0d0a08] p-4">
-            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">Notes</p>
+          <section className="border-4 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--gray-dark)]">Notes</p>
             <form onSubmit={handleSaveNote} className="mt-3 space-y-2">
               <textarea
                 value={researchNotes}
                 onChange={(e) => setResearchNotes(e.target.value)}
                 placeholder="Write your findings..."
-                className="h-24 w-full border-2 border-[#d4a574] bg-[#1a1a1a] px-2 py-2 text-xs text-[#e8d7c6] placeholder-[#666666] outline-none transition focus:border-[#d4a574] focus:bg-[#3a3020] font-mono"
+                className="tactical-input h-24 font-mono"
               />
               <button
                 type="submit"
-                className="w-full border-2 border-[#d4a574] bg-[#1f1f1f] px-2 py-1 text-xs font-mono font-bold text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#3a3020] hover:text-[#e8d7c6]"
+                className="tactical-btn w-full"
               >
                 Save Note
               </button>
@@ -228,44 +228,44 @@ export default function ResearchQAChatPage() {
           </section>
 
           {/* Quick Links */}
-          <section className="border-4 border-[#4a4a4a] bg-[#0a0a0a] p-4">
-            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#8a8a8a]">Navigate</p>
+          <section className="border-4 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--gray-dark)]">Navigate</p>
             <div className="mt-3 space-y-2">
               <Link
                 href="/research"
-                className="block border-2 border-[#4a4a4a] bg-[#0a0a0a] px-2 py-1 text-xs font-mono text-[#b0b0b0] transition hover:border-[#8a8a8a] hover:bg-[#1a1a1a] hover:text-[#e8d7c6]"
+                className="block border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-2 py-1 text-xs font-mono text-[var(--gray-dark)] transition hover:bg-[var(--canvas-tan-dark)] hover:text-[var(--black)]"
               >
                 Research Intake
               </Link>
               <Link
                 href="/evidence"
-                className="block border-2 border-[#4a4a4a] bg-[#0a0a0a] px-2 py-1 text-xs font-mono text-[#b0b0b0] transition hover:border-[#8a8a8a] hover:bg-[#1a1a1a] hover:text-[#e8d7c6]"
+                className="block border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-2 py-1 text-xs font-mono text-[var(--gray-dark)] transition hover:bg-[var(--canvas-tan-dark)] hover:text-[var(--black)]"
               >
                 Evidence Review
               </Link>
               <Link
                 href="/operations"
-                className="block border-2 border-[#4a4a4a] bg-[#0a0a0a] px-2 py-1 text-xs font-mono text-[#b0b0b0] transition hover:border-[#8a8a8a] hover:bg-[#1a1a1a] hover:text-[#e8d7c6]"
+                className="block border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-2 py-1 text-xs font-mono text-[var(--gray-dark)] transition hover:bg-[var(--canvas-tan-dark)] hover:text-[var(--black)]"
               >
                 Operations Hub
               </Link>
               <Link
                 href="/admin/shadow"
-                className="block border-2 border-[#8b4444] bg-[#1a1a1a] px-2 py-1 text-xs font-mono text-[#8b4444] transition hover:border-[#8b4444] hover:bg-[#3a2a2a] hover:text-[#d4a574]"
+                className="block border-2 border-[var(--red-primary)] bg-[var(--canvas-tan-light)] px-2 py-1 text-xs font-mono text-[var(--red-primary)] transition hover:bg-[var(--canvas-tan-dark)] hover:text-[var(--black)]"
               >
                 SHADOW (Admin)
               </Link>
             </div>
           </section>
 
-          <section className="border-4 border-[#4a4a4a] bg-[#0a0a0a] p-4">
-            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#8a8a8a]">SHADOW Research Stream</p>
-            {signalError ? <p className="mt-2 text-xs text-[#f0c4c4]">{signalError}</p> : null}
-            {!signalError && shadowSignals.length === 0 ? <p className="mt-2 text-xs text-[#b0a095]">No SHADOW research signals available.</p> : null}
+          <section className="border-4 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--gray-dark)]">SHADOW Research Stream</p>
+            {signalError ? <p className="mt-2 text-xs text-[var(--red-primary)]">{signalError}</p> : null}
+            {!signalError && shadowSignals.length === 0 ? <p className="mt-2 text-xs text-[var(--gray-dark)]">No SHADOW research signals available.</p> : null}
             <div className="mt-2 space-y-2">
               {shadowSignals.slice(0, 6).map((signal) => (
-                <div key={signal.event_id} className="border border-[#4a4a4a] bg-[#101010] px-2 py-1 text-[11px] text-[#cfbfae]">
-                  <p className="font-semibold text-[#e8d7c6]">{signal.source_event_name}</p>
+                <div key={signal.event_id} className="border border-[var(--black)] bg-[var(--canvas-tan)] px-2 py-1 text-[11px] text-[var(--gray-dark)]">
+                  <p className="font-semibold text-[var(--black)]">{signal.source_event_name}</p>
                   <p>Label: {signal.evidence_label || 'none'}</p>
                   <p>Source: {signal.source_status}</p>
                   <p>State: {signal.review_state}</p>

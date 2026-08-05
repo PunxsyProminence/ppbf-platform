@@ -53,9 +53,9 @@ const scenarios = [
 ];
 
 function riskClasses(risk: 'Low' | 'Moderate' | 'High') {
-  if (risk === 'Low') return 'border-[#3f8b5b] bg-[#162a1d] text-[#c9f0d7]';
-  if (risk === 'Moderate') return 'border-[#b38a3c] bg-[#2f2817] text-[#f5e3b5]';
-  return 'border-[#a13f3f] bg-[#2c1414] text-[#f2c3c3]';
+  if (risk === 'Low') return 'border-[var(--status-ready)] bg-[var(--canvas-tan-light)] text-[var(--black)]';
+  if (risk === 'Moderate') return 'border-[var(--status-warning)] bg-[var(--canvas-tan-light)] text-[var(--black)]';
+  return 'border-[var(--red-primary)] bg-[var(--canvas-tan-light)] text-[var(--black)]';
 }
 
 export default function ScenarioSimulatorPage() {
@@ -79,14 +79,14 @@ export default function ScenarioSimulatorPage() {
     >
       <div className="grid gap-4 lg:grid-cols-2">
         {scenarios.map((scenario) => (
-          <article key={scenario.title} className="border-2 border-[#8b4444] bg-[#1a1a1a]/60 p-4">
-            <p className="text-[16px] font-bold text-[#e8d7c6]">{scenario.title}</p>
-            <div className="mt-2 space-y-2 text-[14px] text-[#cfbfae]">
-              <p><span className="font-semibold text-[#d4a574]">Current State:</span> {scenario.currentState}</p>
-              <p><span className="font-semibold text-[#d4a574]">Proposed Change:</span> {scenario.proposedChange}</p>
-              <p><span className="font-semibold text-[#d4a574]">Expected Outcome:</span> {scenario.expectedOutcome}</p>
+          <article key={scenario.title} className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+            <p className="text-[16px] font-bold text-[var(--black)]">{scenario.title}</p>
+            <div className="mt-2 space-y-2 text-[14px] text-[var(--gray-dark)]">
+              <p><span className="font-semibold text-[var(--red-primary)]">Current State:</span> {scenario.currentState}</p>
+              <p><span className="font-semibold text-[var(--red-primary)]">Proposed Change:</span> {scenario.proposedChange}</p>
+              <p><span className="font-semibold text-[var(--red-primary)]">Expected Outcome:</span> {scenario.expectedOutcome}</p>
               <p>
-                <span className="font-semibold text-[#d4a574]">Risk Rating:</span>{' '}
+                <span className="font-semibold text-[var(--red-primary)]">Risk Rating:</span>{' '}
                 <span className={`inline-flex border px-2 py-0.5 font-mono text-[12px] ${riskClasses(scenario.riskRating as 'Low' | 'Moderate' | 'High')}`}>
                   {scenario.riskRating}
                 </span>
@@ -95,9 +95,9 @@ export default function ScenarioSimulatorPage() {
           </article>
         ))}
 
-        <div className="border-2 border-[#8b4444] bg-[#121212] p-4 lg:col-span-2">
-          <p className="font-mono text-[12px] uppercase tracking-[0.15em] text-[#d4a574]">Flow Direction</p>
-          <p className="mt-2 text-[16px] leading-7 text-[#e8d7c6]">Validated scenarios feed into Audit Trace for governance visibility before Source Control promotion.</p>
+        <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4 lg:col-span-2">
+          <p className="font-mono text-[12px] uppercase tracking-[0.15em] text-[var(--red-primary)]">Flow Direction</p>
+          <p className="mt-2 text-[16px] leading-7 text-[var(--black)]">Validated scenarios feed into Audit Trace for governance visibility before Source Control promotion.</p>
         </div>
       </div>
     </FeatureSurface>

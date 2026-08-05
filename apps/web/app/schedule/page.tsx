@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
 import type { ClubRole } from '@/components/roleRoutes';
+import { ui } from '@/components/uiStyles';
 
 type SchedulerRole = 'athlete' | 'coach' | 'parent' | 'organization_admin' | 'admin';
 
@@ -210,43 +211,43 @@ export default function SchedulerPage() {
 
   return (
     <RoleSessionGate allowedRoles={allowedRoles}>
-      <main className="min-h-screen bg-[#0a0a0a] px-4 py-8 text-[#e8d7c6]">
+      <main className="min-h-screen bg-[var(--canvas-tan)] px-4 py-8 text-[var(--black)]">
         <div className="mx-auto w-full max-w-7xl space-y-6">
-          <header className="border-b-2 border-[#8b4444] pb-5">
-            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">Unified Scheduler</p>
+          <header className="border-b-2 border-[var(--black)] pb-5">
+            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--gray-dark)]">Unified Scheduler</p>
             <h1 className="mt-2 text-3xl font-black md:text-4xl">Class Registration and Attendance</h1>
-            <p className="mt-2 text-sm text-[#cfbfae]">
+            <p className="mt-2 text-sm text-[var(--gray-dark)]">
               Members register for classes, request individual coaching, coaches schedule and cover classes, parents review, and attendance supports coach/admin override.
             </p>
             <div className="mt-3 flex flex-wrap gap-2 text-xs font-mono uppercase tracking-[0.1em]">
-              <span className="border border-[#5a4a3a] bg-[#16110d] px-2 py-1 text-[#d4a574]">Role: {role || 'loading'}</span>
-              <Link href="/operations" className="border border-[#5a4a3a] bg-[#111] px-2 py-1 text-[#cfbfae] hover:border-[#8b4444]">
+              <span className="border border-[var(--black)] bg-[var(--canvas-tan-light)] px-2 py-1 text-[var(--gray-dark)]">Role: {role || 'loading'}</span>
+              <Link href="/operations" className="border border-[var(--black)] bg-[var(--canvas-tan-light)] px-2 py-1 text-[var(--gray-dark)] hover:border-[var(--red-primary)]">
                 Back to Operations
               </Link>
             </div>
           </header>
 
-          {errorMessage ? <div className="border border-red-700 bg-red-900/20 p-3 text-sm text-red-300">{errorMessage}</div> : null}
-          {actionMessage ? <div className="border border-green-700 bg-green-900/20 p-3 text-sm text-green-200">{actionMessage}</div> : null}
+          {errorMessage ? <div className={ui.errorContainer}>{errorMessage}</div> : null}
+          {actionMessage ? <div className="border-2 border-[var(--status-ready)] bg-[var(--status-ready)]/10 p-4 text-sm text-[var(--status-ready)]">{actionMessage}</div> : null}
 
           {loading ? (
-            <div className="border border-[#5a4a3a] bg-[#101010] p-4 text-sm text-[#cfbfae]">Loading scheduler...</div>
+            <div className="border border-[var(--black)] bg-[var(--canvas-tan-light)] p-4 text-sm text-[var(--gray-dark)]">Loading scheduler...</div>
           ) : (
             <>
-              <section className="border-2 border-[#8b4444] bg-[#131313] p-4">
-                <h2 className="text-lg font-bold text-[#d4a574]">Class Schedule</h2>
+              <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+                <h2 className="text-lg font-bold text-[var(--red-primary)]">Class Schedule</h2>
                 {classes.length === 0 ? (
-                  <p className="mt-2 text-sm text-[#b0a095]">No classes scheduled yet.</p>
+                  <p className="mt-2 text-sm text-[var(--gray-dark)]">No classes scheduled yet.</p>
                 ) : (
                   <div className="mt-3 space-y-2">
                     {classes.map((item) => (
-                      <div key={item.class_id} className="flex flex-wrap items-center justify-between gap-3 border border-[#5a4a3a] bg-[#0f0f0f] p-3">
+                      <div key={item.class_id} className="flex flex-wrap items-center justify-between gap-3 border border-[var(--black)] bg-[var(--canvas-tan)] p-3">
                         <div>
-                          <p className="font-semibold text-[#e8d7c6]">{item.title}</p>
-                          <p className="text-xs text-[#b0a095]">
+                          <p className="font-semibold text-[var(--black)]">{item.title}</p>
+                          <p className="text-xs text-[var(--gray-dark)]">
                             {new Date(item.start_at).toLocaleString()} - {new Date(item.end_at).toLocaleTimeString()} | {item.location}
                           </p>
-                          <p className="text-xs text-[#cfbfae]">
+                          <p className="text-xs text-[var(--gray-dark)]">
                             Seats: {item.registered_count ?? 0}/{item.capacity} | Coach: {item.coach_account_id}
                             {item.covering_coach_account_id ? ` | Cover: ${item.covering_coach_account_id}` : ''}
                           </p>
@@ -267,7 +268,7 @@ export default function SchedulerPage() {
                               );
                             }}
                             disabled={actionInFlight}
-                            className="min-h-[40px] border border-[#8b4444] bg-[#2a1414] px-3 text-xs font-bold uppercase tracking-[0.08em] disabled:opacity-50"
+                            className="tactical-btn min-h-[40px] px-3 text-xs disabled:opacity-50"
                           >
                             Register
                           </button>
@@ -276,7 +277,7 @@ export default function SchedulerPage() {
                               type="button"
                               onClick={() => void runAction({ action: 'cover_class', class_id: item.class_id }, 'Coach cover assignment updated.')}
                               disabled={actionInFlight}
-                              className="min-h-[40px] border border-[#5a4a3a] bg-[#111] px-3 text-xs font-bold uppercase tracking-[0.08em] disabled:opacity-50"
+                              className="tactical-btn-ghost min-h-[40px] border-2 border-[var(--black)] px-3 text-xs font-bold uppercase tracking-[0.08em] disabled:opacity-50"
                             >
                               Cover Class
                             </button>
@@ -290,26 +291,26 @@ export default function SchedulerPage() {
 
               <section className="grid gap-4 lg:grid-cols-2">
                 {roleCanManageClasses(role) ? (
-                  <article className="border-2 border-[#8b4444] bg-[#141414] p-4 space-y-3">
-                    <h3 className="font-bold text-[#d4a574]">Schedule New Class</h3>
+                  <article className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4 space-y-3">
+                    <h3 className="font-bold text-[var(--red-primary)]">Schedule New Class</h3>
                     <input
                       value={newClassTitle}
                       onChange={(e) => setNewClassTitle(e.target.value)}
                       placeholder="Class title"
-                      className="w-full border border-[#5a4a3a] bg-[#0f0f0f] px-3 py-2 text-sm"
+                      className="tactical-input"
                     />
                     <div className="grid gap-2 md:grid-cols-2">
                       <input
                         type="datetime-local"
                         value={newClassStartAt}
                         onChange={(e) => setNewClassStartAt(e.target.value)}
-                        className="w-full border border-[#5a4a3a] bg-[#0f0f0f] px-3 py-2 text-sm"
+                        className="tactical-input"
                       />
                       <input
                         type="datetime-local"
                         value={newClassEndAt}
                         onChange={(e) => setNewClassEndAt(e.target.value)}
-                        className="w-full border border-[#5a4a3a] bg-[#0f0f0f] px-3 py-2 text-sm"
+                        className="tactical-input"
                       />
                     </div>
                     <div className="grid gap-2 md:grid-cols-2">
@@ -317,7 +318,7 @@ export default function SchedulerPage() {
                         value={newClassLocation}
                         onChange={(e) => setNewClassLocation(e.target.value)}
                         placeholder="Location"
-                        className="w-full border border-[#5a4a3a] bg-[#0f0f0f] px-3 py-2 text-sm"
+                        className="tactical-input"
                       />
                       <input
                         type="number"
@@ -325,7 +326,7 @@ export default function SchedulerPage() {
                         max={200}
                         value={newClassCapacity}
                         onChange={(e) => setNewClassCapacity(Number.parseInt(e.target.value, 10) || 16)}
-                        className="w-full border border-[#5a4a3a] bg-[#0f0f0f] px-3 py-2 text-sm"
+                        className="tactical-input"
                       />
                     </div>
                     <button
@@ -344,21 +345,21 @@ export default function SchedulerPage() {
                         )
                       }
                       disabled={actionInFlight}
-                      className="min-h-[42px] border border-[#8b4444] bg-[#2a1414] px-4 text-xs font-bold uppercase tracking-[0.08em] disabled:opacity-50"
+                      className="tactical-btn min-h-[42px] px-4 text-xs disabled:opacity-50"
                     >
                       Schedule Class
                     </button>
                   </article>
                 ) : null}
 
-                <article className="border-2 border-[#8b4444] bg-[#141414] p-4 space-y-3">
-                  <h3 className="font-bold text-[#d4a574]">Request Individual Coaching</h3>
+                <article className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4 space-y-3">
+                  <h3 className="font-bold text-[var(--red-primary)]">Request Individual Coaching</h3>
 
                   {(role === 'parent' || roleCanManageClasses(role)) && athletes.length > 0 ? (
                     <select
                       value={selectedAthleteId}
                       onChange={(e) => setSelectedAthleteId(e.target.value)}
-                      className="w-full border border-[#5a4a3a] bg-[#0f0f0f] px-3 py-2 text-sm"
+                      className="tactical-input"
                     >
                       {athletes.map((item) => (
                         <option key={item.athlete_id} value={item.athlete_id}>
@@ -372,13 +373,13 @@ export default function SchedulerPage() {
                     type="datetime-local"
                     value={coachingPreferredAt}
                     onChange={(e) => setCoachingPreferredAt(e.target.value)}
-                    className="w-full border border-[#5a4a3a] bg-[#0f0f0f] px-3 py-2 text-sm"
+                    className="tactical-input"
                   />
                   <textarea
                     value={coachingGoals}
                     onChange={(e) => setCoachingGoals(e.target.value)}
                     placeholder="Goals and focus areas"
-                    className="h-24 w-full border border-[#5a4a3a] bg-[#0f0f0f] px-3 py-2 text-sm"
+                    className="tactical-input h-24"
                   />
                   <button
                     type="button"
@@ -399,7 +400,7 @@ export default function SchedulerPage() {
                       );
                     }}
                     disabled={actionInFlight}
-                    className="min-h-[42px] border border-[#8b4444] bg-[#2a1414] px-4 text-xs font-bold uppercase tracking-[0.08em] disabled:opacity-50"
+                    className="tactical-btn min-h-[42px] px-4 text-xs disabled:opacity-50"
                   >
                     Submit Request
                   </button>
@@ -407,12 +408,12 @@ export default function SchedulerPage() {
               </section>
 
               <section className="grid gap-4 lg:grid-cols-2">
-                <article className="border-2 border-[#8b4444] bg-[#131313] p-4 space-y-3">
-                  <h3 className="font-bold text-[#d4a574]">Attendance Check-In</h3>
+                <article className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4 space-y-3">
+                  <h3 className="font-bold text-[var(--red-primary)]">Attendance Check-In</h3>
                   <select
                     value={selectedClassId}
                     onChange={(e) => setSelectedClassId(e.target.value)}
-                    className="w-full border border-[#5a4a3a] bg-[#0f0f0f] px-3 py-2 text-sm"
+                    className="tactical-input"
                   >
                     {classes.map((item) => (
                       <option key={item.class_id} value={item.class_id}>
@@ -425,7 +426,7 @@ export default function SchedulerPage() {
                     <select
                       value={selectedAthleteId}
                       onChange={(e) => setSelectedAthleteId(e.target.value)}
-                      className="w-full border border-[#5a4a3a] bg-[#0f0f0f] px-3 py-2 text-sm"
+                      className="tactical-input"
                     >
                       {athletes.map((item) => (
                         <option key={item.athlete_id} value={item.athlete_id}>
@@ -438,7 +439,7 @@ export default function SchedulerPage() {
                   <select
                     value={attendanceStatus}
                     onChange={(e) => setAttendanceStatus(e.target.value as 'present' | 'absent' | 'excused')}
-                    className="w-full border border-[#5a4a3a] bg-[#0f0f0f] px-3 py-2 text-sm"
+                    className="tactical-input"
                   >
                     <option value="present">Present</option>
                     <option value="absent">Absent</option>
@@ -449,7 +450,7 @@ export default function SchedulerPage() {
                     value={attendanceNote}
                     onChange={(e) => setAttendanceNote(e.target.value)}
                     placeholder="Attendance notes"
-                    className="h-20 w-full border border-[#5a4a3a] bg-[#0f0f0f] px-3 py-2 text-sm"
+                    className="tactical-input h-20"
                   />
 
                   <button
@@ -473,25 +474,25 @@ export default function SchedulerPage() {
                       );
                     }}
                     disabled={actionInFlight}
-                    className="min-h-[42px] border border-[#8b4444] bg-[#2a1414] px-4 text-xs font-bold uppercase tracking-[0.08em] disabled:opacity-50"
+                    className="tactical-btn min-h-[42px] px-4 text-xs disabled:opacity-50"
                   >
                     {role === 'athlete' ? 'Check In' : 'Update Attendance'}
                   </button>
                 </article>
 
-                <article className="border-2 border-[#8b4444] bg-[#131313] p-4">
-                  <h3 className="font-bold text-[#d4a574]">Parent Review and Records</h3>
+                <article className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+                  <h3 className="font-bold text-[var(--red-primary)]">Parent Review and Records</h3>
                   <div className="mt-3 space-y-2 max-h-[340px] overflow-y-auto">
                     {registrations.length === 0 && attendance.length === 0 ? (
-                      <p className="text-sm text-[#b0a095]">No registration or attendance records visible for your role.</p>
+                      <p className="text-sm text-[var(--gray-dark)]">No registration or attendance records visible for your role.</p>
                     ) : null}
 
                     {registrations.map((item) => (
-                      <div key={item.registration_id} className="border border-[#5a4a3a] bg-[#0f0f0f] p-2 text-xs">
-                        <p className="font-semibold text-[#e8d7c6]">
+                      <div key={item.registration_id} className="border border-[var(--black)] bg-[var(--canvas-tan)] p-2 text-xs">
+                        <p className="font-semibold text-[var(--black)]">
                           Registration: {athleteMap.get(item.athlete_id) || item.athlete_id} {' -> '} {classes.find((x) => x.class_id === item.class_id)?.title || item.class_id}
                         </p>
-                        <p className="text-[#cfbfae]">Status: {item.status} | Parent Reviewed: {item.parent_reviewed ? 'Yes' : 'No'}</p>
+                        <p className="text-[var(--gray-dark)]">Status: {item.status} | Parent Reviewed: {item.parent_reviewed ? 'Yes' : 'No'}</p>
                         {roleCanManageParents(role) && !item.parent_reviewed ? (
                           <button
                             type="button"
@@ -502,7 +503,7 @@ export default function SchedulerPage() {
                               )
                             }
                             disabled={actionInFlight}
-                            className="mt-1 min-h-[34px] border border-[#8b4444] bg-[#2a1414] px-2 text-[11px] font-bold uppercase tracking-[0.08em] disabled:opacity-50"
+                            className="tactical-btn mt-1 min-h-[34px] px-2 text-[11px] disabled:opacity-50"
                           >
                             Mark Parent Reviewed
                           </button>
@@ -511,27 +512,27 @@ export default function SchedulerPage() {
                     ))}
 
                     {attendance.map((item) => (
-                      <div key={item.attendance_id} className="border border-[#5a4a3a] bg-[#0f0f0f] p-2 text-xs">
-                        <p className="font-semibold text-[#e8d7c6]">
+                      <div key={item.attendance_id} className="border border-[var(--black)] bg-[var(--canvas-tan)] p-2 text-xs">
+                        <p className="font-semibold text-[var(--black)]">
                           Attendance: {athleteMap.get(item.athlete_id) || item.athlete_id} {' -> '} {classes.find((x) => x.class_id === item.class_id)?.title || item.class_id}
                         </p>
-                        <p className="text-[#cfbfae]">{item.status.toUpperCase()} via {item.method}</p>
-                        <p className="text-[#b0a095]">{new Date(item.checked_in_at).toLocaleString()}</p>
+                        <p className="text-[var(--gray-dark)]">{item.status.toUpperCase()} via {item.method}</p>
+                        <p className="text-[var(--gray-dark)]">{new Date(item.checked_in_at).toLocaleString()}</p>
                       </div>
                     ))}
                   </div>
                 </article>
               </section>
 
-              <section className="border-2 border-[#8b4444] bg-[#131313] p-4">
-                <h3 className="font-bold text-[#d4a574]">Coaching Requests</h3>
+              <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+                <h3 className="font-bold text-[var(--red-primary)]">Coaching Requests</h3>
                 <div className="mt-3 space-y-2">
-                  {coachingRequests.length === 0 ? <p className="text-sm text-[#b0a095]">No coaching requests yet.</p> : null}
+                  {coachingRequests.length === 0 ? <p className="text-sm text-[var(--gray-dark)]">No coaching requests yet.</p> : null}
                   {coachingRequests.map((item) => (
-                    <div key={item.request_id} className="border border-[#5a4a3a] bg-[#0f0f0f] p-2 text-xs">
-                      <p className="font-semibold text-[#e8d7c6]">{athleteMap.get(item.athlete_id) || item.athlete_id}</p>
-                      <p className="text-[#cfbfae]">Preferred: {new Date(item.preferred_at).toLocaleString()} | Status: {item.status}</p>
-                      <p className="text-[#b0a095]">{item.goals}</p>
+                    <div key={item.request_id} className="border border-[var(--black)] bg-[var(--canvas-tan)] p-2 text-xs">
+                      <p className="font-semibold text-[var(--black)]">{athleteMap.get(item.athlete_id) || item.athlete_id}</p>
+                      <p className="text-[var(--gray-dark)]">Preferred: {new Date(item.preferred_at).toLocaleString()} | Status: {item.status}</p>
+                      <p className="text-[var(--gray-dark)]">{item.goals}</p>
                     </div>
                   ))}
                 </div>

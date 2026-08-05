@@ -27,8 +27,8 @@ export default function DevelopmentPipelineBanner({ currentStage }: DevelopmentP
   const nextStage = currentIndex >= 0 && currentIndex < pipelineStages.length - 1 ? pipelineStages[currentIndex + 1] : null;
 
   return (
-    <section className="border-2 border-[#8b4444] bg-[#101010] p-4">
-      <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-[#d4a574]">PPBF Knowledge Development Pipeline</p>
+    <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
+      <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-[var(--red-primary)]">PPBF Knowledge Development Pipeline</p>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {pipelineStages.map((stage, index) => {
@@ -42,23 +42,23 @@ export default function DevelopmentPipelineBanner({ currentStage }: DevelopmentP
                 href={stage.href}
                 className={`inline-flex min-h-[44px] items-center border px-3 py-2 text-[11px] font-mono uppercase tracking-[0.09em] transition ${
                   isCurrent
-                    ? 'border-[#d4a574] bg-[#4a1f1f] text-[#f7e6d2]'
+                    ? 'border-[var(--red-primary)] bg-[var(--red-primary)] text-[var(--white)]'
                     : isComplete
-                      ? 'border-[#8b4444] bg-[#2e1919] text-[#efc4c4]'
+                      ? 'border-[var(--black)] bg-[var(--canvas-tan-dark)] text-[var(--black)]'
                       : isUpcoming
-                        ? 'border-[#5a4a3a] bg-[#181818] text-[#cfbfae]'
-                        : 'border-[#5a4a3a] bg-[#181818] text-[#cfbfae]'
+                        ? 'border-[var(--black)] bg-[var(--canvas-tan-light)] text-[var(--gray-dark)]'
+                        : 'border-[var(--black)] bg-[var(--canvas-tan-light)] text-[var(--gray-dark)]'
                 }`}
               >
                 {stage.label}
               </Link>
-              {index < pipelineStages.length - 1 && <span className="font-mono text-[#d4a574]">↓</span>}
+              {index < pipelineStages.length - 1 && <span className="font-mono text-[var(--red-primary)]">↓</span>}
             </div>
           );
         })}
       </div>
 
-      <div className="mt-3 grid gap-2 text-[12px] font-mono text-[#cfbfae] md:grid-cols-3">
+      <div className="mt-3 grid gap-2 text-[12px] font-mono text-[var(--gray-dark)] md:grid-cols-3">
         <p>Completed: {currentIndex > 0 ? pipelineStages.slice(0, currentIndex).map((stage) => stage.label).join(' / ') : 'None yet'}</p>
         <p>Current: {pipelineStages[currentIndex]?.label ?? 'Unknown'}</p>
         <p>Next: {nextStage?.label ?? 'Ecosystem Release Complete'}</p>
