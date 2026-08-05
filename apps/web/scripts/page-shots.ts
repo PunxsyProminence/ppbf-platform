@@ -54,7 +54,7 @@
    Starts a dev server if one is not already up, and stops the one it started.
    ─────────────────────────────────────────────────────────────────────────── */
 
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, execSync, type ChildProcess } from 'node:child_process';
 import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -285,10 +285,13 @@ async function startServer(): Promise<ChildProcess | null> {
 function stopServer(child: ChildProcess | null) {
   if (!child?.pid) return;
   try {
-    // On Windows, negative PIDs are not supported; just use the PID directly.
-    // On POSIX, -pid targets the process group (npm wrapper + next worker).
-    const pid = process.platform === 'win32' ? child.pid : -child.pid;
-    process.kill(pid, 'SIGTERM');
+    if (process.platform === 'win32') {
+      // Windows doesn't support negative PIDs. Use taskkill to terminate the process tree.
+      execSync(`taskkill /PID ${child.pid} /T /F`, { stdio: 'ignore' });
+    } else {
+      // POSIX: negative PID targets the process group (npm wrapper + Next.js workers).
+      process.kill(-child.pid, 'SIGTERM');
+    }
   } catch {
     // Already gone. Nothing to clean up.
   }
@@ -379,8 +382,10 @@ function renderGallery(shots: Shot[], capturedAt: string): string {
   /* The sheet renders against the real ppbf.css rather than a copy of its
      values, for the same reason every preview in design-system/ does: a second
      set of numbers is a second thing to drift. Resolved from OUT_DIR because
-     SHOTS_OUT can move the sheet anywhere, and a hardcoded ../../.. renders it
-     unstyled from any other directory. */
+     SHOTS_OUT (via OUT_DIR) can be relocated within WEB_ROOT, and a hardcoded
+     ../../.. renders it unstyled from any other directory. OUT_DIR must be a
+     subdirectory of WEB_ROOT for safety (prevents accidental deletion of broader
+     directories if SHOTS_OUT is misconfigured). */
   const stylesheet = path
     .relative(OUT_DIR, path.resolve(WEB_ROOT, '../../design-system/ppbf.css'))
     .split(path.sep)
@@ -614,11 +619,13 @@ async function main() {
 
   // A stale print of a route that no longer exists is worse than no print --
   // it reads as current. Start the sheet from empty every run.
-  // Sanity check: ensure OUT_DIR is actually in the web root to prevent
+  // Sanity check: ensure OUT_DIR is actually inside the web root to prevent
   // accidental deletion of broader directories if SHOTS_OUT is misconfigured.
-  const resolved = path.resolve(OUT_DIR);
-  if (!resolved.startsWith(path.resolve(WEB_ROOT))) {
-    throw new Error(`SHOTS_OUT must be inside the web root (${WEB_ROOT}), got ${resolved}`);
+  const resolvedOut = path.resolve(OUT_DIR);
+  const resolvedWeb = path.resolve(WEB_ROOT);
+  const relative = path.relative(resolvedWeb, resolvedOut);
+  if (relative.startsWith('..') || path.isAbsolute(relative) || relative === '') {
+    throw new Error(`SHOTS_OUT must be a subdirectory of WEB_ROOT (${resolvedWeb}), got ${resolvedOut}`);
   }
   await rm(OUT_DIR, { recursive: true, force: true });
   for (const v of viewports) await mkdir(path.join(OUT_DIR, v.id), { recursive: true });
