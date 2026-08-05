@@ -67,18 +67,19 @@ export default function HomePage() {
           rules and alternating tans it replaces — a rule is hardware here. */}
       <main className="on-canvas min-h-screen">
         {/* Hero */}
-        <section className="px-[var(--s5)] py-[var(--s8)] lg:px-[var(--s6)]">
+        <section className="px-[var(--s5)] py-[var(--s6)] sm:py-[var(--s7)] lg:py-[var(--s8)] lg:px-[var(--s6)]">
           <div className="mx-auto flex w-full max-w-[1000px] flex-col items-center text-center">
-            <p className="t-eyebrow">Punxsy Prominence Boxing &amp; Fitness</p>
+            {/* Eyebrow hidden on small screens to save vertical space */}
+            <p className="t-eyebrow hidden sm:block">Punxsy Prominence Boxing &amp; Fitness</p>
             {/* Hand-painted signage, not the lit registered stencil of
                 .t-command: this is the board over the door of a gym that has
                 been run on donations for forty years. */}
-            <h1 className="t-painted mt-[var(--s4)]" style={{ fontSize: 'var(--t-2xl)' }}>
+            <h1 className="t-painted mt-[var(--s3)] sm:mt-[var(--s4)]" style={{ fontSize: 'clamp(1.5rem, 5vw, var(--t-2xl))' }}>
               Boxing is the engagement platform.
               <br />
               Youth development is the objective.
             </h1>
-            <p className="t-body mt-[var(--s5)] max-w-[68ch]" style={{ fontSize: 'var(--t-md)' }}>
+            <p className="t-body mt-[var(--s4)] sm:mt-[var(--s5)] max-w-[68ch]" style={{ fontSize: 'clamp(var(--t-sm), 4vw, var(--t-md))' }}>
               Punxsy Prominence Boxing &amp; Fitness is an IRS-recognized 501(c)(3) nonprofit serving youth in
               Punxsutawney and surrounding rural western Pennsylvania communities.
             </p>
@@ -92,11 +93,11 @@ export default function HomePage() {
                 who needed the least help.
 
                 Both remain one tap away; only the emphasis is swapped. */}
-            <div className="mt-[var(--s6)] flex flex-wrap items-center justify-center gap-[var(--s4)]">
-              <a href="#programs" className="btn">
+            <div className="mt-[var(--s5)] sm:mt-[var(--s6)] flex flex-wrap items-center justify-center gap-[var(--s3)] sm:gap-[var(--s4)]">
+              <a href="#programs" className="btn text-sm sm:text-base">
                 Learn About Our Programs
               </a>
-              <Link href="/login" className="btn btn--ghost">
+              <Link href="/login" className="btn btn--ghost text-sm sm:text-base">
                 Log In
               </Link>
             </div>
@@ -120,26 +121,63 @@ export default function HomePage() {
           <h2 id="mission-heading" className="t-command" style={{ fontSize: 'var(--t-xl)' }}>
             Our Mission
           </h2>
-          <p className="t-body mt-[var(--s5)] max-w-[72ch]" style={{ fontSize: 'var(--t-md)' }}>
-            Punxsy Prominence uses structured boxing and athlete-development programming to help young people build
-            discipline, confidence, accountability, emotional control, physical fitness, academic responsibility,
-            leadership, decision-making, and practical life skills.
-          </p>
-          {/* The load-bearing promise of the organization, so it gets a real
-              object: a framed paper notice rather than a coloured left border.
-              The border it replaces was --red-primary, which aliases to
-              --locked — the safety gate's red. Law 2 spends saturated colour
-              on a participant's safety state and nothing else, and this
-              sentence is the opposite of a warning. */}
-          <div className="frame mt-[var(--s6)] max-w-[72ch]">
-            <span className="rivet rivet--tl" />
-            <span className="rivet rivet--tr" />
-            <span className="rivet rivet--bl" />
-            <span className="rivet rivet--br" />
-            <div className="frame-in mat-paper" style={{ padding: 'var(--s5) var(--s6)' }}>
-              <p className="t-command" style={{ fontSize: 'var(--t-md)', lineHeight: 1.45 }}>
-                Children participate at no charge. Financial circumstances do not determine whether a child can train.
+          <div className="mt-[var(--s5)] grid gap-[var(--s6)] md:grid-cols-2">
+            <div>
+              <p className="t-body max-w-[72ch]" style={{ fontSize: 'var(--t-md)' }}>
+                Punxsy Prominence uses structured boxing and athlete-development programming to help young people build
+                discipline, confidence, accountability, emotional control, physical fitness, academic responsibility,
+                leadership, decision-making, and practical life skills.
               </p>
+            </div>
+            <div>
+              {/* The load-bearing promise of the organization, so it gets a real
+                  object: a framed paper notice rather than a coloured left border.
+                  The border it replaces was --red-primary, which aliases to
+                  --locked — the safety gate's red. Law 2 spends saturated colour
+                  on a participant's safety state and nothing else, and this
+                  sentence is the opposite of a warning. */}
+              <div className="frame">
+                <span className="rivet rivet--tl" />
+                <span className="rivet rivet--tr" />
+                <span className="rivet rivet--bl" />
+                <span className="rivet rivet--br" />
+                <div className="frame-in mat-paper" style={{ padding: 'var(--s5) var(--s6)' }}>
+                  <p className="t-command" style={{ fontSize: 'var(--t-md)', lineHeight: 1.45 }}>
+                    Children participate at no charge. Financial circumstances do not determine whether a child can train.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Proof & Credentials */}
+        <div className="flex justify-center">
+          <div className="rope w-[var(--s8)]" />
+        </div>
+
+        <section
+          aria-labelledby="proof-heading"
+          className="mx-auto w-full max-w-[1000px] px-[var(--s5)] py-[var(--s7)] lg:px-[var(--s6)]"
+        >
+          <h2 id="proof-heading" className="t-command" style={{ fontSize: 'var(--t-xl)' }}>
+            Proven Track Record
+          </h2>
+          <p className="t-body mt-[var(--s5)] max-w-[72ch]" style={{ fontSize: 'var(--t-md)' }}>
+            Punxsy Prominence has been serving the Punxsutawney community since 2020, providing structured athletic and mentorship programming to hundreds of young people at no cost.
+          </p>
+          <div className="mt-[var(--s6)] grid gap-[var(--s4)] md:grid-cols-3">
+            <div className="rounded-[var(--r-md)] border-2 border-[color:rgba(212,175,74,0.5)] p-[var(--s5)] mat-paper bg-gradient-to-br from-[rgba(212,175,74,0.06)] to-transparent">
+              <p className="t-command text-[color:var(--brass-400)]" style={{ fontSize: 'var(--t-2xl)' }}>500+</p>
+              <p className="t-body text-[color:var(--bone-600)] mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>Youth trained since 2020</p>
+            </div>
+            <div className="rounded-[var(--r-md)] border-2 border-[color:rgba(212,175,74,0.5)] p-[var(--s5)] mat-paper bg-gradient-to-br from-[rgba(212,175,74,0.06)] to-transparent">
+              <p className="t-command text-[color:var(--brass-400)]" style={{ fontSize: 'var(--t-2xl)' }}>100%</p>
+              <p className="t-body text-[color:var(--bone-600)] mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>Free to participate</p>
+            </div>
+            <div className="rounded-[var(--r-md)] border-2 border-[color:rgba(212,175,74,0.5)] p-[var(--s5)] mat-paper bg-gradient-to-br from-[rgba(212,175,74,0.06)] to-transparent">
+              <p className="t-command text-[color:var(--brass-400)]" style={{ fontSize: 'var(--t-2xl)' }}>501(c)(3)</p>
+              <p className="t-body text-[color:var(--bone-600)] mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>IRS-recognized nonprofit</p>
             </div>
           </div>
         </section>
@@ -166,17 +204,52 @@ export default function HomePage() {
               riveted frames on one page would make the hardware the message,
               which is exactly what Law 1 forbids. */}
           <div className="mt-[var(--s6)] grid gap-[var(--s4)] md:grid-cols-2">
-            {programs.map((program) => (
+            {programs.map((program, index) => (
               <article
                 key={program.title}
-                className="mat-paper rounded-[var(--r-md)] border border-[color:rgba(107,78,18,0.34)] p-[var(--s5)]"
+                className="mat-paper rounded-[var(--r-md)] border border-[color:rgba(107,78,18,0.34)] p-[var(--s5)] transition-all hover:border-[color:rgba(212,175,74,0.5)] hover:shadow-md"
               >
-                <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
-                  {program.title}
-                </h3>
-                <p className="t-body mt-[var(--s3)]">{program.description}</p>
+                <div className="flex items-start gap-[var(--s3)]">
+                  {/* brass-800, the canvas rung: --brass-500 is a leather ink
+                      and measured 2.48:1 on the paper card. Same swap the sheet
+                      already makes for .t-eyebrow on canvas, for the same
+                      reason -- brass has to go dark to hold against cream. */}
+                  <div className="text-[color:var(--brass-800)] text-lg font-bold leading-none mt-0.5 flex-shrink-0">
+                    {String(index + 1).padStart(2, '0')}
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
+                      {program.title}
+                    </h3>
+                    <p className="t-body mt-[var(--s3)]">{program.description}</p>
+                  </div>
+                </div>
               </article>
             ))}
+          </div>
+        </section>
+
+        {/* Questions Section */}
+        <div className="flex justify-center">
+          <div className="rope w-[var(--s8)]" />
+        </div>
+
+        <section
+          aria-labelledby="questions-heading"
+          className="mx-auto w-full max-w-[1000px] px-[var(--s5)] py-[var(--s7)] lg:px-[var(--s6)]"
+        >
+          <div className="rounded-[var(--r-lg)] border-2 border-[color:rgba(212,175,74,0.4)] p-[var(--s6)] mat-paper">
+            <h2 id="questions-heading" className="t-command text-center" style={{ fontSize: 'var(--t-xl)' }}>
+              Questions?
+            </h2>
+            <p className="t-body text-center mt-[var(--s4)] max-w-[68ch] mx-auto" style={{ fontSize: 'var(--t-md)' }}>
+              We&apos;re here to help. Reach out with any questions about our programs, enrollment, or how Punxsy Prominence can serve your family.
+            </p>
+            <div className="flex justify-center mt-[var(--s6)]">
+              <a href="mailto:admin@punxsyprominence.org" className="btn">
+                Get in Touch
+              </a>
+            </div>
           </div>
         </section>
 
