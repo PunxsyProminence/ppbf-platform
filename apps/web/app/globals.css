@@ -191,6 +191,26 @@ h6 {
   background: var(--red-highlight);
 }
 
+.tactical-btn-ghost {
+  background: transparent;
+  color: var(--black);
+}
+
+.tactical-btn-ghost:hover {
+  background: var(--canvas-tan-dark);
+  color: var(--white);
+}
+
+.tactical-btn:disabled,
+.tactical-btn-critical:disabled,
+.tactical-btn-ghost:disabled {
+  background: var(--gray-medium);
+  color: var(--white-off);
+  border-color: var(--black);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .tactical-input {
   width: 100%;
   min-height: 44px;

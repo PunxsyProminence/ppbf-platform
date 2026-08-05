@@ -103,7 +103,7 @@ export default function RoleSessionGate({ allowedRoles, children }: RoleSessionG
             <button
               type="button"
               onClick={() => setRetryNonce((value) => value + 1)}
-              className="mt-5 min-h-[44px] rounded-full border-2 border-[var(--black)] bg-[var(--red-primary)] px-5 text-sm font-black uppercase tracking-[0.12em] text-white"
+              className="tactical-btn tactical-btn-critical mt-5 px-5"
             >
               Retry
             </button>

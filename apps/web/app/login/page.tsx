@@ -30,7 +30,7 @@ const DEFAULT_ANNOUNCEMENT: LoginAnnouncement = {
 
 function AnnouncementCard({ item }: Readonly<{ item: LoginAnnouncement }>) {
   return (
-    <article className="rounded-2xl border border-[rgba(0,0,0,0.12)] bg-white px-4 py-3 shadow-[var(--shadow-sm)]">
+    <article className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 py-3 shadow-[var(--shadow-sm)]">
       <p className="text-sm leading-6 text-[var(--black)]">{item.message}</p>
       <p className="mt-2 text-[11px] font-mono uppercase tracking-[0.08em] text-[var(--gray-medium)]">
         By {item.authorName} ({item.authorRole}) - {item.createdAt}
@@ -73,10 +73,10 @@ function SignInMethodButton({
     <button
       type="button"
       onClick={onClick}
-      className={`relative rounded-xl border-2 p-4 transition ${
+      className={`relative border-2 p-4 transition ${
         isActive
-          ? 'border-[var(--red-primary)] bg-[rgba(184,59,52,0.08)] shadow-[0_4px_12px_rgba(184,59,52,0.15)]'
-          : 'border-[rgba(0,0,0,0.12)] bg-white hover:border-[rgba(0,0,0,0.2)]'
+          ? 'border-[var(--red-primary)] bg-[var(--canvas-tan-light)] shadow-[var(--shadow-md)]'
+          : 'border-[var(--black)] bg-[var(--canvas-tan-light)] hover:bg-[var(--canvas-tan-dark)]'
       }`}
     >
       <div className="flex items-start gap-3">
@@ -97,7 +97,7 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
   return (
     <div className="space-y-6">
       {/* IMPROVED: Sign-In Method Selector */}
-      <div className="grid gap-3 rounded-[24px] border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-md)]">
+      <div className="grid gap-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-md)]">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--black)] mb-2">Choose Sign-In Method</p>
         <div className="grid gap-3 sm:grid-cols-2">
           <SignInMethodButton
@@ -119,7 +119,7 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
 
       {/* Microsoft Sign-In Method */}
       {props.selectedMethod === 'microsoft' && (
-        <div className="grid gap-4 rounded-[24px] border-2 border-[var(--gray-dark)] bg-white p-6 shadow-[var(--shadow-lg)]">
+        <div className="grid gap-4 border-2 border-[var(--gray-dark)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-lg)]">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--black)]">Microsoft Sign In</p>
             <p className="mt-2 text-sm text-[var(--gray-dark)] leading-relaxed">
@@ -128,7 +128,7 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
           </div>
 
           {props.authErrorMessage && (
-            <div className="rounded-lg border border-[var(--red-primary)] bg-[rgba(184,59,52,0.05)] p-3">
+            <div className="tactical-alert-critical">
               <p className="text-sm text-[var(--red-primary)]">⚠️ {props.authErrorMessage}</p>
             </div>
           )}
@@ -136,7 +136,7 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
           <button
             type="button"
             onClick={props.signInWithMicrosoft}
-            className="inline-flex min-h-[52px] w-full items-center justify-center gap-3 rounded-xl border-2 border-[var(--gray-dark)] bg-[var(--gray-dark)] px-6 text-sm font-black uppercase tracking-[0.18em] text-white transition hover:bg-[var(--black)] hover:border-[var(--black)] active:scale-[0.98]"
+            className="inline-flex min-h-[52px] w-full items-center justify-center gap-3 border-2 border-[var(--gray-dark)] bg-[var(--gray-dark)] px-6 text-sm font-black uppercase tracking-[0.18em] text-white shadow-[var(--shadow-sm)] transition hover:bg-[var(--black)] hover:border-[var(--black)] active:scale-[0.98]"
           >
             <span>☁️</span>
             Continue With Microsoft
@@ -151,14 +151,14 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
             e.preventDefault();
             void props.loginWithPin();
           }}
-          className="grid gap-4 rounded-[24px] border-2 border-[var(--red-primary)] bg-white p-6 shadow-[var(--shadow-lg)]"
+          className="grid gap-4 border-2 border-[var(--red-primary)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-lg)]"
         >
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">Account PIN Sign In</p>
             <p className="mt-2 text-sm text-[var(--gray-dark)] leading-relaxed">
               Enter your Account ID and PIN. Ask your coach or admin if you don&apos;t have one.
             </p>
-            <p className="mt-3 rounded-lg border border-[rgba(0,0,0,0.12)] bg-[var(--canvas-tan-light)] px-3 py-2 text-sm text-[var(--gray-dark)]">
+            <p className="mt-3 border border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-2 text-sm text-[var(--gray-dark)]">
               First time here with an activation code?{' '}
               <Link href="/activate" className="font-semibold text-[var(--red-primary)] underline">
                 Set up your account
@@ -178,7 +178,7 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
                 onChange={(event) => props.setLoginAccountId(event.target.value)}
                 placeholder="account-001"
                 autoComplete="username"
-                className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] bg-white px-4 text-[var(--black)] outline-none transition placeholder:text-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:ring-2 focus:ring-[rgba(184,59,52,0.15)]"
+                className="tactical-input mt-2 placeholder:text-[var(--gray-medium)]"
               />
             </div>
 
@@ -194,12 +194,12 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
                 onChange={(event) => props.setLoginPin(event.target.value)}
                 placeholder="••••"
                 autoComplete="current-password"
-                className="mt-2 min-h-[48px] w-full rounded-xl border border-[rgba(0,0,0,0.14)] bg-white px-4 text-[var(--black)] outline-none transition placeholder:text-[var(--gray-medium)] focus:border-[var(--red-primary)] focus:ring-2 focus:ring-[rgba(184,59,52,0.15)]"
+                className="tactical-input mt-2 placeholder:text-[var(--gray-medium)]"
               />
             </div>
 
             {props.loginError && (
-              <div className="rounded-lg border border-[var(--red-primary)] bg-[rgba(184,59,52,0.05)] p-3" role="alert">
+              <div className="tactical-alert-critical" role="alert">
                 <p className="text-sm text-[var(--red-primary)]">❌ {props.loginError}</p>
               </div>
             )}
@@ -207,7 +207,7 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
             <button
               type="submit"
               disabled={props.loginBusy || !props.loginAccountId.trim() || !props.loginPin.trim()}
-              className="inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl border-2 border-[var(--red-primary)] bg-[var(--red-primary)] px-6 text-sm font-black uppercase tracking-[0.18em] text-white transition hover:bg-[var(--red-highlight)] hover:border-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50 disabled:border-[rgba(0,0,0,0.14)] disabled:bg-[var(--gray-medium)] active:scale-[0.98]"
+              className="tactical-btn tactical-btn-critical w-full gap-2 active:scale-[0.98]"
             >
               {props.loginBusy ? (
                 <>
@@ -226,7 +226,7 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
       )}
 
       {/* Help & Recovery */}
-      <div className="rounded-[24px] border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-sm)]">
+      <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-sm)]">
         <div className="space-y-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--red-primary)]">💡 Need Help?</p>
@@ -235,12 +235,12 @@ function LoginTabContent(props: Readonly<LoginTabProps>) {
             </p>
             <Link
               href="/athlete/sign-in"
-              className="mt-3 inline-flex min-h-[40px] items-center rounded-lg border border-[var(--red-primary)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--red-primary)]"
+              className="mt-3 inline-flex min-h-[40px] items-center border-2 border-[var(--red-primary)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--red-primary)]"
             >
               Open Simple Athlete PIN Sign-In
             </Link>
           </div>
-          <div className="rounded-lg border border-[rgba(0,0,0,0.12)] bg-white p-3">
+          <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-3">
             <p className="text-xs font-semibold text-[var(--black)] mb-2">📢 Latest Updates</p>
             <div className="space-y-2">
               {props.announcements.slice(0, 2).map((item) => (
@@ -461,13 +461,13 @@ function LoginPageContent() {
   return (
     <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       <div className="mx-auto grid min-h-screen w-full max-w-5xl place-items-center px-6 py-10 lg:px-10">
-        <section className="w-full max-w-2xl overflow-hidden rounded-[28px] border border-[rgba(0,0,0,0.14)] bg-[var(--canvas-tan-light)] shadow-[var(--shadow-lg)]">
-          <div className="border-b border-[rgba(0,0,0,0.14)] bg-[linear-gradient(135deg,var(--canvas-tan-dark),var(--canvas-tan-light))] px-8 py-8">
+        <section className="w-full max-w-2xl overflow-hidden border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] shadow-[var(--shadow-lg)]">
+          <div className="border-b-2 border-[var(--black)] bg-[linear-gradient(135deg,var(--canvas-tan-dark),var(--canvas-tan-light))] px-8 py-8">
             <div className="flex items-center justify-between gap-3">
               <p className="text-[10px] font-mono uppercase tracking-[0.4em] text-[var(--gray-dark)]">Member Access</p>
               <Link
                 href="/public"
-                className="inline-flex min-h-[34px] items-center justify-center rounded-full border border-[rgba(0,0,0,0.14)] bg-white px-3 text-[10px] font-mono font-bold uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]"
+                className="inline-flex min-h-[34px] items-center justify-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 text-[10px] font-mono font-bold uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]"
               >
                 Public Page
               </Link>

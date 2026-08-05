@@ -80,13 +80,13 @@ export default function HomePage() {
             <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
               <Link
                 href="/login"
-                className="inline-flex min-h-[52px] items-center justify-center rounded-full border-2 border-[var(--black)] bg-[var(--red-primary)] px-8 shadow-[var(--shadow-md)] transition hover:bg-[var(--red-highlight)]"
+                className="inline-flex min-h-[52px] items-center justify-center border-2 border-[var(--black)] bg-[var(--red-primary)] px-8 shadow-[var(--shadow-md)] transition hover:bg-[var(--red-highlight)]"
               >
                 <span className="text-sm font-black uppercase tracking-[0.15em] text-[var(--white)]">Log In</span>
               </Link>
               <a
                 href="#programs"
-                className="group inline-flex min-h-[52px] items-center justify-center rounded-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-8 shadow-[var(--shadow-sm)] transition hover:bg-[var(--canvas-tan-dark)]"
+                className="group inline-flex min-h-[52px] items-center justify-center border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-8 shadow-[var(--shadow-sm)] transition hover:bg-[var(--canvas-tan-dark)]"
               >
                 <span className="text-sm font-black uppercase tracking-[0.15em] text-[var(--black)] transition group-hover:text-[var(--white)]">
                   Learn About Our Programs

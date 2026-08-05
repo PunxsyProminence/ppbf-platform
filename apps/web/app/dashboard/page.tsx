@@ -52,18 +52,18 @@ export default function DashboardEntryPage() {
   }, [retryNonce, router]);
 
   return (
-    <main className="min-h-screen bg-[#0a0a0a] text-[#e8d7c6]">
+    <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col items-center justify-center px-6 py-10 text-center lg:px-10">
-        <p className="text-xs font-mono uppercase tracking-[0.35em] text-[#d4a574]">Dashboard Entry</p>
+        <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--red-primary)]">Dashboard Entry</p>
         <h1 className="mt-3 text-4xl font-black tracking-tight md:text-5xl">The Bell</h1>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-[#b0a095] md:text-base">
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--gray-dark)] md:text-base">
           Your verified server session decides where you land.
         </p>
         {retryable && (
           <button
             type="button"
             onClick={() => setRetryNonce((value) => value + 1)}
-            className="mt-5 min-h-[44px] border border-[#8b4444] bg-[#2a1515] px-5 text-sm font-black uppercase tracking-[0.12em] text-[#e8d7c6]"
+            className="tactical-btn tactical-btn-critical mt-5 px-5"
           >
             Retry
           </button>
