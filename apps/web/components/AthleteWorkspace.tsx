@@ -1398,12 +1398,12 @@ export default function AthleteWorkspace() {
                 ]}
               />
 
-              <div className="border-2 border-red-600 bg-red-900/20 p-4">
-                <p className="text-sm text-red-200">🔒 <strong>SafeSport Policy:</strong> All messages are logged and parent CC is active for all minor athletes.</p>
+              <div className="tactical-alert-critical">
+                <p className="text-sm">🔒 <strong>SafeSport Policy:</strong> All messages are logged and parent CC is active for all minor athletes.</p>
               </div>
 
-              <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4">
-                <h3 className="font-mono font-bold text-[#d4a574]">Send Message to Coach</h3>
+              <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 space-y-4">
+                <h3 className="font-mono font-bold text-[var(--red-primary)]">Send Message to Coach</h3>
                 <form onSubmit={handleSendCoachMessage} className="space-y-4">
                   <div>
                     <label className="block text-sm font-semibold mb-2" htmlFor="message-coach-select">Coach</label>
@@ -1411,7 +1411,7 @@ export default function AthleteWorkspace() {
                       id="message-coach-select"
                       value={selectedCoach}
                       onChange={(event) => setSelectedCoach(event.target.value)}
-                      className="w-full px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none"
+                      className="tactical-input"
                     >
                       <option>Coach Jason (Head Coach)</option>
                       <option>Coach Danielle (Fitness Director)</option>
@@ -1424,14 +1424,14 @@ export default function AthleteWorkspace() {
                       value={coachMessageBody}
                       onChange={(event) => setCoachMessageBody(event.target.value)}
                       placeholder="Type your message..."
-                      className="w-full h-24 px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none resize-none"
+                      className="tactical-input h-24 resize-none"
                     />
                   </div>
-                  {coachMessageStatus ? <p className="text-xs text-[#d4a574]">{coachMessageStatus}</p> : null}
+                  {coachMessageStatus ? <p className="text-xs text-[var(--red-primary)]">{coachMessageStatus}</p> : null}
                   <button
                     type="submit"
                     disabled={isSendingCoachMessage}
-                    className="w-full bg-[#8b4444] hover:bg-[#5a2a2a] disabled:bg-[#4a4a4a] text-white font-semibold py-2 transition"
+                    className="tactical-btn-critical w-full border-2 border-[var(--black)] py-2"
                   >
                     {isSendingCoachMessage ? 'Sending...' : 'Send Message'}
                   </button>
@@ -1446,7 +1446,7 @@ export default function AthleteWorkspace() {
               <div className="flex flex-wrap gap-2">
                 <Link
                   href="/schedule"
-                  className="inline-flex min-h-[40px] items-center border-2 border-[#8b4444] bg-[#2a1414] px-3 text-xs font-mono font-bold uppercase tracking-[0.1em] text-[#e8d7c6] transition hover:bg-[#3a1a1a]"
+                  className="tactical-btn-critical inline-flex min-h-[40px] items-center border-2 border-[var(--black)] px-3 text-xs font-mono font-bold uppercase tracking-[0.1em]"
                 >
                   Open Unified Scheduler
                 </Link>
@@ -1468,9 +1468,9 @@ export default function AthleteWorkspace() {
 
               <div className="space-y-4">
                 {['Mon-Thu 4:00 PM Youth Class', 'Mon-Thu 5:00 PM Intermediate', 'MWF 5:45 PM Adult Fitness'].map((session) => (
-                  <div key={session} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 flex justify-between items-center">
+                  <div key={session} className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4 flex justify-between items-center">
                     <p className="font-semibold">{session}</p>
-                    <button className="px-4 py-2 bg-[#8b4444] hover:bg-[#5a2a2a] text-white font-semibold transition">
+                    <button className="tactical-btn-critical px-4 py-2 border-2 border-[var(--black)] font-semibold">
                       Book
                     </button>
                   </div>
@@ -1496,10 +1496,10 @@ export default function AthleteWorkspace() {
                   their own conversation, and a control that cannot send must not
                   look like one. Route to the real chat instead; see the same
                   correction in RoleSummaryPanels.tsx. */}
-              <div className="border-2 border-[#d4a574] bg-[#0f0f0f] p-6 space-y-4">
+              <div className="border-2 border-[var(--red-primary)] bg-[var(--canvas-tan)] p-6 space-y-4">
                 <div>
-                  <p className="text-sm font-semibold text-[#d4a574]">SHADOW Chat</p>
-                  <p className="mt-1 text-sm text-[#b0a095]">
+                  <p className="text-sm font-semibold text-[var(--red-primary)]">SHADOW Chat</p>
+                  <p className="mt-1 text-sm text-[var(--gray-dark)]">
                     In-workspace chat is not available here yet. Open the full SHADOW chat to ask a
                     question and get a real response.
                   </p>
@@ -1507,31 +1507,31 @@ export default function AthleteWorkspace() {
 
                 <ShadowChatButton context="Athlete Workspace" />
 
-                <div className="space-y-2 border-t-2 border-[#d4a574] pt-4">
-                  <p className="text-sm font-semibold text-[#d4a574]">Things you can ask SHADOW:</p>
+                <div className="space-y-2 border-t-2 border-[var(--red-primary)] pt-4">
+                  <p className="text-sm font-semibold text-[var(--red-primary)]">Things you can ask SHADOW:</p>
                   <ul className="list-disc space-y-1 pl-5">
                     {suggestedQuestions.map((q) => (
-                      <li key={q} className="text-sm text-[#b0a095]">{q}</li>
+                      <li key={q} className="text-sm text-[var(--gray-dark)]">{q}</li>
                     ))}
                   </ul>
                 </div>
               </div>
 
-              <div className="bg-yellow-900/20 border-2 border-yellow-700 p-4 text-sm">
-                <p className="text-yellow-200"><strong>Note:</strong> SHADOW cannot answer questions about other athletes, board operations, financial data, or provide medical/legal advice.</p>
+              <div className={ui.errorContainer}>
+                <p className={ui.errorText}><strong>Note:</strong> SHADOW cannot answer questions about other athletes, board operations, financial data, or provide medical/legal advice.</p>
               </div>
 
-              <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
-                <h3 className="font-mono text-xs font-bold uppercase tracking-[0.08em] text-[#d4a574]">SHADOW Observation Projection</h3>
+              <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+                <h3 className="font-mono text-xs font-bold uppercase tracking-[0.08em] text-[var(--red-primary)]">SHADOW Observation Projection</h3>
                 {shadowObservationError ? (
-                  <div className="mt-2 border border-red-600 bg-red-900/20 p-2 rounded flex items-center justify-between">
-                    <p className="text-xs text-red-400 flex-1">{shadowObservationError}</p>
+                  <div className={cx(ui.errorContainer, 'mt-2 flex items-center justify-between')}>
+                    <p className={cx(ui.errorText, 'text-xs flex-1')}>{shadowObservationError}</p>
                     <button
                       onClick={() => {
                         setShadowObservationError('');
                         void loadShadowObservations();
                       }}
-                      className="ml-2 px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold uppercase transition flex-shrink-0"
+                      className={cx(ui.errorButton, 'ml-2 flex-shrink-0')}
                       aria-label="Retry loading SHADOW observations"
                     >
                       Retry
@@ -1539,12 +1539,12 @@ export default function AthleteWorkspace() {
                   </div>
                 ) : null}
                 {!shadowObservationError && shadowObservations.length === 0 ? (
-                  <p className="mt-2 text-xs text-[#b0a095]">No SHADOW observations available yet.</p>
+                  <p className="mt-2 text-xs text-[var(--gray-dark)]">No SHADOW observations available yet.</p>
                 ) : null}
                 <div className="mt-2 space-y-2">
                   {shadowObservations.slice(0, 6).map((item) => (
-                    <div key={item.id} className="border border-[#5a4a3a] bg-[#101010] p-2 text-xs text-[#cfbfae]">
-                      <p className="font-semibold text-[#e8d7c6]">{item.label}</p>
+                    <div key={item.id} className="border border-[var(--black)] bg-[var(--canvas-tan)] p-2 text-xs text-[var(--gray-dark)]">
+                      <p className="font-semibold text-[var(--black)]">{item.label}</p>
                       <p>Source: {item.source}</p>
                       <p>State: {item.review_state}</p>
                     </div>
@@ -1557,13 +1557,13 @@ export default function AthleteWorkspace() {
 
         {/* PAIN MODAL */}
         {showPainModal && selectedPainLocation && (
-          <div className="fixed inset-0 bg-[#0a0a0a]/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-[#0a0a0a] border-2 border-[#8b4444] p-6 max-w-md w-full space-y-4">
+          <div className="fixed inset-0 bg-[var(--black)]/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-[var(--canvas-tan)] border-2 border-[var(--black)] p-6 max-w-md w-full space-y-4 shadow-[var(--shadow-lg)]">
               <h3 className="text-lg font-bold">Soreness Details: {selectedPainLocation}</h3>
               <div className="space-y-3">
                 <div>
                   <label className="block text-sm font-semibold mb-2" htmlFor="pain-type-select">Pain Type</label>
-                  <select id="pain-type-select" value={currentPainType} onChange={(e) => setCurrentPainType(e.target.value as PainType)} className="w-full px-3 py-2 bg-[#0f0f0f] border-2 border-[#8b4444] text-[#e8d7c6] focus:outline-none">
+                  <select id="pain-type-select" value={currentPainType} onChange={(e) => setCurrentPainType(e.target.value as PainType)} className="tactical-input">
                     {(['Sharp', 'Dull', 'Burning', 'Tight', 'Pulling', 'Throbbing', 'Swollen', 'Numbness/Tingling', 'Instability', 'Other'] as PainType[]).map(t => (
                       <option key={t} value={t}>{t}</option>
                     ))}
@@ -1571,19 +1571,19 @@ export default function AthleteWorkspace() {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold mb-2" htmlFor="pain-severity-range">Severity (1-10)</label>
-                  <input id="pain-severity-range" type="range" min="1" max="10" value={currentPainSeverity} onChange={(e) => setCurrentPainSeverity(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[#4a4a4a] accent-[#d4a574]" />
-                  <p className="text-xs text-[#8a8a8a] mt-1">{currentPainSeverity}/10</p>
+                  <input id="pain-severity-range" type="range" min="1" max="10" value={currentPainSeverity} onChange={(e) => setCurrentPainSeverity(Number.parseInt(e.target.value, 10))} className="w-full h-2 bg-[var(--gray-medium)] accent-[var(--red-primary)]" />
+                  <p className="text-xs text-[var(--gray-dark)] mt-1">{currentPainSeverity}/10</p>
                 </div>
               </div>
               <div className="flex gap-2">
                 <button
                   onClick={() => void handleSavePainReport()}
                   disabled={isSavingPain}
-                  className="flex-1 bg-[#8b4444] hover:bg-[#5a2a2a] disabled:bg-[#4a4a4a] text-white font-semibold py-2 transition"
+                  className="tactical-btn-critical flex-1 border-2 border-[var(--black)] py-2"
                 >
                   {isSavingPain ? 'Saving...' : 'Save'}
                 </button>
-                <button onClick={() => setShowPainModal(false)} className="flex-1 bg-[#4a4a4a] hover:bg-[#5a5a5a] text-white font-semibold py-2 transition">Cancel</button>
+                <button onClick={() => setShowPainModal(false)} className="tactical-btn-ghost flex-1 border-2 border-[var(--black)] py-2">Cancel</button>
               </div>
             </div>
           </div>
