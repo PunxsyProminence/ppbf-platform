@@ -87,26 +87,26 @@ export default function AdminComplianceCenterPage() {
   const getSeverityColor = (severity: string) => {
     switch (severity) {
       case 'critical':
-        return 'bg-[#fce8e6]';
+        return 'bg-[var(--status-danger)]/10';
       case 'high':
-        return 'bg-[#fff3cd]';
+        return 'bg-[var(--status-warning)]/10';
       case 'medium':
-        return 'bg-[#e3f2fd]';
+        return 'bg-[var(--status-info)]/10';
       default:
-        return 'bg-[#f1f8e9]';
+        return 'bg-[var(--status-ready)]/10';
     }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'new':
-        return 'text-[#d32f2f]';
+        return 'text-[var(--status-danger)]';
       case 'escalated':
-        return 'text-[#f57c00]';
+        return 'text-[var(--status-warning)]';
       case 'resolved':
-        return 'text-[#388e3c]';
+        return 'text-[var(--status-ready)]';
       default:
-        return 'text-[#1976d2]';
+        return 'text-[var(--status-info)]';
     }
   };
 
@@ -169,41 +169,41 @@ export default function AdminComplianceCenterPage() {
       showShellHeader={false}
     >
       <div className="space-y-6">
-        <header className="border-2 border-[#8b4444] bg-[#111111] p-5">
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">Compliance Management</p>
-          <h1 className="mt-2 text-3xl font-black text-[#f2e7da]">Compliance Center</h1>
-          <p className="mt-2 text-sm text-[#cfbfae]">Review, manage, and escalate athlete compliance violations.</p>
-          {errorMessage ? <p className="mt-2 text-xs text-[#f0c4c4]">{errorMessage}</p> : null}
+        <header className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--red-primary)]">Compliance Management</p>
+          <h1 className="mt-2 text-3xl font-black text-[var(--black)]">Compliance Center</h1>
+          <p className="mt-2 text-sm text-[var(--gray-dark)]">Review, manage, and escalate athlete compliance violations.</p>
+          {errorMessage ? <p className="mt-2 text-xs text-[var(--red-primary)]">{errorMessage}</p> : null}
           {!errorMessage && !isLoading && !dataAuthoritative ? (
-            <p className="mt-2 text-xs text-[#f0c4c4]">Compliance metrics are unavailable and intentionally not shown as zero.</p>
+            <p className="mt-2 text-xs text-[var(--red-primary)]">Compliance metrics are unavailable and intentionally not shown as zero.</p>
           ) : null}
         </header>
 
         {/* Metrics Dashboard */}
         <section className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-          <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-3 text-center">
-            <p className="text-xs text-[#cfbfae]">Total</p>
-            <p className="text-2xl font-bold text-[#f2e7da]">{metricValue(metrics.total)}</p>
+          <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-3 text-center">
+            <p className="text-xs text-[var(--gray-dark)]">Total</p>
+            <p className="text-2xl font-bold text-[var(--black)]">{metricValue(metrics.total)}</p>
           </div>
-          <div className="border-2 border-[#fce8e6] bg-[#1a1a1a] p-3 text-center">
-            <p className="text-xs text-[#d32f2f]">Critical</p>
-            <p className="text-2xl font-bold text-[#f2e7da]">{metricValue(metrics.critical)}</p>
+          <div className="border-2 border-[var(--status-danger)] bg-[var(--canvas-tan-light)] p-3 text-center">
+            <p className="text-xs text-[var(--status-danger)]">Critical</p>
+            <p className="text-2xl font-bold text-[var(--black)]">{metricValue(metrics.critical)}</p>
           </div>
-          <div className="border-2 border-[#fff3cd] bg-[#1a1a1a] p-3 text-center">
-            <p className="text-xs text-[#f57c00]">High</p>
-            <p className="text-2xl font-bold text-[#f2e7da]">{metricValue(metrics.high)}</p>
+          <div className="border-2 border-[var(--status-warning)] bg-[var(--canvas-tan-light)] p-3 text-center">
+            <p className="text-xs text-[var(--status-warning)]">High</p>
+            <p className="text-2xl font-bold text-[var(--black)]">{metricValue(metrics.high)}</p>
           </div>
-          <div className="border-2 border-[#e3f2fd] bg-[#1a1a1a] p-3 text-center">
-            <p className="text-xs text-[#1976d2]">Medium</p>
-            <p className="text-2xl font-bold text-[#f2e7da]">{metricValue(metrics.medium)}</p>
+          <div className="border-2 border-[var(--status-info)] bg-[var(--canvas-tan-light)] p-3 text-center">
+            <p className="text-xs text-[var(--status-info)]">Medium</p>
+            <p className="text-2xl font-bold text-[var(--black)]">{metricValue(metrics.medium)}</p>
           </div>
-          <div className="border-2 border-[#f1f8e9] bg-[#1a1a1a] p-3 text-center">
-            <p className="text-xs text-[#388e3c]">Low</p>
-            <p className="text-2xl font-bold text-[#f2e7da]">{metricValue(metrics.low)}</p>
+          <div className="border-2 border-[var(--status-ready)] bg-[var(--canvas-tan-light)] p-3 text-center">
+            <p className="text-xs text-[var(--status-ready)]">Low</p>
+            <p className="text-2xl font-bold text-[var(--black)]">{metricValue(metrics.low)}</p>
           </div>
         </section>
 
-        <section className="flex flex-wrap items-center gap-3 border border-[#5a4a3a] bg-[#121212] p-3">
+        <section className="flex flex-wrap items-center gap-3 border border-[var(--black)] bg-[var(--canvas-tan-light)] p-3">
           <div className="flex flex-wrap gap-2">
             {['all', 'new', 'acknowledged', 'escalated', 'resolved'].map((status) => (
               <button
@@ -211,8 +211,8 @@ export default function AdminComplianceCenterPage() {
                 onClick={() => setStatusFilter(status)}
                 className={`border-2 px-3 py-1 text-xs font-bold uppercase ${
                   statusFilter === status
-                    ? 'border-[#d4a574] bg-[#2a1a1a] text-[#d4a574]'
-                    : 'border-[#5a4a3a] bg-[#101010] text-[#8b7355]'
+                    ? 'border-[var(--red-primary)] bg-[var(--red-primary)]/10 text-[var(--red-primary)]'
+                    : 'border-[var(--black)] bg-[var(--canvas-tan)] text-[var(--canvas-tan-dark)]'
                 }`}
               >
                 {status}
@@ -220,11 +220,11 @@ export default function AdminComplianceCenterPage() {
             ))}
           </div>
           <div className="flex items-center gap-3">
-            <label htmlFor="severity-filter" className="text-xs font-bold text-[#d4a574]">Severity:</label>
+            <label htmlFor="severity-filter" className="text-xs font-bold text-[var(--red-primary)]">Severity:</label>
             <select id="severity-filter"
               value={severityFilter}
               onChange={(e) => setSeverityFilter(e.target.value)}
-              className="border border-[#5a4a3a] bg-[#101010] px-3 py-1 text-xs text-[#e8d7c6]"
+              className="border border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-1 text-xs text-[var(--black)]"
             >
               <option value="all">All</option>
               <option value="critical">Critical</option>
@@ -233,48 +233,48 @@ export default function AdminComplianceCenterPage() {
               <option value="low">Low</option>
             </select>
           </div>
-          <div className="ml-auto text-xs text-[#9a8a7a]">
+          <div className="ml-auto text-xs text-[var(--gray-dark)]">
             Showing {dataAuthoritative ? filteredViolations.length : '--'} of {dataAuthoritative ? violations.length : '--'}
           </div>
         </section>
 
         {/* Violations List */}
         <section>
-          <h2 className="mb-4 text-lg font-bold text-[#f2e7da]">
+          <h2 className="mb-4 text-lg font-bold text-[var(--black)]">
             Violations ({filteredViolations.length} of {violations.length})
           </h2>
           <div className="space-y-3">
             {filteredViolations.length === 0 ? (
-              <div className="border border-[#5a4a3a] bg-[#111111] px-4 py-5 text-sm text-[#9a8a7a]">
+              <div className="border border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 py-5 text-sm text-[var(--gray-dark)]">
                 No violations match the current filters. Try setting Status to &quot;all&quot; and Severity to &quot;all&quot;.
               </div>
             ) : (
               filteredViolations.map((v) => (
                 <div
                   key={v.violation_id}
-                  className={`border-2 border-[#8b4444] p-4 ${getSeverityColor(v.severity)}`}
+                  className={`border-2 border-[var(--black)] p-4 ${getSeverityColor(v.severity)}`}
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
                       <div className="mb-2 flex gap-2">
-                        <span className="font-mono text-xs font-bold uppercase text-[#111111]">
+                        <span className="font-mono text-xs font-bold uppercase text-[var(--black)]">
                           {v.severity}
                         </span>
                         <span className={`font-mono text-xs font-bold uppercase ${getStatusColor(v.status)}`}>
                           {v.status}
                         </span>
                       </div>
-                      <p className="text-sm font-semibold text-[#111111]">Athlete: {v.athlete_id}</p>
-                      <p className="text-xs text-[#333333]">Rule: {v.rule_id}</p>
-                      <p className="mt-1 text-xs text-[#444444]">
+                      <p className="text-sm font-semibold text-[var(--black)]">Athlete: {v.athlete_id}</p>
+                      <p className="text-xs text-[var(--gray-dark)]">Rule: {v.rule_id}</p>
+                      <p className="mt-1 text-xs text-[var(--gray-dark)]">
                         {new Date(v.violation_timestamp).toLocaleString()}
                       </p>
-                      {v.description && <p className="mt-2 text-sm text-[#222222]">{v.description}</p>}
+                      {v.description && <p className="mt-2 text-sm text-[var(--black)]">{v.description}</p>}
                     </div>
                     {v.status === 'new' || v.status === 'acknowledged' ? (
                       <button
                         onClick={() => setSelectedViolation(v)}
-                        className="border-2 border-[#111111] bg-[#fce8e6] px-3 py-2 text-xs font-bold text-[#111111]"
+                        className="tactical-btn-critical border-2 border-[var(--black)] px-3 py-2 text-xs font-bold"
                       >
                         Escalate
                       </button>
@@ -288,18 +288,18 @@ export default function AdminComplianceCenterPage() {
 
         {/* Escalation Modal */}
         {selectedViolation && (
-          <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4">
-            <div className="border-2 border-[#8b4444] bg-[#111111] p-6 max-w-sm">
-              <h3 className="mb-4 text-lg font-bold text-[#f2e7da]">Escalate Violation</h3>
-              <p className="mb-4 text-sm text-[#cfbfae]">
-                Athlete: <span className="font-semibold text-[#e8d7c6]">{selectedViolation.athlete_id}</span>
+          <div className="fixed inset-0 bg-[var(--black)]/60 flex items-center justify-center p-4">
+            <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 max-w-sm">
+              <h3 className="mb-4 text-lg font-bold text-[var(--black)]">Escalate Violation</h3>
+              <p className="mb-4 text-sm text-[var(--gray-dark)]">
+                Athlete: <span className="font-semibold text-[var(--black)]">{selectedViolation.athlete_id}</span>
               </p>
               <div className="mb-4">
-                <label htmlFor="escalate-to-select" className="block text-xs font-bold uppercase text-[#d4a574]">Escalate To</label>
+                <label htmlFor="escalate-to-select" className="block text-xs font-bold uppercase text-[var(--red-primary)]">Escalate To</label>
                 <select id="escalate-to-select"
                   value={escalateToRole}
                   onChange={(e) => setEscalateToRole(e.target.value)}
-                  className="mt-1 w-full border border-[#5a4a3a] bg-[#101010] p-2 text-[#e8d7c6]"
+                  className="mt-1 w-full border border-[var(--black)] bg-[var(--canvas-tan)] p-2 text-[var(--black)]"
                 >
                   <option value="organization_admin">Organization Admin</option>
                   <option value="admin">Platform Admin</option>
@@ -308,13 +308,13 @@ export default function AdminComplianceCenterPage() {
               <div className="flex gap-3">
                 <button
                   onClick={handleEscalate}
-                  className="flex-1 border-2 border-[#8b4444] bg-[#2a1a1a] py-2 text-xs font-bold text-[#d4a574]"
+                  className="flex-1 tactical-btn-critical border-2 border-[var(--black)] py-2 text-xs font-bold"
                 >
                   Escalate
                 </button>
                 <button
                   onClick={() => setSelectedViolation(null)}
-                  className="flex-1 border-2 border-[#5a4a3a] bg-[#101010] py-2 text-xs font-bold text-[#8b7355]"
+                  className="flex-1 tactical-btn-ghost border-2 border-[var(--black)] py-2 text-xs font-bold"
                 >
                   Cancel
                 </button>
@@ -324,7 +324,7 @@ export default function AdminComplianceCenterPage() {
         )}
 
         <div className="flex flex-wrap gap-3">
-          <Link href="/admin" className="border-2 border-[#8b4444] bg-[#2a1a1a] px-4 py-2 text-xs font-mono text-[#d4a574]">
+          <Link href="/admin" className="border-2 border-[var(--black)] bg-[var(--canvas-tan-dark)] px-4 py-2 text-xs font-mono text-[var(--black)]">
             Back to Admin
           </Link>
         </div>

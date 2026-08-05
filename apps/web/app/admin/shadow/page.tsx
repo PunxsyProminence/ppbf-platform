@@ -1252,17 +1252,17 @@ export default function AdminShadowConsolePage() {
             });
           },
         })}
-        <section className="space-y-6 border-4 border-[#8b4444] bg-[#0a0a0a]/70 p-6">
-          <div className="mb-6 border-b border-[#8b4444]/20 pb-4">
-            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">AI/ML Telemetry Scout</p>
-            <h2 className="mt-2 text-3xl font-black text-[#e8d7c6]">SHADOW Data Intake + Command Console</h2>
-            <p className="mt-2 text-[16px] leading-7 text-[#d4a574]/85">
+        <section className="space-y-6 border-4 border-[var(--black)] bg-[var(--canvas-tan)] p-6">
+          <div className="mb-6 border-b border-[var(--black)]/20 pb-4">
+            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--gray-dark)]">AI/ML Telemetry Scout</p>
+            <h2 className="mt-2 text-3xl font-black text-[var(--black)]">SHADOW Data Intake + Command Console</h2>
+            <p className="mt-2 text-[16px] leading-7 text-[var(--gray-dark)]">
               Import, classify, stage, and review external data before it enters the PPBF system.
             </p>
           </div>
 
-          <section className="border-4 border-[#8b4444] bg-[#0f0f0f] p-4">
-            <div className="mb-3 flex flex-wrap gap-2 text-xs font-mono uppercase tracking-[0.14em] text-[#d4a574]/85">
+          <section className="border-4 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+            <div className="mb-3 flex flex-wrap gap-2 text-xs font-mono uppercase tracking-[0.14em] text-[var(--gray-dark)]">
               <span>Pending: {queueCounts.pending}</span>
               <span>Classified: {queueCounts.classified}</span>
               <span>Staged: {queueCounts.staged}</span>
@@ -1270,8 +1270,8 @@ export default function AdminShadowConsolePage() {
             </div>
             <div className="max-h-[500px] space-y-3 overflow-y-auto pr-1">
               {consoleLogs.map((log) => (
-                <article key={log.id} className="border-2 border-[#8b4444]/70 bg-[#161616] p-4 font-mono text-[14px] leading-6 text-[#e8d7c6]">
-                  <p className="text-[#d4a574]">[{log.timestamp}]</p>
+                <article key={log.id} className="border-2 border-[var(--black)]/70 bg-[var(--canvas-tan-light)] p-4 font-mono text-[14px] leading-6 text-[var(--black)]">
+                  <p className="text-[var(--gray-dark)]">[{log.timestamp}]</p>
                   <p>SOURCE: {log.source}</p>
                   <p>TYPE: {log.dataType}</p>
                   <p>STATUS: {log.status}</p>
@@ -1283,21 +1283,21 @@ export default function AdminShadowConsolePage() {
             </div>
           </section>
 
-          <section className="border-4 border-[#8b4444] bg-[#101010] p-4">
-            <p className="mb-3 text-[16px] font-semibold text-[#e8d7c6]">Command Bar</p>
+          <section className="border-4 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+            <p className="mb-3 text-[16px] font-semibold text-[var(--black)]">Command Bar</p>
             <div className="mb-3 flex flex-wrap gap-2">
               {commandHints.map((hint) => (
                 <button
                   key={hint}
                   type="button"
                   onClick={() => setCommandInput(hint)}
-                  className="h-11 border border-[#5a2a2a] bg-[#1d1010] px-3 font-mono text-[13px] text-[#d4a574] transition hover:border-[#d4a574] hover:text-[#f0dfce]"
+                  className="tactical-btn-ghost h-11 border-2 border-[var(--black)] px-3 font-mono text-[13px]"
                 >
                   {hint}
                 </button>
               ))}
             </div>
-            <p className="mb-3 font-mono text-[12px] text-[#d4a574]/80">
+            <p className="mb-3 font-mono text-[12px] text-[var(--gray-dark)]">
               Shortcuts: C classify, S stage, A approve, R reject, I import on selected item.
             </p>
             <form onSubmit={handleCommandSubmit} className="flex flex-wrap gap-3">
@@ -1315,30 +1315,30 @@ export default function AdminShadowConsolePage() {
                   }
                 }}
                 placeholder="merge | status | list | clear | summarize | classify | stage | approve | reject"
-                className="h-11 min-w-[280px] flex-1 border-2 border-[#8b4444] bg-[#1a1a1a] px-4 font-mono text-[15px] text-[#e8d7c6] placeholder-[#d4a574] outline-none transition focus:border-[#d4a574]"
+                className="tactical-input h-11 min-w-[280px] flex-1 font-mono text-[15px] placeholder-[var(--gray-dark)]"
               />
               <button
                 type="submit"
-                className="h-11 border-2 border-[#8b4444] bg-[#4a2020] px-6 font-mono text-[14px] font-bold text-[#e8d7c6] transition hover:border-[#d4a574] hover:bg-[#5a3030]"
+                className="tactical-btn-critical h-11 px-6 font-mono text-[14px] font-bold"
               >
                 Submit Command
               </button>
             </form>
           </section>
 
-          <section className="border-4 border-[#8b4444] bg-[#101010] p-4">
+          <section className="border-4 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
-              <h3 className="text-[18px] font-black text-[#e8d7c6]">PENDING IMPORT QUEUE</h3>
-              <p className="font-mono text-[13px] uppercase tracking-[0.1em] text-[#d4a574]">Backed by SHADOW review projection</p>
+              <h3 className="text-[18px] font-black text-[var(--black)]">PENDING IMPORT QUEUE</h3>
+              <p className="font-mono text-[13px] uppercase tracking-[0.1em] text-[var(--gray-dark)]">Backed by SHADOW review projection</p>
             </div>
 
             <div className="mb-4 grid gap-2 md:grid-cols-2">
-              <label className="text-[13px] text-[#d4a574]">
+              <label className="text-[13px] text-[var(--gray-dark)]">
                 <span className="mb-1 block font-mono uppercase">Filter Status</span>
                 <select
                   value={queueFilterStatus}
                   onChange={(event) => setQueueFilterStatus(event.target.value as 'ALL' | IntakeStatus)}
-                  className="h-11 w-full border-2 border-[#8b4444] bg-[#141414] px-3 text-[14px] text-[#e8d7c6]"
+                  className="tactical-input h-11"
                 >
                   <option value="ALL">ALL</option>
                   <option value="Pending">Pending</option>
@@ -1349,12 +1349,12 @@ export default function AdminShadowConsolePage() {
                   <option value="Imported">Imported</option>
                 </select>
               </label>
-              <label className="text-[13px] text-[#d4a574]">
+              <label className="text-[13px] text-[var(--gray-dark)]">
                 <span className="mb-1 block font-mono uppercase">Sort</span>
                 <select
                   value={queueSort}
                   onChange={(event) => setQueueSort(event.target.value as QueueSort)}
-                  className="h-11 w-full border-2 border-[#8b4444] bg-[#141414] px-3 text-[14px] text-[#e8d7c6]"
+                  className="tactical-input h-11"
                 >
                   <option value="newest">Newest First</option>
                   <option value="oldest">Oldest First</option>
@@ -1364,25 +1364,25 @@ export default function AdminShadowConsolePage() {
             </div>
 
             {filteredSortedQueue.length === 0 ? (
-              <p className="text-[16px] text-[#d4a574]/80">No pending intake items. Use Upload File or Quick Add to create staging entries.</p>
+              <p className="text-[16px] text-[var(--gray-dark)]">No pending intake items. Use Upload File or Quick Add to create staging entries.</p>
             ) : (
               <div className="space-y-3">
                 {filteredSortedQueue.map((item) => (
                   <article
                     key={item.id}
-                    className={`border-2 p-4 ${selectedItemId === item.id ? 'border-[#d4a574] bg-[#1d1111]' : 'border-[#8b4444]/70 bg-[#151515]'}`}
+                    className={`border-2 p-4 ${selectedItemId === item.id ? 'border-[var(--red-primary)] bg-[var(--canvas-tan)]' : 'border-[var(--black)]/70 bg-[var(--canvas-tan-light)]'}`}
                   >
-                    <div className="grid gap-2 text-[14px] text-[#e8d7c6] md:grid-cols-2">
-                      <p><span className="font-semibold text-[#d4a574]">Item Name:</span> {item.itemName}</p>
-                      <p><span className="font-semibold text-[#d4a574]">Data Type:</span> {item.dataType}</p>
-                      <p><span className="font-semibold text-[#d4a574]">Source:</span> {item.source}</p>
-                      <p><span className="font-semibold text-[#d4a574]">Suggested Destination:</span> {item.suggestedDestination}</p>
+                    <div className="grid gap-2 text-[14px] text-[var(--black)] md:grid-cols-2">
+                      <p><span className="font-semibold text-[var(--red-primary)]">Item Name:</span> {item.itemName}</p>
+                      <p><span className="font-semibold text-[var(--red-primary)]">Data Type:</span> {item.dataType}</p>
+                      <p><span className="font-semibold text-[var(--red-primary)]">Source:</span> {item.source}</p>
+                      <p><span className="font-semibold text-[var(--red-primary)]">Suggested Destination:</span> {item.suggestedDestination}</p>
                       <p>
-                        <span className="font-semibold text-[#d4a574]">Status:</span>{' '}
+                        <span className="font-semibold text-[var(--red-primary)]">Status:</span>{' '}
                         <span className={`inline-flex font-mono ${statusChipClasses(item.status)}`}>{item.status}</span>
                       </p>
-                      <p><span className="font-semibold text-[#d4a574]">Review Needed:</span> {item.reviewNeeded ? 'Yes' : 'No'}</p>
-                      <p className="md:col-span-2"><span className="font-semibold text-[#d4a574]">Timestamp:</span> {item.timestamp}</p>
+                      <p><span className="font-semibold text-[var(--red-primary)]">Review Needed:</span> {item.reviewNeeded ? 'Yes' : 'No'}</p>
+                      <p className="md:col-span-2"><span className="font-semibold text-[var(--red-primary)]">Timestamp:</span> {item.timestamp}</p>
                     </div>
 
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -1392,7 +1392,7 @@ export default function AdminShadowConsolePage() {
                           type="button"
                           onClick={() => void handleItemAction(item.id, action)}
                           disabled={action === 'IMPORT' && item.status !== 'Approved'}
-                          className="h-11 border-2 border-[#8b4444] bg-[#2a1414] px-3 text-[13px] font-bold text-[#e8d7c6] transition hover:border-[#d4a574] disabled:cursor-not-allowed disabled:opacity-40"
+                          className="tactical-btn h-11 px-3 text-[13px] font-bold disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           {action}
                         </button>
@@ -1406,13 +1406,13 @@ export default function AdminShadowConsolePage() {
         </section>
 
         <aside className="space-y-4">
-          <section className="border-4 border-[#d4a574] bg-[#0a0a0a]/70 p-4">
-            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">Data Intake Sources</p>
-            <h3 className="mt-2 text-xl font-black text-[#e8d7c6]">External Sources</h3>
+          <section className="border-4 border-[var(--red-primary)] bg-[var(--canvas-tan)] p-4">
+            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--gray-dark)]">Data Intake Sources</p>
+            <h3 className="mt-2 text-xl font-black text-[var(--black)]">External Sources</h3>
 
             <div
-              className={`mt-4 space-y-2 rounded border-2 border-dashed p-3 transition ${
-                isDragOver ? 'border-[#e8d7c6] bg-[#3a2a1a]' : 'border-[#8b5a2b] bg-[#1a120a]'
+              className={`mt-4 space-y-2 border-2 border-dashed p-3 transition ${
+                isDragOver ? 'border-[var(--red-primary)] bg-[var(--canvas-tan-dark)]' : 'border-[var(--black)] bg-[var(--canvas-tan-light)]'
               }`}
               onDragOver={(event) => {
                 event.preventDefault();
@@ -1421,7 +1421,7 @@ export default function AdminShadowConsolePage() {
               onDragLeave={() => setIsDragOver(false)}
               onDrop={handleFileDrop}
             >
-              <p className="text-[12px] font-mono uppercase tracking-[0.08em] text-[#d4a574]">
+              <p className="text-[12px] font-mono uppercase tracking-[0.08em] text-[var(--gray-dark)]">
                 Drop PDF here or use the upload button
               </p>
               <input
@@ -1435,14 +1435,14 @@ export default function AdminShadowConsolePage() {
                 type="button"
                 onClick={handleUploadButtonClick}
                 disabled={isUploading}
-                className="h-11 w-full border-2 border-[#d4a574] bg-[#2a1a0a] px-3 text-[14px] font-mono text-[#d4a574] transition hover:border-[#e8d7c6] hover:bg-[#3a2a1a] hover:text-[#e8d7c6]"
+                className="tactical-btn h-11 w-full px-3 text-[14px] font-mono"
               >
                 {isUploading ? 'Processing PDF...' : 'Upload PDF'}
               </button>
-              {uploadedFileName && <p className="text-[14px] text-[#d4a574]/80">Last staged file: {uploadedFileName}</p>}
-              {uploadError && <p className="text-[13px] text-[#f2c3c3]">{uploadError}</p>}
+              {uploadedFileName && <p className="text-[14px] text-[var(--gray-dark)]">Last staged file: {uploadedFileName}</p>}
+              {uploadError && <p className="text-[13px] text-[var(--red-primary)]">{uploadError}</p>}
               {lastIngestSummary && (
-                <div className="border border-[#8b5a2b] bg-[#21160d] p-2 text-[12px] text-[#e8d7c6]">
+                <div className="border border-[var(--black)] bg-[var(--canvas-tan-light)] p-2 text-[12px] text-[var(--black)]">
                   <p>Intake Case: {lastIngestSummary.intake_case_id}</p>
                   <p>Intake Document: {lastIngestSummary.intake_document_id}</p>
                   <p>Classification: {lastIngestSummary.classification}</p>
@@ -1452,15 +1452,15 @@ export default function AdminShadowConsolePage() {
               )}
             </div>
 
-            <div className="mt-4 border-t border-[#d4a574]/20 pt-3">
-              <p className="text-[14px] font-mono text-[#d4a574]/80">Quick Add:</p>
+            <div className="mt-4 border-t border-[var(--black)]/20 pt-3">
+              <p className="text-[14px] font-mono text-[var(--gray-dark)]">Quick Add:</p>
               <div className="mt-2 grid grid-cols-2 gap-2">
                 {QUICK_ADD_OPTIONS.map((option) => (
                   <button
                     key={option.label}
                     type="button"
                     onClick={() => handleQuickAdd(option.label, option.source, option.destination, option.route)}
-                    className="h-11 border-2 border-[#d4a574] bg-[#2a1a0a] px-2 text-[12px] text-[#d4a574] transition hover:border-[#e8d7c6] hover:bg-[#3a2a1a]"
+                    className="tactical-btn h-11 px-2 text-[12px]"
                   >
                     {option.label}
                   </button>
@@ -1469,23 +1469,23 @@ export default function AdminShadowConsolePage() {
             </div>
           </section>
 
-          <section className="border-4 border-[#8b4444] bg-[#0a0a0a]/70 p-4">
-            <h3 className="text-xl font-black text-[#e8d7c6]">Classification Panel</h3>
+          <section className="border-4 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
+            <h3 className="text-xl font-black text-[var(--black)]">Classification Panel</h3>
             {!selectedItem ? (
-              <p className="mt-3 text-[16px] text-[#d4a574]/80">Select an intake item via VIEW to classify and route it.</p>
+              <p className="mt-3 text-[16px] text-[var(--gray-dark)]">Select an intake item via VIEW to classify and route it.</p>
             ) : (
-              <div className="mt-3 space-y-3 text-[14px] text-[#e8d7c6]">
-                <p className="font-semibold text-[#d4a574]">Selected: {selectedItem.itemName}</p>
-                <p className={`inline-flex border px-2 py-1 font-mono text-[12px] ${selectedItem.requiresJasonReview ? 'border-[#8b4444] bg-[#341616] text-[#f0c4c4]' : 'border-[#d4a574] bg-[#2e2a14] text-[#f5e7bf]'}`}>
+              <div className="mt-3 space-y-3 text-[14px] text-[var(--black)]">
+                <p className="font-semibold text-[var(--red-primary)]">Selected: {selectedItem.itemName}</p>
+                <p className={`inline-flex border border-[var(--black)] font-mono text-[12px] ${selectedItem.requiresJasonReview ? ui.statusDanger : ui.statusReady}`}>
                   {selectedItem.requiresJasonReview ? 'PENDING JASON REVIEW' : 'APPROVED FOR IMPORT'}
                 </p>
 
                 <label className="block">
-                  <span className="mb-1 block text-[#d4a574]">Detected Type</span>
+                  <span className="mb-1 block text-[var(--gray-dark)]">Detected Type</span>
                   <select
                     value={selectedItem.detectedType}
                     onChange={(event) => updateSelectedItem({ detectedType: event.target.value as DataType })}
-                    className="h-11 w-full border-2 border-[#8b4444] bg-[#141414] px-3 text-[14px]"
+                    className="tactical-input h-11"
                   >
                     {QUICK_ADD_OPTIONS.map((option) => (
                       <option key={option.label} value={option.label}>
@@ -1498,14 +1498,14 @@ export default function AdminShadowConsolePage() {
                 </label>
 
                 <label className="block">
-                  <span className="mb-1 block text-[#d4a574]">Suggested Destination</span>
+                  <span className="mb-1 block text-[var(--gray-dark)]">Suggested Destination</span>
                   <select
                     value={selectedItem.suggestedDestination}
                     onChange={(event) => {
                       const destination = event.target.value as IntakeDestination;
                       updateSelectedItem({ suggestedDestination: destination, destinationRoute: routeForDestination(destination) });
                     }}
-                    className="h-11 w-full border-2 border-[#8b4444] bg-[#141414] px-3 text-[14px]"
+                    className="tactical-input h-11"
                   >
                     {DESTINATION_OPTIONS.map((destination) => (
                       <option key={destination} value={destination}>
@@ -1516,11 +1516,11 @@ export default function AdminShadowConsolePage() {
                 </label>
 
                 <label className="block">
-                  <span className="mb-1 block text-[#d4a574]">Confidence</span>
+                  <span className="mb-1 block text-[var(--gray-dark)]">Confidence</span>
                   <select
                     value={selectedItem.confidence}
                     onChange={(event) => updateSelectedItem({ confidence: event.target.value as ConfidenceLevel })}
-                    className="h-11 w-full border-2 border-[#8b4444] bg-[#141414] px-3 text-[14px]"
+                    className="tactical-input h-11"
                   >
                     <option value="Low">Low</option>
                     <option value="Medium">Medium</option>
@@ -1529,11 +1529,11 @@ export default function AdminShadowConsolePage() {
                 </label>
 
                 <label className="block">
-                  <span className="mb-1 block text-[#d4a574]">Requires Jason Review</span>
+                  <span className="mb-1 block text-[var(--gray-dark)]">Requires Jason Review</span>
                   <select
                     value={selectedItem.requiresJasonReview ? 'Yes' : 'No'}
                     onChange={(event) => updateSelectedItem({ requiresJasonReview: event.target.value === 'Yes' })}
-                    className="h-11 w-full border-2 border-[#8b4444] bg-[#141414] px-3 text-[14px]"
+                    className="tactical-input h-11"
                   >
                     <option value="Yes">Yes</option>
                     <option value="No">No</option>
@@ -1541,43 +1541,43 @@ export default function AdminShadowConsolePage() {
                 </label>
 
                 <label className="block">
-                  <span className="mb-1 block text-[#d4a574]">Notes</span>
+                  <span className="mb-1 block text-[var(--gray-dark)]">Notes</span>
                   <textarea
                     value={selectedItem.notes}
                     onChange={(event) => updateSelectedItem({ notes: event.target.value })}
-                    className="min-h-[92px] w-full border-2 border-[#8b4444] bg-[#141414] px-3 py-2 text-[14px]"
+                    className="tactical-input min-h-[92px]"
                   />
                 </label>
 
                 <label className="block">
-                  <span className="mb-1 block text-[#d4a574]">Destination Route</span>
+                  <span className="mb-1 block text-[var(--gray-dark)]">Destination Route</span>
                   <input
                     value={selectedItem.destinationRoute}
                     onChange={(event) => updateSelectedItem({ destinationRoute: event.target.value })}
-                    className="h-11 w-full border-2 border-[#8b4444] bg-[#141414] px-3 text-[14px]"
+                    className="tactical-input h-11"
                   />
                 </label>
               </div>
             )}
           </section>
 
-          <section className="border-4 border-[#8b4444] bg-[#0a0a0a]/70 p-4">
+          <section className="border-4 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
             <button
               type="button"
               onClick={() => setShowHistory((current) => !current)}
-              className="h-11 w-full border-2 border-[#8b4444] bg-[#2a1414] text-[14px] font-bold text-[#e8d7c6] transition hover:border-[#d4a574]"
+              className="tactical-btn h-11 w-full text-[14px] font-bold"
             >
               {showHistory ? 'Hide' : 'Show'} IMPORT HISTORY
             </button>
             {showHistory && (
               <div className="mt-3 space-y-2">
                 <div className="grid gap-2 md:grid-cols-2">
-                  <label className="text-[13px] text-[#d4a574]">
+                  <label className="text-[13px] text-[var(--gray-dark)]">
                     <span className="mb-1 block font-mono uppercase">Filter Status</span>
                     <select
                       value={historyFilterStatus}
                       onChange={(event) => setHistoryFilterStatus(event.target.value as 'ALL' | IntakeStatus)}
-                      className="h-11 w-full border-2 border-[#8b4444] bg-[#141414] px-3 text-[14px] text-[#e8d7c6]"
+                      className="tactical-input h-11"
                     >
                       <option value="ALL">ALL</option>
                       <option value="Pending">Pending</option>
@@ -1588,12 +1588,12 @@ export default function AdminShadowConsolePage() {
                       <option value="Imported">Imported</option>
                     </select>
                   </label>
-                  <label className="text-[13px] text-[#d4a574]">
+                  <label className="text-[13px] text-[var(--gray-dark)]">
                     <span className="mb-1 block font-mono uppercase">Sort</span>
                     <select
                       value={historySort}
                       onChange={(event) => setHistorySort(event.target.value as HistorySort)}
-                      className="h-11 w-full border-2 border-[#8b4444] bg-[#141414] px-3 text-[14px] text-[#e8d7c6]"
+                      className="tactical-input h-11"
                     >
                       <option value="newest">Newest First</option>
                       <option value="oldest">Oldest First</option>
@@ -1601,16 +1601,16 @@ export default function AdminShadowConsolePage() {
                   </label>
                 </div>
                 {filteredSortedHistory.length === 0 ? (
-                  <p className="text-[14px] text-[#d4a574]/80">No history entries yet.</p>
+                  <p className="text-[14px] text-[var(--gray-dark)]">No history entries yet.</p>
                 ) : (
                   filteredSortedHistory.map((item) => (
-                    <div key={`${item.id}-${item.lastUpdatedAt}`} className="border border-[#8b4444]/60 bg-[#151515] p-3 text-[13px] text-[#e8d7c6]">
-                      <p className="font-semibold text-[#d4a574]">{item.itemName}</p>
+                    <div key={`${item.id}-${item.lastUpdatedAt}`} className="border border-[var(--black)]/60 bg-[var(--canvas-tan-light)] p-3 text-[13px] text-[var(--black)]">
+                      <p className="font-semibold text-[var(--red-primary)]">{item.itemName}</p>
                       <p>
                         <span className={`inline-flex font-mono ${statusChipClasses(item.status)}`}>{item.status}</span>
                         <span className="ml-2">- {item.dataType}</span>
                       </p>
-                      <p className="font-mono text-[12px] text-[#d4a574]/80">{item.lastUpdatedAt}</p>
+                      <p className="font-mono text-[12px] text-[var(--gray-dark)]">{item.lastUpdatedAt}</p>
                     </div>
                   ))
                 )}
@@ -1618,38 +1618,38 @@ export default function AdminShadowConsolePage() {
             )}
           </section>
 
-          <section className="border-4 border-[#8b4444] bg-[#0a0a0a]/70 p-4">
+          <section className="border-4 border-[var(--black)] bg-[var(--canvas-tan)] p-4">
             <button
               type="button"
               onClick={() => setShowTelemetry((current) => !current)}
-              className="h-11 w-full border-2 border-[#8b4444] bg-[#2a1414] text-[14px] font-bold text-[#e8d7c6] transition hover:border-[#d4a574]"
+              className="tactical-btn h-11 w-full text-[14px] font-bold"
             >
               {showTelemetry ? 'Hide' : 'Show'} telemetry and authority streams
             </button>
             {showTelemetry && (
-              <div className="mt-3 max-h-[220px] space-y-2 overflow-y-auto border border-[#8b4444]/60 bg-[#111111] p-2 font-mono text-[12px] text-[#d4a574]">
-                {telemetryEvents.length === 0 && <p className="p-2 text-[#d4a574]/75">No telemetry events yet.</p>}
+              <div className="mt-3 max-h-[220px] space-y-2 overflow-y-auto border border-[var(--black)]/60 bg-[var(--canvas-tan-light)] p-2 font-mono text-[12px] text-[var(--gray-dark)]">
+                {telemetryEvents.length === 0 && <p className="p-2 text-[var(--gray-dark)]/75">No telemetry events yet.</p>}
                 {telemetryEvents.map((event, index) => (
-                  <pre key={`${event.timestamp}-${index}`} className="whitespace-pre-wrap border border-[#502828] bg-[#151515] p-2 text-[#d4a574]">
+                  <pre key={`${event.timestamp}-${index}`} className="whitespace-pre-wrap border border-[var(--black)] bg-[var(--canvas-tan-light)] p-2 text-[var(--gray-dark)]">
 {JSON.stringify(event, null, 2)}
                   </pre>
                 ))}
 
-                <div className="border-t border-[#8b4444]/60 pt-2">
-                  <p className="mb-2 text-xs uppercase tracking-[0.08em] text-[#e8d7c6]">SHADOW telemetry read model</p>
-                  {shadowTelemetry.length === 0 && <p className="p-2 text-[#d4a574]/75">No SHADOW telemetry events returned.</p>}
+                <div className="border-t border-[var(--black)]/60 pt-2">
+                  <p className="mb-2 text-xs uppercase tracking-[0.08em] text-[var(--black)]">SHADOW telemetry read model</p>
+                  {shadowTelemetry.length === 0 && <p className="p-2 text-[var(--gray-dark)]/75">No SHADOW telemetry events returned.</p>}
                   {shadowTelemetry.map((event) => (
-                    <pre key={`shadow-telemetry-${event.shadow_telemetry_event_id}`} className="whitespace-pre-wrap border border-[#3a4f2c] bg-[#102010] p-2 text-[#b5ddb1]">
+                    <pre key={`shadow-telemetry-${event.shadow_telemetry_event_id}`} className="whitespace-pre-wrap border border-[var(--status-ready)] bg-[var(--canvas-tan-light)] p-2 text-[var(--status-ready)]">
 {JSON.stringify(event, null, 2)}
                     </pre>
                   ))}
                 </div>
 
-                <div className="border-t border-[#8b4444]/60 pt-2">
-                  <p className="mb-2 text-xs uppercase tracking-[0.08em] text-[#e8d7c6]">SHADOW authority read model</p>
-                  {shadowAuthorityChecks.length === 0 && <p className="p-2 text-[#d4a574]/75">No SHADOW authority checks returned.</p>}
+                <div className="border-t border-[var(--black)]/60 pt-2">
+                  <p className="mb-2 text-xs uppercase tracking-[0.08em] text-[var(--black)]">SHADOW authority read model</p>
+                  {shadowAuthorityChecks.length === 0 && <p className="p-2 text-[var(--gray-dark)]/75">No SHADOW authority checks returned.</p>}
                   {shadowAuthorityChecks.map((check) => (
-                    <pre key={`shadow-authority-${check.authority_check_id}`} className="whitespace-pre-wrap border border-[#4f3428] bg-[#201510] p-2 text-[#e6c3a9]">
+                    <pre key={`shadow-authority-${check.authority_check_id}`} className="whitespace-pre-wrap border border-[var(--black)] bg-[var(--canvas-tan-light)] p-2 text-[var(--black)]">
 {JSON.stringify(check, null, 2)}
                     </pre>
                   ))}
@@ -1661,13 +1661,13 @@ export default function AdminShadowConsolePage() {
           <div className="flex gap-2 pt-2">
             <Link
               href="/admin"
-              className="flex-1 border-2 border-[#8b4444] bg-[#1a1a1a] px-3 py-2 text-center text-[12px] font-mono text-[#d4a574] transition hover:border-[#d4a574] hover:text-[#e8d7c6]"
+              className="tactical-btn-ghost flex-1 border-2 border-[var(--black)] px-3 py-2 text-center text-[12px] font-mono"
             >
               Admin Hub
             </Link>
             <Link
               href="/shadow"
-              className="flex-1 border-2 border-[#8b4444] bg-[#3a0000] px-3 py-2 text-center text-[12px] font-mono text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#4a0000]"
+              className="tactical-btn-critical flex-1 px-3 py-2 text-center text-[12px] font-mono"
             >
               SHADOW
             </Link>

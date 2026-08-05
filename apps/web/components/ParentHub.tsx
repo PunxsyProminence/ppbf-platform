@@ -500,7 +500,7 @@ export default function ParentHub() {
                 ]}
               />
 
-              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[var(--red-primary)]">
                 PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for home assignments yet, so this
                 list is always empty.
               </p>
@@ -541,26 +541,26 @@ export default function ParentHub() {
                 ]}
               />
 
-              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[var(--red-primary)]">
                 PLANNED | NOT YET IMPLEMENTED -- there is no backend feed or entry form for parent observations
                 yet, so this section is always empty.
               </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {parentObservations.map(obs => (
-                  <div key={obs.id} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 space-y-2">
+                  <div key={obs.id} className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4 space-y-2">
                     <h4 className="font-semibold">{obs.category}</h4>
                     <div>
                       <div className="flex justify-between text-xs mb-1">
-                        <span className="text-[#b0a095]">Rating</span>
+                        <span className="text-[var(--gray-dark)]">Rating</span>
                         <span className="font-semibold">{obs.value}/10</span>
                       </div>
-                      <div className="w-full bg-[#4a4a4a] h-2">
-                        <div className="bg-[#d4a574] h-2" style={{width: `${obs.value * 10}%`}}></div>
+                      <div className="w-full bg-[var(--gray-medium)] h-2">
+                        <div className="bg-[var(--red-primary)] h-2" style={{width: `${obs.value * 10}%`}}></div>
                       </div>
                     </div>
                     {obs.notes && (
-                      <p className="text-xs text-[#b0a095] italic mt-2">{obs.notes}</p>
+                      <p className="text-xs text-[var(--gray-dark)] italic mt-2">{obs.notes}</p>
                     )}
                   </div>
                 ))}
@@ -587,26 +587,26 @@ export default function ParentHub() {
                 ]}
               />
 
-              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[var(--red-primary)]">
                 PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for family goals yet, so this section
                 is always empty.
               </p>
 
               <div className="space-y-3">
                 {familyGoals.map(goal => (
-                  <div key={goal.id} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4 space-y-3">
+                  <div key={goal.id} className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4 space-y-3">
                     <div className="flex justify-between items-start">
                       <h4 className="font-semibold">{goal.title}</h4>
-                      <span className="text-xs text-[#8a8a8a]">{goal.targetDate}</span>
+                      <span className="text-xs text-[var(--gray-dark)]">{goal.targetDate}</span>
                     </div>
-                    <p className="text-sm text-[#b0a095]">{goal.supportAction}</p>
+                    <p className="text-sm text-[var(--gray-dark)]">{goal.supportAction}</p>
                     <div>
                       <div className="flex justify-between text-xs mb-1">
-                        <span className="text-[#b0a095]">Progress</span>
+                        <span className="text-[var(--gray-dark)]">Progress</span>
                         <span className="font-semibold">{goal.progress}%</span>
                       </div>
-                      <div className="w-full bg-[#4a4a4a] h-2">
-                        <div className="bg-[#d4a574] h-2" style={{width: `${goal.progress}%`}}></div>
+                      <div className="w-full bg-[var(--gray-medium)] h-2">
+                        <div className="bg-[var(--red-primary)] h-2" style={{width: `${goal.progress}%`}}></div>
                       </div>
                     </div>
                   </div>
@@ -634,30 +634,30 @@ export default function ParentHub() {
                 ]}
               />
 
-              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[var(--red-primary)]">
                 PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for coach messages yet, so this list
                 is always empty.
               </p>
 
               <div className="space-y-3 max-h-96 overflow-y-auto">
                 {messages.map(msg => (
-                  <div key={msg.id} className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
+                  <div key={msg.id} className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
                     <div className="flex justify-between items-start mb-2">
                       <h4 className="font-semibold">{msg.subject}</h4>
-                      <span className="text-xs text-[#8a8a8a]">From Coach</span>
+                      <span className="text-xs text-[var(--gray-dark)]">From Coach</span>
                     </div>
-                    <p className="text-sm text-[#b0a095] mb-2">{msg.body}</p>
-                    <p className="text-xs text-[#8a8a8a]">{msg.date}</p>
+                    <p className="text-sm text-[var(--gray-dark)] mb-2">{msg.body}</p>
+                    <p className="text-xs text-[var(--gray-dark)]">{msg.date}</p>
                   </div>
                 ))}
               </div>
 
-              <div className="border-2 border-[#d4a574] bg-[#0f0f0f] p-4 space-y-3">
-                <h4 className="font-semibold text-[#d4a574]">Reply to Coach</h4>
-                <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+              <div className="border-2 border-[var(--red-primary)] bg-[var(--canvas-tan-light)] p-4 space-y-3">
+                <h4 className="font-semibold text-[var(--red-primary)]">Reply to Coach</h4>
+                <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[var(--red-primary)]">
                   PLANNED | NOT YET IMPLEMENTED
                 </p>
-                <p className="text-xs text-[#b0a095]">
+                <p className="text-xs text-[var(--gray-dark)]">
                   There is no coach-messaging backend yet. This field is disabled so a message can&apos;t be typed
                   and silently discarded -- until this is wired up, contact your child&apos;s coach directly.
                 </p>
@@ -666,12 +666,12 @@ export default function ParentHub() {
                   onChange={(e) => setNewMessage(e.target.value)}
                   placeholder="Messaging is not yet available."
                   disabled
-                  className="w-full h-20 px-3 py-2 bg-[#1a1a1a] border-2 border-[#5a4a3a] text-[#8a8a8a] focus:outline-none resize-none cursor-not-allowed"
+                  className="tactical-input w-full h-20 text-[var(--gray-dark)] resize-none cursor-not-allowed"
                 />
                 <button
                   type="button"
                   disabled
-                  className="px-4 py-2 bg-[#3a2a2a] text-[#8a8a8a] font-semibold cursor-not-allowed"
+                  className="px-4 py-2 bg-[var(--gray-medium)] text-[var(--white-off)] font-semibold cursor-not-allowed"
                 >
                   Send Message (unavailable)
                 </button>
@@ -681,29 +681,29 @@ export default function ParentHub() {
 
           {/* ATTENDANCE */}
           {activeTab === 'attendance' && (
-            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
-              <h3 className="font-mono font-bold text-[#d4a574] uppercase">Attendance Tracking</h3>
-              <p className="text-[#b0a095]">View attendance history and upcoming sessions.</p>
-              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+            <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 space-y-4 animate-fadeIn">
+              <h3 className="font-mono font-bold text-[var(--red-primary)] uppercase">Attendance Tracking</h3>
+              <p className="text-[var(--gray-dark)]">View attendance history and upcoming sessions.</p>
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[var(--red-primary)]">
                 PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for attendance history or upcoming
                 sessions yet, so these lists are always empty.
               </p>
 
               <div className="space-y-2">
                 {activeAttendanceEntries.map((entry) => (
-                  <div key={entry.id} className="border border-[#3a3a3a] bg-[#101010] p-3 flex flex-wrap items-center justify-between gap-3">
+                  <div key={entry.id} className="border border-[var(--black)] bg-[var(--canvas-tan)] p-3 flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <p className="font-semibold text-[#f2e7da]">{entry.date} | {entry.session}</p>
+                      <p className="font-semibold text-[var(--black)]">{entry.date} | {entry.session}</p>
                     </div>
                     <span className={`text-sm font-semibold ${attendanceStatusTone(entry.status)}`}>{entry.status}</span>
                   </div>
                 ))}
               </div>
 
-              <div className="border border-[#3a3a3a] bg-[#101010] p-4 space-y-2">
-                <h4 className="font-semibold text-[#f2e7da]">Upcoming Sessions</h4>
+              <div className="border border-[var(--black)] bg-[var(--canvas-tan)] p-4 space-y-2">
+                <h4 className="font-semibold text-[var(--black)]">Upcoming Sessions</h4>
                 {upcomingSessions.map((session) => (
-                  <div key={session.id} className="text-sm text-[#cfbfae]">
+                  <div key={session.id} className="text-sm text-[var(--gray-dark)]">
                     <p><strong>{session.date} {session.time}</strong> - {session.title}</p>
                     <p>Focus: {session.focus}</p>
                   </div>
@@ -714,21 +714,21 @@ export default function ParentHub() {
 
           {/* PROGRESS */}
           {activeTab === 'progress' && (
-            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
-              <h3 className="font-mono font-bold text-[#d4a574] uppercase">Progress & Achievements</h3>
-              <p className="text-[#b0a095]">Track skill development and milestone achievements.</p>
+            <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 space-y-4 animate-fadeIn">
+              <h3 className="font-mono font-bold text-[var(--red-primary)] uppercase">Progress & Achievements</h3>
+              <p className="text-[var(--gray-dark)]">Track skill development and milestone achievements.</p>
 
-              <details className="border border-[#5a4a3a] bg-[#101010] p-3">
-                <summary className="cursor-pointer text-sm font-semibold text-[#e8d7c6]">Parent-Support Visibility Placeholder</summary>
-                <p className="mt-2 text-xs font-mono uppercase tracking-[0.08em] text-[#d4a574]">
+              <details className="border border-[var(--black)] bg-[var(--canvas-tan)] p-3">
+                <summary className="cursor-pointer text-sm font-semibold text-[var(--black)]">Parent-Support Visibility Placeholder</summary>
+                <p className="mt-2 text-xs font-mono uppercase tracking-[0.08em] text-[var(--red-primary)]">
                   CLOSED-LOOP PROGRESSION INTELLIGENCE - PLANNED | FRONT-END PLACEHOLDER | BACKEND REQUIRED
                 </p>
-                <Link href="/parent/progression-visibility" className="mt-2 inline-flex border border-[#8b4444] bg-[#2a1414] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[#e8d7c6]">
+                <Link href="/parent/progression-visibility" className="mt-2 inline-flex border border-[var(--black)] bg-[var(--canvas-tan-dark)] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.08em] text-[var(--black)]">
                   Open Parent Progression Visibility
                 </Link>
               </details>
 
-              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[var(--red-primary)]">
                 PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for progress milestones yet, so this
                 list is always empty.
               </p>
@@ -745,8 +745,8 @@ export default function ParentHub() {
                         <span>Progress</span>
                         <span>{milestone.percent}%</span>
                       </div>
-                      <div className="w-full bg-[#2a2a2a] h-2">
-                        <div className="bg-[#d4a574] h-2" style={{ width: `${milestone.percent}%` }}></div>
+                      <div className="w-full bg-[var(--gray-medium)] h-2">
+                        <div className="bg-[var(--red-primary)] h-2" style={{ width: `${milestone.percent}%` }}></div>
                       </div>
                     </div>
                   </div>
@@ -757,20 +757,20 @@ export default function ParentHub() {
 
           {/* RESOURCES */}
           {activeTab === 'resources' && (
-            <div className="border-2 border-[#8b4444] bg-[#1a1a1a] p-6 space-y-4 animate-fadeIn">
-              <h3 className="font-mono font-bold text-[#d4a574] uppercase">Parent Support Resources</h3>
-              <p className="text-[#b0a095]">Guides, videos, and tips for supporting young athletes.</p>
-              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[#dc2626]">
+            <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 space-y-4 animate-fadeIn">
+              <h3 className="font-mono font-bold text-[var(--red-primary)] uppercase">Parent Support Resources</h3>
+              <p className="text-[var(--gray-dark)]">Guides, videos, and tips for supporting young athletes.</p>
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.1em] text-[var(--red-primary)]">
                 PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for parent resources yet, so this
                 list is always empty.
               </p>
               <div className="space-y-2">
                 {parentResources.map((resource) => (
-                  <div key={resource.id} className="border-2 border-[#8b4444] bg-[#0f0f0f] p-3">
+                  <div key={resource.id} className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] p-3">
                     <p className="font-semibold">{resource.title}</p>
-                    <p className="text-sm text-[#b0a095] mt-1">Type: {resource.type}</p>
-                    <p className="text-sm text-[#cfbfae] mt-1">{resource.summary}</p>
-                    <button className="mt-2 px-3 py-1 bg-[#8b4444] hover:bg-[#5a2a2a] text-white text-sm font-semibold transition">
+                    <p className="text-sm text-[var(--gray-dark)] mt-1">Type: {resource.type}</p>
+                    <p className="text-sm text-[var(--gray-dark)] mt-1">{resource.summary}</p>
+                    <button className="mt-2 tactical-btn-critical px-3 py-1 text-sm font-semibold transition">
                       {resource.actionLabel}
                     </button>
                   </div>
