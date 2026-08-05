@@ -88,17 +88,17 @@ export default function AthleteVideoAnalysisPage() {
   return (
     <RoleStandaloneView roleLabel="Athlete Workspace" routeLabel="/athlete/video-analysis" allowedRoles={['athlete']} showShellHeader={false}>
       <div className="space-y-6">
-        <header className="border-2 border-[#8b4444] bg-[#111111] p-5">
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#d4a574]">Film Review</p>
-          <h1 className="mt-2 text-3xl font-black text-[#f2e7da]">Athlete Film Lane</h1>
-          <p className="mt-2 text-sm text-[#cfbfae]">Watch footage your coach has uploaded for your sessions.</p>
+        <header className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-5">
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--gray-dark)]">Film Review</p>
+          <h1 className="mt-2 text-3xl font-black text-[var(--black)]">Athlete Film Lane</h1>
+          <p className="mt-2 text-sm text-[var(--gray-dark)]">Watch footage your coach has uploaded for your sessions.</p>
         </header>
 
         {activeVideo ? (
-          <section className="border-2 border-[#8b4444] bg-[#0d0d0d] p-4">
+          <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
             <div className="flex items-center justify-between">
-              <h2 className="font-mono text-sm font-bold uppercase text-[#d4a574]">{activeVideo.title}</h2>
-              <button onClick={() => setActiveVideo(null)} className="text-xs font-mono text-[#cfbfae] underline">Close</button>
+              <h2 className="font-mono text-sm font-bold uppercase text-[var(--gray-dark)]">{activeVideo.title}</h2>
+              <button onClick={() => setActiveVideo(null)} className="text-xs font-mono text-[var(--gray-dark)] underline">Close</button>
             </div>
             <video className="mt-3 w-full max-h-[480px] bg-black" src={activeVideo.url} controls>
               <track kind="captions" />
@@ -106,21 +106,21 @@ export default function AthleteVideoAnalysisPage() {
           </section>
         ) : null}
 
-        <section className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
-          <h2 className="font-mono text-sm font-bold uppercase text-[#d4a574]">Your Film Library</h2>
-          {videoError ? <p className="mt-2 text-xs text-[#f0c4c4]">{videoError}</p> : null}
+        <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+          <h2 className="font-mono text-sm font-bold uppercase text-[var(--gray-dark)]">Your Film Library</h2>
+          {videoError ? <p className="mt-2 text-xs text-[var(--red-primary)]">{videoError}</p> : null}
           {!videoError && videos.length === 0 ? (
-            <p className="mt-3 text-xs text-[#cfbfae]">No videos have been shared with you yet.</p>
+            <p className="mt-3 text-xs text-[var(--gray-dark)]">No videos have been shared with you yet.</p>
           ) : (
             <div className="mt-3 space-y-2">
               {videos.map((v) => (
-                <div key={v.video_session_id} className="flex items-center justify-between border border-[#5a4a3a] bg-[#101010] p-3">
+                <div key={v.video_session_id} className="flex items-center justify-between border border-[var(--black)] bg-[var(--canvas-tan)] p-3">
                   <div>
-                    <p className="text-sm font-semibold text-[#e8d7c6]">{v.title}</p>
-                    <p className="mt-0.5 text-xs text-[#cfbfae]">{v.file_name} · {formatBytes(v.file_size_bytes)} · {v.status}</p>
-                    <p className="mt-0.5 text-xs text-[#7a6a5a]">{new Date(v.created_at).toLocaleString()}</p>
+                    <p className="text-sm font-semibold text-[var(--black)]">{v.title}</p>
+                    <p className="mt-0.5 text-xs text-[var(--gray-dark)]">{v.file_name} · {formatBytes(v.file_size_bytes)} · {v.status}</p>
+                    <p className="mt-0.5 text-xs text-[var(--gray-medium)]">{new Date(v.created_at).toLocaleString()}</p>
                   </div>
-                  <button onClick={() => { void openVideo(v.video_session_id); }} disabled={loadingVideoId === v.video_session_id} className="ml-4 border border-[#8b4444] bg-[#2a1a1a] px-3 py-1 text-xs font-mono text-[#d4a574] disabled:opacity-50">
+                  <button onClick={() => { void openVideo(v.video_session_id); }} disabled={loadingVideoId === v.video_session_id} className="tactical-btn ml-4 px-3 py-1 text-xs disabled:opacity-50">
                     {loadingVideoId === v.video_session_id ? 'Loading...' : 'Play'}
                   </button>
                 </div>
@@ -129,34 +129,34 @@ export default function AthleteVideoAnalysisPage() {
           )}
         </section>
 
-        <section className="border-2 border-[#8b4444] bg-[#1a1a1a] p-4">
-          <h2 className="font-mono text-sm font-bold uppercase text-[#d4a574]">SHADOW Signal Stream</h2>
+        <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+          <h2 className="font-mono text-sm font-bold uppercase text-[var(--gray-dark)]">SHADOW Signal Stream</h2>
           <div className="mt-3 space-y-2">
-            {observationError ? <p className="text-xs text-[#f0c4c4]">{observationError}</p> : null}
+            {observationError ? <p className="text-xs text-[var(--red-primary)]">{observationError}</p> : null}
             {observations.slice(0, 5).map((item) => (
-              <article key={item.id} className="border border-[#5a4a3a] bg-[#101010] p-3">
-                <p className="text-sm font-semibold text-[#e8d7c6]">{item.label}</p>
-                <p className="mt-1 text-xs text-[#cfbfae]">Review State: {item.review_state}</p>
+              <article key={item.id} className="border border-[var(--black)] bg-[var(--canvas-tan)] p-3">
+                <p className="text-sm font-semibold text-[var(--black)]">{item.label}</p>
+                <p className="mt-1 text-xs text-[var(--gray-dark)]">Review State: {item.review_state}</p>
               </article>
             ))}
-            {!observationError && observations.length === 0 ? <p className="text-xs text-[#cfbfae]">No observations available.</p> : null}
+            {!observationError && observations.length === 0 ? <p className="text-xs text-[var(--gray-dark)]">No observations available.</p> : null}
           </div>
         </section>
 
-        <section className="border-2 border-[#4a4a4a] bg-[#141414] p-4">
-          <h2 className="font-mono text-sm font-bold uppercase text-[#7a7a7a]">AI/ML Scoring — Planned</h2>
+        <section className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
+          <h2 className="font-mono text-sm font-bold uppercase text-[var(--gray-medium)]">AI/ML Scoring — Planned</h2>
           <div className="mt-2 grid gap-2 sm:grid-cols-2">
             {['Skill Recognition', 'Technique Scoring'].map((p) => (
-              <div key={p} className="border border-[#3a3a3a] bg-[#0d0d0d] p-3">
-                <p className="text-xs font-semibold text-[#8a8a8a]">{p}</p>
-                <p className="mt-1 text-xs font-mono uppercase tracking-[0.07em] text-[#5a5a5a]">{ML_PLACEHOLDER}</p>
+              <div key={p} className="border border-[var(--black)] bg-[var(--canvas-tan)] p-3">
+                <p className="text-xs font-semibold text-[var(--gray-medium)]">{p}</p>
+                <p className="mt-1 text-xs font-mono uppercase tracking-[0.07em] text-[var(--gray-medium)]">{ML_PLACEHOLDER}</p>
               </div>
             ))}
           </div>
         </section>
 
         <div className="flex flex-wrap gap-3">
-          <Link href="/athlete/dashboard" className="border-2 border-[#8b4444] bg-[#2a1a1a] px-4 py-2 text-xs font-mono text-[#d4a574]">
+          <Link href="/athlete/dashboard" className="tactical-btn px-4 py-2 text-xs">
             Back to Athlete Workspace
           </Link>
         </div>
