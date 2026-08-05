@@ -83,10 +83,10 @@ const NO_SERVER_EVIDENCE_TIER: ShadowEvidenceTier = 'RESEARCH_NEEDED';
 // Darkest (most evidenced) to lightest (least evidenced) -- "the bigger the
 // shadow, the more authentic the message."
 const EVIDENCE_TIER_STYLES: Record<ShadowEvidenceTier, string> = {
-  PROVEN: 'border-2 border-[#d4a574] bg-black text-[#f2e7da] shadow-[0_0_18px_rgba(0,0,0,0.9)]',
-  EMERGING: 'border-2 border-[#d4a574] bg-[#2a1f0f] text-[#e8d7c6] shadow-[0_0_10px_rgba(0,0,0,0.6)]',
-  EXPERIMENTAL: 'border-2 border-[#8a7358] bg-[#3a3020] text-[#d8cdbd]',
-  RESEARCH_NEEDED: 'border-2 border-[#6a6258] bg-[#5a5248] text-[#1a1a1a]',
+  PROVEN: 'border-2 border-[var(--black)] bg-[var(--black)] text-[var(--white)] shadow-[var(--shadow-lg)]',
+  EMERGING: 'border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] text-[var(--black)] shadow-[var(--shadow-sm)]',
+  EXPERIMENTAL: 'border-2 border-[var(--black)] bg-[var(--canvas-tan-dark)] text-[var(--black)]',
+  RESEARCH_NEEDED: 'border-2 border-[var(--black)] bg-[var(--gray-medium)] text-[var(--white)]',
 };
 
 function getEvidenceTierLabel(tier: ShadowEvidenceTier): string {
@@ -813,9 +813,9 @@ function ShadowChatPageContent() {
 
   if (!authChecked || !capabilitiesLoaded) {
     return (
-      <main className="grid min-h-screen place-items-center bg-[#0a0a0a] px-6 text-[#e8d7c6]">
+      <main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]">
         <div className="text-center">
-          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[#dc2626]">Secure Session</p>
+          <p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--red-primary)]">Secure Session</p>
           <h1 className="mt-3 font-display text-3xl tracking-tight">Opening SHADOW</h1>
         </div>
       </main>
@@ -823,24 +823,24 @@ function ShadowChatPageContent() {
   }
 
   return (
-    <main className="min-h-screen bg-[#0a0a0a] text-[#e8d7c6]">
+    <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
       {/* HEADER */}
-      <header className="border-b-4 border-[#8b4444] bg-[#1a1a1a] px-4 py-4 md:px-8 md:py-6">
+      <header className="border-b-4 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 py-4 md:px-8 md:py-6">
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-4">
           <div>
-            <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-[#dc2626]">{getModeHeadingLabel(mode)}</p>
-            <h1 className="font-display text-2xl font-black tracking-tight text-[#e8d7c6] md:text-3xl">{heading}</h1>
-            <p className="mt-1 text-xs text-[#b0a095]">{intro}</p>
+            <p className="text-[10px] font-mono uppercase tracking-[0.3em] text-[var(--red-primary)]">{getModeHeadingLabel(mode)}</p>
+            <h1 className="font-display text-2xl font-black tracking-tight text-[var(--black)] md:text-3xl">{heading}</h1>
+            <p className="mt-1 text-xs text-[var(--gray-dark)]">{intro}</p>
           </div>
           <div className="flex items-center gap-4 text-right">
             <div>
-              <p className="font-mono text-[10px] text-[#8a8a8a]">Role: {roleLabel}</p>
-              {context ? <p className="font-mono text-[10px] text-[#8a8a8a]">Context: {context}</p> : null}
-              <p className="text-xs font-bold text-[#dc2626]">LIVE</p>
+              <p className="font-mono text-[10px] text-[var(--gray-dark)]">Role: {roleLabel}</p>
+              {context ? <p className="font-mono text-[10px] text-[var(--gray-dark)]">Context: {context}</p> : null}
+              <p className="text-xs font-bold text-[var(--red-primary)]">LIVE</p>
             </div>
             <button
               onClick={handleLogout}
-              className="border-2 border-[#8b4444] bg-[#2a1a1a] px-3 py-2 text-xs font-semibold uppercase tracking-[0.1em] text-[#b0a095] transition hover:border-[#d4a574] hover:bg-[#3a2a2a] hover:text-[#e8d7c6]"
+              className="tactical-btn-ghost border-2 border-[var(--black)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.1em]"
             >
               Logout
             </button>
@@ -849,17 +849,17 @@ function ShadowChatPageContent() {
       </header>
 
       <div className="mx-auto max-w-4xl p-4 md:p-8">
-        <section className="mb-4 grid gap-3 border-2 border-[#8b4444] bg-[#151515] p-4 text-xs text-[#cfbfae] md:grid-cols-3">
+        <section className="mb-4 grid gap-3 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4 text-xs text-[var(--gray-dark)] md:grid-cols-3">
           <div>
-            <p className="font-mono uppercase tracking-[0.14em] text-[#d4a574]">Scope</p>
+            <p className="font-mono uppercase tracking-[0.14em] text-[var(--red-primary)]">Scope</p>
             <p className="mt-2">{scopeSummary}</p>
           </div>
           <div>
-            <p className="font-mono uppercase tracking-[0.14em] text-[#d4a574]">Authority Boundary</p>
+            <p className="font-mono uppercase tracking-[0.14em] text-[var(--red-primary)]">Authority Boundary</p>
             <p className="mt-2">SHADOW can improve learning and generate research. SHADOW cannot clear, diagnose, prescribe, or override human authority.</p>
           </div>
           <div>
-            <p className="font-mono uppercase tracking-[0.14em] text-[#d4a574]">When Evidence Is Weak</p>
+            <p className="font-mono uppercase tracking-[0.14em] text-[var(--red-primary)]">When Evidence Is Weak</p>
             <p className="mt-2">Use The Library and Research Intake. Unknowns should become research requirements, not fake certainty.</p>
           </div>
         </section>
@@ -867,7 +867,7 @@ function ShadowChatPageContent() {
         {unlockHints.some((hint) => hint.closeToUnlocking) ? (
           <section
             aria-label="SHADOW features close to unlocking"
-            className="mb-4 border-2 border-[#d4a574] bg-[#151510] p-3 text-xs text-[#d4a574]"
+            className="mb-4 border-2 border-[var(--red-primary)] bg-[var(--canvas-tan-light)] p-3 text-xs text-[var(--red-primary)]"
           >
             <p className="font-mono uppercase tracking-[0.14em]">
               {unlockHints.filter((hint) => hint.closeToUnlocking).length} feature
@@ -878,14 +878,14 @@ function ShadowChatPageContent() {
 
         <section
           aria-label="Saved SHADOW sessions"
-          className="mb-4 border-2 border-[#5a4a3a] bg-[#111111] p-4"
+          className="mb-4 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4"
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#d4a574]">
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--red-primary)]">
                 Saved sessions
               </p>
-              <p className="mt-1 text-xs text-[#8a8a8a]">
+              <p className="mt-1 text-xs text-[var(--gray-dark)]">
                 Your server-stored conversation history. Chat content is not stored in this browser.
               </p>
             </div>
@@ -893,20 +893,20 @@ function ShadowChatPageContent() {
               type="button"
               onClick={handleNewChat}
               disabled={isLoading}
-              className="border-2 border-[#8b4444] bg-[#2a1a1a] px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-[0.12em] text-[#dc2626] transition hover:border-[#dc2626] disabled:opacity-50"
+              className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-[0.12em] text-[var(--red-primary)] transition hover:border-[var(--red-primary)] disabled:opacity-50"
             >
               New chat
             </button>
           </div>
 
           {sessionNotice ? (
-            <p role="status" className="mt-3 text-xs text-[#d4a574]">{sessionNotice}</p>
+            <p role="status" className="mt-3 text-xs text-[var(--red-primary)]">{sessionNotice}</p>
           ) : null}
 
           {sessionsLoading ? (
-            <p className="mt-3 font-mono text-[10px] text-[#8a8a8a]">Loading saved sessions...</p>
+            <p className="mt-3 font-mono text-[10px] text-[var(--gray-dark)]">Loading saved sessions...</p>
           ) : savedSessions.length === 0 ? (
-            <p className="mt-3 font-mono text-[10px] text-[#6a5a4a]">No saved sessions yet.</p>
+            <p className="mt-3 font-mono text-[10px] text-[var(--gray-dark)]">No saved sessions yet.</p>
           ) : (
             <div className="mt-3 grid max-h-40 gap-2 overflow-y-auto md:grid-cols-2">
               {savedSessions.map((session) => {
@@ -921,14 +921,14 @@ function ShadowChatPageContent() {
                     disabled={isLoading}
                     className={`border px-3 py-2 text-left transition disabled:opacity-50 ${
                       selected
-                        ? 'border-[#dc2626] bg-[#2a1a1a]'
-                        : 'border-[#3a3a3a] bg-[#171717] hover:border-[#8b4444]'
+                        ? 'border-[var(--red-primary)] bg-[var(--canvas-tan-dark)]'
+                        : 'border-[var(--black)] bg-[var(--canvas-tan-light)] hover:border-[var(--red-primary)]'
                     }`}
                   >
-                    <span className="block truncate text-xs font-semibold text-[#cfbfae]">
+                    <span className="block truncate text-xs font-semibold text-[var(--black)]">
                       {restoring ? 'Restoring…' : session.title}
                     </span>
-                    <span className="mt-1 block font-mono text-[9px] uppercase tracking-[0.08em] text-[#6a5a4a]">
+                    <span className="mt-1 block font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--gray-dark)]">
                       {session.sessionType.replaceAll('_', ' ')} · {new Date(session.updatedAt).toLocaleDateString()}
                     </span>
                   </button>
@@ -939,9 +939,9 @@ function ShadowChatPageContent() {
         </section>
 
         {/* CHAT BOX */}
-        <section className="border-4 border-[#8b4444] bg-[#0f0f0f] p-6 shadow-2xl shadow-black/60">
+        <section className="border-4 border-[var(--black)] bg-[var(--canvas-tan-light)] p-6 shadow-[var(--shadow-lg)]">
           {/* Messages */}
-          <div className="mb-6 max-h-[550px] space-y-4 overflow-y-auto bg-[#050505] p-4 font-mono text-sm">
+          <div className="mb-6 max-h-[550px] space-y-4 overflow-y-auto bg-[var(--canvas-tan)] p-4 font-mono text-sm">
             {messages.map((msg) => (
               <div
                 key={msg.id}
@@ -950,7 +950,7 @@ function ShadowChatPageContent() {
                 <div
                   className={`max-w-md px-4 py-3 transition-colors ${
                     msg.type === 'user'
-                      ? 'border-2 border-[#dc2626] bg-[#2a1a1a] text-[#ff6b6b]'
+                      ? 'border-2 border-[var(--red-primary)] bg-[var(--red-primary)] text-[var(--white)]'
                       : EVIDENCE_TIER_STYLES[msg.evidenceTier ?? NO_SERVER_EVIDENCE_TIER]
                   }`}
                 >
@@ -966,15 +966,15 @@ function ShadowChatPageContent() {
                     </p>
                   ) : null}
                   {msg.type === 'shadow' && msg.handoff ? (
-                    <div className="mt-2 border-2 border-[#dc2626] bg-[#2a1414] px-3 py-2">
-                      <p className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#ff6b6b]">Human Handoff Required</p>
-                      <p className="mt-1 text-[10px] leading-5 text-[#ffb3b3]">{msg.handoff}</p>
+                    <div className="tactical-alert-critical mt-2">
+                      <p className="text-[9px] font-bold uppercase tracking-[0.1em]">Human Handoff Required</p>
+                      <p className="mt-1 text-[10px] leading-5 text-[var(--black)]">{msg.handoff}</p>
                     </div>
                   ) : null}
                   {msg.tier ? (
-                    <div className="mt-3 space-y-2 border-t border-[#5a4a3a] pt-2">
+                    <div className="mt-3 space-y-2 border-t border-[var(--black)] pt-2">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-[9px] text-[#6a5a4a]">
+                        <p className="text-[9px] text-[var(--gray-dark)]">
                           {msg.tier === 'heavy_bag' ? '🥊 Heavy Bag' : '⚡ Quick Round'}
                           {getProfileTierLabel(msg.profileTier)}
                           {msg.isAsync ? ' · Processing...' : ''}
@@ -985,17 +985,17 @@ function ShadowChatPageContent() {
                           <div className="flex gap-1">
                             <button
                               onClick={() => void sendFeedback(msg.id, true, msg.tier, msg.tier)}
-                              className="border border-[#3a2a2a] px-2 py-0.5 text-[9px] text-[#6a5a4a] hover:border-[#4a8a4a] hover:text-[#4a8a4a] transition"
+                              className="border border-[var(--black)] px-2 py-0.5 text-[9px] text-[var(--gray-dark)] hover:border-[var(--status-ready)] hover:text-[var(--status-ready)] transition"
                               title="Helpful"
                             >&#x1F44D;</button>
                             <button
                               onClick={() => void sendFeedback(msg.id, false, msg.tier, msg.tier)}
-                              className="border border-[#3a2a2a] px-2 py-0.5 text-[9px] text-[#6a5a4a] hover:border-[#dc2626] hover:text-[#dc2626] transition"
+                              className="border border-[var(--black)] px-2 py-0.5 text-[9px] text-[var(--gray-dark)] hover:border-[var(--red-primary)] hover:text-[var(--red-primary)] transition"
                               title="Not helpful"
                             >&#x1F44E;</button>
                           </div>
                         ) : msg.feedbackSent ? (
-                          <p className="text-[9px] text-[#4a5a4a] font-mono">✓ Feedback</p>
+                          <p className="text-[9px] text-[var(--gray-dark)] font-mono">✓ Feedback</p>
                         ) : null}
                       </div>
                     </div>
@@ -1006,8 +1006,8 @@ function ShadowChatPageContent() {
             ))}
             {isLoading ? (
               <div className="flex justify-start">
-                <div className="border-2 border-[#5a4a3a] bg-[#1a1a1a] px-4 py-3">
-                  <p className="text-xs text-[#8a8a8a] font-mono">SHADOW {heavyBagMode ? '🥊 Heavy Bag' : '⚡'} processing...</p>
+                <div className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 py-3">
+                  <p className="text-xs text-[var(--gray-dark)] font-mono">SHADOW {heavyBagMode ? '🥊 Heavy Bag' : '⚡'} processing...</p>
                 </div>
               </div>
             ) : null}
@@ -1015,11 +1015,11 @@ function ShadowChatPageContent() {
           </div>
 
           {allowedSessionTypes.includes('heavy_bag') && Object.keys(modelStatus).length > 0 ? (
-            <div className="mb-3 flex flex-wrap gap-2 font-mono text-[9px] uppercase tracking-[0.08em] text-[#8a8a8a]">
+            <div className="mb-3 flex flex-wrap gap-2 font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--gray-dark)]">
               {Object.values(modelStatus).map((model) => (
                 <span
                   key={model.displayName}
-                  className={`border px-2 py-1 ${model.available ? 'border-[#4a8a4a] text-[#4a8a4a]' : 'border-[#5a4a3a] text-[#5a4a3a]'}`}
+                  className={`border px-2 py-1 ${model.available ? 'border-[var(--status-ready)] text-[var(--status-ready)]' : 'border-[var(--gray-medium)] text-[var(--gray-medium)]'}`}
                   title={`${model.tier} tier -- ${model.available ? 'live' : 'not deployed yet'}`}
                 >
                   {model.available ? '● ' : '○ '}{model.displayName}
@@ -1038,8 +1038,8 @@ function ShadowChatPageContent() {
                 title={heavyBagMode ? 'Switch to Quick Round' : 'Switch to Heavy Bag Session (deep reasoning)'}
                 className={`border-2 px-3 py-3 text-[9px] font-mono font-bold uppercase tracking-[0.1em] transition ${
                   heavyBagMode
-                    ? 'border-[#dc2626] bg-[#3a1a1a] text-[#dc2626]'
-                    : 'border-[#5a4a3a] bg-[#1a1a1a] text-[#6a5a4a] hover:border-[#8b4444]'
+                    ? 'border-[var(--red-primary)] bg-[var(--canvas-tan-dark)] text-[var(--red-primary)]'
+                    : 'border-[var(--black)] bg-[var(--canvas-tan-light)] text-[var(--gray-dark)] hover:border-[var(--red-primary)]'
                 }`}
               >
                 {heavyBagMode ? '🥊' : '⚡'}
@@ -1051,12 +1051,12 @@ function ShadowChatPageContent() {
               onChange={(e) => setUserInput(e.target.value)}
               disabled={Boolean(restoringSessionId)}
               placeholder="What do you need to know?"
-              className="flex-1 border-2 border-[#8b4444] bg-[#1a1a1a] px-4 py-3 text-sm text-[#e8d7c6] placeholder-[#6a5a4a] outline-none transition focus:border-[#dc2626] focus:bg-[#2a1a1a]"
+              className="tactical-input flex-1 placeholder-[var(--gray-dark)]"
             />
             <button
               type="submit"
               disabled={isLoading || Boolean(restoringSessionId)}
-              className="border-2 border-[#8b4444] bg-[#2a1a1a] px-6 py-3 text-xs font-mono font-bold text-[#dc2626] transition hover:border-[#dc2626] hover:bg-[#3a2a2a] hover:text-[#ff6b6b] disabled:opacity-50"
+              className="tactical-btn tactical-btn-critical"
             >
               {isLoading ? '...' : 'Ask'}
             </button>
@@ -1065,52 +1065,52 @@ function ShadowChatPageContent() {
 
         {/* NAV LINKS */}
         <div className="mt-6 flex flex-wrap gap-3">
-          <ShadowChatButton context="SHADOW" label="SHADOW CHAT" className="border-[#8b4444] bg-[#1a1a1a] text-[#d4a574] hover:border-[#d4a574] hover:bg-[#2a1a1a]" />
+          <ShadowChatButton context="SHADOW" label="SHADOW CHAT" className="border-[var(--black)] bg-[var(--canvas-tan-light)] text-[var(--red-primary)] hover:border-[var(--red-primary)] hover:bg-[var(--canvas-tan-dark)]" />
           <Link
             href="/research/chat"
-            className="border-2 border-[#d4a574] bg-[#1f1f1f] px-4 py-2 text-xs font-mono text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#2a1f1f]"
+            className="border-2 border-[var(--red-primary)] bg-[var(--canvas-tan-light)] px-4 py-2 text-xs font-mono text-[var(--red-primary)] transition hover:border-[var(--red-primary)] hover:bg-[var(--canvas-tan-dark)]"
           >
             The Library
           </Link>
           <Link
             href="/research"
-            className="border-2 border-[#d4a574] bg-[#1f1f1f] px-4 py-2 text-xs font-mono text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#2a1f1f]"
+            className="border-2 border-[var(--red-primary)] bg-[var(--canvas-tan-light)] px-4 py-2 text-xs font-mono text-[var(--red-primary)] transition hover:border-[var(--red-primary)] hover:bg-[var(--canvas-tan-dark)]"
           >
             Research Intake
           </Link>
           <Link
             href="/admin/shadow"
-            className="border-2 border-[#8b4444] bg-[#1a1a1a] px-4 py-2 text-xs font-mono text-[#dc2626] transition hover:border-[#dc2626] hover:bg-[#2a1a1a]"
+            className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 py-2 text-xs font-mono text-[var(--red-primary)] transition hover:border-[var(--red-primary)] hover:bg-[var(--canvas-tan-dark)]"
           >
             The Office
           </Link>
           <Link
             href="/operations"
-            className="border-2 border-[#4a4a4a] bg-[#1a1a1a] px-4 py-2 text-xs font-mono text-[#b0b0b0] transition hover:border-[#8a8a8a] hover:text-[#e8d7c6]"
+            className="border-2 border-[var(--gray-medium)] bg-[var(--canvas-tan-light)] px-4 py-2 text-xs font-mono text-[var(--gray-dark)] transition hover:border-[var(--gray-medium)] hover:text-[var(--black)]"
           >
             Operations
           </Link>
           <Link
             href="/coach/video-analysis"
-            className="border-2 border-[#8b4444] bg-[#1a1a1a] px-4 py-2 text-xs font-mono text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#2a1a1a]"
+            className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 py-2 text-xs font-mono text-[var(--red-primary)] transition hover:border-[var(--red-primary)] hover:bg-[var(--canvas-tan-dark)]"
           >
             AI Video Analysis (Planned)
           </Link>
           <Link
             href="/board/compliance-monitoring"
-            className="border-2 border-[#8b4444] bg-[#1a1a1a] px-4 py-2 text-xs font-mono text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#2a1a1a]"
+            className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 py-2 text-xs font-mono text-[var(--red-primary)] transition hover:border-[var(--red-primary)] hover:bg-[var(--canvas-tan-dark)]"
           >
             Compliance Monitoring (Planned)
           </Link>
           <Link
             href="/athlete/progression-intelligence"
-            className="border-2 border-[#8b4444] bg-[#1a1a1a] px-4 py-2 text-xs font-mono text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#2a1a1a]"
+            className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 py-2 text-xs font-mono text-[var(--red-primary)] transition hover:border-[var(--red-primary)] hover:bg-[var(--canvas-tan-dark)]"
           >
             Progression Intelligence (Planned)
           </Link>
           <Link
             href="/source-control/publication-workflow"
-            className="border-2 border-[#8b4444] bg-[#1a1a1a] px-4 py-2 text-xs font-mono text-[#d4a574] transition hover:border-[#d4a574] hover:bg-[#2a1a1a]"
+            className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 py-2 text-xs font-mono text-[var(--red-primary)] transition hover:border-[var(--red-primary)] hover:bg-[var(--canvas-tan-dark)]"
           >
             Publication Workflow (Planned)
           </Link>
@@ -1122,7 +1122,7 @@ function ShadowChatPageContent() {
 
 export default function ShadowChatPage() {
   return (
-    <Suspense fallback={<main className="grid min-h-screen place-items-center bg-[#0a0a0a] px-6 text-[#e8d7c6]"><div className="text-center"><p className="text-xs font-mono uppercase tracking-[0.35em] text-[#dc2626]">SHADOW</p><h1 className="mt-3 font-display text-3xl tracking-tight">Loading scope</h1></div></main>}>
+    <Suspense fallback={<main className="grid min-h-screen place-items-center bg-[var(--canvas-tan)] px-6 text-[var(--black)]"><div className="text-center"><p className="text-xs font-mono uppercase tracking-[0.35em] text-[var(--red-primary)]">SHADOW</p><h1 className="mt-3 font-display text-3xl tracking-tight">Loading scope</h1></div></main>}>
       <ShadowChatPageContent />
     </Suspense>
   );
