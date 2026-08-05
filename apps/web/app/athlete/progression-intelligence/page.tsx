@@ -6,11 +6,6 @@ import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
 
-// Each rabbit hole carries its own top margin rather than sitting in a shared
-// wrapper: two anchors are read per gap and either may have nothing to show, so
-// there must be no container left behind when they do not. A lesson is a paper
-// note pinned to the leather panel, so it wears the paper material and its
-// content inherits the paper's own ink via currentColor.
 const GAP_RABBIT_HOLE_CLASS = 'mat-paper mt-[var(--s4)] rounded-[var(--r-md)] border-l-4 border-[color:var(--brass-700)] p-[var(--s4)]';
 
 interface ProgressionGap {
@@ -21,7 +16,7 @@ interface ProgressionGap {
   severity: string;
   status: string;
   created_at: string;
-  updated_at: string;
+  updated_at?: string;
 }
 
 interface DrillAssignment {
@@ -29,6 +24,8 @@ interface DrillAssignment {
   gap_id: string;
   drill_name: string;
   drill_description: string;
+  drill_display_name?: string;
+  drill_display_description?: string;
   drill_difficulty: string;
   rep_count?: number;
   duration_minutes?: number;
@@ -48,11 +45,6 @@ interface AssignmentCompletion {
   completed_at: string;
   verified_at?: string;
 }
-
-/* Every state below is a queue outcome, so it wears the design system's badge
-   rungs with a glyph beside the label (Laws 2 + 3) rather than colour alone.
-   States with no ladder meaning (deferred, cancelled) take a neutral chip so
-   they never borrow a safety hue. */
 
 const NEUTRAL_CHIP_CLASS =
   'inline-flex items-center gap-[7px] rounded-[var(--r-pill)] border border-[color:rgba(212,175,74,.32)] bg-[rgba(0,0,0,.28)] px-[12px] py-[6px] font-bold uppercase tracking-[0.1em] text-[11px] text-[color:var(--bone-300)]';
@@ -99,10 +91,6 @@ const StatusBadge = ({ status, type }: { status: string; type: 'gap' | 'assignme
   return <span className={rung.className}><i>{rung.glyph}</i>{label}</span>;
 };
 
-/* Completion progress as the brass gauge. Ticks and needle only — no
-   .gauge-arc, because completion has no danger threshold: Law 2 reserves the
-   red band for readings where "too high" is a real, defined state. The percent
-   is also printed beside it, so the needle is never the only channel (Law 3). */
 const CompletionGauge = ({ percent }: { percent: number }) => {
   const clamped = Math.min(Math.max(percent, 0), 100);
   const deg = clamped * 1.8 - 90;
@@ -128,6 +116,11 @@ export default function AthleteProgressionIntelligencePage() {
   const [completions, setCompletions] = useState<AssignmentCompletion[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
+  const [loggingAssignmentId, setLoggingAssignmentId] = useState<string | null>(null);
+  const [logReps, setLogReps] = useState('');
+  const [logNotes, setLogNotes] = useState('');
+  const [logBusy, setLogBusy] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -146,16 +139,13 @@ export default function AthleteProgressionIntelligencePage() {
   }, []);
 
   useEffect(() => {
-    if (!athleteId) {
-      return;
-    }
+    if (!athleteId) return;
 
     const fetchData = async () => {
       try {
         setLoading(true);
         setErrorMessage(null);
 
-        // Fetch gaps
         const gapsRes = await fetch(`${apiBase()}/api/pilot/progression/gaps?athlete_id=${encodeURIComponent(athleteId)}`, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
@@ -165,7 +155,6 @@ export default function AthleteProgressionIntelligencePage() {
         const gapsData = await gapsRes.json();
         setGaps(gapsData.items || []);
 
-        // Fetch assignments
         const assignRes = await fetch(`${apiBase()}/api/pilot/progression/assignments?athlete_id=${encodeURIComponent(athleteId)}`, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
@@ -175,9 +164,8 @@ export default function AthleteProgressionIntelligencePage() {
         const assignData = await assignRes.json();
         setAssignments(assignData.items || []);
 
-        // Fetch completions for each assignment
         if ((assignData.items || []).length > 0) {
-          const completionsMap: Record<string, AssignmentCompletion[]> = {};
+          const allCompletions: AssignmentCompletion[] = [];
           for (const assignment of assignData.items) {
             const compRes = await fetch(`${apiBase()}/api/pilot/progression/completions?assignment_id=${assignment.assignment_id}`, {
               method: 'GET',
@@ -186,12 +174,12 @@ export default function AthleteProgressionIntelligencePage() {
             });
             if (compRes.ok) {
               const compData = await compRes.json();
-              completionsMap[assignment.assignment_id] = compData.items || [];
+              allCompletions.push(...(compData.items || []));
             }
           }
-          // Flatten all completions
-          const allCompletions = Object.values(completionsMap).flat();
           setCompletions(allCompletions);
+        } else {
+          setCompletions([]);
         }
       } catch (err) {
         setErrorMessage(err instanceof Error ? err.message : 'Failed to load progression data');
@@ -200,8 +188,40 @@ export default function AthleteProgressionIntelligencePage() {
       }
     };
 
-    fetchData();
-  }, [athleteId]);
+    void fetchData();
+  }, [athleteId, reloadToken]);
+
+  const handleLogCompletion = async (assignmentId: string) => {
+    if (!athleteId) return;
+    setLogBusy(true);
+    try {
+      const body: Record<string, unknown> = {
+        assignment_id: assignmentId,
+        athlete_id: athleteId,
+      };
+      if (logReps.trim()) body.reps_completed = Number(logReps);
+      if (logNotes.trim()) body.notes = logNotes.trim();
+
+      const res = await fetch(`${apiBase()}/api/pilot/progression/completions`, {
+        credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error || `Log failed (${res.status})`);
+      }
+      setLoggingAssignmentId(null);
+      setLogReps('');
+      setLogNotes('');
+      setReloadToken((t) => t + 1);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to log completion');
+    } finally {
+      setLogBusy(false);
+    }
+  };
 
   const getCompletionsForAssignment = (assignmentId: string) => {
     return completions.filter((c) => c.assignment_id === assignmentId);
@@ -214,11 +234,8 @@ export default function AthleteProgressionIntelligencePage() {
 
   return (
     <RoleStandaloneView roleLabel="Athlete Workspace" routeLabel="/athlete/progression-intelligence" allowedRoles={['athlete']} showShellHeader={false} room="floor">
-      {/* Athlete-facing floor surface: ink ground with the floor room's brick
-          wall, leather panels standing in it (PAGE_MAP: ink, dashboard). */}
       <div className="room--floor min-h-screen rounded-[var(--r-lg)] bg-[var(--hide-950)] p-[var(--s5)] text-[color:var(--bone-200)]">
         <div className="max-w-5xl mx-auto">
-          {/* Header */}
           <div className="mb-[var(--s6)]">
             <p className="t-eyebrow">Closed-Loop Progression Intelligence</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Your Progression</h1>
@@ -241,7 +258,7 @@ export default function AthleteProgressionIntelligencePage() {
             <div className="flex justify-center py-[var(--s7)]">
               <span className="working">Loading your progression data...</span>
             </div>
-          ) : gaps.length === 0 ? (
+          ) : gaps.length === 0 && assignments.length === 0 ? (
             <div className="mat-leather rounded-[var(--r-lg)]">
               <div className="empty">
                 <div className="empty-glyph" aria-hidden="true">🥊</div>
@@ -251,7 +268,6 @@ export default function AthleteProgressionIntelligencePage() {
             </div>
           ) : (
             <div className="space-y-[var(--s6)]">
-              {/* Gaps Overview */}
               <section>
                 <h2 className="t-command mb-[var(--s4)]" style={{ fontSize: 'var(--t-lg)' }}>Identified Gaps</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-[var(--s4)]">
@@ -268,23 +284,13 @@ export default function AthleteProgressionIntelligencePage() {
                         <StatusBadge status={gap.status} type="gap" />
                         <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>Identified {new Date(gap.created_at).toLocaleDateString()}</span>
                       </div>
-
-                      {/* Anchored to the two vocabulary terms this card already
-                          names, never to the card. */}
-                      <RabbitHole
-                        anchor={{ anchorType: 'gap_type', anchorKey: gap.gap_type }}
-                        className={GAP_RABBIT_HOLE_CLASS}
-                      />
-                      <RabbitHole
-                        anchor={{ anchorType: 'severity', anchorKey: gap.severity }}
-                        className={GAP_RABBIT_HOLE_CLASS}
-                      />
+                      <RabbitHole anchor={{ anchorType: 'gap_type', anchorKey: gap.gap_type }} className={GAP_RABBIT_HOLE_CLASS} />
+                      <RabbitHole anchor={{ anchorType: 'severity', anchorKey: gap.severity }} className={GAP_RABBIT_HOLE_CLASS} />
                     </div>
                   ))}
                 </div>
               </section>
 
-              {/* Drill Assignments */}
               <section>
                 <h2 className="t-command mb-[var(--s4)]" style={{ fontSize: 'var(--t-lg)' }}>Drill Assignments</h2>
                 {assignments.length === 0 ? (
@@ -299,14 +305,18 @@ export default function AthleteProgressionIntelligencePage() {
                       const gap = getGapForAssignment(assignment.assignment_id);
                       const assignmentCompletions = getCompletionsForAssignment(assignment.assignment_id);
                       const progressPercent = assignment.completion_percentage;
+                      const isLogging = loggingAssignmentId === assignment.assignment_id;
 
                       return (
                         <div key={assignment.assignment_id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
-                          {/* Drill Header */}
                           <div className="flex items-start justify-between gap-[var(--s4)] mb-[var(--s4)]">
                             <div className="flex-1">
-                              <h3 className="text-[length:var(--t-md)] font-bold text-[color:var(--bone-100)]">{assignment.drill_name}</h3>
-                              <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">{assignment.drill_description}</p>
+                              <h3 className="text-[length:var(--t-md)] font-bold text-[color:var(--bone-100)]">
+                                {assignment.drill_display_name || assignment.drill_name}
+                              </h3>
+                              <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">
+                                {assignment.drill_display_description || assignment.drill_description}
+                              </p>
                               {gap && (
                                 <p className="t-muted mt-[var(--s3)]">
                                   Assigned for:{' '}
@@ -316,27 +326,24 @@ export default function AthleteProgressionIntelligencePage() {
                             </div>
                             <div className="text-right">
                               <StatusBadge status={assignment.status} type="assignment" />
-                              <p className="t-label mt-[var(--s3)]">
-                                {assignment.drill_difficulty.replaceAll('_', ' ')}
-                              </p>
+                              <p className="t-label mt-[var(--s3)]">{assignment.drill_difficulty.replaceAll('_', ' ')}</p>
                             </div>
                           </div>
 
-                          {/* Drill Details — auditable numbers, so the record voice (Law 4). */}
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-[var(--s4)] mb-[var(--s4)]">
-                            {assignment.rep_count && (
+                            {assignment.rep_count != null && (
                               <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                                 <p className="t-label">Reps</p>
                                 <p className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{assignment.rep_count}</p>
                               </div>
                             )}
-                            {assignment.duration_minutes && (
+                            {assignment.duration_minutes != null && (
                               <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                                 <p className="t-label">Duration</p>
                                 <p className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{assignment.duration_minutes} min</p>
                               </div>
                             )}
-                            {assignment.frequency_per_week && (
+                            {assignment.frequency_per_week != null && (
                               <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                                 <p className="t-label">Frequency</p>
                                 <p className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{assignment.frequency_per_week}x/week</p>
@@ -345,21 +352,77 @@ export default function AthleteProgressionIntelligencePage() {
                             {assignment.due_date && (
                               <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                                 <p className="t-label">Due Date</p>
-                                {/* due_date is a pg DATE. new Date() parses a bare date as UTC
-                                    midnight and renders the previous day in every zone west of
-                                    Greenwich -- the athlete saw the 14th for a drill due the 15th. */}
                                 <p className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{formatCalendarDay(assignment.due_date)}</p>
                               </div>
                             )}
                           </div>
 
-                          {/* Completion gauge — ticks and needle, no danger arc:
-                              completion has no defined "too high" (Law 2). */}
                           <div className="mb-[var(--s4)] flex items-center gap-[var(--s5)]">
                             <CompletionGauge percent={Math.min(progressPercent, 100)} />
                           </div>
 
-                          {/* Completion History */}
+                          {/* Log completion form */}
+                          {assignment.status !== 'cancelled' && assignment.status !== 'completed' && (
+                            <div className="mb-[var(--s4)]">
+                              {!isLogging ? (
+                                <button
+                                  type="button"
+                                  className="btn"
+                                  onClick={() => {
+                                    setLoggingAssignmentId(assignment.assignment_id);
+                                    setLogReps('');
+                                    setLogNotes('');
+                                  }}
+                                >
+                                  Log completion
+                                </button>
+                              ) : (
+                                <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)] space-y-[var(--s3)]">
+                                  <div className="field">
+                                    <label className="t-label" htmlFor={`reps-${assignment.assignment_id}`}>Reps completed (optional)</label>
+                                    <input
+                                      id={`reps-${assignment.assignment_id}`}
+                                      type="number"
+                                      min={0}
+                                      className="input"
+                                      value={logReps}
+                                      onChange={(e) => setLogReps(e.target.value)}
+                                    />
+                                  </div>
+                                  <div className="field">
+                                    <label className="t-label" htmlFor={`notes-${assignment.assignment_id}`}>Notes (optional)</label>
+                                    <textarea
+                                      id={`notes-${assignment.assignment_id}`}
+                                      className="textarea"
+                                      rows={2}
+                                      value={logNotes}
+                                      onChange={(e) => setLogNotes(e.target.value)}
+                                      placeholder="How it felt, what you focused on…"
+                                    />
+                                  </div>
+                                  <div className="flex gap-[var(--s2)]">
+                                    <button
+                                      type="button"
+                                      className="btn"
+                                      disabled={logBusy}
+                                      onClick={() => void handleLogCompletion(assignment.assignment_id)}
+                                    >
+                                      {logBusy ? 'Saving…' : 'Save log'}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn btn--ghost"
+                                      disabled={logBusy}
+                                      onClick={() => setLoggingAssignmentId(null)}
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
                           {assignmentCompletions.length > 0 && (
                             <div className="border-t border-[color:rgba(212,175,74,.22)] pt-[var(--s4)]">
                               <p className="t-label mb-[var(--s4)]">Completion History</p>
@@ -375,13 +438,11 @@ export default function AthleteProgressionIntelligencePage() {
                                           </span>
                                           <StatusBadge status={completion.verification_status} type="completion" />
                                         </div>
-                                        {completion.reps_completed && (
-                                          <p className="t-muted mt-[var(--s2)]">
-                                            Completed {completion.reps_completed} reps
-                                          </p>
+                                        {completion.reps_completed != null && (
+                                          <p className="t-muted mt-[var(--s2)]">Completed {completion.reps_completed} reps</p>
                                         )}
                                         {completion.notes && (
-                                          <p className="mt-[var(--s3)] text-[length:var(--t-sm)] italic text-[color:var(--bone-300)]">&quot;{completion.notes}&quot;</p>
+                                          <p className="mt-[var(--s3)] text-[length:var(--t-sm)] italic text-[color:var(--bone-300)]">&ldquo;{completion.notes}&rdquo;</p>
                                         )}
                                         {completion.verified_at && (
                                           <p className="mt-[var(--s2)] text-[length:var(--t-xs)] font-medium text-[color:var(--cleared-ink)]">
@@ -401,8 +462,6 @@ export default function AthleteProgressionIntelligencePage() {
                 )}
               </section>
 
-              {/* Statistics Summary — plain headcounts with no danger threshold,
-                  so leather record blocks rather than gauges with arcs (Law 2). */}
               {assignments.length > 0 && (
                 <section className="grid grid-cols-1 md:grid-cols-3 gap-[var(--s4)]">
                   <div className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s5)]">

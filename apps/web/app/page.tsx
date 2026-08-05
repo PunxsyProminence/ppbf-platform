@@ -169,15 +169,15 @@ export default function HomePage() {
           <div className="mt-[var(--s6)] grid gap-[var(--s4)] md:grid-cols-3">
             <div className="rounded-[var(--r-md)] border-2 border-[color:rgba(212,175,74,0.5)] p-[var(--s5)] mat-paper bg-gradient-to-br from-[rgba(212,175,74,0.06)] to-transparent">
               <p className="t-command text-[color:var(--brass-400)]" style={{ fontSize: 'var(--t-2xl)' }}>500+</p>
-              <p className="t-body text-[var(--bone-600)] mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>Youth trained since 2020</p>
+              <p className="t-body text-[color:var(--bone-600)] mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>Youth trained since 2020</p>
             </div>
             <div className="rounded-[var(--r-md)] border-2 border-[color:rgba(212,175,74,0.5)] p-[var(--s5)] mat-paper bg-gradient-to-br from-[rgba(212,175,74,0.06)] to-transparent">
               <p className="t-command text-[color:var(--brass-400)]" style={{ fontSize: 'var(--t-2xl)' }}>100%</p>
-              <p className="t-body text-[var(--bone-600)] mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>Free to participate</p>
+              <p className="t-body text-[color:var(--bone-600)] mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>Free to participate</p>
             </div>
             <div className="rounded-[var(--r-md)] border-2 border-[color:rgba(212,175,74,0.5)] p-[var(--s5)] mat-paper bg-gradient-to-br from-[rgba(212,175,74,0.06)] to-transparent">
               <p className="t-command text-[color:var(--brass-400)]" style={{ fontSize: 'var(--t-2xl)' }}>501(c)(3)</p>
-              <p className="t-body text-[var(--bone-600)] mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>IRS-recognized nonprofit</p>
+              <p className="t-body text-[color:var(--bone-600)] mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>IRS-recognized nonprofit</p>
             </div>
           </div>
         </section>
@@ -239,7 +239,7 @@ export default function HomePage() {
               Questions?
             </h2>
             <p className="t-body text-center mt-[var(--s4)] max-w-[68ch] mx-auto" style={{ fontSize: 'var(--t-md)' }}>
-              We're here to help. Reach out with any questions about our programs, enrollment, or how Punxsy Prominence can serve your family.
+              We&apos;re here to help. Reach out with any questions about our programs, enrollment, or how Punxsy Prominence can serve your family.
             </p>
             <div className="flex justify-center mt-[var(--s6)]">
               <a href="mailto:admin@punxsyprominence.org" className="btn">
