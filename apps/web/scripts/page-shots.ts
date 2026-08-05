@@ -285,7 +285,10 @@ async function startServer(): Promise<ChildProcess | null> {
 function stopServer(child: ChildProcess | null) {
   if (!child?.pid) return;
   try {
-    process.kill(-child.pid, 'SIGTERM');
+    // On Windows, negative PIDs are not supported; just use the PID directly.
+    // On POSIX, -pid targets the process group (npm wrapper + next worker).
+    const pid = process.platform === 'win32' ? child.pid : -child.pid;
+    process.kill(pid, 'SIGTERM');
   } catch {
     // Already gone. Nothing to clean up.
   }
@@ -335,9 +338,11 @@ async function capture(
 
   try {
     await page.goto(BASE + route, { waitUntil: 'networkidle', timeout: 45_000 });
-  } catch {
+  } catch (error) {
     // Photograph whatever rendered. A route whose API hangs still has a
     // design worth looking at, and reporting nothing would hide it.
+    // Still, track the failure so the sheet signals a problem.
+    shot.error = error instanceof Error ? error.message : String(error);
   }
 
   // Client gates resolve the session in an effect, then swap the page. Without
@@ -609,6 +614,12 @@ async function main() {
 
   // A stale print of a route that no longer exists is worse than no print --
   // it reads as current. Start the sheet from empty every run.
+  // Sanity check: ensure OUT_DIR is actually in the web root to prevent
+  // accidental deletion of broader directories if SHOTS_OUT is misconfigured.
+  const resolved = path.resolve(OUT_DIR);
+  if (!resolved.startsWith(path.resolve(WEB_ROOT))) {
+    throw new Error(`SHOTS_OUT must be inside the web root (${WEB_ROOT}), got ${resolved}`);
+  }
   await rm(OUT_DIR, { recursive: true, force: true });
   for (const v of viewports) await mkdir(path.join(OUT_DIR, v.id), { recursive: true });
 
