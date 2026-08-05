@@ -67,18 +67,19 @@ export default function HomePage() {
           rules and alternating tans it replaces — a rule is hardware here. */}
       <main className="on-canvas min-h-screen">
         {/* Hero */}
-        <section className="px-[var(--s5)] py-[var(--s8)] lg:px-[var(--s6)]">
+        <section className="px-[var(--s5)] py-[var(--s6)] sm:py-[var(--s7)] lg:py-[var(--s8)] lg:px-[var(--s6)]">
           <div className="mx-auto flex w-full max-w-[1000px] flex-col items-center text-center">
-            <p className="t-eyebrow">Punxsy Prominence Boxing &amp; Fitness</p>
+            {/* Eyebrow hidden on small screens to save vertical space */}
+            <p className="t-eyebrow hidden sm:block">Punxsy Prominence Boxing &amp; Fitness</p>
             {/* Hand-painted signage, not the lit registered stencil of
                 .t-command: this is the board over the door of a gym that has
                 been run on donations for forty years. */}
-            <h1 className="t-painted mt-[var(--s4)]" style={{ fontSize: 'var(--t-2xl)' }}>
+            <h1 className="t-painted mt-[var(--s3)] sm:mt-[var(--s4)]" style={{ fontSize: 'clamp(1.5rem, 5vw, var(--t-2xl))' }}>
               Boxing is the engagement platform.
               <br />
               Youth development is the objective.
             </h1>
-            <p className="t-body mt-[var(--s5)] max-w-[68ch]" style={{ fontSize: 'var(--t-md)' }}>
+            <p className="t-body mt-[var(--s4)] sm:mt-[var(--s5)] max-w-[68ch]" style={{ fontSize: 'clamp(var(--t-sm), 4vw, var(--t-md))' }}>
               Punxsy Prominence Boxing &amp; Fitness is an IRS-recognized 501(c)(3) nonprofit serving youth in
               Punxsutawney and surrounding rural western Pennsylvania communities.
             </p>
@@ -92,11 +93,11 @@ export default function HomePage() {
                 who needed the least help.
 
                 Both remain one tap away; only the emphasis is swapped. */}
-            <div className="mt-[var(--s6)] flex flex-wrap items-center justify-center gap-[var(--s4)]">
-              <a href="#programs" className="btn">
+            <div className="mt-[var(--s5)] sm:mt-[var(--s6)] flex flex-wrap items-center justify-center gap-[var(--s3)] sm:gap-[var(--s4)]">
+              <a href="#programs" className="btn text-sm sm:text-base">
                 Learn About Our Programs
               </a>
-              <Link href="/login" className="btn btn--ghost">
+              <Link href="/login" className="btn btn--ghost text-sm sm:text-base">
                 Log In
               </Link>
             </div>
@@ -160,16 +161,16 @@ export default function HomePage() {
             Punxsy Prominence has been serving the Punxsutawney community since 2020, providing structured athletic and mentorship programming to hundreds of young people at no cost.
           </p>
           <div className="mt-[var(--s6)] grid gap-[var(--s4)] md:grid-cols-3">
-            <div className="rounded-[var(--r-md)] border border-[color:rgba(107,78,18,0.34)] p-[var(--s5)] mat-paper">
-              <p className="t-command" style={{ fontSize: 'var(--t-2xl)' }}>500+</p>
+            <div className="rounded-[var(--r-md)] border-2 border-[color:rgba(212,175,74,0.5)] p-[var(--s5)] mat-paper bg-gradient-to-br from-[rgba(212,175,74,0.06)] to-transparent">
+              <p className="t-command text-[color:var(--brass-400)]" style={{ fontSize: 'var(--t-2xl)' }}>500+</p>
               <p className="t-body text-[var(--bone-600)] mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>Youth trained since 2020</p>
             </div>
-            <div className="rounded-[var(--r-md)] border border-[color:rgba(107,78,18,0.34)] p-[var(--s5)] mat-paper">
-              <p className="t-command" style={{ fontSize: 'var(--t-2xl)' }}>100%</p>
+            <div className="rounded-[var(--r-md)] border-2 border-[color:rgba(212,175,74,0.5)] p-[var(--s5)] mat-paper bg-gradient-to-br from-[rgba(212,175,74,0.06)] to-transparent">
+              <p className="t-command text-[color:var(--brass-400)]" style={{ fontSize: 'var(--t-2xl)' }}>100%</p>
               <p className="t-body text-[var(--bone-600)] mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>Free to participate</p>
             </div>
-            <div className="rounded-[var(--r-md)] border border-[color:rgba(107,78,18,0.34)] p-[var(--s5)] mat-paper">
-              <p className="t-command" style={{ fontSize: 'var(--t-2xl)' }}>501(c)(3)</p>
+            <div className="rounded-[var(--r-md)] border-2 border-[color:rgba(212,175,74,0.5)] p-[var(--s5)] mat-paper bg-gradient-to-br from-[rgba(212,175,74,0.06)] to-transparent">
+              <p className="t-command text-[color:var(--brass-400)]" style={{ fontSize: 'var(--t-2xl)' }}>501(c)(3)</p>
               <p className="t-body text-[var(--bone-600)] mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>IRS-recognized nonprofit</p>
             </div>
           </div>
