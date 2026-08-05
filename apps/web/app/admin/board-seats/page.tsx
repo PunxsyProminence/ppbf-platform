@@ -399,7 +399,7 @@ function BoardSeatsConsole() {
                         </p>
                       ) : (
                         <p className="mt-[var(--s2)]">
-                          <span className="badge badge--restricted"><i>▲</i>Unfilled</span>
+                          <span className="badge badge--filed"><i>◌</i>Unfilled</span>
                         </p>
                       )}
                     </div>

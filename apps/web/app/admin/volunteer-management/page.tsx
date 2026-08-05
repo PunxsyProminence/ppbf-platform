@@ -263,11 +263,19 @@ export default function VolunteerManagementPage() {
             </button>
           </section>
 
-          <section className="mt-[var(--s5)] grid gap-[var(--s4)] md:grid-cols-2 xl:grid-cols-3">
-            {items.map((item) => (
-              <VolunteerCard key={item.volunteer_id} item={item} onStatusChange={(volunteerId, status) => void handleStatusUpdate(volunteerId, status)} />
-            ))}
-          </section>
+          {items.length === 0 ? (
+            <div className="empty mt-[var(--s5)]">
+              <div className="empty-glyph" aria-hidden="true">◌</div>
+              <div className="empty-title">No volunteers on record yet</div>
+              <div className="empty-msg">Add the first volunteer above and they&apos;ll show up here.</div>
+            </div>
+          ) : (
+            <section className="mt-[var(--s5)] grid gap-[var(--s4)] md:grid-cols-2 xl:grid-cols-3">
+              {items.map((item) => (
+                <VolunteerCard key={item.volunteer_id} item={item} onStatusChange={(volunteerId, status) => void handleStatusUpdate(volunteerId, status)} />
+              ))}
+            </section>
+          )}
 
           {message ? <p className="t-body mt-[var(--s5)] font-semibold text-[color:var(--brass-300)]">{message}</p> : null}
 
