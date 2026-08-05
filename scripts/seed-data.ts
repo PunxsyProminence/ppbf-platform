@@ -289,7 +289,29 @@ async function insertSessions(
 // Main Seed Function
 // ============================================================================
 
+// Unlike roster import (insertAthleteIfAbsent, ON CONFLICT DO NOTHING), every
+// insert below is ON CONFLICT DO UPDATE -- pointed at a populated database,
+// this silently replaces a real athlete's name, dob, weight class, coach, and
+// goal/session history with whatever is in the seed file. --dry-run makes no
+// writes and is always allowed; anything else needs an explicit opt-in so a
+// config pointed at a live organization id can't be run by habit.
+function assertDestructiveSeedAllowed(dryRun: boolean): void {
+  if (dryRun) {
+    return;
+  }
+  if (process.env.PPBF_ALLOW_DESTRUCTIVE_SEED === 'true' || process.env.NODE_ENV === 'test') {
+    return;
+  }
+  throw new Error(
+    'Refusing to run: this script overwrites existing athletes, goals, and sessions on conflict '
+    + '(roster import never does). Set PPBF_ALLOW_DESTRUCTIVE_SEED=true to confirm you want that '
+    + 'against this database, or pass --dry-run to preview without writing.',
+  );
+}
+
 async function seedData(config: SeedConfig) {
+  assertDestructiveSeedAllowed(config.options.dryRun || false);
+
   console.log(`\n📊 PPBF Data Seed Script`);
   console.log(`Organization: ${config.organizationId}`);
   console.log(`Dry Run: ${config.options.dryRun ? 'YES' : 'NO'}\n`);
