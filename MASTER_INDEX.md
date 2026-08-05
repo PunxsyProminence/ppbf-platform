@@ -140,7 +140,6 @@ merge, or deploy applies a migration as a side effect.
 - `apps/web` — the Next.js application (App Router)
 - `packages/` — governance, routing, execution, intelligence, continuity
 - `infra/azure/` — Postgres schema and migrations for the `pilot.*` schema
-- `infra/supabase/schema.sql` — earlier Supabase schema
 
 ## Archive
 

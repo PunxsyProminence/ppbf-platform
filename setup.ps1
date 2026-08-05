@@ -7,5 +7,5 @@ if (-not (Test-Path "apps/web/package.json")) {
     Write-Host "Run: cd apps/web; npx create-next-app@latest . --yes --tailwind --eslint --typescript --force"
 }
 
-Write-Host "Apply infra/supabase/schema.sql in your Supabase project."
+Write-Host "Apply the Postgres schema: cd apps/web; npm run pilot:apply-schema"
 Write-Host "Ready for development and GitHub."
