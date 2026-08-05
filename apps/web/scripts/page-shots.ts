@@ -54,7 +54,7 @@
    Starts a dev server if one is not already up, and stops the one it started.
    ─────────────────────────────────────────────────────────────────────────── */
 
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, execSync, type ChildProcess } from 'node:child_process';
 import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -287,7 +287,7 @@ function stopServer(child: ChildProcess | null) {
   try {
     if (process.platform === 'win32') {
       // Windows doesn't support negative PIDs. Use taskkill to terminate the process tree.
-      require('child_process').execSync(`taskkill /PID ${child.pid} /T /F`, { stdio: 'ignore' });
+      execSync(`taskkill /PID ${child.pid} /T /F`, { stdio: 'ignore' });
     } else {
       // POSIX: negative PID targets the process group (npm wrapper + Next.js workers).
       process.kill(-child.pid, 'SIGTERM');
@@ -622,7 +622,7 @@ async function main() {
   const resolvedOut = path.resolve(OUT_DIR);
   const resolvedWeb = path.resolve(WEB_ROOT);
   const relative = path.relative(resolvedWeb, resolvedOut);
-  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+  if (relative.startsWith('..') || path.isAbsolute(relative) || relative === '') {
     throw new Error(`SHOTS_OUT must be a subdirectory of WEB_ROOT (${resolvedWeb}), got ${resolvedOut}`);
   }
   await rm(OUT_DIR, { recursive: true, force: true });
