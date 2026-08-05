@@ -25,10 +25,10 @@ type ShadowEvidenceTier = 'PROVEN' | 'EMERGING' | 'EXPERIMENTAL' | 'RESEARCH_NEE
 // Kept in step with app/shadow/page.tsx. Only the ordering matters here: the
 // darker the style, the more evidenced the answer claims to be.
 const EVIDENCE_TIER_STYLES: Record<ShadowEvidenceTier, string> = {
-  PROVEN: 'bg-black',
-  EMERGING: 'bg-[#2a1f0f]',
-  EXPERIMENTAL: 'bg-[#3a3020]',
-  RESEARCH_NEEDED: 'bg-[#5a5248]',
+  PROVEN: 'border-2 border-[var(--black)] bg-[var(--black)] text-[var(--white)] shadow-[var(--shadow-lg)]',
+  EMERGING: 'border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] text-[var(--black)] shadow-[var(--shadow-sm)]',
+  EXPERIMENTAL: 'border-2 border-[var(--black)] bg-[var(--canvas-tan-dark)] text-[var(--black)]',
+  RESEARCH_NEEDED: 'border-2 border-[var(--black)] bg-[var(--gray-medium)] text-[var(--white)]',
 };
 
 function RestoredBubble({ message }: { readonly message: StoredShadowConversationMessage }) {
