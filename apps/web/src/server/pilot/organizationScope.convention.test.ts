@@ -35,7 +35,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const WEB_ROOT = path.resolve(__dirname, '../../../..');
+const WEB_ROOT = path.resolve(__dirname, '../../..');
 const API_ROOT = path.join(WEB_ROOT, 'app', 'api');
 
 /**
