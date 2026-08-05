@@ -285,10 +285,13 @@ async function startServer(): Promise<ChildProcess | null> {
 function stopServer(child: ChildProcess | null) {
   if (!child?.pid) return;
   try {
-    // On Windows, negative PIDs are not supported; just use the PID directly.
-    // On POSIX, -pid targets the process group (npm wrapper + next worker).
-    const pid = process.platform === 'win32' ? child.pid : -child.pid;
-    process.kill(pid, 'SIGTERM');
+    if (process.platform === 'win32') {
+      // Windows doesn't support negative PIDs. Use taskkill to terminate the process tree.
+      require('child_process').execSync(`taskkill /PID ${child.pid} /T /F`, { stdio: 'ignore' });
+    } else {
+      // POSIX: negative PID targets the process group (npm wrapper + Next.js workers).
+      process.kill(-child.pid, 'SIGTERM');
+    }
   } catch {
     // Already gone. Nothing to clean up.
   }
@@ -614,11 +617,13 @@ async function main() {
 
   // A stale print of a route that no longer exists is worse than no print --
   // it reads as current. Start the sheet from empty every run.
-  // Sanity check: ensure OUT_DIR is actually in the web root to prevent
+  // Sanity check: ensure OUT_DIR is actually inside the web root to prevent
   // accidental deletion of broader directories if SHOTS_OUT is misconfigured.
-  const resolved = path.resolve(OUT_DIR);
-  if (!resolved.startsWith(path.resolve(WEB_ROOT))) {
-    throw new Error(`SHOTS_OUT must be inside the web root (${WEB_ROOT}), got ${resolved}`);
+  const resolvedOut = path.resolve(OUT_DIR);
+  const resolvedWeb = path.resolve(WEB_ROOT);
+  const relative = path.relative(resolvedWeb, resolvedOut);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error(`SHOTS_OUT must be a subdirectory of WEB_ROOT (${resolvedWeb}), got ${resolvedOut}`);
   }
   await rm(OUT_DIR, { recursive: true, force: true });
   for (const v of viewports) await mkdir(path.join(OUT_DIR, v.id), { recursive: true });
