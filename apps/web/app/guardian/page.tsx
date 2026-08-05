@@ -1,7 +1,8 @@
 'use client';
 
-import FeatureSurface from '@/components/FeatureSurface';
+import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
+import ShadowChatButton from '@/components/ShadowChatButton';
 
 export default function GuardianPortalPage() {
   return (
@@ -11,68 +12,113 @@ export default function GuardianPortalPage() {
   );
 }
 
+/* Family-facing surface, so the whole sheet sits on the warm canvas ground
+   (Law 6): .on-canvas on the full-bleed wrapper, paper panels standing on it.
+   Built from design-system/screens/guardian-portal.html rather than from the
+   FeatureSurface scaffold this page used to borrow. */
+
+const STATS = [
+  { label: 'Audience', value: 'Guardians' },
+  { label: 'Access', value: 'View-only' },
+  { label: 'Focus', value: 'Safety' },
+  { label: 'Mode', value: 'Family' },
+] as const;
+
+const QUICK_LINKS = [
+  { label: 'Parent Dashboard', href: '/parent/dashboard' },
+  { label: 'Progress Visibility', href: '/parent/progression-visibility' },
+  { label: 'Guardian Snapshot', href: '/guardian' },
+  { label: 'SHADOW Intel', href: '/shadow' },
+  { label: 'The Ring', href: '/operations' },
+  { label: 'Member Access', href: '/login' },
+] as const;
+
+const EXPLAINERS = [
+  {
+    title: 'Attendance',
+    body: 'Shows check-ins, streaks, and whether the participant has met minimum participation expectations.',
+  },
+  {
+    title: 'Safety Notes',
+    body: 'Surface for injury flags, recovery holds, and any restricted training guidance.',
+  },
+  {
+    title: 'Home Follow-Up',
+    body: 'A place for at-home practice prompts, family reminders, and message acknowledgements.',
+  },
+] as const;
+
 function GuardianPortalContent() {
   return (
-    <FeatureSurface
-      eyebrow="Guardian Portal"
-      title="View-only family progress surface"
-      description="A secure, easy-to-read snapshot for parents or guardians to monitor attendance, progress, and safety notes."
-      status="ready"
-      primaryLinks={[
-        { label: 'Parent dashboard', href: '/parent/dashboard' },
-        { label: 'The Ring', href: '/operations' },
-      ]}
-      stats={[
-        { label: 'Audience', value: 'Guardians' },
-        { label: 'Access', value: 'View-only' },
-        { label: 'Focus', value: 'Safety' },
-        { label: 'Mode', value: 'Family' },
-      ]}
-    >
-      <section className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)] p-4">
-        <h2 className="text-lg font-black text-[color:var(--bone-200)]">Quick Actions</h2>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <a
-            href="/parent/dashboard"
-            className="inline-flex min-h-[44px] items-center justify-center border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-3 text-xs font-mono font-bold uppercase tracking-[0.1em] text-[color:var(--bone-200)] transition hover:bg-[var(--rust-900)]"
-          >
-            Parent Dashboard
-          </a>
-          <a
-            href="/parent/progression-visibility"
-            className="inline-flex min-h-[44px] items-center justify-center border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 text-xs font-mono font-bold uppercase tracking-[0.1em] text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)]"
-          >
-            Progress Visibility
-          </a>
-          <a
-            href="/guardian"
-            className="inline-flex min-h-[44px] items-center justify-center border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 text-xs font-mono font-bold uppercase tracking-[0.1em] text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)]"
-          >
-            Guardian Snapshot
-          </a>
-          <a
-            href="/shadow"
-            className="inline-flex min-h-[44px] items-center justify-center border border-[color:var(--hide-600)] bg-[var(--hide-950)] px-3 text-xs font-mono font-bold uppercase tracking-[0.1em] text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)]"
-          >
-            SHADOW Intel
-          </a>
+    <div className="on-canvas min-h-full rounded-[var(--r-lg)] p-[var(--s5)] md:p-[var(--s6)]">
+      <div className="mx-auto w-full max-w-[1080px]">
+        {/* Head row — eyebrow, command title, plain-language description. */}
+        <div className="mb-[var(--s6)] flex flex-wrap items-start justify-between gap-[var(--s6)]">
+          <div className="max-w-[56ch]">
+            <p className="t-eyebrow">PPBF Platform · Family Access</p>
+            <h1 className="t-command mt-[var(--s2)] mb-[var(--s3)]" style={{ fontSize: 'var(--t-2xl)' }}>
+              Guardian Portal
+            </h1>
+            <p className="t-body m-0">
+              A secure, easy-to-read snapshot for parents or guardians to monitor attendance, progress, and safety
+              notes. View-only family progress surface.
+            </p>
+          </div>
+          <ShadowChatButton context="Guardian Portal View-only family progress surface" />
         </div>
-      </section>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <details className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)]/60 p-4">
-          <summary className="cursor-pointer text-[11px] font-mono uppercase tracking-[0.2em] text-[color:var(--brass-300)]">Attendance</summary>
-          <p className="mt-2 text-sm leading-6 text-[color:var(--bone-200)]">Shows check-ins, streaks, and whether the participant has met minimum participation expectations.</p>
-        </details>
-        <details className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)]/60 p-4">
-          <summary className="cursor-pointer text-[11px] font-mono uppercase tracking-[0.2em] text-[color:var(--brass-300)]">Safety notes</summary>
-          <p className="mt-2 text-sm leading-6 text-[color:var(--bone-200)]">Surface for injury flags, recovery holds, and any restricted training guidance.</p>
-        </details>
-        <details className="border-2 border-[color:var(--brass-700)] bg-[var(--hide-900)]/60 p-4">
-          <summary className="cursor-pointer text-[11px] font-mono uppercase tracking-[0.2em] text-[color:var(--brass-300)]">Home follow-up</summary>
-          <p className="mt-2 text-sm leading-6 text-[color:var(--bone-200)]">A place for at-home practice prompts, family reminders, and message acknowledgements.</p>
-        </details>
+        {/* Governance banner — structure only; the type voices recolour for canvas. */}
+        <div
+          className="mb-[var(--s6)] rounded-r-[var(--r-lg)] border-l-4 border-[color:var(--brass-700)] p-[var(--s4)] pl-[var(--s5)]"
+          style={{ background: 'linear-gradient(90deg, rgba(212,175,74,.22) 0%, transparent 100%)' }}
+        >
+          <p className="t-label mb-[var(--s2)]">Layer 0 Governance</p>
+          <p className="t-body m-0">
+            All guardian actions are logged and attributable. Only records you are authorized to view will appear here.
+          </p>
+        </div>
+
+        {/* Registry facts as auditable records — t-label over t-data (Law 4). */}
+        <div className="mb-[var(--s6)] grid grid-cols-2 gap-[var(--s4)] md:grid-cols-4">
+          {STATS.map((item) => (
+            <div key={item.label} className="mat-paper rounded-[var(--r-md)] p-[var(--s4)]">
+              <p className="t-label m-0">{item.label}</p>
+              <p className="t-data mt-[var(--s2)] mb-0" style={{ fontSize: 'var(--t-sm)' }}>{item.value}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid items-start gap-[var(--s6)] md:grid-cols-[var(--split-major)_var(--split-minor)]">
+          {/* What this surface reports on. */}
+          <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)]">
+            <h2 className="t-command m-0" style={{ fontSize: 'var(--t-md)' }}>What You Can See Here</h2>
+            <p className="t-muted mt-[var(--s2)] mb-[var(--s5)]">
+              Each of these reads from the participant&apos;s own record — nothing here is editable from the family side.
+            </p>
+            <div className="space-y-[var(--s4)]">
+              {EXPLAINERS.map((item) => (
+                <details key={item.title} className="rounded-[var(--r-md)] border border-[color:rgba(0,0,0,.14)] bg-[var(--paper-2)] p-[var(--s4)]">
+                  <summary className="t-label cursor-pointer">{item.title}</summary>
+                  <p className="t-body mt-[var(--s3)] mb-0">{item.body}</p>
+                </details>
+              ))}
+            </div>
+          </div>
+
+          {/* Quick links. */}
+          <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)]">
+            <h2 className="t-command m-0" style={{ fontSize: 'var(--t-md)' }}>Quick Links</h2>
+            <p className="t-muted mt-[var(--s2)] mb-[var(--s5)]">The rest of the family side, one tap away.</p>
+            <div className="grid gap-[var(--s3)]">
+              {QUICK_LINKS.map((item) => (
+                <Link key={item.href} href={item.href} className="btn btn--ghost w-full">
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
-    </FeatureSurface>
+    </div>
   );
 }

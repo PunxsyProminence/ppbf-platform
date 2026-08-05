@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { GET, POST } from './route';
-import { query, queryOne } from '@/src/server/pilot/db';
+import { query, queryOne, withTransaction } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
@@ -13,11 +13,29 @@ jest.mock('@/src/server/pilot/http', () => {
 jest.mock('@/src/server/pilot/db', () => ({
   query: jest.fn(),
   queryOne: jest.fn(),
+  // recordCompletion inserts the log and recomputes assignment percentage in
+  // one transaction. The fake hands the callback a client whose query() is the
+  // same spy, so call assertions stay meaningful.
+  withTransaction: jest.fn(),
 }));
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockQuery = query as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
+const mockWithTransaction = withTransaction as jest.Mock;
+
+beforeEach(() => {
+  // A transaction client returns the pg Result shape ({ rows }), unlike the
+  // module's query() which returns the rows array directly.
+  mockWithTransaction.mockImplementation(
+    (work: (client: { query: jest.Mock }) => Promise<unknown>) =>
+      work({
+        query: jest.fn(async (...args: unknown[]) => ({
+          rows: (await mockQuery(...args)) ?? [],
+        })) as jest.Mock,
+      }),
+  );
+});
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -157,7 +175,12 @@ describe('POST /api/pilot/progression/completions', () => {
   test('athlete can record their own completion', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
     mockQueryOne.mockResolvedValueOnce(assignmentRow());
-    mockQuery.mockResolvedValueOnce([{ completion_id: 'c1', assignment_id: 'asg-1' }]);
+    // recordCompletion transaction: insert → lock assignment → count → update %
+    mockQuery
+      .mockResolvedValueOnce([{ completion_id: 'c1', assignment_id: 'asg-1', verification_status: 'pending' }])
+      .mockResolvedValueOnce([{ frequency_per_week: null, status: 'assigned' }])
+      .mockResolvedValueOnce([{ n: '1' }])
+      .mockResolvedValueOnce([]);
     const res = await POST(postRequest({ assignment_id: 'asg-1', athlete_id: 'ath-1' }));
     expect(res.status).toBe(201);
   });
@@ -175,9 +198,37 @@ describe('POST /api/pilot/progression/completions', () => {
       .mockResolvedValueOnce({ athlete_id: 'ath-1' }) // assertCoachAssignedToAthlete
       .mockResolvedValueOnce(assignmentRow()); // getDrillAssignmentById
     mockQuery
-      .mockResolvedValueOnce([{ completion_id: 'c1', assignment_id: 'asg-1' }]) // recordCompletion insert
-      .mockResolvedValueOnce([]); // verifyCompletion update
+      .mockResolvedValueOnce([{ completion_id: 'c1', assignment_id: 'asg-1', verification_status: 'pending' }]) // insert
+      .mockResolvedValueOnce([{ frequency_per_week: null, status: 'assigned' }]) // lock assignment
+      .mockResolvedValueOnce([{ n: '1' }]) // count
+      .mockResolvedValueOnce([]) // update percentage
+      .mockResolvedValueOnce([{ completion_id: 'c1', assignment_id: 'asg-1', verification_status: 'verified' }]); // verifyCompletion
     const res = await POST(postRequest({ assignment_id: 'asg-1', athlete_id: 'ath-1', verify: true, verified: true }));
     expect(res.status).toBe(201);
+  });
+
+  test('assigned coach can verify an existing pending completion without creating a new log', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', athleteId: null }));
+    mockQuery
+      .mockResolvedValueOnce([
+        {
+          completion_id: 'c1',
+          assignment_id: 'asg-1',
+          completed_at: '2026-01-02T00:00:00.000Z',
+          reps_completed: 10,
+          notes: 'felt good',
+          verification_status: 'verified',
+          verified_at: '2026-01-02T01:00:00.000Z',
+        },
+      ]); // verifyCompletion update returning
+    mockQueryOne
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' }) // assertCoachAssignedToAthlete
+      .mockResolvedValueOnce(assignmentRow()); // getDrillAssignmentById ownership check
+    const res = await POST(
+      postRequest({ completion_id: 'c1', athlete_id: 'ath-1', verify: true, verified: true }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.verification_status).toBe('verified');
   });
 });

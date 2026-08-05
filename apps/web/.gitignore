@@ -26,6 +26,12 @@
 .DS_Store
 *.pem
 
+# `npm run shots` output -- full-page prints of every route plus the contact
+# sheet that lays them out. Regenerated from the running app on demand, and a
+# committed print goes stale the moment the page changes, which is worse than
+# no print because it still reads as current.
+/page-shots/
+
 # debug
 npm-debug.log*
 yarn-debug.log*

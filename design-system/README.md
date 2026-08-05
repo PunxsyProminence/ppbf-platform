@@ -279,6 +279,15 @@ Five rules, stricter than the visual system's:
 5. **One at a time, and short.** Nothing runs past ~1.2s; an overlapping call is dropped rather
    than stacked.
 
+**In the app.** `apps/web/components/useGymSound.ts` is the only seam: one engine shared through
+`useSyncExternalStore`, SSR-safe, and silent rather than broken when a browser or a locked-down
+kiosk refuses to start audio. The opt-in lives on the session bar (`SoundToggle`), which names four
+states rather than two — a preference that has not met a user gesture yet is "waiting", not "on".
+Three voices are wired, each beside a visible change that already carries the whole message:
+`accept` on a check-in the server stored, `bell` on crossing a training-card milestone, `stamp` on
+the board gate's refusal stamp appearing. `latch` confirms the toggle itself. Nothing is bound to
+hover, focus, or a keystroke.
+
 ---
 
 ## UX Patterns — the five
@@ -359,6 +368,47 @@ stock, etc.
 
 ### Not yet built
 None — the design system is feature-complete. All 8 Laws, grit vocabulary, two-ground architecture, and all foundational + component + screen previews are built and verified.
+
+---
+
+## Seeing the pages that actually shipped
+
+Everything above is a **mockup** — hand-authored HTML showing what the language is
+supposed to do. It is not a picture of the app, and the two drift apart quietly: a
+preview stays correct-looking long after the page it describes stopped matching it.
+
+To see the real thing:
+
+```bash
+npm run shots            # from the repo root
+```
+
+`apps/web/scripts/page-shots.ts` photographs every route at desktop and Pixel 7
+widths and lays the prints out on one contact sheet at
+`apps/web/page-shots/gallery.html` — grouped by room, filterable, click a plate for
+the full-length page. It starts a dev server if one is not already running.
+
+Three things it reads rather than restates. Routes come off the filesystem, so a new
+page joins the sheet the day it lands. Each route's label, room, and roles come from
+`apps/web/components/buildingMap.ts`, the same registry the corridor and the card
+catalog read. And each page is opened *as the role that opens that door*, so a gated
+surface photographs as itself instead of as the login screen.
+
+It flags three things worth looking at: a page that **redirected** somewhere else, one
+that **overflows** its viewport horizontally, and one the building map does not list
+(**UNLISTED**) — a surface the corridor cannot reach, which is a finding rather than a
+fault of the script. Dynamic routes such as `/store/[organizationId]` are named in the
+run's output but not photographed: each needs a real id, which is a fixtures question
+rather than a screenshot one.
+
+**These are prints for a person to judge, not a baseline.** Nothing compares two
+images and nothing fails on a difference. Before adding that, read the header of
+`apps/web/e2e/public-homepage.spec.ts`: pixel assertions were removed here on purpose,
+because Chromium revisions shape glyphs differently and the noise is the same size as
+the signal. That reasoning is about asserting pixels, not about looking at them.
+
+Output is gitignored. A committed print goes stale the moment the page changes, which
+is worse than no print because it still reads as current.
 
 ---
 

@@ -97,7 +97,7 @@ describe('coach workspace does not fabricate the coach\'s own records', () => {
     expect(screen.queryByText(/Bronze Certification/i)).toBeNull();
     expect(screen.queryByText(/USA Boxing Coach License/i)).toBeNull();
     expect(screen.queryByText(/Expires:/i)).toBeNull();
-    expect(screen.getAllByText(/PLANNED \| NOT YET IMPLEMENTED/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Planned — Not Yet Implemented/i).length).toBeGreaterThan(0);
   });
 
   test('Development topics are a reference list, not controls that save nothing', async () => {

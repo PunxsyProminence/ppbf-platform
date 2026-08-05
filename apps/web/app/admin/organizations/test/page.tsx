@@ -25,12 +25,12 @@ export default function SetupWizard() {
 
   if (!testWizardEnabled) {
     return (
-      <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
-        <div className="mx-auto w-full max-w-3xl space-y-6 px-6 py-12 lg:px-10">
-          <header className="rounded-[28px] border border-[rgba(0,0,0,0.14)] bg-white p-6 shadow-[var(--shadow-md)]">
-            <p className="text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--brass-800)]">Setup Wizard</p>
-            <h1 className="mt-2 font-display text-3xl font-black">Test Wizard Disabled</h1>
-            <p className="mt-3 text-sm leading-6 text-[var(--gray-dark)]">
+      <main className="room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+        <div className="mx-auto w-full max-w-3xl space-y-[var(--s5)] px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
+          <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+            <p className="t-eyebrow">Setup Wizard</p>
+            <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Test Wizard Disabled</h1>
+            <p className="t-body mt-[var(--s3)]">
               This unauthenticated simulation route is disabled by default. Set NEXT_PUBLIC_PPBF_ENABLE_TEST_WIZARD=true only in controlled non-production environments.
             </p>
           </header>
@@ -121,38 +121,45 @@ function SetupWizardContent() {
   const step2Complete = completedSteps.includes(2);
 
   return (
-    <main className="min-h-screen bg-[var(--canvas-tan)] text-[var(--black)]">
-      <div className="mx-auto w-full max-w-3xl space-y-8 px-6 py-12 lg:px-10">
+    <main className="room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+      <div className="mx-auto w-full max-w-3xl space-y-[var(--s6)] px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
         {/* Test Banner */}
-        <div className="rounded-lg border-2 border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_10%,white)] p-4">
-          <p className="text-sm font-semibold text-[var(--accent-quiet)]">🧪 TEST MODE - No authentication required. Form submissions are simulated.</p>
+        <div className="mat-leather--raised flex flex-wrap items-center gap-[var(--s3)] rounded-[var(--r-md)] border border-[color:var(--restricted)] p-[var(--s4)]">
+          <span className="badge badge--restricted"><i>▲</i>Test Mode</span>
+          <p className="t-body">No authentication required. Form submissions are simulated.</p>
         </div>
 
         {/* Header */}
-        <header className="space-y-4 rounded-[28px] border border-[rgba(0,0,0,0.14)] bg-white p-6 shadow-[var(--shadow-md)]">
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--brass-800)]">Setup Wizard</p>
-          <h1 className="font-display text-4xl font-black">Get Your Gym Online</h1>
-          <p className="text-base leading-7 text-[var(--gray-dark)]">
-            Follow these 3 simple steps to set up your gym in PPBF and start managing athletes.
-          </p>
+        <header className="frame">
+          <span className="rivet rivet--tl" />
+          <span className="rivet rivet--tr" />
+          <span className="rivet rivet--bl" />
+          <span className="rivet rivet--br" />
+          <div className="frame-in mat-leather space-y-[var(--s4)] p-[var(--s5)]">
+            <p className="t-eyebrow">Setup Wizard</p>
+            <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>Get Your Gym Online</h1>
+            <p className="t-body">
+              Follow these 3 simple steps to set up your gym in PPBF and start managing athletes.
+            </p>
+          </div>
         </header>
 
         {/* Progress Indicator */}
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center justify-between gap-[var(--s2)]">
           {[1, 2, 3].map((s) => (
-            <div key={s} className="flex flex-1 items-center gap-2">
+            <div key={s} className="flex flex-1 items-center gap-[var(--s2)]">
               <div
-                className={`flex h-10 w-10 items-center justify-center rounded-full border-2 font-bold transition ${
+                className={`flex h-[34px] w-[34px] items-center justify-center rounded-full border-2 font-bold transition ${
                   s < step
-                    ? 'border-[color:var(--brass-600)] bg-[var(--brass-800)] text-white'
+                    ? 'border-[color:var(--brass-700)] bg-[var(--accent-strong)] text-[color:var(--accent-ink)]'
                     : s === step
-                      ? 'border-[color:var(--brass-600)] bg-white text-[color:var(--brass-800)]'
-                      : 'border-[rgba(0,0,0,0.14)] bg-white text-[var(--gray-dark)]'
+                      ? 'border-[color:var(--brass-400)] bg-[var(--hide-900)] text-[color:var(--brass-300)]'
+                      : 'border-[color:var(--hide-600)] bg-[var(--hide-900)] text-[color:var(--bone-400)]'
                 }`}
               >
                 {s < step ? '✓' : s}
               </div>
-              {s < 3 && <div className={`flex-1 h-1 rounded ${s < step ? 'bg-[var(--brass-800)]' : 'bg-[rgba(0,0,0,0.08)]'}`} />}
+              {s < 3 && <div className={`h-[3px] flex-1 rounded-[var(--r-sm)] ${s < step ? 'bg-[var(--brass-700)]' : 'bg-[var(--hide-700)]'}`} />}
             </div>
           ))}
         </div>
@@ -160,69 +167,69 @@ function SetupWizardContent() {
         {/* Feedback Message */}
         {feedback && (
           <div
-            className={`rounded-xl border px-4 py-3 ${
+            className={`rounded-[var(--r-md)] border px-[var(--s4)] py-[var(--s3)] ${
               feedback.kind === 'error'
-                ? 'border-[var(--safety-locked)] bg-[color-mix(in_srgb,var(--safety-locked)_5%,white)]'
+                ? 'border-[color:var(--brass-700)] bg-[var(--rust-900)]'
                 : feedback.kind === 'success'
-                  ? 'border-[var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_8%,white)]'
-                  : 'border-[var(--gray-medium)] bg-[rgba(0,0,0,0.03)]'
+                  ? 'border-[color:var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_16%,var(--hide-950))]'
+                  : 'mat-leather--raised border-[color:var(--hide-600)]'
             }`}
           >
             <p
-              className={`text-sm font-semibold ${
+              className={`text-[length:var(--t-sm)] font-semibold ${
                 feedback.kind === 'error'
-                  ? 'text-[var(--safety-locked)]'
+                  ? 'text-[color:var(--locked-ink)]'
                   : feedback.kind === 'success'
-                    ? 'text-[var(--cleared-deep)]'
-                    : 'text-[var(--gray-dark)]'
+                    ? 'text-[color:var(--cleared-ink)]'
+                    : 'text-[color:var(--bone-300)]'
               }`}
             >
-              {feedback.kind === 'error' && '❌ '}{feedback.kind === 'success' && '✓ '}{feedback.text}
+              {feedback.kind === 'error' && '✕ '}{feedback.kind === 'success' && '✓ '}{feedback.text}
             </p>
           </div>
         )}
 
         {/* Step 1: Create Gym */}
         <section
-          className={`rounded-2xl border-2 p-6 transition ${
+          className={`mat-leather rounded-[var(--r-lg)] border p-[var(--s5)] transition ${
             step === 1
-              ? 'border-[var(--accent)] bg-white shadow-[0_4px_12px_color-mix(in_srgb,var(--accent)_15%,white)]'
-              : 'border-[rgba(0,0,0,0.14)] bg-white/60 opacity-60'
+              ? 'border-[color:var(--brass-400)]'
+              : 'border-[color:var(--hide-700)] opacity-60'
           }`}
         >
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start justify-between gap-[var(--s4)]">
             <div className="flex-1">
-              <h2 className="text-lg font-bold">Step 1: Create Your Gym Profile</h2>
-              <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
+              <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Step 1: Create Your Gym Profile</h2>
+              <p className="t-body mt-[var(--s3)]">
                 Give your gym a unique ID and friendly name. This is how PPBF identifies your organization.
               </p>
             </div>
-            {step1Complete && <span className="text-2xl">✓</span>}
+            {step1Complete && <span className="badge badge--cleared"><i>✓</i>Done</span>}
           </div>
 
           {step === 1 && (
-            <div className="mt-6 space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-[var(--black)]">Gym ID (Short Code)</label>
-                <p className="mt-1 text-xs text-[var(--gray-dark)]">Use lowercase letters and numbers, no spaces. Example: &quot;golden_boxing&quot;</p>
+            <div className="mt-[var(--s5)] space-y-[var(--s4)]">
+              <div className="field">
+                <label className="t-label">Gym ID (Short Code)</label>
+                <p className="t-muted mb-[var(--s2)]">Use lowercase letters and numbers, no spaces. Example: &quot;golden_boxing&quot;</p>
                 <input
                   type="text"
                   value={gymId}
                   onChange={(e) => setGymId(e.target.value.toLowerCase())}
                   placeholder="golden_boxing"
-                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+                  className="input font-mono"
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-[var(--black)]">Gym Name (Display Name)</label>
-                <p className="mt-1 text-xs text-[var(--gray-dark)]">The full name of your gym as you&apos;d like it to appear.</p>
+              <div className="field">
+                <label className="t-label">Gym Name (Display Name)</label>
+                <p className="t-muted mb-[var(--s2)]">The full name of your gym as you&apos;d like it to appear.</p>
                 <input
                   type="text"
                   value={gymName}
                   onChange={(e) => setGymName(e.target.value)}
                   placeholder="Golden Boxing Studio"
-                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+                  className="input"
                 />
               </div>
 
@@ -236,7 +243,7 @@ function SetupWizardContent() {
                     setStep(2);
                   }
                 }}
-                className="h-11 w-full rounded-lg border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isBusy ? 'Creating...' : 'Create Gym & Continue'}
               </button>
@@ -246,56 +253,56 @@ function SetupWizardContent() {
 
         {/* Step 2: Create Admin Account */}
         <section
-          className={`rounded-2xl border-2 p-6 transition ${
+          className={`mat-leather rounded-[var(--r-lg)] border p-[var(--s5)] transition ${
             step === 2
-              ? 'border-[var(--accent)] bg-white shadow-[0_4px_12px_color-mix(in_srgb,var(--accent)_15%,white)]'
-              : 'border-[rgba(0,0,0,0.14)] bg-white/60 opacity-60'
+              ? 'border-[color:var(--brass-400)]'
+              : 'border-[color:var(--hide-700)] opacity-60'
           }`}
         >
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start justify-between gap-[var(--s4)]">
             <div className="flex-1">
-              <h2 className="text-lg font-bold">Step 2: Create Your Admin Account</h2>
-              <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
+              <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Step 2: Create Your Admin Account</h2>
+              <p className="t-body mt-[var(--s3)]">
                 This will be your first user account. You&apos;ll use the Account ID and PIN to sign in to PPBF.
               </p>
             </div>
-            {step2Complete && <span className="text-2xl">✓</span>}
+            {step2Complete && <span className="badge badge--cleared"><i>✓</i>Done</span>}
           </div>
 
           {step === 2 && (
-            <div className="mt-6 space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-[var(--black)]">Your Account ID</label>
-                <p className="mt-1 text-xs text-[var(--gray-dark)]">A unique identifier for you. Example: &quot;coach-john&quot; or &quot;admin-001&quot;</p>
+            <div className="mt-[var(--s5)] space-y-[var(--s4)]">
+              <div className="field">
+                <label className="t-label">Your Account ID</label>
+                <p className="t-muted mb-[var(--s2)]">A unique identifier for you. Example: &quot;coach-john&quot; or &quot;admin-001&quot;</p>
                 <input
                   type="text"
                   value={adminAccountId}
                   onChange={(e) => setAdminAccountId(e.target.value)}
                   placeholder="coach-john"
-                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+                  className="input font-mono"
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-[var(--black)]">PIN (4+ digits)</label>
-                <p className="mt-1 text-xs text-[var(--gray-dark)]">A secure PIN code you&apos;ll use to sign in. Example: 1234 or 9876</p>
+              <div className="field">
+                <label className="t-label">PIN (4+ digits)</label>
+                <p className="t-muted mb-[var(--s2)]">A secure PIN code you&apos;ll use to sign in. Example: 1234 or 9876</p>
                 <input
                   type="password"
                   value={adminPin}
                   onChange={(e) => setAdminPin(e.target.value)}
                   placeholder="••••"
-                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+                  className="input"
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-[var(--black)]">Confirm PIN</label>
+              <div className="field">
+                <label className="t-label">Confirm PIN</label>
                 <input
                   type="password"
                   value={adminConfirmPin}
                   onChange={(e) => setAdminConfirmPin(e.target.value)}
                   placeholder="••••"
-                  className="mt-2 h-11 w-full rounded-lg border border-[rgba(0,0,0,0.16)] bg-white px-3 text-sm focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:shadow-[var(--focus)]"
+                  className="input"
                 />
               </div>
 
@@ -309,7 +316,7 @@ function SetupWizardContent() {
                     setStep(3);
                   }
                 }}
-                className="h-11 w-full rounded-lg border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isBusy ? 'Creating...' : 'Create Admin Account & Continue'}
               </button>
@@ -319,22 +326,22 @@ function SetupWizardContent() {
 
         {/* Step 3: Configure Features */}
         <section
-          className={`rounded-2xl border-2 p-6 transition ${
-            step === 3 ? 'border-[var(--accent)] bg-white shadow-[0_4px_12px_color-mix(in_srgb,var(--accent)_15%,white)]' : 'border-[rgba(0,0,0,0.14)] bg-white/60 opacity-60'
+          className={`mat-leather rounded-[var(--r-lg)] border p-[var(--s5)] transition ${
+            step === 3 ? 'border-[color:var(--brass-400)]' : 'border-[color:var(--hide-700)] opacity-60'
           }`}
         >
           <div className="flex-1">
-            <h2 className="text-lg font-bold">Step 3: Choose Your Features</h2>
-            <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
+            <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Step 3: Choose Your Features</h2>
+            <p className="t-body mt-[var(--s3)]">
               Select which tools your gym wants to use. You can always change these later.
             </p>
           </div>
 
           {step === 3 && (
-            <div className="mt-6 space-y-4">
-              <div className="space-y-3">
+            <div className="mt-[var(--s5)] space-y-[var(--s4)]">
+              <div className="space-y-[var(--s3)]">
                 {gymCapabilities.map(({ id, label, description }) => (
-                  <label key={id} className="flex items-start gap-3 rounded-lg border border-[rgba(0,0,0,0.12)] bg-[var(--canvas-tan-light)] p-4 cursor-pointer hover:border-[color:var(--brass-600)] transition">
+                  <label key={id} className="mat-leather--raised flex cursor-pointer items-start gap-[var(--s3)] rounded-[var(--r-md)] border border-[color:var(--hide-700)] p-[var(--s4)] transition hover:border-[color:var(--brass-700)]">
                     <input
                       type="checkbox"
                       checked={gymCapabilityAccess[id] ?? false}
@@ -344,11 +351,11 @@ function SetupWizardContent() {
                           [id]: e.target.checked,
                         })
                       }
-                      className="mt-1 h-5 w-5 cursor-pointer accent-[var(--brass-600)]"
+                      className="mt-1 h-5 w-5 cursor-pointer accent-[var(--brass-500)]"
                     />
                     <div className="flex-1">
-                      <p className="font-semibold text-[var(--black)]">{label}</p>
-                      <p className="mt-1 text-sm text-[var(--gray-dark)]">{description}</p>
+                      <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{label}</p>
+                      <p className="t-muted mt-[var(--s1)]">{description}</p>
                     </div>
                   </label>
                 ))}
@@ -364,7 +371,7 @@ function SetupWizardContent() {
                     setStep(4);
                   }
                 }}
-                className="h-11 w-full rounded-lg border-2 border-[color:var(--brass-600)] bg-[var(--brass-800)] px-4 font-bold uppercase tracking-[0.1em] text-white transition hover:bg-[var(--red-highlight)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isBusy ? 'Saving...' : 'Save & Complete Setup'}
               </button>
@@ -374,13 +381,13 @@ function SetupWizardContent() {
 
         {/* Complete State */}
         {step === 4 && (
-          <section className="rounded-2xl border-2 border-[var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_8%,white)] p-6 text-center">
-            <p className="text-4xl">🎉</p>
-            <h2 className="mt-4 font-display text-2xl font-black">You&apos;re All Set!</h2>
-            <p className="mt-3 text-sm leading-6 text-[var(--gray-dark)]">
+          <section className="mat-leather space-y-[var(--s4)] rounded-[var(--r-lg)] border border-[color:var(--cleared)] p-[var(--s5)] text-center">
+            <span className="stamp stamp--green stamp--lg">Complete</span>
+            <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>You&apos;re All Set!</h2>
+            <p className="t-body">
               Your gym profile is ready. You can now invite coaches and athletes to join. Sign out and log in with your new account to get started.
             </p>
-            <div className="mt-6 space-x-3 flex justify-center">
+            <div className="flex justify-center gap-[var(--s3)]">
               <button
                 type="button"
                 onClick={() => {
@@ -393,7 +400,7 @@ function SetupWizardContent() {
                   setGymCapabilityAccess({});
                   setCompletedSteps([]);
                 }}
-                className="inline-flex h-11 items-center rounded-lg border-2 border-[var(--gray-dark)] bg-white px-6 font-bold uppercase tracking-[0.1em] text-[var(--black)] transition hover:bg-[var(--canvas-tan)]"
+                className="btn btn--ghost"
               >
                 Start Over
               </button>

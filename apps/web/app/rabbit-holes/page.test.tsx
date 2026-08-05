@@ -298,7 +298,7 @@ test('retiring marks the lesson retired in place rather than deleting it', async
 
   expect(screen.getByText(/no longer renders anywhere, and nothing was deleted/)).toBeTruthy();
   expect(screen.getAllByRole('button', { name: 'Restore' }).length).toBeGreaterThan(0);
-  expect(screen.getAllByText('RETIRED').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('Retired').length).toBeGreaterThan(0);
   // The concept and homework stay on the record.
   expect(screen.getByText(/Thirty slow crosses/)).toBeTruthy();
 });

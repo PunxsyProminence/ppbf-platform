@@ -37,6 +37,14 @@ on:
         description: "Type CONFIRMED to attest all database migrations this commit depends on are already applied to production"
         required: true
         type: string
+      allow_rollback:
+        description: "Deploying a commit OLDER than what production runs? Choose YES. Leave NO otherwise."
+        required: false
+        default: "NO"
+        type: choice
+        options:
+          - "NO"
+          - "YES"
 
 permissions:
   id-token: write
@@ -109,8 +117,13 @@ jobs:
       RESOURCE_GROUP: ${{ secrets.AZURE_PRODUCTION_RESOURCE_GROUP || 'rg-ppbf-enterprise-staging' }}
       CONTAINER_APP_NAME: app-ppbf-production
     steps:
+      # Full history: the rollback guard below asks whether the commit being
+      # deployed is an ANCESTOR of the one production already runs, and the
+      # default shallow clone cannot answer that.
       - name: Checkout Source Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Authenticate via Azure OIDC
         uses: azure/login@v2
@@ -127,6 +140,106 @@ jobs:
             echo "::error::release digest '$RELEASE_DIGEST' was not found in ACR for ppbf-frontend."
             exit 1
           fi
+
+      # ─────────────────────────────────────────────────────────────────────
+      # Refuse a rollback nobody asked for.
+      #
+      # WHY THIS EXISTS. On 2026-08-03 two production promotions sat at the
+      # approval gate at once: a fresh one carrying thirteen fixes, and a stale
+      # one dispatched five hours earlier for an older commit. Both were
+      # approved within two minutes of each other. The stale one ran FIRST and
+      # repointed production at the older image; the newer one happened to land
+      # ninety seconds later and won. Had the clicks landed the other way round,
+      # production would have been serving a build from before every fix -- a
+      # dead drill library, an open child-account boundary, DDL back on the
+      # login path -- and NOTHING would have said so, because in the run list a
+      # successful rollback is indistinguishable from a successful deploy.
+      #
+      # `confirm_sha` did not help and could not: it compares the input against
+      # the commit this workflow checked out, so a stale run whose SHA is
+      # internally consistent passes cleanly. Nothing compared what was being
+      # deployed against what was already running.
+      #
+      # WHAT THIS CHECKS. Two independent questions, because either alone has a
+      # blind spot:
+      #
+      #   1. Is the incoming commit an ANCESTOR of the one production runs?
+      #      That is the precise definition of "older" for a linear history,
+      #      and it is what catches the case above.
+      #   2. Failing that -- if the app carries no recorded SHA yet, or the two
+      #      commits are on unrelated branches -- is the incoming IMAGE the one
+      #      already deployed? Then this is a harmless re-apply and says so.
+      #
+      # A deliberate rollback is a legitimate emergency action, so this refuses
+      # rather than forbids: dispatch again with allow_rollback=YES.
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Refuse a Rollback Nobody Asked For
+        env:
+          INCOMING_SHA: ${{ inputs.confirm_sha }}
+          INCOMING_DIGEST: ${{ inputs.release_digest }}
+          ALLOW_ROLLBACK: ${{ inputs.allow_rollback }}
+        run: |
+          set -euo pipefail
+
+          RUNNING_IMAGE="$(az containerapp show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "properties.template.containers[0].image" -o tsv)"
+          RUNNING_DIGEST="${RUNNING_IMAGE##*@}"
+
+          # Recorded by this workflow on every deploy (see --set-env-vars
+          # below). Absent only on an app that has not been deployed since this
+          # guard shipped.
+          RUNNING_SHA="$(az containerapp show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "properties.template.containers[0].env[?name=='PPBF_RELEASE_SHA'].value | [0]" \
+            -o tsv 2>/dev/null || true)"
+
+          echo "running digest : ${RUNNING_DIGEST:-<none>}"
+          echo "incoming digest: ${INCOMING_DIGEST}"
+          echo "running commit : ${RUNNING_SHA:-<not recorded>}"
+          echo "incoming commit: ${INCOMING_SHA}"
+
+          if [ "$RUNNING_DIGEST" = "$INCOMING_DIGEST" ]; then
+            echo "Same image already running. This is a re-apply, not a change."
+            exit 0
+          fi
+
+          if [ -z "$RUNNING_SHA" ]; then
+            echo "::warning::Production carries no PPBF_RELEASE_SHA, so this deploy cannot be" \
+                 "checked for being older than what is running. It will be recorded from now on."
+            exit 0
+          fi
+
+          if ! git cat-file -e "${RUNNING_SHA}^{commit}" 2>/dev/null; then
+            echo "::warning::The commit production runs (${RUNNING_SHA}) is not in this" \
+                 "repository's history -- force-push, or an image built elsewhere. Ancestry" \
+                 "cannot be checked; proceeding on the digest comparison alone."
+            exit 0
+          fi
+
+          if [ "$RUNNING_SHA" = "$INCOMING_SHA" ]; then
+            echo "Same commit, different image -- a rebuild of what is already live. Allowed."
+            exit 0
+          fi
+
+          if git merge-base --is-ancestor "$INCOMING_SHA" "$RUNNING_SHA"; then
+            if [ "$ALLOW_ROLLBACK" = "YES" ]; then
+              echo "::warning::ROLLBACK: ${INCOMING_SHA} is an ancestor of the running" \
+                   "${RUNNING_SHA}. Proceeding because allow_rollback=YES."
+              exit 0
+            fi
+            echo "::error::REFUSING A SILENT ROLLBACK."
+            echo "::error::Production runs ${RUNNING_SHA}. This run would deploy ${INCOMING_SHA}," \
+                 "which is an ANCESTOR of it -- every change between the two would be reverted."
+            echo "::error::If that is what you want, dispatch again with allow_rollback=YES."
+            echo "::error::If it is not, this is probably a stale dispatch that has been sitting" \
+                 "at the approval gate while newer work shipped. Cancel it."
+            exit 1
+          fi
+
+          echo "Incoming commit is not an ancestor of what is running. Proceeding."
 
       # This deploy is digest-only: deploy-staging builds and pushes the image,
       # and this workflow just repoints the production Container App at an
@@ -190,11 +303,36 @@ jobs:
       # per-job authority is re-validated against the enqueuing actor at
       # execution time -- so enabling it grants no new access.
       #
-      # PPBF_INTAKE_PROMOTION_ENABLED stays FALSE here: the intake
-      # review -> approve -> promote path (#95) turns on in staging first,
-      # same rollout as the worker flag, and this line flips only after the
-      # staging gate has run the full intake path green. Until then promotion
-      # keeps its honest 403 in production.
+      # PPBF_INTAKE_PROMOTION_ENABLED is now TRUE. The condition this line
+      # carried -- "flips only after the staging gate has run the full intake
+      # path green" -- was met on 2026-08-03 by deploy-staging run
+      # 30820241108 against SHA 876cdb4, dispatched with enable_shadow_gate
+      # specifically to test it rather than assumed from an older run.
+      #
+      # The gate did not merely touch intake, it walked the whole path and
+      # reported GATE PASS: step 4 reviewed each document and approved the
+      # case, step 5 promoted it to domain records + accounts + linkage,
+      # step 9b activated the promoted athlete through the real admin flow,
+      # and step 10 verified that athlete could then sign in and be read back.
+      # That is the sequence an organization admin performs at the gym, end to
+      # end, against a real staging database.
+      #
+      # Turned on at the owner's explicit instruction (2026-08-03), for the
+      # pilot: without it, an approved intake case cannot become an athlete
+      # record, and the waiver that promotion files alongside it never gets
+      # written -- so consent arrives, if at all, as a separate act somebody
+      # has to remember.
+      #
+      # What it does NOT loosen, all still enforced in
+      # app/api/pilot/intake/review-action/route.ts:
+      #   - automation_mode 'automatic' is refused outright; a person promotes
+      #   - only organization_admin may promote, never Omega and never a coach
+      #   - the case must already be 'approved'
+      #   - the athlete account is provisioned with NO credential and inactive;
+      #     the PIN is set afterwards through pin-reset mode 'activate'
+      #   - athlete.pin and guardian.pin are both refused rather than silently
+      #     discarded, which is how an admin used to believe a credential was
+      #     set that never was
       #
       # PPBF_VIDEO_CONTENT_SCAN enables the video scan sweep's content gate
       # (#49) -- the only thing in the platform that moves an upload off
@@ -238,6 +376,7 @@ jobs:
             --resource-group "$RESOURCE_GROUP" \
             --image "${ACR_LOGIN_SERVER}/ppbf-frontend@${{ inputs.release_digest }}" \
             --set-env-vars \
+              PPBF_RELEASE_SHA=${{ inputs.confirm_sha }} \
               AZURE_POSTGRES_CONNECTION_STRING=secretref:azure-postgres-connection-string \
               AZURE_STORAGE_CONNECTION_STRING=secretref:azure-storage-connection-string \
               PPBF_MS_TENANT_ID=secretref:ppbf-ms-tenant-id \
@@ -256,7 +395,7 @@ jobs:
               PPBF_SHADOW_MAX_COMPLETION_TOKENS=8192 \
               PPBF_SHADOW_PROVIDER_TIMEOUT_MS=120000 \
               PPBF_SHADOW_WORKER_ENABLED=true \
-              PPBF_INTAKE_PROMOTION_ENABLED=false \
+              PPBF_INTAKE_PROMOTION_ENABLED=true \
               AZURE_AI_EMBEDDING_DEPLOYMENT_NAME=text-embedding-3-small \
               AZURE_AI_VISION_DEPLOYMENT_NAME=gpt-5-vision-shadow \
               PPBF_VIDEO_CONTENT_SCAN=vision \

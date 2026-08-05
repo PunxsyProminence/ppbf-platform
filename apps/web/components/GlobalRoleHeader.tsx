@@ -9,6 +9,8 @@ import FeedbackBox from "./FeedbackBox";
 import Corridor from "./Corridor";
 import CardCatalog from "./CardCatalog";
 import CommandsOverlay from "./CommandsOverlay";
+import SoundToggle from "./SoundToggle";
+import { CONTROL_EXIT, CONTROL_QUIET } from "./sessionBarControls";
 
 // The queue the "Tell Us" box fills is worked by the people who can act on it:
 // a gym's own administrators, and the platform owner reading across gyms.
@@ -39,18 +41,28 @@ const BAR =
 const EYEBROW =
   "font-mono text-[length:var(--t-xs)] uppercase tracking-[0.32em] text-[color:var(--bone-400)]";
 
-/* Shared geometry for every control on the bar: --tap tall, on the type scale,
-   and a focus ring that is visible against leather. */
-const CONTROL =
-  "inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-sm)] border px-[var(--s4)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.14em] transition " +
-  "focus-visible:outline-none focus-visible:shadow-[var(--focus)]";
-const CONTROL_QUIET = `${CONTROL} border-[color:rgba(212,175,74,.32)] bg-[rgba(0,0,0,.26)] text-[color:var(--bone-200)] hover:border-[color:var(--brass-400)] hover:text-[color:var(--bone-100)]`;
-const CONTROL_EXIT = `${CONTROL} border-[color:var(--rust-500)] bg-[rgba(0,0,0,.26)] text-[color:var(--bone-300)] hover:border-[color:var(--locked)] hover:text-[color:var(--bone-100)]`;
+/* Control geometry now lives in sessionBarControls.ts, because FeedbackBox and
+   SoundToggle render on this same bar and could not reach these constants from
+   here. Both fell back to `.btn` and both had their corrections silently
+   outranked by it -- see that file for the measurements. */
 
 export default function GlobalRoleHeader() {
   const router = useRouter();
   const pathname = usePathname();
   const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
+
+  /* The wall display stands alone. /wall is a television bolted to the gym
+     floor: no pointer, no keyboard, nobody signed in, and nobody within fifteen
+     feet of it. A sticky session bar there is a strip of furniture that can
+     never be used, and on a screen that runs twelve hours a day it is also a
+     fixed high-contrast band in the same pixels all evening -- the exact shape
+     that burns into a panel.
+
+     This is placed AFTER every hook above deliberately: an early return before
+     useSyncExternalStore would make the hook order depend on the route. */
+  if (pathname === "/wall" || pathname?.startsWith("/wall/")) {
+    return null;
+  }
 
   // Minimal bar pre-auth and on login
   if (!session || pathname === "/login") {
@@ -108,6 +120,13 @@ export default function GlobalRoleHeader() {
               on every surface, with no effect writing state on navigation. */}
           <CardCatalog key={`catalog:${pathname}`} />
           <CommandsOverlay />
+          {/* Sound is opt-in and off by default, and turning it on has to
+              happen inside a click because no browser starts audio otherwise.
+              The bar is where it belongs: on every signed-in surface, so
+              anyone who wants it can find it, and saying one short thing
+              rather than advertising itself. Nothing in this app needs sound
+              to be understood — see useGymSound.ts. */}
+          <SoundToggle />
           <FeedbackBox />
           {FEEDBACK_TRIAGE_ROLES.includes(session.role) ? (
             <Link href="/admin/feedback" className={CONTROL_QUIET}>

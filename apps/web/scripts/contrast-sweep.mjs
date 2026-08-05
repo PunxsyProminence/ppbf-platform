@@ -138,7 +138,14 @@ function collect(threshold) {
   };
 }
 
-const browser = await chromium.launch();
+/* Same escape hatch playwright.config.ts documents: a container may ship a
+   Chromium at a different revision than @playwright/test wants and be unable
+   to fetch the matching one. Without this the sweep is the one design tool
+   that cannot run in the environment where the design work happens. CI
+   installs the matching revision and leaves it unset. */
+const browser = await chromium.launch(
+  process.env.PPBF_CHROMIUM_PATH ? { executablePath: process.env.PPBF_CHROMIUM_PATH } : {},
+);
 const results = [];
 
 for (const [path, role] of routes) {

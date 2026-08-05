@@ -8,11 +8,22 @@
 
 import { render, screen } from '@testing-library/react';
 
+import { resetCeremonyMemory } from './milestoneCeremony';
 import TrainingCard, { MILESTONES, type TrainingSession } from './TrainingCard';
 
 function session(over: Partial<TrainingSession> & { session_id: string }): TrainingSession {
   return { date: '2026-07-01', rpe: 6, completed_flag: true, ...over };
 }
+
+// The milestone ceremony writes down which seals it has already pressed, and
+// that record outlives a render. Every case below is a different athlete's
+// card, so each one starts from a card nobody has seen before — which is also
+// why none of them stages a crossing. The ceremony itself is pinned in
+// trainingCardCeremony.test.tsx.
+afterEach(() => {
+  window.localStorage.clear();
+  resetCeremonyMemory();
+});
 
 describe('TrainingCard', () => {
   it('says so plainly when the card is empty, and promises it never resets', () => {

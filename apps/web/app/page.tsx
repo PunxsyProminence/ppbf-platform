@@ -82,13 +82,23 @@ export default function HomePage() {
               Punxsy Prominence Boxing &amp; Fitness is an IRS-recognized 501(c)(3) nonprofit serving youth in
               Punxsutawney and surrounding rural western Pennsylvania communities.
             </p>
+            {/* Programs first, sign-in second, and the order is the argument.
+
+                This is the front door of a 501(c)(3), and the person most
+                likely to be standing at it is a parent who has never been here
+                -- not a member, who knows the way in and does not need the
+                brightest object on the page to find it. The filled brass was
+                on Log In, so the page's loudest voice spoke to the one visitor
+                who needed the least help.
+
+                Both remain one tap away; only the emphasis is swapped. */}
             <div className="mt-[var(--s6)] flex flex-wrap items-center justify-center gap-[var(--s4)]">
-              <Link href="/login" className="btn">
-                Log In
-              </Link>
-              <a href="#programs" className="btn btn--ghost">
+              <a href="#programs" className="btn">
                 Learn About Our Programs
               </a>
+              <Link href="/login" className="btn btn--ghost">
+                Log In
+              </Link>
             </div>
           </div>
         </section>

@@ -2,6 +2,7 @@
 
 import { useId, useRef, useState } from 'react';
 import { apiBase } from '@/lib/apiBase';
+import { CONTROL_SAFEGUARD } from './sessionBarControls';
 
 /**
  * The comment box, mounted in the global header so it is reachable from
@@ -97,23 +98,26 @@ export default function FeedbackBox() {
         aria-expanded={isOpen}
         aria-controls={panelId}
         /*
-          The design-system control class, raised to the header's own geometry.
+          The bar's own safeguard control, sharing the bar's own geometry.
 
-          Two fixes met here. main moved this button onto `.btn btn--ghost`,
-          which is the right idiom and carries ppbf.css's 44px floor. But every
-          other control on this bar -- Triage, Operations, Dashboard, Logout --
-          uses GlobalRoleHeader's CONTROL constant at min-h-[var(--tap)], 55px.
-          A 44px button beside four 55px ones is both harder to hit and visibly
-          the odd one out, so the class comes from main and the height matches
-          its siblings.
-
-          Worth the fuss because this is the control a child taps to say someone
-          hurt them, it sits on every authenticated route, and it was 28.5px --
+          This is the control a child taps to say someone hurt them, it sits on
+          every authenticated route, and it was 28.5px before anyone noticed --
           the smallest thing in the header. The WCAG sweep that claimed "every
           interactive target" edited this exact file, raised the two buttons
           INSIDE the panel, and never touched the one that opens it.
+
+          The fix after that reached for `.btn btn--ghost` and corrected its
+          geometry with min-h-[var(--tap)]. That correction never landed:
+          ppbf.css is unlayered, so `.btn { min-height: 44px }` outranked it and
+          this shipped at 44px beside 55px siblings -- still the smallest target
+          on the bar, which is the exact thing the fix was written to prevent.
+          It also inherited `.btn`'s 15px display face, making the report-harm
+          button the loudest voice on every page rather than the easiest to hit.
+
+          CONTROL_SAFEGUARD composes no unlayered class, so the --tap target it
+          was always supposed to have actually applies.
         */
-        className="btn btn--ghost min-h-[var(--tap)] px-[var(--s4)] text-[length:var(--t-xs)]"
+        className={CONTROL_SAFEGUARD}
       >
         Tell Us
       </button>

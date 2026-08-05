@@ -117,7 +117,7 @@
     "--brick-900": "#2A1712",
     "--brick-700": "#4A251C",
     "--brick-500": "#6B3A2A",
-    "--mortar": "#6E6255",
+    "--mortar": "#5C5246",
     "--lamp": "#FFE9B8",
     "--lamp-hot": "#FFF6DF",
     "--cleared": "#3F7D4E",
@@ -243,7 +243,7 @@
       "group": "Foundations",
       "name": "Training Card",
       "subtitle": "One stamp per logged session, milestone seals on the Fibonacci series — a record, not a score, and deliberately not a streak",
-      "bytes": 9880
+      "bytes": 17870
     },
     {
       "path": "components/forms.html",
