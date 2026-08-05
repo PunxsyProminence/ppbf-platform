@@ -294,12 +294,22 @@ async function insertSessions(
 // this silently replaces a real athlete's name, dob, weight class, coach, and
 // goal/session history with whatever is in the seed file. --dry-run makes no
 // writes and is always allowed; anything else needs an explicit opt-in so a
-// config pointed at a live organization id can't be run by habit.
+// config pointed at a live organization id can't be run by habit. The CLI
+// section below checks this BEFORE the config file is even imported, so the
+// refusal happens before any INSERT/UPDATE could run; this copy stays here too
+// so a future programmatic caller of seedData() gets the same guard rather
+// than none.
+function destructiveSeedAllowed(dryRun: boolean, cliOverride = false): boolean {
+  return (
+    dryRun
+    || cliOverride
+    || process.env.PPBF_ALLOW_DESTRUCTIVE_SEED === 'true'
+    || process.env.NODE_ENV === 'test'
+  );
+}
+
 function assertDestructiveSeedAllowed(dryRun: boolean): void {
-  if (dryRun) {
-    return;
-  }
-  if (process.env.PPBF_ALLOW_DESTRUCTIVE_SEED === 'true' || process.env.NODE_ENV === 'test') {
+  if (destructiveSeedAllowed(dryRun)) {
     return;
   }
   throw new Error(
@@ -404,10 +414,24 @@ async function seedData(config: SeedConfig) {
 const args = process.argv.slice(2);
 let configPath = 'scripts/seed-data.config.ts';
 let dryRun = false;
+let iUnderstandOverwrite = false;
 
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--config') configPath = args[i + 1];
   if (args[i] === '--dry-run') dryRun = true;
+  if (args[i] === '--i-understand-overwrite') iUnderstandOverwrite = true;
+}
+
+// Checked before the config file is even imported, so refusal never depends
+// on how far a real run would have gotten -- the config could point at
+// production and this still exits before that path is read.
+if (!destructiveSeedAllowed(dryRun, iUnderstandOverwrite)) {
+  console.error(
+    'Refusing to run: this script overwrites existing athletes, goals, and sessions on conflict '
+    + '(roster import never does). Preview with --dry-run, or confirm the overwrite explicitly '
+    + 'with --i-understand-overwrite or PPBF_ALLOW_DESTRUCTIVE_SEED=true.',
+  );
+  process.exit(2);
 }
 
 // Import config

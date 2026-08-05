@@ -1,5 +1,12 @@
 // Backfill embeddings for SHADOW Library chunks that predate the embedding
-// deployment (or whose write-time embedding failed).
+// deployment, whose write-time embedding failed, or whose stored
+// embedding_model no longer matches the deployment this script is pointed
+// at. That third case matters as much as the other two: the search query in
+// shadowLibrary.ts filters candidates to embedding_model = the CURRENT
+// deployment, so a chunk left on a retired model is not wrong, it is simply
+// invisible to semantic search until this script re-embeds it. Without
+// that case a deployment change would silently and permanently shrink the
+// semantic corpus rather than degrade it temporarily.
 //
 // Operator-run, explicit-target-only: like the fixture provisioner, this
 // script refuses to write to a database nobody named -- set
@@ -9,9 +16,11 @@
 // to stop). Requires the embedding env (AZURE_AI_ENDPOINT, AZURE_AI_KEY,
 // AZURE_AI_EMBEDDING_DEPLOYMENT_NAME); exits without writing when unset.
 //
-// Idempotent: only rows with a NULL embedding are touched, so re-running
-// after a partial failure resumes where it stopped. Each row is committed
-// individually -- a mid-run crash loses nothing.
+// Idempotent with respect to the CURRENT deployment: a row already embedded
+// by the deployment named in AZURE_AI_EMBEDDING_DEPLOYMENT_NAME is never
+// re-fetched, so re-running after a partial failure (or on a schedule)
+// resumes where it stopped rather than re-embedding everything. Each row is
+// committed individually -- a mid-run crash loses nothing.
 
 import { Client } from 'pg';
 
@@ -64,17 +73,22 @@ try {
   console.log(`Backfilling chunk embeddings in database "${current.rows[0].db}" with deployment "${deployment}".`);
 
   const { rows } = await client.query(
-    `select chunk_id, organization_id, text_content
+    `select chunk_id, organization_id, text_content, embedding_model
      from pilot.shadow_library_chunks
-     where embedding is null
+     where (embedding is null or embedding_model is distinct from $3)
        and ($1 = '' or organization_id = $1)
      order by created_at asc
      limit $2`,
-    [organizationFilter, BATCH_LIMIT],
+    [organizationFilter, BATCH_LIMIT, deployment],
   );
 
   if (rows.length === 0) {
     console.log('No chunks need embedding. Done.');
+  }
+
+  const staleModelCount = rows.filter((row) => row.embedding_model && row.embedding_model !== deployment).length;
+  if (staleModelCount > 0) {
+    console.log(`${staleModelCount} of ${rows.length} chunk(s) carry a different embedding_model and will be re-embedded.`);
   }
 
   let embedded = 0;
@@ -85,7 +99,7 @@ try {
       await client.query(
         `update pilot.shadow_library_chunks
          set embedding = $3::jsonb, embedding_model = $4
-         where chunk_id = $1 and organization_id = $2 and embedding is null`,
+         where chunk_id = $1 and organization_id = $2`,
         [row.chunk_id, row.organization_id, JSON.stringify(embedding), deployment],
       );
       embedded += 1;
