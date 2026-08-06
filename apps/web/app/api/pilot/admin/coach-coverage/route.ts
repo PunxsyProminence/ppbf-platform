@@ -1,0 +1,88 @@
+import { NextResponse, type NextRequest } from 'next/server';
+
+import { grantCoachCoverage, isOrganizationAdminRole, revokeCoachCoverage } from '@/src/server/pilot/access';
+import { jsonError, requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
+
+export const runtime = 'nodejs';
+
+export async function POST(request: NextRequest) {
+  try {
+    const principal = await requireMicrosoftAuthenticatedPrincipal(request);
+
+    if (!isOrganizationAdminRole(principal.role)) {
+      throw new Error('Forbidden: role not allowed');
+    }
+
+    const body = (await request.json()) as {
+      athlete_id?: string;
+      covering_coach_id?: string;
+      ttl_hours?: number;
+    };
+
+    const athleteId = body.athlete_id?.trim() || '';
+    const coveringCoachId = body.covering_coach_id?.trim() || '';
+
+    if (!athleteId || !coveringCoachId) {
+      throw new Error('Missing athlete_id or covering_coach_id');
+    }
+
+    const result = await grantCoachCoverage({
+      organizationId: principal.organizationId,
+      athleteId,
+      coveringCoachId,
+      grantedByAccountId: principal.accountId,
+      ttlHours: body.ttl_hours,
+    });
+
+    return NextResponse.json({
+      ok: true,
+      coverage_id: result.coverageId,
+      organization_id: principal.organizationId,
+      athlete_id: athleteId,
+      covering_coach_id: coveringCoachId,
+      expires_at: result.expiresAt,
+    });
+  } catch (error) {
+    return jsonError(error);
+  }
+}
+
+// The withdrawal half of POST. Same authorization -- an organization admin
+// grants coverage and the same role takes it back -- and the same
+// organization scoping, so one gym cannot end another gym's grant by
+// guessing a coverage_id.
+export async function DELETE(request: NextRequest) {
+  try {
+    const principal = await requireMicrosoftAuthenticatedPrincipal(request);
+
+    if (!isOrganizationAdminRole(principal.role)) {
+      throw new Error('Forbidden: role not allowed');
+    }
+
+    const body = (await request.json().catch(() => ({}))) as { coverage_id?: string };
+    const coverageId = body.coverage_id?.trim() || '';
+
+    if (!coverageId) {
+      throw new Error('Missing coverage_id');
+    }
+
+    const result = await revokeCoachCoverage({
+      organizationId: principal.organizationId,
+      coverageId,
+    });
+
+    // `revoked: false` means no active grant matched -- already expired,
+    // already revoked, or another organization's. Deliberately not a 404: the
+    // caller's intent (this coverage is not active) holds either way, and
+    // distinguishing the cases would confirm whether a coverage_id exists in
+    // some other gym.
+    return NextResponse.json({
+      ok: true,
+      coverage_id: coverageId,
+      organization_id: principal.organizationId,
+      revoked: result.revoked,
+    });
+  } catch (error) {
+    return jsonError(error);
+  }
+}

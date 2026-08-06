@@ -3,8 +3,11 @@ import {
   assertAthleteBelongsToOrganization,
   assertAthleteUpdateAllowed,
   assertCoachAssignedToAthlete,
+  DEFAULT_COVERAGE_TTL_HOURS,
+  grantCoachCoverage,
   isOrganizationAdminRole,
   requireRole,
+  revokeCoachCoverage,
 } from './access';
 import { queryOne } from './db';
 import type { ActorIdentity } from './access';
@@ -88,7 +91,113 @@ describe('assertCoachAssignedToAthlete', () => {
 
   test('throws Forbidden when coach is not assigned to athlete', async () => {
     mockQueryOne.mockResolvedValueOnce(null);
+    mockQueryOne.mockResolvedValueOnce(null);
     await expect(assertCoachAssignedToAthlete('coach-1', 'ath-other', 'org-1')).rejects.toThrow('Forbidden');
+  });
+});
+
+// ─── grantCoachCoverage ───────────────────────────────────────────────────────
+//
+// The TTL bound is the security property here, not an input-validation nicety.
+// A per-athlete coverage table was chosen over a roster-wide flag specifically
+// because coverage is time-bounded exposure to one minor's record; a ttl_hours
+// that reaches `now() + ($n || ' hours')::interval` unchecked makes "temporary"
+// mean "until someone notices", which is the property the design was picked for.
+
+describe('grantCoachCoverage', () => {
+  const baseParams = {
+    organizationId: 'org-1',
+    athleteId: 'ath-1',
+    coveringCoachId: 'coach-sub',
+    grantedByAccountId: 'admin-1',
+  };
+
+  test('defaults to DEFAULT_COVERAGE_TTL_HOURS when ttlHours is omitted', async () => {
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockQueryOne.mockResolvedValueOnce({ coverage_id: 'cov-1', expires_at: '2026-08-07T00:00:00Z' });
+
+    await expect(grantCoachCoverage(baseParams)).resolves.toEqual({
+      coverageId: 'cov-1',
+      expiresAt: '2026-08-07T00:00:00Z',
+    });
+
+    expect(mockQueryOne).toHaveBeenLastCalledWith(
+      expect.stringContaining('insert into pilot.coach_coverage'),
+      expect.arrayContaining([DEFAULT_COVERAGE_TTL_HOURS]),
+    );
+  });
+
+  test('rejects a ttlHours beyond the maximum instead of granting a century of access', async () => {
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
+
+    await expect(grantCoachCoverage({ ...baseParams, ttlHours: 876_000 })).rejects.toThrow(
+      'Missing ttl_hours: must be a positive integer of at most 336',
+    );
+
+    // The insert must never be reached -- rejecting after writing would be no
+    // protection at all.
+    expect(mockQueryOne).toHaveBeenCalledTimes(1);
+  });
+
+  test('rejects a non-integer ttlHours', async () => {
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    await expect(grantCoachCoverage({ ...baseParams, ttlHours: 1.5 })).rejects.toThrow('Missing ttl_hours');
+  });
+
+  test('rejects a zero or negative ttlHours', async () => {
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    await expect(grantCoachCoverage({ ...baseParams, ttlHours: 0 })).rejects.toThrow('Missing ttl_hours');
+
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    await expect(grantCoachCoverage({ ...baseParams, ttlHours: -4 })).rejects.toThrow('Missing ttl_hours');
+  });
+
+  test('accepts a ttlHours exactly at the maximum', async () => {
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockQueryOne.mockResolvedValueOnce({ coverage_id: 'cov-2', expires_at: '2026-08-20T00:00:00Z' });
+
+    await expect(grantCoachCoverage({ ...baseParams, ttlHours: 336 })).resolves.toMatchObject({
+      coverageId: 'cov-2',
+    });
+  });
+
+  test('refuses to grant coverage for an athlete outside the organization', async () => {
+    mockQueryOne.mockResolvedValueOnce(null);
+    await expect(grantCoachCoverage(baseParams)).rejects.toThrow('Forbidden: athlete does not belong to organization');
+    expect(mockQueryOne).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─── revokeCoachCoverage ──────────────────────────────────────────────────────
+
+describe('revokeCoachCoverage', () => {
+  test('reports revoked when an active grant was ended', async () => {
+    mockQueryOne.mockResolvedValueOnce({ coverage_id: 'cov-1' });
+
+    await expect(revokeCoachCoverage({ organizationId: 'org-1', coverageId: 'cov-1' })).resolves.toEqual({
+      revoked: true,
+    });
+  });
+
+  test('scopes the revoke by organization so one gym cannot end another gym grant', async () => {
+    mockQueryOne.mockResolvedValueOnce(null);
+
+    await expect(revokeCoachCoverage({ organizationId: 'org-2', coverageId: 'cov-1' })).resolves.toEqual({
+      revoked: false,
+    });
+
+    expect(mockQueryOne).toHaveBeenCalledWith(
+      expect.stringContaining('organization_id = $1'),
+      ['org-2', 'cov-1'],
+    );
+  });
+
+  test('is idempotent -- revoking an already-expired grant is not an error', async () => {
+    mockQueryOne.mockResolvedValueOnce(null);
+
+    await expect(revokeCoachCoverage({ organizationId: 'org-1', coverageId: 'cov-gone' })).resolves.toEqual({
+      revoked: false,
+    });
   });
 });
 
@@ -163,8 +272,23 @@ describe('assertActorCanAccessAthlete', () => {
 
     test('throws Forbidden when coach is not assigned to athlete', async () => {
       mockQueryOne.mockResolvedValueOnce(null);
+      mockQueryOne.mockResolvedValueOnce(null);
       const actor: ActorIdentity = { accountId: 'coach-1', role: 'coach', organizationId: 'org-1', athleteId: null };
       await expect(assertActorCanAccessAthlete(actor, 'ath-other')).rejects.toThrow('Forbidden');
+    });
+
+    test('allows access when coach has an active covering grant', async () => {
+      mockQueryOne.mockResolvedValueOnce(null);
+      mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
+      const actor: ActorIdentity = { accountId: 'coach-covering', role: 'coach', organizationId: 'org-1', athleteId: null };
+      await expect(assertActorCanAccessAthlete(actor, 'ath-1')).resolves.toBeUndefined();
+    });
+
+    test('throws Forbidden when coach covering grant is expired or absent', async () => {
+      mockQueryOne.mockResolvedValueOnce(null);
+      mockQueryOne.mockResolvedValueOnce(null);
+      const actor: ActorIdentity = { accountId: 'coach-expired', role: 'coach', organizationId: 'org-1', athleteId: null };
+      await expect(assertActorCanAccessAthlete(actor, 'ath-1')).rejects.toThrow('Forbidden: coach not assigned to athlete');
     });
   });
 
