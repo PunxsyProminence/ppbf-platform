@@ -685,7 +685,7 @@ create table if not exists pilot.scheduler_attendance (
   class_id                text not null,
   athlete_id              text not null,
   status                  text not null check (status in ('present', 'absent', 'excused')),
-  method                  text not null check (method in ('self', 'coach_override', 'admin_override')),
+  method                  text not null check (method in ('self', 'parent', 'coach_override', 'admin_override')),
   checked_in_by_role      text not null check (checked_in_by_role in ('athlete', 'parent', 'coach', 'organization_admin', 'admin')),
   checked_in_by_account_id text not null,
   note                    text not null default '',

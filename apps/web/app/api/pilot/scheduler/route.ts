@@ -6,6 +6,7 @@ import { assertActorCanAccessAthlete, isOrganizationAdminRole } from '@/src/serv
 import { query } from '@/src/server/pilot/db';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
+  bulkUpsertSchedulerAttendance,
   createSchedulerClass,
   createSchedulerCoachingRequest,
   getSchedulerClassById,
@@ -30,7 +31,8 @@ type SchedulerAction =
   | 'register_class'
   | 'parent_review_registration'
   | 'request_coaching'
-  | 'attendance_checkin';
+  | 'attendance_checkin'
+  | 'bulk_attendance_checkin';
 
 type SchedulerActorRole = SchedulerRole | 'platform_owner' | 'volunteer' | 'staff';
 
@@ -77,6 +79,20 @@ function normalizeRole(role: SchedulerActorRole): SchedulerRole {
 
 function canManageAll(actor: SchedulerActor): boolean {
   return actor.role === 'admin' || isOrganizationAdminRole(actor.role as SchedulerActorRole);
+}
+
+// A parent has been able to check in their own linked child since
+// attendance_checkin shipped (assertCanActOnAthlete permits it), but this
+// resolution only ever considered "is this the athlete themself" or "can
+// this actor manage the whole org" -- a parent fell into the `else` branch
+// and was recorded as `coach_override`, misattributing who actually made the
+// call. `checked_in_by_role` was always correct ('parent'); only `method`
+// lied. See infra/azure/pilot_slice_postgres_attendance_parent_method_migration.sql
+// for why a migration was needed to store this honestly.
+function resolveAttendanceMethod(actor: SchedulerActor, isSelf: boolean): SchedulerAttendance['method'] {
+  if (isSelf) return 'self';
+  if (actor.role === 'parent') return 'parent';
+  return canManageAll(actor) ? 'admin_override' : 'coach_override';
 }
 
 async function getParentAthleteIds(actor: SchedulerActor): Promise<string[]> {
@@ -250,6 +266,11 @@ export async function POST(request: NextRequest) {
       registration_id?: string;
       status?: 'present' | 'absent' | 'excused';
       note?: string;
+      entries?: Array<{
+        athlete_id?: string;
+        status?: 'present' | 'absent' | 'excused';
+        note?: string;
+      }>;
     };
 
     const action = body.action;
@@ -438,11 +459,7 @@ export async function POST(request: NextRequest) {
       }
 
       const now = new Date().toISOString();
-      const method: SchedulerAttendance['method'] = isSelf
-        ? 'self'
-        : canManageAll(actor)
-          ? 'admin_override'
-          : 'coach_override';
+      const method = resolveAttendanceMethod(actor, isSelf);
 
       const classItem = await getSchedulerClassById(actor.organizationId, classId);
       if (!classItem) {
@@ -465,6 +482,76 @@ export async function POST(request: NextRequest) {
       await upsertSchedulerAttendance(actor.organizationId, attendanceRecord);
 
       return NextResponse.json({ ok: true, class_id: classId, athlete_id: athleteId });
+    }
+
+    if (action === 'bulk_attendance_checkin') {
+      // A coach marking a whole class at once, rather than one athlete per
+      // request. Only coach/admin may use this action -- an athlete or
+      // parent's self/child-scoped check-in stays on attendance_checkin,
+      // where assertCanActOnAthlete already enforces they can only ever
+      // touch their own record.
+      if (!(actor.role === 'coach' || canManageAll(actor))) {
+        throw new Error('Forbidden: only coach/admin can bulk-mark attendance');
+      }
+
+      const classId = requiredString(body.class_id, 'class_id');
+      const classItem = await getSchedulerClassById(actor.organizationId, classId);
+      if (!classItem) {
+        throw new Error('Missing class record');
+      }
+
+      const entries = body.entries;
+      if (!Array.isArray(entries) || entries.length === 0) {
+        throw new Error('Missing entries: must be a non-empty array');
+      }
+      if (entries.length > 200) {
+        throw new Error('Unsupported entries: must not exceed 200 per request');
+      }
+
+      const now = new Date().toISOString();
+      const seenAthleteIds = new Set<string>();
+      const records: SchedulerAttendance[] = [];
+
+      for (const entry of entries) {
+        const entryAthleteId = requiredString(entry?.athlete_id, 'entries[].athlete_id');
+        const entryStatus = entry?.status;
+        if (entryStatus !== 'present' && entryStatus !== 'absent' && entryStatus !== 'excused') {
+          throw new Error('Unsupported entries[].status: must be present, absent, or excused');
+        }
+        if (seenAthleteIds.has(entryAthleteId)) {
+          throw new Error(`Unsupported entries: duplicate athlete_id ${entryAthleteId}`);
+        }
+        seenAthleteIds.add(entryAthleteId);
+
+        // Every athlete in the batch, not just the actor's own athleteId,
+        // must pass the same ownership check a single check-in would --
+        // a coach can only mark athletes they are actually assigned to
+        // (assertCanActOnAthlete -> assertCoachAssignedToAthlete), even
+        // inside a bulk call.
+        await assertCanActOnAthlete(actor, entryAthleteId);
+
+        records.push({
+          attendance_id: randomUUID(),
+          class_id: classId,
+          athlete_id: entryAthleteId,
+          status: entryStatus,
+          method: resolveAttendanceMethod(actor, false),
+          checked_in_by_role: actorRole,
+          checked_in_by_account_id: actor.accountId,
+          note: typeof entry?.note === 'string' ? entry.note.trim() : '',
+          checked_in_at: now,
+          updated_at: now,
+        });
+      }
+
+      await bulkUpsertSchedulerAttendance(actor.organizationId, records);
+
+      return NextResponse.json({
+        ok: true,
+        class_id: classId,
+        marked_count: records.length,
+        athlete_ids: records.map((record) => record.athlete_id),
+      });
     }
 
     throw new Error(`Unsupported action: ${action}`);

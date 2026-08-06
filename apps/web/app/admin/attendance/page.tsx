@@ -1,0 +1,194 @@
+"use client";
+
+import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import RoleSessionGate from '@/components/RoleSessionGate';
+import { apiBase } from '@/lib/apiBase';
+
+interface AttendanceAthleteSummary {
+  athlete_id: string;
+  full_name: string;
+  present_count: number;
+  absent_count: number;
+  excused_count: number;
+  total_marked: number;
+  last_marked_at: string | null;
+  attendance_rate: number | null;
+}
+
+function formatRate(rate: number | null): string {
+  if (rate === null) return 'Unavailable';
+  return `${Math.round(rate * 100)}%`;
+}
+
+function formatLastMarked(value: string | null): string {
+  if (!value) return 'Never';
+  try {
+    return new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch {
+    return value;
+  }
+}
+
+// Sorts athletes with a real rate first (worst attendance first, so a coach
+// or admin sees who needs attention without hunting for them), and pushes
+// never-marked athletes to the bottom under their own heading rather than
+// interleaving "0%" (a real, bad number) with "no data yet" (not a number at
+// all) -- collapsing those two would be exactly the fabrication this
+// dashboard exists to avoid.
+function sortSummary(items: AttendanceAthleteSummary[]): AttendanceAthleteSummary[] {
+  const withRate = items.filter((item) => item.attendance_rate !== null).sort((a, b) => (a.attendance_rate ?? 0) - (b.attendance_rate ?? 0));
+  const withoutRate = items.filter((item) => item.attendance_rate === null).sort((a, b) => a.full_name.localeCompare(b.full_name));
+  return [...withRate, ...withoutRate];
+}
+
+export default function AttendanceDashboardPage() {
+  const [items, setItems] = useState<AttendanceAthleteSummary[] | null>(null);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/scheduler/attendance-summary`, {
+          credentials: 'include',
+          signal: controller.signal,
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          athletes?: AttendanceAthleteSummary[];
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new Error(payload.error || 'Unable to load attendance summary.');
+        }
+        setItems(payload.athletes ?? []);
+        setErrorMessage('');
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setItems([]);
+        setErrorMessage(error instanceof Error ? error.message : 'Unable to load attendance summary.');
+      }
+    })();
+    return () => controller.abort();
+  }, []);
+
+  const sorted = useMemo(() => sortSummary(items ?? []), [items]);
+
+  const kpis = useMemo(() => {
+    const source = items ?? [];
+    const withRate = source.filter((item) => item.attendance_rate !== null);
+    const averageRate = withRate.length === 0
+      ? null
+      : withRate.reduce((sum, item) => sum + (item.attendance_rate ?? 0), 0) / withRate.length;
+    return {
+      totalAthletes: source.length,
+      neverMarked: source.filter((item) => item.total_marked === 0).length,
+      averageRate,
+    };
+  }, [items]);
+
+  const isLoading = items === null;
+
+  return (
+    <RoleSessionGate allowedRoles={['admin', 'coach']}>
+      <main className="room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+        <div className="mx-auto w-full max-w-6xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
+          <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)] p-[var(--s5)]">
+            <p className="t-eyebrow">Admin Workspace</p>
+            <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Attendance</h1>
+            <p className="t-data mt-[var(--s3)] uppercase tracking-[0.14em] text-[color:var(--brass-300)]">LIVE | ROLLS UP pilot.scheduler_attendance</p>
+            <p className="t-body mt-[var(--s3)] max-w-4xl">
+              Every mark comes from a real check-in recorded on the <Link href="/schedule" className="underline">Schedule</Link> page.
+              An athlete with no rows here has never been checked in for a class, not a 0% attendance rate --
+              those two facts are shown separately below.
+            </p>
+            {errorMessage ? (
+              <p role="alert" className="alert alert--critical mt-[var(--s3)]">
+                <span className="alert-icon">✕</span>
+                <span className="alert-msg">{errorMessage}</span>
+              </p>
+            ) : null}
+          </header>
+
+          <section className="mt-[var(--s5)] grid gap-[var(--s4)] md:grid-cols-3">
+            <article className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-[var(--s4)] py-[var(--s4)]">
+              <p className="t-eyebrow">Athletes tracked</p>
+              <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">
+                {isLoading ? '—' : kpis.totalAthletes}
+              </p>
+            </article>
+            <article className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-[var(--s4)] py-[var(--s4)]">
+              <p className="t-eyebrow">Never checked in</p>
+              <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">
+                {isLoading ? '—' : kpis.neverMarked}
+              </p>
+            </article>
+            <article className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-[var(--s4)] py-[var(--s4)]">
+              <p className="t-eyebrow">Average rate (marked athletes)</p>
+              <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">
+                {isLoading ? '—' : formatRate(kpis.averageRate)}
+              </p>
+            </article>
+          </section>
+
+          {isLoading ? (
+            <div className="empty mt-[var(--s5)]">
+              <div className="empty-glyph" aria-hidden="true">◌</div>
+              <div className="empty-title">Loading attendance…</div>
+            </div>
+          ) : sorted.length === 0 ? (
+            <div className="empty mt-[var(--s5)]">
+              <div className="empty-glyph" aria-hidden="true">◌</div>
+              <div className="empty-title">No active athletes in scope yet</div>
+              <div className="empty-msg">
+                Coaches see athletes registered for their own classes; organization_admin/admin see the whole roster.
+              </div>
+            </div>
+          ) : (
+            <section className="mat-leather mt-[var(--s5)] overflow-x-auto rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)]">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="t-eyebrow border-b border-[color:var(--hide-700)]">
+                    <th className="px-[var(--s4)] py-[var(--s3)]">Athlete</th>
+                    <th className="px-[var(--s4)] py-[var(--s3)]">Present</th>
+                    <th className="px-[var(--s4)] py-[var(--s3)]">Absent</th>
+                    <th className="px-[var(--s4)] py-[var(--s3)]">Excused</th>
+                    <th className="px-[var(--s4)] py-[var(--s3)]">Rate</th>
+                    <th className="px-[var(--s4)] py-[var(--s3)]">Last marked</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sorted.map((item) => (
+                    <tr key={item.athlete_id} className="border-b border-[color:var(--hide-800)] last:border-b-0">
+                      <td className="t-body px-[var(--s4)] py-[var(--s3)]">{item.full_name}</td>
+                      <td className="t-data px-[var(--s4)] py-[var(--s3)]">{item.present_count}</td>
+                      <td className="t-data px-[var(--s4)] py-[var(--s3)]">{item.absent_count}</td>
+                      <td className="t-data px-[var(--s4)] py-[var(--s3)]">{item.excused_count}</td>
+                      <td className="t-data px-[var(--s4)] py-[var(--s3)]">
+                        {item.attendance_rate === null ? (
+                          <span className="badge badge--monitor"><i>◉</i>Unavailable</span>
+                        ) : (
+                          formatRate(item.attendance_rate)
+                        )}
+                      </td>
+                      <td className="t-body px-[var(--s4)] py-[var(--s3)]">{formatLastMarked(item.last_marked_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          )}
+
+          <div className="mt-[var(--s6)] flex flex-wrap gap-[var(--s3)]">
+            <Link href="/schedule" className="btn btn--ghost">
+              Go to Schedule (mark attendance)
+            </Link>
+            <Link href="/operations" className="btn btn--ghost">
+              Back to Mission Control
+            </Link>
+          </div>
+        </div>
+      </main>
+    </RoleSessionGate>
+  );
+}

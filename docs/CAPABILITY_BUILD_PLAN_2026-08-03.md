@@ -27,8 +27,8 @@ Rough scoreboard across the 200 detailed items:
 | Status | Count (approx.) | Meaning |
 |---|---|---|
 | ✅ Built | ~18 | A dedicated module + route + surface exists and is tested |
-| 🟡 Partial | ~52 | Real code covers part of the capability's scope |
-| ⬜ Not started | ~130 | No dedicated code found |
+| 🟡 Partial | ~54 | Real code covers part of the capability's scope |
+| ⬜ Not started | ~128 | No dedicated code found |
 
 The build so far has been **deep in four areas** — identity/governance, SHADOW
 (AI layer), coach review/video, and board/compliance — and **thin in the
@@ -220,7 +220,7 @@ sits behind the Privacy-Tier System (#200).
 |---|---|---|---|---|
 | 120 | Class Control Engine | 🟡 | `schedulerDb.ts`, scheduler route | 2 |
 | 121 | Group Assignment Engine | 🟡 | track-assignments | 2 |
-| 122 | Attendance Engine | ⬜ | **no dedicated module found** — biggest daily-ops gap | 2 |
+| 122 | Attendance Engine | 🟡 | This entry was wrong: `pilot.scheduler_attendance` + `schedulerDb.ts` + the scheduler route's `attendance_checkin` action already existed and recorded real check-ins. The actual gaps closed 2026-08-06: no reporting/rollup layer (now `attendanceReporting.ts` + `/api/pilot/scheduler/attendance-summary` + `admin/attendance`), no bulk class check-in (now `bulk_attendance_checkin`), and a real bug where a parent's check-in was misattributed as `coach_override` (now its own `method: 'parent'`, migrated). Still open: `CoachWorkspace.tsx`'s roster view still hardcodes `attendance: 'Unknown'` instead of querying the new summary endpoint — deferred because that file was claimed by a concurrent session; a second legacy table, `pilot.attendance` (written by `intake.ts`'s manual-entry flow, read by `passbook.ts`), remains a second source of truth not unified with `scheduler_attendance` in this pass | 2 |
 | 123 | Station Rotation Engine | 🟡 | floor-plans route | 2 |
 | 124 | Capacity Management Engine | ⬜ | | 2 |
 | 125 | Behavior Standard Engine | ⬜ | | 2 |
@@ -291,7 +291,7 @@ sits behind the Privacy-Tier System (#200).
 | 170 | Safety Dashboard | 🟡 | board compliance-monitoring page | 1 |
 | 171 | Progression Dashboard | 🟡 | progression pages; gaps route | 3 |
 | 172 | Performance Trend Dashboard | ⬜ | needs Phase 3 engines | 3 |
-| 173 | Attendance Dashboard | ⬜ | needs #122 | 2 |
+| 173 | Attendance Dashboard | 🟡 | `admin/attendance` — org/coach-scoped rollup table; no trend charts or grant-facing view yet | 2 |
 | 174 | Grant / Impact Dashboard | ⬜ | needs #146 | 4 |
 | 175 | Source-Control Dashboard | 🟡 | placeholder (same as #143) | 4 |
 

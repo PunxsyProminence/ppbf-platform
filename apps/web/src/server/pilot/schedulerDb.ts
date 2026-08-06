@@ -49,7 +49,7 @@ export interface SchedulerAttendance {
   class_id: string;
   athlete_id: string;
   status: 'present' | 'absent' | 'excused';
-  method: 'self' | 'coach_override' | 'admin_override';
+  method: 'self' | 'parent' | 'coach_override' | 'admin_override';
   checked_in_by_role: SchedulerRole;
   checked_in_by_account_id: string;
   note: string;
@@ -372,4 +372,80 @@ export async function upsertSchedulerAttendance(organizationId: string, item: Sc
       item.updated_at,
     ],
   );
+}
+
+// Marks a whole roster in one call -- a coach standing in front of a class
+// should not have to make one round trip per athlete. All-or-nothing: if one
+// row in the batch fails (a bad status value slipping past the route's own
+// validation, say), none of the batch is written, so a partially-applied
+// roster never sits between "not marked" and "marked" for the coach to
+// re-discover mid-session.
+export async function bulkUpsertSchedulerAttendance(organizationId: string, items: SchedulerAttendance[]): Promise<void> {
+  if (items.length === 0) return;
+
+  await withTransaction(async (client) => {
+    for (const item of items) {
+      const existing = await client.query<{ attendance_id: string }>(
+        `select attendance_id
+         from pilot.scheduler_attendance
+         where organization_id = $1 and class_id = $2 and athlete_id = $3
+         limit 1`,
+        [organizationId, item.class_id, item.athlete_id],
+      );
+
+      if (existing.rows[0]) {
+        await client.query(
+          `update pilot.scheduler_attendance
+           set status = $4,
+               method = $5,
+               checked_in_by_role = $6,
+               checked_in_by_account_id = $7,
+               note = $8,
+               checked_in_at = $9,
+               updated_at = $10
+           where organization_id = $1 and class_id = $2 and athlete_id = $3`,
+          [
+            organizationId,
+            item.class_id,
+            item.athlete_id,
+            item.status,
+            item.method,
+            item.checked_in_by_role,
+            item.checked_in_by_account_id,
+            item.note,
+            item.checked_in_at,
+            item.updated_at,
+          ],
+        );
+        continue;
+      }
+
+      await client.query(
+        `insert into pilot.scheduler_attendance (
+           organization_id, attendance_id, class_id, athlete_id,
+           status, method,
+           checked_in_by_role, checked_in_by_account_id,
+           note, checked_in_at, updated_at
+         ) values (
+           $1,$2,$3,$4,
+           $5,$6,
+           $7,$8,
+           $9,$10,$11
+         )`,
+        [
+          organizationId,
+          item.attendance_id,
+          item.class_id,
+          item.athlete_id,
+          item.status,
+          item.method,
+          item.checked_in_by_role,
+          item.checked_in_by_account_id,
+          item.note,
+          item.checked_in_at,
+          item.updated_at,
+        ],
+      );
+    }
+  });
 }
