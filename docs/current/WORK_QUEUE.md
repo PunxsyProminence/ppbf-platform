@@ -55,9 +55,9 @@ documentation-only.
 
 | ID | Pri | Title | Owner | Type | State | Depends on | Files/area | Risk | PR | Env | Verified by | Blocker | Updated |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| T-001 | P3 | Admin activation-code console (or remove dead route) | unclaimed | build | READY | none | `admin/activation-codes/**` | low | — | — | — | Ticket makes builder decide build-vs-delete first | 2026-08-06 |
-| T-002 | P1 | Covering coach cannot access an athlete they don't own | unclaimed | build | READY | none | `access.ts`, new migration | medium — auth + schema | — | — | — | Builder must pick coverage model, state rejected alternative | 2026-08-06 |
-| T-003 | P0 | Admin console for quarantined-video scan-review escalation | unclaimed | build | READY | none | `admin/video-review/**` | medium — safeguarding, minors' footage | — | — | — | none | 2026-08-06 |
+| T-001 | P3 | Admin activation-code console (or remove dead route) | unclaimed | build | STAGING_READY | none | `admin/activation-codes/**` | low | #239 | — | — | Clean-room verified: typecheck, lint, 4 tests pass, build green | none | 2026-08-06 |
+| T-002 | P1 | Covering coach cannot access an athlete they don't own | unclaimed | build | STAGING_READY | #243 | `access.ts`, new migration | medium — auth + schema | #242 | — | — | Clean-room verified: 284 suites pass, 15 new tests, typecheck/lint green, migrations pending (embedded-postgres flake on Windows, GitHub will verify) | Blocker #243 (coach reassignment) merged 2026-08-06 | 2026-08-06 |
+| T-003 | P0 | Admin console for quarantined-video scan-review escalation | unclaimed | build | STAGING_READY | none | `admin/video-review/**` | medium — safeguarding, minors' footage | #237 | — | — | Clean-room verified: typecheck, lint, tests pass, E2E pass, build green | none | 2026-08-06 |
 
 **Refuted, not queued**: an automated audit pass flagged "athlete onboarding
 creates live accounts on a shared, guessable PIN with no safeguard" as a
