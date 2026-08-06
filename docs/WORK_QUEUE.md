@@ -1,5 +1,10 @@
 # Work queue — shared between agent sessions
 
+> **Superseded.** The current queue is
+> [docs/current/WORK_QUEUE.md](current/WORK_QUEUE.md). Kept here because the
+> incidents below are real history worth keeping, not because this table is
+> still authoritative — do not claim an item from it.
+
 Two Claude sessions work this repository at the same time. Today that cost real
 duplicated work: the same nine compliance/progression/publication tables were
 ported to migrations twice (once as one file, once as three), and video release
