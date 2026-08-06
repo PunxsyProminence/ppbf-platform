@@ -33,12 +33,9 @@ interface AuthoredLesson extends RabbitHoleLessonItem {
    a neutral chip rather than a saturated rung. */
 const STATUS_BADGES: Record<AuthoredLesson['status'], { className: string; glyph: string; label: string }> = {
   published: { className: 'badge badge--cleared', glyph: '✓', label: 'Published' },
-  retired: {
-    className:
-      'inline-flex items-center gap-[var(--s2)] rounded-[var(--r-pill)] border border-[color:var(--hide-500)] bg-[rgba(0,0,0,.26)] px-[var(--s3)] py-[var(--s1)] font-mono text-[length:var(--t-xs)] font-bold uppercase tracking-[0.1em] text-[color:var(--bone-400)] [&_i]:not-italic',
-    glyph: '◌',
-    label: 'Retired',
-  },
+  /* The sheet's own administrative rung (badge--filed) replaced the
+     hand-rolled chip this entry used to carry -- same ◌, same job. */
+  retired: { className: 'badge badge--filed', glyph: '◌', label: 'Retired' },
 };
 
 const EMPTY_DRAFT = {

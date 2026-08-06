@@ -24,12 +24,9 @@ const REVIEW_STATE_BADGES: Record<ShadowKnowledgeNode['review_state'], { classNa
   approved: { className: 'badge badge--cleared', glyph: '✓', label: 'Approved' },
   rejected: { className: 'badge badge--locked', glyph: '✕', label: 'Rejected' },
   promoted: { className: 'badge badge--cleared', glyph: '✓', label: 'Promoted' },
-  unknown: {
-    className:
-      'inline-flex items-center gap-[var(--s2)] rounded-[var(--r-pill)] border border-[color:rgba(51,41,27,.4)] px-[var(--s3)] py-[var(--s1)] font-mono text-[length:var(--t-xs)] font-bold uppercase tracking-[0.1em] text-[color:var(--hide-600)] [&_i]:not-italic',
-    glyph: '◌',
-    label: 'Unknown',
-  },
+  /* The sheet's own administrative rung (badge--filed) replaced the
+     hand-rolled chip this entry used to carry -- same ◌, same job. */
+  unknown: { className: 'badge badge--filed', glyph: '◌', label: 'Unknown' },
 };
 
 export default function KnowledgeGraphPage() {
