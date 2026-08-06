@@ -1,0 +1,48 @@
+{
+  "_readme": "Controller-owned. Only the gatekeeper (VS Code Claude session) writes verified fields, after observing the target environment directly (az containerapp show / live smoke probes) -- never from reading source, a merged PR, or an agent's claim. External agents may read this file and may propose an update in a PR, but the PR does not become truth until the gatekeeper re-observes and re-writes it. Use null / 'not_verified' rather than guessing; a wrong value here is worse than an honest gap.",
+
+  "environments": {
+    "staging": {
+      "deployed_sha": "07188a444a652c850ef4698116afb8e09c8f109f",
+      "deployed_image_digest": "sha256:028f4c8a4d7cf41f38e3e2a3f921c2f94237810c70a6cff774afe0bd7535950d",
+      "deployment_timestamp": "2026-08-06T05:50:00Z",
+      "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/30985796578",
+      "container_app": "app-ppbf-staging",
+      "revision": "app-ppbf-staging--0000121",
+      "last_verified_by": "gatekeeper",
+      "last_verified_at": "2026-08-06T05:56:00Z",
+      "last_verification_method": "az containerapp show (image match) + curl smoke set (login 400, session 200, shadow 401, GET / 200, GET /login 200)",
+      "known_staging_gaps": []
+    },
+    "production": {
+      "deployed_sha": "07188a444a652c850ef4698116afb8e09c8f109f",
+      "deployed_image_digest": "sha256:028f4c8a4d7cf41f38e3e2a3f921c2f94237810c70a6cff774afe0bd7535950d",
+      "deployment_timestamp": "2026-08-06T05:55:24Z",
+      "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/31017335138",
+      "container_app": "app-ppbf-production",
+      "resource_group": "rg-ppbf-enterprise-staging",
+      "revision": "app-ppbf-production--0000114",
+      "last_verified_by": "gatekeeper",
+      "last_verified_at": "2026-08-06T06:15:00Z",
+      "last_verification_method": "az containerapp show, image digest compared against deployed_image_digest above",
+      "known_production_gaps": []
+    }
+  },
+
+  "schema": {
+    "known_applied_migrations": [
+      "goal-category-progress (confirmed applied to both staging and production, apply-migrations runs 2026-08-05T03:48Z and 04:30Z)"
+    ],
+    "note": "This is a log of what has been OBSERVED applied via apply-migrations run output, not a generated schema version. Every pilot:apply-* runner is additive/idempotent, so re-running one is safe -- this list exists to avoid re-running unnecessarily, not to gate anything."
+  },
+
+  "capabilities": {
+    "runtime_verified": [],
+    "merged_not_deployed": [],
+    "deployed_not_runtime_verified": [],
+    "note": "Empty until the audit workflow's gap register is reconciled into intake/tickets/. Do not hand-populate this from source reading -- that is exactly the source-code-claims-mistaken-for-truth failure this file exists to prevent."
+  },
+
+  "last_updated_by": "gatekeeper",
+  "last_updated_at": "2026-08-06T06:20:00Z"
+}

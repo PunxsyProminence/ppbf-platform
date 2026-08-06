@@ -123,6 +123,11 @@ Point-in-time, but not archived — these describe issues that may still be open
 
 ## Operations
 
+- [docs/AI_DELIVERY_PIPELINE.md](docs/AI_DELIVERY_PIPELINE.md) — how AI-built
+  capabilities move from a ticket in [intake/](intake/) through one verified
+  gate to production; extends
+  [docs/AI_CONTRIBUTOR_GUARDRAILS.md](docs/AI_CONTRIBUTOR_GUARDRAILS.md) and
+  [docs/MULTI_AI_EXECUTION_PLAN.md](docs/MULTI_AI_EXECUTION_PLAN.md)
 - [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md)
 - [docs/MULTI_ORG_MIGRATION_RUNBOOK.md](docs/MULTI_ORG_MIGRATION_RUNBOOK.md)
 - [docs/MULTI_ORG_ROLLBACK_RUNBOOK.md](docs/MULTI_ORG_ROLLBACK_RUNBOOK.md)
