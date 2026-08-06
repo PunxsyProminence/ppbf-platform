@@ -20,7 +20,7 @@ import { query, queryOne, withTransaction } from './db';
  */
 
 export type SafetyEscalationSeverity = 'low' | 'moderate' | 'high' | 'critical';
-export type SafetyEscalationSourceType = 'near_miss' | 'pain_report' | 'safety_gate_evaluation' | 'repeated_pattern';
+export type SafetyEscalationSourceType = 'near_miss' | 'pain_report' | 'safety_gate_evaluation' | 'repeated_pattern' | 'athlete_voice';
 export type SafetyEscalationStatus = 'open' | 'acknowledged' | 'resolved';
 /** Who an escalation is filed against. Deliberately excludes 'board' -- see the migration header for why. */
 export type SafetyEscalationTargetRole = 'coach' | 'organization_admin' | 'admin';
@@ -153,6 +153,15 @@ export function shouldAutoEscalateNearMiss(severity: SafetyEscalationSeverity): 
 export interface EscalationListFilters {
   status?: SafetyEscalationStatus;
   athleteIds?: string[];
+  /**
+   * Coach-scoped reads set this: an 'athlete_voice' escalation exists
+   * because a child typed something into the feedback box, and its mere
+   * presence on a coach's list -- however non-disclosing its reason --
+   * tells the athlete's coach that the athlete said something. The coach
+   * may be exactly who the child is disclosing about, so athlete_voice
+   * rows are admin-surface only.
+   */
+  excludeAthleteVoice?: boolean;
 }
 
 /** Org-wide list, newest first. Callers scope by athleteIds for a coach; omit it for org_admin/admin. */
@@ -170,10 +179,11 @@ export async function listEscalations(
      where organization_id = $1
        and ($2::text is null or status = $2)
        and ($3::text[] is null or athlete_id = any($3))
+       and ($4::boolean is not true or source_type <> 'athlete_voice')
      order by
        case severity when 'critical' then 0 when 'high' then 1 when 'moderate' then 2 else 3 end asc,
        created_at desc`,
-    [organizationId, filters.status ?? null, filters.athleteIds ?? null],
+    [organizationId, filters.status ?? null, filters.athleteIds ?? null, filters.excludeAthleteVoice ?? null],
   );
 }
 

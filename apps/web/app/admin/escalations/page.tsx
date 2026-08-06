@@ -7,7 +7,7 @@ import { apiBase } from '@/lib/apiBase';
 
 type EscalationSeverity = 'low' | 'moderate' | 'high' | 'critical';
 type EscalationStatus = 'open' | 'acknowledged' | 'resolved';
-type EscalationSourceType = 'near_miss' | 'pain_report' | 'safety_gate_evaluation' | 'repeated_pattern';
+type EscalationSourceType = 'near_miss' | 'pain_report' | 'safety_gate_evaluation' | 'repeated_pattern' | 'athlete_voice';
 
 interface SafetyEscalation {
   escalation_id: string;
@@ -32,6 +32,7 @@ const SOURCE_LABEL: Record<EscalationSourceType, string> = {
   pain_report: 'Pain Report',
   safety_gate_evaluation: 'Safety Gate',
   repeated_pattern: 'Repeated Pattern',
+  athlete_voice: 'Athlete Voice',
 };
 
 const STATUS_TABS: Array<{ value: EscalationStatus | 'all'; label: string }> = [

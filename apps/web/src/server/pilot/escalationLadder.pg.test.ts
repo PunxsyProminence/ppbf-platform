@@ -283,6 +283,21 @@ describe('safety escalations against real Postgres', () => {
     }
   });
 
+  // #198 widened the source_type vocabulary: athleteVoice.ts files these when
+  // an athlete's feedback submission routes to safeguarding.
+  test('the athlete_voice source_type stores, carrying the submission pointer in source_id', async () => {
+    const client = await freshDatabase('ppbf_test_escalations_voice', { dropEscalationsTableFirst: true, applyIncrement: true });
+    try {
+      await insertEscalation(client, { source_type: 'athlete_voice', source_id: 'sub-123' });
+      const { rows } = await client.query(
+        `select source_type, source_id from pilot.safety_escalations where escalation_id = 'esc-1'`,
+      );
+      expect(rows[0]).toEqual({ source_type: 'athlete_voice', source_id: 'sub-123' });
+    } finally {
+      await client.end();
+    }
+  });
+
   test('every admitted status value stores', async () => {
     const client = await freshDatabase('ppbf_test_escalations_status_admits', { dropEscalationsTableFirst: true, applyIncrement: true });
     try {

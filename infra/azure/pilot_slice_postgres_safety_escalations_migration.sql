@@ -39,6 +39,18 @@
 -- event. source_id is therefore nullable: a repeated-pattern escalation has
 -- no single originating row.
 --
+-- 'athlete_voice' (capability #198) is filed by athleteVoice.ts when an
+-- athlete's feedback submission routes to safeguarding: source_id carries
+-- the pilot.feedback_submissions id, and the escalation's reason/metadata
+-- deliberately carry NO submission text -- escalation rows reach surfaces
+-- the disclosure body must never reach (a coach may be who the child is
+-- disclosing about; the coach-scoped list excludes athlete_voice rows
+-- entirely for the same reason). Note the FK asymmetry, decided on purpose:
+-- this table cascades on athlete delete while feedback_submissions
+-- survives account deletion -- the escalation is the ALARM (pull-surface
+-- state), the submission is the RECORD; offboarding an athlete may clear
+-- their alarms but never their words.
+--
 -- escalated_to_role IS CONSTRAINED, UNLIKE violation_escalations.escalated_to_role
 --
 -- The compliance table's equivalent column is unconstrained free text and in
@@ -61,7 +73,7 @@
 create table if not exists pilot.safety_escalations (
   organization_id             text not null references pilot.organizations(organization_id) on delete cascade,
   escalation_id                text not null,
-  source_type                  text not null check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern')),
+  source_type                  text not null check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice')),
   source_id                    text null,
   athlete_id                   text not null,
   severity                     text not null check (severity in ('low', 'moderate', 'high', 'critical')),

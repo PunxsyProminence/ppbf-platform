@@ -322,7 +322,7 @@ owner has explicitly banned.
 | 195 | Minimum Effective Dose Engine | ⬜ | 3 |
 | 196 | Session Quality Score | ⬜ | 3 |
 | 197 | Readiness-to-Learn Score | ⬜ | 3 |
-| 198 | Athlete Voice Module | ⬜ | 1 |
+| 198 | Athlete Voice Module | ✅ 2026-08-06 — athlete safeguarding feedback files `athlete_voice` escalations (admin-only surface, non-disclosing, oracle-safe) | 1 |
 | 199 | Parent Education Module | ⬜ | 2 |
 | 200 | Privacy-Tier System | 🟡 (org isolation exists; no tiers) | 1 |
 

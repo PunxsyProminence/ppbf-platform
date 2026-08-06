@@ -67,7 +67,13 @@ export async function GET(request: NextRequest) {
     const status = (statusParam ?? undefined) as SafetyEscalationStatus | undefined;
 
     const athleteIds = isCoach ? await coachAthleteIds(principal.organizationId, principal.accountId) : undefined;
-    const escalations = await listEscalations(principal.organizationId, { status, athleteIds });
+    // athlete_voice rows are admin-surface only: their existence alone says
+    // "this child said something", and the coach may be who it is about.
+    const escalations = await listEscalations(principal.organizationId, {
+      status,
+      athleteIds,
+      excludeAthleteVoice: isCoach ? true : undefined,
+    });
 
     return NextResponse.json({ ok: true, escalations });
   } catch (error) {
@@ -104,9 +110,15 @@ export async function POST(request: NextRequest) {
       // own athletes -- checked by membership in their own scoped list
       // rather than a separate lookup-by-id, so "not mine" and "not real"
       // both land on the same Missing error a coach cannot tell apart.
+      // athlete_voice is excluded here exactly as in GET: a coach can
+      // neither see nor act on a disclosure-driven escalation, and probing
+      // this path with a guessed id yields the same Missing as a bogus id.
       if (isCoach) {
         const allowedAthleteIds = await coachAthleteIds(principal.organizationId, principal.accountId);
-        const ownEscalations = await listEscalations(principal.organizationId, { athleteIds: allowedAthleteIds });
+        const ownEscalations = await listEscalations(principal.organizationId, {
+          athleteIds: allowedAthleteIds,
+          excludeAthleteVoice: true,
+        });
         if (!ownEscalations.some((escalation) => escalation.escalation_id === escalationId)) {
           throw new Error('Missing escalation record');
         }

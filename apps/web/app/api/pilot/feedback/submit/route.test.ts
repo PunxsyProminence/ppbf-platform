@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { POST } from './route';
+import { fileAthleteVoiceEscalation } from '@/src/server/pilot/athleteVoice';
 import { resolvePrincipal, type PilotPrincipal } from '@/src/server/pilot/auth';
 import { createFeedbackSubmission } from '@/src/server/pilot/feedback';
 
@@ -13,8 +14,13 @@ jest.mock('@/src/server/pilot/feedback', () => ({
   createFeedbackSubmission: jest.fn(),
 }));
 
+jest.mock('@/src/server/pilot/athleteVoice', () => ({
+  fileAthleteVoiceEscalation: jest.fn().mockResolvedValue(null),
+}));
+
 const mockResolvePrincipal = resolvePrincipal as jest.MockedFunction<typeof resolvePrincipal>;
 const mockCreate = createFeedbackSubmission as jest.MockedFunction<typeof createFeedbackSubmission>;
+const mockFileVoice = jest.mocked(fileAthleteVoiceEscalation);
 
 const DISCLOSURE = 'someone at the gym keeps hurting me and im scared to come back';
 
@@ -172,5 +178,81 @@ describe('POST /api/pilot/feedback/submit', () => {
 
     expect(Object.keys(payload).sort()).toEqual(['acknowledgement', 'ok']);
     expect(String(payload.acknowledgement)).toContain('A person at the gym reads');
+  });
+});
+
+// ─── Athlete Voice (#198): the escalation the safeguarding queue feeds ───────
+
+describe('athlete voice escalation filing', () => {
+  test('an athlete safeguarding submission files an escalation pointing at the stored row', async () => {
+    mockResolvePrincipal.mockResolvedValueOnce(principal());
+    mockCreate.mockResolvedValueOnce({ submission_id: 'sub-voice-1', route: 'safeguarding' });
+
+    const res = await POST(request({ kind: 'other', body: DISCLOSURE }));
+
+    expect(res.status).toBe(200);
+    expect(mockFileVoice).toHaveBeenCalledWith({
+      organizationId: 'org-1',
+      accountId: 'acct-athlete',
+      submissionId: 'sub-voice-1',
+      body: DISCLOSURE,
+    });
+  });
+
+  test('a product-routed submission files nothing', async () => {
+    mockResolvePrincipal.mockResolvedValueOnce(principal());
+    mockCreate.mockResolvedValueOnce({ submission_id: 'sub-voice-2', route: 'product' });
+
+    await POST(request({ kind: 'bug', body: 'the schedule is wrong' }));
+
+    expect(mockFileVoice).not.toHaveBeenCalled();
+  });
+
+  test('a non-athlete never files, even if a submission somehow routed to safeguarding', async () => {
+    mockResolvePrincipal.mockResolvedValueOnce(principal({ role: 'coach', accountId: 'acct-coach' }));
+    mockCreate.mockResolvedValueOnce({ submission_id: 'sub-voice-3', route: 'safeguarding' });
+
+    await POST(request({ kind: 'other', body: DISCLOSURE }));
+
+    expect(mockFileVoice).not.toHaveBeenCalled();
+  });
+
+  // THE ORACLE TEST. The escalation table may not exist yet (operator-applied
+  // migrations), the insert may fail, the athlete may have no athlete row --
+  // and none of it may show. An error only the safeguarding path can hit is a
+  // classifier anyone can probe from the chair next to the child.
+  test('a filing failure changes nothing about the reply', async () => {
+    mockResolvePrincipal.mockResolvedValueOnce(principal());
+    mockCreate.mockResolvedValueOnce({ submission_id: 'sub-voice-4', route: 'safeguarding' });
+    mockFileVoice.mockRejectedValueOnce(
+      Object.assign(new Error('relation "pilot.safety_escalations" does not exist'), { code: '42P01' }),
+    );
+    const failing = await POST(request({ kind: 'other', body: DISCLOSURE }));
+    const failingPayload = await failing.json();
+
+    mockResolvePrincipal.mockResolvedValueOnce(principal());
+    mockCreate.mockResolvedValueOnce({ submission_id: 'sub-voice-5', route: 'product' });
+    const product = await POST(request({ kind: 'bug', body: 'the schedule page is confusing' }));
+    const productPayload = await product.json();
+
+    expect(failing.status).toBe(200);
+    expect(failingPayload).toEqual(productPayload);
+  });
+
+  test('the escalation is filed only after the submission is stored', async () => {
+    const order: string[] = [];
+    mockResolvePrincipal.mockResolvedValueOnce(principal());
+    mockCreate.mockImplementationOnce(async () => {
+      order.push('create');
+      return { submission_id: 'sub-voice-6', route: 'safeguarding' };
+    });
+    mockFileVoice.mockImplementationOnce(async () => {
+      order.push('escalate');
+      return null;
+    });
+
+    await POST(request({ kind: 'other', body: DISCLOSURE }));
+
+    expect(order).toEqual(['create', 'escalate']);
   });
 });

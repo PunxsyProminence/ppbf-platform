@@ -105,7 +105,7 @@ describe('listEscalations', () => {
     await listEscalations('org-1');
 
     const [, params] = mockQuery.mock.calls[0];
-    expect(params).toEqual(['org-1', null, null]);
+    expect(params).toEqual(['org-1', null, null, null]);
   });
 
   test('scopes to specific athlete ids for a coach', async () => {
@@ -114,7 +114,20 @@ describe('listEscalations', () => {
     await listEscalations('org-1', { status: 'open', athleteIds: ['ATH-1', 'ATH-2'] });
 
     const [, params] = mockQuery.mock.calls[0];
-    expect(params).toEqual(['org-1', 'open', ['ATH-1', 'ATH-2']]);
+    expect(params).toEqual(['org-1', 'open', ['ATH-1', 'ATH-2'], null]);
+  });
+
+  // #198: the coach-scoped list must never carry athlete_voice rows -- the
+  // existence of a disclosure-driven escalation is itself information the
+  // athlete's coach must not receive through this surface.
+  test('excludeAthleteVoice reaches the SQL as a real predicate, not a default', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+
+    await listEscalations('org-1', { athleteIds: ['ATH-1'], excludeAthleteVoice: true });
+
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(String(sql)).toContain("source_type <> 'athlete_voice'");
+    expect(params).toEqual(['org-1', null, ['ATH-1'], true]);
   });
 });
 

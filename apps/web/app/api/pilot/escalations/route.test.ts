@@ -115,7 +115,11 @@ describe('GET /api/pilot/escalations', () => {
     const [rosterSql, rosterParams] = mockDbQuery.mock.calls[0];
     expect(String(rosterSql)).toContain('from pilot.athletes');
     expect(rosterParams).toEqual(['org-a', 'acct-coach-1']);
-    expect(mockList).toHaveBeenCalledWith('org-a', { status: undefined, athleteIds: ['ATH-1', 'ATH-2'] });
+    expect(mockList).toHaveBeenCalledWith('org-a', {
+      status: undefined,
+      athleteIds: ['ATH-1', 'ATH-2'],
+      excludeAthleteVoice: true,
+    });
   });
 
   test('a coach with no assigned athletes gets an empty scope, never the org-wide view', async () => {
@@ -127,7 +131,29 @@ describe('GET /api/pilot/escalations', () => {
 
     // [] must reach the SQL as [], which matches nothing -- undefined would
     // mean "no filter" and expose every athlete's escalations.
-    expect(mockList).toHaveBeenCalledWith('org-a', { status: undefined, athleteIds: [] });
+    expect(mockList).toHaveBeenCalledWith('org-a', {
+      status: undefined,
+      athleteIds: [],
+      excludeAthleteVoice: true,
+    });
+  });
+
+  // #198: an athlete_voice escalation exists because a child typed something
+  // into the feedback box. Its presence on a coach's list -- even with a
+  // non-disclosing reason -- tells the athlete's coach the athlete said
+  // something, and the coach may be exactly who the child is disclosing
+  // about. Admin lists carry the rows; coach lists never do.
+  test('a coach list always excludes athlete_voice; an admin list never does', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockDbQuery.mockResolvedValueOnce([{ athlete_id: 'ATH-1' }] as never);
+    mockList.mockResolvedValueOnce([]);
+    await GET(request('/api/pilot/escalations'));
+    expect(mockList.mock.calls[0][1]).toMatchObject({ excludeAthleteVoice: true });
+
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockList.mockResolvedValueOnce([]);
+    await GET(request('/api/pilot/escalations'));
+    expect(mockList.mock.calls[1][1]?.excludeAthleteVoice).not.toBe(true);
   });
 
   // T-002: the coach roster query unions in actively covered athletes -- a
@@ -144,7 +170,11 @@ describe('GET /api/pilot/escalations', () => {
     const [rosterSql] = mockDbQuery.mock.calls[0];
     expect(String(rosterSql)).toContain('pilot.coach_coverage');
     expect(String(rosterSql)).toContain('expires_at > now()');
-    expect(mockList).toHaveBeenCalledWith('org-a', { status: undefined, athleteIds: ['ATH-ASSIGNED', 'ATH-COVERED'] });
+    expect(mockList).toHaveBeenCalledWith('org-a', {
+      status: undefined,
+      athleteIds: ['ATH-ASSIGNED', 'ATH-COVERED'],
+      excludeAthleteVoice: true,
+    });
   });
 
   test('a missing coverage table (pre-migration) falls back to assigned athletes, never a 500', async () => {
@@ -157,7 +187,11 @@ describe('GET /api/pilot/escalations', () => {
     const response = await GET(request('/api/pilot/escalations'));
 
     expect(response.status).toBe(200);
-    expect(mockList).toHaveBeenCalledWith('org-a', { status: undefined, athleteIds: ['ATH-1'] });
+    expect(mockList).toHaveBeenCalledWith('org-a', {
+      status: undefined,
+      athleteIds: ['ATH-1'],
+      excludeAthleteVoice: true,
+    });
   });
 });
 

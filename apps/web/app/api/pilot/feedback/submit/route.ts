@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { fileAthleteVoiceEscalation } from '@/src/server/pilot/athleteVoice';
 import {
   FEEDBACK_BODY_MAX_LENGTH,
   createFeedbackSubmission,
@@ -60,13 +61,36 @@ export async function POST(request: NextRequest) {
     // So the reply is the same for every submission: it worked, and a person
     // reads it. If you are here to add the submission id to this response,
     // that is what it would cost.
-    await createFeedbackSubmission({
+    const submission = await createFeedbackSubmission({
       organizationId: principal.organizationId,
       accountId: principal.accountId,
       role: principal.role,
       kind,
       body,
     });
+
+    // Athlete Voice (#198): an athlete's safeguarding submission also files
+    // an escalation, so the ladder -- the platform's only notification
+    // surface -- carries the alarm and not just the queue. EVERY outcome of
+    // the filing is swallowed, not just expected ones: the submission above
+    // is already committed (the record exists; the queue orders it first),
+    // and any response difference this block could produce -- an error only
+    // the safeguarding path can hit, a shape only it returns -- would be a
+    // classifier oracle, exactly what the comment below refuses to hand out.
+    if (principal.role === 'athlete' && submission.route === 'safeguarding') {
+      try {
+        await fileAthleteVoiceEscalation({
+          organizationId: principal.organizationId,
+          accountId: principal.accountId,
+          submissionId: submission.submission_id,
+          body,
+        });
+      } catch {
+        // Swallowed deliberately -- see above. The 42P01 pre-migration
+        // window lands here too: no escalations table means the queue-only
+        // behavior every submission had before #198.
+      }
+    }
 
     return NextResponse.json({
       ok: true,
