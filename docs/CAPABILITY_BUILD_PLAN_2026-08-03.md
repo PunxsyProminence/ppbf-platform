@@ -49,7 +49,7 @@ Evidence pointers are the primary module or route; tests live alongside.
 |---|---|---|---|---|
 | 1 | Athlete Profile System | ✅ | `entities.ts`, `api/pilot/athletes/*` | — |
 | 2 | Raw Observation Intake | 🟡 | `shadow/formulas/observations`, feedback intake; no unified observation store | 1 |
-| 3 | Safety Gate System | 🟡 | `contactClearanceGate.ts`, `gateSession`; matrix not generalized | 1 |
+| 3 | Safety Gate System | 🟡 | Generalized 2026-08-06: `pilot.safety_gates` + `pilot.safety_gate_evaluations`, `safetyGateMatrix.ts` evaluation/recording substrate, seeded per-org. `contactClearanceGate.ts` is its first row (a 'flag' gate — see #43). No gate exists yet for age or training-level; no admin UI to configure gate rows beyond the seeded defaults. (Note: `gateSession` in the original evidence was a misidentification — it's CI/deploy session tooling, unrelated to athlete safety.) | 1 |
 | 4 | Performance Tracking | 🟡 | `shadowMetrics.ts`, formula engine; athlete-facing trends missing | 3 |
 | 5 | Progression Decision System | 🟡 | `progression.ts`, coach reviews; decision rules thin | 1 |
 | 6 | Training Assignment System | 🟡 | `admin/track-assignments`, `progression/assignments` | 1 |
@@ -87,7 +87,7 @@ Evidence pointers are the primary module or route; tests live alongside.
 | 40 | Defense / Exit / Reset Engine | 🟡 | film-study proposals | 5 |
 | 41 | Footwork / Ring Movement Engine | 🟡 | film-study scope | 5 |
 | 42 | Round Performance Engine | ⬜ | | 5 |
-| 43 | Contact / Sparring Restriction Engine | 🟡 | `contactClearanceGate.ts` — closest thing to done | 1 |
+| 43 | Contact / Sparring Restriction Engine | 🟡 | `contactClearanceGate.ts`, now registered in the Safety Gate Matrix (#3) as a 'flag'-enforcement gate — deliberately does not block, since it guards a post-action record (contact that already happened); refusing the write would destroy the only record it occurred. A pre-action 'block' gate (e.g. sparring registration) is unbuilt | 1 |
 | 44 | Non-Contact Youth Program Engine | ⬜ | | 2 |
 | 45 | Coach-Controlled Constraint Engine | ⬜ | | 5 |
 

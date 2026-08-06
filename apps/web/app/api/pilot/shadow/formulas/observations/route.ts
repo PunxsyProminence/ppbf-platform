@@ -199,6 +199,9 @@ export async function POST(request: NextRequest) {
               reason: 'contact_without_medical_clearance',
               medicalStatus: clearance.medicalStatus,
               severity: clearance.severity,
+              // What earns clearance, not just that a review was raised --
+              // the "teaching moment" doctrine (owner principle, 2026-08-03).
+              lesson: clearance.lesson,
             },
           }
         : {}),

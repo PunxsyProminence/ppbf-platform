@@ -25,6 +25,10 @@ interface DeepTrackResult {
   // the record is kept deliberately -- but the athlete should be told, not left
   // to discover it from a coach later.
   safetyReviewRaised: boolean;
+  // What earns clearance, from the gate's own requirement_text -- the "teaching
+  // moment" doctrine: a stop names what's missing and where to fix it, not just
+  // that it happened. Undefined when no review was raised.
+  safetyReviewLesson: string | undefined;
 }
 
 async function submitDeepTrackObservations(input: {
@@ -92,9 +96,13 @@ async function submitDeepTrackObservations(input: {
     });
 
     const payload = (await response.json().catch(() => ({}))) as {
-      safetyReview?: { raised?: boolean };
+      safetyReview?: { raised?: boolean; lesson?: string };
     };
-    return { ok: response.ok, safetyReviewRaised: payload.safetyReview?.raised === true };
+    return {
+      ok: response.ok,
+      safetyReviewRaised: payload.safetyReview?.raised === true,
+      safetyReviewLesson: payload.safetyReview?.lesson,
+    };
   }));
 
   const fulfilled = results.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
@@ -106,6 +114,7 @@ async function submitDeepTrackObservations(input: {
     // Any one of the contact observations tripping the gate is enough; they all
     // concern the same session.
     safetyReviewRaised: fulfilled.some((value) => value.safetyReviewRaised),
+    safetyReviewLesson: fulfilled.find((value) => value.safetyReviewLesson)?.safetyReviewLesson,
   };
 }
 
@@ -156,7 +165,7 @@ export default function SparringTelemetryPage() {
     const observedAt = new Date().toISOString();
 
     try {
-      const { ok, savedCount, safetyReviewRaised } = await submitDeepTrackObservations({
+      const { ok, savedCount, safetyReviewRaised, safetyReviewLesson } = await submitDeepTrackObservations({
         athleteId,
         contextId,
         observedAt,
@@ -183,6 +192,7 @@ export default function SparringTelemetryPage() {
       const savedMessage = safetyReviewRaised
         ? 'Telemetry saved. Because there is no current medical clearance on file for this athlete, '
           + 'a safety review has been raised for your coach. The session was still recorded -- do not re-enter it.'
+          + (safetyReviewLesson ? ` ${safetyReviewLesson}` : '')
         : 'Telemetry saved and sent to the SHADOW formula engine for coach review.';
 
       setStatusMessage(ok

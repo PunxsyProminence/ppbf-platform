@@ -704,6 +704,55 @@ create table if not exists pilot.scheduler_attendance (
 create index if not exists idx_scheduler_attendance_org_class
   on pilot.scheduler_attendance(organization_id, class_id, checked_in_at desc);
 
+-- Safety Gate Matrix: reusable substrate for athlete-safety gates
+-- (capabilities #3/#43). See
+-- pilot_slice_postgres_safety_gate_matrix_migration.sql for the full
+-- design rationale -- enforcement is 'block' or 'flag' per gate, never
+-- assumed, and requirement_text carries the "teaching moment" lesson a
+-- refusal or flag surfaces alongside the stop.
+create table if not exists pilot.safety_gates (
+  organization_id   text not null references pilot.organizations(organization_id) on delete cascade,
+  gate_id           text not null,
+  gate_key          text not null,
+  name              text not null,
+  category          text not null check (category in ('medical', 'age', 'training_level', 'contact', 'equipment', 'behavioral', 'other')),
+  enforcement       text not null check (enforcement in ('block', 'flag')),
+  requirement_text  text not null,
+  active_flag       boolean not null default true,
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now(),
+  primary key (organization_id, gate_id),
+  unique (organization_id, gate_key)
+);
+
+create table if not exists pilot.safety_gate_evaluations (
+  organization_id          text not null references pilot.organizations(organization_id) on delete cascade,
+  evaluation_id             text not null,
+  gate_key                  text not null,
+  athlete_id                text not null,
+  outcome                   text not null check (outcome in ('passed', 'blocked', 'flagged')),
+  reason                    text not null default '',
+  evaluated_by_account_id   text not null,
+  evaluated_by_role         text not null,
+  context_id                text not null default '',
+  metadata                  jsonb not null default '{}'::jsonb,
+  evaluated_at              timestamptz not null,
+  created_at                timestamptz not null default now(),
+  primary key (organization_id, evaluation_id),
+  foreign key (organization_id, gate_key)
+    references pilot.safety_gates(organization_id, gate_key)
+    on delete cascade,
+  foreign key (organization_id, athlete_id)
+    references pilot.athletes(organization_id, athlete_id)
+    on delete cascade
+);
+
+create index if not exists idx_safety_gate_evaluations_org_athlete
+  on pilot.safety_gate_evaluations(organization_id, athlete_id, evaluated_at desc);
+
+create index if not exists idx_safety_gate_evaluations_org_gate
+  on pilot.safety_gate_evaluations(organization_id, gate_key, evaluated_at desc);
+
 -- Document ingest backend audit stream
 create table if not exists pilot.document_ingest_audit (
   audit_id     bigserial primary key,
