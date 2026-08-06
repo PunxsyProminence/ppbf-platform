@@ -156,12 +156,20 @@ Ordered by a floor-readiness trace run 2026-08-01.
 | Athlete record correction + deactivation | session A | `feature/knowledge-and-feedback` |
 | Athlete check-out losing notes | session A | `feature/knowledge-and-feedback` |
 | Coach coverage (403 on a covered class) | session A | `feature/knowledge-and-feedback` |
+| Attendance Engine (#122, per `docs/CAPABILITY_BUILD_PLAN_2026-08-03.md`): attendance reporting/rollup, bulk class check-in, parent-check-in method attribution fix | session B | `claude/remaining-capabilities-ab0q7d` |
 
 **Free for the other session** — none of the above, and none of these files:
 `scripts/`, `.github/workflows/`, `apps/web/app/admin/page.tsx`,
 `apps/web/app/admin/people/page.tsx`, `apps/web/components/CoachWorkspace.tsx`,
 `apps/web/components/AthleteWorkspace.tsx`,
 `apps/web/src/server/pilot/{staffProvisioning,access,drills,feedback,rabbitHoles}.ts`.
+
+Session B's attendance work stays inside `pilot.scheduler_attendance` (the
+existing check-in store), `schedulerDb.ts`, `app/api/pilot/scheduler/**`, a
+new `attendanceReporting.ts` module, a new `app/admin/attendance` page, and a
+new migration — it does not touch `CoachWorkspace.tsx`'s hardcoded
+`attendance: 'Unknown'` roster column, since that file is session A's. That
+wiring is real follow-up work, left for whoever has that file free next.
 
 Good unclaimed candidates: per-athlete starting PIN, the honesty sweep
 (fabricated donations, the example minors in `scripts/data/`, `/public`
