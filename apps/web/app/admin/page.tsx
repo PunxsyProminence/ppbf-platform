@@ -1216,6 +1216,53 @@ export default function AdminCapabilitiesPage() {
                   EQUIPMENT
                 </Link>
               )}
+              {/*
+                Same discoverability pattern as CONSENT / LOAD ROSTER: these
+                screens existed with no header entry on the capability room.
+                PIN and board seats are org-admin only (platform_owner is refused
+                or not the primary operator). The rest admit admin + platform_owner
+                on their own gates, matching this page's RoleSessionGate.
+              */}
+              {canManagePeople && (
+                <Link
+                  href="/admin/pin"
+                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[#2a1a1a]"
+                >
+                  ATHLETE PINS
+                </Link>
+              )}
+              {canManagePeople && (
+                <Link
+                  href="/admin/board-seats"
+                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[#2a1a1a]"
+                >
+                  BOARD SEATS
+                </Link>
+              )}
+              <Link
+                href="/admin/volunteer-management"
+                className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[#2a1a1a]"
+              >
+                VOLUNTEERS
+              </Link>
+              <Link
+                href="/admin/feedback"
+                className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[#2a1a1a]"
+              >
+                FEEDBACK
+              </Link>
+              <Link
+                href="/admin/public-interest"
+                className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[#2a1a1a]"
+              >
+                PUBLIC INTEREST
+              </Link>
+              <Link
+                href="/admin/platform"
+                className="btn btn--ghost"
+              >
+                PLATFORM
+              </Link>
               <Link
                 href="/operations"
                 className="inline-flex h-11 items-center border border-[color:var(--hide-600)] bg-[var(--hide-900)] px-4 text-[length:var(--t-sm)] font-bold text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)]"
