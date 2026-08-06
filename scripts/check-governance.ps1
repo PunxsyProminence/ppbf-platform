@@ -41,8 +41,8 @@ if (Test-Path "packages/governance/boundedContext.ts") {
     Write-Host "   ❌ Bounded context module missing!" -ForegroundColor Red
 }
 
-Write-Host "`n[6/7] Checking Supabase schema..." -ForegroundColor Yellow
-if (Test-Path "infra/supabase/schema.sql") {
+Write-Host "`n[6/7] Checking Postgres schema..." -ForegroundColor Yellow
+if (Test-Path "infra/azure/pilot_slice_postgres.sql") {
     Write-Host "   ✅ Schema file ready" -ForegroundColor Green
 } else {
     Write-Host "   ❌ Schema missing!" -ForegroundColor Red

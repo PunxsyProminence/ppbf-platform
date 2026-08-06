@@ -1,5 +1,11 @@
 # Work queue — 2026-08-01
 
+> **Superseded.** The current queue is
+> [docs/current/WORK_QUEUE.md](current/WORK_QUEUE.md), which generalizes this
+> file's Remote/VS Code split into the Owner/Builder/Gatekeeper roles used by
+> [docs/AI_DELIVERY_PIPELINE.md](AI_DELIVERY_PIPELINE.md). Kept for its
+> collision-rule history — do not claim an item from it.
+
 A shared queue for two agents working the same repository: **Remote** (Claude Code on the
 web, ephemeral container, no Azure access) and **VS Code** (local, holds the deploy
 credentials). This file is the only medium both can read, so it is the queue of record.
