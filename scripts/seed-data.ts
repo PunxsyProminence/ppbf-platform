@@ -72,7 +72,9 @@ async function loadFile(filePath: string) {
 // Validation
 // ============================================================================
 
-async function validateAthleteRow(row: any, org: string): Promise<string[]> {
+// checkCoach is false only when a dry run could not reach a database. See
+// resolveCoachCheck below for why that is allowed to happen at all.
+async function validateAthleteRow(row: any, org: string, checkCoach: boolean): Promise<string[]> {
   const errors: string[] = [];
 
   if (!row.athlete_id) errors.push('Missing athlete_id');
@@ -84,7 +86,7 @@ async function validateAthleteRow(row: any, org: string): Promise<string[]> {
   if (!row.coach_id) errors.push('Missing coach_id');
 
   // Verify coach exists
-  if (row.coach_id && !errors.length) {
+  if (checkCoach && row.coach_id && !errors.length) {
     const coachExists = await query(
       `SELECT 1 FROM pilot.accounts WHERE account_id = $1 AND organization_id = $2`,
       [row.coach_id, org]
@@ -143,14 +145,15 @@ async function validateSessionRow(row: any, org: string, athleteIds: Set<string>
 async function insertAthletes(
   rows: any[],
   org: string,
-  dryRun: boolean
+  dryRun: boolean,
+  checkCoach: boolean
 ): Promise<{ result: SeedResult; athleteIds: Set<string> }> {
   const result: SeedResult = { table: 'athletes', inserted: 0, skipped: 0, errors: [] };
   const athleteIds = new Set<string>();
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
-    const errors = await validateAthleteRow(row, org);
+    const errors = await validateAthleteRow(row, org, checkCoach);
 
     if (errors.length > 0) {
       result.errors.push({ row: i + 1, error: errors.join('; ') });
@@ -320,12 +323,43 @@ function assertDestructiveSeedAllowed(dryRun: boolean): void {
   );
 }
 
+// Whether the coach-existence check can run.
+//
+// A real seed always needs the database -- it is about to write to it, and a
+// connection failure there must stay fatal. A DRY RUN is different: the only
+// thing it needed a database for was this one lookup, so requiring a live
+// AZURE_POSTGRES_CONNECTION_STRING made `--dry-run` unusable on exactly the
+// machine most likely to want a preview -- a laptop with the roster file and
+// no production credentials. It failed with a bare "Missing required
+// environment variable" before printing a single parsed row.
+//
+// So a dry run degrades instead of dying, and says so loudly rather than
+// quietly returning a weaker answer that looks like the strong one.
+async function resolveCoachCheck(dryRun: boolean): Promise<boolean> {
+  if (!dryRun) {
+    return true;
+  }
+  try {
+    await query('SELECT 1');
+    return true;
+  } catch {
+    console.warn('⚠️  No database reachable — previewing file contents only.');
+    console.warn('   Coach-existence checks are SKIPPED, so this run CANNOT tell you');
+    console.warn('   whether coach_id values resolve to real accounts.');
+    console.warn('   Set AZURE_POSTGRES_CONNECTION_STRING for a complete preview.\n');
+    return false;
+  }
+}
+
 async function seedData(config: SeedConfig) {
-  assertDestructiveSeedAllowed(config.options.dryRun || false);
+  const dryRun = config.options.dryRun || false;
+  assertDestructiveSeedAllowed(dryRun);
 
   console.log(`\n📊 PPBF Data Seed Script`);
   console.log(`Organization: ${config.organizationId}`);
-  console.log(`Dry Run: ${config.options.dryRun ? 'YES' : 'NO'}\n`);
+  console.log(`Dry Run: ${dryRun ? 'YES' : 'NO'}\n`);
+
+  const checkCoach = await resolveCoachCheck(dryRun);
 
   const results: SeedResult[] = [];
   let athleteIds = new Set<string>();
@@ -338,7 +372,8 @@ async function seedData(config: SeedConfig) {
       const { result, athleteIds: ids } = await insertAthletes(
         athletes,
         config.organizationId,
-        config.options.dryRun || false
+        dryRun,
+        checkCoach
       );
       athleteIds = ids;
       results.push(result);
@@ -351,7 +386,7 @@ async function seedData(config: SeedConfig) {
     if (config.files.goals) {
       console.log(`Loading goals from ${config.files.goals}...`);
       const goals = await loadFile(path.join(config.dataDir, config.files.goals));
-      const result = await insertGoals(goals, config.organizationId, athleteIds, config.options.dryRun || false);
+      const result = await insertGoals(goals, config.organizationId, athleteIds, dryRun);
       results.push(result);
       console.log(
         `  ✓ Inserted: ${result.inserted}, Skipped: ${result.skipped}, Errors: ${result.errors.length}\n`
@@ -362,7 +397,7 @@ async function seedData(config: SeedConfig) {
     if (config.files.sessions) {
       console.log(`Loading sessions from ${config.files.sessions}...`);
       const sessions = await loadFile(path.join(config.dataDir, config.files.sessions));
-      const result = await insertSessions(sessions, config.organizationId, athleteIds, config.options.dryRun || false);
+      const result = await insertSessions(sessions, config.organizationId, athleteIds, dryRun);
       results.push(result);
       console.log(
         `  ✓ Inserted: ${result.inserted}, Skipped: ${result.skipped}, Errors: ${result.errors.length}\n`
@@ -397,8 +432,15 @@ async function seedData(config: SeedConfig) {
     console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
     console.log(`Total: Inserted ${totalInserted} | Skipped ${totalSkipped} | Errors ${totalErrors}`);
 
-    if (config.options.dryRun) {
+    if (dryRun) {
       console.log(`\n✨ Dry run complete. No changes were made.`);
+      // Restated at the end, not only at the start. Somebody reading the tail
+      // of a long run should not mistake a partial check for a clean bill.
+      if (!checkCoach) {
+        console.log(`   PARTIAL: no database was reachable, so coach_id values were`);
+        console.log(`   not verified. A clean result here does not mean the roster`);
+        console.log(`   will import cleanly.`);
+      }
     } else {
       console.log(`\n✅ Seed complete!`);
     }
@@ -428,12 +470,13 @@ for (let i = 0; i < args.length; i++) {
 // refuses it -- "Only URLs with a scheme in: file, data, and node". That made
 // the script unusable on the platform it is developed on, and the failure
 // arrived as a protocol error that says nothing about paths.
+// seedData() is deliberately NOT chained inside this .then(). It was, and the
+// single .catch() then attributed every seeding failure to the config file:
+// refusing a destructive run printed "Failed to load config from ..." followed
+// by a message about overwriting athletes, which sends the reader to inspect a
+// file that loaded perfectly. Loading and running fail for unrelated reasons
+// and now report separately.
 import(pathToFileURL(path.resolve(configPath)).href)
-  .then((module) => {
-    const config: SeedConfig = module.default;
-    if (dryRun) config.options.dryRun = true;
-    return seedData(config);
-  })
   .catch((err) => {
     console.error(`Failed to load config from ${configPath}:`, err.message);
     if (err instanceof Error && 'code' in err && err.code === 'ERR_MODULE_NOT_FOUND') {
@@ -442,5 +485,14 @@ import(pathToFileURL(path.resolve(configPath)).href)
         + 'or pass --config <path>.',
       );
     }
+    process.exit(1);
+  })
+  .then((module) => {
+    const config: SeedConfig = module.default;
+    if (dryRun) config.options.dryRun = true;
+    return seedData(config);
+  })
+  .catch((err) => {
+    console.error(`\n❌ ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   });
