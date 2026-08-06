@@ -11,6 +11,7 @@ import {
   createSchedulerCoachingRequest,
   getSchedulerClassById,
   getSchedulerRegistrationById,
+  listRegisteredAthleteIdsForClass,
   listSchedulerStore,
   markSchedulerRegistrationReviewed,
   registerForClassTransactionally,
@@ -93,6 +94,24 @@ function resolveAttendanceMethod(actor: SchedulerActor, isSelf: boolean): Schedu
   if (isSelf) return 'self';
   if (actor.role === 'parent') return 'parent';
   return canManageAll(actor) ? 'admin_override' : 'coach_override';
+}
+
+// A coach writes attendance only into a class they own (teach, scheduled, or
+// cover) -- the same ownership test the attendance-summary READ route already
+// enforces. Without this, a coach could overwrite another coach's attendance
+// attestations in a class they cannot even view: write access without read
+// access, on a safeguarding record about minors. Athlete/parent paths are
+// governed by assertCanActOnAthlete instead, and admin manages all.
+function assertCoachOwnsClass(actor: SchedulerActor, classItem: SchedulerClass): void {
+  if (actor.role !== 'coach') return;
+  if (
+    classItem.coach_account_id === actor.accountId
+    || classItem.scheduled_by_account_id === actor.accountId
+    || classItem.covering_coach_account_id === actor.accountId
+  ) {
+    return;
+  }
+  throw new Error('Forbidden: coach does not own this class');
 }
 
 async function getParentAthleteIds(actor: SchedulerActor): Promise<string[]> {
@@ -465,6 +484,17 @@ export async function POST(request: NextRequest) {
       if (!classItem) {
         throw new Error('Missing class record');
       }
+      assertCoachOwnsClass(actor, classItem);
+
+      // Attendance is only recordable for a registered athlete. An
+      // unregistered mark would count in the org summary while appearing on
+      // no class roster -- a number no drill-down could explain or correct --
+      // and it is also what let an athlete self-mark 'present' in every
+      // class in the gym.
+      const registeredIds = await listRegisteredAthleteIdsForClass(actor.organizationId, classId);
+      if (!registeredIds.includes(athleteId)) {
+        throw new Error('Missing registration: athlete is not registered for this class');
+      }
 
       const attendanceRecord: SchedulerAttendance = {
         attendance_id: randomUUID(),
@@ -499,6 +529,7 @@ export async function POST(request: NextRequest) {
       if (!classItem) {
         throw new Error('Missing class record');
       }
+      assertCoachOwnsClass(actor, classItem);
 
       const entries = body.entries;
       if (!Array.isArray(entries) || entries.length === 0) {
@@ -507,6 +538,10 @@ export async function POST(request: NextRequest) {
       if (entries.length > 200) {
         throw new Error('Unsupported entries: must not exceed 200 per request');
       }
+
+      // Same registration requirement as the single check-in path, for the
+      // same reason -- fetched once for the whole batch.
+      const registeredIds = new Set(await listRegisteredAthleteIdsForClass(actor.organizationId, classId));
 
       const now = new Date().toISOString();
       const seenAthleteIds = new Set<string>();
@@ -522,6 +557,9 @@ export async function POST(request: NextRequest) {
           throw new Error(`Unsupported entries: duplicate athlete_id ${entryAthleteId}`);
         }
         seenAthleteIds.add(entryAthleteId);
+        if (!registeredIds.has(entryAthleteId)) {
+          throw new Error(`Missing registration: athlete ${entryAthleteId} is not registered for this class`);
+        }
 
         // Every athlete in the batch, not just the actor's own athleteId,
         // must pass the same ownership check a single check-in would --

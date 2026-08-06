@@ -103,6 +103,34 @@ export async function flagNearMiss(input: {
   });
 }
 
+/**
+ * The most recent near miss already filed for one (athlete, trigger, context)
+ * triple. The contact-clearance gate uses this to collapse the several
+ * contact observations one session submits (contact_level, contact_rounds,
+ * punch_absorbed each arrive as their own POST) into ONE near miss and one
+ * escalation, instead of three that say the same thing about the same
+ * session -- which buried the escalation surface it was supposed to feed.
+ */
+export async function findNearMissByTriggerContext(
+  organizationId: string,
+  athleteId: string,
+  trigger: string,
+  contextId: string,
+): Promise<ShadowNearMissRow | null> {
+  const rows = await query<ShadowNearMissRow>(
+    `select near_miss_id, organization_id, athlete_id, decision_id, description, severity, detected_by, detected_by_account_id, metadata, created_at
+     from pilot.shadow_near_misses
+     where organization_id = $1
+       and athlete_id = $2
+       and metadata->>'trigger' = $3
+       and metadata->>'context_id' = $4
+     order by created_at desc
+     limit 1`,
+    [organizationId, athleteId, trigger, contextId],
+  );
+  return rows[0] ?? null;
+}
+
 export async function listNearMisses(organizationId: string, athleteId: string): Promise<ShadowNearMissRow[]> {
   return query<ShadowNearMissRow>(
     `select near_miss_id, organization_id, athlete_id, decision_id, description, severity, detected_by, detected_by_account_id, metadata, created_at

@@ -51,6 +51,7 @@ function formatDate(value: string): string {
 
 export default function EscalationsPage() {
   const [role, setRole] = useState<string | null>(null);
+  const [roleFetchFailed, setRoleFetchFailed] = useState(false);
   const [items, setItems] = useState<SafetyEscalation[] | null>(null);
   const [statusFilter, setStatusFilter] = useState<EscalationStatus | 'all'>('open');
   const [errorMessage, setErrorMessage] = useState('');
@@ -78,11 +79,21 @@ export default function EscalationsPage() {
   useEffect(() => {
     void (async () => {
       try {
-        const response = await fetch(`${apiBase()}/api/pilot/auth/session`, { credentials: 'include' });
+        // POST, matching app/schedule/page.tsx -- the session route exports
+        // POST only, so a GET here 405s and would silently hide every admin
+        // control on this page forever.
+        const response = await fetch(`${apiBase()}/api/pilot/auth/session`, { method: 'POST', credentials: 'include' });
         const payload = (await response.json().catch(() => ({}))) as { role?: string };
-        setRole(payload.role ?? null);
+        if (!response.ok || !payload.role) {
+          setRole(null);
+          setRoleFetchFailed(true);
+          return;
+        }
+        setRole(payload.role);
+        setRoleFetchFailed(false);
       } catch {
         setRole(null);
+        setRoleFetchFailed(true);
       }
     })();
   }, []);
@@ -122,8 +133,17 @@ export default function EscalationsPage() {
   }
 
   async function handleResolve(escalationId: string) {
-    const note = window.prompt('Resolution note (visible in the record):', '');
+    const note = window.prompt(
+      'Resolution note (required -- this is the durable record of why the red flag was closed):',
+      '',
+    );
     if (note === null) return;
+    // A safety escalation about a minor does not close without a stated
+    // reason. An empty OK is treated as "not done deciding", not as consent.
+    if (note.trim() === '') {
+      setActionMessage('Resolution needs a note -- the escalation was not resolved.');
+      return;
+    }
     try {
       const response = await fetch(`${apiBase()}/api/pilot/escalations`, {
         method: 'POST',
@@ -188,6 +208,14 @@ export default function EscalationsPage() {
                 <span className="alert-msg">{errorMessage}</span>
               </p>
             ) : null}
+            {roleFetchFailed ? (
+              <p role="alert" className="alert alert--critical mt-[var(--s3)]">
+                <span className="alert-icon">✕</span>
+                <span className="alert-msg">
+                  Your role could not be verified, so resolve and pattern-scan controls are hidden. Reload to retry.
+                </span>
+              </p>
+            ) : null}
             {actionMessage ? <p className="t-body mt-[var(--s3)] font-semibold text-[color:var(--brass-300)]">{actionMessage}</p> : null}
           </header>
 
@@ -228,6 +256,15 @@ export default function EscalationsPage() {
             <div className="empty mt-[var(--s5)]">
               <div className="empty-glyph" aria-hidden="true">◌</div>
               <div className="empty-title">Loading escalations…</div>
+            </div>
+          ) : errorMessage ? (
+            // A failed load must not wear the empty state's clothes: "Nothing
+            // in this view" is a claim about the data, and after an error we
+            // hold no data to make claims about.
+            <div className="empty mt-[var(--s5)]">
+              <div className="empty-glyph" aria-hidden="true">✕</div>
+              <div className="empty-title">Escalations could not be loaded</div>
+              <div className="empty-msg">The list above is unavailable, not empty. Reload to retry.</div>
             </div>
           ) : items.length === 0 ? (
             <div className="empty mt-[var(--s5)]">

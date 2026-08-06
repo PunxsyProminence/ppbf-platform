@@ -100,6 +100,17 @@ export async function getOrganizationAttendanceSummary(
        from pilot.scheduler_attendance a
        join pilot.scheduler_classes c
          on c.organization_id = a.organization_id and c.class_id = a.class_id
+       -- Only marks backed by a live registration count. An attendance row
+       -- for an athlete never registered in that class appears on no class
+       -- roster, so counting it here would put a number on the dashboard
+       -- that no drill-down surface can explain or correct. The write paths
+       -- now refuse such marks; this join keeps any that predate that
+       -- enforcement from inflating rates forever.
+       join pilot.scheduler_registrations reg
+         on reg.organization_id = a.organization_id
+         and reg.class_id = a.class_id
+         and reg.athlete_id = a.athlete_id
+         and reg.status = 'registered'
        where a.organization_id = $1
          and (
            $2::text is null

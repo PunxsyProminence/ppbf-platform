@@ -4,7 +4,12 @@ jest.mock('./db', () => ({
   withTransaction: jest.fn(),
 }));
 
-import { bulkUpsertSchedulerAttendance, type SchedulerAttendance } from './schedulerDb';
+import {
+  bulkUpsertSchedulerAttendance,
+  listRegisteredAthleteIdsForClass,
+  upsertSchedulerAttendance,
+  type SchedulerAttendance,
+} from './schedulerDb';
 import { query } from './db';
 
 const mockQuery = query as jest.Mock;
@@ -67,5 +72,38 @@ describe('bulkUpsertSchedulerAttendance', () => {
     const [sql] = mockQuery.mock.calls[0];
     const setClause = String(sql).split('do update')[1];
     expect(setClause).not.toContain('attendance_id');
+  });
+});
+
+describe('upsertSchedulerAttendance (single record)', () => {
+  // The previous body here was a SELECT then INSERT-or-UPDATE with no
+  // transaction: two concurrent check-ins for the same (class, athlete) both
+  // saw no row, both INSERTed, and the loser's unique-violation surfaced as
+  // an unexplained 500 -- a double-tapped check-in button was enough. The
+  // single record is now the one-element case of the same atomic ON CONFLICT
+  // statement.
+  test('is one atomic ON CONFLICT statement, never a select-then-write', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+
+    await upsertSchedulerAttendance('org-1', attendanceRecord());
+
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(String(sql)).not.toMatch(/^\s*select/i);
+    expect(String(sql)).toContain('on conflict (organization_id, class_id, athlete_id) do update');
+    expect(params[1]).toEqual(['attendance-1']);
+  });
+});
+
+describe('listRegisteredAthleteIdsForClass', () => {
+  test('returns only live registrations, scoped to org and class', async () => {
+    mockQuery.mockResolvedValueOnce([{ athlete_id: 'ATH-1' }, { athlete_id: 'ATH-2' }]);
+
+    const ids = await listRegisteredAthleteIdsForClass('org-1', 'class-1');
+
+    expect(ids).toEqual(['ATH-1', 'ATH-2']);
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(String(sql)).toContain("status = 'registered'");
+    expect(params).toEqual(['org-1', 'class-1']);
   });
 });

@@ -105,6 +105,10 @@ export async function POST(request: NextRequest) {
       }
       const escalationId = body.escalation_id?.trim();
       if (!escalationId) throw new Error('Missing escalation_id');
+      // Empty maps to '' here and to NULL-equivalent in the module's
+      // coalesce(nullif(...)) -- so an absent note can never overwrite a
+      // stored one. The status guard in transitionEscalation is what stops
+      // re-resolve outright; this is the second layer.
       const resolutionNote = typeof body.resolution_note === 'string' ? body.resolution_note.trim() : '';
 
       const updated = await resolveEscalation(principal.organizationId, escalationId, principal.accountId, resolutionNote);

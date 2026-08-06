@@ -5,7 +5,7 @@ import {
 } from './contactClearanceGate';
 import { getSafetyGateDefinition, recordSafetyGateEvaluation } from './safetyGateMatrix';
 import { getLatestMedicalAdministrativeStatus } from './shadowMedicalStatus';
-import { flagNearMiss } from './shadowNearMisses';
+import { findNearMissByTriggerContext, flagNearMiss } from './shadowNearMisses';
 
 const GATE_LESSON = 'Set status to cleared before contact continues (test gate text).';
 
@@ -15,6 +15,7 @@ jest.mock('./shadowMedicalStatus', () => ({
 
 jest.mock('./shadowNearMisses', () => ({
   flagNearMiss: jest.fn().mockResolvedValue({ near_miss_id: 'nm-1' }),
+  findNearMissByTriggerContext: jest.fn().mockResolvedValue(null),
 }));
 
 jest.mock('./safetyGateMatrix', () => ({
@@ -32,6 +33,7 @@ jest.mock('./safetyGateMatrix', () => ({
 
 const mockStatus = getLatestMedicalAdministrativeStatus as jest.Mock;
 const mockFlag = flagNearMiss as jest.Mock;
+const mockFindExisting = findNearMissByTriggerContext as jest.Mock;
 const mockGetGate = getSafetyGateDefinition as jest.Mock;
 const mockRecordEvaluation = recordSafetyGateEvaluation as jest.Mock;
 
@@ -262,5 +264,54 @@ describe('a missing gate row (pre-migration organization) still fails toward ale
 
     await expect(call()).resolves.toEqual({ flagged: false });
     expect(mockRecordEvaluation).not.toHaveBeenCalled();
+  });
+});
+
+describe('one near miss per session, not per contact observation', () => {
+  // A single sparring submission posts contact_level, contact_rounds, and
+  // punch_absorbed as separate requests with the SAME contextId. Without
+  // dedup, one uncleared session filed three near-identical near misses and
+  // three open escalations -- and three same-trigger rows then read to the
+  // repeated-pattern detector as a pattern, which is supposed to mean
+  // repeated SESSIONS.
+  test('a second contact observation in the same session does not file a second near miss', async () => {
+    mockStatus.mockResolvedValueOnce({ status: 'not_cleared' });
+    mockFindExisting.mockResolvedValueOnce({ near_miss_id: 'nm-existing' });
+
+    const result = await call({ kind: 'punch_absorbed', value: 9 });
+
+    expect(mockFlag).not.toHaveBeenCalled();
+    // The caller still learns the truth: this observation IS flagged, with
+    // the same severity and lesson the first one carried.
+    expect(result.flagged).toBe(true);
+    expect(result.severity).toBe('critical');
+    expect(result.lesson).toBe(GATE_LESSON);
+    // The evaluation audit trail still records that this observation was
+    // checked -- that table is the audit trail, not the alert surface.
+    expect(mockRecordEvaluation).toHaveBeenCalledTimes(1);
+  });
+
+  test('the dedup key is athlete + trigger + context', async () => {
+    mockStatus.mockResolvedValueOnce({ status: 'pending' });
+    mockFindExisting.mockResolvedValueOnce(null);
+
+    await call({ kind: 'contact_level', value: 2 });
+
+    expect(mockFindExisting).toHaveBeenCalledWith(
+      'punxsy_prominence',
+      'Neeko-001',
+      'contact_observation_without_medical_clearance',
+      'sparring_123',
+    );
+    expect(mockFlag).toHaveBeenCalledTimes(1);
+  });
+
+  test('the same athlete in a NEW session is flagged fresh', async () => {
+    mockStatus.mockResolvedValueOnce({ status: 'not_cleared' });
+    mockFindExisting.mockResolvedValueOnce(null);
+
+    await call({ contextId: 'sparring_next_week' });
+
+    expect(mockFlag).toHaveBeenCalledTimes(1);
   });
 });

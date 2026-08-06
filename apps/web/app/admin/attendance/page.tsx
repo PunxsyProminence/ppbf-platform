@@ -136,6 +136,14 @@ export default function AttendanceDashboardPage() {
               <div className="empty-glyph" aria-hidden="true">◌</div>
               <div className="empty-title">Loading attendance…</div>
             </div>
+          ) : errorMessage ? (
+            // Same rule as the escalations page: a failed load is not an
+            // empty roster, and must not read as one.
+            <div className="empty mt-[var(--s5)]">
+              <div className="empty-glyph" aria-hidden="true">✕</div>
+              <div className="empty-title">Attendance could not be loaded</div>
+              <div className="empty-msg">The summary is unavailable, not empty. Reload to retry.</div>
+            </div>
           ) : sorted.length === 0 ? (
             <div className="empty mt-[var(--s5)]">
               <div className="empty-glyph" aria-hidden="true">◌</div>

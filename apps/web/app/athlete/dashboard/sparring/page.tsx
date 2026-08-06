@@ -54,8 +54,21 @@ async function submitDeepTrackObservations(input: {
     unit: string;
     dimensions?: Record<string, string | number | boolean>;
   }> = [
-    { kind: 'contact_level', value: input.contactLevel, unit: 'level_0_3', dimensions: baseDimensions },
-    { kind: 'contact_rounds', value: input.totalRoundsCompleted, unit: 'count', dimensions: baseDimensions },
+    // The contact pair is sent only when contact actually happened. The
+    // rounds field on this form is TOTAL session rounds, so sending it as
+    // 'contact_rounds' for a contact level of 0 ('None') would report 6
+    // rounds of contact for a bag-work session -- which files a
+    // contact-without-clearance safety flag against an athlete who honestly
+    // logged that no contact occurred. Omitting the whole pair keeps the
+    // formula engine's pair-per-context invariant intact and contributes
+    // exactly what a zero-contact session should to Contact Exposure:
+    // nothing.
+    ...(input.contactLevel > 0
+      ? [
+          { kind: 'contact_level', value: input.contactLevel, unit: 'level_0_3', dimensions: baseDimensions },
+          { kind: 'contact_rounds', value: input.totalRoundsCompleted, unit: 'count', dimensions: baseDimensions },
+        ]
+      : []),
     { kind: 'punch_attempted', value: input.punchesAttempted, unit: 'count', dimensions: { punchType: input.punchType } },
     { kind: 'punch_landed', value: input.punchesLanded, unit: 'count', dimensions: { punchType: input.punchType } },
     { kind: 'punch_absorbed', value: input.punchesAbsorbed, unit: 'count', dimensions: baseDimensions },

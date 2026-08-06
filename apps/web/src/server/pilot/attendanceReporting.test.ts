@@ -77,6 +77,18 @@ describe('getOrganizationAttendanceSummary', () => {
     expect(sql).toContain('pilot.scheduler_attendance');
     expect(params).toEqual(['org-1', 'acct-coach-1', '2026-07-01T00:00:00.000Z']);
   });
+
+  // A mark with no live registration appears on no class roster, so counting
+  // it here would put a number on the dashboard no drill-down can explain.
+  test('only registration-backed marks count toward the summary', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+
+    await getOrganizationAttendanceSummary('org-1');
+
+    const [sql] = mockQuery.mock.calls[0];
+    expect(sql).toContain('join pilot.scheduler_registrations reg');
+    expect(sql).toContain("reg.status = 'registered'");
+  });
 });
 
 describe('getClassAttendanceRoster', () => {

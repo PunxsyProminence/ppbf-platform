@@ -1,11 +1,14 @@
 import type { ObservationKind } from './formulas/types';
 import { getSafetyGateDefinition, recordSafetyGateEvaluation } from './safetyGateMatrix';
 import { getLatestMedicalAdministrativeStatus } from './shadowMedicalStatus';
-import { flagNearMiss } from './shadowNearMisses';
+import { findNearMissByTriggerContext, flagNearMiss } from './shadowNearMisses';
 import type { ShadowNearMissSeverity } from './shadowNearMisses';
 
 /** The gate_key this module is registered under in pilot.safety_gates. */
 const GATE_KEY = 'contact_medical_clearance';
+
+/** The metadata marker this gate's near misses are written and deduped by. */
+const NEAR_MISS_TRIGGER = 'contact_observation_without_medical_clearance';
 
 /** Used only if the gate row itself is missing (pre-migration organization). */
 const DEFAULT_LESSON =
@@ -163,24 +166,43 @@ export async function flagContactWithoutClearance(input: {
 
   const status = record?.status ?? 'no_record';
   const severity = severityForStatus(status);
+  const lesson = gate?.requirement_text ?? DEFAULT_LESSON;
 
-  await flagNearMiss({
-    organizationId: input.organizationId,
-    athleteId: input.athleteId,
-    description: describe(status, input.kind, value, input.athleteId),
-    severity,
-    detectedBy: 'system',
-    detectedByAccountId: input.actorAccountId,
-    detectedByRole: input.actorRole,
-    metadata: {
-      trigger: 'contact_observation_without_medical_clearance',
-      observation_kind: input.kind,
-      observation_value: value,
-      medical_status: status,
-      context_id: input.contextId,
-      observed_at: input.observedAt,
-    },
-  });
+  // One near miss (and thus one escalation) per SESSION, not per contact
+  // observation: a single sparring submission posts contact_level,
+  // contact_rounds, and punch_absorbed as separate requests, each of which
+  // lands here. Without this check, one uncleared session filed three
+  // near-identical near misses and three open escalations -- and three rows
+  // with the same trigger then read as a "repeated pattern" to the detector,
+  // which is supposed to mean repeated SESSIONS. The evaluation record below
+  // is still written per observation: that table is the audit trail of what
+  // was checked, not the alert surface.
+  const alreadyFlagged = await findNearMissByTriggerContext(
+    input.organizationId,
+    input.athleteId,
+    NEAR_MISS_TRIGGER,
+    input.contextId,
+  );
+
+  if (!alreadyFlagged) {
+    await flagNearMiss({
+      organizationId: input.organizationId,
+      athleteId: input.athleteId,
+      description: describe(status, input.kind, value, input.athleteId),
+      severity,
+      detectedBy: 'system',
+      detectedByAccountId: input.actorAccountId,
+      detectedByRole: input.actorRole,
+      metadata: {
+        trigger: NEAR_MISS_TRIGGER,
+        observation_kind: input.kind,
+        observation_value: value,
+        medical_status: status,
+        context_id: input.contextId,
+        observed_at: input.observedAt,
+      },
+    });
+  }
 
   // Same FK constraint as the passed path above -- best-effort, gated on the
   // gate row existing, never a reason to fail a request that already
@@ -204,5 +226,5 @@ export async function flagContactWithoutClearance(input: {
     });
   }
 
-  return { flagged: true, medicalStatus: status, severity, lesson: gate?.requirement_text ?? DEFAULT_LESSON };
+  return { flagged: true, medicalStatus: status, severity, lesson };
 }

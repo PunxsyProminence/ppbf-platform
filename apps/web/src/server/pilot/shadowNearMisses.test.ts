@@ -13,7 +13,7 @@ jest.mock('./escalationLadder', () => ({
 import { query, withTransaction } from './db';
 import { fileEscalation } from './escalationLadder';
 import { writeShadowAuditEntry } from './shadowAuditEntries';
-import { flagNearMiss, listNearMisses } from './shadowNearMisses';
+import { findNearMissByTriggerContext, flagNearMiss, listNearMisses } from './shadowNearMisses';
 
 const mockQuery = jest.mocked(query);
 const mockWithTransaction = jest.mocked(withTransaction);
@@ -184,5 +184,33 @@ describe('listNearMisses', () => {
     const [sql, params] = mockQuery.mock.calls[0];
     expect(String(sql)).toContain('order by created_at desc');
     expect(params).toEqual(['org-1', 'athlete-1']);
+  });
+});
+
+describe('findNearMissByTriggerContext', () => {
+  test('matches on org + athlete + metadata trigger + context, newest first', async () => {
+    mockQuery.mockResolvedValueOnce([nearMissRow({ near_miss_id: 'nm-newest' })]);
+
+    const found = await findNearMissByTriggerContext(
+      'org-1',
+      'athlete-1',
+      'contact_observation_without_medical_clearance',
+      'sparring_123',
+    );
+
+    expect(found?.near_miss_id).toBe('nm-newest');
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(String(sql)).toContain("metadata->>'trigger' = $3");
+    expect(String(sql)).toContain("metadata->>'context_id' = $4");
+    expect(String(sql)).toContain('limit 1');
+    expect(params).toEqual(['org-1', 'athlete-1', 'contact_observation_without_medical_clearance', 'sparring_123']);
+  });
+
+  test('resolves null when the session has not been flagged before', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+
+    await expect(
+      findNearMissByTriggerContext('org-1', 'athlete-1', 'trigger-x', 'ctx-x'),
+    ).resolves.toBeNull();
   });
 });

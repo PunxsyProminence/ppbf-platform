@@ -119,30 +119,67 @@ describe('listEscalations', () => {
 });
 
 describe('acknowledgeEscalation / resolveEscalation', () => {
-  test('acknowledge sets status and the acknowledging account, not a resolution', async () => {
+  test('acknowledge sets status and the acknowledging account, guarded to open rows only', async () => {
     mockQueryOne.mockResolvedValueOnce({ escalation_id: 'esc-1', status: 'acknowledged' });
 
     await acknowledgeEscalation('org-1', 'esc-1', 'acct-coach-1');
 
     const [sql, params] = mockQueryOne.mock.calls[0];
     expect(String(sql)).toContain("status = 'acknowledged'");
-    expect(params).toEqual(['org-1', 'esc-1', 'acct-coach-1']);
+    // The status predicate is what stops a stale page from regressing a
+    // resolved record back into the acknowledged queue.
+    expect(String(sql)).toContain('status = any($4::text[])');
+    expect(params).toEqual(['org-1', 'esc-1', 'acct-coach-1', ['open']]);
   });
 
-  test('resolve requires a resolution note to be threaded through', async () => {
+  test('resolve threads the note through, guarded to open/acknowledged rows', async () => {
     mockQueryOne.mockResolvedValueOnce({ escalation_id: 'esc-1', status: 'resolved' });
 
     await resolveEscalation('org-1', 'esc-1', 'acct-admin-1', 'Athlete cleared by physician, note on file.');
 
     const [sql, params] = mockQueryOne.mock.calls[0];
     expect(String(sql)).toContain("status = 'resolved'");
-    expect(params).toEqual(['org-1', 'esc-1', 'acct-admin-1', 'Athlete cleared by physician, note on file.']);
+    expect(String(sql)).toContain('status = any($5::text[])');
+    // nullif keeps an empty-string note from wiping a stored one.
+    expect(String(sql)).toContain("coalesce(nullif($4, ''), resolution_note)");
+    expect(params).toEqual(['org-1', 'esc-1', 'acct-admin-1', 'Athlete cleared by physician, note on file.', ['open', 'acknowledged']]);
   });
 
-  test('a resolve/acknowledge against another organization or a missing id resolves null, not an error', async () => {
-    mockQueryOne.mockResolvedValueOnce(null);
+  test('a missing id resolves null: guarded update matches nothing, re-read finds no row', async () => {
+    mockQueryOne.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
 
     await expect(acknowledgeEscalation('org-1', 'esc-does-not-exist', 'acct-1')).resolves.toBeNull();
+    expect(mockQueryOne).toHaveBeenCalledTimes(2);
+  });
+
+  test('acknowledging a RESOLVED escalation throws an Unsupported transition instead of regressing it', async () => {
+    mockQueryOne
+      .mockResolvedValueOnce(null) // guarded update matched nothing
+      .mockResolvedValueOnce({ status: 'resolved' }); // the row exists, in a terminal state
+
+    await expect(acknowledgeEscalation('org-1', 'esc-1', 'acct-coach-1')).rejects.toThrow(
+      /Unsupported transition: escalation is 'resolved'/,
+    );
+  });
+
+  test('re-resolving a resolved escalation throws rather than overwriting who closed it', async () => {
+    mockQueryOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ status: 'resolved' });
+
+    await expect(resolveEscalation('org-1', 'esc-1', 'acct-admin-2', 'second note')).rejects.toThrow(
+      /Unsupported transition/,
+    );
+  });
+
+  test('re-acknowledging throws rather than silently replacing who first saw the red flag', async () => {
+    mockQueryOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ status: 'acknowledged' });
+
+    await expect(acknowledgeEscalation('org-1', 'esc-1', 'acct-coach-2')).rejects.toThrow(
+      /Unsupported transition: escalation is 'acknowledged'/,
+    );
   });
 });
 

@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { GET, POST } from './route';
+import { query } from '@/src/server/pilot/db';
 import {
   acknowledgeEscalation,
   detectRepeatedPatternEscalations,
@@ -19,6 +20,8 @@ jest.mock('@/src/server/pilot/escalationLadder', () => ({
 jest.mock('@/src/server/pilot/db', () => ({
   query: jest.fn().mockResolvedValue([]),
 }));
+
+const mockDbQuery = jest.mocked(query);
 
 jest.mock('@/src/server/pilot/http', () => ({
   requirePrincipal: jest.fn(),
@@ -98,6 +101,34 @@ describe('GET /api/pilot/escalations', () => {
     expect(response.status).toBe(400);
     expect(mockList).not.toHaveBeenCalled();
   });
+
+  // The one thing standing between a coach and every other child's safety
+  // record in the gym is this athleteIds scope -- it must be the coach's own
+  // roster from the database, not absent and not caller-supplied.
+  test('a coach lists only their own athletes: athleteIds comes from their roster query', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockDbQuery.mockResolvedValueOnce([{ athlete_id: 'ATH-1' }, { athlete_id: 'ATH-2' }] as never);
+    mockList.mockResolvedValueOnce([]);
+
+    await GET(request('/api/pilot/escalations'));
+
+    const [rosterSql, rosterParams] = mockDbQuery.mock.calls[0];
+    expect(String(rosterSql)).toContain('from pilot.athletes');
+    expect(rosterParams).toEqual(['org-a', 'acct-coach-1']);
+    expect(mockList).toHaveBeenCalledWith('org-a', { status: undefined, athleteIds: ['ATH-1', 'ATH-2'] });
+  });
+
+  test('a coach with no assigned athletes gets an empty scope, never the org-wide view', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-lonely' }));
+    mockDbQuery.mockResolvedValueOnce([] as never);
+    mockList.mockResolvedValueOnce([]);
+
+    await GET(request('/api/pilot/escalations'));
+
+    // [] must reach the SQL as [], which matches nothing -- undefined would
+    // mean "no filter" and expose every athlete's escalations.
+    expect(mockList).toHaveBeenCalledWith('org-a', { status: undefined, athleteIds: [] });
+  });
 });
 
 describe('POST /api/pilot/escalations acknowledge', () => {
@@ -129,6 +160,20 @@ describe('POST /api/pilot/escalations acknowledge', () => {
 
     expect(response.status).toBe(400);
     expect(mockAcknowledge).not.toHaveBeenCalled();
+  });
+
+  // The module throws when the escalation exists but the transition is not
+  // legal from its current state (e.g. acknowledging a resolved record).
+  // That must surface as a 400 caller error, not a masked 500.
+  test('an illegal transition from the module surfaces as a 400', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockAcknowledge.mockRejectedValueOnce(
+      new Error("Unsupported transition: escalation is 'resolved' and cannot move to 'acknowledged'"),
+    );
+
+    const response = await POST(jsonRequest({ action: 'acknowledge', escalation_id: 'esc-1' }));
+
+    expect(response.status).toBe(400);
   });
 });
 

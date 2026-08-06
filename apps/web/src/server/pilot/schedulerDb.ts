@@ -310,68 +310,25 @@ export async function createSchedulerCoachingRequest(organizationId: string, ite
   );
 }
 
+// One record is the one-element case of the batch: the same atomic
+// ON CONFLICT upsert, so a double-tapped check-in button (two concurrent
+// requests for the same class/athlete) resolves as last-writer-wins instead
+// of the loser's 23505 unique-violation surfacing as an unexplained 500 --
+// which is exactly what the previous select-then-write body here did, the
+// same race the bulk function's own comment warned about.
 export async function upsertSchedulerAttendance(organizationId: string, item: SchedulerAttendance): Promise<void> {
-  const existing = await queryOne<{ attendance_id: string }>(
-    `select attendance_id
-     from pilot.scheduler_attendance
-     where organization_id = $1 and class_id = $2 and athlete_id = $3
-     limit 1`,
-    [organizationId, item.class_id, item.athlete_id],
-  );
+  await bulkUpsertSchedulerAttendance(organizationId, [item]);
+}
 
-  if (existing) {
-    await query(
-      `update pilot.scheduler_attendance
-       set status = $4,
-           method = $5,
-           checked_in_by_role = $6,
-           checked_in_by_account_id = $7,
-           note = $8,
-           checked_in_at = $9,
-           updated_at = $10
-       where organization_id = $1 and class_id = $2 and athlete_id = $3`,
-      [
-        organizationId,
-        item.class_id,
-        item.athlete_id,
-        item.status,
-        item.method,
-        item.checked_in_by_role,
-        item.checked_in_by_account_id,
-        item.note,
-        item.checked_in_at,
-        item.updated_at,
-      ],
-    );
-    return;
-  }
-
-  await query(
-    `insert into pilot.scheduler_attendance (
-       organization_id, attendance_id, class_id, athlete_id,
-       status, method,
-       checked_in_by_role, checked_in_by_account_id,
-       note, checked_in_at, updated_at
-     ) values (
-       $1,$2,$3,$4,
-       $5,$6,
-       $7,$8,
-       $9,$10,$11
-     )`,
-    [
-      organizationId,
-      item.attendance_id,
-      item.class_id,
-      item.athlete_id,
-      item.status,
-      item.method,
-      item.checked_in_by_role,
-      item.checked_in_by_account_id,
-      item.note,
-      item.checked_in_at,
-      item.updated_at,
-    ],
+/** Athlete ids with a live ('registered') registration for one class. */
+export async function listRegisteredAthleteIdsForClass(organizationId: string, classId: string): Promise<string[]> {
+  const rows = await query<{ athlete_id: string }>(
+    `select athlete_id
+     from pilot.scheduler_registrations
+     where organization_id = $1 and class_id = $2 and status = 'registered'`,
+    [organizationId, classId],
   );
+  return rows.map((row) => row.athlete_id);
 }
 
 // Marks a whole roster in one call -- a coach standing in front of a class

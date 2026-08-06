@@ -67,8 +67,20 @@ async function findFreePort(): Promise<number> {
   });
 }
 
-/** Fresh database with the base schema and one org/coach/athlete. */
-async function freshDatabase(name: string, applyIncrement = false): Promise<Client> {
+/**
+ * Fresh database with the base schema and one org/coach/athlete.
+ *
+ * `dropEscalationsTableFirst` reproduces the only kind of database the
+ * increment migration exists for: one from BEFORE this change, where
+ * pilot_slice_postgres.sql had not yet grown the table. Without it, every
+ * assertion in this suite ran against the base schema's copy of the table
+ * and the migration's `create table if not exists` was a guaranteed no-op --
+ * the migration itself was never actually under test.
+ */
+async function freshDatabase(
+  name: string,
+  { applyIncrement = false, dropEscalationsTableFirst = false }: { applyIncrement?: boolean; dropEscalationsTableFirst?: boolean } = {},
+): Promise<Client> {
   const admin = new Client({ connectionString: connectionStringFor('postgres') });
   await admin.connect();
   await admin.query(`drop database if exists ${name}`);
@@ -78,6 +90,9 @@ async function freshDatabase(name: string, applyIncrement = false): Promise<Clie
   const client = new Client({ connectionString: connectionStringFor(name) });
   await client.connect();
   await client.query(baseSchemaSql);
+  if (dropEscalationsTableFirst) {
+    await client.query('drop table if exists pilot.safety_escalations cascade');
+  }
   await client.query(
     `insert into pilot.organizations (organization_id, organization_name, status)
      values ($1, $1, 'active') on conflict do nothing`,
@@ -97,6 +112,28 @@ async function freshDatabase(name: string, applyIncrement = false): Promise<Clie
     await client.query(migrationSql);
   }
   return client;
+}
+
+/** Column shapes + check constraints + indexes for pilot.safety_escalations, for the drift diff. */
+async function escalationsTableShape(client: Client) {
+  const columns = await client.query(
+    `select column_name, data_type, is_nullable, coalesce(column_default, '') as column_default
+     from information_schema.columns
+     where table_schema = 'pilot' and table_name = 'safety_escalations'
+     order by column_name`,
+  );
+  const checks = await client.query(
+    `select pg_get_constraintdef(oid) as def
+     from pg_constraint
+     where conrelid = to_regclass('pilot.safety_escalations')
+     order by pg_get_constraintdef(oid)`,
+  );
+  const indexes = await client.query(
+    `select indexname from pg_indexes
+     where schemaname = 'pilot' and tablename = 'safety_escalations'
+     order by indexname`,
+  );
+  return { columns: columns.rows, checks: checks.rows, indexes: indexes.rows };
 }
 
 async function insertEscalation(client: Client, overrides: Partial<Record<string, unknown>> = {}): Promise<void> {
@@ -202,7 +239,7 @@ describe('safety escalations against real Postgres', () => {
   });
 
   test('re-running the increment migration on top of the base schema is a safe no-op', async () => {
-    const client = await freshDatabase('ppbf_test_escalations_rerun', false);
+    const client = await freshDatabase('ppbf_test_escalations_rerun');
     try {
       await insertEscalation(client);
       await client.query(migrationSql);
@@ -215,7 +252,7 @@ describe('safety escalations against real Postgres', () => {
   });
 
   test('status defaults to open, and every timestamp/resolution column starts empty', async () => {
-    const client = await freshDatabase('ppbf_test_escalations_defaults');
+    const client = await freshDatabase('ppbf_test_escalations_defaults', { dropEscalationsTableFirst: true, applyIncrement: true });
     try {
       await insertEscalation(client);
 
@@ -236,7 +273,7 @@ describe('safety escalations against real Postgres', () => {
     ['escalated_to_role', 'escalated_to_role', 'platform_owner'],
     ['triggered_by', 'triggered_by', 'ai'],
   ])('the database refuses an invalid %s value', async (_label, column, badValue) => {
-    const client = await freshDatabase('ppbf_test_escalations_vocab');
+    const client = await freshDatabase('ppbf_test_escalations_vocab', { dropEscalationsTableFirst: true, applyIncrement: true });
     try {
       await expect(insertEscalation(client, { [column]: badValue })).rejects.toThrow(/violates check constraint/i);
     } finally {
@@ -245,7 +282,7 @@ describe('safety escalations against real Postgres', () => {
   });
 
   test('every admitted status value stores', async () => {
-    const client = await freshDatabase('ppbf_test_escalations_status_admits');
+    const client = await freshDatabase('ppbf_test_escalations_status_admits', { dropEscalationsTableFirst: true, applyIncrement: true });
     try {
       for (const [index, status] of ['open', 'acknowledged', 'resolved'].entries()) {
         await client.query(
@@ -267,7 +304,7 @@ describe('safety escalations against real Postgres', () => {
   });
 
   test('an escalation cannot reference an athlete that does not exist', async () => {
-    const client = await freshDatabase('ppbf_test_escalations_fk_athlete');
+    const client = await freshDatabase('ppbf_test_escalations_fk_athlete', { dropEscalationsTableFirst: true, applyIncrement: true });
     try {
       await expect(insertEscalation(client, { athlete_id: 'ATH-DOES-NOT-EXIST' })).rejects.toThrow(
         /violates foreign key constraint/i,
@@ -278,7 +315,7 @@ describe('safety escalations against real Postgres', () => {
   });
 
   test('an escalation cannot reference an organization that does not exist', async () => {
-    const client = await freshDatabase('ppbf_test_escalations_fk_org');
+    const client = await freshDatabase('ppbf_test_escalations_fk_org', { dropEscalationsTableFirst: true, applyIncrement: true });
     try {
       await expect(
         client.query(
@@ -295,7 +332,7 @@ describe('safety escalations against real Postgres', () => {
   });
 
   test('resolving stamps resolved_at, resolved_by, and the resolution note together', async () => {
-    const client = await freshDatabase('ppbf_test_escalations_resolve');
+    const client = await freshDatabase('ppbf_test_escalations_resolve', { dropEscalationsTableFirst: true, applyIncrement: true });
     try {
       await insertEscalation(client);
 
@@ -322,7 +359,7 @@ describe('safety escalations against real Postgres', () => {
   });
 
   test('source_id is nullable, for a repeated_pattern escalation with no single originating row', async () => {
-    const client = await freshDatabase('ppbf_test_escalations_null_source');
+    const client = await freshDatabase('ppbf_test_escalations_null_source', { dropEscalationsTableFirst: true, applyIncrement: true });
     try {
       await client.query(
         `insert into pilot.safety_escalations (
@@ -338,6 +375,45 @@ describe('safety escalations against real Postgres', () => {
       expect(rows[0]).toEqual({ source_id: null, metadata: { trigger_key: 'x' } });
     } finally {
       await client.end();
+    }
+  });
+
+  // NEGATIVE CONTROL for everything above: the pre-migration shape is real.
+  // If this fails, dropEscalationsTableFirst is broken and every
+  // { dropEscalationsTableFirst: true, applyIncrement: true } test in this
+  // file is silently back to testing the base schema's copy.
+  test('the pre-migration shape is reproducible: dropped table, increment not applied, table absent', async () => {
+    const client = await freshDatabase('ppbf_test_escalations_premigration', { dropEscalationsTableFirst: true });
+    try {
+      await expect(client.query('select 1 from pilot.safety_escalations')).rejects.toThrow(
+        /relation "pilot.safety_escalations" does not exist/i,
+      );
+    } finally {
+      await client.end();
+    }
+  });
+
+  // The table is defined twice by hand -- once in pilot_slice_postgres.sql
+  // for fresh environments, once in the increment migration for existing
+  // ones -- and nothing else compares them. Any drift here means a
+  // fresh-built gym and a migrated gym silently run different schemas: the
+  // exact defect class the safety-gate seeds ownership test exists to
+  // prevent for seed VALUES, asserted here for table SHAPE.
+  test('the base-schema table and the migration-built table are byte-for-byte the same shape', async () => {
+    const baseBuilt = await freshDatabase('ppbf_test_escalations_shape_base');
+    const migrationBuilt = await freshDatabase('ppbf_test_escalations_shape_migrated', {
+      dropEscalationsTableFirst: true,
+      applyIncrement: true,
+    });
+    try {
+      const baseShape = await escalationsTableShape(baseBuilt);
+      const migratedShape = await escalationsTableShape(migrationBuilt);
+      expect(migratedShape.columns).toEqual(baseShape.columns);
+      expect(migratedShape.checks).toEqual(baseShape.checks);
+      expect(migratedShape.indexes).toEqual(baseShape.indexes);
+    } finally {
+      await baseBuilt.end();
+      await migrationBuilt.end();
     }
   });
 });

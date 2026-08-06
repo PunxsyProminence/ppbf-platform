@@ -177,6 +177,26 @@ export async function listEscalations(
   );
 }
 
+/**
+ * The one legal ordering: open -> acknowledged -> resolved (resolve may also
+ * skip acknowledged). Enforced by a status predicate on the UPDATE itself, so
+ * a stale page or a raced request cannot regress a record: without the guard,
+ * acknowledging a RESOLVED escalation flipped it back to 'acknowledged' with
+ * its resolved_* columns still populated -- a closed safety record about a
+ * minor silently reopened, its resolution invisible on every status filter --
+ * and re-acknowledging overwrote who first saw the red flag.
+ *
+ * When the guarded UPDATE matches nothing, the row is re-read to distinguish
+ * the two different facts a caller must not conflate: no such row (returns
+ * null; routes surface their 'Missing escalation record') versus a row in a
+ * state the transition is not legal from (throws 'Unsupported transition:',
+ * which jsonError maps to 400 -- a caller mistake, not a server fault).
+ */
+const LEGAL_PRIOR_STATES: Record<'acknowledged' | 'resolved', SafetyEscalationStatus[]> = {
+  acknowledged: ['open'],
+  resolved: ['open', 'acknowledged'],
+};
+
 async function transitionEscalation(
   organizationId: string,
   escalationId: string,
@@ -186,22 +206,40 @@ async function transitionEscalation(
     resolutionNote?: string;
   },
 ): Promise<SafetyEscalationRow | null> {
+  // nullif($4, '') keeps an empty-string note from wiping a stored one: the
+  // route layer can only ever produce strings, and coalesce alone treats ''
+  // as a real value that wins over the existing note.
   const columns = input.status === 'acknowledged'
     ? `status = 'acknowledged', acknowledged_by_account_id = $3, acknowledged_at = now(), updated_at = now()`
-    : `status = 'resolved', resolved_by_account_id = $3, resolved_at = now(), resolution_note = coalesce($4, resolution_note), updated_at = now()`;
+    : `status = 'resolved', resolved_by_account_id = $3, resolved_at = now(), resolution_note = coalesce(nullif($4, ''), resolution_note), updated_at = now()`;
 
-  return queryOne<SafetyEscalationRow>(
+  const legalPriorStates = LEGAL_PRIOR_STATES[input.status];
+  const statesParam = input.status === 'acknowledged' ? '$4' : '$5';
+
+  const updated = await queryOne<SafetyEscalationRow>(
     `update pilot.safety_escalations
      set ${columns}
      where organization_id = $1 and escalation_id = $2
+       and status = any(${statesParam}::text[])
      returning escalation_id, source_type, source_id, athlete_id, severity, reason,
                escalated_to_role, triggered_by, triggered_by_account_id, triggered_by_role,
                status, acknowledged_by_account_id, acknowledged_at::text,
                resolved_by_account_id, resolved_at::text, resolution_note, metadata,
                created_at::text, updated_at::text`,
     input.status === 'acknowledged'
-      ? [organizationId, escalationId, input.accountId]
-      : [organizationId, escalationId, input.accountId, input.resolutionNote ?? null],
+      ? [organizationId, escalationId, input.accountId, legalPriorStates]
+      : [organizationId, escalationId, input.accountId, input.resolutionNote ?? null, legalPriorStates],
+  );
+  if (updated) return updated;
+
+  const existing = await queryOne<{ status: SafetyEscalationStatus }>(
+    `select status from pilot.safety_escalations
+     where organization_id = $1 and escalation_id = $2`,
+    [organizationId, escalationId],
+  );
+  if (!existing) return null;
+  throw new Error(
+    `Unsupported transition: escalation is '${existing.status}' and cannot move to '${input.status}'`,
   );
 }
 

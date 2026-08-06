@@ -6,6 +6,7 @@ import { requirePrincipal } from '@/src/server/pilot/http';
 import {
   bulkUpsertSchedulerAttendance,
   getSchedulerClassById,
+  listRegisteredAthleteIdsForClass,
   registerForClassTransactionally,
   upsertSchedulerAttendance,
 } from '@/src/server/pilot/schedulerDb';
@@ -26,6 +27,7 @@ jest.mock('@/src/server/pilot/schedulerDb', () => ({
   getSchedulerClassById: jest.fn(),
   upsertSchedulerAttendance: jest.fn(),
   bulkUpsertSchedulerAttendance: jest.fn(),
+  listRegisteredAthleteIdsForClass: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/db', () => ({
@@ -39,6 +41,7 @@ const mockAssertCanAct = assertActorCanAccessAthlete as jest.Mock;
 const mockGetClass = getSchedulerClassById as jest.Mock;
 const mockUpsertAttendance = upsertSchedulerAttendance as jest.Mock;
 const mockBulkUpsertAttendance = bulkUpsertSchedulerAttendance as jest.Mock;
+const mockListRegistered = listRegisteredAthleteIdsForClass as jest.Mock;
 
 const classRecord = {
   class_id: 'class-1',
@@ -59,6 +62,7 @@ beforeEach(() => {
   mockGetClass.mockResolvedValue(classRecord);
   mockUpsertAttendance.mockResolvedValue(undefined);
   mockBulkUpsertAttendance.mockResolvedValue(undefined);
+  mockListRegistered.mockResolvedValue(['ATH-1', 'ATH-2', 'ATH-OUTSIDE']);
 });
 
 afterEach(() => {
@@ -254,6 +258,114 @@ describe('bulk_attendance_checkin', () => {
     );
 
     expect(response.status).toBe(403);
+    expect(mockBulkUpsertAttendance).not.toHaveBeenCalled();
+  });
+});
+
+describe('coach class-ownership on attendance writes', () => {
+  // Without this, a coach could overwrite another coach's attendance
+  // attestations in a class they cannot even read (the summary route 403s
+  // them) -- write access without read access, on a safeguarding record.
+  test('a coach who does not own the class cannot bulk-mark it', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-2' }));
+
+    const response = await POST(
+      jsonRequest({
+        action: 'bulk_attendance_checkin',
+        class_id: 'class-1',
+        entries: [{ athlete_id: 'ATH-1', status: 'absent' }],
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({ error: expect.stringContaining('does not own this class') });
+    expect(mockBulkUpsertAttendance).not.toHaveBeenCalled();
+  });
+
+  test('a coach who does not own the class cannot single-mark it either', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-2' }));
+
+    const response = await POST(
+      jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', athlete_id: 'ATH-1', status: 'absent' }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(mockUpsertAttendance).not.toHaveBeenCalled();
+  });
+
+  test('a covering coach owns the class for attendance purposes', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-covering' }));
+    mockGetClass.mockResolvedValueOnce({ ...classRecord, covering_coach_account_id: 'acct-covering' });
+
+    const response = await POST(
+      jsonRequest({
+        action: 'bulk_attendance_checkin',
+        class_id: 'class-1',
+        entries: [{ athlete_id: 'ATH-1', status: 'present' }],
+      }),
+    );
+
+    expect(response.status).toBe(200);
+  });
+
+  test('admin is not subject to class ownership', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin', { accountId: 'acct-admin-1' }));
+
+    const response = await POST(
+      jsonRequest({
+        action: 'bulk_attendance_checkin',
+        class_id: 'class-1',
+        entries: [{ athlete_id: 'ATH-1', status: 'present' }],
+      }),
+    );
+
+    expect(response.status).toBe(200);
+  });
+});
+
+describe('attendance requires registration', () => {
+  // An unregistered mark counts in the org summary but appears on no class
+  // roster -- a number no drill-down can explain -- and it is what let an
+  // athlete self-mark 'present' in every class in the gym.
+  test('single check-in for an unregistered athlete is refused', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockListRegistered.mockResolvedValueOnce(['ATH-2']);
+
+    const response = await POST(
+      jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', athlete_id: 'ATH-1', status: 'present' }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ error: expect.stringContaining('not registered') });
+    expect(mockUpsertAttendance).not.toHaveBeenCalled();
+  });
+
+  test('an athlete cannot self-check-in to a class they are not registered for', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('athlete', { athleteId: 'ATH-1' }));
+    mockListRegistered.mockResolvedValueOnce([]);
+
+    const response = await POST(jsonRequest({ action: 'attendance_checkin', class_id: 'class-1', status: 'present' }));
+
+    expect(response.status).toBe(400);
+    expect(mockUpsertAttendance).not.toHaveBeenCalled();
+  });
+
+  test('a bulk batch containing one unregistered athlete fails whole before any write', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockListRegistered.mockResolvedValueOnce(['ATH-1']);
+
+    const response = await POST(
+      jsonRequest({
+        action: 'bulk_attendance_checkin',
+        class_id: 'class-1',
+        entries: [
+          { athlete_id: 'ATH-1', status: 'present' },
+          { athlete_id: 'ATH-2', status: 'present' },
+        ],
+      }),
+    );
+
+    expect(response.status).toBe(400);
     expect(mockBulkUpsertAttendance).not.toHaveBeenCalled();
   });
 });
