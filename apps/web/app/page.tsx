@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import PhotoSlot from "@/components/PhotoSlot";
+import { gymPhotoSlotsFor } from "@/src/shared/gymPhotos";
+
 export const metadata: Metadata = {
   title: "Punxsy Prominence Boxing & Fitness",
   description:
@@ -148,6 +151,36 @@ export default function HomePage() {
                 </div>
               </div>
             </div>
+          </div>
+        </section>
+
+        <div className="flex justify-center">
+          <div className="rope w-[var(--s8)]" />
+        </div>
+
+        {/* The room. The page said everything and showed nothing — the one
+            question a nervous parent cannot settle from prose is what the
+            place actually looks like. Three frames from the same manifest the
+            dashboards hang (gymPhotos.ts): illustrations today, photographs
+            the day somebody commits them, with no layout change either way. */}
+        <section
+          id="the-room"
+          aria-labelledby="room-heading"
+          className="mx-auto w-full max-w-[1000px] px-[var(--s5)] py-[var(--s7)] lg:px-[var(--s6)]"
+        >
+          <h2 id="room-heading" className="t-command" style={{ fontSize: 'var(--t-xl)' }}>
+            The Room
+          </h2>
+          <p className="t-body mt-[var(--s3)] max-w-[68ch]">
+            One building in Big Run, run on donations. Come see it before you commit to anything —
+            that is the right way round.
+          </p>
+          <div className="mt-[var(--s5)] grid gap-[var(--s5)] sm:grid-cols-2 lg:grid-cols-3">
+            {gymPhotoSlotsFor('public')
+              .filter((slot) => ['entrance', 'floor', 'ring'].includes(slot.key))
+              .map((slot) => (
+                <PhotoSlot key={slot.key} slot={slot} shape="wide" />
+              ))}
           </div>
         </section>
 
