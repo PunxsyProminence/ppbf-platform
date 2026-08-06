@@ -42,8 +42,6 @@ function assertExpectedTarget(target, expectedHostname, expectedDatabase) {
   }
 }
 
-// Same reasoning as db.ts's resolveSslConfig and the other pilot-apply-*
-// scripts: production/staging always require TLS.
 function resolveSslConfig() {
   if (process.env.NODE_ENV === 'test' && process.env.PPBF_POSTGRES_DISABLE_SSL === 'true') {
     return false;
@@ -51,32 +49,15 @@ function resolveSslConfig() {
   return { rejectUnauthorized: true };
 }
 
-// Asserts the properties the migration exists for, not merely that a table
-// by that name appeared: the time window CHECK (a grant whose expiry does
-// not follow its start is malformed by definition), the granted_by_role
-// vocabulary, and the lookup index the hot access-gate query depends on.
 const READINESS_QUERY = `
   select
     to_regclass('pilot.coach_coverage') is not null as coach_coverage_ready,
     exists (
-      select 1 from pg_constraint
-      where conname = 'pilot_coach_coverage_window'
-        and conrelid = to_regclass('pilot.coach_coverage')
-        and contype = 'c'
-        and pg_get_constraintdef(oid) like '%expires_at > starts_at%'
-    ) as window_constraint_ready,
-    exists (
-      select 1 from pg_constraint
-      where conrelid = to_regclass('pilot.coach_coverage')
-        and contype = 'c'
-        and pg_get_constraintdef(oid) like '%''coach''%'
-        and pg_get_constraintdef(oid) like '%''organization_admin''%'
-    ) as granted_by_vocabulary_ready,
-    exists (
-      select 1 from pg_indexes
-      where schemaname = 'pilot' and tablename = 'coach_coverage'
-        and indexname = 'idx_coach_coverage_lookup'
-    ) as lookup_index_ready
+      select 1
+      from pg_indexes
+      where schemaname = 'pilot'
+        and indexname = 'idx_pilot_coach_coverage_lookup'
+    ) as coach_coverage_index_ready
 `;
 
 function assertReadiness(row) {

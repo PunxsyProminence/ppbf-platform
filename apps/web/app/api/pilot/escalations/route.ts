@@ -30,8 +30,8 @@ async function coachAthleteIds(organizationId: string, coachAccountId: string): 
       `select athlete_id from pilot.athletes where organization_id = $1 and coach_id = $2
        union
        select athlete_id from pilot.coach_coverage
-       where organization_id = $1 and covering_coach_account_id = $2
-         and revoked_at is null and starts_at <= now() and expires_at > now()`,
+       where organization_id = $1 and covering_coach_id = $2
+         and starts_at <= now() and expires_at > now()`,
       [organizationId, coachAccountId],
     );
     return rows.map((row) => row.athlete_id);

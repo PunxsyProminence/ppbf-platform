@@ -36,11 +36,12 @@ export function requireRole(actor: ActorIdentity, allowed: PilotRole[]): void {
  *
  * 1. They are the athlete's coach_id of record -- the original exact-match,
  *    untouched (T-002's own rule: extend, don't replace).
- * 2. They hold an active coverage grant (pilot.coach_coverage): not revoked,
- *    started, not yet expired -- a coach substituting for the coach of
- *    record, granted temporary per-athlete access without ever becoming the
+ * 2. They hold an active coverage grant (pilot.coach_coverage): started and
+ *    not yet expired -- a coach substituting for the coach of record,
+ *    granted temporary per-athlete access without ever becoming the
  *    coach_id. Expiry is enforced by comparing against now() at read time,
- *    so a lapsed grant needs no cleanup job to stop working.
+ *    so a lapsed grant needs no cleanup job to stop working, and a revoked
+ *    grant (expires_at forced to now()) stops working the same way.
  *
  * Both failures throw the SAME message on purpose: whether a coach has no
  * relationship to this athlete, an expired grant, or a revoked one is not
@@ -57,25 +58,23 @@ export async function assertCoachAssignedToAthlete(coachId: string, athleteId: s
     return;
   }
 
-  let coverage: { coverage_id: string } | null = null;
+  let coverage: { athlete_id: string } | null = null;
   try {
-    coverage = await queryOne<{ coverage_id: string }>(
-      `select coverage_id
+    coverage = await queryOne<{ athlete_id: string }>(
+      `select athlete_id
        from pilot.coach_coverage
-       where athlete_id = $1
-         and covering_coach_account_id = $2
-         and organization_id = $3
-         and revoked_at is null
+       where organization_id = $1
+         and athlete_id = $2
+         and covering_coach_id = $3
          and starts_at <= now()
-         and expires_at > now()
-       limit 1`,
-      [athleteId, coachId, organizationId],
+         and expires_at > now()`,
+      [organizationId, athleteId, coachId],
     );
   } catch (error) {
     // Migrations are operator-applied (guardrails section 7), so this code
     // legitimately runs against databases the coach_coverage migration has
     // not reached yet. In that window a missing relation (Postgres 42P01)
-    // must mean exactly what the pre-T-002 code meant -- no coverage --
+    // must mean exactly what the pre-coverage code meant -- no coverage --
     // not turn every non-assigned-coach 403 into an opaque 500 that also
     // takes down the pain-report alert path layered on this gate. Any
     // other database error still propagates.
@@ -85,9 +84,136 @@ export async function assertCoachAssignedToAthlete(coachId: string, athleteId: s
     }
   }
 
-  if (!coverage) {
-    throw new Error('Forbidden: coach not assigned to athlete');
+  if (coverage) {
+    return;
   }
+
+  throw new Error('Forbidden: coach not assigned to athlete');
+}
+
+export const DEFAULT_COVERAGE_TTL_HOURS = 24;
+
+// A substitute covering one session needs hours, not months. The cap is what
+// makes this design defensible over the roster-wide alternative that was
+// rejected: coverage is bounded exposure to one athlete's record, and a bound
+// nobody enforces is not a bound. Mirrors resolveTtlHours in activation.ts.
+const MAX_COVERAGE_TTL_HOURS = 14 * 24;
+
+function resolveCoverageTtlHours(requested?: number): number {
+  if (requested === undefined) {
+    return DEFAULT_COVERAGE_TTL_HOURS;
+  }
+
+  if (!Number.isSafeInteger(requested) || requested <= 0 || requested > MAX_COVERAGE_TTL_HOURS) {
+    throw new Error('Missing ttl_hours: must be a positive integer of at most 336');
+  }
+
+  return requested;
+}
+
+export async function grantCoachCoverage(params: {
+  organizationId: string;
+  athleteId: string;
+  coveringCoachId: string;
+  grantedByAccountId: string;
+  ttlHours?: number;
+}): Promise<{ coverageId: string; expiresAt: string }> {
+  await assertAthleteBelongsToOrganization(params.organizationId, params.athleteId);
+
+  const ttlHours = resolveCoverageTtlHours(params.ttlHours);
+
+  // The grantee must be an active coach in the granting organization. This
+  // table exists to admit its holder through assertCoachAssignedToAthlete,
+  // so a typo'd account id here is not a bad reference -- it is coach-level
+  // access to a minor's record handed to whatever account the typo names
+  // (a parent, an athlete, a deactivated coach).
+  const grantee = await queryOne<{ account_id: string }>(
+    `select account_id
+     from pilot.accounts
+     where account_id = $1
+       and organization_id = $2
+       and role = 'coach'
+       and active_flag = true`,
+    [params.coveringCoachId, params.organizationId],
+  );
+
+  if (!grantee) {
+    throw new Error('Missing covering_coach_id: must be an active coach account in this organization');
+  }
+
+  // At most one live grant per (athlete, coach). Stacked overlapping grants
+  // make revocation lie: an admin revokes "the" grant, the hidden second one
+  // keeps the door open. Refusing the overlap names the live grant so the
+  // admin can revoke it first if they really mean to re-issue.
+  const overlapping = await queryOne<{ coverage_id: string }>(
+    `select coverage_id
+     from pilot.coach_coverage
+     where organization_id = $1
+       and athlete_id = $2
+       and covering_coach_id = $3
+       and expires_at > now()
+     limit 1`,
+    [params.organizationId, params.athleteId, params.coveringCoachId],
+  );
+
+  if (overlapping) {
+    throw new Error(`Coverage already exists: grant ${overlapping.coverage_id} for this coach and athlete is still active`);
+  }
+
+  const inserted = await queryOne<{ coverage_id: string; expires_at: string }>(
+    `insert into pilot.coach_coverage (
+       organization_id,
+       athlete_id,
+       covering_coach_id,
+       granted_by_account_id,
+       starts_at,
+       expires_at
+     )
+     values ($1, $2, $3, $4, now(), now() + ($5 || ' hours')::interval)
+     returning coverage_id, expires_at::text`,
+    [params.organizationId, params.athleteId, params.coveringCoachId, params.grantedByAccountId, ttlHours],
+  );
+
+  if (!inserted) {
+    throw new Error('Failed to grant coach coverage');
+  }
+
+  return {
+    coverageId: inserted.coverage_id,
+    expiresAt: inserted.expires_at,
+  };
+}
+
+/**
+ * Ends an active coverage grant immediately.
+ *
+ * Without this there was no way to withdraw coverage through the application
+ * at all -- a grant issued to the wrong coach, or for longer than intended,
+ * could only be undone with direct SQL against production. Re-granting does
+ * not help either: a second grant does not supersede the first (grant-time
+ * overlap refusal blocks it outright while the first is live), so revoking
+ * is the only way to end access early.
+ *
+ * Expires rather than deletes, so the row survives as an audit trail of who
+ * held access and when it was cut short. The `expires_at > now()` guard makes
+ * this idempotent -- revoking twice is not an error, and it cannot be used to
+ * silently extend an already-expired grant.
+ */
+export async function revokeCoachCoverage(params: {
+  organizationId: string;
+  coverageId: string;
+}): Promise<{ revoked: boolean }> {
+  const row = await queryOne<{ coverage_id: string }>(
+    `update pilot.coach_coverage
+     set expires_at = now()
+     where organization_id = $1
+       and coverage_id = $2
+       and expires_at > now()
+     returning coverage_id`,
+    [params.organizationId, params.coverageId],
+  );
+
+  return { revoked: Boolean(row) };
 }
 
 export async function assertAthleteBelongsToOrganization(organizationId: string, athleteId: string): Promise<void> {
@@ -154,16 +280,31 @@ export function assertAthleteUpdateAllowed(
   before: { coach_id: string; active_flag: boolean; gym_status: string },
   after: { coach_id: string; active_flag: boolean; gym_status: string },
 ): void {
-  // A coach who is not the coach of record reaches this route only through a
-  // coverage grant (T-002) -- and a grant is temporary BY DESIGN. Letting
-  // the covering coach rewrite coach_id (including to themselves) would
-  // convert a 3-day grant into permanent access the moment it was written:
-  // the exact-match branch of assertCoachAssignedToAthlete would pass
-  // forever after, and revoking or expiring the grant would change nothing.
-  // Reassignment is an authority action; a substitute correcting a typo'd
-  // date of birth is not the same act as a substitute adopting the athlete.
-  if (actor.role === 'coach' && before.coach_id !== after.coach_id && before.coach_id !== actor.accountId) {
-    throw new Error('Forbidden: covering coach cannot change coach assignment');
+  // Who an athlete's coach is, is an administrator's decision. The create
+  // route already refuses to let a coach file an athlete under anyone but
+  // themselves ("coach can only create athletes assigned to self"); update
+  // had no matching rule, so the same column the create path guards was
+  // writable here by any coach who could reach the record.
+  //
+  // Left unguarded this converts read access into permanent ownership: a
+  // coach reaching an athlete through a TEMPORARY grant can set coach_id to
+  // their own account, at which point the grant's expiry stops mattering --
+  // they match the permanent assignment check from then on -- and the
+  // athlete's actual coach, who no longer matches coach_id, loses access.
+  // A bound that the bounded party can write their way out of is not a bound.
+  //
+  // The knock-on is worse than the record access. profileDb grants
+  // 'coach_of_subject' straight from athletes.coach_id, and that relationship
+  // is one of the three in profileVisibility's MINOR_CIRCLE -- the circle a
+  // minor's PHOTOGRAPH never leaves, and one organization admins are
+  // deliberately outside of. So this column is not only roster bookkeeping;
+  // writing to it admits the writer to a child's portrait.
+  //
+  // Refused outright rather than restricted to self-assignment: handing an
+  // athlete to a different coach is equally an administrator's call, and
+  // "only to yourself" would still permit the escalation above.
+  if (actor.role === 'coach' && before.coach_id !== after.coach_id) {
+    throw new Error('Forbidden: coach cannot change coach assignment');
   }
 
   if (actor.role !== 'athlete') {

@@ -1,222 +1,119 @@
-import { randomUUID } from 'node:crypto';
-
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { assertAthleteBelongsToOrganization } from '@/src/server/pilot/access';
+import { grantCoachCoverage, isOrganizationAdminRole, revokeCoachCoverage } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
-import { query, queryOne } from '@/src/server/pilot/db';
-import { jsonError, requireMicrosoftAuthenticatedPrincipal, requireRole } from '@/src/server/pilot/http';
+import { jsonError, requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
-
-// T-002's "minimal way to grant coverage": an admin-only API surface with no
-// UI -- the ticket explicitly allows cutting the UI at this size, and this
-// PR does. Granting is deliberately privileged (Microsoft-authenticated
-// organization_admin/admin): a coverage grant hands a coach access to a
-// child's athlete-scoped records, which is an authority decision, not a
-// convenience toggle. The schema's granted_by_role admits 'coach' so a
-// future regular-coach handoff is a route change, not a migration -- but
-// today the route does not offer it.
-//
-// A grant is capped at 14 days. Coverage is temporary by definition; an
-// open-ended grant is a permanent reassignment wearing coverage's clothes,
-// and permanent reassignment already has a real path (updating the
-// athlete's coach_id) that this table must not quietly replace.
-const MAX_COVERAGE_DAYS = 14;
-
-export async function GET(request: NextRequest) {
-  try {
-    const principal = await requireMicrosoftAuthenticatedPrincipal(request);
-    requireRole(principal, ['organization_admin', 'admin']);
-
-    const rows = await query(
-      `select coverage_id, athlete_id, covering_coach_account_id,
-              granted_by_account_id, granted_by_role, reason,
-              starts_at::text, expires_at::text, revoked_at::text, revoked_by_account_id,
-              created_at::text,
-              (revoked_at is null and starts_at <= now() and expires_at > now()) as is_active
-       from pilot.coach_coverage
-       where organization_id = $1
-       order by created_at desc
-       limit 200`,
-      [principal.organizationId],
-    );
-
-    return NextResponse.json({ ok: true, coverage: rows });
-  } catch (error) {
-    return jsonError(error);
-  }
-}
 
 export async function POST(request: NextRequest) {
   try {
     const principal = await requireMicrosoftAuthenticatedPrincipal(request);
-    requireRole(principal, ['organization_admin', 'admin']);
 
-    // .catch + object guard: malformed JSON (or a literal null body) is a
-    // caller mistake and must read as the conventional 400, not fall through
-    // jsonError's 500 branch as a SyntaxError/TypeError.
-    const body = (await request.json().catch(() => null)) as {
+    if (!isOrganizationAdminRole(principal.role)) {
+      throw new Error('Forbidden: role not allowed');
+    }
+
+    const body = (await request.json()) as {
       athlete_id?: string;
-      covering_coach_account_id?: string;
-      expires_at?: string;
-      starts_at?: string;
-      reason?: string;
-    } | null;
-    if (!body || typeof body !== 'object') {
-      throw new Error('Request body must be valid JSON');
+      covering_coach_id?: string;
+      ttl_hours?: number;
+    };
+
+    const athleteId = body.athlete_id?.trim() || '';
+    const coveringCoachId = body.covering_coach_id?.trim() || '';
+
+    if (!athleteId || !coveringCoachId) {
+      throw new Error('Missing athlete_id or covering_coach_id');
     }
 
-    const athleteId = typeof body.athlete_id === 'string' ? body.athlete_id.trim() : '';
-    if (!athleteId) throw new Error('Missing athlete_id');
-    const coveringCoachAccountId = typeof body.covering_coach_account_id === 'string' ? body.covering_coach_account_id.trim() : '';
-    if (!coveringCoachAccountId) throw new Error('Missing covering_coach_account_id');
-    // typeof guards matter here: the `as` cast types these as strings but a
-    // JSON number slips through it, and Date.parse(2030) (the YEAR 2030)
-    // disagrees with new Date(2030) (epoch milliseconds) -- a grant meant
-    // for 2030 would validate and then activate in January 1970.
-    if (typeof body.expires_at !== 'string' || Number.isNaN(Date.parse(body.expires_at))) {
-      throw new Error('Missing expires_at: must be a valid date string');
-    }
-    if (body.starts_at !== undefined && (typeof body.starts_at !== 'string' || Number.isNaN(Date.parse(body.starts_at)))) {
-      throw new Error('Unsupported starts_at: must be a valid date string');
-    }
-    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
-    if (reason.length > 2000) {
-      throw new Error('Unsupported reason: longer than 2000 characters');
-    }
+    const result = await grantCoachCoverage({
+      organizationId: principal.organizationId,
+      athleteId,
+      coveringCoachId,
+      grantedByAccountId: principal.accountId,
+      ttlHours: body.ttl_hours,
+    });
 
-    const startsAt = body.starts_at !== undefined ? new Date(body.starts_at) : new Date();
-    const expiresAt = new Date(body.expires_at);
-    const now = Date.now();
-
-    if (expiresAt.getTime() <= now) {
-      throw new Error('Unsupported expires_at: must be in the future');
-    }
-    if (expiresAt.getTime() <= startsAt.getTime()) {
-      throw new Error('Unsupported expires_at: must be after starts_at');
-    }
-    if (expiresAt.getTime() - now > MAX_COVERAGE_DAYS * 24 * 60 * 60 * 1000) {
-      throw new Error(
-        `Unsupported expires_at: coverage is capped at ${MAX_COVERAGE_DAYS} days -- a longer arrangement is a coach reassignment, not coverage`,
-      );
-    }
-
-    await assertAthleteBelongsToOrganization(principal.organizationId, athleteId);
-
-    // The grantee must be a real, active coach in THIS organization. Without
-    // this, a typo'd account id would mint a grant nobody can use -- or
-    // worse, one a non-coach account could.
-    const coachRow = await queryOne<{ account_id: string }>(
-      `select account_id from pilot.accounts
-       where account_id = $1 and organization_id = $2 and role = 'coach' and active_flag = true`,
-      [coveringCoachAccountId, principal.organizationId],
-    );
-    if (!coachRow) {
-      throw new Error('Missing coach account: covering_coach_account_id is not an active coach in this organization');
-    }
-
-    // A retried or double-clicked grant must read as "already done", not
-    // silently mint a second identical active grant that survives
-    // revocation of the first -- the same partially-failed-create hazard
-    // jsonError's 409 block exists for.
-    const overlapping = await queryOne<{ coverage_id: string }>(
-      `select coverage_id from pilot.coach_coverage
-       where organization_id = $1 and athlete_id = $2 and covering_coach_account_id = $3
-         and revoked_at is null
-         and starts_at < $5 and expires_at > $4
-       limit 1`,
-      [principal.organizationId, athleteId, coveringCoachAccountId, startsAt.toISOString(), expiresAt.toISOString()],
-    );
-    if (overlapping) {
-      throw new Error(
-        `Coverage already exists: grant ${overlapping.coverage_id} for this coach and athlete overlaps the requested window -- revoke it first if the window should change`,
-      );
-    }
-
-    const coverageId = randomUUID();
-    await query(
-      `insert into pilot.coach_coverage (
-         organization_id, coverage_id, athlete_id, covering_coach_account_id,
-         granted_by_account_id, granted_by_role, reason, starts_at, expires_at
-       ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-      [
-        principal.organizationId,
-        coverageId,
-        athleteId,
-        coveringCoachAccountId,
-        principal.accountId,
-        principal.role,
-        reason,
-        startsAt.toISOString(),
-        expiresAt.toISOString(),
-      ],
-    );
-
+    // A coverage grant hands a coach access to a child's athlete-scoped
+    // records; who granted it, to whom, and until when must survive in the
+    // audit stream, not only in the coverage row itself.
     await writePilotAuditEvent({
       event_type: 'create',
       actor_account_id: principal.accountId,
       actor_role: principal.role,
       organization_id: principal.organizationId,
       entity_type: 'coach_coverage',
-      entity_id: coverageId,
+      entity_id: result.coverageId,
       details: {
         athlete_id: athleteId,
-        covering_coach_account_id: coveringCoachAccountId,
-        starts_at: startsAt.toISOString(),
-        expires_at: expiresAt.toISOString(),
+        covering_coach_id: coveringCoachId,
+        expires_at: result.expiresAt,
       },
     });
 
-    return NextResponse.json({ ok: true, coverage_id: coverageId });
+    return NextResponse.json({
+      ok: true,
+      coverage_id: result.coverageId,
+      organization_id: principal.organizationId,
+      athlete_id: athleteId,
+      covering_coach_id: coveringCoachId,
+      expires_at: result.expiresAt,
+    });
   } catch (error) {
     return jsonError(error);
   }
 }
 
-export async function PATCH(request: NextRequest) {
+// The withdrawal half of POST. Same authorization -- an organization admin
+// grants coverage and the same role takes it back -- and the same
+// organization scoping, so one gym cannot end another gym's grant by
+// guessing a coverage_id.
+export async function DELETE(request: NextRequest) {
   try {
     const principal = await requireMicrosoftAuthenticatedPrincipal(request);
-    requireRole(principal, ['organization_admin', 'admin']);
 
-    const body = (await request.json().catch(() => null)) as { coverage_id?: string } | null;
-    if (!body || typeof body !== 'object') {
-      throw new Error('Request body must be valid JSON');
-    }
-    const coverageId = typeof body.coverage_id === 'string' ? body.coverage_id.trim() : '';
-    if (!coverageId) throw new Error('Missing coverage_id');
-
-    // Guarded in the UPDATE itself (the escalation-ladder lesson): revoking
-    // an already-revoked grant must not overwrite who revoked it first.
-    const revoked = await queryOne<{ coverage_id: string }>(
-      `update pilot.coach_coverage
-       set revoked_at = now(), revoked_by_account_id = $3
-       where organization_id = $1 and coverage_id = $2 and revoked_at is null
-       returning coverage_id`,
-      [principal.organizationId, coverageId, principal.accountId],
-    );
-
-    if (!revoked) {
-      const existing = await queryOne<{ coverage_id: string }>(
-        `select coverage_id from pilot.coach_coverage
-         where organization_id = $1 and coverage_id = $2`,
-        [principal.organizationId, coverageId],
-      );
-      if (!existing) throw new Error('Missing coverage record');
-      throw new Error('Unsupported transition: coverage is already revoked');
+    if (!isOrganizationAdminRole(principal.role)) {
+      throw new Error('Forbidden: role not allowed');
     }
 
-    await writePilotAuditEvent({
-      event_type: 'update',
-      actor_account_id: principal.accountId,
-      actor_role: principal.role,
-      organization_id: principal.organizationId,
-      entity_type: 'coach_coverage',
-      entity_id: coverageId,
-      details: { action: 'revoked' },
+    const body = (await request.json().catch(() => ({}))) as { coverage_id?: string };
+    const coverageId = body.coverage_id?.trim() || '';
+
+    if (!coverageId) {
+      throw new Error('Missing coverage_id');
+    }
+
+    const result = await revokeCoachCoverage({
+      organizationId: principal.organizationId,
+      coverageId,
     });
 
-    return NextResponse.json({ ok: true, coverage_id: coverageId });
+    // Audit the state change only: an idempotent re-revoke of an already
+    // ended grant changed nothing, so it writes nothing.
+    if (result.revoked) {
+      await writePilotAuditEvent({
+        event_type: 'update',
+        actor_account_id: principal.accountId,
+        actor_role: principal.role,
+        organization_id: principal.organizationId,
+        entity_type: 'coach_coverage',
+        entity_id: coverageId,
+        details: { action: 'revoke' },
+      });
+    }
+
+    // `revoked: false` means no active grant matched -- already expired,
+    // already revoked, or another organization's. Deliberately not a 404: the
+    // caller's intent (this coverage is not active) holds either way, and
+    // distinguishing the cases would confirm whether a coverage_id exists in
+    // some other gym.
+    return NextResponse.json({
+      ok: true,
+      coverage_id: coverageId,
+      organization_id: principal.organizationId,
+      revoked: result.revoked,
+    });
   } catch (error) {
     return jsonError(error);
   }

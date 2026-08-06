@@ -1,12 +1,13 @@
 // Real PostgreSQL-backed contract test for the coach-coverage migration
 // (pilot.coach_coverage) and -- unlike the sibling suites -- for the REAL
-// access-gate behavior on top of it: './db' is mocked to route into the
-// embedded server, so assertCoachAssignedToAthlete below is the actual
-// production function evaluating its actual SQL against actual rows. The
-// ticket's acceptance criteria (active grant passes, expired grant refuses,
-// no grant refuses) are proven here at the only altitude that can prove
-// them -- the window predicates live in SQL, and a unit mock cannot execute
-// SQL.
+// access-gate and grant/revoke behavior on top of it: './db' is mocked to
+// route into the embedded server, so assertCoachAssignedToAthlete,
+// grantCoachCoverage, and revokeCoachCoverage below are the actual
+// production functions evaluating their actual SQL against actual rows.
+// The ticket's acceptance criteria (active grant passes, expired grant
+// refuses, no grant refuses, revocation ends access) are proven here at the
+// only altitude that can prove them -- the window predicates live in SQL,
+// and a unit mock cannot execute SQL.
 //
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
@@ -38,7 +39,7 @@ jest.mock('./db', () => ({
   }),
 }));
 
-import { assertCoachAssignedToAthlete } from './access';
+import { assertCoachAssignedToAthlete, grantCoachCoverage, revokeCoachCoverage } from './access';
 
 jest.setTimeout(180_000);
 
@@ -53,6 +54,7 @@ const ORG_ID = 'org-coverage';
 const OTHER_ORG_ID = 'org-coverage-other';
 const RECORD_COACH = 'acct-coach-record';
 const SUB_COACH = 'acct-coach-sub';
+const ADMIN_ACCOUNT = 'acct-admin-1';
 const ATHLETE_ID = 'ATH-COVERAGE-1';
 
 let PG_PORT: number;
@@ -82,8 +84,8 @@ async function findFreePort(): Promise<number> {
 }
 
 /**
- * Fresh database: two orgs, a coach of record, a substitute coach, and one
- * athlete assigned to the coach of record. `dropCoverageTableFirst`
+ * Fresh database: two orgs, a coach of record, a substitute coach, an admin,
+ * and one athlete assigned to the coach of record. `dropCoverageTableFirst`
  * reproduces the pre-migration shape (the only database the increment
  * exists for), exactly as the escalations suite does.
  */
@@ -118,6 +120,11 @@ async function freshDatabase(
     );
   }
   await client.query(
+    `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+     values ($1, 'organization_admin', $2, 'microsoft') on conflict do nothing`,
+    [ADMIN_ACCOUNT, ORG_ID],
+  );
+  await client.query(
     `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
      values ($1, $2, 'Coverage Athlete', '2011-05-06', 'fly', 'active', 'contact', true, $3, now(), now())`,
     [ORG_ID, ATHLETE_ID, RECORD_COACH],
@@ -128,26 +135,27 @@ async function freshDatabase(
   return client;
 }
 
-async function grantCoverage(
+/**
+ * Direct-SQL grant for windows the application function cannot write
+ * (expired, not-yet-started, other-org): grantCoachCoverage always anchors
+ * starts_at at now(), so the odd windows are inserted by hand.
+ */
+async function insertGrant(
   client: Client,
   overrides: Partial<{
-    coverage_id: string;
     organization_id: string;
     athlete_id: string;
-    covering_coach_account_id: string;
+    covering_coach_id: string;
     starts_at: string;
     expires_at: string;
-    revoked: boolean;
   }> = {},
 ): Promise<void> {
   const grant = {
-    coverage_id: 'cov-1',
     organization_id: ORG_ID,
     athlete_id: ATHLETE_ID,
-    covering_coach_account_id: SUB_COACH,
+    covering_coach_id: SUB_COACH,
     starts_at: "now() - interval '1 hour'",
     expires_at: "now() + interval '1 hour'",
-    revoked: false,
     ...overrides,
   };
   // If the grant targets the other org, that org needs the athlete row too
@@ -162,11 +170,20 @@ async function grantCoverage(
   }
   await client.query(
     `insert into pilot.coach_coverage (
-       organization_id, coverage_id, athlete_id, covering_coach_account_id,
-       granted_by_account_id, granted_by_role, starts_at, expires_at, revoked_at
-     ) values ($1,$2,$3,$4,'acct-admin-1','organization_admin', ${grant.starts_at}, ${grant.expires_at}, ${grant.revoked ? 'now()' : 'null'})`,
-    [grant.organization_id, grant.coverage_id, grant.athlete_id, grant.covering_coach_account_id],
+       organization_id, athlete_id, covering_coach_id, granted_by_account_id, starts_at, expires_at
+     ) values ($1,$2,$3,$4, ${grant.starts_at}, ${grant.expires_at})`,
+    [grant.organization_id, grant.athlete_id, grant.covering_coach_id, ADMIN_ACCOUNT],
   );
+}
+
+function grantParams(overrides: Partial<Parameters<typeof grantCoachCoverage>[0]> = {}) {
+  return {
+    organizationId: ORG_ID,
+    athleteId: ATHLETE_ID,
+    coveringCoachId: SUB_COACH,
+    grantedByAccountId: ADMIN_ACCOUNT,
+    ...overrides,
+  };
 }
 
 beforeAll(async () => {
@@ -249,11 +266,11 @@ describe('the real access gate against real coverage rows (T-002 acceptance)', (
     }
   });
 
-  test('a coach with an ACTIVE grant passes', async () => {
+  test('a grant issued by the real grantCoachCoverage opens the gate', async () => {
     const client = await freshDatabase('ppbf_test_cov_active', { dropCoverageTableFirst: true, applyIncrement: true });
     activeClient = client;
     try {
-      await grantCoverage(client);
+      await grantCoachCoverage(grantParams());
       await expect(assertCoachAssignedToAthlete(SUB_COACH, ATHLETE_ID, ORG_ID)).resolves.toBeUndefined();
     } finally {
       await client.end();
@@ -264,7 +281,7 @@ describe('the real access gate against real coverage rows (T-002 acceptance)', (
     const client = await freshDatabase('ppbf_test_cov_expired', { dropCoverageTableFirst: true, applyIncrement: true });
     activeClient = client;
     try {
-      await grantCoverage(client, {
+      await insertGrant(client, {
         starts_at: "now() - interval '2 hours'",
         expires_at: "now() - interval '1 hour'",
       });
@@ -276,11 +293,16 @@ describe('the real access gate against real coverage rows (T-002 acceptance)', (
     }
   });
 
-  test('a REVOKED grant gets Forbidden even inside its time window', async () => {
+  test('the real revokeCoachCoverage closes the gate a live grant had opened', async () => {
     const client = await freshDatabase('ppbf_test_cov_revoked', { dropCoverageTableFirst: true, applyIncrement: true });
     activeClient = client;
     try {
-      await grantCoverage(client, { revoked: true });
+      const granted = await grantCoachCoverage(grantParams());
+      await expect(assertCoachAssignedToAthlete(SUB_COACH, ATHLETE_ID, ORG_ID)).resolves.toBeUndefined();
+
+      await expect(revokeCoachCoverage({ organizationId: ORG_ID, coverageId: granted.coverageId })).resolves.toEqual({
+        revoked: true,
+      });
       await expect(assertCoachAssignedToAthlete(SUB_COACH, ATHLETE_ID, ORG_ID)).rejects.toThrow('Forbidden');
     } finally {
       await client.end();
@@ -291,7 +313,7 @@ describe('the real access gate against real coverage rows (T-002 acceptance)', (
     const client = await freshDatabase('ppbf_test_cov_future', { dropCoverageTableFirst: true, applyIncrement: true });
     activeClient = client;
     try {
-      await grantCoverage(client, {
+      await insertGrant(client, {
         starts_at: "now() + interval '1 hour'",
         expires_at: "now() + interval '2 hours'",
       });
@@ -313,7 +335,7 @@ describe('the real access gate against real coverage rows (T-002 acceptance)', (
       // predicate's loss. (A different-athlete_id variant would pass even
       // with the org filter deleted: the athlete_id predicate would exclude
       // the row on its own, proving nothing about the tenant boundary.)
-      await grantCoverage(client, { organization_id: OTHER_ORG_ID, athlete_id: ATHLETE_ID });
+      await insertGrant(client, { organization_id: OTHER_ORG_ID, athlete_id: ATHLETE_ID });
       await expect(assertCoachAssignedToAthlete(SUB_COACH, ATHLETE_ID, ORG_ID)).rejects.toThrow('Forbidden');
     } finally {
       await client.end();
@@ -339,42 +361,96 @@ describe('the real access gate against real coverage rows (T-002 acceptance)', (
   });
 });
 
+describe('the real grant path against real rows', () => {
+  test('refuses a grantee that is not a coach: the account named by a typo gets nothing', async () => {
+    const client = await freshDatabase('ppbf_test_cov_grantee_role', { dropCoverageTableFirst: true, applyIncrement: true });
+    activeClient = client;
+    try {
+      await client.query(
+        `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+         values ('acct-parent-1', 'parent', $1, 'microsoft')`,
+        [ORG_ID],
+      );
+      await expect(grantCoachCoverage(grantParams({ coveringCoachId: 'acct-parent-1' }))).rejects.toThrow(
+        'Missing covering_coach_id: must be an active coach account in this organization',
+      );
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('refuses a deactivated coach', async () => {
+    const client = await freshDatabase('ppbf_test_cov_grantee_inactive', { dropCoverageTableFirst: true, applyIncrement: true });
+    activeClient = client;
+    try {
+      await client.query(`update pilot.accounts set active_flag = false where account_id = $1`, [SUB_COACH]);
+      await expect(grantCoachCoverage(grantParams())).rejects.toThrow('Missing covering_coach_id');
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('refuses a second grant while the first is live, then admits it once the first is revoked', async () => {
+    const client = await freshDatabase('ppbf_test_cov_overlap', { dropCoverageTableFirst: true, applyIncrement: true });
+    activeClient = client;
+    try {
+      const first = await grantCoachCoverage(grantParams());
+      await expect(grantCoachCoverage(grantParams())).rejects.toThrow(/^Coverage already exists: grant /);
+
+      // Revocation clears the overlap -- the two protections compose instead
+      // of deadlocking the admin who granted to the right coach for the
+      // wrong duration.
+      await revokeCoachCoverage({ organizationId: ORG_ID, coverageId: first.coverageId });
+      await expect(grantCoachCoverage(grantParams())).resolves.toMatchObject({ coverageId: expect.any(String) });
+    } finally {
+      await client.end();
+    }
+  });
+});
+
 describe('coach coverage schema against real Postgres', () => {
   test('the window constraint refuses a grant whose expiry does not follow its start', async () => {
     const client = await freshDatabase('ppbf_test_cov_window', { dropCoverageTableFirst: true, applyIncrement: true });
     activeClient = client;
     try {
       await expect(
-        grantCoverage(client, {
+        insertGrant(client, {
           starts_at: "now() + interval '1 hour'",
           expires_at: "now() + interval '1 hour'",
         }),
-      ).rejects.toThrow(/pilot_coach_coverage_window/);
+      ).rejects.toThrow(/pilot_coach_coverage_window_check/);
     } finally {
       await client.end();
     }
   });
 
-  test('granted_by_role admits coach for the future handoff case but refuses arbitrary roles', async () => {
-    const client = await freshDatabase('ppbf_test_cov_grantor_vocab', { dropCoverageTableFirst: true, applyIncrement: true });
+  // The org column is trustworthy only because of the composite FK: without
+  // it a row could name org A while pointing at org B's athlete, and every
+  // org-scoped read would still look correct.
+  test('a coverage row cannot name one org while pointing at another org\'s athlete', async () => {
+    const client = await freshDatabase('ppbf_test_cov_composite_fk', { dropCoverageTableFirst: true, applyIncrement: true });
     activeClient = client;
     try {
-      await client.query(
-        `insert into pilot.coach_coverage (
-           organization_id, coverage_id, athlete_id, covering_coach_account_id,
-           granted_by_account_id, granted_by_role, expires_at
-         ) values ($1,'cov-coach-granted',$2,$3,$4,'coach', now() + interval '1 hour')`,
-        [ORG_ID, ATHLETE_ID, SUB_COACH, RECORD_COACH],
-      );
       await expect(
         client.query(
           `insert into pilot.coach_coverage (
-             organization_id, coverage_id, athlete_id, covering_coach_account_id,
-             granted_by_account_id, granted_by_role, expires_at
-           ) values ($1,'cov-parent-granted',$2,$3,'acct-parent-1','parent', now() + interval '1 hour')`,
-          [ORG_ID, ATHLETE_ID, SUB_COACH],
+             organization_id, athlete_id, covering_coach_id, granted_by_account_id, expires_at
+           ) values ($1, $2, $3, $4, now() + interval '1 hour')`,
+          // OTHER_ORG_ID has no athlete row at all -- the athlete exists only
+          // under ORG_ID, so this insert can only succeed if the FK is gone.
+          [OTHER_ORG_ID, ATHLETE_ID, SUB_COACH, ADMIN_ACCOUNT],
         ),
-      ).rejects.toThrow(/violates check constraint/i);
+      ).rejects.toThrow(/pilot_coach_coverage_athlete_fk|foreign key/i);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a grant referencing a nonexistent coach account is refused by the FK', async () => {
+    const client = await freshDatabase('ppbf_test_cov_coach_fk', { dropCoverageTableFirst: true, applyIncrement: true });
+    activeClient = client;
+    try {
+      await expect(insertGrant(client, { covering_coach_id: 'acct-ghost' })).rejects.toThrow(/foreign key/i);
     } finally {
       await client.end();
     }

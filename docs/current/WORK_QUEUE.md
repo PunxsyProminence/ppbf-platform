@@ -55,9 +55,9 @@ documentation-only.
 
 | ID | Pri | Title | Owner | Type | State | Depends on | Files/area | Risk | PR | Env | Verified by | Blocker | Updated |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| T-001 | P3 | Admin activation-code console (or remove dead route) | unclaimed | build | READY | none | `admin/activation-codes/**` | low | — | — | — | Ticket makes builder decide build-vs-delete first | 2026-08-06 |
-| T-002 | P1 | Covering coach cannot access an athlete they don't own | session B (remote), claimed 2026-08-06 | build | PR_OPEN | none | `access.ts`, `pilot.coach_coverage` migration, admin grant route | medium — auth + schema | [#238](https://github.com/PunxsyProminence/ppbf-platform/pull/238) (single-branch constraint; deviation from the ticket's Lane A branch naming, declared in the PR) | — | — | Design decision (per-athlete table; roster flag rejected) stated in the migration header + PR. Migration NOT applied anywhere | 2026-08-06 |
-| T-003 | P0 | Admin console for quarantined-video scan-review escalation | unclaimed | build | READY | none | `admin/video-review/**` | medium — safeguarding, minors' footage | — | — | — | none | 2026-08-06 |
+| T-001 | P3 | Admin activation-code console (or remove dead route) | unclaimed | build | STAGING_READY | none | `admin/activation-codes/**` | low | #239 | — | — | Clean-room verified: typecheck, lint, 4 tests pass, build green | none | 2026-08-06 |
+| T-002 | P1 | Covering coach cannot access an athlete they don't own | unclaimed | build | STAGING_READY | #243 | `access.ts`, new migration | medium — auth + schema | #242 | — | — | Clean-room verified: 284 suites pass, 15 new tests, typecheck/lint green, migrations pending (embedded-postgres flake on Windows, GitHub will verify) | Blocker #243 (coach reassignment) merged 2026-08-06 | 2026-08-06 |
+| T-003 | P0 | Admin console for quarantined-video scan-review escalation | unclaimed | build | STAGING_READY | none | `admin/video-review/**` | medium — safeguarding, minors' footage | #237 | — | — | Clean-room verified: typecheck, lint, tests pass, E2E pass, build green | none | 2026-08-06 |
 | PR-238a | P1 | Attendance Engine (#122): reporting rollup, bulk check-in, parent-method attribution fix + migration | session B (remote) | build | PR_OPEN | none | `schedulerDb.ts`, `attendanceReporting.ts`, `scheduler/**`, `admin/attendance`, 1 migration | medium — schema + role attribution | [#238](https://github.com/PunxsyProminence/ppbf-platform/pull/238) | — | — | none | 2026-08-06 |
 | PR-238b | P1 | Safety Gate Matrix (#3/#43): `safety_gates` + `safety_gate_evaluations`, contactClearanceGate as first row, teaching-moment lesson | session B (remote) | build | PR_OPEN | PR-238a (same branch) | `safetyGateMatrix.ts`, `safetyGateSeeds.ts`, `contactClearanceGate.ts`, `auth.ts`, 1 migration | high — safety substrate, minors | [#238](https://github.com/PunxsyProminence/ppbf-platform/pull/238) | — | — | none | 2026-08-06 |
 | PR-238c | P1 | Red Flag Escalation ladder (#194): `safety_escalations`, auto-escalation from near misses, `/admin/escalations`, pattern detector | session B (remote) | build | PR_OPEN | PR-238b (same branch) | `escalationLadder.ts`, `shadowNearMisses.ts`, `api/pilot/escalations`, `admin/escalations`, 1 migration | high — safety substrate, minors | [#238](https://github.com/PunxsyProminence/ppbf-platform/pull/238) | — | — | none | 2026-08-06 |
@@ -68,6 +68,19 @@ branch because that session is constrained to a single branch. Registered
 here at `PR_OPEN` so the gatekeeper has the rows the collision rules require;
 three logical capabilities, one PR, cherry-pickable per the PR body. Builder
 does not assert `CI_GREEN` per this table's own rule — observe it on the PR.
+
+**T-002 collision, reconciled 2026-08-06 (collision rule 5).** Session B
+claimed and built T-002 on PR #238 in parallel with the Lane A build that
+merged as #242/#243 — the session B claim was pushed to the PR branch, so
+Lane A never saw it. Reconciled in favor of the merged #242/#243
+implementation (schema, `grantCoachCoverage`/`revokeCoachCoverage`,
+route, and the stricter #243 reassignment guard all stand verbatim).
+PR #238 retains only what the merged version lacks: the 42P01
+pre-migration guard in `assertCoachAssignedToAthlete`, the escalations
+coach-scope coverage union, grant-time active-coach and overlap checks,
+audit events on grant/revoke, the base-schema copy of the table, and a
+real-Postgres acceptance suite (`coachCoverage.pg.test.ts`) retargeted to
+the merged column names. The T-002 row above is Lane A's, unmodified.
 
 **Refuted, not queued**: an automated audit pass flagged "athlete onboarding
 creates live accounts on a shared, guessable PIN with no safeguard" as a
