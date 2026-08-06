@@ -12,6 +12,7 @@ import { ANCHOR_KEY_OPTIONS, anchorLabel } from './rabbitHoleAnchorLabels';
 import ProfileHeader from './ProfileHeader';
 import { AthleteSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
+import ThenAndNow from './ThenAndNow';
 import TrainingCard, { type TrainingSession } from './TrainingCard';
 import { cx } from './uiStyles';
 import useGymSound from './useGymSound';
@@ -1600,6 +1601,12 @@ export default function AthleteWorkspace() {
           {/* MY DASHBOARD */}
           {activeTab === 'my-dashboard' && (
             <div className="space-y-6 panel-settle">
+              {/* The before/after frame from the Phase 2 roadmap, built from
+                  the record rather than photographs -- see ThenAndNow.tsx for
+                  why photographs cannot do this here. Renders nothing until
+                  the athlete's identity resolves and history exists. */}
+              <ThenAndNow athleteId={backendAthleteId} />
+
               <section className={PANEL}>
                 <h3 className="t-label">Quick Actions</h3>
                 <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-2 lg:grid-cols-4">
