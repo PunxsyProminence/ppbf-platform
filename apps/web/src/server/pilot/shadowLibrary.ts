@@ -150,6 +150,17 @@ export interface ShadowLibrarySearchResult {
   score: number;
 }
 
+export interface ShadowApprovedEvidenceExportRow {
+  chunk_id: string;
+  source_title: string;
+  source_publisher: string | null;
+  source_type: 'peer_reviewed' | 'clinical_guideline' | 'governing_body' | 'textbook';
+  authority_tier: number;
+  source_url: string | null;
+  publication_date: string | null;
+  text_content: string;
+}
+
 export interface ShadowLibraryClaimResult {
   answer: string;
   status: ShadowLibraryClaimStatus;
@@ -498,6 +509,50 @@ export async function listShadowLibrarySources(input: {
      limit $4
      offset $5`,
     [input.organizationId, input.sourceType?.trim() || null, input.status?.trim() || null, limit, offset],
+  );
+}
+
+// Dedicated export boundary for the read-only research bridge. It deliberately
+// excludes subject-scoped chunks and all observational/self-report source types,
+// then reapplies the same source + document approval gate used by Library search.
+export async function listApprovedGlobalEvidenceForResearchBridge(input: {
+  organizationId: string;
+  limit?: number;
+}): Promise<ShadowApprovedEvidenceExportRow[]> {
+  const limit = Math.max(1, Math.min(2_000, Math.trunc(input.limit ?? 1_000)));
+  const allowedSourceTypes = ['peer_reviewed', 'clinical_guideline', 'governing_body', 'textbook'];
+
+  return query<ShadowApprovedEvidenceExportRow>(
+    `select
+       c.chunk_id,
+       s.title as source_title,
+       s.publisher as source_publisher,
+       s.source_type,
+       s.authority_tier,
+       s.url as source_url,
+       s.publication_date::text as publication_date,
+       c.text_content
+     from pilot.shadow_library_chunks c
+     join pilot.shadow_library_documents d
+       on d.document_id = c.document_id
+      and d.organization_id = c.organization_id
+     join pilot.shadow_library_sources s
+       on s.source_id = c.source_id
+      and s.organization_id = c.organization_id
+     where c.organization_id = $1
+       and c.subject_id is null
+       and d.subject_id is null
+       and s.status = 'active'
+       and s.approval_state = 'approved'
+       and s.verification_state = 'verified'
+       and d.ingest_state = 'indexed'
+       and d.index_completed_at is not null
+       and d.approval_state = 'approved'
+       and d.verification_state = 'verified'
+       and s.source_type = any($2::text[])
+     order by s.authority_tier asc, s.title asc, c.ordinal asc
+     limit $3`,
+    [input.organizationId, allowedSourceTypes, limit],
   );
 }
 
