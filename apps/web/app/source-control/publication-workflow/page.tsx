@@ -99,11 +99,12 @@ export default function PublicationWorkflowPage() {
         {errorMessage ? (
           /* Law 3: the failed load carries a glyph and an uppercase label,
              not colour alone. */
-          <div role="alert" className="mat-leather rounded-[var(--r-md)] border-2 border-[color:var(--locked)] p-[var(--s4)]">
-            <span className="badge badge--locked">
-              <i>✕</i>Load failed
-            </span>
-            <p className="t-body mt-[var(--s3)]">{errorMessage}</p>
+          <div role="alert" className="alert alert--critical">
+            <span className="alert-icon" aria-hidden="true">✕</span>
+            <div className="alert-body">
+              <p className="alert-title">Load failed</p>
+              <p className="alert-msg">{errorMessage}</p>
+            </div>
           </div>
         ) : null}
 

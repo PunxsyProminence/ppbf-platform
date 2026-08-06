@@ -265,11 +265,10 @@ export default function TrainingCard({
 
 /** The roundel, zero-asset — curved text via textPath, same as .seal.
  *
- * The seal's ink was a raw hex — the same paper-card ink ppbf.css uses for
- * .tcard-title, which has no token of its own (logged as a DS gap). Until the
- * sheet grows a card-ink token, the nearest existing token is --hide-900:
- * indistinguishable at 52px, and no hardcoded hex here. */
-const SEAL_INK = 'var(--hide-900)';
+ * The seal's ink is the paper-card ink ppbf.css uses for .tcard-title. The
+ * design sheet now provides a token for it, so the --hide-900 stand-in is
+ * gone: this is --card-ink itself. */
+const SEAL_INK = 'var(--card-ink)';
 
 function Seal({ count, earned }: { count: number; earned: boolean }) {
   const id = `tcard-seal-${count}`;

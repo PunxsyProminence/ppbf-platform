@@ -359,7 +359,7 @@ export default function ParentHub() {
         {/* CHILD SELECTOR */}
         {childrenLoading && (
           <div className="mat-paper rounded-[var(--r-md)] p-[var(--s4)] text-center">
-            <p className="t-muted">Loading your children...</p>
+            <p className="working">Loading your children...</p>
             <div className="mt-[var(--s4)] flex justify-center">
               <div className="animate-spin h-5 w-5 rounded-[var(--r-pill)] border-2 border-[color:var(--brass-700)] border-t-transparent"></div>
             </div>
@@ -367,25 +367,23 @@ export default function ParentHub() {
         )}
 
         {childrenError && !childrenLoading && (
-          <div
-            className="rounded-[var(--r-md)] border-2 border-[color:var(--locked)] p-[var(--s4)]"
-            style={{ background: 'color-mix(in srgb, var(--locked) 10%, var(--canvas-warm))' }}
-            role="alert"
-          >
-            <div className="mb-[var(--s3)] flex items-center justify-between gap-[var(--s4)]">
-              <span className="badge badge--locked"><i>✕</i>Failed</span>
-              <button
-                onClick={() => {
-                  setChildrenError(null);
-                  setChildrenRetryNonce((value) => value + 1);
-                }}
-                className="btn btn--ghost"
-                aria-label="Retry loading children"
-              >
-                Retry
-              </button>
+          <div className="alert alert--critical" role="alert">
+            <div className="alert-body">
+              <div className="mb-[var(--s3)] flex items-center justify-between gap-[var(--s4)]">
+                <span className="badge badge--locked"><i>✕</i>Failed</span>
+                <button
+                  onClick={() => {
+                    setChildrenError(null);
+                    setChildrenRetryNonce((value) => value + 1);
+                  }}
+                  className="btn btn--ghost"
+                  aria-label="Retry loading children"
+                >
+                  Retry
+                </button>
+              </div>
+              <p className="alert-msg">Error loading children: {childrenError}</p>
             </div>
-            <p className="t-body">Error loading children: {childrenError}</p>
           </div>
         )}
 

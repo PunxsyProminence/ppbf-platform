@@ -461,19 +461,19 @@ export default function AthleteProgressionIntelligencePage() {
 
               {assignments.length > 0 && (
                 <section className="grid grid-cols-1 md:grid-cols-3 gap-[var(--s4)]">
-                  <div className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s5)]">
-                    <p className="t-label">Total Gaps</p>
-                    <p className="t-data mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>{gaps.length}</p>
+                  <div className="stat">
+                    <p className="stat-label">Total Gaps</p>
+                    <p className="stat-val">{gaps.length}</p>
                   </div>
-                  <div className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s5)]">
-                    <p className="t-label">Active Drills</p>
-                    <p className="t-data mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>
+                  <div className="stat">
+                    <p className="stat-label">Active Drills</p>
+                    <p className="stat-val">
                       {assignments.filter((a) => a.status === 'in_progress' || a.status === 'assigned').length}
                     </p>
                   </div>
-                  <div className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s5)]">
-                    <p className="t-label">Completed</p>
-                    <p className="t-data mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>
+                  <div className="stat">
+                    <p className="stat-label">Completed</p>
+                    <p className="stat-val">
                       {assignments.filter((a) => a.status === 'completed').length}
                     </p>
                   </div>

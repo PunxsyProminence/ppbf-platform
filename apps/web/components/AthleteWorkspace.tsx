@@ -1662,17 +1662,17 @@ export default function AthleteWorkspace() {
                   <div className="space-y-[var(--s4)]">
                     <div>
                       <label className="t-label block mb-[var(--s3)]" htmlFor="readiness-sleep-hours">Sleep (hours)</label>
-                      <input id="readiness-sleep-hours" type="range" min="4" max="12" value={sleepHours} onChange={(e) => setSleepHours(Number.parseInt(e.target.value, 10))} className="w-full min-h-[var(--tap)] cursor-pointer accent-[var(--brass-400)]" />
+                      <input id="readiness-sleep-hours" type="range" min="4" max="12" value={sleepHours} onChange={(e) => setSleepHours(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
                       <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{sleepHours} hours</p>
                     </div>
                     <div>
                       <label className="t-label block mb-[var(--s3)]" htmlFor="readiness-energy-level">Energy Level (1-10)</label>
-                      <input id="readiness-energy-level" type="range" min="1" max="10" value={energyLevel} onChange={(e) => setEnergyLevel(Number.parseInt(e.target.value, 10))} className="w-full min-h-[var(--tap)] cursor-pointer accent-[var(--brass-400)]" />
+                      <input id="readiness-energy-level" type="range" min="1" max="10" value={energyLevel} onChange={(e) => setEnergyLevel(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
                       <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{energyLevel}/10</p>
                     </div>
                     <div>
                       <label className="t-label block mb-[var(--s3)]" htmlFor="readiness-train">Readiness to Train (1-10)</label>
-                      <input id="readiness-train" type="range" min="1" max="10" value={readinessToTrain} onChange={(e) => setReadinessToTrain(Number.parseInt(e.target.value, 10))} className="w-full min-h-[var(--tap)] cursor-pointer accent-[var(--brass-400)]" />
+                      <input id="readiness-train" type="range" min="1" max="10" value={readinessToTrain} onChange={(e) => setReadinessToTrain(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
                       <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{readinessToTrain}/10</p>
                     </div>
                     <div className="field">
@@ -1704,7 +1704,7 @@ export default function AthleteWorkspace() {
                     </label>
                     <div>
                       <label className="t-label block mb-[var(--s3)]" htmlFor="readiness-soreness">Soreness Level (1-10)</label>
-                      <input id="readiness-soreness" type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(Number.parseInt(e.target.value, 10))} className="w-full min-h-[var(--tap)] cursor-pointer accent-[var(--brass-400)]" />
+                      <input id="readiness-soreness" type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
                       <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{soreness}/10</p>
                     </div>
                     <div className="grid grid-cols-3 gap-[var(--s3)] pt-[var(--s2)]">
@@ -2199,22 +2199,22 @@ export default function AthleteWorkspace() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-[var(--s4)]">
                   <div>
                     <label className="t-label block mb-[var(--s3)]" htmlFor="bio-sleep-hours">Sleep (4-12 hours)</label>
-                    <input id="bio-sleep-hours" type="range" min="4" max="12" step="0.5" value={sleepHours} onChange={(e) => setSleepHours(Number.parseFloat(e.target.value))} className="w-full min-h-[var(--tap)] cursor-pointer accent-[var(--brass-400)]" />
+                    <input id="bio-sleep-hours" type="range" min="4" max="12" step="0.5" value={sleepHours} onChange={(e) => setSleepHours(Number.parseFloat(e.target.value))} className="range--kiosk cursor-pointer" />
                     <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{sleepHours} hours</p>
                   </div>
                   <div>
                     <label className="t-label block mb-[var(--s3)]" htmlFor="bio-hydration">Hydration (1-10)</label>
-                    <input id="bio-hydration" type="range" min="1" max="10" value={hydrationStatus} onChange={(e) => setHydrationStatus(Number.parseInt(e.target.value, 10))} className="w-full min-h-[var(--tap)] cursor-pointer accent-[var(--brass-400)]" />
+                    <input id="bio-hydration" type="range" min="1" max="10" value={hydrationStatus} onChange={(e) => setHydrationStatus(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
                     <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{hydrationStatus}/10</p>
                   </div>
                   <div>
                     <label className="t-label block mb-[var(--s3)]" htmlFor="bio-motivation">Motivation (1-10)</label>
-                    <input id="bio-motivation" type="range" min="1" max="10" value={motivation} onChange={(e) => setMotivation(Number.parseInt(e.target.value, 10))} className="w-full min-h-[var(--tap)] cursor-pointer accent-[var(--brass-400)]" />
+                    <input id="bio-motivation" type="range" min="1" max="10" value={motivation} onChange={(e) => setMotivation(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
                     <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{motivation}/10</p>
                   </div>
                   <div>
                     <label className="t-label block mb-[var(--s3)]" htmlFor="bio-soreness">Soreness (0-10)</label>
-                    <input id="bio-soreness" type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(Number.parseInt(e.target.value, 10))} className="w-full min-h-[var(--tap)] cursor-pointer accent-[var(--brass-400)]" />
+                    <input id="bio-soreness" type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
                     <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{soreness}/10</p>
                   </div>
                 </div>
@@ -2543,7 +2543,7 @@ export default function AthleteWorkspace() {
                 </div>
                 <div>
                   <label className="t-label block mb-[var(--s3)]" htmlFor="pain-severity-range">Severity (1-10)</label>
-                  <input id="pain-severity-range" type="range" min="1" max="10" value={currentPainSeverity} onChange={(e) => setCurrentPainSeverity(Number.parseInt(e.target.value, 10))} className="w-full min-h-[var(--tap)] cursor-pointer accent-[var(--brass-400)]" />
+                  <input id="pain-severity-range" type="range" min="1" max="10" value={currentPainSeverity} onChange={(e) => setCurrentPainSeverity(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
                   <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{currentPainSeverity}/10</p>
                 </div>
               </div>

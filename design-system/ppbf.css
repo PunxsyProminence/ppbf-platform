@@ -2393,34 +2393,6 @@ body.ppbf.on-canvas {
   display: inline-flex; align-items: center; gap: var(--s2);
 }
 
-/* ============================================================= STAT TILE ==
-   The label-over-figure cell every dashboard hand-composed from
-   mat-leather--raised + t-label + a mono figure. Layout and type ONLY, on
-   purpose: the material stays the markup's decision, so the same stat reads
-   correctly on leather, on paper, or inside a frame --
-     <div class="mat-leather--raised stat"> ... </div>
-   .tile is a navigation object (cursor, hover lift) and .plaque an inline
-   chip; neither is a measurement, which is why this exists. */
-.stat {
-  display: flex; flex-direction: column; gap: var(--s2);
-  padding: var(--s4) var(--s5);
-}
-.stat-label {
-  font: 650 11px/1 var(--font-data); letter-spacing: .1em;
-  text-transform: uppercase; color: var(--bone-400);
-}
-.stat-val {
-  font: 700 var(--t-xl)/1.1 var(--font-data);
-  color: var(--bone-100);
-}
-.stat-val--lg { font-size: var(--t-2xl); }
-/* One line under the figure -- measured-at, rate detail, caveat. */
-.stat-note {
-  font: 400 11px/1.5 var(--font-data); letter-spacing: .04em;
-  color: var(--bone-400);
-}
-/* A stat is a measurement, so a suppressed or unavailable value is still a
-   statement: pair with .stamp--flat rather than leaving the cell blank. */
 .working::before { content: "◴"; font-size: 13px; }
 
 /* ============================================================== FOCUS RING ===

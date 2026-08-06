@@ -1286,9 +1286,9 @@ export default function AdminCapabilitiesPage() {
               { label: 'UNASSIGNED', value: dashboardCounts.unassigned },
               { label: 'ARCHIVED', value: dashboardCounts.archived },
             ].map((card) => (
-              <article key={card.label} className="border border-[color:var(--hide-700)] bg-[var(--hide-950)] px-4 py-4">
-                <p className="text-[length:var(--t-xs)] font-mono uppercase tracking-[0.16em] text-[color:var(--brass-300)]">{card.label}</p>
-                <p className="mt-2 text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{card.value}</p>
+              <article key={card.label} className="stat">
+                <p className="stat-label">{card.label}</p>
+                <p className="stat-val">{card.value}</p>
               </article>
             ))}
           </section>

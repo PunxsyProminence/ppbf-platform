@@ -283,8 +283,22 @@ function PinManagementPageContent() {
                 />
               </div>
 
-              {createError && <p className="rounded-[var(--r-md)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--locked-ink)]" role="alert">{createError}</p>}
-              {createSuccess && <p className="rounded-[var(--r-md)] border border-[color:var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_16%,var(--hide-950))] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--cleared-ink)]">✓ {createSuccess}</p>}
+              {createError && (
+                <div role="alert" className="alert alert--critical alert--tight">
+                  <span className="alert-icon" aria-hidden="true">✕</span>
+                  <div className="alert-body">
+                    <p className="alert-msg">{createError}</p>
+                  </div>
+                </div>
+              )}
+              {createSuccess && (
+                <div className="alert alert--success alert--tight">
+                  <span className="alert-icon" aria-hidden="true">✓</span>
+                  <div className="alert-body">
+                    <p className="alert-msg">{createSuccess}</p>
+                  </div>
+                </div>
+              )}
 
               <button
                 type="submit"
@@ -358,8 +372,22 @@ function PinManagementPageContent() {
                 />
               </div>
 
-              {error && <p className="rounded-[var(--r-md)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--locked-ink)]" role="alert">{error}</p>}
-              {success && <p className="rounded-[var(--r-md)] border border-[color:var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_16%,var(--hide-950))] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--cleared-ink)]">✓ {success}</p>}
+              {error && (
+                <div role="alert" className="alert alert--critical alert--tight">
+                  <span className="alert-icon" aria-hidden="true">✕</span>
+                  <div className="alert-body">
+                    <p className="alert-msg">{error}</p>
+                  </div>
+                </div>
+              )}
+              {success && (
+                <div className="alert alert--success alert--tight">
+                  <span className="alert-icon" aria-hidden="true">✓</span>
+                  <div className="alert-body">
+                    <p className="alert-msg">{success}</p>
+                  </div>
+                </div>
+              )}
 
               <button
                 type="submit"

@@ -146,11 +146,11 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
             written in dark ink by hand: the .t-* voices pin the light colours
             that belong on the leather panels below, and an unlayered voice
             class cannot be re-coloured by a utility. */}
-        <header className="flex flex-col gap-[var(--s4)] border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)] md:flex-row md:items-end md:justify-between">
+        <header className="on-plaster flex flex-col gap-[var(--s4)] border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)] md:flex-row md:items-end md:justify-between">
           <div className="space-y-[var(--s3)]">
-            <p className="font-mono text-[length:var(--t-xs)] uppercase tracking-[0.35em] text-[color:var(--brass-800)]">Board Workspace Framework</p>
-            <h1 className="font-display text-[length:var(--t-2xl)] font-black tracking-tight text-[color:var(--hide-950)] md:text-[length:var(--t-3xl)]">{seat.seatLabel} Workspace</h1>
-            <p className="max-w-[80ch] text-[length:var(--t-sm)] leading-7 text-[color:var(--hide-800)]">One board workspace shell with seat-specific visibility for nonprofit governance, mission stewardship, and strategic oversight.</p>
+            <p className="t-eyebrow tracking-[0.35em]">Board Workspace Framework</p>
+            <h1 className="t-command text-[length:var(--t-2xl)] md:text-[length:var(--t-3xl)]">{seat.seatLabel} Workspace</h1>
+            <p className="t-body max-w-[80ch]">One board workspace shell with seat-specific visibility for nonprofit governance, mission stewardship, and strategic oversight.</p>
           </div>
           <div className="plaque">{seat.seatLabel}</div>
         </header>
