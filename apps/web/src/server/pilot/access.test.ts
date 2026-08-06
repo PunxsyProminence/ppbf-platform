@@ -83,11 +83,52 @@ describe('assertCoachAssignedToAthlete', () => {
       expect.stringContaining('pilot.athletes'),
       ['ath-1', 'coach-1', 'org-1'],
     );
+    // The assigned coach never costs a coverage lookup.
+    expect(mockQueryOne).toHaveBeenCalledTimes(1);
   });
 
   test('throws Forbidden when coach is not assigned to athlete', async () => {
-    mockQueryOne.mockResolvedValueOnce(null);
+    // Setup only (T-002's rule: add setup, never weaken the assertion): the
+    // coach is not assigned AND holds no coverage grant.
+    mockQueryOne.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
     await expect(assertCoachAssignedToAthlete('coach-1', 'ath-other', 'org-1')).rejects.toThrow('Forbidden');
+  });
+
+  // T-002: a coach covering for the athlete's coach of record.
+  describe('coverage grants (T-002)', () => {
+    test('resolves for a coach holding an active coverage grant', async () => {
+      mockQueryOne
+        .mockResolvedValueOnce(null) // not the coach_id of record
+        .mockResolvedValueOnce({ coverage_id: 'cov-1' }); // active grant
+      await expect(assertCoachAssignedToAthlete('coach-sub', 'ath-1', 'org-1')).resolves.toBeUndefined();
+      expect(mockQueryOne).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining('pilot.coach_coverage'),
+        ['ath-1', 'coach-sub', 'org-1'],
+      );
+    });
+
+    // The window predicates live in the SQL itself, so an expired (or
+    // revoked, or not-yet-started) grant is indistinguishable from no grant:
+    // the query returns nothing and the same Forbidden is thrown. The
+    // real-Postgres proof that the predicates enforce expiry against real
+    // rows is in coachCoverage.pg.test.ts.
+    test('throws Forbidden when the only grant is expired: the lookup window excludes it', async () => {
+      mockQueryOne.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+      await expect(assertCoachAssignedToAthlete('coach-sub', 'ath-1', 'org-1')).rejects.toThrow(
+        'Forbidden: coach not assigned to athlete',
+      );
+      const [coverageSql] = mockQueryOne.mock.calls[1];
+      expect(String(coverageSql)).toContain('revoked_at is null');
+      expect(String(coverageSql)).toContain('starts_at <= now()');
+      expect(String(coverageSql)).toContain('expires_at > now()');
+    });
+
+    test('a coverage grant does not shadow the exact-match path: assigned coach still short-circuits', async () => {
+      mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
+      await expect(assertCoachAssignedToAthlete('coach-1', 'ath-1', 'org-1')).resolves.toBeUndefined();
+      expect(mockQueryOne).toHaveBeenCalledTimes(1);
+    });
   });
 });
 
@@ -161,9 +202,19 @@ describe('assertActorCanAccessAthlete', () => {
     });
 
     test('throws Forbidden when coach is not assigned to athlete', async () => {
-      mockQueryOne.mockResolvedValueOnce(null);
+      // Setup only: no assignment and no coverage grant (T-002 added the
+      // second lookup). The assertion is unchanged.
+      mockQueryOne.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
       const actor: ActorIdentity = { accountId: 'coach-1', role: 'coach', organizationId: 'org-1', athleteId: null };
       await expect(assertActorCanAccessAthlete(actor, 'ath-other')).rejects.toThrow('Forbidden');
+    });
+
+    test('allows access when coach holds an active coverage grant for the athlete (T-002)', async () => {
+      mockQueryOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ coverage_id: 'cov-1' });
+      const actor: ActorIdentity = { accountId: 'coach-sub', role: 'coach', organizationId: 'org-1', athleteId: null };
+      await expect(assertActorCanAccessAthlete(actor, 'ath-1')).resolves.toBeUndefined();
     });
   });
 

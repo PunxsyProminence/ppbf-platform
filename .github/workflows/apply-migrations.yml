@@ -98,6 +98,7 @@ on:
           - attendance-parent-method
           - safety-gate-matrix
           - safety-escalations
+          - coach-coverage
 
 permissions:
   id-token: write
@@ -226,7 +227,7 @@ jobs:
               # which environment is at which revision.
               # gear-vendors follows gear: it alters pilot.gear_products, which
               # the gear migration creates.
-              for m in multiorg onboarding session-expiry first-login-pin audit-event-vocabulary shadow-runtime shadow-evidence shadow-decision-loop public-interest scheduler-tables scheduler-race announcements volunteer-program video-sessions film-study-proposals progression compliance publications announcement-placements compliance-rule-seeds board-seats board-role shadow-chunk-embedding shadow-formula-foundation shadow-job-lease drills rabbit-holes feedback rate-limit gear gear-vendors achievements profile-identity goal-category-progress attendance-parent-method safety-gate-matrix safety-escalations; do
+              for m in multiorg onboarding session-expiry first-login-pin audit-event-vocabulary shadow-runtime shadow-evidence shadow-decision-loop public-interest scheduler-tables scheduler-race announcements volunteer-program video-sessions film-study-proposals progression compliance publications announcement-placements compliance-rule-seeds board-seats board-role shadow-chunk-embedding shadow-formula-foundation shadow-job-lease drills rabbit-holes feedback rate-limit gear gear-vendors achievements profile-identity goal-category-progress attendance-parent-method safety-gate-matrix safety-escalations coach-coverage; do
                 run_one "$m"
               done
               ;;
@@ -238,7 +239,7 @@ jobs:
               # adding a migration -- it touches no database.
               missing=0
               for s in $(node -e "const p=require('./package.json');Object.keys(p.scripts).filter(k=>k.startsWith('pilot:apply-')).forEach(k=>console.log(k.replace('pilot:apply-','')))"); do
-                case " multiorg onboarding session-expiry first-login-pin audit-event-vocabulary shadow-runtime shadow-evidence shadow-decision-loop public-interest scheduler-tables scheduler-race announcements volunteer-program video-sessions film-study-proposals progression compliance publications announcement-placements compliance-rule-seeds board-seats board-role shadow-chunk-embedding shadow-formula-foundation shadow-job-lease drills rabbit-holes feedback rate-limit gear gear-vendors achievements profile-identity goal-category-progress attendance-parent-method safety-gate-matrix safety-escalations schema " in
+                case " multiorg onboarding session-expiry first-login-pin audit-event-vocabulary shadow-runtime shadow-evidence shadow-decision-loop public-interest scheduler-tables scheduler-race announcements volunteer-program video-sessions film-study-proposals progression compliance publications announcement-placements compliance-rule-seeds board-seats board-role shadow-chunk-embedding shadow-formula-foundation shadow-job-lease drills rabbit-holes feedback rate-limit gear gear-vendors achievements profile-identity goal-category-progress attendance-parent-method safety-gate-matrix safety-escalations coach-coverage schema " in
                   *" $s "*) ;;
                   *) echo "::error::pilot:apply-$s is not covered by the 'all' list in this workflow."; missing=1 ;;
                 esac

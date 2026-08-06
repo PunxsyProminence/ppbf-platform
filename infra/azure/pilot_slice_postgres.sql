@@ -793,6 +793,35 @@ create index if not exists idx_safety_escalations_org_status
 create index if not exists idx_safety_escalations_org_athlete
   on pilot.safety_escalations(organization_id, athlete_id, created_at desc);
 
+-- Coach coverage grants (ticket T-002): per-athlete, time-bounded access
+-- for a coach substituting for the athlete's coach of record. See
+-- pilot_slice_postgres_coach_coverage_migration.sql for the design
+-- rationale (and why a roster-wide membership flag was rejected). The
+-- access gate checks `revoked_at is null and starts_at <= now() and
+-- expires_at > now()` at read time -- expiry needs no cron.
+create table if not exists pilot.coach_coverage (
+  organization_id            text not null references pilot.organizations(organization_id) on delete cascade,
+  coverage_id                 text not null,
+  athlete_id                  text not null,
+  covering_coach_account_id   text not null,
+  granted_by_account_id       text not null,
+  granted_by_role             text not null check (granted_by_role in ('coach', 'organization_admin', 'admin')),
+  reason                      text not null default '',
+  starts_at                   timestamptz not null default now(),
+  expires_at                  timestamptz not null,
+  revoked_at                  timestamptz null,
+  revoked_by_account_id       text null,
+  created_at                  timestamptz not null default now(),
+  primary key (organization_id, coverage_id),
+  foreign key (organization_id, athlete_id)
+    references pilot.athletes(organization_id, athlete_id)
+    on delete cascade,
+  constraint pilot_coach_coverage_window check (expires_at > starts_at)
+);
+
+create index if not exists idx_coach_coverage_lookup
+  on pilot.coach_coverage(organization_id, covering_coach_account_id, athlete_id, expires_at desc);
+
 -- Document ingest backend audit stream
 create table if not exists pilot.document_ingest_audit (
   audit_id     bigserial primary key,

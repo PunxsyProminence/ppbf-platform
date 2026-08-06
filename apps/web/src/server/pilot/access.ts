@@ -31,13 +31,46 @@ export function requireRole(actor: ActorIdentity, allowed: PilotRole[]): void {
   }
 }
 
+/**
+ * A coach reaches an athlete two ways, checked in order:
+ *
+ * 1. They are the athlete's coach_id of record -- the original exact-match,
+ *    untouched (T-002's own rule: extend, don't replace).
+ * 2. They hold an active coverage grant (pilot.coach_coverage): not revoked,
+ *    started, not yet expired -- a coach substituting for the coach of
+ *    record, granted temporary per-athlete access without ever becoming the
+ *    coach_id. Expiry is enforced by comparing against now() at read time,
+ *    so a lapsed grant needs no cleanup job to stop working.
+ *
+ * Both failures throw the SAME message on purpose: whether a coach has no
+ * relationship to this athlete, an expired grant, or a revoked one is not
+ * something the error channel should disclose -- and the pre-coverage
+ * assertion text stays byte-identical for every existing caller and test.
+ */
 export async function assertCoachAssignedToAthlete(coachId: string, athleteId: string, organizationId: string): Promise<void> {
   const row = await queryOne<{ athlete_id: string }>(
     'select athlete_id from pilot.athletes where athlete_id = $1 and coach_id = $2 and organization_id = $3',
     [athleteId, coachId, organizationId],
   );
 
-  if (!row) {
+  if (row) {
+    return;
+  }
+
+  const coverage = await queryOne<{ coverage_id: string }>(
+    `select coverage_id
+     from pilot.coach_coverage
+     where athlete_id = $1
+       and covering_coach_account_id = $2
+       and organization_id = $3
+       and revoked_at is null
+       and starts_at <= now()
+       and expires_at > now()
+     limit 1`,
+    [athleteId, coachId, organizationId],
+  );
+
+  if (!coverage) {
     throw new Error('Forbidden: coach not assigned to athlete');
   }
 }
