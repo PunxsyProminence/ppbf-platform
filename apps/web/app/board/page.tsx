@@ -10,11 +10,11 @@ export default function BoardHubPage() {
             written in dark ink rather than the bone type the leather panels
             below carry. The .t-* voices pin their own light colours, which is
             why the header composes the same ladder by hand. */}
-        <header className="flex flex-col gap-[var(--s4)] border-b-4 border-[color:var(--brass-700)] pb-[var(--s5)] md:flex-row md:items-end md:justify-between">
+        <header className="on-plaster flex flex-col gap-[var(--s4)] border-b-4 border-[color:var(--brass-700)] pb-[var(--s5)] md:flex-row md:items-end md:justify-between">
           <div className="space-y-[var(--s3)]">
-            <p className="font-mono text-[length:var(--t-xs)] uppercase tracking-[0.35em] text-[color:var(--brass-800)]">Board Hub</p>
-            <h1 className="font-display text-[length:var(--t-2xl)] font-black tracking-tight text-[color:var(--hide-950)] md:text-[length:var(--t-3xl)]">One board governance framework</h1>
-            <p className="max-w-[80ch] text-[length:var(--t-sm)] leading-7 text-[color:var(--hide-800)]">
+            <p className="t-eyebrow tracking-[0.35em]">Board Hub</p>
+            <h1 className="t-command text-[length:var(--t-2xl)] md:text-[length:var(--t-3xl)]">One board governance framework</h1>
+            <p className="t-body max-w-[80ch]">
               Board Hub is the board seat directory, governance control surface, and mission oversight launcher. Every seat opens the same board workspace shell with role-aware visibility for nonprofit governance.
             </p>
           </div>

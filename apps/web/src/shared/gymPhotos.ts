@@ -30,21 +30,29 @@
  * HOW A PHOTOGRAPH ACTUALLY GETS HERE
  * ---------------------------------------------------------------------------
  *
- *   1. Drop the file into apps/web/public/gym/ (create the folder; it does not
- *      exist yet, because there are no photographs yet).
- *   2. Set that slot's `file` below to the file name.
+ * Two paths, one release rule -- a person who can see the picture decides:
  *
- * That is the whole procedure. No migration, no storage account, no deploy
- * variable, no review queue -- because none of those would be protecting
- * anybody here. The act of committing a file IS the release decision, made by a
- * person who can see what is in the picture, which is the only review a
- * photograph can honestly get (the same argument profileVisibility.ts makes
- * about portraits).
+ *   1. THE MANIFEST (this file). Drop the file into apps/web/public/gym/ and
+ *      set that slot's `file` below. No migration, no storage account, no
+ *      review queue -- the act of committing a file IS the release decision,
+ *      made by a person who can see what is in the picture, which is the only
+ *      review a photograph can honestly get (the same argument
+ *      profileVisibility.ts makes about portraits).
+ *   2. THE ADMIN UPLOAD (/admin/gym-photos). An admin uploads a photograph
+ *      for a slot from the dashboard; it is stored org-scoped in private blob
+ *      storage (EXIF/GPS stripped, same policy family as portraits) and takes
+ *      the frame over whatever this manifest names. Clicking upload in front
+ *      of the actual picture is the same release decision by the same kind of
+ *      person -- it just doesn't require a git client.
  *
- * EVERY SLOT IS EMPTY TODAY. That is not a gap waiting to be filled in with
- * stock imagery -- it is the state the owner is actually in, and the empty
- * frame is designed as the primary state rather than as a fallback. Do not add
- * a stock photograph, a gradient, or an illustration to make a slot look full.
+ * WHAT THE SLOTS HOLD TODAY: commissioned placeholder ILLUSTRATIONS, by owner
+ * decision (2026-08-06) -- drawn in the design system's own palette, building
+ * only, visibly labeled "PLACEHOLDER ILLUSTRATION" inside the image, and named
+ * as illustrations in the alt text. They exist so the wall reads as a wall
+ * while the real photographs are being taken, and each one is expected to be
+ * REPLACED by a real photograph via either path above. The standing rules are
+ * unchanged: no stock photography, no fake-photorealistic imagery, and no
+ * people -- not even drawn ones.
  */
 
 /** Where a slot is allowed to appear. A slot names its surfaces; a surface asks for its slots. */
@@ -84,48 +92,48 @@ export const GYM_PHOTO_SLOTS: readonly GymPhotoSlot[] = [
     key: 'entrance',
     title: 'The front door',
     caption: '204 Pennsylvania Ave. What you are looking for when you pull up the first time.',
-    file: null,
-    alt: 'The entrance to the gym at 204 Pennsylvania Ave, Big Run.',
+    file: 'entrance.svg',
+    alt: 'Illustration of the entrance to the gym at 204 Pennsylvania Ave, Big Run — a placeholder until the real photograph is taken.',
     surfaces: ['public'],
   },
   {
     key: 'floor',
     title: 'The floor',
     caption: 'The room itself, on an ordinary night. Not staged, not empty on purpose.',
-    file: null,
-    alt: 'The main training floor of the gym.',
+    file: 'floor.svg',
+    alt: 'Illustration of the main training floor of the gym — a placeholder until the real photograph is taken.',
     surfaces: ['public', 'dashboard'],
   },
   {
     key: 'ring',
     title: 'The ring',
     caption: 'Most people who train here never step in it. It is still the middle of the room.',
-    file: null,
-    alt: 'The boxing ring.',
+    file: 'ring.svg',
+    alt: 'Illustration of the boxing ring — a placeholder until the real photograph is taken.',
     surfaces: ['public', 'dashboard'],
   },
   {
     key: 'bags',
     title: 'The bags',
     caption: 'Heavy bags, speed bag, double end. Where most of the work actually happens.',
-    file: null,
-    alt: 'The heavy bags along the wall.',
+    file: 'bags.svg',
+    alt: 'Illustration of the heavy bags along the wall — a placeholder until the real photograph is taken.',
     surfaces: ['public', 'dashboard'],
   },
   {
     key: 'wraps-bench',
     title: 'Where you wrap up',
     caption: 'Bench, hooks, and whoever is already sitting there when you walk in.',
-    file: null,
-    alt: 'The bench where athletes wrap their hands.',
+    file: 'wraps-bench.svg',
+    alt: 'Illustration of the bench where athletes wrap their hands — a placeholder until the real photograph is taken.',
     surfaces: ['public', 'dashboard'],
   },
   {
     key: 'wall',
     title: 'The wall',
     caption: 'Whatever is taped, pinned, or written up there this month.',
-    file: null,
-    alt: 'The gym wall, with notices and photographs pinned to it.',
+    file: 'wall.svg',
+    alt: 'Illustration of the gym wall with notices pinned to it — a placeholder until the real photograph is taken.',
     surfaces: ['dashboard'],
   },
 ];

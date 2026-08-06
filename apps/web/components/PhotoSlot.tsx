@@ -19,7 +19,10 @@ import { gymPhotoSrc, type GymPhotoSlot } from '@/src/shared/gymPhotos';
  * moulding, a mount, and an engraved plate underneath saying what belongs in
  * it. What it deliberately does NOT have:
  *
- *   - no stock photograph, no illustration, no silhouette of a boxer;
+ *   - no stock photograph, no silhouette of a boxer (the manifest's
+ *     commissioned placeholder illustrations are the one sanctioned stand-in,
+ *     by owner decision -- drawn, labeled as illustrations inside the image
+ *     and in the alt, building only; see gymPhotos.ts);
  *   - no placeholder gradient, which is exactly what a broken CDN looks like;
  *   - no dashed "upload" rectangle, because a visitor to the public page is not
  *     going to upload anything and being shown an authoring affordance they
@@ -37,11 +40,20 @@ export interface PhotoSlotProps {
   /** 'tall' is a portrait mount (a person), 'wide' a landscape one (a room). */
   readonly shape?: 'tall' | 'wide';
   readonly className?: string;
+  /**
+   * An admin-uploaded photograph of the BUILDING for this slot, served by the
+   * session-scoped gym-wall route (/api/pilot/gym-photos/[slot]). This is the
+   * one sanctioned second source beside the static manifest: it is fed only by
+   * GymWallModule's fetch of that route, which has no path to member media --
+   * see the admin route's own header for the release rule. When present it
+   * takes the frame over the manifest's placeholder illustration.
+   */
+  readonly uploadedSrc?: string | null;
 }
 
-export default function PhotoSlot({ slot, shape = 'wide', className = '' }: PhotoSlotProps) {
+export default function PhotoSlot({ slot, shape = 'wide', className = '', uploadedSrc = null }: PhotoSlotProps) {
   const [failed, setFailed] = useState(false);
-  const src = gymPhotoSrc(slot.file);
+  const src = uploadedSrc ?? gymPhotoSrc(slot.file);
   const showPhoto = src !== null && !failed;
 
   return (
@@ -49,10 +61,11 @@ export default function PhotoSlot({ slot, shape = 'wide', className = '' }: Phot
       <div className="photo-slot-mount">
         {showPhoto ? (
           /* A bare <img>, matching ProfilePortrait's reasoning about the image
-             optimizer. These are static same-origin files under public/gym, so
-             there is no session-scoped route for a cache to get wrong, but the
-             files are already sized by whoever committed them and the optimizer
-             would only add a build dependency for no gain. */
+             optimizer. Manifest files are static same-origin files under
+             public/gym, already sized by whoever committed them; an uploaded
+             photograph comes from the session-scoped gym-wall route, which the
+             optimizer must NOT proxy (its cache has no idea about sessions).
+             Either way the optimizer would only add a build dependency. */
           // eslint-disable-next-line @next/next/no-img-element
           <img src={src} alt={slot.alt} loading="lazy" decoding="async" onError={() => setFailed(true)} />
         ) : (

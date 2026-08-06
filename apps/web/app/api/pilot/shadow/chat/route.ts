@@ -620,7 +620,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           success: false,
           state: 'filtered',
           response: sessionType === 'film_study'
-            ? 'Film Study is not available in text chat. Use the dedicated video-analysis workflow.'
+            ? 'Film Study is not available in text chat. Request it from the Video Analysis page for a released video -- the observation will wait for your review before it is recorded.'
             : 'Recovery Round is an internal background workflow and cannot be started from chat.',
           messageId: `msg_${Date.now()}`,
           createdAt: new Date().toISOString(),

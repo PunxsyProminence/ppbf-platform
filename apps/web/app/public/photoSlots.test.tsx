@@ -15,7 +15,7 @@ import { GYM_STAFF_CARDS, gymPhotoSlotsFor } from '@/src/shared/gymPhotos';
  * when they open this on their phone, so it is the state that is tested.
  */
 
-describe('the public page while every frame is empty', () => {
+describe('the public page photo frames', () => {
   it('hangs a frame for each slot the public surface asks for', () => {
     const { container } = render(<PublicPortalPage />);
 
@@ -29,19 +29,28 @@ describe('the public page while every frame is empty', () => {
     }
   });
 
-  it('shows no image at all rather than a stand-in', () => {
+  it('shows the manifest placeholder illustrations, each declared as one', () => {
+    // Updated deliberately (owner decision, 2026-08-06): the gym slots carry
+    // commissioned placeholder ILLUSTRATIONS until real photographs land. The
+    // rule this test guards is unchanged -- nothing in a frame may pretend to
+    // be a photograph of this gym -- so every image must say what it is.
     const { container } = render(<PublicPortalPage />);
 
-    // No stock photo, no illustration, no gradient block dressed as a picture.
-    // An <img> on this page today could only be one of those things.
-    expect(container.querySelectorAll('img')).toHaveLength(0);
-    expect(container.querySelectorAll('.photo-slot [data-filled="yes"]')).toHaveLength(0);
+    const images = Array.from(container.querySelectorAll('.photo-slot img'));
+    expect(images.length).toBe(gymPhotoSlotsFor('public').length);
+    for (const image of images) {
+      expect(image.getAttribute('src') ?? '').toMatch(/^\/gym\//);
+      expect(image.getAttribute('alt') ?? '').toMatch(/illustration/i);
+    }
+    // The staff frame still holds no image: a drawn stand-in for a named real
+    // person would be an invention, so it stays empty until a photo is filed.
+    expect(container.querySelectorAll('.photo-slot').length - images.length).toBe(GYM_STAFF_CARDS.length);
   });
 
-  it('says why the frames are empty, and what to do instead', () => {
+  it('says the frames hold drawn stand-ins, and still invites the real visit', () => {
     render(<PublicPortalPage />);
 
-    expect(screen.getByText(/nobody has taken the photographs yet/i)).toBeTruthy();
+    expect(screen.getByText(/drawn stand-ins of our own room/i)).toBeTruthy();
     expect(screen.getByText(/come and look at the real thing/i)).toBeTruthy();
   });
 

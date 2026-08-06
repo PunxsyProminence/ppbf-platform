@@ -7,6 +7,7 @@ import AthleteAchievements from './AthleteAchievements';
 import Chalkboard from './Chalkboard';
 import FightCard from './FightCard';
 import GymWallModule from './GymWallModule';
+import ParentDigest from './ParentDigest';
 import ProfilePortrait from './ProfilePortrait';
 import { ParentSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
@@ -359,7 +360,7 @@ export default function ParentHub() {
         {/* CHILD SELECTOR */}
         {childrenLoading && (
           <div className="mat-paper rounded-[var(--r-md)] p-[var(--s4)] text-center">
-            <p className="t-muted">Loading your children...</p>
+            <p className="working">Loading your children...</p>
             <div className="mt-[var(--s4)] flex justify-center">
               <div className="animate-spin h-5 w-5 rounded-[var(--r-pill)] border-2 border-[color:var(--brass-700)] border-t-transparent"></div>
             </div>
@@ -367,25 +368,23 @@ export default function ParentHub() {
         )}
 
         {childrenError && !childrenLoading && (
-          <div
-            className="rounded-[var(--r-md)] border-2 border-[color:var(--locked)] p-[var(--s4)]"
-            style={{ background: 'color-mix(in srgb, var(--locked) 10%, var(--canvas-warm))' }}
-            role="alert"
-          >
-            <div className="mb-[var(--s3)] flex items-center justify-between gap-[var(--s4)]">
-              <span className="badge badge--locked"><i>✕</i>Failed</span>
-              <button
-                onClick={() => {
-                  setChildrenError(null);
-                  setChildrenRetryNonce((value) => value + 1);
-                }}
-                className="btn btn--ghost"
-                aria-label="Retry loading children"
-              >
-                Retry
-              </button>
+          <div className="alert alert--critical" role="alert">
+            <div className="alert-body">
+              <div className="mb-[var(--s3)] flex items-center justify-between gap-[var(--s4)]">
+                <span className="badge badge--locked"><i>✕</i>Failed</span>
+                <button
+                  onClick={() => {
+                    setChildrenError(null);
+                    setChildrenRetryNonce((value) => value + 1);
+                  }}
+                  className="btn btn--ghost"
+                  aria-label="Retry loading children"
+                >
+                  Retry
+                </button>
+              </div>
+              <p className="alert-msg">Error loading children: {childrenError}</p>
             </div>
-            <p className="t-body">Error loading children: {childrenError}</p>
           </div>
         )}
 
@@ -454,7 +453,13 @@ export default function ParentHub() {
         <div className="space-y-6">
           {/* OVERVIEW */}
           {activeTab === 'overview' && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 panel-settle">
+              {/* The digest leads the overview: the roadmap's "blind spot" is
+                  the guardian who never sees the room, and the first thing
+                  they should meet is the coach's own words, not a button
+                  grid. */}
+              <ParentDigest athleteId={activeChildId || null} childName={activeChild?.name ?? null} />
+
               <section className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]">
                 <h3 className="t-label">Quick Actions</h3>
                 <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-2 lg:grid-cols-4">
@@ -617,7 +622,7 @@ export default function ParentHub() {
 
           {/* PARENT FLOOR */}
           {activeTab === 'parent-floor' && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 panel-settle">
               <HelpPanel
                 title="Parent Floor"
                 description="Your at-home support tasks. Track drills, assignments, and parent verification items."
@@ -654,7 +659,7 @@ export default function ParentHub() {
 
           {/* HOME ASSIGNMENTS */}
           {activeTab === 'home-assignments' && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 panel-settle">
               <HelpPanel
                 title="Home Assignments"
                 description="Coach-assigned work for home practice. Videos, drills, reflections, and skill development."
@@ -696,7 +701,7 @@ export default function ParentHub() {
 
           {/* OBSERVATIONS */}
           {activeTab === 'observations' && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 panel-settle">
               <HelpPanel
                 title="Parent Observations"
                 description="Record what you notice at home about your child's energy, motivation, stress, and development."
@@ -742,7 +747,7 @@ export default function ParentHub() {
 
           {/* FAMILY GOALS */}
           {activeTab === 'family-goals' && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 panel-settle">
               <HelpPanel
                 title="Family Goals"
                 description="Collaborative family goals that support your child's boxing journey."
@@ -789,7 +794,7 @@ export default function ParentHub() {
 
           {/* MESSAGES */}
           {activeTab === 'messages' && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 panel-settle">
               <HelpPanel
                 title="Coach Messages"
                 description="Receive updates and messages from coaches about your child's progress."
@@ -853,7 +858,7 @@ export default function ParentHub() {
 
           {/* ATTENDANCE */}
           {activeTab === 'attendance' && (
-            <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)] animate-fadeIn">
+            <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)] panel-settle">
               <h3 className="t-label">Attendance Tracking</h3>
               <p className="t-body">View attendance history and upcoming sessions.</p>
               <p className="t-label">
@@ -888,7 +893,7 @@ export default function ParentHub() {
 
           {/* PROGRESS */}
           {activeTab === 'progress' && (
-            <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)] animate-fadeIn">
+            <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)] panel-settle">
               <h3 className="t-label">Progress & Achievements</h3>
               <p className="t-body">Track skill development and milestone achievements.</p>
 
@@ -954,7 +959,7 @@ export default function ParentHub() {
 
           {/* RESOURCES */}
           {activeTab === 'resources' && (
-            <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)] animate-fadeIn">
+            <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)] panel-settle">
               <h3 className="t-label">Parent Support Resources</h3>
               <p className="t-body">Guides, videos, and tips for supporting young athletes.</p>
               <p className="t-label">
@@ -978,7 +983,7 @@ export default function ParentHub() {
 
           {/* SHADOW AI */}
           {activeTab === 'shadow' && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 panel-settle">
               <RoleSpecificShadow
                 role="parent"
                 description="Ask SHADOW how to support your child at home. Tap below to open a live chat scoped to your family -- there is no canned answer here."

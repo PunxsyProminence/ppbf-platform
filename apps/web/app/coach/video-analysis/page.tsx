@@ -31,6 +31,28 @@ interface ShadowObservationItem {
   created_at: string;
 }
 
+// Mirrors VideoAnalysisResponse in app/api/pilot/shadow/video-analysis/route.ts.
+type FilmStudyJobStatus = 'requesting' | 'queued' | 'processing' | 'completed' | 'failed' | 'unavailable';
+
+interface FilmStudyJobState {
+  status: FilmStudyJobStatus;
+  jobId?: string;
+  message: string;
+}
+
+// Mirrors FilmStudyProposalRow in src/server/pilot/shadowFilmStudyProposals.ts,
+// trimmed to what this page renders.
+interface FilmStudyProposal {
+  proposal_id: string;
+  athlete_id: string;
+  video_session_id: string;
+  observation_text: string;
+  model_deployment: string;
+  frames_analyzed: number;
+  review_state: 'pending_review' | 'accepted' | 'rejected';
+  created_at: string;
+}
+
 const mlPanels = [
   { title: 'Skill Recognition', detail: ML_PLACEHOLDER },
   { title: 'Punch Detection', detail: ML_PLACEHOLDER },
@@ -38,6 +60,19 @@ const mlPanels = [
   { title: 'Technique Scoring', detail: ML_PLACEHOLDER },
   { title: 'Movement Analysis', detail: ML_PLACEHOLDER },
 ];
+
+// Film Study jobs are enqueued but nothing here forces the SHADOW worker to be
+// running (the route enqueues unconditionally -- see PR discussion on
+// PPBF_SHADOW_WORKER_ENABLED). Polling stops rather than spinning forever, and
+// says so honestly instead of pretending the job failed.
+const FILM_STUDY_POLL_FAST_MS = 3_000;
+const FILM_STUDY_POLL_FAST_ATTEMPTS = 20; // ~1 minute
+const FILM_STUDY_POLL_SLOW_MS = 15_000;
+const FILM_STUDY_POLL_SLOW_ATTEMPTS = 20; // ~5 more minutes
+const FILM_STUDY_STILL_PROCESSING_MESSAGE =
+  'Still processing. This page stopped checking, but the job continues -- '
+  + 'reopen this page to see the result, or check the review queue below once it lands. '
+  + 'If this never resolves, background jobs may not be enabled for this environment.';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -63,6 +98,140 @@ export default function CoachVideoAnalysisPage() {
   const [activeVideo, setActiveVideo] = useState<{ url: string; title: string } | null>(null);
   const [loadingVideoId, setLoadingVideoId] = useState<string | null>(null);
 
+  const [filmStudyJobs, setFilmStudyJobs] = useState<Record<string, FilmStudyJobState>>({});
+  const [proposals, setProposals] = useState<FilmStudyProposal[]>([]);
+  const [proposalsError, setProposalsError] = useState('');
+  const [resolvingProposalId, setResolvingProposalId] = useState<string | null>(null);
+
+  const loadProposals = () => {
+    void (async () => {
+      try {
+        const res = await fetch(`${apiBase()}/api/pilot/shadow/film-study/proposals?state=pending`, {
+          credentials: 'include',
+        });
+        if (!res.ok) throw new Error('Unable to load the Film Study review queue');
+        const data = (await res.json()) as { proposals?: FilmStudyProposal[] };
+        setProposals(data.proposals ?? []);
+        setProposalsError('');
+      } catch (err) {
+        setProposalsError(err instanceof Error ? err.message : 'Unable to load the Film Study review queue');
+      }
+    })();
+  };
+
+  const pollFilmStudyJob = (videoSessionId: string, jobId: string, attempt: number) => {
+    const isFastPhase = attempt < FILM_STUDY_POLL_FAST_ATTEMPTS;
+    const attemptsRemainingInPhase = isFastPhase
+      ? FILM_STUDY_POLL_FAST_ATTEMPTS - attempt
+      : FILM_STUDY_POLL_FAST_ATTEMPTS + FILM_STUDY_POLL_SLOW_ATTEMPTS - attempt;
+    const delayMs = isFastPhase ? FILM_STUDY_POLL_FAST_MS : FILM_STUDY_POLL_SLOW_MS;
+
+    if (attemptsRemainingInPhase <= 0) {
+      setFilmStudyJobs((current) => ({
+        ...current,
+        [videoSessionId]: { status: 'processing', jobId, message: FILM_STUDY_STILL_PROCESSING_MESSAGE },
+      }));
+      return;
+    }
+
+    setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await fetch(
+            `${apiBase()}/api/pilot/shadow/video-analysis?jobId=${encodeURIComponent(jobId)}`,
+            { credentials: 'include' },
+          );
+          const data = (await res.json().catch(() => ({}))) as {
+            status?: FilmStudyJobStatus;
+            message?: string;
+          };
+          const status = data.status ?? 'failed';
+          const message = data.message ?? 'Film Study job status unavailable.';
+
+          setFilmStudyJobs((current) => ({ ...current, [videoSessionId]: { status, jobId, message } }));
+
+          if (status === 'completed') {
+            loadProposals();
+            return;
+          }
+          if (status === 'failed' || status === 'unavailable') {
+            return;
+          }
+          pollFilmStudyJob(videoSessionId, jobId, attempt + 1);
+        } catch {
+          // A transient network error while polling is not the job failing --
+          // keep trying on the same schedule rather than reporting failure for
+          // a fetch that simply didn't land.
+          pollFilmStudyJob(videoSessionId, jobId, attempt + 1);
+        }
+      })();
+    }, delayMs);
+  };
+
+  const requestFilmStudy = async (videoSessionId: string) => {
+    setFilmStudyJobs((current) => ({
+      ...current,
+      [videoSessionId]: { status: 'requesting', message: 'Requesting Film Study analysis...' },
+    }));
+
+    try {
+      const res = await fetch(`${apiBase()}/api/pilot/shadow/video-analysis`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoSessionId }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        status?: FilmStudyJobStatus;
+        jobId?: string;
+        message?: string;
+      };
+      const status = data.status ?? 'failed';
+      const message = data.message ?? `Request failed (${res.status}).`;
+
+      setFilmStudyJobs((current) => ({
+        ...current,
+        [videoSessionId]: { status, jobId: data.jobId, message },
+      }));
+
+      if (status === 'queued' && data.jobId) {
+        pollFilmStudyJob(videoSessionId, data.jobId, 0);
+      }
+    } catch (err) {
+      setFilmStudyJobs((current) => ({
+        ...current,
+        [videoSessionId]: {
+          status: 'failed',
+          message: err instanceof Error ? err.message : 'Request failed.',
+        },
+      }));
+    }
+  };
+
+  const resolveProposal = async (proposal: FilmStudyProposal, verdict: 'accepted' | 'rejected') => {
+    setResolvingProposalId(proposal.proposal_id);
+    try {
+      const res = await fetch(`${apiBase()}/api/pilot/shadow/film-study/proposals`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proposal_id: proposal.proposal_id, verdict }),
+      });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error ?? `Could not record verdict (${res.status}).`);
+      }
+      // The settled proposal leaves the pending queue either way -- accepting
+      // and rejecting are both an exit, not just accepting.
+      setProposals((current) => current.filter((p) => p.proposal_id !== proposal.proposal_id));
+      setProposalsError('');
+    } catch (err) {
+      setProposalsError(err instanceof Error ? err.message : 'Could not record verdict.');
+    } finally {
+      setResolvingProposalId(null);
+    }
+  };
+
   const loadVideos = () => {
     void (async () => {
       try {
@@ -79,6 +248,7 @@ export default function CoachVideoAnalysisPage() {
 
   useEffect(() => {
     loadVideos();
+    loadProposals();
     void (async () => {
       try {
         const res = await fetch(`${apiBase()}/api/pilot/shadow/observation-projection`, {
@@ -201,7 +371,9 @@ export default function CoachVideoAnalysisPage() {
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Coach Video Console</h1>
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
             Upload session footage and review athlete film. An upload is held until you release it, and only then can it
-            be played. AI/ML scoring features are planned and not yet active.
+            be played. A released video can be sent for Film Study -- a vision-based observation that waits for your
+            review below before it touches any athlete record. Per-skill scoring (punch detection, footwork, and the
+            rest) remains planned and is not yet active.
           </p>
         </header>
 
@@ -297,6 +469,11 @@ export default function CoachVideoAnalysisPage() {
                           : 'Held for review by the coach who uploaded it.'}
                       </p>
                     ) : null}
+                    {filmStudyJobs[v.video_session_id] ? (
+                      <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]" data-testid={`film-study-status-${v.video_session_id}`}>
+                        Film Study: {filmStudyJobs[v.video_session_id].message}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="flex shrink-0 items-center gap-[var(--s3)]">
                     {canRelease(v) ? (
@@ -311,6 +488,59 @@ export default function CoachVideoAnalysisPage() {
                     ) : null}
                     <button onClick={() => { void openVideo(v.video_session_id); }} disabled={v.status !== 'ready' || loadingVideoId === v.video_session_id} className="btn btn--ghost disabled:opacity-50">
                       {v.status !== 'ready' ? 'Not released' : loadingVideoId === v.video_session_id ? 'Loading...' : 'Play'}
+                    </button>
+                    {v.status === 'ready' ? (
+                      <button
+                        onClick={() => { void requestFilmStudy(v.video_session_id); }}
+                        disabled={['requesting', 'queued', 'processing'].includes(filmStudyJobs[v.video_session_id]?.status ?? '')}
+                        className="btn btn--ghost disabled:opacity-50"
+                      >
+                        {filmStudyJobs[v.video_session_id]?.status === 'requesting'
+                          ? 'Requesting...'
+                          : ['queued', 'processing'].includes(filmStudyJobs[v.video_session_id]?.status ?? '')
+                            ? 'Analyzing...'
+                            : 'Request Film Study'}
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+          <h2 className="t-eyebrow">Film Study Review Queue</h2>
+          <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
+            A vision observation about an athlete never touches their record on its own -- it lands here first, and
+            only a human verdict settles it.
+          </p>
+          {proposalsError ? <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--locked-ink)]">{proposalsError}</p> : null}
+          {!proposalsError && proposals.length === 0 ? (
+            <p className="t-muted mt-[var(--s3)] text-[color:var(--bone-300)]">No Film Study observations awaiting review.</p>
+          ) : (
+            <div className="mt-[var(--s3)] space-y-[var(--s3)]">
+              {proposals.map((p) => (
+                <div key={p.proposal_id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s3)]">
+                  <p className="t-data text-[color:var(--bone-300)]">
+                    Athlete: {p.athlete_id} · {p.frames_analyzed} frame(s) · {p.model_deployment}
+                  </p>
+                  <p className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-100)]">{p.observation_text}</p>
+                  <p className="t-data mt-[var(--s1)] text-[color:var(--bone-400)]">{new Date(p.created_at).toLocaleString()}</p>
+                  <div className="mt-[var(--s3)] flex gap-[var(--s3)]">
+                    <button
+                      onClick={() => { void resolveProposal(p, 'accepted'); }}
+                      disabled={resolvingProposalId === p.proposal_id}
+                      className="btn disabled:opacity-50"
+                    >
+                      {resolvingProposalId === p.proposal_id ? 'Recording...' : 'Accept'}
+                    </button>
+                    <button
+                      onClick={() => { void resolveProposal(p, 'rejected'); }}
+                      disabled={resolvingProposalId === p.proposal_id}
+                      className="btn btn--ghost disabled:opacity-50"
+                    >
+                      {resolvingProposalId === p.proposal_id ? 'Recording...' : 'Reject'}
                     </button>
                   </div>
                 </div>

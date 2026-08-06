@@ -851,14 +851,20 @@ function PeopleConsoleContent() {
         )}
 
         {error && (
-          <p role="alert" className="rounded-[var(--r-md)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-[var(--s4)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[color:var(--locked-ink)]">
-            {error}
-          </p>
+          <div role="alert" className="alert alert--critical">
+            <span className="alert-icon" aria-hidden="true">✕</span>
+            <div className="alert-body">
+              <p className="alert-msg">{error}</p>
+            </div>
+          </div>
         )}
         {notice && (
-          <p className="rounded-[var(--r-md)] border border-[color:var(--cleared)] bg-[color-mix(in_srgb,var(--cleared)_16%,var(--hide-950))] px-[var(--s4)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[color:var(--cleared-ink)]">
-            ✓ {notice}
-          </p>
+          <div className="alert alert--success">
+            <span className="alert-icon" aria-hidden="true">✓</span>
+            <div className="alert-body">
+              <p className="alert-msg">{notice}</p>
+            </div>
+          </div>
         )}
 
         <nav className="mat-leather flex flex-wrap gap-[var(--s2)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s2)]">

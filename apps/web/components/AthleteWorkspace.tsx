@@ -12,6 +12,7 @@ import { ANCHOR_KEY_OPTIONS, anchorLabel } from './rabbitHoleAnchorLabels';
 import ProfileHeader from './ProfileHeader';
 import { AthleteSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
+import ThenAndNow from './ThenAndNow';
 import TrainingCard, { type TrainingSession } from './TrainingCard';
 import { cx } from './uiStyles';
 import useGymSound from './useGymSound';
@@ -1599,7 +1600,13 @@ export default function AthleteWorkspace() {
         <div className="space-y-6">
           {/* MY DASHBOARD */}
           {activeTab === 'my-dashboard' && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 panel-settle">
+              {/* The before/after frame from the Phase 2 roadmap, built from
+                  the record rather than photographs -- see ThenAndNow.tsx for
+                  why photographs cannot do this here. Renders nothing until
+                  the athlete's identity resolves and history exists. */}
+              <ThenAndNow athleteId={backendAthleteId} />
+
               <section className={PANEL}>
                 <h3 className="t-label">Quick Actions</h3>
                 <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-2 lg:grid-cols-4">
@@ -1662,17 +1669,17 @@ export default function AthleteWorkspace() {
                   <div className="space-y-[var(--s4)]">
                     <div>
                       <label className="t-label block mb-[var(--s3)]" htmlFor="readiness-sleep-hours">Sleep (hours)</label>
-                      <input id="readiness-sleep-hours" type="range" min="4" max="12" value={sleepHours} onChange={(e) => setSleepHours(Number.parseInt(e.target.value, 10))} className="w-full min-h-[var(--tap)] cursor-pointer accent-[var(--brass-400)]" />
+                      <input id="readiness-sleep-hours" type="range" min="4" max="12" value={sleepHours} onChange={(e) => setSleepHours(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
                       <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{sleepHours} hours</p>
                     </div>
                     <div>
                       <label className="t-label block mb-[var(--s3)]" htmlFor="readiness-energy-level">Energy Level (1-10)</label>
-                      <input id="readiness-energy-level" type="range" min="1" max="10" value={energyLevel} onChange={(e) => setEnergyLevel(Number.parseInt(e.target.value, 10))} className="w-full min-h-[var(--tap)] cursor-pointer accent-[var(--brass-400)]" />
+                      <input id="readiness-energy-level" type="range" min="1" max="10" value={energyLevel} onChange={(e) => setEnergyLevel(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
                       <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{energyLevel}/10</p>
                     </div>
                     <div>
                       <label className="t-label block mb-[var(--s3)]" htmlFor="readiness-train">Readiness to Train (1-10)</label>
-                      <input id="readiness-train" type="range" min="1" max="10" value={readinessToTrain} onChange={(e) => setReadinessToTrain(Number.parseInt(e.target.value, 10))} className="w-full min-h-[var(--tap)] cursor-pointer accent-[var(--brass-400)]" />
+                      <input id="readiness-train" type="range" min="1" max="10" value={readinessToTrain} onChange={(e) => setReadinessToTrain(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
                       <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{readinessToTrain}/10</p>
                     </div>
                     <div className="field">
@@ -1704,7 +1711,7 @@ export default function AthleteWorkspace() {
                     </label>
                     <div>
                       <label className="t-label block mb-[var(--s3)]" htmlFor="readiness-soreness">Soreness Level (1-10)</label>
-                      <input id="readiness-soreness" type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(Number.parseInt(e.target.value, 10))} className="w-full min-h-[var(--tap)] cursor-pointer accent-[var(--brass-400)]" />
+                      <input id="readiness-soreness" type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
                       <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{soreness}/10</p>
                     </div>
                     <div className="grid grid-cols-3 gap-[var(--s3)] pt-[var(--s2)]">
@@ -1832,7 +1839,7 @@ export default function AthleteWorkspace() {
 
           {/* ATHLETE FLOOR */}
           {activeTab === 'athlete-floor' && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 panel-settle">
               {lastWorkoutBuildNote && (
                 <div className={PANEL}>
                   <p className="t-eyebrow">Today&apos;s Work</p>
@@ -1931,7 +1938,7 @@ export default function AthleteWorkspace() {
 
           {/* SMART GOALS */}
           {activeTab === 'smart-goals' && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 panel-settle">
               <div className="flex justify-between items-start">
                 <HelpPanel
                   title="SMART Goals"
@@ -2126,7 +2133,7 @@ export default function AthleteWorkspace() {
 
           {/* TRACKS - Placeholder */}
           {activeTab === 'tracks' && (
-            <div className={`${PANEL} space-y-[var(--s4)] animate-fadeIn`}>
+            <div className={`${PANEL} space-y-[var(--s4)] panel-settle`}>
               <h3 className="t-label">Track Management</h3>
               <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">View current track assignment and request upgrades as you progress.</p>
               {/* Track assignment, membership, scholarship, and support status
@@ -2150,7 +2157,7 @@ export default function AthleteWorkspace() {
 
           {/* ASSESSMENTS - Placeholder */}
           {activeTab === 'assessments' && (
-            <div className={`${PANEL} space-y-[var(--s4)] animate-fadeIn`}>
+            <div className={`${PANEL} space-y-[var(--s4)] panel-settle`}>
               <h3 className="t-label">Assessments</h3>
               <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Complete personality tests, surveys, and skill assessments.</p>
               {/* Not-built-yet is a statement of fact, not a refusal or a safety
@@ -2176,7 +2183,7 @@ export default function AthleteWorkspace() {
 
           {/* BIO CHECK-IN */}
           {activeTab === 'bio-checkin' && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 panel-settle">
               <HelpPanel
                 title="Bio Check-In"
                 description="Daily biological assessment covering sleep, vitals, recovery, mental state, and training readiness."
@@ -2199,22 +2206,22 @@ export default function AthleteWorkspace() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-[var(--s4)]">
                   <div>
                     <label className="t-label block mb-[var(--s3)]" htmlFor="bio-sleep-hours">Sleep (4-12 hours)</label>
-                    <input id="bio-sleep-hours" type="range" min="4" max="12" step="0.5" value={sleepHours} onChange={(e) => setSleepHours(Number.parseFloat(e.target.value))} className="w-full min-h-[var(--tap)] cursor-pointer accent-[var(--brass-400)]" />
+                    <input id="bio-sleep-hours" type="range" min="4" max="12" step="0.5" value={sleepHours} onChange={(e) => setSleepHours(Number.parseFloat(e.target.value))} className="range--kiosk cursor-pointer" />
                     <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{sleepHours} hours</p>
                   </div>
                   <div>
                     <label className="t-label block mb-[var(--s3)]" htmlFor="bio-hydration">Hydration (1-10)</label>
-                    <input id="bio-hydration" type="range" min="1" max="10" value={hydrationStatus} onChange={(e) => setHydrationStatus(Number.parseInt(e.target.value, 10))} className="w-full min-h-[var(--tap)] cursor-pointer accent-[var(--brass-400)]" />
+                    <input id="bio-hydration" type="range" min="1" max="10" value={hydrationStatus} onChange={(e) => setHydrationStatus(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
                     <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{hydrationStatus}/10</p>
                   </div>
                   <div>
                     <label className="t-label block mb-[var(--s3)]" htmlFor="bio-motivation">Motivation (1-10)</label>
-                    <input id="bio-motivation" type="range" min="1" max="10" value={motivation} onChange={(e) => setMotivation(Number.parseInt(e.target.value, 10))} className="w-full min-h-[var(--tap)] cursor-pointer accent-[var(--brass-400)]" />
+                    <input id="bio-motivation" type="range" min="1" max="10" value={motivation} onChange={(e) => setMotivation(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
                     <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{motivation}/10</p>
                   </div>
                   <div>
                     <label className="t-label block mb-[var(--s3)]" htmlFor="bio-soreness">Soreness (0-10)</label>
-                    <input id="bio-soreness" type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(Number.parseInt(e.target.value, 10))} className="w-full min-h-[var(--tap)] cursor-pointer accent-[var(--brass-400)]" />
+                    <input id="bio-soreness" type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
                     <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{soreness}/10</p>
                   </div>
                 </div>
@@ -2244,7 +2251,7 @@ export default function AthleteWorkspace() {
 
           {/* DRILL LIBRARY */}
           {activeTab === 'drill-library' && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 panel-settle">
               <HelpPanel
                 title="Drill Library"
                 description="Physical lesson items and technical boxing drills organized by category with coaching cues."
@@ -2317,7 +2324,7 @@ export default function AthleteWorkspace() {
 
           {/* RABBIT HOLES / LEARNING */}
           {activeTab === 'rabbit-holes' && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 panel-settle">
               <HelpPanel
                 title="Rabbit Holes - Deep Learning"
                 description="Deep-dive lessons your coaches wrote, each one a concept to understand and something to go and do with it."
@@ -2347,7 +2354,7 @@ export default function AthleteWorkspace() {
 
           {/* MESSAGE COACH */}
           {activeTab === 'message-coach' && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 panel-settle">
               <HelpPanel
                 title="Message Coach"
                 description="Write a question for your coach. It is recorded in your own SHADOW conversation and answered by SHADOW -- it is not delivered to the coach."
@@ -2416,7 +2423,7 @@ export default function AthleteWorkspace() {
 
           {/* SCHEDULE SESSION */}
           {activeTab === 'schedule-session' && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 panel-settle">
               <div className="flex flex-wrap gap-[var(--s3)]">
                 <Link href="/schedule" className="btn min-h-[var(--tap)]">
                   Open Unified Scheduler
@@ -2446,7 +2453,7 @@ export default function AthleteWorkspace() {
 
           {/* SHADOW AI */}
           {activeTab === 'shadow' && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 panel-settle">
               <RoleSpecificShadow
                 role="athlete"
                 description="Ask SHADOW about your next workout, goals, or progress. Open the real SHADOW chat to get a response -- this workspace does not answer questions inline."
@@ -2543,7 +2550,7 @@ export default function AthleteWorkspace() {
                 </div>
                 <div>
                   <label className="t-label block mb-[var(--s3)]" htmlFor="pain-severity-range">Severity (1-10)</label>
-                  <input id="pain-severity-range" type="range" min="1" max="10" value={currentPainSeverity} onChange={(e) => setCurrentPainSeverity(Number.parseInt(e.target.value, 10))} className="w-full min-h-[var(--tap)] cursor-pointer accent-[var(--brass-400)]" />
+                  <input id="pain-severity-range" type="range" min="1" max="10" value={currentPainSeverity} onChange={(e) => setCurrentPainSeverity(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
                   <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{currentPainSeverity}/10</p>
                 </div>
               </div>

@@ -53,11 +53,11 @@ interface BoardSummaryPalette {
 const palettes: Record<BoardSummaryVariant, BoardSummaryPalette> = {
   hub: {
     frame: 'mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)]',
-    tile: 'mat-leather--raised rounded-[var(--r-md)]',
+    tile: 'stat',
   },
   workspace: {
     frame: 'mat-leather rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.22)]',
-    tile: 'mat-leather--raised rounded-[var(--r-md)]',
+    tile: 'stat',
   },
 };
 
@@ -257,20 +257,20 @@ export default function BoardSummaryPanel({
               const display = boardMetricDisplay(tile.metric, summary.minimumCohortSize, tile.unitLabel);
               const suppressed = tile.metric.status === 'insufficient_data';
               return (
-                <article key={tile.label} className={`${palette.tile} p-[var(--s4)]`}>
-                  <p className="t-label">{tile.label}</p>
+                <article key={tile.label} className={palette.tile}>
+                  <p className="stat-label">{tile.label}</p>
                   {suppressed ? (
                     // k-anonymity withholding is a static ink stamp (Law 7),
                     // never a blank and never a zero.
-                    <p className="mt-[var(--s3)]">
+                    <p>
                       <span className="stamp stamp--flat">{display.value}</span>
                     </p>
                   ) : (
-                    <p className="mt-[var(--s3)] font-mono text-[length:var(--t-xl)] font-bold text-[color:var(--bone-100)]">{display.value}</p>
+                    <p className="stat-val">{display.value}</p>
                   )}
-                  <p className="t-muted mt-[var(--s2)]">{display.note}</p>
+                  <p className="stat-note">{display.note}</p>
                   {tile.metric.status === 'available' && tile.detail ? (
-                    <p className="t-data mt-[var(--s2)]">{tile.detail}</p>
+                    <p className="stat-note">{tile.detail}</p>
                   ) : null}
                 </article>
               );

@@ -556,12 +556,9 @@ export default function ScoutReportPage() {
    and wears a neutral chip off the saturated rungs. */
 function StatusBadge({ status }: { readonly status: JobStatusResult['status'] }) {
   const badges: Record<JobStatusResult['status'], { className: string; glyph: string; label: string }> = {
-    pending: {
-      className:
-        'inline-flex items-center gap-[var(--s2)] rounded-[var(--r-pill)] border border-[color:var(--hide-500)] bg-[rgba(0,0,0,.26)] px-[var(--s3)] py-[var(--s1)] font-mono text-[length:var(--t-xs)] font-bold uppercase tracking-[0.1em] text-[color:var(--bone-400)] [&_i]:not-italic',
-      glyph: '◌',
-      label: 'Pending',
-    },
+    /* The sheet's own administrative rung (badge--filed) replaced the
+       hand-rolled chip this entry used to carry -- same ◌, same job. */
+    pending: { className: 'badge badge--filed', glyph: '◌', label: 'Pending' },
     running: { className: 'badge badge--monitor', glyph: '◉', label: 'Running' },
     completed: { className: 'badge badge--cleared', glyph: '✓', label: 'Completed' },
     failed: { className: 'badge badge--locked', glyph: '✕', label: 'Failed' },

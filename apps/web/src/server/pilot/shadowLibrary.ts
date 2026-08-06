@@ -13,7 +13,8 @@ import { writeShadowTelemetryEvent } from './shadowTelemetry';
 // chunk that merely lost least badly. Deliberately permissive: embeddings
 // separate related from unrelated text well above this line, and the
 // downstream evidence review gates still apply to whatever is returned.
-const SEMANTIC_SCORE_FLOOR = 0.15;
+// Exported so pilotOpsReadiness.ts can report the real value.
+export const SEMANTIC_SCORE_FLOOR = 0.15;
 
 export type ShadowLibrarySourceType =
   | 'peer_reviewed'
@@ -152,7 +153,15 @@ export interface ShadowLibrarySearchResult {
 export interface ShadowLibraryClaimResult {
   answer: string;
   status: ShadowLibraryClaimStatus;
+  // NOT a calibrated probability. This is one of exactly three fixed values
+  // (0.78 / 0.46 / 0.12) selected solely by which `status` band evidence.length
+  // and distinctSourceCount land in below -- a precise-looking float standing
+  // in for an ordinal judgment. Kept for existing callers rather than removed,
+  // but `status` is the honest signal; a caller wanting the reasoning behind
+  // it should read `evidenceCount` / `distinctSourceCount`, not this number.
   confidence: number;
+  evidenceCount: number;
+  distinctSourceCount: number;
   evidence: ShadowLibrarySearchResult[];
   researchRequirementId: number | null;
 }
@@ -901,6 +910,15 @@ export async function searchShadowLibrary(input: {
   if (isSemanticLibrarySearchEnabled()) {
     const queryEmbedding = await embedText(normalizedQuery);
     if (queryEmbedding) {
+      // Restricted to embedding_model = the CURRENT deployment, not merely
+      // "has an embedding". Two different embedding models can share a
+      // dimension count -- cosineSimilarity only guards dimension mismatch,
+      // so a vector from a retired deployment would compare as a real-looking
+      // but semantically meaningless score, clear SEMANTIC_SCORE_FLOOR by
+      // chance, and get cited to a user as evidence. A model change must
+      // degrade those rows to the keyword path, same as never having been
+      // embedded, until the backfill catches up.
+      const currentEmbeddingModel = getEmbeddingDeploymentName();
       const candidates = await query<ShadowLibrarySearchResult & { embedding: number[] }>(
         `select
            c.chunk_id, c.document_id, c.source_id, c.subject_id, c.ordinal,
@@ -922,13 +940,14 @@ export async function searchShadowLibrary(input: {
            and d.approval_state = 'approved'
            and d.verification_state = 'verified'
            and c.embedding is not null
+           and c.embedding_model = $4
            and (
              ($2::text = 'scoped' and c.subject_id is null)
              or ($2::text = 'subject' and (c.subject_id is null or c.subject_id = $3))
            )
          order by s.authority_tier asc, c.created_at asc
          limit 200`,
-        [input.organizationId, normalized.scope, normalized.effectiveSubjectId],
+        [input.organizationId, normalized.scope, normalized.effectiveSubjectId, currentEmbeddingModel],
       );
 
       const ranked = candidates
@@ -1149,6 +1168,8 @@ export async function createShadowLibraryClaim(input: {
     answer,
     status,
     confidence,
+    evidenceCount: evidence.length,
+    distinctSourceCount,
     evidence,
     researchRequirementId,
   };
