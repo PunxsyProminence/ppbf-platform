@@ -129,6 +129,36 @@ describe('GET /api/pilot/escalations', () => {
     // mean "no filter" and expose every athlete's escalations.
     expect(mockList).toHaveBeenCalledWith('org-a', { status: undefined, athleteIds: [] });
   });
+
+  // T-002: the coach roster query unions in actively covered athletes -- a
+  // covering coach who can read the athlete's pain reports must also see
+  // the escalations they feed, or coverage hands them the data but not the
+  // alarm.
+  test("the coach scope includes actively covered athletes via the coverage union", async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-sub' }));
+    mockDbQuery.mockResolvedValueOnce([{ athlete_id: 'ATH-ASSIGNED' }, { athlete_id: 'ATH-COVERED' }] as never);
+    mockList.mockResolvedValueOnce([]);
+
+    await GET(request('/api/pilot/escalations'));
+
+    const [rosterSql] = mockDbQuery.mock.calls[0];
+    expect(String(rosterSql)).toContain('pilot.coach_coverage');
+    expect(String(rosterSql)).toContain('expires_at > now()');
+    expect(mockList).toHaveBeenCalledWith('org-a', { status: undefined, athleteIds: ['ATH-ASSIGNED', 'ATH-COVERED'] });
+  });
+
+  test('a missing coverage table (pre-migration) falls back to assigned athletes, never a 500', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockDbQuery
+      .mockRejectedValueOnce(Object.assign(new Error('relation "pilot.coach_coverage" does not exist'), { code: '42P01' }))
+      .mockResolvedValueOnce([{ athlete_id: 'ATH-1' }] as never);
+    mockList.mockResolvedValueOnce([]);
+
+    const response = await GET(request('/api/pilot/escalations'));
+
+    expect(response.status).toBe(200);
+    expect(mockList).toHaveBeenCalledWith('org-a', { status: undefined, athleteIds: ['ATH-1'] });
+  });
 });
 
 describe('POST /api/pilot/escalations acknowledge', () => {

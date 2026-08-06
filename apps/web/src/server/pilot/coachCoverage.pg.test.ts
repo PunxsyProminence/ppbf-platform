@@ -305,8 +305,34 @@ describe('the real access gate against real coverage rows (T-002 acceptance)', (
     const client = await freshDatabase('ppbf_test_cov_crossorg', { dropCoverageTableFirst: true, applyIncrement: true });
     activeClient = client;
     try {
-      await grantCoverage(client, { organization_id: OTHER_ORG_ID, athlete_id: 'ATH-OTHER-1' });
+      // SAME athlete_id string, other organization -- pilot.athletes' key is
+      // composite (organization_id, athlete_id), so the same id can exist in
+      // two orgs. With identical athlete_id and coach, the ONLY predicate
+      // standing between this grant and cross-tenant access is
+      // organization_id -- which makes this control able to detect that
+      // predicate's loss. (A different-athlete_id variant would pass even
+      // with the org filter deleted: the athlete_id predicate would exclude
+      // the row on its own, proving nothing about the tenant boundary.)
+      await grantCoverage(client, { organization_id: OTHER_ORG_ID, athlete_id: ATHLETE_ID });
       await expect(assertCoachAssignedToAthlete(SUB_COACH, ATHLETE_ID, ORG_ID)).rejects.toThrow('Forbidden');
+    } finally {
+      await client.end();
+    }
+  });
+
+  // The pre-migration window is real: migrations are operator-applied, so
+  // this exact code ships before the table exists anywhere. A missing
+  // relation must mean what the pre-T-002 code meant -- Forbidden -- not a
+  // 42P01 surfacing as a 500 through every route on this gate.
+  test('a database without the coverage table still refuses with Forbidden, not a relation error', async () => {
+    const client = await freshDatabase('ppbf_test_cov_missing_table', { dropCoverageTableFirst: true });
+    activeClient = client;
+    try {
+      await expect(assertCoachAssignedToAthlete(SUB_COACH, ATHLETE_ID, ORG_ID)).rejects.toThrow(
+        'Forbidden: coach not assigned to athlete',
+      );
+      // And the coach of record is entirely unaffected by the table's absence.
+      await expect(assertCoachAssignedToAthlete(RECORD_COACH, ATHLETE_ID, ORG_ID)).resolves.toBeUndefined();
     } finally {
       await client.end();
     }
@@ -390,7 +416,10 @@ describe('coach coverage schema against real Postgres', () => {
            order by pg_get_constraintdef(oid)`,
         );
         const indexes = await client.query(
-          `select indexname from pg_indexes
+          // indexdef, not just indexname: two files can agree on a name while
+          // disagreeing on columns, order, or DESC -- the drift this test exists
+          // to catch.
+          `select indexname, indexdef from pg_indexes
            where schemaname = 'pilot' and tablename = 'coach_coverage'
            order by indexname`,
         );

@@ -129,7 +129,9 @@ async function escalationsTableShape(client: Client) {
      order by pg_get_constraintdef(oid)`,
   );
   const indexes = await client.query(
-    `select indexname from pg_indexes
+    // indexdef, not just indexname: a name can match while columns, order,
+    // or DESC drift -- the exact thing this diff exists to catch.
+    `select indexname, indexdef from pg_indexes
      where schemaname = 'pilot' and tablename = 'safety_escalations'
      order by indexname`,
   );

@@ -1,6 +1,7 @@
 import {
   assertActorCanAccessAthlete,
   assertAthleteBelongsToOrganization,
+  assertAthleteUpdateAllowed,
   assertCoachAssignedToAthlete,
   isOrganizationAdminRole,
   requireRole,
@@ -129,6 +130,61 @@ describe('assertCoachAssignedToAthlete', () => {
       await expect(assertCoachAssignedToAthlete('coach-1', 'ath-1', 'org-1')).resolves.toBeUndefined();
       expect(mockQueryOne).toHaveBeenCalledTimes(1);
     });
+
+    // Migrations are operator-applied, so this code legitimately runs
+    // against databases the coverage migration has not reached. A missing
+    // relation must mean what the pre-T-002 code meant -- Forbidden -- not
+    // turn every non-assigned-coach 403 into an opaque 500.
+    test('a missing coach_coverage table (42P01) refuses with Forbidden, not a relation error', async () => {
+      const missingTable = Object.assign(new Error('relation "pilot.coach_coverage" does not exist'), { code: '42P01' });
+      mockQueryOne.mockResolvedValueOnce(null).mockRejectedValueOnce(missingTable);
+
+      await expect(assertCoachAssignedToAthlete('coach-sub', 'ath-1', 'org-1')).rejects.toThrow(
+        'Forbidden: coach not assigned to athlete',
+      );
+    });
+
+    test('any other database error from the coverage lookup still propagates', async () => {
+      const dbDown = Object.assign(new Error('connection refused'), { code: '08006' });
+      mockQueryOne.mockResolvedValueOnce(null).mockRejectedValueOnce(dbDown);
+
+      await expect(assertCoachAssignedToAthlete('coach-sub', 'ath-1', 'org-1')).rejects.toThrow('connection refused');
+    });
+  });
+});
+
+// ─── assertAthleteUpdateAllowed: the coverage-to-permanent escalation guard ──
+
+describe('assertAthleteUpdateAllowed coach branch (T-002)', () => {
+  const fields = (coachId: string) => ({ coach_id: coachId, active_flag: true, gym_status: 'active' });
+
+  // Without this guard, a covering coach could rewrite coach_id to
+  // themselves through athletes/update: the exact-match branch would then
+  // pass forever, and revoking or expiring the grant would change nothing --
+  // a temporary grant silently converted into permanent access to a minor's
+  // records.
+  test('a coach who is not the coach of record cannot change coach_id', () => {
+    const actor: ActorIdentity = { accountId: 'coach-sub', role: 'coach', organizationId: 'org-1', athleteId: null };
+    expect(() => assertAthleteUpdateAllowed(actor, fields('coach-record'), fields('coach-sub'))).toThrow(
+      'Forbidden: covering coach cannot change coach assignment',
+    );
+  });
+
+  test('a covering coach may still correct non-assignment fields', () => {
+    const actor: ActorIdentity = { accountId: 'coach-sub', role: 'coach', organizationId: 'org-1', athleteId: null };
+    const before = { coach_id: 'coach-record', active_flag: true, gym_status: 'active' };
+    const after = { coach_id: 'coach-record', active_flag: true, gym_status: 'active' };
+    expect(() => assertAthleteUpdateAllowed(actor, before, after)).not.toThrow();
+  });
+
+  test('the coach of record may hand off their own athlete', () => {
+    const actor: ActorIdentity = { accountId: 'coach-record', role: 'coach', organizationId: 'org-1', athleteId: null };
+    expect(() => assertAthleteUpdateAllowed(actor, fields('coach-record'), fields('coach-next'))).not.toThrow();
+  });
+
+  test('admin reassignment is untouched by the coach guard', () => {
+    const actor: ActorIdentity = { accountId: 'acct-admin', role: 'organization_admin', organizationId: 'org-1', athleteId: null };
+    expect(() => assertAthleteUpdateAllowed(actor, fields('coach-record'), fields('coach-next'))).not.toThrow();
   });
 });
 

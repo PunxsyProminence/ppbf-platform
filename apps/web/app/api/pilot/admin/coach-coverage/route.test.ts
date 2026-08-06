@@ -58,6 +58,14 @@ beforeEach(() => {
   mockAssertAthlete.mockResolvedValue(undefined);
   mockAudit.mockResolvedValue(undefined);
   mockQuery.mockResolvedValue([]);
+  // Default: the grantee IS an active coach and no overlapping grant exists,
+  // so a 400/409 in any test below can only come from the guard that test
+  // targets -- the review found three tests passing vacuously through the
+  // coach-lookup 400 because queryOne had no default.
+  mockQueryOne.mockImplementation(async (sql: string) => {
+    if (String(sql).includes('pilot.accounts')) return { account_id: 'acct-coach-sub' };
+    return null;
+  });
 });
 
 describe('POST /api/pilot/admin/coach-coverage (grant)', () => {
@@ -133,6 +141,9 @@ describe('POST /api/pilot/admin/coach-coverage (grant)', () => {
     }));
 
     expect(response.status).toBe(400);
+    // Pin the SPECIFIC guard: without this, the test passed vacuously
+    // through the unrelated coach-lookup 400.
+    await expect(response.json()).resolves.toMatchObject({ error: expect.stringContaining('must be in the future') });
   });
 
   // Coverage is temporary by definition. An open-ended grant is a permanent
@@ -163,6 +174,7 @@ describe('POST /api/pilot/admin/coach-coverage (grant)', () => {
     }));
 
     expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ error: expect.stringContaining('must be after starts_at') });
   });
 
   test('refuses missing fields with a 400, naming the field', async () => {
@@ -171,6 +183,71 @@ describe('POST /api/pilot/admin/coach-coverage (grant)', () => {
     const response = await POST(jsonRequest('POST', { athlete_id: 'ATH-1' }));
 
     expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ error: expect.stringContaining('covering_coach_account_id') });
+  });
+
+  // Date.parse coerces to string (Date.parse(2030) = the year 2030) while
+  // new Date(2030) means epoch milliseconds -- a numeric starts_at that
+  // validated as "the year 2030" would activate the grant in January 1970,
+  // i.e. immediately. The typeof guard closes that divergence.
+  test('refuses a numeric starts_at instead of silently activating the grant now', async () => {
+    mockPrincipal.mockResolvedValueOnce(principal('organization_admin'));
+
+    const response = await POST(jsonRequest('POST', {
+      athlete_id: 'ATH-1',
+      covering_coach_account_id: 'acct-coach-sub',
+      starts_at: 2030 as unknown as string,
+      expires_at: inOneHour(),
+    }));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ error: expect.stringContaining('starts_at') });
+  });
+
+  test('refuses a reason longer than 2000 characters', async () => {
+    mockPrincipal.mockResolvedValueOnce(principal('organization_admin'));
+
+    const response = await POST(jsonRequest('POST', {
+      athlete_id: 'ATH-1',
+      covering_coach_account_id: 'acct-coach-sub',
+      expires_at: inOneHour(),
+      reason: 'x'.repeat(2001),
+    }));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ error: expect.stringContaining('2000') });
+  });
+
+  test('malformed JSON is a 400, not a masked 500', async () => {
+    mockPrincipal.mockResolvedValueOnce(principal('organization_admin'));
+
+    const response = await POST(new NextRequest('https://ppbf.example/api/pilot/admin/coach-coverage', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: 'not json {',
+    }));
+
+    expect(response.status).toBe(400);
+  });
+
+  // A retried or double-clicked grant must read as "already done" (409),
+  // not silently mint a second identical active grant that survives
+  // revocation of the first.
+  test('an overlapping active grant for the same coach and athlete is a 409', async () => {
+    mockPrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockQueryOne
+      .mockResolvedValueOnce({ account_id: 'acct-coach-sub' }) // coach lookup
+      .mockResolvedValueOnce({ coverage_id: 'cov-existing' }); // overlap found
+
+    const response = await POST(jsonRequest('POST', {
+      athlete_id: 'ATH-1',
+      covering_coach_account_id: 'acct-coach-sub',
+      expires_at: inOneHour(),
+    }));
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ error: expect.stringContaining('cov-existing') });
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 });
 

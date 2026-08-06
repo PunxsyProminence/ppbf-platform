@@ -53,26 +53,40 @@ export async function POST(request: NextRequest) {
     const principal = await requireMicrosoftAuthenticatedPrincipal(request);
     requireRole(principal, ['organization_admin', 'admin']);
 
-    const body = (await request.json()) as {
+    // .catch + object guard: malformed JSON (or a literal null body) is a
+    // caller mistake and must read as the conventional 400, not fall through
+    // jsonError's 500 branch as a SyntaxError/TypeError.
+    const body = (await request.json().catch(() => null)) as {
       athlete_id?: string;
       covering_coach_account_id?: string;
       expires_at?: string;
       starts_at?: string;
       reason?: string;
-    };
+    } | null;
+    if (!body || typeof body !== 'object') {
+      throw new Error('Request body must be valid JSON');
+    }
 
-    const athleteId = body.athlete_id?.trim();
+    const athleteId = typeof body.athlete_id === 'string' ? body.athlete_id.trim() : '';
     if (!athleteId) throw new Error('Missing athlete_id');
-    const coveringCoachAccountId = body.covering_coach_account_id?.trim();
+    const coveringCoachAccountId = typeof body.covering_coach_account_id === 'string' ? body.covering_coach_account_id.trim() : '';
     if (!coveringCoachAccountId) throw new Error('Missing covering_coach_account_id');
-    if (!body.expires_at || Number.isNaN(Date.parse(body.expires_at))) {
+    // typeof guards matter here: the `as` cast types these as strings but a
+    // JSON number slips through it, and Date.parse(2030) (the YEAR 2030)
+    // disagrees with new Date(2030) (epoch milliseconds) -- a grant meant
+    // for 2030 would validate and then activate in January 1970.
+    if (typeof body.expires_at !== 'string' || Number.isNaN(Date.parse(body.expires_at))) {
       throw new Error('Missing expires_at: must be a valid date string');
     }
-    if (body.starts_at !== undefined && Number.isNaN(Date.parse(body.starts_at))) {
+    if (body.starts_at !== undefined && (typeof body.starts_at !== 'string' || Number.isNaN(Date.parse(body.starts_at)))) {
       throw new Error('Unsupported starts_at: must be a valid date string');
     }
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+    if (reason.length > 2000) {
+      throw new Error('Unsupported reason: longer than 2000 characters');
+    }
 
-    const startsAt = body.starts_at ? new Date(body.starts_at) : new Date();
+    const startsAt = body.starts_at !== undefined ? new Date(body.starts_at) : new Date();
     const expiresAt = new Date(body.expires_at);
     const now = Date.now();
 
@@ -102,6 +116,24 @@ export async function POST(request: NextRequest) {
       throw new Error('Missing coach account: covering_coach_account_id is not an active coach in this organization');
     }
 
+    // A retried or double-clicked grant must read as "already done", not
+    // silently mint a second identical active grant that survives
+    // revocation of the first -- the same partially-failed-create hazard
+    // jsonError's 409 block exists for.
+    const overlapping = await queryOne<{ coverage_id: string }>(
+      `select coverage_id from pilot.coach_coverage
+       where organization_id = $1 and athlete_id = $2 and covering_coach_account_id = $3
+         and revoked_at is null
+         and starts_at < $5 and expires_at > $4
+       limit 1`,
+      [principal.organizationId, athleteId, coveringCoachAccountId, startsAt.toISOString(), expiresAt.toISOString()],
+    );
+    if (overlapping) {
+      throw new Error(
+        `Coverage already exists: grant ${overlapping.coverage_id} for this coach and athlete overlaps the requested window -- revoke it first if the window should change`,
+      );
+    }
+
     const coverageId = randomUUID();
     await query(
       `insert into pilot.coach_coverage (
@@ -115,7 +147,7 @@ export async function POST(request: NextRequest) {
         coveringCoachAccountId,
         principal.accountId,
         principal.role,
-        typeof body.reason === 'string' ? body.reason.trim() : '',
+        reason,
         startsAt.toISOString(),
         expiresAt.toISOString(),
       ],
@@ -147,8 +179,11 @@ export async function PATCH(request: NextRequest) {
     const principal = await requireMicrosoftAuthenticatedPrincipal(request);
     requireRole(principal, ['organization_admin', 'admin']);
 
-    const body = (await request.json()) as { coverage_id?: string };
-    const coverageId = body.coverage_id?.trim();
+    const body = (await request.json().catch(() => null)) as { coverage_id?: string } | null;
+    if (!body || typeof body !== 'object') {
+      throw new Error('Request body must be valid JSON');
+    }
+    const coverageId = typeof body.coverage_id === 'string' ? body.coverage_id.trim() : '';
     if (!coverageId) throw new Error('Missing coverage_id');
 
     // Guarded in the UPDATE itself (the escalation-ladder lesson): revoking

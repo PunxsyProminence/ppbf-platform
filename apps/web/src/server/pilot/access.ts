@@ -57,18 +57,33 @@ export async function assertCoachAssignedToAthlete(coachId: string, athleteId: s
     return;
   }
 
-  const coverage = await queryOne<{ coverage_id: string }>(
-    `select coverage_id
-     from pilot.coach_coverage
-     where athlete_id = $1
-       and covering_coach_account_id = $2
-       and organization_id = $3
-       and revoked_at is null
-       and starts_at <= now()
-       and expires_at > now()
-     limit 1`,
-    [athleteId, coachId, organizationId],
-  );
+  let coverage: { coverage_id: string } | null = null;
+  try {
+    coverage = await queryOne<{ coverage_id: string }>(
+      `select coverage_id
+       from pilot.coach_coverage
+       where athlete_id = $1
+         and covering_coach_account_id = $2
+         and organization_id = $3
+         and revoked_at is null
+         and starts_at <= now()
+         and expires_at > now()
+       limit 1`,
+      [athleteId, coachId, organizationId],
+    );
+  } catch (error) {
+    // Migrations are operator-applied (guardrails section 7), so this code
+    // legitimately runs against databases the coach_coverage migration has
+    // not reached yet. In that window a missing relation (Postgres 42P01)
+    // must mean exactly what the pre-T-002 code meant -- no coverage --
+    // not turn every non-assigned-coach 403 into an opaque 500 that also
+    // takes down the pain-report alert path layered on this gate. Any
+    // other database error still propagates.
+    const code = (error as { code?: unknown }).code;
+    if (code !== '42P01') {
+      throw error;
+    }
+  }
 
   if (!coverage) {
     throw new Error('Forbidden: coach not assigned to athlete');
@@ -139,6 +154,18 @@ export function assertAthleteUpdateAllowed(
   before: { coach_id: string; active_flag: boolean; gym_status: string },
   after: { coach_id: string; active_flag: boolean; gym_status: string },
 ): void {
+  // A coach who is not the coach of record reaches this route only through a
+  // coverage grant (T-002) -- and a grant is temporary BY DESIGN. Letting
+  // the covering coach rewrite coach_id (including to themselves) would
+  // convert a 3-day grant into permanent access the moment it was written:
+  // the exact-match branch of assertCoachAssignedToAthlete would pass
+  // forever after, and revoking or expiring the grant would change nothing.
+  // Reassignment is an authority action; a substitute correcting a typo'd
+  // date of birth is not the same act as a substitute adopting the athlete.
+  if (actor.role === 'coach' && before.coach_id !== after.coach_id && before.coach_id !== actor.accountId) {
+    throw new Error('Forbidden: covering coach cannot change coach assignment');
+  }
+
   if (actor.role !== 'athlete') {
     return;
   }

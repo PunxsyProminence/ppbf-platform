@@ -20,11 +20,34 @@ export const runtime = 'nodejs';
 // see escalationLadder.ts / the safety-escalations migration for why; board
 // reads only the k-anonymity-gated summary via a separate route.
 async function coachAthleteIds(organizationId: string, coachAccountId: string): Promise<string[]> {
-  const rows = await query<{ athlete_id: string }>(
-    `select athlete_id from pilot.athletes where organization_id = $1 and coach_id = $2`,
-    [organizationId, coachAccountId],
-  );
-  return rows.map((row) => row.athlete_id);
+  // Assigned athletes PLUS actively covered ones (T-002): a covering coach
+  // who can read the athlete's pain reports through the access gate must
+  // also see the escalations those reports feed -- this pull surface is the
+  // platform's only notification mechanism, and coverage that excluded it
+  // would hand the substitute the data but not the alarm.
+  try {
+    const rows = await query<{ athlete_id: string }>(
+      `select athlete_id from pilot.athletes where organization_id = $1 and coach_id = $2
+       union
+       select athlete_id from pilot.coach_coverage
+       where organization_id = $1 and covering_coach_account_id = $2
+         and revoked_at is null and starts_at <= now() and expires_at > now()`,
+      [organizationId, coachAccountId],
+    );
+    return rows.map((row) => row.athlete_id);
+  } catch (error) {
+    // Pre-migration window (operator-applied migrations): a missing
+    // coach_coverage relation means assigned athletes only, exactly the
+    // pre-T-002 scope -- never a 500 on the safety feed.
+    if ((error as { code?: unknown }).code !== '42P01') {
+      throw error;
+    }
+    const rows = await query<{ athlete_id: string }>(
+      `select athlete_id from pilot.athletes where organization_id = $1 and coach_id = $2`,
+      [organizationId, coachAccountId],
+    );
+    return rows.map((row) => row.athlete_id);
+  }
 }
 
 export async function GET(request: NextRequest) {
