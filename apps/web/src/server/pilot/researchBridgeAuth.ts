@@ -34,6 +34,16 @@ export function isResearchBridgeExportActive(
     && requestHost.trim().toLowerCase() === allowedHost;
 }
 
+export function resolveResearchBridgeRequestHost(
+  requestUrl: string,
+  forwardedHost: string | null,
+  host: string | null,
+): string {
+  return forwardedHost?.split(',')[0]?.trim()
+    || host?.trim()
+    || new URL(requestUrl).host;
+}
+
 export function extractBearerToken(authorization: string | null): string | null {
   if (!authorization) {
     return null;
@@ -56,7 +66,12 @@ export async function requireResearchBridgeAccess(
   request: NextRequest,
   environment: ResearchBridgeEnvironment = process.env,
 ): Promise<{ organizationId: string }> {
-  if (!isResearchBridgeExportActive(environment, new URL(request.url).host)) {
+  const requestHost = resolveResearchBridgeRequestHost(
+    request.url,
+    request.headers.get('x-forwarded-host'),
+    request.headers.get('host'),
+  );
+  if (!isResearchBridgeExportActive(environment, requestHost)) {
     throw new ResearchBridgeAccessError(404, 'Research bridge export is unavailable');
   }
 

@@ -1,4 +1,9 @@
-import { extractBearerToken, hasRequiredClaims, isResearchBridgeExportActive } from './researchBridgeAuth';
+import {
+  extractBearerToken,
+  hasRequiredClaims,
+  isResearchBridgeExportActive,
+  resolveResearchBridgeRequestHost,
+} from './researchBridgeAuth';
 
 describe('research bridge export activation', () => {
   const enabled = {
@@ -12,6 +17,19 @@ describe('research bridge export activation', () => {
     expect(isResearchBridgeExportActive({ ...enabled, RESEARCH_BRIDGE_EXPORT_ENABLED: 'false' }, 'app-ppbf-staging.example.test')).toBe(false);
     expect(isResearchBridgeExportActive({ ...enabled, RESEARCH_BRIDGE_EXPORT_ENVIRONMENT: 'production' }, 'app-ppbf-staging.example.test')).toBe(false);
     expect(isResearchBridgeExportActive(enabled, 'app-ppbf-production.example.test')).toBe(false);
+  });
+
+  test('uses the external proxy host before the internal request URL', () => {
+    expect(resolveResearchBridgeRequestHost(
+      'http://localhost:3000/api/pilot/shadow/research-bridge/export',
+      'app-ppbf-staging.example.test',
+      'localhost:3000',
+    )).toBe('app-ppbf-staging.example.test');
+    expect(resolveResearchBridgeRequestHost(
+      'http://localhost:3000/api/pilot/shadow/research-bridge/export',
+      null,
+      'app-ppbf-staging.example.test',
+    )).toBe('app-ppbf-staging.example.test');
   });
 
   test('extracts only a single bearer token', () => {
