@@ -1,0 +1,5 @@
+# Drop zone for chat-only AI output. Nothing in here is ever committed —
+# the gatekeeper integrates drops onto branches after verification, and a
+# half-finished drop must never ride into a commit by accident.
+*
+!.gitignore
