@@ -58,6 +58,16 @@ documentation-only.
 | T-001 | P3 | Admin activation-code console (or remove dead route) | unclaimed | build | READY | none | `admin/activation-codes/**` | low | — | — | — | Ticket makes builder decide build-vs-delete first | 2026-08-06 |
 | T-002 | P1 | Covering coach cannot access an athlete they don't own | unclaimed | build | READY | none | `access.ts`, new migration | medium — auth + schema | — | — | — | Builder must pick coverage model, state rejected alternative | 2026-08-06 |
 | T-003 | P0 | Admin console for quarantined-video scan-review escalation | unclaimed | build | READY | none | `admin/video-review/**` | medium — safeguarding, minors' footage | — | — | — | none | 2026-08-06 |
+| PR-238a | P1 | Attendance Engine (#122): reporting rollup, bulk check-in, parent-method attribution fix + migration | session B (remote) | build | PR_OPEN | none | `schedulerDb.ts`, `attendanceReporting.ts`, `scheduler/**`, `admin/attendance`, 1 migration | medium — schema + role attribution | [#238](https://github.com/PunxsyProminence/ppbf-platform/pull/238) | — | — | none | 2026-08-06 |
+| PR-238b | P1 | Safety Gate Matrix (#3/#43): `safety_gates` + `safety_gate_evaluations`, contactClearanceGate as first row, teaching-moment lesson | session B (remote) | build | PR_OPEN | PR-238a (same branch) | `safetyGateMatrix.ts`, `safetyGateSeeds.ts`, `contactClearanceGate.ts`, `auth.ts`, 1 migration | high — safety substrate, minors | [#238](https://github.com/PunxsyProminence/ppbf-platform/pull/238) | — | — | none | 2026-08-06 |
+| PR-238c | P1 | Red Flag Escalation ladder (#194): `safety_escalations`, auto-escalation from near misses, `/admin/escalations`, pattern detector | session B (remote) | build | PR_OPEN | PR-238b (same branch) | `escalationLadder.ts`, `shadowNearMisses.ts`, `api/pilot/escalations`, `admin/escalations`, 1 migration | high — safety substrate, minors | [#238](https://github.com/PunxsyProminence/ppbf-platform/pull/238) | — | — | none | 2026-08-06 |
+
+**PR-238a/b/c predate this queue and its ticket process** — they were claimed
+and built under the prior `docs/WORK_QUEUE.md` (rows preserved there) on one
+branch because that session is constrained to a single branch. Registered
+here at `PR_OPEN` so the gatekeeper has the rows the collision rules require;
+three logical capabilities, one PR, cherry-pickable per the PR body. Builder
+does not assert `CI_GREEN` per this table's own rule — observe it on the PR.
 
 **Refuted, not queued**: an automated audit pass flagged "athlete onboarding
 creates live accounts on a shared, guessable PIN with no safeguard" as a

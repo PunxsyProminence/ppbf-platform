@@ -36,7 +36,7 @@ is listed per row.
 
 ---
 
-## Table shape — 17 routes
+## Table shape — 19 routes
 
 A header, a filter row, and rows with per-row actions. Highest-leverage shape in
 the app.
@@ -44,6 +44,8 @@ the app.
 | Route | Ground | Notes |
 |---|---|---|
 | `admin/people` | ink | **Build first.** 1048 lines already — port it, don't rewrite |
+| `admin/activation-codes` | ink | Per-athlete activation code issuance (T-001) |
+| `admin/video-review` | ink | Quarantined-video scan-review escalation (T-003); resolves `needs_human_review`, never overturns `blocked`/`infected` |
 | `admin` | ink | Hub: capability tiles + KPI row, so table + dashboard hybrid |
 | `admin/pin` | ink | Expiring keys use `.badge.badge--restricted` |
 | `admin/organizations` | ink | |
@@ -143,4 +145,4 @@ No shared shape. Schedule these last, individually.
 4. Those three groups are independent and can then run in parallel
 5. Custom routes last, one at a time
 
-17 + 28 + 8 + 10 = 63.
+19 + 28 + 8 + 10 = 65.
