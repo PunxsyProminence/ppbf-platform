@@ -454,9 +454,21 @@ export default function PublicPortalPage() {
         <section id="the-room" className="mt-6 border-[3px] border-[color:rgba(107,78,18,.28)] mat-paper p-5 shadow-[var(--shadow-sm)]">
           <h2 className="text-[length:var(--t-md)] font-black text-[color:var(--hide-950)]">WHAT IT LOOKS LIKE IN HERE</h2>
           <p className="mt-3 max-w-4xl text-[length:var(--t-sm)] leading-7 text-[color:var(--hide-800)]">
-            {gymPhotoSlotsFor('public').some((slot) => gymPhotoSrc(slot.file) !== null)
-              ? 'Photographs of this gym. Not a stock photo of a different gym in a different state.'
-              : 'These frames are empty because nobody has taken the photographs yet, and we would rather show you an empty frame than a stock photo of somebody else’s gym. Until they are up: come and look at the real thing. You do not need an appointment and you do not need to call first.'}
+            {(() => {
+              /* Three honest states, not two: the frames now carry drawn
+                 stand-ins (manifest .svg illustrations, labeled as such inside
+                 the image and in the alt) until real photographs land, and the
+                 caption must not call a drawing a photograph. A committed
+                 photograph is any filled slot that is not an .svg. */
+              const filled = gymPhotoSlotsFor('public').filter((slot) => gymPhotoSrc(slot.file) !== null);
+              if (filled.length === 0) {
+                return 'These frames are empty because nobody has taken the photographs yet, and we would rather show you an empty frame than a stock photo of somebody else’s gym. Until they are up: come and look at the real thing. You do not need an appointment and you do not need to call first.';
+              }
+              if (filled.every((slot) => (slot.file ?? '').endsWith('.svg'))) {
+                return 'Drawn stand-ins of our own room — labeled as exactly that — until the photographs are taken. Never a stock photo of somebody else’s gym. Come and look at the real thing: you do not need an appointment and you do not need to call first.';
+              }
+              return 'Photographs of this gym. Not a stock photo of a different gym in a different state.';
+            })()}
           </p>
           <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {gymPhotoSlotsFor('public').map((slot) => (

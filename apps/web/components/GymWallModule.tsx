@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 
 import PhotoSlot from './PhotoSlot';
 import { gymPhotoSlotsFor, gymPhotoSrc, type GymPhotoSlot } from '@/src/shared/gymPhotos';
+import { apiBase } from '@/lib/apiBase';
 
 /**
  * THE GYM WALL — photographs of this building, on a dashboard.
@@ -73,7 +74,7 @@ export default function GymWallModule({
     let cancelled = false;
     (async () => {
       try {
-        const response = await fetch('/api/pilot/gym-photos');
+        const response = await fetch(`${apiBase()}/api/pilot/gym-photos`, { credentials: 'include' });
         if (!response.ok) return;
         const data: unknown = await response.json();
         const uploaded = (data as { ok?: boolean; uploads?: Record<string, string> } | null)?.uploads;

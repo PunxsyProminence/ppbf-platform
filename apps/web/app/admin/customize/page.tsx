@@ -6,6 +6,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Chalkboard from '@/components/Chalkboard';
 import type { AnnouncementPlacement } from '@/components/AnnouncementBanner';
 import { GYM_PHOTO_SLOTS, gymPhotoSrc } from '@/src/shared/gymPhotos';
+import { apiBase } from '@/lib/apiBase';
 
 /**
  * THE CUSTOMIZATION CENTER -- everything the gym can change about how it looks
@@ -72,7 +73,7 @@ export default function AdminCustomizePage() {
     let cancelled = false;
     (async () => {
       try {
-        const response = await fetch('/api/pilot/admin/gym-photos');
+        const response = await fetch(`${apiBase()}/api/pilot/admin/gym-photos`, { credentials: 'include' });
         if (cancelled) return;
         if (response.status === 401 || response.status === 403) {
           setAccess('denied');
@@ -113,7 +114,7 @@ export default function AdminCustomizePage() {
       const body = new FormData();
       body.append('slot', slotKey);
       body.append('photo', file);
-      const response = await fetch('/api/pilot/admin/gym-photos', { method: 'POST', body });
+      const response = await fetch(`${apiBase()}/api/pilot/admin/gym-photos`, { method: 'POST', body, credentials: 'include' });
       const data: { ok?: boolean; error?: string; message?: string } = await response.json();
       if (!response.ok || !data.ok) {
         setSlotNotice(slotKey, { tone: 'error', text: data.error ?? 'The upload failed. Try again.' });
@@ -134,8 +135,9 @@ export default function AdminCustomizePage() {
     setBusy((current) => ({ ...current, [slotKey]: 'removing' }));
     setSlotNotice(slotKey, null);
     try {
-      const response = await fetch(`/api/pilot/admin/gym-photos?slot=${encodeURIComponent(slotKey)}`, {
+      const response = await fetch(`${apiBase()}/api/pilot/admin/gym-photos?slot=${encodeURIComponent(slotKey)}`, {
         method: 'DELETE',
+        credentials: 'include',
       });
       const data: { ok?: boolean; error?: string } = await response.json();
       if (!response.ok || !data.ok) {
