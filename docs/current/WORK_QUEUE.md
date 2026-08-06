@@ -55,9 +55,9 @@ documentation-only.
 
 | ID | Pri | Title | Owner | Type | State | Depends on | Files/area | Risk | PR | Env | Verified by | Blocker | Updated |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| T-001 | P3 | Admin activation-code console (or remove dead route) | unclaimed | build | READY | none | `admin/activation-codes/**` | low | — | — | — | Ticket makes builder decide build-vs-delete first | 2026-08-06 |
-| T-002 | P1 | Covering coach cannot access an athlete they don't own | unclaimed | build | READY | none | `access.ts`, new migration | medium — auth + schema | — | — | — | Builder must pick coverage model, state rejected alternative | 2026-08-06 |
-| T-003 | P0 | Admin console for quarantined-video scan-review escalation | unclaimed | build | READY | none | `admin/video-review/**` | medium — safeguarding, minors' footage | — | — | — | none | 2026-08-06 |
+| T-001 | P3 | Admin activation-code console (or remove dead route) | Claude (VS Code) | build | STAGING_READY | none | `admin/activation-codes/**` | low | #239 | — | gatekeeper (full gate + acceptance test) | none | 2026-08-06 |
+| T-002 | P1 | Covering coach cannot access an athlete they don't own | Lane B drop, reconciled | build | BLOCKED | none | `access.ts`, new migration | medium — auth + schema | #236 | — | gatekeeper (returned at step 6) | Unbounded `ttl_hours`; no revoke path; migration lacks FKs — see PR #236 ledger comment | 2026-08-06 |
+| T-003 | P0 | Admin console for quarantined-video scan-review escalation | Lane B drop, reconciled | build | STAGING_READY | none | `admin/video-review/**` | medium — safeguarding, minors' footage | #237 | — | gatekeeper (adversarial review + contract check) | none | 2026-08-06 |
 
 **Refuted, not queued**: an automated audit pass flagged "athlete onboarding
 creates live accounts on a shared, guessable PIN with no safeguard" as a
