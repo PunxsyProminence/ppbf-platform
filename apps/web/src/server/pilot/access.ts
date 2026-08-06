@@ -37,9 +37,61 @@ export async function assertCoachAssignedToAthlete(coachId: string, athleteId: s
     [athleteId, coachId, organizationId],
   );
 
-  if (!row) {
-    throw new Error('Forbidden: coach not assigned to athlete');
+  if (row) {
+    return;
   }
+
+  const coverage = await queryOne<{ athlete_id: string }>(
+    `select athlete_id
+     from pilot.coach_coverage
+     where organization_id = $1
+       and athlete_id = $2
+       and covering_coach_id = $3
+       and starts_at <= now()
+       and expires_at > now()`,
+    [organizationId, athleteId, coachId],
+  );
+
+  if (coverage) {
+    return;
+  }
+
+  throw new Error('Forbidden: coach not assigned to athlete');
+}
+
+export async function grantCoachCoverage(params: {
+  organizationId: string;
+  athleteId: string;
+  coveringCoachId: string;
+  grantedByAccountId: string;
+  ttlHours?: number;
+}): Promise<{ coverageId: string; expiresAt: string }> {
+  await assertAthleteBelongsToOrganization(params.organizationId, params.athleteId);
+
+  const ttlHours = params.ttlHours && params.ttlHours > 0 ? params.ttlHours : 24;
+
+  const inserted = await queryOne<{ coverage_id: string; expires_at: string }>(
+    `insert into pilot.coach_coverage (
+       organization_id,
+       athlete_id,
+       covering_coach_id,
+       granted_by_account_id,
+       starts_at,
+       expires_at
+     )
+     values ($1, $2, $3, $4, now(), now() + ($5 || ' hours')::interval)
+     returning coverage_id, expires_at::text`,
+    [params.organizationId, params.athleteId, params.coveringCoachId, params.grantedByAccountId, ttlHours],
+  );
+
+  if (!inserted) {
+    throw new Error('Failed to grant coach coverage');
+  }
+
+  return {
+    coverageId: inserted.coverage_id,
+    expiresAt: inserted.expires_at,
+  };
 }
 
 export async function assertAthleteBelongsToOrganization(organizationId: string, athleteId: string): Promise<void> {

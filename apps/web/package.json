@@ -32,6 +32,7 @@
     "pilot:apply-announcement-placements": "node scripts/pilot-apply-announcement-placements-migration.mjs",
     "pilot:apply-volunteer-program": "node scripts/pilot-apply-volunteer-program-migration.mjs",
     "pilot:apply-scheduler-tables": "node scripts/pilot-apply-scheduler-tables-migration.mjs",
+    "pilot:apply-coach-coverage": "node scripts/pilot-apply-coach-coverage-migration.mjs",
     "pilot:backfill-chunk-embeddings": "node scripts/pilot-backfill-chunk-embeddings.mjs",
     "pilot:apply-scheduler-race": "node scripts/pilot-apply-scheduler-race-migration.mjs",
     "session:cleanup": "tsx scripts/pilot-cleanup-sessions.ts",

@@ -87,6 +87,7 @@ describe('assertCoachAssignedToAthlete', () => {
 
   test('throws Forbidden when coach is not assigned to athlete', async () => {
     mockQueryOne.mockResolvedValueOnce(null);
+    mockQueryOne.mockResolvedValueOnce(null);
     await expect(assertCoachAssignedToAthlete('coach-1', 'ath-other', 'org-1')).rejects.toThrow('Forbidden');
   });
 });
@@ -162,8 +163,23 @@ describe('assertActorCanAccessAthlete', () => {
 
     test('throws Forbidden when coach is not assigned to athlete', async () => {
       mockQueryOne.mockResolvedValueOnce(null);
+      mockQueryOne.mockResolvedValueOnce(null);
       const actor: ActorIdentity = { accountId: 'coach-1', role: 'coach', organizationId: 'org-1', athleteId: null };
       await expect(assertActorCanAccessAthlete(actor, 'ath-other')).rejects.toThrow('Forbidden');
+    });
+
+    test('allows access when coach has an active covering grant', async () => {
+      mockQueryOne.mockResolvedValueOnce(null);
+      mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
+      const actor: ActorIdentity = { accountId: 'coach-covering', role: 'coach', organizationId: 'org-1', athleteId: null };
+      await expect(assertActorCanAccessAthlete(actor, 'ath-1')).resolves.toBeUndefined();
+    });
+
+    test('throws Forbidden when coach covering grant is expired or absent', async () => {
+      mockQueryOne.mockResolvedValueOnce(null);
+      mockQueryOne.mockResolvedValueOnce(null);
+      const actor: ActorIdentity = { accountId: 'coach-expired', role: 'coach', organizationId: 'org-1', athleteId: null };
+      await expect(assertActorCanAccessAthlete(actor, 'ath-1')).rejects.toThrow('Forbidden: coach not assigned to athlete');
     });
   });
 
