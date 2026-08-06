@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1220 754" role="img" aria-label="Illustration of the heavy bags">
+  <!-- Placeholder illustration, not a photograph. Heavy bags on chains from
+       the beam, a speed bag at the end of the row. Building only, no people. -->
+  <rect width="1220" height="754" fill="#14100D"/>
+  <!-- beam -->
+  <rect x="0" y="60" width="1220" height="34" fill="#2A1F18" stroke="#3B2C21" stroke-width="3"/>
+  <g fill="#B8912F"><circle cx="80" cy="77" r="5"/><circle cx="330" cy="77" r="5"/><circle cx="580" cy="77" r="5"/><circle cx="830" cy="77" r="5"/><circle cx="1080" cy="77" r="5"/></g>
+  <!-- wall courses behind -->
+  <g stroke="#1E1712" stroke-width="3">
+    <line x1="0" y1="180" x2="1220" y2="180"/><line x1="0" y1="280" x2="1220" y2="280"/>
+    <line x1="0" y1="380" x2="1220" y2="380"/><line x1="0" y1="480" x2="1220" y2="480"/>
+  </g>
+  <!-- three heavy bags, different heights, chains drawn as link runs -->
+  <g stroke="#B5A688" stroke-width="3.5" fill="none">
+    <path d="M 260 94 l 0 84 M 250 104 l 20 0 M 250 130 l 20 0 M 250 156 l 20 0"/>
+    <path d="M 610 94 l 0 60 M 600 104 l 20 0 M 600 128 l 20 0"/>
+    <path d="M 950 94 l 0 100 M 940 106 l 20 0 M 940 136 l 20 0 M 940 166 l 20 0"/>
+  </g>
+  <!-- bag bodies: leather with stitch lines and a strap ring -->
+  <g>
+    <rect x="196" y="178" width="128" height="330" rx="42" fill="#2A1F18" stroke="#3B2C21" stroke-width="4"/>
+    <line x1="228" y1="188" x2="228" y2="498" stroke="#4A3728" stroke-width="2.5"/>
+    <line x1="292" y1="188" x2="292" y2="498" stroke="#4A3728" stroke-width="2.5"/>
+    <rect x="196" y="240" width="128" height="14" fill="#5C4632"/>
+    <circle cx="260" cy="176" r="10" fill="none" stroke="#B8912F" stroke-width="4"/>
+  </g>
+  <g>
+    <rect x="546" y="154" width="128" height="360" rx="42" fill="#3B2C21" stroke="#2A1F18" stroke-width="4"/>
+    <line x1="578" y1="164" x2="578" y2="504" stroke="#4A3728" stroke-width="2.5"/>
+    <line x1="642" y1="164" x2="642" y2="504" stroke="#4A3728" stroke-width="2.5"/>
+    <rect x="546" y="220" width="128" height="14" fill="#5C4632"/>
+    <circle cx="610" cy="152" r="10" fill="none" stroke="#B8912F" stroke-width="4"/>
+  </g>
+  <g>
+    <rect x="886" y="194" width="128" height="300" rx="42" fill="#2A1F18" stroke="#3B2C21" stroke-width="4"/>
+    <line x1="918" y1="204" x2="918" y2="484" stroke="#4A3728" stroke-width="2.5"/>
+    <line x1="982" y1="204" x2="982" y2="484" stroke="#4A3728" stroke-width="2.5"/>
+    <rect x="886" y="250" width="128" height="14" fill="#5C4632"/>
+    <circle cx="950" cy="192" r="10" fill="none" stroke="#B8912F" stroke-width="4"/>
+  </g>
+  <!-- speed bag platform at the end -->
+  <rect x="1108" y="150" width="86" height="16" fill="#2A1F18" stroke="#3B2C21" stroke-width="3"/>
+  <line x1="1151" y1="166" x2="1151" y2="186" stroke="#B5A688" stroke-width="3.5"/>
+  <path d="M 1151 186 q 26 10 22 44 q -4 30 -22 30 q -18 0 -22 -30 q -4 -34 22 -44 Z" fill="#5C2A1C" stroke="#3B2C21" stroke-width="3"/>
+  <!-- floor -->
+  <line x1="0" y1="640" x2="1220" y2="640" stroke="#2A1F18" stroke-width="4"/>
+  <g stroke="#1E1712" stroke-width="3"><line x1="0" y1="690" x2="1220" y2="690"/></g>
+  <!-- honest label -->
+  <text x="1196" y="732" text-anchor="end" font-family="Menlo, Consolas, monospace" font-size="15" letter-spacing="3" fill="#B5A688">PLACEHOLDER ILLUSTRATION</text>
+</svg>

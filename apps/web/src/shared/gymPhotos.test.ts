@@ -17,12 +17,34 @@ import {
  */
 
 describe('the gym photo manifest', () => {
-  it('has every slot empty, because there are no photographs yet', () => {
-    // If this ever fails it is because somebody added a real photograph, which
-    // is the point of the feature -- update the expectation deliberately, and
-    // check the picture before you do.
-    expect(filledGymPhotoSlots()).toEqual([]);
+  it('fills every slot with a placeholder illustration, honestly labeled', () => {
+    // Updated deliberately (owner decision, 2026-08-06): the six building
+    // slots carry commissioned placeholder ILLUSTRATIONS until the real
+    // photographs are taken. Each file was drawn and checked -- building only,
+    // no people -- and each alt text says out loud that it is an illustration,
+    // because a frame must never claim a photograph it does not hold.
+    expect(filledGymPhotoSlots().map((slot) => slot.key)).toEqual(
+      GYM_PHOTO_SLOTS.map((slot) => slot.key),
+    );
+    for (const slot of GYM_PHOTO_SLOTS) {
+      expect(slot.file).toMatch(/\.svg$/);
+      expect(slot.alt.toLowerCase()).toContain('illustration');
+      expect(slot.alt.toLowerCase()).toContain('placeholder');
+    }
+    // Staff cards are different: a drawn stand-in for a named real person
+    // would be an invention, so they stay empty until a real photograph lands.
     expect(GYM_STAFF_CARDS.every((person) => person.photo === null)).toBe(true);
+  });
+
+  it('backs every named illustration with a real file in public/gym', () => {
+    for (const slot of GYM_PHOTO_SLOTS) {
+      expect(slot.file).not.toBeNull();
+      const filePath = path.join(__dirname, '..', '..', 'public', 'gym', slot.file as string);
+      expect({ slot: slot.key, exists: readFileSync(filePath, 'utf8').length > 0 }).toEqual({
+        slot: slot.key,
+        exists: true,
+      });
+    }
   });
 
   it('gives every slot alt text before it can ever hold a photograph', () => {

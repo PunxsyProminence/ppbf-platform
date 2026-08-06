@@ -81,8 +81,24 @@ describe('the empty frame', () => {
 });
 
 describe('the gym wall module', () => {
-  it('is an empty wall today, because there are no photographs', () => {
+  it('shows the manifest placeholder illustrations by default', () => {
+    // Updated deliberately (owner decision, 2026-08-06): the manifest now
+    // names a placeholder illustration for every slot, so the default wall is
+    // filled rather than empty. The empty state is still real -- it is what a
+    // slot list with no files renders -- and is tested below.
     const { container } = render(<GymWallModule />);
+
+    expect(container.querySelector('[data-filled="yes"]')).not.toBeNull();
+    const image = container.querySelector('img') as HTMLImageElement;
+    expect(image).not.toBeNull();
+    expect(image.getAttribute('src')).toMatch(/^\/gym\//);
+    expect(image.getAttribute('alt') ?? '').toMatch(/illustration/i);
+  });
+
+  it('still builds the empty wall, and says no child photograph goes on a shared screen', () => {
+    const { container } = render(
+      <GymWallModule slots={[slot({ key: 'a' }), slot({ key: 'b', title: 'The bags' })]} />,
+    );
 
     expect(container.querySelector('img')).toBeNull();
     expect(container.querySelector('[data-filled="no"]')).not.toBeNull();
@@ -90,10 +106,6 @@ describe('the gym wall module', () => {
     // a row of them reads as a wall waiting to be filled.
     expect(container.querySelectorAll('.photo-slot').length).toBeGreaterThan(1);
     expect(screen.getByText(/Nobody has taken these yet/)).toBeTruthy();
-  });
-
-  it('says out loud that no child photograph goes on a shared screen', () => {
-    render(<GymWallModule />);
     expect(screen.getByText(/no pictures of anybody.s kid on a shared screen/i)).toBeTruthy();
   });
 

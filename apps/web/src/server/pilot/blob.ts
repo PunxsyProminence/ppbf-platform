@@ -202,3 +202,100 @@ export async function deletePilotProfilePhoto(blobPath: string): Promise<void> {
   const containerClient = serviceClient.getContainerClient(getPilotProfileContainerName());
   await containerClient.getBlockBlobClient(blobPath).deleteIfExists();
 }
+
+/* --------------------------------------------------------- THE GYM WALL ----
+ * Photographs of the building, uploaded by an admin from /admin/gym-photos.
+ *
+ * Same container and same stance as portraits: private, no SAS at any point,
+ * bytes out over the authenticated request only. These are pictures of a room,
+ * not of a person -- but a picture of a room can have a person standing in it,
+ * and the cost of treating every upload with the portrait container's caution
+ * is one code path instead of two rules.
+ *
+ * The path is derived from the organization and the slot, never from a random
+ * id: one slot holds exactly one photograph, and a replacement overwrites
+ * rather than accumulating a history in the container.
+ */
+
+const GYM_WALL_BLOB_PREFIX = 'gym-wall';
+
+function gymWallBlobPath(organizationId: string, slotKey: string): string {
+  return `${GYM_WALL_BLOB_PREFIX}/${organizationId}/${slotKey}`;
+}
+
+export async function uploadPilotGymWallPhoto(
+  organizationId: string,
+  slotKey: string,
+  bytes: Uint8Array,
+  contentType: string,
+): Promise<void> {
+  const serviceClient = getBlobServiceClient();
+  const containerClient = serviceClient.getContainerClient(getPilotProfileContainerName());
+  await containerClient.createIfNotExists();
+  const blockBlobClient = containerClient.getBlockBlobClient(gymWallBlobPath(organizationId, slotKey));
+  await blockBlobClient.uploadData(Buffer.from(bytes), {
+    blobHTTPHeaders: {
+      blobContentType: contentType,
+      blobCacheControl: 'private, no-store',
+    },
+  });
+}
+
+/**
+ * Read one gym-wall photograph, or null when the slot has no upload. Absence
+ * is an ordinary answer here -- the wall falls back to the manifest -- so a
+ * missing blob returns null rather than throwing.
+ */
+export async function downloadPilotGymWallPhoto(
+  organizationId: string,
+  slotKey: string,
+  maxBytes = 12 * 1024 * 1024,
+): Promise<{ bytes: Buffer; contentType: string } | null> {
+  const serviceClient = getBlobServiceClient();
+  const containerClient = serviceClient.getContainerClient(getPilotProfileContainerName());
+  const blobClientForPath = containerClient.getBlockBlobClient(gymWallBlobPath(organizationId, slotKey));
+
+  let contentType = 'application/octet-stream';
+  try {
+    const properties = await blobClientForPath.getProperties();
+    if (typeof properties.contentLength === 'number' && properties.contentLength > maxBytes) {
+      throw new Error('GYM_WALL_PHOTO_TOO_LARGE');
+    }
+    contentType = properties.contentType ?? contentType;
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'statusCode' in error && (error as { statusCode?: number }).statusCode === 404) {
+      return null;
+    }
+    throw error;
+  }
+
+  const bytes = await blobClientForPath.downloadToBuffer(0, undefined, { maxRetryRequestsPerBlock: 2 });
+  return { bytes, contentType };
+}
+
+/** Delete outright; the bytes go, not a flag. Missing is success. */
+export async function deletePilotGymWallPhoto(organizationId: string, slotKey: string): Promise<void> {
+  const serviceClient = getBlobServiceClient();
+  const containerClient = serviceClient.getContainerClient(getPilotProfileContainerName());
+  await containerClient.getBlockBlobClient(gymWallBlobPath(organizationId, slotKey)).deleteIfExists();
+}
+
+/** Which slots hold an uploaded photograph for this organization. */
+export async function listPilotGymWallSlotKeys(organizationId: string): Promise<string[]> {
+  const serviceClient = getBlobServiceClient();
+  const containerClient = serviceClient.getContainerClient(getPilotProfileContainerName());
+  const prefix = `${GYM_WALL_BLOB_PREFIX}/${organizationId}/`;
+  const keys: string[] = [];
+  try {
+    for await (const blob of containerClient.listBlobsFlat({ prefix })) {
+      const key = blob.name.slice(prefix.length);
+      if (key && !key.includes('/')) keys.push(key);
+    }
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'statusCode' in error && (error as { statusCode?: number }).statusCode === 404) {
+      return [];
+    }
+    throw error;
+  }
+  return keys;
+}
