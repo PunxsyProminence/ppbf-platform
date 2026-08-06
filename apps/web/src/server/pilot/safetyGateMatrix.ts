@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { query, queryOne } from './db';
+import type { SafetyGateCategory, SafetyGateEnforcement } from './safetyGateSeeds';
 
 /**
  * Shared substrate for athlete-safety gates (capabilities #3 / #43).
@@ -24,14 +25,14 @@ import { query, queryOne } from './db';
  * add later -- it is something this module must keep refusing to have.
  */
 
-export type SafetyGateEnforcement = 'block' | 'flag';
+export type { SafetyGateEnforcement };
 export type SafetyGateOutcome = 'passed' | 'blocked' | 'flagged';
 
 export interface SafetyGateDefinition {
   gate_id: string;
   gate_key: string;
   name: string;
-  category: string;
+  category: SafetyGateCategory;
   enforcement: SafetyGateEnforcement;
   requirement_text: string;
   active_flag: boolean;

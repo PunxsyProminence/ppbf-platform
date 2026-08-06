@@ -23,10 +23,17 @@ import { withTransaction } from './db';
 
 export type SafetyGateEnforcement = 'block' | 'flag';
 
+// Matches pilot.safety_gates' category CHECK constraint exactly (see the
+// safety-gate-matrix migration). Typed here, the single source both this
+// module and safetyGateMatrix.ts's SafetyGateDefinition import from, so a
+// category outside the vocabulary is a compile error instead of a runtime
+// constraint violation discovered during a migration or a seed.
+export type SafetyGateCategory = 'medical' | 'age' | 'training_level' | 'contact' | 'equipment' | 'behavioral' | 'other';
+
 export type SafetyGateSeed = {
   readonly gateKey: string;
   readonly name: string;
-  readonly category: string;
+  readonly category: SafetyGateCategory;
   readonly enforcement: SafetyGateEnforcement;
   readonly requirementText: string;
 };

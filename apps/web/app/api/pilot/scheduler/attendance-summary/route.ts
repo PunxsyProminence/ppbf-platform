@@ -56,7 +56,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ ok: true, class_id: classId, roster });
     }
 
-    const sinceIso = request.nextUrl.searchParams.get('since') ?? undefined;
+    const sinceRaw = request.nextUrl.searchParams.get('since');
+    // Validated here rather than left to the ::timestamptz cast in
+    // attendanceReporting.ts's SQL -- an invalid string would otherwise
+    // surface as a raw Postgres "invalid input syntax" error, which
+    // jsonError falls through to a generic 500 for. A malformed query
+    // param is a caller mistake, not a server fault.
+    if (sinceRaw !== null && Number.isNaN(Date.parse(sinceRaw))) {
+      throw new Error('Unsupported since: must be a valid date string');
+    }
+    const sinceIso = sinceRaw ?? undefined;
     const summary = await getOrganizationAttendanceSummary(principal.organizationId, {
       coachAccountId,
       sinceIso,

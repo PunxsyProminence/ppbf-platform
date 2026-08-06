@@ -25,7 +25,7 @@ jest.mock('@/src/server/pilot/http', () => ({
       ? 401
       : message.startsWith('Forbidden')
         ? 403
-        : message.startsWith('Missing')
+        : message.startsWith('Missing') || message.startsWith('Unsupported')
           ? 400
           : 500;
     return new Response(JSON.stringify({ error: message }), {
@@ -142,5 +142,26 @@ describe('GET /api/pilot/scheduler/attendance-summary', () => {
 
     expect(response.status).toBe(400);
     expect(mockRoster).not.toHaveBeenCalled();
+  });
+
+  // Passed straight through to a ::timestamptz cast in attendanceReporting.ts;
+  // an invalid string must be caught here as a 400, not left to surface as a
+  // raw Postgres error that jsonError would report as a generic 500.
+  test('an invalid since value is a 400, not a 500', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+
+    const response = await GET(request('/api/pilot/scheduler/attendance-summary?since=not-a-date'));
+
+    expect(response.status).toBe(400);
+    expect(mockSummary).not.toHaveBeenCalled();
+  });
+
+  test('a valid since value is passed through', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockSummary.mockResolvedValueOnce([]);
+
+    await GET(request('/api/pilot/scheduler/attendance-summary?since=2026-07-01T00:00:00.000Z'));
+
+    expect(mockSummary).toHaveBeenCalledWith('org-a', { coachAccountId: undefined, sinceIso: '2026-07-01T00:00:00.000Z' });
   });
 });

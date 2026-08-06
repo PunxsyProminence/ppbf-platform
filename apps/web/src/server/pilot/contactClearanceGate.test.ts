@@ -241,4 +241,26 @@ describe('a missing gate row (pre-migration organization) still fails toward ale
     expect(result.lesson).toEqual(expect.stringContaining('cleared'));
     expect(mockFlag).toHaveBeenCalledTimes(1);
   });
+
+  // pilot.safety_gate_evaluations foreign-keys to (organization_id, gate_key)
+  // in pilot.safety_gates. Recording an evaluation with no matching gate row
+  // would violate that constraint and abort the whole request -- the near
+  // miss above must land regardless, so recording is skipped rather than
+  // attempted and left to fail.
+  test('does not attempt to record an evaluation with no gate row to reference', async () => {
+    mockGetGate.mockResolvedValueOnce(null);
+    mockStatus.mockResolvedValueOnce({ status: 'not_cleared' });
+
+    await call();
+
+    expect(mockRecordEvaluation).not.toHaveBeenCalled();
+  });
+
+  test('a cleared athlete with no gate row is still not flagged, and records nothing', async () => {
+    mockGetGate.mockResolvedValueOnce(null);
+    mockStatus.mockResolvedValueOnce({ status: 'cleared' });
+
+    await expect(call()).resolves.toEqual({ flagged: false });
+    expect(mockRecordEvaluation).not.toHaveBeenCalled();
+  });
 });

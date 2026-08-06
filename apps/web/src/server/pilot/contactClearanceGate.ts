@@ -139,17 +139,25 @@ export async function flagContactWithoutClearance(input: {
   const value = input.value as number;
 
   if (record?.status === 'cleared') {
-    await recordSafetyGateEvaluation({
-      organizationId: input.organizationId,
-      gateKey: GATE_KEY,
-      athleteId: input.athleteId,
-      outcome: 'passed',
-      evaluatedByAccountId: input.actorAccountId,
-      evaluatedByRole: input.actorRole,
-      contextId: input.contextId,
-      metadata: { observation_kind: input.kind, observation_value: value },
-      evaluatedAt: input.observedAt,
-    });
+    // pilot.safety_gate_evaluations has a foreign key to (organization_id,
+    // gate_key) in pilot.safety_gates -- a pre-migration organization with
+    // no gate row would fail that constraint and abort the whole
+    // observation request. Recording is therefore best-effort, gated on the
+    // row actually existing; the underlying flagging/near-miss behavior
+    // below does not depend on it and must never be blocked by it.
+    if (gate) {
+      await recordSafetyGateEvaluation({
+        organizationId: input.organizationId,
+        gateKey: GATE_KEY,
+        athleteId: input.athleteId,
+        outcome: 'passed',
+        evaluatedByAccountId: input.actorAccountId,
+        evaluatedByRole: input.actorRole,
+        contextId: input.contextId,
+        metadata: { observation_kind: input.kind, observation_value: value },
+        evaluatedAt: input.observedAt,
+      });
+    }
     return { flagged: false };
   }
 
@@ -174,22 +182,27 @@ export async function flagContactWithoutClearance(input: {
     },
   });
 
-  await recordSafetyGateEvaluation({
-    organizationId: input.organizationId,
-    gateKey: GATE_KEY,
-    athleteId: input.athleteId,
-    outcome: 'flagged',
-    reason: describe(status, input.kind, value, input.athleteId),
-    evaluatedByAccountId: input.actorAccountId,
-    evaluatedByRole: input.actorRole,
-    contextId: input.contextId,
-    metadata: {
-      observation_kind: input.kind,
-      observation_value: value,
-      medical_status: status,
-    },
-    evaluatedAt: input.observedAt,
-  });
+  // Same FK constraint as the passed path above -- best-effort, gated on the
+  // gate row existing, never a reason to fail a request that already
+  // succeeded at raising the near miss that actually matters.
+  if (gate) {
+    await recordSafetyGateEvaluation({
+      organizationId: input.organizationId,
+      gateKey: GATE_KEY,
+      athleteId: input.athleteId,
+      outcome: 'flagged',
+      reason: describe(status, input.kind, value, input.athleteId),
+      evaluatedByAccountId: input.actorAccountId,
+      evaluatedByRole: input.actorRole,
+      contextId: input.contextId,
+      metadata: {
+        observation_kind: input.kind,
+        observation_value: value,
+        medical_status: status,
+      },
+      evaluatedAt: input.observedAt,
+    });
+  }
 
   return { flagged: true, medicalStatus: status, severity, lesson: gate?.requirement_text ?? DEFAULT_LESSON };
 }
