@@ -1,6 +1,7 @@
 import { randomInt } from 'node:crypto';
 
 import type { PilotRole } from './contracts';
+import { DEFAULT_ACTIVATION_TTL_HOURS, MAX_ACTIVATION_TTL_HOURS } from './activationPolicy';
 import { query, withTransaction } from './db';
 import { validatePinPolicy } from './pinPolicy';
 import { hashPin, hashToken } from './security';
@@ -12,9 +13,6 @@ import { hashPin, hashToken } from './security';
 const CODE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 const CODE_LENGTH = 12;
 const CODE_GROUP_SIZE = 4;
-
-export const DEFAULT_ACTIVATION_TTL_HOURS = 14 * 24;
-const MAX_ACTIVATION_TTL_HOURS = 90 * 24;
 
 export interface IssuedActivationCode {
   // The plaintext code. This is the only moment it exists outside the
