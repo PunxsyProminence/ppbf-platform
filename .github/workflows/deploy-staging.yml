@@ -219,7 +219,17 @@ jobs:
           AZURE_AI_ENDPOINT: ${{ vars.AZURE_AI_ENDPOINT }}
           AZURE_AI_DEPLOYMENT_NAME: ${{ vars.AZURE_AI_DEPLOYMENT_NAME }}
           AZURE_AI_API_VERSION: ${{ vars.AZURE_AI_API_VERSION }}
+          RESEARCH_BRIDGE_EXPORT_AUDIENCE: ${{ vars.RESEARCH_BRIDGE_EXPORT_AUDIENCE }}
+          RESEARCH_BRIDGE_EXPORT_ALLOWED_CLIENT_IDS: ${{ vars.RESEARCH_BRIDGE_EXPORT_ALLOWED_CLIENT_IDS }}
+          RESEARCH_BRIDGE_EXPORT_ALLOWED_HOST: ${{ vars.RESEARCH_BRIDGE_EXPORT_ALLOWED_HOST }}
         run: |
+          for name in RESEARCH_BRIDGE_EXPORT_AUDIENCE RESEARCH_BRIDGE_EXPORT_ALLOWED_CLIENT_IDS RESEARCH_BRIDGE_EXPORT_ALLOWED_HOST; do
+            if [ -z "${!name}" ]; then
+              echo "Required staging research bridge variable '$name' is not configured."
+              exit 1
+            fi
+          done
+
           az containerapp update \
             --name app-ppbf-staging \
             --resource-group "$RESOURCE_GROUP" \
@@ -247,7 +257,14 @@ jobs:
               PPBF_PILOT_BOOTSTRAP_KEY=secretref:ppbf-pilot-bootstrap-key \
               PPBF_PILOT_DEFAULT_ORG_ID=secretref:ppbf-pilot-default-org-id \
               PPBF_PILOT_SHADOW_CONTAINER=secretref:ppbf-pilot-shadow-container \
-              PPBF_DURABLE_RATE_LIMIT=true
+              PPBF_DURABLE_RATE_LIMIT=true \
+              RESEARCH_BRIDGE_EXPORT_ENABLED=true \
+              RESEARCH_BRIDGE_EXPORT_ENVIRONMENT=staging \
+              RESEARCH_BRIDGE_EXPORT_ALLOWED_HOST="$RESEARCH_BRIDGE_EXPORT_ALLOWED_HOST" \
+              RESEARCH_BRIDGE_EXPORT_AUDIENCE="$RESEARCH_BRIDGE_EXPORT_AUDIENCE" \
+              RESEARCH_BRIDGE_EXPORT_ALLOWED_CLIENT_IDS="$RESEARCH_BRIDGE_EXPORT_ALLOWED_CLIENT_IDS" \
+              RESEARCH_BRIDGE_ORGANIZATION_ID=secretref:ppbf-pilot-default-org-id \
+              AZURE_TENANT_ID=secretref:ppbf-ms-tenant-id
 
       - name: Verify Staging AI Secret Reference
         run: |

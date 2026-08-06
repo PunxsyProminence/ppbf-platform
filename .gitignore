@@ -11,6 +11,7 @@ build/
 # Local agent + editor state, never shared
 .claude/
 .vscode/
+.copilot-azure/
 
 # Scratch output. .build-output.txt is a hand-captured `next build` log -- it
 # was tracked once and nothing reads it, so keep it from coming back.
