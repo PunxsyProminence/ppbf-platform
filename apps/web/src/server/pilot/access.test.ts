@@ -1,6 +1,7 @@
 import {
   assertActorCanAccessAthlete,
   assertAthleteBelongsToOrganization,
+  assertAthleteUpdateAllowed,
   assertCoachAssignedToAthlete,
   isOrganizationAdminRole,
   requireRole,
@@ -212,6 +213,90 @@ describe('assertActorCanAccessAthlete', () => {
     test('throws Forbidden for staff', async () => {
       const actor: ActorIdentity = { accountId: 's1', role: 'staff', organizationId: 'org-1', athleteId: null };
       await expect(assertActorCanAccessAthlete(actor, 'ath-1')).rejects.toThrow('Forbidden');
+    });
+  });
+});
+
+// ─── assertAthleteUpdateAllowed ──────────────────────────────────────────────
+//
+// This function had no tests, which is how the coach branch below stayed
+// missing: `coach_id` is in the update route's CORRECTABLE_FIELDS and is
+// written by upsertAthlete's `coach_id = excluded.coach_id`, so nothing
+// between the request and the column refused a coach rewriting it.
+
+describe('assertAthleteUpdateAllowed', () => {
+  const actor = (role: string): ActorIdentity => ({
+    accountId: 'coach-sub',
+    role: role as ActorIdentity['role'],
+    organizationId: 'org-1',
+    athleteId: 'ath-1',
+  });
+
+  const record = (overrides: Partial<{ coach_id: string; active_flag: boolean; gym_status: string }> = {}) => ({
+    coach_id: 'coach-assigned',
+    active_flag: true,
+    gym_status: 'active',
+    ...overrides,
+  });
+
+  describe('coach role', () => {
+    test('refuses a coach reassigning the athlete to themselves', () => {
+      // The escalation this guards: a coach who reached the record through a
+      // temporary grant writes themselves in as the permanent coach, after
+      // which the grant's expiry no longer matters.
+      expect(() =>
+        assertAthleteUpdateAllowed(actor('coach'), record(), record({ coach_id: 'coach-sub' })),
+      ).toThrow('Forbidden: coach cannot change coach assignment');
+    });
+
+    test('refuses a coach handing the athlete to a different coach', () => {
+      expect(() =>
+        assertAthleteUpdateAllowed(actor('coach'), record(), record({ coach_id: 'coach-other' })),
+      ).toThrow('Forbidden: coach cannot change coach assignment');
+    });
+
+    test('still allows a coach to correct fields that are theirs to correct', () => {
+      expect(() =>
+        assertAthleteUpdateAllowed(actor('coach'), record(), record({ gym_status: 'injured' })),
+      ).not.toThrow();
+    });
+  });
+
+  describe('organization_admin role', () => {
+    test('allows an admin to reassign the coach -- this is an administrator decision', () => {
+      expect(() =>
+        assertAthleteUpdateAllowed(actor('organization_admin'), record(), record({ coach_id: 'coach-new' })),
+      ).not.toThrow();
+    });
+
+    test('allows the legacy admin role to reassign the coach', () => {
+      expect(() =>
+        assertAthleteUpdateAllowed(actor('admin'), record(), record({ coach_id: 'coach-new' })),
+      ).not.toThrow();
+    });
+  });
+
+  describe('athlete role -- existing invariants, unchanged', () => {
+    test('refuses an athlete changing their coach assignment', () => {
+      expect(() =>
+        assertAthleteUpdateAllowed(actor('athlete'), record(), record({ coach_id: 'coach-new' })),
+      ).toThrow('Forbidden: athlete cannot change coach assignment');
+    });
+
+    test('refuses an athlete changing their active flag', () => {
+      expect(() =>
+        assertAthleteUpdateAllowed(actor('athlete'), record(), record({ active_flag: false })),
+      ).toThrow('Forbidden: athlete cannot change status flags');
+    });
+
+    test('refuses an athlete changing their gym status', () => {
+      expect(() =>
+        assertAthleteUpdateAllowed(actor('athlete'), record(), record({ gym_status: 'inactive' })),
+      ).toThrow('Forbidden: athlete cannot change gym_status');
+    });
+
+    test('allows an athlete to submit an unchanged record', () => {
+      expect(() => assertAthleteUpdateAllowed(actor('athlete'), record(), record())).not.toThrow();
     });
   });
 });

@@ -106,6 +106,33 @@ export function assertAthleteUpdateAllowed(
   before: { coach_id: string; active_flag: boolean; gym_status: string },
   after: { coach_id: string; active_flag: boolean; gym_status: string },
 ): void {
+  // Who an athlete's coach is, is an administrator's decision. The create
+  // route already refuses to let a coach file an athlete under anyone but
+  // themselves ("coach can only create athletes assigned to self"); update
+  // had no matching rule, so the same column the create path guards was
+  // writable here by any coach who could reach the record.
+  //
+  // Left unguarded this converts read access into permanent ownership: a
+  // coach reaching an athlete through a TEMPORARY grant can set coach_id to
+  // their own account, at which point the grant's expiry stops mattering --
+  // they match the permanent assignment check from then on -- and the
+  // athlete's actual coach, who no longer matches coach_id, loses access.
+  // A bound that the bounded party can write their way out of is not a bound.
+  //
+  // The knock-on is worse than the record access. profileDb grants
+  // 'coach_of_subject' straight from athletes.coach_id, and that relationship
+  // is one of the three in profileVisibility's MINOR_CIRCLE -- the circle a
+  // minor's PHOTOGRAPH never leaves, and one organization admins are
+  // deliberately outside of. So this column is not only roster bookkeeping;
+  // writing to it admits the writer to a child's portrait.
+  //
+  // Refused outright rather than restricted to self-assignment: handing an
+  // athlete to a different coach is equally an administrator's call, and
+  // "only to yourself" would still permit the escalation above.
+  if (actor.role === 'coach' && before.coach_id !== after.coach_id) {
+    throw new Error('Forbidden: coach cannot change coach assignment');
+  }
+
   if (actor.role !== 'athlete') {
     return;
   }
