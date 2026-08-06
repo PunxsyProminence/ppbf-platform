@@ -1,0 +1,9 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    # Single npm workspace root (package-lock.json lives here; apps/web and
+    # packages/* are workspace members Dependabot resolves from this one file
+    # -- pointing it at a member directory instead would miss the lockfile).
+    directory: "/"
+    schedule:
+      interval: "weekly"

@@ -23,8 +23,10 @@ jest.mock('./shadowEmbeddings', () => ({
 import { assertActorCanAccessAthlete } from './access';
 import { query, queryOne } from './db';
 import { embedText, isSemanticLibrarySearchEnabled } from './shadowEmbeddings';
+import { createShadowResearchRequirement, listShadowResearchRequirements } from './shadowResearch';
 import {
   createShadowLibraryChunk,
+  createShadowLibraryClaim,
   normalizeSearchScope,
   searchShadowLibrary,
 } from './shadowLibrary';
@@ -269,6 +271,22 @@ describe('SHADOW library semantic search', () => {
     expect(String(mockQuery.mock.calls[0][0])).toContain('c.embedding is not null');
   });
 
+  it('restricts semantic candidates to the current embedding deployment', async () => {
+    // A chunk embedded by a retired model shares a dimension with the
+    // current one and would rank as a real-looking, meaningless score if the
+    // database query did not filter it out before it ever reached
+    // cosineSimilarity -- so the assertion is on the query sent, not the
+    // ranking, since a mocked query already only returns what the real SQL
+    // would have.
+    mockEmbedText.mockResolvedValue([1, 0]);
+    mockQuery.mockResolvedValueOnce([candidate('chunk_current_model', [0.98, 0.05])] as never);
+
+    await searchShadowLibrary(searchInput);
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(String(sql)).toContain('c.embedding_model = $4');
+    expect(params).toContain('test-embedding');
+  });
+
   it('falls back to keyword search when every candidate is below the relevance floor', async () => {
     mockEmbedText.mockResolvedValue([1, 0]);
     mockQuery
@@ -298,5 +316,69 @@ describe('SHADOW library semantic search', () => {
     expect(mockEmbedText).not.toHaveBeenCalled();
     expect(mockQuery).toHaveBeenCalledTimes(1);
     expect(String(mockQuery.mock.calls[0][0])).toContain("like '%' || $4 || '%'");
+  });
+});
+
+describe('SHADOW library claim honesty', () => {
+  function evidenceRow(sourceId: string) {
+    return {
+      chunk_id: `chunk-${sourceId}`,
+      document_id: 'doc-1',
+      source_id: sourceId,
+      subject_id: null,
+      ordinal: 0,
+      document_name: 'Coaching Manual',
+      source_title: 'Manual',
+      source_publisher: null,
+      source_type: 'textbook',
+      authority_tier: 3,
+      source_status: 'active',
+      publication_date: null,
+      text_content: 'chunk text',
+      score: 0,
+    };
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAssertActorCanAccessAthlete.mockResolvedValue(undefined);
+    mockIsSemanticEnabled.mockReturnValue(false);
+    jest.mocked(listShadowResearchRequirements).mockResolvedValue([]);
+    jest.mocked(createShadowResearchRequirement).mockResolvedValue(101);
+  });
+
+  // confidence's three fixed values (0.78/0.46/0.12) are a status label
+  // wearing a percentage's clothes, not a calibrated score -- these counts are
+  // the numbers a caller can actually reason about, and this test exists so a
+  // future edit cannot drop them back off the return value unnoticed.
+  it('reports evidenceCount and distinctSourceCount alongside the ordinal status', async () => {
+    mockQuery.mockResolvedValueOnce([evidenceRow('src-a'), evidenceRow('src-b')] as never);
+
+    const result = await createShadowLibraryClaim({
+      organizationId: 'org-1',
+      actorAccountId: 'acct-1',
+      actorRole: 'organization_admin',
+      question: 'What does the evidence say about jab timing drills?',
+    });
+
+    expect(result.status).toBe('supported');
+    expect(result.evidenceCount).toBe(2);
+    expect(result.distinctSourceCount).toBe(2);
+    expect(result.confidence).toBe(0.78);
+  });
+
+  it('reports zero counts and the unsupported band when nothing was found', async () => {
+    mockQuery.mockResolvedValueOnce([] as never);
+
+    const result = await createShadowLibraryClaim({
+      organizationId: 'org-1',
+      actorAccountId: 'acct-1',
+      actorRole: 'organization_admin',
+      question: 'Is there evidence for a claim nobody has written about?',
+    });
+
+    expect(result.status).toBe('unsupported');
+    expect(result.evidenceCount).toBe(0);
+    expect(result.distinctSourceCount).toBe(0);
   });
 });
