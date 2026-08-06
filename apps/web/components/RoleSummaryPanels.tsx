@@ -75,6 +75,10 @@ interface RoleSpecificShadowProps {
    ladder size — .t-data pins 13px, so the size is composed by hand. */
 const KPI_TILE = 'mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]';
 const KPI_VALUE = 'mt-[var(--s3)] font-mono text-[length:var(--t-lg)] font-bold text-[color:var(--bone-100)]';
+/* The sheet now ships that composition as the .stat family; neutral
+   measurement cells compose it with their material. Banded safety cells
+   (Law 2) keep the hand-composed pair above. */
+const STAT_TILE = 'stat';
 
 function getAttendanceColor(attendancePercent: number): string {
   if (attendancePercent >= 90) return 'bg-[color-mix(in_srgb,var(--cleared)_16%,transparent)] border-[color:var(--cleared)]';
@@ -126,15 +130,15 @@ export function AthleteSummaryPanel({
       </div>
 
       {/* Tasks */}
-      <div className={KPI_TILE}>
-        <p className="t-label">Tasks Due</p>
-        <p className={KPI_VALUE}>{tasksDue}</p>
+      <div className={STAT_TILE}>
+        <p className="stat-label">Tasks Due</p>
+        <p className="stat-val">{tasksDue}</p>
       </div>
 
       {/* Goals */}
-      <div className={KPI_TILE}>
-        <p className="t-label">Active Goals</p>
-        <p className={KPI_VALUE}>{goalsActive}</p>
+      <div className={STAT_TILE}>
+        <p className="stat-label">Active Goals</p>
+        <p className="stat-val">{goalsActive}</p>
       </div>
 
       {/* Upcoming Session */}
@@ -144,9 +148,9 @@ export function AthleteSummaryPanel({
       </div>
 
       {/* Messages */}
-      <div className={KPI_TILE}>
-        <p className="t-label">Messages</p>
-        <p className={KPI_VALUE}>{unreadMessages}</p>
+      <div className={STAT_TILE}>
+        <p className="stat-label">Messages</p>
+        <p className="stat-val">{unreadMessages}</p>
       </div>
     </div>
   );
@@ -185,9 +189,9 @@ export function CoachSummaryPanel({
     <>
     <div className="mb-[var(--s4)] grid grid-cols-2 gap-[var(--s4)] md:grid-cols-4">
       {/* Active Athletes */}
-      <div className={KPI_TILE}>
-        <p className="t-label">Athletes</p>
-        <p className={KPI_VALUE}>{activeAthletes}</p>
+      <div className={STAT_TILE}>
+        <p className="stat-label">Athletes</p>
+        <p className="stat-val">{activeAthletes}</p>
       </div>
 
       {/* Injury Flags */}
@@ -203,15 +207,15 @@ export function CoachSummaryPanel({
       </div>
 
       {/* Reviews */}
-      <div className={KPI_TILE}>
-        <p className="t-label">Reviews</p>
-        <p className={KPI_VALUE}>{reviewsNeeded}</p>
+      <div className={STAT_TILE}>
+        <p className="stat-label">Reviews</p>
+        <p className="stat-val">{reviewsNeeded}</p>
       </div>
 
       {/* Assignments */}
-      <div className={KPI_TILE}>
-        <p className="t-label">Due</p>
-        <p className={KPI_VALUE}>{assignmentsDue}</p>
+      <div className={STAT_TILE}>
+        <p className="stat-label">Due</p>
+        <p className="stat-val">{assignmentsDue}</p>
       </div>
     </div>
 
@@ -245,15 +249,15 @@ export function ParentSummaryPanel({
       </div>
 
       {/* Tasks */}
-      <div className={KPI_TILE}>
-        <p className="t-label">Home Tasks</p>
-        <p className={KPI_VALUE}>{tasksDue}</p>
+      <div className={STAT_TILE}>
+        <p className="stat-label">Home Tasks</p>
+        <p className="stat-val">{tasksDue}</p>
       </div>
 
       {/* Events */}
-      <div className={KPI_TILE}>
-        <p className="t-label">Upcoming</p>
-        <p className={KPI_VALUE}>{upcomingEvents}</p>
+      <div className={STAT_TILE}>
+        <p className="stat-label">Upcoming</p>
+        <p className="stat-val">{upcomingEvents}</p>
       </div>
 
       {/* Attendance */}
@@ -273,9 +277,9 @@ export function ParentSummaryPanel({
       )}
 
       {/* Messages */}
-      <div className={KPI_TILE}>
-        <p className="t-label">Messages</p>
-        <p className={KPI_VALUE}>{unreadMessages}</p>
+      <div className={STAT_TILE}>
+        <p className="stat-label">Messages</p>
+        <p className="stat-val">{unreadMessages}</p>
       </div>
     </div>
   );
@@ -319,21 +323,21 @@ export function AdminSummaryPanel({
       </div>
 
       {/* Open Assignments */}
-      <div className={KPI_TILE}>
-        <p className="t-label">Open</p>
-        <p className={KPI_VALUE}>{openAssignments}</p>
+      <div className={STAT_TILE}>
+        <p className="stat-label">Open</p>
+        <p className="stat-val">{openAssignments}</p>
       </div>
 
       {/* Compliance */}
-      <div className={KPI_TILE}>
-        <p className="t-label">Compliance</p>
-        <p className={KPI_VALUE}>{complianceItems}</p>
+      <div className={STAT_TILE}>
+        <p className="stat-label">Compliance</p>
+        <p className="stat-val">{complianceItems}</p>
       </div>
 
       {/* Reviews */}
-      <div className={KPI_TILE}>
-        <p className="t-label">Reviews</p>
-        <p className={KPI_VALUE}>{pendingReviews}</p>
+      <div className={STAT_TILE}>
+        <p className="stat-label">Reviews</p>
+        <p className="stat-val">{pendingReviews}</p>
       </div>
     </div>
   );

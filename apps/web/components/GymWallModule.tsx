@@ -3,7 +3,8 @@
 import React, { useEffect, useState } from 'react';
 
 import PhotoSlot from './PhotoSlot';
-import { filledGymPhotoSlots, gymPhotoSlotsFor, type GymPhotoSlot } from '@/src/shared/gymPhotos';
+import { gymPhotoSlotsFor, gymPhotoSrc, type GymPhotoSlot } from '@/src/shared/gymPhotos';
+import { apiBase } from '@/lib/apiBase';
 
 /**
  * THE GYM WALL — photographs of this building, on a dashboard.
@@ -14,9 +15,11 @@ import { filledGymPhotoSlots, gymPhotoSlotsFor, type GymPhotoSlot } from '@/src/
  *
  * NO PEOPLE. This module shows the room, the ring, the bags, the bench and the
  * wall. It never shows a member, and it is structurally incapable of showing
- * one: its only source is src/shared/gymPhotos.ts, a manifest of static files
- * under public/gym, and there is no code path from this component to
- * pilot.account_profiles, to the portrait route, or to any athlete media.
+ * one: its sources are src/shared/gymPhotos.ts (a manifest of static files
+ * under public/gym) and the gym-wall route (/api/pilot/gym-photos, serving
+ * only what an admin uploaded through /admin/gym-photos for THIS slot list).
+ * There is no code path from this component to pilot.account_profiles, to the
+ * portrait route, or to any athlete media.
  *
  * That is not caution for its own sake. A dashboard module is seen by everyone
  * signed in to the gym, which makes the honest viewer relationship
@@ -62,7 +65,31 @@ export default function GymWallModule({
   className = '',
   rotateMs = GYM_WALL_ROTATE_MS,
 }: GymWallModuleProps) {
-  const filled = filledGymPhotoSlots(slots);
+  // Admin-uploaded photographs, slot key -> session-scoped URL. Loaded once,
+  // defensively: a wall that cannot reach the route shows the manifest's
+  // placeholder illustrations, which is a complete answer rather than an error.
+  const [uploads, setUploads] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (typeof fetch !== 'function') return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/gym-photos`, { credentials: 'include' });
+        if (!response.ok) return;
+        const data: unknown = await response.json();
+        const uploaded = (data as { ok?: boolean; uploads?: Record<string, string> } | null)?.uploads;
+        if (!cancelled && uploaded && typeof uploaded === 'object') setUploads(uploaded);
+      } catch {
+        // Signed-out surface, offline kiosk, or a route hiccup: the manifest
+        // stands in. Nothing to report to the person looking at a wall.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const filled = slots.filter((slot) => uploads[slot.key] || gymPhotoSrc(slot.file) !== null);
   const [index, setIndex] = useState(0);
 
   // Rotation exists only when there is something to rotate. With one
@@ -93,7 +120,7 @@ export default function GymWallModule({
 
       {showing ? (
         <>
-          <PhotoSlot slot={showing} shape="wide" className="gym-wall-frame" />
+          <PhotoSlot slot={showing} shape="wide" className="gym-wall-frame" uploadedSrc={uploads[showing.key] ?? null} />
           {filled.length > 1 && (
             <div className="gym-wall-controls">
               <button

@@ -74,7 +74,7 @@
     "licence": "SIL OFL 1.1 — all faces free and self-hosted, no CDN"
   },
   "tokenCounts": {
-    "total": 98,
+    "total": 101,
     "type": 9,
     "space": 7,
     "motionDurations": 6,
@@ -101,6 +101,8 @@
     "--bone-300": "#DCCFB2",
     "--bone-400": "#B5A688",
     "--paper": "#F4EBD4",
+    "--card-ink": "#241C11",
+    "--card-ink-muted": "#6B5B44",
     "--paper-2": "#E6DABE",
     "--canvas-warm": "#EFE4C8",
     "--slate-board": "#1C2420",
@@ -124,6 +126,7 @@
     "--monitor": "#2E6E96",
     "--restricted": "#C05A1E",
     "--locked": "#A81E22",
+    "--filed": "#6B6355",
     "--cleared-deep": "#366A42",
     "--monitor-deep": "#2A6488",
     "--restricted-deep": "#9A4818",

@@ -87,13 +87,11 @@ export default function ParentProgressionVisibilityPage() {
               {capabilityStatus}
             </p>
             {errorMessage ? (
-              <div
-                className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-[color:var(--locked)] p-[var(--s4)]"
-                style={{ background: 'color-mix(in srgb, var(--locked) 10%, var(--canvas-warm))' }}
-                role="alert"
-              >
-                <span className="badge badge--locked"><i>✕</i>Failed</span>
-                <p className="t-body mt-[var(--s3)]">{errorMessage}</p>
+              <div className="alert alert--critical alert--tight" role="alert">
+                <div className="alert-body">
+                  <span className="badge badge--locked"><i>✕</i>Failed</span>
+                  <p className="alert-msg mt-[var(--s3)]">{errorMessage}</p>
+                </div>
               </div>
             ) : null}
           </header>

@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1220 754" role="img" aria-label="Illustration of the cork wall with notices pinned to it">
+  <!-- Placeholder illustration, not a photograph. The cork wall: notices,
+       a schedule card, tape and pins. Building only, no people, and the
+       papers deliberately carry no readable names. -->
+  <rect width="1220" height="754" fill="#14100D"/>
+  <!-- cork board in a wood frame -->
+  <rect x="80" y="60" width="1060" height="600" fill="#96682F"/>
+  <rect x="80" y="60" width="1060" height="600" fill="none" stroke="#3B2C21" stroke-width="14"/>
+  <rect x="94" y="74" width="1032" height="572" fill="none" stroke="#C08E4E" stroke-width="3" opacity="0.6"/>
+  <!-- pinned papers, deterministic tilt -->
+  <g>
+    <g transform="rotate(-2 300 220)">
+      <rect x="170" y="120" width="260" height="200" fill="#F4EBD4"/>
+      <circle cx="300" cy="132" r="7" fill="#A81E22"/>
+      <g stroke="#B5A688" stroke-width="4"><line x1="192" y1="170" x2="408" y2="170"/><line x1="192" y1="204" x2="408" y2="204"/><line x1="192" y1="238" x2="380" y2="238"/><line x1="192" y1="272" x2="408" y2="272"/></g>
+    </g>
+    <g transform="rotate(1.5 620 260)">
+      <rect x="500" y="130" width="240" height="260" fill="#EFE6D0"/>
+      <rect x="590" y="118" width="60" height="24" fill="#DCCFB2" opacity="0.8"/>
+      <g stroke="#6E5B3E" stroke-width="4"><line x1="522" y1="190" x2="718" y2="190"/><line x1="522" y1="228" x2="718" y2="228"/><line x1="522" y1="266" x2="690" y2="266"/><line x1="522" y1="304" x2="718" y2="304"/><line x1="522" y1="342" x2="660" y2="342"/></g>
+    </g>
+    <g transform="rotate(-1 950 240)">
+      <rect x="830" y="140" width="240" height="200" fill="#F4EBD4"/>
+      <circle cx="950" cy="152" r="7" fill="#46421F"/>
+      <text x="950" y="205" text-anchor="middle" font-family="Georgia, serif" font-weight="bold" font-size="34" letter-spacing="4" fill="#5C4632">TODAY</text>
+      <g stroke="#B5A688" stroke-width="4"><line x1="852" y1="240" x2="1048" y2="240"/><line x1="852" y1="274" x2="1020" y2="274"/><line x1="852" y1="308" x2="1048" y2="308"/></g>
+    </g>
+    <g transform="rotate(2 340 500)">
+      <rect x="220" y="410" width="240" height="180" fill="#EFE6D0"/>
+      <circle cx="340" cy="422" r="7" fill="#46421F"/>
+      <g stroke="#6E5B3E" stroke-width="4"><line x1="242" y1="460" x2="438" y2="460"/><line x1="242" y1="494" x2="410" y2="494"/><line x1="242" y1="528" x2="438" y2="528"/></g>
+    </g>
+    <g transform="rotate(-1.5 720 520)">
+      <rect x="560" y="440" width="320" height="160" fill="#F4EBD4"/>
+      <rect x="700" y="428" width="60" height="24" fill="#DCCFB2" opacity="0.8"/>
+      <g stroke="#B5A688" stroke-width="4"><line x1="582" y1="490" x2="858" y2="490"/><line x1="582" y1="524" x2="820" y2="524"/><line x1="582" y1="558" x2="858" y2="558"/></g>
+    </g>
+    <!-- one small photo-shaped card, drawn as an empty frame: even the
+         illustration does not invent a picture of a person -->
+    <g transform="rotate(1 1000 500)">
+      <rect x="930" y="420" width="150" height="170" fill="#EFE6D0"/>
+      <rect x="944" y="434" width="122" height="112" fill="#2A1F18"/>
+      <circle cx="1000" cy="432" r="6" fill="#A81E22"/>
+    </g>
+  </g>
+  <!-- honest label -->
+  <text x="1196" y="732" text-anchor="end" font-family="Menlo, Consolas, monospace" font-size="15" letter-spacing="3" fill="#B5A688">PLACEHOLDER ILLUSTRATION</text>
+</svg>
