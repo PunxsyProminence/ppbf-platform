@@ -53,6 +53,11 @@
   --bone-300: #DCCFB2;  /* secondary on leather */
   --bone-400: #B5A688;  /* tertiary, captions */
   --paper:    #F4EBD4;  /* torn notes, board packets */
+  /* The ink printed matter carries. Every paper-faced component (training
+     card, commands sheet) used to restate these two hexes by hand; they are
+     tokens so a component -- or an SVG seal -- can reference them. */
+  --card-ink:       #241C11;
+  --card-ink-muted: #6B5B44;
   --paper-2:  #E6DABE;  /* paper shadow side */
   --canvas-warm: #EFE4C8;  /* the second ground (Law 6) — Guardian, Public Onboarding */
 
@@ -554,6 +559,12 @@ body.ppbf {
   letter-spacing: .13em; text-transform: uppercase; color: var(--bone-400);
 }
 .t-data  { font: 650 13px/1.5 var(--font-data); color: var(--bone-200); }
+/* Display rungs for the record voice. The base pins 13px through the font
+   shorthand, which outranks a layered Tailwind text-[length:...] utility --
+   so a KPI figure could not be scaled without an inline style. These are the
+   sanctioned sizes; they must follow the base rule to win the tie. */
+.t-data--lg { font-size: var(--t-lg); line-height: 1.15; color: var(--bone-100); }
+.t-data--xl { font-size: var(--t-xl); line-height: 1.1;  color: var(--bone-100); }
 .t-hand  { font-family: var(--font-hand); font-size: 14px; line-height: 1.5; color: #33291B; }
 
 /* Hand-painted signage — plywood-and-brush lettering rather than the lit,
@@ -589,6 +600,12 @@ body.ppbf {
   border: 3px solid currentColor; border-radius: var(--r-sm);
   color: var(--stamp-red);
   rotate: -6deg;
+}
+/* Card-scale ink. The full stamp at --t-sm with a 3px border shouts inside a
+   panel heading row; this is the same mark at metadata size. */
+.stamp--sm {
+  font-size: var(--t-xs); border-width: 2px;
+  padding: var(--s1) var(--s2); letter-spacing: .07em;
 }
 .stamp::after {
   content: ""; position: absolute; inset: -3px; border-radius: inherit;
@@ -712,6 +729,9 @@ body.ppbf {
 .input::placeholder { color: #6E6152; }
 .input:focus, .select:focus, .textarea:focus { outline: 0; border-color: var(--brass-400); box-shadow: inset 0 2px 6px rgba(0,0,0,.7), var(--focus); }
 .input--kiosk { min-height: var(--tap); font-size: 19px; }
+/* Law 5 for sliders. .input--kiosk covers text controls only, so every floor
+   slider re-stated the tap height and the brass accent by hand. */
+.range--kiosk { min-height: var(--tap); width: 100%; accent-color: var(--brass-500); }
 
 /* ============================================================ ON CANVAS == */
 /* Law 6 — two grounds, one system. Everything above was tuned against ink
@@ -765,6 +785,25 @@ body.ppbf.on-canvas {
    public homepage's Nonprofit & Leadership list, the first canvas screen to
    put records on the page. */
 .on-canvas .t-data      { color: #2A2013; }
+/* The pending voice and the alert panels were tuned for ink and had no canvas
+   reading at all -- brass-300 at ~2:1 on cream, bone-100 body text invisible.
+   Same rung-down move as the eyebrow above, for the same reason. */
+.on-canvas .working     { color: var(--brass-800); }
+.on-canvas .alert--info,
+.on-canvas .alert--warning,
+.on-canvas .alert--critical,
+.on-canvas .alert--success { color: #2A2013; }
+
+/* ---- ON PLASTER ---------------------------------------------------------
+   room--board's upper wall is light plaster over the wainscot, and headers
+   standing on it need dark ink -- but the type voices pin light colors that
+   layered utilities cannot override, so every board header hand-composed
+   its own inks. Same mechanism as .on-canvas, scoped to the four voices a
+   header actually uses; apply it to the header block, not the room. */
+.on-plaster .t-eyebrow { color: var(--brass-800); }
+.on-plaster .t-command { color: #241B12; text-shadow: 0 1px 0 rgba(255,255,255,.4); }
+.on-plaster .t-body    { color: #3A2E1D; }
+.on-plaster .t-muted   { color: #6E5B3E; }
 
 /* ── Leather islands on a canvas page ──────────────────────────────────────
    Every rule above repaints a voice in dark ink because the ground under it is
@@ -1492,7 +1531,7 @@ body.ppbf.on-canvas {
    why it reads correctly in every room. */
 .t-press {
   font-family: var(--font-display); text-transform: uppercase;
-  color: #241C11;
+  color: var(--card-ink);
   text-shadow:
     calc(var(--sx, 1) * -1px) calc(var(--sy, 1) * -1px) 0 rgba(255,255,255,.42),
     calc(var(--sx, 1) *  1px) calc(var(--sy, 1) *  1px) 0 rgba(0,0,0,.34),
@@ -2005,6 +2044,9 @@ body.ppbf.on-canvas {
 .alert-action { margin-top: var(--s3); }
 .alert-action a { color: inherit; text-decoration: underline; cursor: pointer; }
 
+/* Field-level errors inside compact panels: the component's --s5 vertical
+   margin is a paragraph's spacing, not a field's. */
+.alert--tight { margin: var(--s2) 0; padding: var(--s3) var(--s4); }
 .alert--info    { border-left-color: var(--monitor);    background: color-mix(in srgb, var(--monitor) 12%, transparent);
                   color: var(--bone-100); }
 .alert--warning { border-left-color: var(--restricted); background: color-mix(in srgb, var(--restricted) 12%, transparent);
@@ -2350,6 +2392,35 @@ body.ppbf.on-canvas {
   text-transform: uppercase; color: var(--brass-300);
   display: inline-flex; align-items: center; gap: var(--s2);
 }
+
+/* ============================================================= STAT TILE ==
+   The label-over-figure cell every dashboard hand-composed from
+   mat-leather--raised + t-label + a mono figure. Layout and type ONLY, on
+   purpose: the material stays the markup's decision, so the same stat reads
+   correctly on leather, on paper, or inside a frame --
+     <div class="mat-leather--raised stat"> ... </div>
+   .tile is a navigation object (cursor, hover lift) and .plaque an inline
+   chip; neither is a measurement, which is why this exists. */
+.stat {
+  display: flex; flex-direction: column; gap: var(--s2);
+  padding: var(--s4) var(--s5);
+}
+.stat-label {
+  font: 650 11px/1 var(--font-data); letter-spacing: .1em;
+  text-transform: uppercase; color: var(--bone-400);
+}
+.stat-val {
+  font: 700 var(--t-xl)/1.1 var(--font-data);
+  color: var(--bone-100);
+}
+.stat-val--lg { font-size: var(--t-2xl); }
+/* One line under the figure -- measured-at, rate detail, caveat. */
+.stat-note {
+  font: 400 11px/1.5 var(--font-data); letter-spacing: .04em;
+  color: var(--bone-400);
+}
+/* A stat is a measurement, so a suppressed or unavailable value is still a
+   statement: pair with .stamp--flat rather than leaving the cell blank. */
 .working::before { content: "◴"; font-size: 13px; }
 
 /* ============================================================== FOCUS RING ===
@@ -2386,15 +2457,15 @@ body.ppbf.on-canvas {
             gap: var(--s5); flex-wrap: wrap; margin-bottom: var(--s5);
             border-bottom: 2px solid rgba(20,16,13,.2); padding-bottom: var(--s3); }
 .tcard-title { font-family: var(--font-display); text-transform: uppercase;
-               font-size: var(--t-md); letter-spacing: .05em; color: #241C11; margin: 0; }
+               font-size: var(--t-md); letter-spacing: .05em; color: var(--card-ink); margin: 0; }
 .tcard-sub { font: 400 11px/1.4 var(--font-data); letter-spacing: .06em;
-             text-transform: uppercase; color: #6B5B44; margin-top: 2px; }
+             text-transform: uppercase; color: var(--card-ink-muted); margin-top: 2px; }
 /* The count that never resets. */
 .tcard-count { text-align: right; line-height: 1; }
 .tcard-count b { display: block; font-family: var(--font-display); font-size: var(--t-2xl);
-                 color: #241C11; line-height: .9; }
+                 color: var(--card-ink); line-height: .9; }
 .tcard-count span { display: block; font: 650 9.5px/1 var(--font-data); letter-spacing: .14em;
-                    text-transform: uppercase; color: #6B5B44; margin-top: var(--s2); }
+                    text-transform: uppercase; color: var(--card-ink-muted); margin-top: var(--s2); }
 
 /* The grid of impressions. */
 .tcard-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(34px, 1fr));
@@ -2435,7 +2506,7 @@ body.ppbf.on-canvas {
 .tcard-seal-slot { text-align: center; }
 .tcard-seal-slot .tcard-seal-lbl {
   display: block; font: 650 9px/1.5 var(--font-data); letter-spacing: .1em;
-  text-transform: uppercase; color: #6B5B44; margin-top: var(--s2);
+  text-transform: uppercase; color: var(--card-ink-muted); margin-top: var(--s2);
 }
 /* An unearned milestone is drawn, not hidden — you can see what is next.
    NOT named "--locked": in this platform "locked" is the Layer 11 safety state,
@@ -2510,7 +2581,7 @@ body.ppbf.on-canvas {
 .tcard-earned[hidden] { display: none; }
 
 .tcard-legend { display: flex; gap: var(--s5); flex-wrap: wrap; margin-top: var(--s4);
-                font: 400 10.5px/1.5 var(--font-ui); color: #6B5B44; }
+                font: 400 10.5px/1.5 var(--font-ui); color: var(--card-ink-muted); }
 .tcard-legend i { font-style: normal; display: inline-block; width: 11px; height: 11px;
                   border-radius: 2px; vertical-align: -1px; margin-right: var(--s2);
                   border: 1.5px solid rgba(36,28,17,.6); }
@@ -2539,9 +2610,9 @@ body.ppbf.on-canvas {
 .commands-sheet-hd { border-bottom: 2px solid rgba(20,16,13,.24); padding-bottom: var(--s3);
                      margin-bottom: var(--s4); }
 .commands-sheet-hd b { display: block; font-family: var(--font-display); text-transform: uppercase;
-                       font-size: var(--t-lg); letter-spacing: .04em; color: #241C11; line-height: 1; }
+                       font-size: var(--t-lg); letter-spacing: .04em; color: var(--card-ink); line-height: 1; }
 .commands-sheet-hd span { display: block; margin-top: var(--s2); font-size: 11px;
-                          color: #6B5B44; line-height: 1.45; }
+                          color: var(--card-ink-muted); line-height: 1.45; }
 
 .commands-scope { margin-bottom: var(--s4); }
 .commands-scope-hd { font: 650 9.5px/1 var(--font-data); letter-spacing: .14em;
@@ -2555,7 +2626,7 @@ body.ppbf.on-canvas {
 }
 .commands-sheet .commands-item:last-child { border-bottom: 0; }
 .commands-sheet .commands-key {
-  flex: 0 0 74px; font: 650 12px/1.6 var(--font-data); color: #241C11;
+  flex: 0 0 74px; font: 650 12px/1.6 var(--font-data); color: var(--card-ink);
   background: rgba(20,16,13,.07); border: 1px solid rgba(20,16,13,.22);
   border-radius: 3px; padding: 1px 6px; text-align: center; white-space: nowrap;
 }
@@ -2563,10 +2634,10 @@ body.ppbf.on-canvas {
                                  text-align: left; }
 
 .commands-sheet-ft { border-top: 1px solid rgba(20,16,13,.16); padding-top: var(--s3);
-                     font-size: 10.5px; color: #6B5B44; }
+                     font-size: 10.5px; color: var(--card-ink-muted); }
 .commands-sheet-ft kbd {
   font: 650 9.5px/1.5 var(--font-data); padding: 1px 5px; border-radius: 3px;
-  background: rgba(20,16,13,.08); border: 1px solid rgba(20,16,13,.24); color: #241C11;
+  background: rgba(20,16,13,.08); border: 1px solid rgba(20,16,13,.24); color: var(--card-ink);
 }
 
 /* ======================================================== PRINT MEDIA RULES === */
