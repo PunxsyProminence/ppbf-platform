@@ -1434,11 +1434,11 @@ export default function CoachWorkspace() {
                   : 'Live work items derived from the SHADOW review queue — nothing here is invented, and an empty board means the queue is clear.'}
                 usage={[
                   'Work HIGH priority items first',
-                  'Items clear automatically when the underlying review is resolved',
-                  'Use the SHADOW tab to act on review-queue items'
+                  'Items clear automatically when the underlying review is resolved elsewhere',
+                  'Open the SHADOW Intel tab to read live queue items (read-only here — approve/reject runs on the admin SHADOW console)'
                 ]}
                 mistakes={[
-                  'Letting review-queue items sit unresolved',
+                  'Treating an empty board as proof the org queue is clear when the load failed',
                   'Ignoring related athlete information'
                 ]}
               />
