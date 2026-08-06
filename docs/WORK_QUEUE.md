@@ -156,7 +156,8 @@ Ordered by a floor-readiness trace run 2026-08-01.
 | Athlete record correction + deactivation | session A | `feature/knowledge-and-feedback` |
 | Athlete check-out losing notes | session A | `feature/knowledge-and-feedback` |
 | Coach coverage (403 on a covered class) | session A | `feature/knowledge-and-feedback` |
-| Attendance Engine (#122, per `docs/CAPABILITY_BUILD_PLAN_2026-08-03.md`): attendance reporting/rollup, bulk class check-in, parent-check-in method attribution fix | session B | `claude/remaining-capabilities-ab0q7d` |
+| Attendance Engine (#122, per `docs/CAPABILITY_BUILD_PLAN_2026-08-03.md`): attendance reporting/rollup, bulk class check-in, parent-check-in method attribution fix | session B | `claude/remaining-capabilities-ab0q7d` — PR [#238](https://github.com/PunxsyProminence/ppbf-platform/pull/238) |
+| Safety Gate Matrix (#3 + #43, per `docs/CAPABILITY_BUILD_PLAN_2026-08-03.md` Phase 1): `pilot.safety_gates` + `pilot.safety_gate_evaluations` substrate, `contactClearanceGate.ts` wired in as its first (flag-type) gate, per-org seeding on org creation | session B | `claude/remaining-capabilities-ab0q7d` |
 
 **Free for the other session** — none of the above, and none of these files:
 `scripts/`, `.github/workflows/`, `apps/web/app/admin/page.tsx`,
