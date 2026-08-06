@@ -191,17 +191,38 @@ Your patches are applied and run by others, so:
 
 Two roles, and an AI is in exactly one of them for a given piece of work.
 
-**Builders — Claude sessions with repository and shell execution.**
-All application, infrastructure, migration, and design code is written by
-these. A builder must *prove* its work: run the suite, run the affected
-tests, measure the behavior it claims, and say in the PR what it executed.
-"It should now work" is not a deliverable; §1 applies with full force.
+**Builders — Claude sessions with repository and shell execution (Lane A),
+or a named model producing file output against a ticket for the gatekeeper
+to integrate (Lane B, see `AI_DELIVERY_PIPELINE.md`).** All application,
+infrastructure, migration, and design code is written by these. A Lane A
+builder must *prove* its work: run the suite, run the affected tests,
+measure the behavior it claims, and say in the PR what it executed. "It
+should now work" is not a deliverable; §1 applies with full force. A Lane B
+builder cannot run anything, so it marks every behavioral claim
+`UNVERIFIED` instead (§10) — the gatekeeper is what turns that into proof,
+not the builder's say-so.
 
-**Auditors — other model families (Grok, ChatGPT, and any future model),
-audit-only.** They read the repository and report findings. They do NOT
-open PRs, write fixes, change files, or dispatch workflows. Their findings
-go to the deploy coordinator, who verifies each one — by measurement where
-possible — before any of it becomes an execution brief for a builder.
+**Auditors — the default mode for other model families (Grok, ChatGPT, and
+any future model) is audit-only.** They read the repository and report
+findings; they never open PRs, commit, or dispatch workflows themselves.
+Findings go to the deploy coordinator, who verifies each one — by
+measurement where possible — before any of it becomes an execution brief
+for a builder.
+
+**Lane B is the one named exception to audit-only, and it does not weaken
+the split below.** A model in Lane B may produce complete file output
+against a ticket, left in `intake/drops/<ticket-id>/` — it still never
+touches git, opens a PR, or dispatches a workflow. That drop is a
+*candidate*, not a merged builder's output: the gatekeeper reconciles it
+onto its own branch and runs the identical full verification gate
+(`AI_DELIVERY_PIPELINE.md`, "What the gatekeeper runs on every intake")
+that any Lane A PR passes through before anything reaches `main`. A drop
+that fails the gate is returned as feedback, never merged with the gap
+patched over silently. The asymmetry this section is built on —
+"survivable in an auditor whose output is verified before use, and not
+survivable in a builder whose output is merged" — is exactly why that gate
+exists: Lane B output is never unverified by the time it merges, so it
+never reaches the failure mode audit-only was written to prevent.
 
 **Why this split, from measured experience (2026-07-30, seven audit
 reports across three model families):**
