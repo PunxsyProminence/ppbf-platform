@@ -26,9 +26,11 @@ Rough scoreboard across the 200 detailed items:
 
 | Status | Count (approx.) | Meaning |
 |---|---|---|
-| ✅ Built | ~18 | A dedicated module + route + surface exists and is tested |
+| ✅ Built | 21 marked, 20 distinct | A dedicated module + route + surface exists and is tested. #113/#166 are the same code under two capability numbers (drift-checked 2026-08-06 — see below) |
 | 🟡 Partial | ~54 | Real code covers part of the capability's scope |
-| ⬜ Not started | ~128 | No dedicated code found |
+| ⬜ Not started | ~125 | No dedicated code found |
+
+**Drift check, 2026-08-06:** every row marked ✅ was audited against the actual codebase (does the cited evidence exist, still do what's claimed, and get reached by a real route/UI?). 16 of 21 confirmed clean. Five had real drift, each corrected in its own row: #8's evidence cited the wrong file for the review queue; #9 is admin-only, not athlete self-service, despite the "athlete portal" claim; #113/#166 are one capability double-counted under two numbers; #119's audit write path is real but has no reachable read UI. #82/#198/#200 (this session's builds) were verified end-to-end with full test suites at build time and are not re-audited here.
 
 The build so far has been **deep in four areas** — identity/governance, SHADOW
 (AI layer), coach review/video, and board/compliance — and **thin in the
@@ -54,8 +56,8 @@ Evidence pointers are the primary module or route; tests live alongside.
 | 5 | Progression Decision System | 🟡 | `progression.ts`, coach reviews; decision rules thin | 1 |
 | 6 | Training Assignment System | 🟡 | `admin/track-assignments`, `progression/assignments` | 1 |
 | 7 | Session Builder | 🟡 | sessions CRUD exists (`api/pilot/sessions/*`); no builder workflow | 3 |
-| 8 | Coach Review System | ✅ | `api/pilot/coach-reviews/*`, `coach/review-queue` | — |
-| 9 | Athlete Update System | ✅ | `athletes/update`, athlete portal | — |
+| 8 | Coach Review System | ✅ | Drift-corrected 2026-08-06: submission is `api/pilot/coach-reviews/route.ts` (real, called by `CoachWorkspace.tsx`); the queue a coach actually sees is `api/pilot/shadow/review-projection`, not `coach-reviews/list` (real route, but never called — the evidence cell named the wrong file). | — |
+| 9 | Athlete Update System | ✅ | Drift-corrected 2026-08-06: `athletes/update` is real but is an **admin-only correction tool** (`app/admin/athletes/page.tsx`, `allowedRoles={['admin','platform_owner']}`) — it is not called anywhere under `app/athlete/*`. "Athlete portal" self-service update does not exist; the capability as built is staff-side only. | — |
 | 10 | Development Route System | 🟡 | routing pieces in progression; Route Factory not built | 3 |
 | 11 | Goal Management System | 🟡 | `api/pilot/goals/*`; **known gap:** category & progress read by UI, stored nowhere (`pilot_slice_postgres.sql:77`) | 1 |
 | 12 | Roster / Participation System | 🟡 | roster export exists; no attendance (see #122) | 2 |
@@ -206,13 +208,13 @@ sits behind the Privacy-Tier System (#200).
 | 110 | Coaching Doctrine Engine | 🟡 | SHADOW doctrine filtering | 5 |
 | 111 | Coach Intelligence Engine | 🟡 | `coach/progression-intelligence` page | 5 |
 | 112 | Coach Training Module | ⬜ | | 5 |
-| 113 | Coach Dashboard | ✅ | `app/coach/*` (8 workspaces) | — |
+| 113 | Coach Dashboard | ✅ | `app/coach/*` (8 workspaces). Drift note 2026-08-06: **duplicate of #166** — same title, same code, two different category framings in the master list (`expanded-200-index.json` ModuleId 113 vs 166). No root `app/coach/page.tsx` aggregates the 8 workspaces into an actual dashboard; the scoreboard's "~18 built" double-counts this pair by one. | — |
 | 114 | Coach Cue Library | 🟡 | drills library adjacent | 5 |
 | 115 | Coach Intervention Library | ⬜ | | 5 |
 | 116 | Coach Compliance / Integrity Engine | ⬜ | | 4 |
 | 117 | Coach Scenario Training | ⬜ | | 5 |
 | 118 | Coach Review Queue | ✅ | `coach/review-queue` | — |
-| 119 | Coach Decision Audit | ✅ | audit trail + `shadowAuditEntries.ts` | — |
+| 119 | Coach Decision Audit | ✅ | Drift-corrected 2026-08-06: writes are real (`writeShadowAuditEntry`, called from `shadowDecisions.ts`/`shadowRecommendations.ts`/`shadowNearMisses.ts`/`shadowMedicalStatus.ts`/`shadowDecisionOutcomes.ts`); `listShadowAuditEntries` has zero callers anywhere in `app/` — no route lets anyone read this trail back. The one reachable audit UI (`app/audit/page.tsx`) reads a different table (`pilot.audit_events`) that decision code never writes to. Recorded, unreadable. | — |
 
 ### Group L — Class / Program Management (120–129)
 
