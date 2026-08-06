@@ -1599,7 +1599,7 @@ export default function AthleteWorkspace() {
         <div className="space-y-6">
           {/* MY DASHBOARD */}
           {activeTab === 'my-dashboard' && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 panel-settle">
               <section className={PANEL}>
                 <h3 className="t-label">Quick Actions</h3>
                 <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-2 lg:grid-cols-4">
@@ -1832,7 +1832,7 @@ export default function AthleteWorkspace() {
 
           {/* ATHLETE FLOOR */}
           {activeTab === 'athlete-floor' && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 panel-settle">
               {lastWorkoutBuildNote && (
                 <div className={PANEL}>
                   <p className="t-eyebrow">Today&apos;s Work</p>
@@ -1931,7 +1931,7 @@ export default function AthleteWorkspace() {
 
           {/* SMART GOALS */}
           {activeTab === 'smart-goals' && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 panel-settle">
               <div className="flex justify-between items-start">
                 <HelpPanel
                   title="SMART Goals"
@@ -2126,7 +2126,7 @@ export default function AthleteWorkspace() {
 
           {/* TRACKS - Placeholder */}
           {activeTab === 'tracks' && (
-            <div className={`${PANEL} space-y-[var(--s4)] animate-fadeIn`}>
+            <div className={`${PANEL} space-y-[var(--s4)] panel-settle`}>
               <h3 className="t-label">Track Management</h3>
               <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">View current track assignment and request upgrades as you progress.</p>
               {/* Track assignment, membership, scholarship, and support status
@@ -2150,7 +2150,7 @@ export default function AthleteWorkspace() {
 
           {/* ASSESSMENTS - Placeholder */}
           {activeTab === 'assessments' && (
-            <div className={`${PANEL} space-y-[var(--s4)] animate-fadeIn`}>
+            <div className={`${PANEL} space-y-[var(--s4)] panel-settle`}>
               <h3 className="t-label">Assessments</h3>
               <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Complete personality tests, surveys, and skill assessments.</p>
               {/* Not-built-yet is a statement of fact, not a refusal or a safety
@@ -2176,7 +2176,7 @@ export default function AthleteWorkspace() {
 
           {/* BIO CHECK-IN */}
           {activeTab === 'bio-checkin' && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 panel-settle">
               <HelpPanel
                 title="Bio Check-In"
                 description="Daily biological assessment covering sleep, vitals, recovery, mental state, and training readiness."
@@ -2244,7 +2244,7 @@ export default function AthleteWorkspace() {
 
           {/* DRILL LIBRARY */}
           {activeTab === 'drill-library' && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 panel-settle">
               <HelpPanel
                 title="Drill Library"
                 description="Physical lesson items and technical boxing drills organized by category with coaching cues."
@@ -2317,7 +2317,7 @@ export default function AthleteWorkspace() {
 
           {/* RABBIT HOLES / LEARNING */}
           {activeTab === 'rabbit-holes' && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 panel-settle">
               <HelpPanel
                 title="Rabbit Holes - Deep Learning"
                 description="Deep-dive lessons your coaches wrote, each one a concept to understand and something to go and do with it."
@@ -2347,7 +2347,7 @@ export default function AthleteWorkspace() {
 
           {/* MESSAGE COACH */}
           {activeTab === 'message-coach' && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 panel-settle">
               <HelpPanel
                 title="Message Coach"
                 description="Write a question for your coach. It is recorded in your own SHADOW conversation and answered by SHADOW -- it is not delivered to the coach."
@@ -2416,7 +2416,7 @@ export default function AthleteWorkspace() {
 
           {/* SCHEDULE SESSION */}
           {activeTab === 'schedule-session' && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 panel-settle">
               <div className="flex flex-wrap gap-[var(--s3)]">
                 <Link href="/schedule" className="btn min-h-[var(--tap)]">
                   Open Unified Scheduler
@@ -2446,7 +2446,7 @@ export default function AthleteWorkspace() {
 
           {/* SHADOW AI */}
           {activeTab === 'shadow' && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 panel-settle">
               <RoleSpecificShadow
                 role="athlete"
                 description="Ask SHADOW about your next workout, goals, or progress. Open the real SHADOW chat to get a response -- this workspace does not answer questions inline."
