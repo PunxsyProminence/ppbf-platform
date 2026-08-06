@@ -1,4 +1,5 @@
 import { query, withTransaction } from './db';
+import { fileEscalation, shouldAutoEscalateNearMiss } from './escalationLadder';
 import { writeShadowAuditEntry } from './shadowAuditEntries';
 
 export type ShadowNearMissSeverity = 'low' | 'moderate' | 'high' | 'critical';
@@ -73,6 +74,30 @@ export async function flagNearMiss(input: {
       actorRole: input.detectedByRole,
       afterState: { severity: row.severity, decisionId: row.decision_id },
     });
+
+    // High/critical near misses escalate automatically -- see
+    // escalationLadder.ts's module doc for why this is the one chokepoint
+    // both contactClearanceGate.ts and painReportAlert.ts flow through, and
+    // why 'low'/'moderate' stay pull-only rather than escalating every near
+    // miss into noise. Same transaction as the near-miss insert above: one
+    // severe enough to escalate must never commit without its escalation.
+    if (shouldAutoEscalateNearMiss(row.severity)) {
+      await fileEscalation(
+        {
+          organizationId: input.organizationId,
+          sourceType: 'near_miss',
+          sourceId: row.near_miss_id,
+          athleteId: row.athlete_id,
+          severity: row.severity,
+          reason: row.description,
+          triggeredBy: 'system',
+          triggeredByAccountId: input.detectedByAccountId,
+          triggeredByRole: input.detectedByRole,
+          metadata: { near_miss_id: row.near_miss_id, trigger: (row.metadata as { trigger?: string } | null)?.trigger },
+        },
+        client,
+      );
+    }
 
     return row;
   });

@@ -753,6 +753,46 @@ create index if not exists idx_safety_gate_evaluations_org_athlete
 create index if not exists idx_safety_gate_evaluations_org_gate
   on pilot.safety_gate_evaluations(organization_id, gate_key, evaluated_at desc);
 
+-- Red Flag Escalation ladder (capability #194): pull-based surface a coach
+-- or admin checks so a near miss, pain report, or safety-gate flag does not
+-- sit undiscovered in its own insert-only table. See
+-- pilot_slice_postgres_safety_escalations_migration.sql for the full design
+-- rationale -- escalated_to_role is constrained and deliberately excludes
+-- 'board' (an aggregate-only side channel, not a rung on the escalation
+-- ladder).
+create table if not exists pilot.safety_escalations (
+  organization_id             text not null references pilot.organizations(organization_id) on delete cascade,
+  escalation_id                text not null,
+  source_type                  text not null check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern')),
+  source_id                    text null,
+  athlete_id                   text not null,
+  severity                     text not null check (severity in ('low', 'moderate', 'high', 'critical')),
+  reason                       text not null,
+  escalated_to_role            text not null check (escalated_to_role in ('coach', 'organization_admin', 'admin')),
+  triggered_by                 text not null check (triggered_by in ('system', 'human')),
+  triggered_by_account_id      text null,
+  triggered_by_role            text null,
+  status                       text not null default 'open' check (status in ('open', 'acknowledged', 'resolved')),
+  acknowledged_by_account_id   text null,
+  acknowledged_at              timestamptz null,
+  resolved_by_account_id       text null,
+  resolved_at                  timestamptz null,
+  resolution_note              text not null default '',
+  metadata                     jsonb not null default '{}'::jsonb,
+  created_at                   timestamptz not null default now(),
+  updated_at                   timestamptz not null default now(),
+  primary key (organization_id, escalation_id),
+  foreign key (organization_id, athlete_id)
+    references pilot.athletes(organization_id, athlete_id)
+    on delete cascade
+);
+
+create index if not exists idx_safety_escalations_org_status
+  on pilot.safety_escalations(organization_id, status, created_at desc);
+
+create index if not exists idx_safety_escalations_org_athlete
+  on pilot.safety_escalations(organization_id, athlete_id, created_at desc);
+
 -- Document ingest backend audit stream
 create table if not exists pilot.document_ingest_audit (
   audit_id     bigserial primary key,

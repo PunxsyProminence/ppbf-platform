@@ -1,0 +1,343 @@
+// Real PostgreSQL-backed contract test for the Safety Escalations migration
+// (pilot.safety_escalations) -- capability #194.
+//
+// Unlike the safety-gate-matrix and compliance-rule-seeds migrations, this
+// one seeds nothing: an escalation only exists once a near miss, pain
+// report, or safety-gate flag actually happens, so an empty table after
+// migration is the correct starting state, not a gap to prove closed.
+// What needs proving instead:
+//
+// 1. The table and its vocabulary constraints exist and are enforced by the
+//    database, not only by the TypeScript module.
+// 2. 'board' is specifically rejected as an escalated_to_role -- board is
+//    an aggregate-only side channel, not a rung on this ladder, and that
+//    boundary should not be something only application code remembers.
+// 3. Foreign keys hold: an escalation cannot reference an athlete or
+//    organization that does not exist.
+//
+// Spins up the same disposable, local-only embedded Postgres the other
+// migration suites use. It NEVER connects to production or staging.
+
+import { type ChildProcessByStdio, spawn } from 'node:child_process';
+import fs from 'node:fs/promises';
+import net from 'node:net';
+import os from 'node:os';
+import path from 'node:path';
+import readline from 'node:readline';
+import type { Readable } from 'node:stream';
+
+import { Client } from 'pg';
+
+jest.setTimeout(180_000);
+
+const PG_USER = 'postgres';
+const PG_PASSWORD = 'postgres';
+const DATA_DIR = path.join(os.tmpdir(), `ppbf-safety-escalations-pg-test-${Date.now()}`);
+const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedded-pg-server.mjs');
+const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
+const MIGRATION_FILE = 'pilot_slice_postgres_safety_escalations_migration.sql';
+
+const ORG_ID = 'org-escalations';
+const COACH_ID = 'acct-escalations-coach';
+const ATHLETE_ID = 'ATH-ESCALATIONS-1';
+
+let PG_PORT: number;
+let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
+let migrationSql: string;
+let baseSchemaSql: string;
+
+function connectionStringFor(database: string): string {
+  return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
+}
+
+async function findFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.unref();
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (address && typeof address === 'object') {
+        const { port } = address;
+        server.close(() => resolve(port));
+      } else {
+        server.close(() => reject(new Error('Could not determine a free port')));
+      }
+    });
+  });
+}
+
+/** Fresh database with the base schema and one org/coach/athlete. */
+async function freshDatabase(name: string, applyIncrement = false): Promise<Client> {
+  const admin = new Client({ connectionString: connectionStringFor('postgres') });
+  await admin.connect();
+  await admin.query(`drop database if exists ${name}`);
+  await admin.query(`create database ${name}`);
+  await admin.end();
+
+  const client = new Client({ connectionString: connectionStringFor(name) });
+  await client.connect();
+  await client.query(baseSchemaSql);
+  await client.query(
+    `insert into pilot.organizations (organization_id, organization_name, status)
+     values ($1, $1, 'active') on conflict do nothing`,
+    [ORG_ID],
+  );
+  await client.query(
+    `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+     values ($1, 'coach', $2, 'microsoft') on conflict do nothing`,
+    [COACH_ID, ORG_ID],
+  );
+  await client.query(
+    `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+     values ($1, $2, 'Escalations Athlete', '2011-05-06', 'fly', 'active', 'contact', true, $3, now(), now())`,
+    [ORG_ID, ATHLETE_ID, COACH_ID],
+  );
+  if (applyIncrement) {
+    await client.query(migrationSql);
+  }
+  return client;
+}
+
+async function insertEscalation(client: Client, overrides: Partial<Record<string, unknown>> = {}): Promise<void> {
+  const row = {
+    escalation_id: 'esc-1',
+    source_type: 'near_miss',
+    source_id: null,
+    athlete_id: ATHLETE_ID,
+    severity: 'critical',
+    reason: 'Contact logged without a current medical clearance.',
+    escalated_to_role: 'organization_admin',
+    triggered_by: 'system',
+    triggered_by_account_id: COACH_ID,
+    triggered_by_role: 'coach',
+    status: 'open',
+    ...overrides,
+  };
+  await client.query(
+    `insert into pilot.safety_escalations (
+       organization_id, escalation_id, source_type, source_id, athlete_id,
+       severity, reason, escalated_to_role, triggered_by,
+       triggered_by_account_id, triggered_by_role, status
+     ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+    [
+      ORG_ID,
+      row.escalation_id,
+      row.source_type,
+      row.source_id,
+      row.athlete_id,
+      row.severity,
+      row.reason,
+      row.escalated_to_role,
+      row.triggered_by,
+      row.triggered_by_account_id,
+      row.triggered_by_role,
+      row.status,
+    ],
+  );
+}
+
+beforeAll(async () => {
+  PG_PORT = await findFreePort();
+
+  serverProcess = spawn(process.execPath, [SERVER_SCRIPT_PATH, DATA_DIR, String(PG_PORT)], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  let stderrOutput = '';
+  serverProcess.stderr.on('data', (chunk) => {
+    stderrOutput += chunk.toString();
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    const rl = readline.createInterface({ input: serverProcess.stdout });
+    const timeout = setTimeout(() => {
+      rl.close();
+      reject(new Error(`Embedded Postgres did not become ready in time. stderr:\n${stderrOutput}`));
+    }, 120_000);
+
+    rl.on('line', (line) => {
+      if (line.includes('EMBEDDED_PG_READY')) {
+        clearTimeout(timeout);
+        rl.close();
+        resolve();
+      }
+    });
+
+    serverProcess.once('exit', (code) => {
+      clearTimeout(timeout);
+      reject(new Error(`Embedded Postgres process exited early (code ${code}). stderr:\n${stderrOutput}`));
+    });
+  });
+
+  baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
+  migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
+});
+
+afterAll(async () => {
+  await new Promise<void>((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(safetyTimer);
+      resolve();
+    };
+    const safetyTimer = setTimeout(finish, 15_000);
+    safetyTimer.unref();
+    serverProcess.once('exit', finish);
+    serverProcess.kill('SIGTERM');
+  });
+});
+
+describe('safety escalations against real Postgres', () => {
+  test('the base schema already carries the table (fresh environments need no increment)', async () => {
+    const client = await freshDatabase('ppbf_test_escalations_base');
+    try {
+      const { rows } = await client.query(`select count(*)::int as n from pilot.safety_escalations`);
+      expect(rows[0].n).toBe(0);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('re-running the increment migration on top of the base schema is a safe no-op', async () => {
+    const client = await freshDatabase('ppbf_test_escalations_rerun', false);
+    try {
+      await insertEscalation(client);
+      await client.query(migrationSql);
+
+      const { rows } = await client.query(`select escalation_id from pilot.safety_escalations where organization_id = $1`, [ORG_ID]);
+      expect(rows).toEqual([{ escalation_id: 'esc-1' }]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('status defaults to open, and every timestamp/resolution column starts empty', async () => {
+    const client = await freshDatabase('ppbf_test_escalations_defaults');
+    try {
+      await insertEscalation(client);
+
+      const { rows } = await client.query(
+        `select status, acknowledged_at, resolved_at, resolution_note from pilot.safety_escalations where escalation_id = 'esc-1'`,
+      );
+      expect(rows[0]).toEqual({ status: 'open', acknowledged_at: null, resolved_at: null, resolution_note: '' });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test.each([
+    ['source_type', 'source_type', 'made_up_source'],
+    ['severity', 'severity', 'urgent'],
+    ['status', 'status', 'unread'],
+    ['escalated_to_role', 'escalated_to_role', 'board'],
+    ['escalated_to_role', 'escalated_to_role', 'platform_owner'],
+    ['triggered_by', 'triggered_by', 'ai'],
+  ])('the database refuses an invalid %s value', async (_label, column, badValue) => {
+    const client = await freshDatabase('ppbf_test_escalations_vocab');
+    try {
+      await expect(insertEscalation(client, { [column]: badValue })).rejects.toThrow(/violates check constraint/i);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('every admitted status value stores', async () => {
+    const client = await freshDatabase('ppbf_test_escalations_status_admits');
+    try {
+      for (const [index, status] of ['open', 'acknowledged', 'resolved'].entries()) {
+        await client.query(
+          `insert into pilot.safety_escalations (
+             organization_id, escalation_id, source_type, athlete_id, severity, reason,
+             escalated_to_role, triggered_by, status
+           ) values ($1,$2,'near_miss',$3,'low','x','coach','system',$4)`,
+          [ORG_ID, `esc-status-${index}`, ATHLETE_ID, status],
+        );
+      }
+      const { rows } = await client.query(
+        `select status from pilot.safety_escalations where organization_id = $1 order by status`,
+        [ORG_ID],
+      );
+      expect(rows.map((r) => r.status)).toEqual(['acknowledged', 'open', 'resolved']);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('an escalation cannot reference an athlete that does not exist', async () => {
+    const client = await freshDatabase('ppbf_test_escalations_fk_athlete');
+    try {
+      await expect(insertEscalation(client, { athlete_id: 'ATH-DOES-NOT-EXIST' })).rejects.toThrow(
+        /violates foreign key constraint/i,
+      );
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('an escalation cannot reference an organization that does not exist', async () => {
+    const client = await freshDatabase('ppbf_test_escalations_fk_org');
+    try {
+      await expect(
+        client.query(
+          `insert into pilot.safety_escalations (
+             organization_id, escalation_id, source_type, athlete_id, severity, reason,
+             escalated_to_role, triggered_by
+           ) values ('org-does-not-exist','esc-x','near_miss',$1,'low','x','coach','system')`,
+          [ATHLETE_ID],
+        ),
+      ).rejects.toThrow(/violates foreign key constraint/i);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('resolving stamps resolved_at, resolved_by, and the resolution note together', async () => {
+    const client = await freshDatabase('ppbf_test_escalations_resolve');
+    try {
+      await insertEscalation(client);
+
+      await client.query(
+        `update pilot.safety_escalations
+         set status = 'resolved', resolved_by_account_id = $2, resolved_at = now(), resolution_note = $3
+         where organization_id = $1 and escalation_id = 'esc-1'`,
+        [ORG_ID, COACH_ID, 'Cleared by physician, note on file.'],
+      );
+
+      const { rows } = await client.query(
+        `select status, resolved_by_account_id, resolution_note, resolved_at is not null as has_resolved_at
+         from pilot.safety_escalations where escalation_id = 'esc-1'`,
+      );
+      expect(rows[0]).toEqual({
+        status: 'resolved',
+        resolved_by_account_id: COACH_ID,
+        resolution_note: 'Cleared by physician, note on file.',
+        has_resolved_at: true,
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('source_id is nullable, for a repeated_pattern escalation with no single originating row', async () => {
+    const client = await freshDatabase('ppbf_test_escalations_null_source');
+    try {
+      await client.query(
+        `insert into pilot.safety_escalations (
+           organization_id, escalation_id, source_type, source_id, athlete_id, severity, reason,
+           escalated_to_role, triggered_by, metadata
+         ) values ($1,'esc-pattern','repeated_pattern',null,$2,'high','pattern reason','organization_admin','system','{"trigger_key":"x"}'::jsonb)`,
+        [ORG_ID, ATHLETE_ID],
+      );
+
+      const { rows } = await client.query(
+        `select source_id, metadata from pilot.safety_escalations where escalation_id = 'esc-pattern'`,
+      );
+      expect(rows[0]).toEqual({ source_id: null, metadata: { trigger_key: 'x' } });
+    } finally {
+      await client.end();
+    }
+  });
+});

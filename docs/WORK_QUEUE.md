@@ -158,30 +158,43 @@ Ordered by a floor-readiness trace run 2026-08-01.
 | Coach coverage (403 on a covered class) | session A | `feature/knowledge-and-feedback` |
 | Attendance Engine (#122, per `docs/CAPABILITY_BUILD_PLAN_2026-08-03.md`): attendance reporting/rollup, bulk class check-in, parent-check-in method attribution fix | session B | `claude/remaining-capabilities-ab0q7d` — PR [#238](https://github.com/PunxsyProminence/ppbf-platform/pull/238), ready for review |
 | Safety Gate Matrix (#3 + #43, per `docs/CAPABILITY_BUILD_PLAN_2026-08-03.md` Phase 1): `pilot.safety_gates` + `pilot.safety_gate_evaluations` substrate, `contactClearanceGate.ts` wired in as its first (flag-type) gate, per-org seeding on org creation | session B | `claude/remaining-capabilities-ab0q7d` — same PR [#238](https://github.com/PunxsyProminence/ppbf-platform/pull/238) |
+| Red Flag Escalation Protocol (#194, per `docs/CAPABILITY_BUILD_PLAN_2026-08-03.md` Phase 1): `pilot.safety_escalations`, `escalationLadder.ts`, auto-escalation from `shadowNearMisses.ts`, `/admin/escalations`, repeated-pattern detector, board-safe summary | session B | `claude/remaining-capabilities-ab0q7d` — same PR [#238](https://github.com/PunxsyProminence/ppbf-platform/pull/238) |
 
 ### PR #238 — ready for VS Code
 
-Both items above are in one PR (single-branch constraint this session; see the
-PR body for why). Remote's side is done: typecheck/lint clean, full unit
-suite green (3684 tests), both new `test:migrations:*` suites green against
-embedded Postgres, `list-check` equivalent passed locally. Marked ready for
-review; CI (`validate`) was still running as of this note.
+Three items above are in one PR (single-branch constraint this session; see
+the PR body for why). Remote's side is done: typecheck/lint clean, full unit
+suite green (3726 tests), all four new `test:migrations:*` suites green
+against embedded Postgres, `list-check` equivalent passed locally. A GitHub
+Copilot review caught 4 real issues (a foreign-key crash risk on a
+pre-migration organization, an N+1 + race in the bulk attendance upsert, a
+raw-string category field with no compile-time link to the DB's CHECK
+constraint, an unvalidated `since` query param that could 500 instead of
+400) — all four fixed and covered by new/updated tests in the same PR. One
+comment (RoleSessionGate missing `organization_admin`) was investigated and
+found incorrect for this codebase (`mapPilotRoleToClubRole` already
+normalizes `organization_admin` to the client-side `admin` role before
+`RoleSessionGate` ever sees it) — not changed, replied on the PR explaining
+why.
 
 **What VS Code needs to do, in order:**
 1. Confirm CI is green on #238 (Remote cannot see runtime, only dispatch and
    local results).
 2. Merge #238.
 3. Dispatch `apply-migrations` with target=whichever environment is being
-   updated, migration=`all` (or individually: `attendance-parent-method` then
-   `safety-gate-matrix` — no ordering dependency between the two, but both
-   must land before the image that expects them). **Migrations before image
-   promotion**, per this file's standing rule.
+   updated, migration=`all` (or individually: `attendance-parent-method`,
+   `safety-gate-matrix`, `safety-escalations` — no ordering dependency
+   between them, but all three must land before the image that expects
+   them). **Migrations before image promotion**, per this file's standing
+   rule.
 4. Promote the image.
 5. Runtime verification Remote cannot do: exercise `/admin/attendance` as a
    coach and as an org admin; exercise a contact observation against an
-   athlete with no medical clearance and confirm the near miss AND the
-   lesson text both appear; confirm a parent test account's check-in records
-   `method: 'parent'` in `pilot.scheduler_attendance`, not `coach_override`.
+   athlete with no medical clearance and confirm the near miss, the lesson
+   text, AND a new row in `/admin/escalations` all appear; confirm a parent
+   test account's check-in records `method: 'parent'` in
+   `pilot.scheduler_attendance`, not `coach_override`; acknowledge/resolve
+   an escalation as coach and as admin and confirm the role split holds.
 
 **Free for the other session** — none of the above, and none of these files:
 `scripts/`, `.github/workflows/`, `apps/web/app/admin/page.tsx`,

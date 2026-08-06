@@ -63,7 +63,7 @@ the app.
 
 ---
 
-## Dashboard shape — 27 routes
+## Dashboard shape — 28 routes
 
 KPI row over content sections. The nine named board routes are one page with a
 role parameter; build `board/[member]` and the rest are routing.
@@ -71,6 +71,7 @@ role parameter; build `board/[member]` and the rest are routing.
 | Route | Ground | Notes |
 |---|---|---|
 | `admin/attendance` | ink | Rolls up `pilot.scheduler_attendance` (capability #122); a never-marked athlete renders `Unavailable`, never a fabricated 0% |
+| `admin/escalations` | ink | Reads `pilot.safety_escalations` (capability #194); the only pull surface for a near miss / pain report / safety-gate flag severe enough to auto-escalate — this platform sends no notification of any kind |
 | `board/[member]` | ink | **Build first.** The nine named board routes are this page |
 | `board` | ink | |
 | `board/president` | ink | |
@@ -142,4 +143,4 @@ No shared shape. Schedule these last, individually.
 4. Those three groups are independent and can then run in parallel
 5. Custom routes last, one at a time
 
-17 + 27 + 8 + 10 = 62.
+17 + 28 + 8 + 10 = 63.

@@ -318,7 +318,7 @@ owner has explicitly banned.
 | # | Capability | Status | Phase |
 |---|---|---|---|
 | 193 | Parent-Safe Exercise Library | ⬜ | 2 |
-| 194 | Red Flag Escalation Protocol | 🟡 (compliance escalate exists) | 1 |
+| 194 | Red Flag Escalation Protocol | 🟡 | Built 2026-08-06: `pilot.safety_escalations` + `escalationLadder.ts`, auto-files from `shadowNearMisses.ts`'s `flagNearMiss` (covers contactClearanceGate + pain reports) for high/critical severity, `/admin/escalations` (coach acknowledges own athletes, admin resolves), repeated-pattern detector, board-safe k-anonymity summary. Deliberately not unified with `compliance.ts`'s `escalateViolation` (separate, already-working system) — that merge is a real product question, left open | 1 |
 | 195 | Minimum Effective Dose Engine | ⬜ | 3 |
 | 196 | Session Quality Score | ⬜ | 3 |
 | 197 | Readiness-to-Learn Score | ⬜ | 3 |
