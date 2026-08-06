@@ -7,6 +7,7 @@ import AthleteAchievements from './AthleteAchievements';
 import Chalkboard from './Chalkboard';
 import FightCard from './FightCard';
 import GymWallModule from './GymWallModule';
+import ParentDigest from './ParentDigest';
 import ProfilePortrait from './ProfilePortrait';
 import { ParentSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
@@ -453,6 +454,12 @@ export default function ParentHub() {
           {/* OVERVIEW */}
           {activeTab === 'overview' && (
             <div className="space-y-6 animate-fadeIn">
+              {/* The digest leads the overview: the roadmap's "blind spot" is
+                  the guardian who never sees the room, and the first thing
+                  they should meet is the coach's own words, not a button
+                  grid. */}
+              <ParentDigest athleteId={activeChildId || null} childName={activeChild?.name ?? null} />
+
               <section className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]">
                 <h3 className="t-label">Quick Actions</h3>
                 <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-2 lg:grid-cols-4">
