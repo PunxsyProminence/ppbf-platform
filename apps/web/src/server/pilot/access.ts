@@ -1,5 +1,6 @@
 import type { PilotRole } from './contracts';
 import { queryOne } from './db';
+import { isGuardianLinkedToAthlete } from './guardianAccess';
 
 export interface ActorIdentity {
   accountId: string;
@@ -254,18 +255,7 @@ export async function assertActorCanAccessAthlete(actor: ActorIdentity, athleteI
   }
 
   if (actor.role === 'parent') {
-    const linked = await queryOne<{ athlete_id: string }>(
-      `select athlete_id
-       from pilot.guardian_links
-       where organization_id = $1 and athlete_id = $2 and parent_id in (
-         select parent_id
-         from pilot.parents
-         where organization_id = $1 and account_id = $3
-       )`,
-      [actor.organizationId, athleteId, actor.accountId],
-    );
-
-    if (!linked) {
+    if (!(await isGuardianLinkedToAthlete(actor.organizationId, actor.accountId, athleteId))) {
       throw new Error('Forbidden: parent not linked to athlete');
     }
 

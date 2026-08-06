@@ -324,7 +324,7 @@ owner has explicitly banned.
 | 197 | Readiness-to-Learn Score | ⬜ | 3 |
 | 198 | Athlete Voice Module | ✅ 2026-08-06 — athlete safeguarding feedback files `athlete_voice` escalations (admin-only surface, non-disclosing, oracle-safe) | 1 |
 | 199 | Parent Education Module | ⬜ | 2 |
-| 200 | Privacy-Tier System | 🟡 (org isolation exists; no tiers) | 1 |
+| 200 | Privacy-Tier System | ✅ 2026-08-06 — `privacyTiers.ts` names the six enforced tiers + `FIELD_TIERS` registry; `guardianAccess.ts` consolidates viewer-scoped guardian joins; drift-tested, no schema | 1 |
 
 ---
 

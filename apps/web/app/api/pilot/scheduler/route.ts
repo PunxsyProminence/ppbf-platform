@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, isOrganizationAdminRole } from '@/src/server/pilot/access';
-import { query } from '@/src/server/pilot/db';
+import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   bulkUpsertSchedulerAttendance,
@@ -119,15 +119,7 @@ async function getParentAthleteIds(actor: SchedulerActor): Promise<string[]> {
     return [];
   }
 
-  const rows = await query<{ athlete_id: string }>(
-    `select distinct gl.athlete_id
-     from pilot.guardian_links gl
-     join pilot.parents p on p.parent_id = gl.parent_id and p.organization_id = gl.organization_id
-     where gl.organization_id = $1 and p.account_id = $2`,
-    [actor.organizationId, actor.accountId],
-  );
-
-  return rows.map((row) => row.athlete_id);
+  return guardianAthleteIds(actor.organizationId, actor.accountId);
 }
 
 async function assertCanActOnAthlete(actor: SchedulerActor, athleteId: string): Promise<void> {
