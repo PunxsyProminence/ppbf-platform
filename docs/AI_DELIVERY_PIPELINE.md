@@ -1,13 +1,34 @@
 # AI Delivery Pipeline
 
 How missing capabilities get built by any AI and shipped to production through
-one verified path. This is the operating manual for the flow; the rules of
-conduct live in [AI_CONTRIBUTOR_GUARDRAILS.md](AI_CONTRIBUTOR_GUARDRAILS.md)
-and still bind every participant. The role decomposition it extends is
+one verified path. This is the operating manual for the flow. Three documents
+work together and none of them stand alone:
+
+- **This file** — roles, lanes, the gate a builder's work passes through.
+- [docs/current/WORK_QUEUE.md](current/WORK_QUEUE.md) — the one current
+  queue, its state machine, and the collision rules.
+- [docs/current/PRODUCTION_STATE.json](current/PRODUCTION_STATE.json) — what
+  is actually deployed and runtime-verified, right now, written only by the
+  gatekeeper after observing the live environment.
+
+Rules of conduct live in
+[AI_CONTRIBUTOR_GUARDRAILS.md](AI_CONTRIBUTOR_GUARDRAILS.md) and still bind
+every participant. The role decomposition this extends is
 [MULTI_AI_EXECUTION_PLAN.md](MULTI_AI_EXECUTION_PLAN.md).
 
 The platform serves youth athletes. Every shortcut in this pipeline was
 removed on purpose.
+
+## The central rule
+
+**Implemented, merged, deployed, and runtime-verified are four different
+claims.** This repo has shipped code that was merged, green in CI, and had
+never worked once (guardrails §1) — CI proves compilation and unit behavior,
+not that the product works. So "done" means production-deployed AND
+production-verified, unless a ticket explicitly defines a documentation-only
+completion rule. A ticket does not advance a state because code exists on a
+branch; it advances because the gatekeeper observed it working at that state.
+See the state machine in [docs/current/WORK_QUEUE.md](current/WORK_QUEUE.md).
 
 ## The shape
 
