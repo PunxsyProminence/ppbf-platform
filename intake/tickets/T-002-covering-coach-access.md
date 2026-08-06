@@ -18,7 +18,7 @@ Non-negotiable conventions:
 
 - Every read/write of organization-owned data is scoped by
   `organization_id` in the SQL itself.
-- Auth: role checks from `src/server/pilot/auth.ts` at the top of every
+- Auth: role checks from `apps/web/src/server/pilot/auth.ts` at the top of every
   route handler.
 - Full rules: `docs/AI_CONTRIBUTOR_GUARDRAILS.md` in the repo. Read it.
 

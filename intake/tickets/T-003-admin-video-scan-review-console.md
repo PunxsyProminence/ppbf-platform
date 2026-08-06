@@ -19,7 +19,7 @@ Non-negotiable conventions:
 
 - Every read/write of organization-owned data is scoped by
   `organization_id` in the SQL itself.
-- Auth: role checks from `src/server/pilot/auth.ts` /
+- Auth: role checks from `apps/web/src/server/pilot/auth.ts` /
   `src/server/pilot/access.ts` at the top of every route handler.
 - Design system: use classes from `design-system/ppbf.css`. No new hex
   values, no new fonts.

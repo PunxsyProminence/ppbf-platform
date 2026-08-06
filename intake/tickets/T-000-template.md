@@ -20,8 +20,8 @@ Non-negotiable conventions:
 - Every read/write of organization-owned data is scoped by
   `organization_id` in the SQL itself. A convention test fails PRs that
   join without it.
-- Auth: `requireSession` / role checks from `src/server/pilot/auth.ts` at
-  the top of every route handler. PIN sessions are athlete-only.
+- Auth: `requireSession` / role checks from `apps/web/src/server/pilot/auth.ts`
+  at the top of every route handler. PIN sessions are athlete-only.
 - Design system: use classes from `design-system/ppbf.css` (`.btn`,
   `.badge--filed`, `.frame`, `.stat`, `t-*` type classes, `--s*` spacing
   vars). No new hex values, no new fonts, no inline style constants.

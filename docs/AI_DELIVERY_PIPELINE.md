@@ -44,7 +44,7 @@ Three roles:
 |---|---|---|
 | **Owner** | Jason | Ticket selection, production approval clicks, all final calls |
 | **Builder** | Any AI (Claude, ChatGPT, Grok, Copilot, …) | The ticket it was handed, nothing else |
-| **Gatekeeper** | The VS Code Claude session | `gh`, `az`, the local test environment, and the only path to merge/deploy |
+| **Gatekeeper** | The person or session assigned to the gatekeeper role | `gh`, `az`, the local test environment, and the only path to merge/deploy |
 
 Builders never deploy, never merge, never touch the database. The gatekeeper
 never expands a ticket's scope. The owner never has to read a diff to know
@@ -66,9 +66,10 @@ whether something is safe — that is what the verification ledger is for.
 6. Stop. Do not merge, do not dispatch workflows, do not "helpfully" fix
    adjacent code.
 
-## Lane B — chat-only builders (ChatGPT, Grok, anything in a browser tab)
+## Lane B — chat-only builders that are permitted to author files
 
-For AIs that cannot run git. The **drop zone** is `intake/drops/`.
+For chat-only AIs that can produce files but do not have a git workflow. The
+**drop zone** is `intake/drops/`.
 
 1. The owner pastes the ticket file into the AI as its prompt.
 2. The AI produces complete files (never fragments or "…rest unchanged"),
@@ -80,8 +81,10 @@ For AIs that cannot run git. The **drop zone** is `intake/drops/`.
    tells the gatekeeper "drop T-014 is in".
 4. The gatekeeper integrates: applies the files on a fresh branch, reconciles
    them with current `main`, runs the full gate, authors the PR, and credits
-   the builder in the PR body. Integration problems go back to the owner as
-   ticket feedback, not silent rewrites.
+   the builder in the PR body. If the model family remains audit-only under
+   the repo's guardrails, the gatekeeper returns the drop instead of turning it
+   into a PR. Integration problems go back to the owner as ticket feedback,
+   not silent rewrites.
 
 `intake/drops/` is gitignored — half-finished drops never reach a commit; the
 only way out of the drop zone is through the gatekeeper's verification.
@@ -108,18 +111,24 @@ In order, stopping at the first failure:
    automatic return regardless of what else passes.
 8. **Merge** — squash, PR number in title (house style), only after CI
    `validate` is green in GitHub too.
-9. **Stage** — dispatch `deploy-staging` with the exact SHA; capture the
-   image digest; run the smoke set (login 400 / session 200 / shadow 401)
-   plus whatever probe the ticket's acceptance criteria name. New
-   user-facing behavior extends the SHADOW E2E gate or states why not
-   (guardrails §1).
-10. **Promote** — dispatch `deploy-production` with that SHA + digest.
+9. **Apply staging migrations** — if the ticket adds SQL or persistence
+   changes, apply the staging migration before dispatching `deploy-staging`
+   and record the attested schema state.
+10. **Stage** — dispatch `deploy-staging` with the exact SHA; capture the
+    image digest; run the smoke set (login 400 / session 200 / shadow 401)
+    plus whatever probe the ticket's acceptance criteria name. New
+    user-facing behavior extends the SHADOW E2E gate or states why not
+    (guardrails §1).
+11. **Apply production migrations** — if the ticket adds SQL or persistence
+    changes, apply the production migration before dispatching
+    `deploy-production` and record the attested schema state.
+12. **Promote** — dispatch `deploy-production` with that SHA + digest.
     The GitHub `production` environment rule halts it for the owner's
     approval — that click is the owner's checkpoint, by design.
-11. **Verify live** — read the container app's `PPBF_RELEASE_SHA` and image
+13. **Verify live** — read the container app's `PPBF_RELEASE_SHA` and image
     digest back and confirm they match what was staged; run the smoke set
     against production.
-12. **Close the ticket** — move its file to `intake/tickets/done/` with a
+14. **Close the ticket** — move its file to `intake/tickets/done/` with a
     Shipped section: PR number, production SHA, digest, verification
     evidence.
 
@@ -161,10 +170,10 @@ everything else. Within a band, tickets are independent by construction
 | Builder claims done, never ran it | Evidence section empty → returned at step 0 |
 | Stale base, silent conflict | Freshness (step 1) |
 | Scope creep into contested files | Scope check (step 2) |
-| Compiles, fails in reality | Adversarial review (step 6), staging smoke (step 9) |
+| Compiles, fails in reality | Adversarial review (step 6), staging smoke (step 10) |
 | Cross-org data leak | Authorization sweep in step 6 + convention test |
 | Weakened safety validator | Invariant checklist (step 7) |
-| Wrong image promoted | Digest/SHA match verification (step 11) |
+| Wrong image promoted | Digest/SHA match verification (step 13) |
 | Two AIs on one file | Ticket allowed-files disjointness + draft-PR visibility |
 
 The pipeline assumes every builder is competent and none are trusted. That
