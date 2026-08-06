@@ -214,6 +214,10 @@ describe('POST /api/pilot/escalations acknowledge', () => {
     const response = await POST(jsonRequest({ action: 'acknowledge', escalation_id: 'esc-1' }));
 
     expect(response.status).toBe(200);
+    // The membership check itself must exclude athlete_voice (#198) -- same
+    // rule as GET, or a coach could act on a disclosure-driven escalation
+    // they cannot see.
+    expect(mockList.mock.calls[0][1]).toMatchObject({ excludeAthleteVoice: true });
   });
 
   test('a coach cannot acknowledge an escalation outside their own athletes', async () => {
@@ -223,6 +227,22 @@ describe('POST /api/pilot/escalations acknowledge', () => {
     const response = await POST(jsonRequest({ action: 'acknowledge', escalation_id: 'esc-not-mine' }));
 
     expect(response.status).toBe(400);
+    expect(mockAcknowledge).not.toHaveBeenCalled();
+    expect(mockList.mock.calls[0][1]).toMatchObject({ excludeAthleteVoice: true });
+  });
+
+  // #198: an athlete_voice escalation_id a coach somehow obtained behaves
+  // exactly like a nonexistent id -- the excluded membership list cannot
+  // contain it, so the same Missing error fires and acknowledge is never
+  // reached. Indistinguishable from a bogus id by status, body, or calls.
+  test('a coach acknowledging an athlete_voice id gets the same Missing as a bogus id', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+    mockList.mockResolvedValueOnce([]); // exclusion strips the athlete_voice row for their own athlete
+
+    const response = await POST(jsonRequest({ action: 'acknowledge', escalation_id: 'esc-voice-own-athlete' }));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: 'Missing escalation record' });
     expect(mockAcknowledge).not.toHaveBeenCalled();
   });
 

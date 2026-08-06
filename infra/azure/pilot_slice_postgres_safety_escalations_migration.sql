@@ -73,7 +73,7 @@
 create table if not exists pilot.safety_escalations (
   organization_id             text not null references pilot.organizations(organization_id) on delete cascade,
   escalation_id                text not null,
-  source_type                  text not null check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice')),
+  source_type                  text not null constraint safety_escalations_source_type_check check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice')),
   source_id                    text null,
   athlete_id                   text not null,
   severity                     text not null check (severity in ('low', 'moderate', 'high', 'critical')),
@@ -96,6 +96,35 @@ create table if not exists pilot.safety_escalations (
     references pilot.athletes(organization_id, athlete_id)
     on delete cascade
 );
+
+-- Idempotent repair for a database where an earlier revision of this
+-- migration created the table with the four-value source_type vocabulary
+-- (pre-athlete_voice, #198): the create-if-not-exists above no-ops there,
+-- which would leave every athlete_voice escalation violating the stale
+-- CHECK -- and the filing code deliberately swallows that failure (oracle
+-- safety), so the loss would be silent. Re-running this migration must
+-- therefore widen the CHECK in place. The runner's readiness probe also
+-- refuses to PASS until 'athlete_voice' is in the constraint, so a stale
+-- database fails loudly instead of dropping disclosures.
+do $$
+declare
+  stale_constraint text;
+begin
+  select conname into stale_constraint
+  from pg_constraint
+  where conrelid = 'pilot.safety_escalations'::regclass
+    and contype = 'c'
+    and pg_get_constraintdef(oid) like '%source_type%'
+    and pg_get_constraintdef(oid) like '%''near_miss''%'
+    and pg_get_constraintdef(oid) not like '%''athlete_voice''%';
+
+  if stale_constraint is not null then
+    execute format('alter table pilot.safety_escalations drop constraint %I', stale_constraint);
+    alter table pilot.safety_escalations
+      add constraint safety_escalations_source_type_check
+      check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice'));
+  end if;
+end $$;
 
 create index if not exists idx_safety_escalations_org_status
   on pilot.safety_escalations(organization_id, status, created_at desc);

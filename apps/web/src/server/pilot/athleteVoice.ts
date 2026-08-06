@@ -55,6 +55,27 @@ export const ATHLETE_VOICE_CRITICAL_CUES: readonly string[] = [
   'harm_to_someone_else',
 ];
 
+/**
+ * Every scan cue that deliberately files 'high' rather than 'critical'.
+ * This list exists so the triage is EXHAUSTIVE: the drift test sweeps the
+ * scan module's source for its cue ids and fails on any id that appears in
+ * neither list -- a new or split scanner cue must be triaged here on
+ * purpose, not silently defaulted to 'high' by falling through the
+ * critical-set check.
+ */
+export const ATHLETE_VOICE_TRIAGED_HIGH_CUES: readonly string[] = [
+  'fear',
+  'pain_or_injury',
+  'broken_bone',
+  'someone_is_frightening_me',
+  'does_not_want_to_be_there',
+  'does_not_feel_safe',
+  'contact_with_body_part',
+  'refusal_to_return',
+  'distress_signals',
+  'secrecy',
+];
+
 const CRITICAL_CUE_SET: ReadonlySet<string> = new Set(ATHLETE_VOICE_CRITICAL_CUES);
 
 export function athleteVoiceSeverity(cues: readonly string[]): SafetyEscalationSeverity {

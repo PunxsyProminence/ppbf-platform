@@ -1,6 +1,10 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
 import {
   ATHLETE_VOICE_CRITICAL_CUES,
   ATHLETE_VOICE_REASON,
+  ATHLETE_VOICE_TRIAGED_HIGH_CUES,
   athleteVoiceSeverity,
   fileAthleteVoiceEscalation,
 } from './athleteVoice';
@@ -42,14 +46,52 @@ describe('athleteVoiceSeverity', () => {
   });
 });
 
+// ─── the cue-vocabulary drift alarm ──────────────────────────────────────────
+//
+// The scan module does not export its cue ids as data, so this sweeps its
+// SOURCE for `id: '...'` entries and asserts the severity triage covers the
+// vocabulary exhaustively in both directions. A cue ADDED or SPLIT in the
+// scanner (say, sexualized-contact phrases moved out of a non-critical cue
+// into their own id) must be triaged in athleteVoice.ts on purpose --
+// without this sweep it would silently default to 'high' by simply not
+// being in the critical set.
+
+describe('the severity triage covers the scanner vocabulary exhaustively', () => {
+  const scannerSource = fs.readFileSync(path.join(__dirname, 'feedbackSafetyScan.ts'), 'utf8');
+  const scannerCueIds = [...scannerSource.matchAll(/^\s*id: '([a-z_]+)',$/gm)].map((match) => match[1]);
+  const triaged = new Set([...ATHLETE_VOICE_CRITICAL_CUES, ...ATHLETE_VOICE_TRIAGED_HIGH_CUES]);
+
+  test('the sweep itself found the vocabulary (guards against a regex rot)', () => {
+    expect(scannerCueIds.length).toBeGreaterThanOrEqual(15);
+    expect(scannerCueIds).toContain('crisis');
+    expect(scannerCueIds).toContain('secrecy');
+  });
+
+  test('every scanner cue is triaged as critical or deliberately high', () => {
+    const untriaged = scannerCueIds.filter((id) => !triaged.has(id));
+    expect(untriaged).toEqual([]);
+  });
+
+  test('every triaged id still exists in the scanner (catches renames/removals)', () => {
+    const scannerSet = new Set(scannerCueIds);
+    const stale = [...triaged].filter((id) => !scannerSet.has(id));
+    expect(stale).toEqual([]);
+  });
+
+  test('no cue is triaged both ways', () => {
+    const both = ATHLETE_VOICE_CRITICAL_CUES.filter((id) => ATHLETE_VOICE_TRIAGED_HIGH_CUES.includes(id));
+    expect(both).toEqual([]);
+  });
+});
+
 // ─── the cue-id drift alarm ──────────────────────────────────────────────────
 //
-// The critical-cue list names cue ids from feedbackSafetyScan. That module's
-// ids are not exported as data, so this drives the REAL scanner with a
-// canonical sentence for each critical cue and asserts the end-to-end
-// severity. If a cue id is ever renamed in the scan module, the sentence
-// still matches its pattern but the id no longer matches the critical set --
-// and this test fails loudly instead of a crisis silently downgrading.
+// The vocabulary sweep above proves coverage; this proves BEHAVIOR: it
+// drives the REAL scanner with a canonical sentence for each critical cue
+// and asserts the end-to-end severity. If a cue id is ever renamed in the
+// scan module, the sentence still matches its pattern but the id no longer
+// matches the critical set -- and this fails loudly instead of a crisis
+// silently downgrading.
 
 describe('critical severity end-to-end against the real scanner', () => {
   test.each([

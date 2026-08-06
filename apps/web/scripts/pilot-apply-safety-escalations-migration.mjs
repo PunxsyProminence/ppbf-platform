@@ -62,6 +62,7 @@ const READINESS_QUERY = `
         and pg_get_constraintdef(oid) like '%''pain_report''%'
         and pg_get_constraintdef(oid) like '%''safety_gate_evaluation''%'
         and pg_get_constraintdef(oid) like '%''repeated_pattern''%'
+        and pg_get_constraintdef(oid) like '%''athlete_voice''%'
     ) as source_type_vocabulary_ready,
     exists (
       select 1 from pg_constraint

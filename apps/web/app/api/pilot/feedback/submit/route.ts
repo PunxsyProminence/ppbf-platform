@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { fileAthleteVoiceEscalation } from '@/src/server/pilot/athleteVoice';
+import { sanitizedSqlState } from '@/src/server/pilot/db';
 import {
   FEEDBACK_BODY_MAX_LENGTH,
   createFeedbackSubmission,
@@ -71,25 +72,40 @@ export async function POST(request: NextRequest) {
 
     // Athlete Voice (#198): an athlete's safeguarding submission also files
     // an escalation, so the ladder -- the platform's only notification
-    // surface -- carries the alarm and not just the queue. EVERY outcome of
-    // the filing is swallowed, not just expected ones: the submission above
-    // is already committed (the record exists; the queue orders it first),
-    // and any response difference this block could produce -- an error only
-    // the safeguarding path can hit, a shape only it returns -- would be a
-    // classifier oracle, exactly what the comment below refuses to hand out.
+    // surface -- carries the alarm and not just the queue. The filing is
+    // deliberately NOT awaited: awaiting it would make the safeguarding
+    // path measurably slower than the product path (extra lookups plus a
+    // transaction, all before the response), and response LATENCY is as
+    // much a classifier oracle as response shape -- someone driving an
+    // athlete session can submit candidate phrasings and time the replies.
+    // Fired-and-forgotten, the response path does identical work for every
+    // submission, and the ordering still holds: the submission is committed
+    // before this line runs.
+    //
+    // Every filing outcome is swallowed -- an error only the safeguarding
+    // path can hit would be the same oracle -- but not silently on the
+    // server: a persistently failing alarm (stale CHECK vocabulary, FK
+    // breakage) must be visible to operators, so failures log a fixed
+    // event name plus a validated SQLSTATE and nothing else. No body, no
+    // submission id, no error message. The 42P01 pre-migration window
+    // lands here too: no escalations table means the queue-only behavior
+    // every submission had before #198.
     if (principal.role === 'athlete' && submission.route === 'safeguarding') {
-      try {
-        await fileAthleteVoiceEscalation({
-          organizationId: principal.organizationId,
-          accountId: principal.accountId,
-          submissionId: submission.submission_id,
-          body,
+      void fileAthleteVoiceEscalation({
+        organizationId: principal.organizationId,
+        accountId: principal.accountId,
+        submissionId: submission.submission_id,
+        body,
+      }).catch((error: unknown) => {
+        const rawCode = error && typeof error === 'object' && 'code' in error
+          ? (error as { code: unknown }).code
+          : undefined;
+        const code = sanitizedSqlState(rawCode);
+        console.error({
+          event: 'athlete-voice-escalation-filing-failed',
+          ...(code ? { code } : {}),
         });
-      } catch {
-        // Swallowed deliberately -- see above. The 42P01 pre-migration
-        // window lands here too: no escalations table means the queue-only
-        // behavior every submission had before #198.
-      }
+      });
     }
 
     return NextResponse.json({

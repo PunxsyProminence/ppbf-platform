@@ -28,6 +28,32 @@ import type { Readable } from 'node:stream';
 
 import { Client } from 'pg';
 
+// Routes escalationLadder.ts's queries into whichever embedded database the
+// current test opened (the coachCoverage suite's pattern), so listEscalations
+// below is the REAL production function executing its REAL SQL -- the
+// athlete_voice exclusion predicate lives in that SQL, and a unit mock can
+// only assert the string, not the behavior.
+let activeClient: Client | null = null;
+
+jest.mock('./db', () => ({
+  query: jest.fn(async (text: string, params: unknown[] = []) => {
+    if (!activeClient) throw new Error('test bug: no active embedded client');
+    const result = await activeClient.query(text, params);
+    return result.rows;
+  }),
+  queryOne: jest.fn(async (text: string, params: unknown[] = []) => {
+    if (!activeClient) throw new Error('test bug: no active embedded client');
+    const result = await activeClient.query(text, params);
+    return result.rows[0] ?? null;
+  }),
+  withTransaction: jest.fn(async (fn: (client: unknown) => Promise<unknown>) => {
+    if (!activeClient) throw new Error('test bug: no active embedded client');
+    return fn({ query: (text: string, values: unknown[]) => activeClient!.query(text, values) });
+  }),
+}));
+
+import { listEscalations } from './escalationLadder';
+
 jest.setTimeout(180_000);
 
 const PG_USER = 'postgres';
@@ -431,6 +457,81 @@ describe('safety escalations against real Postgres', () => {
     } finally {
       await baseBuilt.end();
       await migrationBuilt.end();
+    }
+  });
+
+  // #198: a database where an EARLIER revision of this migration ran carries
+  // the four-value source_type CHECK. create-if-not-exists no-ops there, so
+  // the repair do-block must widen the stale CHECK in place -- otherwise
+  // every athlete_voice filing violates the constraint, and the filing code
+  // deliberately swallows that failure (oracle safety), making the loss
+  // silent. This reproduces the stale database and re-runs the migration.
+  test('re-running the migration widens a stale pre-athlete_voice CHECK in place', async () => {
+    const client = await freshDatabase('ppbf_test_escalations_stale_check', {
+      dropEscalationsTableFirst: true,
+      applyIncrement: true,
+    });
+    try {
+      // Regress the CHECK to the pre-#198 vocabulary.
+      await client.query('alter table pilot.safety_escalations drop constraint safety_escalations_source_type_check');
+      await client.query(
+        `alter table pilot.safety_escalations
+         add constraint safety_escalations_source_type_check
+         check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern'))`,
+      );
+      await expect(insertEscalation(client, { source_type: 'athlete_voice' })).rejects.toThrow(
+        /violates check constraint/i,
+      );
+
+      // Re-apply: the repair block must widen it.
+      await client.query(migrationSql);
+      await insertEscalation(client, { escalation_id: 'esc-repaired', source_type: 'athlete_voice' });
+      const { rows } = await client.query(
+        `select source_type from pilot.safety_escalations where escalation_id = 'esc-repaired'`,
+      );
+      expect(rows[0]).toEqual({ source_type: 'athlete_voice' });
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+// ─── the real listEscalations against real rows (#198 coach exclusion) ───────
+//
+// The exclusion predicate lives in listEscalations' SQL. The unit test can
+// only assert the string contains it; this executes the actual function
+// against actual rows, so an inverted or deleted predicate fails HERE even
+// while every string assertion stays green.
+
+describe('the real listEscalations against real rows', () => {
+  afterEach(() => {
+    activeClient = null;
+  });
+
+  test('excludeAthleteVoice strips athlete_voice rows and nothing else; omitting it returns them', async () => {
+    const client = await freshDatabase('ppbf_test_escalations_real_list', {
+      dropEscalationsTableFirst: true,
+      applyIncrement: true,
+    });
+    activeClient = client;
+    try {
+      await insertEscalation(client, { escalation_id: 'esc-nm', source_type: 'near_miss' });
+      await insertEscalation(client, { escalation_id: 'esc-av', source_type: 'athlete_voice', source_id: 'sub-1' });
+
+      // The coach-shaped call: athlete-scoped, exclusion on.
+      const coachView = await listEscalations(ORG_ID, { athleteIds: [ATHLETE_ID], excludeAthleteVoice: true });
+      expect(coachView.map((row) => row.escalation_id)).toEqual(['esc-nm']);
+
+      // The admin-shaped call: no exclusion -- both rows, critical first.
+      const adminView = await listEscalations(ORG_ID, {});
+      expect(adminView.map((row) => row.escalation_id).sort()).toEqual(['esc-av', 'esc-nm']);
+
+      // An explicit false behaves like omission, not like true.
+      const explicitFalse = await listEscalations(ORG_ID, { athleteIds: [ATHLETE_ID], excludeAthleteVoice: false });
+      expect(explicitFalse.map((row) => row.escalation_id).sort()).toEqual(['esc-av', 'esc-nm']);
+    } finally {
+      activeClient = null;
+      await client.end();
     }
   });
 });
