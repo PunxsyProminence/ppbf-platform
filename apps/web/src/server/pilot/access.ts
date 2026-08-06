@@ -59,6 +59,26 @@ export async function assertCoachAssignedToAthlete(coachId: string, athleteId: s
   throw new Error('Forbidden: coach not assigned to athlete');
 }
 
+export const DEFAULT_COVERAGE_TTL_HOURS = 24;
+
+// A substitute covering one session needs hours, not months. The cap is what
+// makes this design defensible over the roster-wide alternative that was
+// rejected: coverage is bounded exposure to one athlete's record, and a bound
+// nobody enforces is not a bound. Mirrors resolveTtlHours in activation.ts.
+const MAX_COVERAGE_TTL_HOURS = 14 * 24;
+
+function resolveCoverageTtlHours(requested?: number): number {
+  if (requested === undefined) {
+    return DEFAULT_COVERAGE_TTL_HOURS;
+  }
+
+  if (!Number.isSafeInteger(requested) || requested <= 0 || requested > MAX_COVERAGE_TTL_HOURS) {
+    throw new Error('Missing ttl_hours: must be a positive integer of at most 336');
+  }
+
+  return requested;
+}
+
 export async function grantCoachCoverage(params: {
   organizationId: string;
   athleteId: string;
@@ -68,7 +88,7 @@ export async function grantCoachCoverage(params: {
 }): Promise<{ coverageId: string; expiresAt: string }> {
   await assertAthleteBelongsToOrganization(params.organizationId, params.athleteId);
 
-  const ttlHours = params.ttlHours && params.ttlHours > 0 ? params.ttlHours : 24;
+  const ttlHours = resolveCoverageTtlHours(params.ttlHours);
 
   const inserted = await queryOne<{ coverage_id: string; expires_at: string }>(
     `insert into pilot.coach_coverage (
@@ -92,6 +112,37 @@ export async function grantCoachCoverage(params: {
     coverageId: inserted.coverage_id,
     expiresAt: inserted.expires_at,
   };
+}
+
+/**
+ * Ends an active coverage grant immediately.
+ *
+ * Without this there was no way to withdraw coverage through the application
+ * at all -- a grant issued to the wrong coach, or for longer than intended,
+ * could only be undone with direct SQL against production. Re-granting does
+ * not help either: unlike activation codes, a second grant does not supersede
+ * the first, so both stay live until they expire on their own.
+ *
+ * Expires rather than deletes, so the row survives as an audit trail of who
+ * held access and when it was cut short. The `expires_at > now()` guard makes
+ * this idempotent -- revoking twice is not an error, and it cannot be used to
+ * silently extend an already-expired grant.
+ */
+export async function revokeCoachCoverage(params: {
+  organizationId: string;
+  coverageId: string;
+}): Promise<{ revoked: boolean }> {
+  const row = await queryOne<{ coverage_id: string }>(
+    `update pilot.coach_coverage
+     set expires_at = now()
+     where organization_id = $1
+       and coverage_id = $2
+       and expires_at > now()
+     returning coverage_id`,
+    [params.organizationId, params.coverageId],
+  );
+
+  return { revoked: Boolean(row) };
 }
 
 export async function assertAthleteBelongsToOrganization(organizationId: string, athleteId: string): Promise<void> {
