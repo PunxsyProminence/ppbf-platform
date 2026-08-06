@@ -31,18 +31,33 @@ describe('the tier vocabulary', () => {
     expect([...PRIVACY_TIERS].sort()).toEqual(Object.keys(PRIVACY_TIER_DOCTRINE).sort());
   });
 
-  it('never gets compared numerically anywhere in the pilot server code', () => {
+  it('never gets compared numerically anywhere in the pilot server code or routes', () => {
     // The header says tiers are not a ladder. This keeps it true: no
-    // production module may index or rank PRIVACY_TIERS -- the registry
-    // itself and this test are the only legitimate mentions.
+    // production module may index, rank, or sort PRIVACY_TIERS -- the
+    // registry itself and this test are the only legitimate mentions.
+    // Recursive over BOTH roots (matching the guardianAccess sweep's
+    // scope), so formulas/ and route files cannot hide a comparison.
     const offenders: string[] = [];
-    const files = readdirSync(HERE).filter(
-      (file) => file.endsWith('.ts') && !file.endsWith('.test.ts') && file !== 'privacyTiers.ts',
-    );
-    for (const file of files) {
-      const source = readFileSync(path.join(HERE, file), 'utf8');
-      if (/PRIVACY_TIERS\s*\.\s*indexOf|PRIVACY_TIERS\s*\[/.test(source)) {
-        offenders.push(file);
+    const webRoot = path.resolve(HERE, '../../..');
+
+    function* walk(dir: string): Generator<string> {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const resolved = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          yield* walk(resolved);
+        } else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) {
+          yield resolved;
+        }
+      }
+    }
+
+    for (const root of [HERE, path.join(webRoot, 'app/api/pilot')]) {
+      for (const file of walk(root)) {
+        if (path.basename(file) === 'privacyTiers.ts') continue;
+        const source = readFileSync(file, 'utf8');
+        if (/PRIVACY_TIERS\s*\.\s*(indexOf|findIndex|sort)|PRIVACY_TIERS\s*\[/.test(source)) {
+          offenders.push(path.relative(webRoot, file));
+        }
       }
     }
     expect(offenders).toEqual([]);
@@ -99,16 +114,15 @@ describe('the field registry', () => {
     }
   });
 
-  it('covers every column the public-surface denylist forbids', () => {
+  it('covers every column the public-surface denylist forbids -- no exemptions', () => {
     // The column denylist and the field registry must not drift apart: a
     // column forbidden on public surfaces is sensitive, so it has a tier.
-    const fieldColumns = Object.keys(FIELD_TIERS).map((key) => key.split('.').pop());
+    // The bare 'note' entry matches by prefix: it stands in for every
+    // *.note / *.notes field the registry carries.
+    const fieldColumns = Object.keys(FIELD_TIERS).map((key) => key.split('.').pop() ?? '');
     for (const column of PUBLIC_SURFACE_FORBIDDEN_COLUMNS) {
-      const bare = column.split('.').pop();
-      expect({ column, tiered: fieldColumns.includes(bare) || column === 'checked_in_by_role' }).toEqual({
-        column,
-        tiered: true,
-      });
+      const tiered = fieldColumns.some((name) => name === column || name.startsWith(column));
+      expect({ column, tiered }).toEqual({ column, tiered: true });
     }
   });
 
@@ -122,14 +136,49 @@ describe('the field registry', () => {
   });
 });
 
-describe('the promoted denylists stay non-empty and health-shaped', () => {
-  it('forbidden tables still include the clinical core', () => {
-    for (const table of ['pilot.medical_intake', 'pilot.shadow_medical', 'pilot.shadow_near_misses', 'pilot.feedback']) {
-      expect(PUBLIC_SURFACE_FORBIDDEN_TABLES).toContain(table);
-    }
+describe('the promoted denylists are pinned exactly', () => {
+  // Promotion created a single point of weakening: one deletion here would
+  // silently narrow BOTH wall suites at once, where the old inline lists
+  // required edits inside the files that own the teeth. So the contents are
+  // pinned exactly, the same way MINOR_CIRCLE is -- shrinking a denylist is
+  // an edit somebody has to make in two places, on purpose, with a diff
+  // that says so.
+  it('the forbidden tables are exactly the eleven clinical/safety/conduct tables', () => {
+    expect([...PUBLIC_SURFACE_FORBIDDEN_TABLES].sort()).toEqual([
+      'pilot.assessments',
+      'pilot.coach_observations',
+      'pilot.compliance_records',
+      'pilot.documents',
+      'pilot.emergency_contacts',
+      'pilot.feedback',
+      'pilot.intake_cases',
+      'pilot.medical_intake',
+      'pilot.readiness',
+      'pilot.shadow_medical',
+      'pilot.shadow_near_misses',
+    ]);
   });
 
-  it('ranking tables stay separate from sensitivity tables', () => {
+  it('the forbidden columns are exactly the eight', () => {
+    expect([...PUBLIC_SURFACE_FORBIDDEN_COLUMNS].sort()).toEqual([
+      'checked_in_by_account_id',
+      'checked_in_by_role',
+      'clearance_status',
+      'emergency_contact',
+      'gym_status',
+      'note',
+      'signed_by_name',
+      'weight_class',
+    ]);
+  });
+
+  it('the ranking tables are exactly the four, and stay separate from sensitivity tables', () => {
+    expect([...PUBLIC_RANKING_FORBIDDEN_TABLES].sort()).toEqual([
+      'pilot.athlete_milestones',
+      'pilot.attendance',
+      'pilot.scheduler_attendance',
+      'pilot.sessions',
+    ]);
     for (const table of PUBLIC_RANKING_FORBIDDEN_TABLES) {
       expect(PUBLIC_SURFACE_FORBIDDEN_TABLES).not.toContain(table);
     }

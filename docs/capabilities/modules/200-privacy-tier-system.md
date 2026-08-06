@@ -33,10 +33,12 @@ record; the two de-identified shapes sit *beside* it, not above.
 
 ## Vertical slice (what was built, 2026-08-06)
 - `apps/web/src/server/pilot/privacyTiers.ts` — the six-tier doctrine with
-  per-tier `enforcedBy` pointers; `FIELD_TIERS` (18 fields, each naming its
-  enforcer); `PUBLIC_SURFACE_FORBIDDEN_TABLES` / `_COLUMNS` (promoted from
-  the wall tests, which now read this module); the anti-ranking table list,
-  kept separate because ranking is not sensitivity.
+  per-tier `enforcedBy` pointers; `FIELD_TIERS` (each field naming its
+  enforcer — the count lives in the module, not here, so this record cannot
+  drift from it); `PUBLIC_SURFACE_FORBIDDEN_TABLES` / `_COLUMNS` (promoted
+  from the wall tests, which now read this module, and pinned exactly by
+  the drift suite); the anti-ranking table list, kept separate because
+  ranking is not sensitivity.
 - `apps/web/src/server/pilot/guardianAccess.ts` — the one definition of
   viewer-scoped guardian reach (`isGuardianLinkedToAthlete`,
   `guardianAthleteIds`), replacing four of the six hand-written

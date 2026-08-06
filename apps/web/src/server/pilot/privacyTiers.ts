@@ -146,29 +146,42 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     note: 'Reaches the public tier ONLY through a dated, guardian-signed consent row; defaults to initials.',
   },
   'athletes.dob': {
-    tier: 'athlete_record',
-    enforcedBy: 'access.ts#assertActorCanAccessAthlete',
-    note: 'Null DOB is treated as a minor everywhere age gates anything (wallDisplay.ts#isMinor).',
+    tier: 'organization',
+    enforcedBy: 'organizationScope.convention.test.ts',
+    note:
+      'Honest, not aspirational: athletes/list hands any coach in the org the full row today, so the '
+      + 'enforced tier is the org floor, not per-relationship. Null DOB is treated as a minor wherever '
+      + 'age gates anything (wallDisplay.ts#isMinor). Narrowing coach reads is an athletes/list work '
+      + 'item; record it here only when real.',
   },
   'athletes.weight_class': {
-    tier: 'athlete_record',
-    enforcedBy: 'wallOfNamesPrivacy.test.ts',
-    note: 'A record about a person\'s body; named forbidden on every public read.',
+    tier: 'organization',
+    enforcedBy: 'organizationScope.convention.test.ts',
+    note:
+      'A record about a person\'s body; the public floor is separately held by the wall denylist '
+      + '(wallOfNamesPrivacy.test.ts). Org-wide staff reads exist today via athletes/list.',
   },
   'athletes.gym_status': {
-    tier: 'athlete_record',
-    enforcedBy: 'wallOfNamesPrivacy.test.ts',
+    tier: 'organization',
+    enforcedBy: 'organizationScope.convention.test.ts',
+    note: 'Public floor held by the wall denylist; org-wide staff reads exist today via athletes/list.',
   },
   'athletes.emergency_contact': {
-    tier: 'athlete_record',
-    enforcedBy: 'wallOfNamesPrivacy.test.ts',
-    note: 'A phone number belonging to somebody who never agreed to appear anywhere.',
+    tier: 'organization',
+    enforcedBy: 'organizationScope.convention.test.ts',
+    note:
+      'A phone number belonging to somebody who never agreed to appear anywhere; forbidden on every '
+      + 'public read (wall denylist). Org-wide staff reads exist today via athletes/list.',
   },
-  'athletes.photo': {
+  'account_profiles.photo_blob_path': {
     tier: 'minor_circle',
     enforcedBy: 'profileVisibility.ts#decidePortrait',
+    note:
+      'photo_content_type and photo_review_state travel with it. The circle is applied '
+      + 'per-relationship by profileDb.ts, which calls assertActorCanAccessAthlete FIRST and then '
+      + 'narrows -- the record tier is the floor, never the ceiling.',
   },
-  'athletes.nickname': {
+  'account_profiles.display_nickname': {
     tier: 'minor_circle',
     enforcedBy: 'profileVisibility.ts#decideRingName',
     note: 'The ring name travels with the face, so there is one answer to "who can see my kid\'s stuff".',
@@ -207,8 +220,11 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     tier: 'organization',
     enforcedBy: 'feedback.ts#PLATFORM_FEEDBACK_SQL',
     note:
-      'Safeguarding bodies are stricter than the tier says: org-admin triage only, nulled for the '
-      + 'platform owner, and never quoted outside the queue (athleteVoice.ts files a pointer, not text).',
+      'Diverges from the tier in BOTH directions, and both are deliberate. Stricter: a safeguarding '
+      + 'body is org-admin triage only, nulled for the platform owner, never quoted outside the queue '
+      + '(athleteVoice.ts files a pointer, not text). Looser: a product-routed body travels verbatim, '
+      + 'cross-org, to the platform owner via PLATFORM_FEEDBACK_SQL -- de-identified by column, but '
+      + 'the text is the text. The route decides which regime applies, frozen at write time.',
   },
   'safety_escalations.source_type': {
     tier: 'athlete_record',
@@ -222,10 +238,19 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     enforcedBy: 'wallDisplayPrivacy.test.ts',
     note: 'Who checked a child in is staff bookkeeping; it never reaches a public surface.',
   },
-  'scheduler_attendance.note': {
-    tier: 'athlete_record',
+  'scheduler_attendance.checked_in_by_role': {
+    tier: 'organization',
     enforcedBy: 'wallDisplayPrivacy.test.ts',
-    note: 'Free text a coach typed about a child.',
+    note: 'Which KIND of staff checked a child in is the same bookkeeping as who; never public.',
+  },
+  'scheduler_attendance.note': {
+    tier: 'organization',
+    enforcedBy: 'attendanceReporting.ts#getClassAttendanceRoster',
+    note:
+      'Free text a coach typed about a child. Honest, not aspirational: reads are bounded to '
+      + 'class-owning coaches and org admins today, which is class scope, not per-athlete scope -- '
+      + 'so the enforced tier is organization. The public floor is separately held by the wall '
+      + 'denylist (bare \'note\' in the forbidden columns).',
   },
 };
 
@@ -260,7 +285,11 @@ export const PUBLIC_SURFACE_FORBIDDEN_COLUMNS: readonly string[] = [
   'emergency_contact',
   'clearance_status',
   'signed_by_name',
-  'waivers.notes',
+  // Bare 'note', not 'waivers.notes': the wall modules select with
+  // UNQUALIFIED column lists, so a qualified string can never match the
+  // drift it exists to catch. As a substring, 'note' covers both
+  // waivers.notes and scheduler_attendance.note in one entry.
+  'note',
   'checked_in_by_account_id',
   'checked_in_by_role',
 ];

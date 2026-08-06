@@ -50,6 +50,24 @@ describe('guardianAthleteIds', () => {
     expect(params).toEqual(['org-1', 'parent-acct-1']);
   });
 
+  test('the parents join is organization-scoped on both levels', async () => {
+    // The load-bearing clause. parent_id is only unique PER ORG (composite
+    // primary key), so a join missing `p.organization_id = gl.organization_id`
+    // could match another org's parents row carrying this account id and
+    // widen the caller's athlete scope across the tenant boundary. Three
+    // call sites' scope lists now ride on this one function -- the exact
+    // consolidation risk this module's header names, pinned here the same
+    // way the sibling check pins it.
+    mockQuery.mockResolvedValueOnce([]);
+
+    await guardianAthleteIds('org-1', 'parent-acct-1');
+
+    const [sql] = mockQuery.mock.calls[0];
+    expect(String(sql)).toContain('pilot.parents');
+    expect(String(sql)).toContain('p.organization_id = gl.organization_id');
+    expect(String(sql)).toContain('gl.organization_id = $1');
+  });
+
   test('no links means [], never undefined -- an empty scope must match nothing', async () => {
     mockQuery.mockResolvedValueOnce([]);
     await expect(guardianAthleteIds('org-1', 'parent-lonely')).resolves.toEqual([]);
@@ -88,6 +106,44 @@ describe('consolidation holds: no new hand-written viewer-scoped guardian join a
     }
   }
 
+  // One left-to-right tokenizing pass, so comments and string literals
+  // shield each other: a `//` inside a URL string is consumed as string
+  // content (stripping it first truncated the literal and desynchronized
+  // every later quote pairing in the file -- a real bug: any file with an
+  // https:// string above its SQL was effectively unswept), and a quote
+  // inside a comment is consumed as comment content. Escapes handled.
+  function sqlLiteralsOf(source: string): string[] {
+    const tokens = source.match(
+      /\/\*[\s\S]*?\*\/|\/\/[^\n]*|`(?:[^`\\]|\\[\s\S])*`|'(?:[^'\\\n]|\\[\s\S])*'|"(?:[^"\\\n]|\\[\s\S])*"/g,
+    ) ?? [];
+    return tokens.filter((token) => token.startsWith('`') || token.startsWith("'") || token.startsWith('"'));
+  }
+
+  // The signature is per-STATEMENT, not per-file: a viewer-scoped join
+  // names guardian_links and filters by a parent account inside the same
+  // SQL literal. The account predicate covers the codebase's parameter
+  // idioms -- `= $n`, `= any($n...)`, `in ($n`, and dynamically indexed
+  // `$${...}` -- not just bare positional equality. Subject-scoped reads
+  // (filter by athlete), link CRUD, and org-wide admin listings all mention
+  // the table without an account predicate and are legitimately inline.
+  const VIEWER_SCOPED = (literal: string): boolean =>
+    literal.includes('pilot.guardian_links') && /account_id\s*(=|in\s*\()\s*(any\s*\(\s*)?\$/.test(literal);
+
+  test('the sweep catches its target patterns (probe self-test)', () => {
+    // Teeth, proven inline: the canonical join is flagged even when an
+    // https:// URL string precedes it (the tokenizer-order regression), and
+    // the house-style variants are flagged too.
+    const canonical = '`select athlete_id from pilot.guardian_links where account_id = $1`';
+    const withUrlAbove = "const help = 'see https://example.com/docs';\nconst sql = " + canonical + ';';
+    expect(sqlLiteralsOf(withUrlAbove).some(VIEWER_SCOPED)).toBe(true);
+    expect(sqlLiteralsOf('const sql = `from pilot.guardian_links where p.account_id = any($2::text[])`;').some(VIEWER_SCOPED)).toBe(true);
+    expect(sqlLiteralsOf('const sql = `from pilot.guardian_links where account_id in ($2)`;').some(VIEWER_SCOPED)).toBe(true);
+    expect(sqlLiteralsOf('const sql = `from pilot.guardian_links where account_id = $${i}`;').some(VIEWER_SCOPED)).toBe(true);
+    // And the legitimate shapes stay clean: subject-scoped and link CRUD.
+    expect(sqlLiteralsOf('const sql = `from pilot.guardian_links where athlete_id = $2`;').some(VIEWER_SCOPED)).toBe(false);
+    expect(sqlLiteralsOf('const sql = `insert into pilot.guardian_links (organization_id) values ($1)`;').some(VIEWER_SCOPED)).toBe(false);
+  });
+
   test('every server module and route either uses guardianAccess or is on the reasoned allowlist', () => {
     const webRoot = path.resolve(__dirname, '../../..');
     const roots = [__dirname, path.join(webRoot, 'app/api/pilot')];
@@ -97,19 +153,7 @@ describe('consolidation holds: no new hand-written viewer-scoped guardian join a
       for (const file of walk(root)) {
         const relative = path.relative(webRoot, file).replace(/\\/g, '/').replace('src/server/pilot/', '');
         if (ALLOWED.has(relative)) continue;
-        const source = readFileSync(file, 'utf8')
-          .replace(/\/\*[\s\S]*?\*\//g, ' ')
-          .replace(/\/\/[^\n]*/g, ' ');
-        // The signature is per-STATEMENT, not per-file: a viewer-scoped
-        // join names guardian_links and filters by a parent account inside
-        // the same SQL literal. Subject-scoped reads (filter by athlete),
-        // link CRUD, and org-wide admin listings all mention the table
-        // without the account predicate and are legitimately inline.
-        const sqlLiterals = source.match(/`[^`]*`|'[^']*'/g) ?? [];
-        const handWritten = sqlLiterals.some(
-          (literal) => literal.includes('pilot.guardian_links') && /account_id\s*=\s*\$\d/.test(literal),
-        );
-        if (handWritten) {
+        if (sqlLiteralsOf(readFileSync(file, 'utf8')).some(VIEWER_SCOPED)) {
           offenders.push(relative);
         }
       }
