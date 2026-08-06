@@ -1,4 +1,5 @@
 import { query, queryOne, withTransaction } from './db';
+import { findRegistrationBlockingHold } from './trainingHolds';
 
 export type SchedulerRole = 'athlete' | 'parent' | 'coach' | 'organization_admin' | 'admin';
 
@@ -179,6 +180,7 @@ export async function getSchedulerRegistrationById(
 export type RegisterForClassOutcome =
   | { outcome: 'class_not_found' }
   | { outcome: 'already_registered' }
+  | { outcome: 'training_hold'; holdId: string; athleteExplanation: string; liftConditionText: string }
   | { outcome: 'registered' | 'waitlisted'; registrationId: string };
 
 // Registration must not be a check-then-insert sequence: an unlocked
@@ -208,6 +210,22 @@ export async function registerForClassTransactionally(
     const classRow = classResult.rows[0];
     if (!classRow) {
       return { outcome: 'class_not_found' };
+    }
+
+    // #82 STOP: an active 'all_training' hold refuses the registration
+    // before the duplicate/capacity checks, so a held athlete hears the
+    // hold's own explanation consistently rather than a mix of conflict
+    // messages. Checked inside this transaction (same client), and a
+    // missing table (pre-migration window) degrades to the pre-#82
+    // behavior via the 42P01 guard in findRegistrationBlockingHold.
+    const blockingHold = await findRegistrationBlockingHold(organizationId, athleteId, client);
+    if (blockingHold) {
+      return {
+        outcome: 'training_hold',
+        holdId: blockingHold.hold_id,
+        athleteExplanation: blockingHold.athlete_explanation,
+        liftConditionText: blockingHold.lift_condition_text,
+      };
     }
 
     const existing = await client.query<{ registration_id: string }>(

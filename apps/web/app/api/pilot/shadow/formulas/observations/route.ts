@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { flagContactWithoutClearance } from '@/src/server/pilot/contactClearanceGate';
+import { flagContactDuringHold } from '@/src/server/pilot/trainingHolds';
 import {
   deterministicKey,
 } from '@/src/server/pilot/formulas/identity';
@@ -123,6 +124,21 @@ export async function POST(request: NextRequest) {
     // observation write below is idempotency-keyed, so a retry is safe. See
     // contactClearanceGate.ts for why this flags rather than refuses.
     const clearance = await flagContactWithoutClearance({
+      organizationId: principal.organizationId,
+      athleteId: body.athleteId,
+      kind: body.kind,
+      value: body.value as number | null,
+      actorAccountId: principal.accountId,
+      actorRole: principal.role,
+      contextId: body.contextId.trim(),
+      observedAt: new Date(body.observedAt).toISOString(),
+    });
+
+    // #82 REGRESS: same ordering, same doctrine -- contact logged while a
+    // hold covering contact is active raises a near miss (auto-escalated)
+    // rather than refusing the record. Runs before the store so a failure
+    // aborts loudly instead of persisting contact nobody was alerted to.
+    await flagContactDuringHold({
       organizationId: principal.organizationId,
       athleteId: body.athleteId,
       kind: body.kind,

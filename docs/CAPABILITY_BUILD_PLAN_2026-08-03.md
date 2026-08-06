@@ -148,7 +148,7 @@ there; the inference layers land in Phase 6.
 | 79 | Water Safety Gate | ⬜ | swim module | 7 |
 | 80 | Breath-Hold Restriction Engine | ⬜ | swim module | 7 |
 | 81 | Fatigue Breakdown Engine | ⬜ | | 3 |
-| 82 | Stop / Hold / Regress Engine | ⬜ | | 1 |
+| 82 | Stop / Hold / Regress Engine | ✅ 2026-08-06 — `pilot.training_holds` + `trainingHolds.ts`; all_training holds block class registration; scoped holds (regress = reduced permitted intensity, never a demotion) flag contact; escalation + audit wired | | 1 |
 | 83 | Unsafe Behavior Flag Engine | 🟡 | `shadowNearMisses.ts`, feedback safety scan | 1 |
 | 84 | Guardian Safety Report Engine | ⬜ | | 2 |
 

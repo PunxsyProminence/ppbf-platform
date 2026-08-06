@@ -20,7 +20,7 @@ import { query, queryOne, withTransaction } from './db';
  */
 
 export type SafetyEscalationSeverity = 'low' | 'moderate' | 'high' | 'critical';
-export type SafetyEscalationSourceType = 'near_miss' | 'pain_report' | 'safety_gate_evaluation' | 'repeated_pattern' | 'athlete_voice';
+export type SafetyEscalationSourceType = 'near_miss' | 'pain_report' | 'safety_gate_evaluation' | 'repeated_pattern' | 'athlete_voice' | 'training_hold';
 export type SafetyEscalationStatus = 'open' | 'acknowledged' | 'resolved';
 /** Who an escalation is filed against. Deliberately excludes 'board' -- see the migration header for why. */
 export type SafetyEscalationTargetRole = 'coach' | 'organization_admin' | 'admin';

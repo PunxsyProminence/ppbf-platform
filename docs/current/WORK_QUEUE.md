@@ -71,6 +71,8 @@ here at `PR_OPEN` so the gatekeeper has the rows the collision rules require;
 three logical capabilities, one PR, cherry-pickable per the PR body. Builder
 does not assert `CI_GREEN` per this table's own rule — observe it on the PR.
 
+| PR-238f | P1 | Stop/Hold/Regress (#82): `pilot.training_holds`, registration STOP, scoped-hold REGRESS contact flag, escalation + audit wiring, athlete banner | session B (remote) | build | PR_OPEN | PR-238b/c (same branch — gate row + `training_hold` escalation source_type; also widens the applied audit-vocabulary migration, operator must re-dispatch `apply-migrations: audit-event-vocabulary`) | `trainingHolds.ts` (new), `training-holds/route.ts` (new), `schedulerDb.ts`, `scheduler/route.ts`, `observations/route.ts`, `safetyGateSeeds.ts` + matrix migration seed, `escalationLadder.ts` vocab, `auditEventTypes.ts` + both SQL homes, `AthleteWorkspace` banner, 1 new migration | high — safety substrate, minors; owner decisions recorded in module doc | [#238](https://github.com/PunxsyProminence/ppbf-platform/pull/238) | — | — | Owner decisions 2026-08-06: all three rungs (regress = scope restriction, no athlete ranks); coaches AND admins place/lift; enforcement at registration | 2026-08-06 |
+
 **T-002 collision, reconciled 2026-08-06 (collision rule 5).** Session B
 claimed and built T-002 on PR #238 in parallel with the Lane A build that
 merged as #242/#243 — the session B claim was pushed to the PR branch, so

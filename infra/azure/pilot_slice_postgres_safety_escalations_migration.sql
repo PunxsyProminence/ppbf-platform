@@ -51,6 +51,13 @@
 -- state), the submission is the RECORD; offboarding an athlete may clear
 -- their alarms but never their words.
 --
+-- 'training_hold' (capability #82) is filed by trainingHolds.ts in the same
+-- transaction that places a hold: source_id carries the pilot.training_holds
+-- id, so the admin surface always knows a child's training was paused, by
+-- whom, and why. Resolving the escalation does NOT lift the hold -- an
+-- escalation resolves when a human has looked; a hold lifts when a person
+-- lifts it (trainingHolds.ts owns that transition).
+--
 -- escalated_to_role IS CONSTRAINED, UNLIKE violation_escalations.escalated_to_role
 --
 -- The compliance table's equivalent column is unconstrained free text and in
@@ -73,7 +80,7 @@
 create table if not exists pilot.safety_escalations (
   organization_id             text not null references pilot.organizations(organization_id) on delete cascade,
   escalation_id                text not null,
-  source_type                  text not null constraint safety_escalations_source_type_check check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice')),
+  source_type                  text not null constraint safety_escalations_source_type_check check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold')),
   source_id                    text null,
   athlete_id                   text not null,
   severity                     text not null check (severity in ('low', 'moderate', 'high', 'critical')),
@@ -116,13 +123,13 @@ begin
     and contype = 'c'
     and pg_get_constraintdef(oid) like '%source_type%'
     and pg_get_constraintdef(oid) like '%''near_miss''%'
-    and pg_get_constraintdef(oid) not like '%''athlete_voice''%';
+    and pg_get_constraintdef(oid) not like '%''training_hold''%';
 
   if stale_constraint is not null then
     execute format('alter table pilot.safety_escalations drop constraint %I', stale_constraint);
     alter table pilot.safety_escalations
       add constraint safety_escalations_source_type_check
-      check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice'));
+      check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold'));
   end if;
 end $$;
 

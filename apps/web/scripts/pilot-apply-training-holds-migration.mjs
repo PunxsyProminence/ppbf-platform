@@ -42,8 +42,6 @@ function assertExpectedTarget(target, expectedHostname, expectedDatabase) {
   }
 }
 
-// Same reasoning as db.ts's resolveSslConfig and the other pilot-apply-*
-// scripts: production/staging always require TLS.
 function resolveSslConfig() {
   if (process.env.NODE_ENV === 'test' && process.env.PPBF_POSTGRES_DISABLE_SSL === 'true') {
     return false;
@@ -53,31 +51,27 @@ function resolveSslConfig() {
 
 const READINESS_QUERY = `
   select
-    to_regclass('pilot.safety_escalations') is not null as safety_escalations_ready,
+    to_regclass('pilot.training_holds') is not null as training_holds_ready,
     exists (
       select 1 from pg_constraint
-      where conrelid = to_regclass('pilot.safety_escalations')
+      where conrelid = to_regclass('pilot.training_holds')
         and contype = 'c'
-        and pg_get_constraintdef(oid) like '%''near_miss''%'
-        and pg_get_constraintdef(oid) like '%''pain_report''%'
-        and pg_get_constraintdef(oid) like '%''safety_gate_evaluation''%'
-        and pg_get_constraintdef(oid) like '%''repeated_pattern''%'
-        and pg_get_constraintdef(oid) like '%''athlete_voice''%'
-        and pg_get_constraintdef(oid) like '%''training_hold''%'
-    ) as source_type_vocabulary_ready,
+        and pg_get_constraintdef(oid) like '%''all_training''%'
+        and pg_get_constraintdef(oid) like '%''contact_only''%'
+        and pg_get_constraintdef(oid) like '%''conditioning_only''%'
+    ) as scope_vocabulary_ready,
     exists (
-      select 1 from pg_constraint
-      where conrelid = to_regclass('pilot.safety_escalations')
-        and contype = 'c'
-        and pg_get_constraintdef(oid) like '%''coach''%'
-        and pg_get_constraintdef(oid) like '%''organization_admin''%'
-        and pg_get_constraintdef(oid) not like '%''board''%'
-    ) as escalated_to_role_vocabulary_ready
+      select 1
+      from pg_indexes
+      where schemaname = 'pilot'
+        and indexname = 'idx_training_holds_one_active'
+        and indexdef like '%status = ''active''%'
+    ) as one_active_hold_index_ready
 `;
 
 function assertReadiness(row) {
   if (!row || Object.values(row).some((value) => value !== true)) {
-    throw new Error('SAFETY_ESCALATIONS_NOT_READY');
+    throw new Error('TRAINING_HOLDS_NOT_READY');
   }
 }
 
@@ -106,7 +100,7 @@ export async function run() {
   const __dirname = path.dirname(__filename);
   const migrationPath = path.resolve(
     __dirname,
-    '../../../infra/azure/pilot_slice_postgres_safety_escalations_migration.sql',
+    '../../../infra/azure/pilot_slice_postgres_training_holds_migration.sql',
   );
 
   const sql = await fs.readFile(migrationPath, 'utf8');
@@ -125,8 +119,8 @@ export async function run() {
 
   console.log(`target_hostname: ${target.hostname}`);
   console.log(`target_database: ${target.database}`);
-  console.log(`Applied safety escalations migration: ${migrationPath}`);
-  console.log('PILOT SAFETY ESCALATIONS MIGRATION PASS');
+  console.log(`Applied training holds migration: ${migrationPath}`);
+  console.log('PILOT TRAINING HOLDS MIGRATION PASS');
 }
 
 const isMainModule = process.argv[1] === fileURLToPath(import.meta.url);
@@ -134,7 +128,7 @@ if (isMainModule) {
   try {
     await run();
   } catch (error) {
-    console.error('PILOT SAFETY ESCALATIONS MIGRATION FAIL');
+    console.error('PILOT TRAINING HOLDS MIGRATION FAIL');
     console.error(String(error));
     process.exit(1);
   }

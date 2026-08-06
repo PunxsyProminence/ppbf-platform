@@ -117,6 +117,7 @@ export function jsonError(error: unknown, fallbackStatus = 500): NextResponse {
     || message.startsWith('Athlete is already linked')
     || message.startsWith('Athlete record already exists')
     || message.startsWith('Coverage already exists')
+    || message.startsWith('Hold already exists')
   ) {
     return NextResponse.json({ error: message }, { status: 409 });
   }

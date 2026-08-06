@@ -27,6 +27,11 @@ export const AUDIT_EVENT_TYPES = [
   'shadow_classification',
   'shadow_routing',
   'shadow_research_upload_requirement',
+  // #82: pausing a child's training is a safety action, not bookkeeping. A
+  // hold recorded as a generic 'update' would be indistinguishable from a
+  // typo correction in the audit stream.
+  'safety_hold_placed',
+  'safety_hold_lifted',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];

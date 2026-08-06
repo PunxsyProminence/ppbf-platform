@@ -137,7 +137,7 @@ create table if not exists pilot.audit_events (
   -- auditEventVocabulary.test.ts asserts this constraint matches it -- these
   -- two previously drifted, and the missing value failed every SHADOW
   -- research-requirement upload at the audit write.
-  event_type text not null check (event_type in ('create', 'update', 'login', 'logout', 'shadow_classification', 'shadow_routing', 'shadow_research_upload_requirement')),
+  event_type text not null check (event_type in ('create', 'update', 'login', 'logout', 'shadow_classification', 'shadow_routing', 'shadow_research_upload_requirement', 'safety_hold_placed', 'safety_hold_lifted')),
   actor_account_id text null,
   actor_role text null,
   organization_id text null references pilot.organizations(organization_id),
@@ -763,7 +763,7 @@ create index if not exists idx_safety_gate_evaluations_org_gate
 create table if not exists pilot.safety_escalations (
   organization_id             text not null references pilot.organizations(organization_id) on delete cascade,
   escalation_id                text not null,
-  source_type                  text not null check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice')),
+  source_type                  text not null check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold')),
   source_id                    text null,
   athlete_id                   text not null,
   severity                     text not null check (severity in ('low', 'moderate', 'high', 'critical')),
@@ -816,6 +816,47 @@ create table if not exists pilot.coach_coverage (
 
 create index if not exists idx_pilot_coach_coverage_lookup
   on pilot.coach_coverage (organization_id, athlete_id, covering_coach_id, expires_at);
+
+-- Training holds (capability #82): durable, attributed, expiring pauses on
+-- an athlete's training. See pilot_slice_postgres_training_holds_migration.sql
+-- for the full design rationale (why not gym_status, why not a gate row
+-- alone, what Stop/Hold/Regress each mean). The athlete_explanation is NOT
+-- NULL on purpose: a hold a child cannot read a reason for is a punishment,
+-- not a safety measure.
+create table if not exists pilot.training_holds (
+  organization_id        text not null references pilot.organizations(organization_id) on delete cascade,
+  hold_id                text not null,
+  athlete_id             text not null,
+  scope                  text not null check (scope in ('all_training', 'contact_only', 'conditioning_only')),
+  reason_category        text not null check (reason_category in ('medical', 'fatigue', 'behavioral', 'administrative', 'other')),
+  reason_text            text not null default '',
+  athlete_explanation    text not null check (length(btrim(athlete_explanation)) > 0),
+  lift_condition_text    text not null default '',
+  placed_by_account_id   text not null,
+  placed_by_role         text not null check (placed_by_role in ('coach', 'organization_admin', 'admin')),
+  placed_at              timestamptz not null default now(),
+  expires_at             timestamptz null,
+  lifted_by_account_id   text null,
+  lifted_at              timestamptz null,
+  lift_note              text not null default '',
+  status                 text not null default 'active' check (status in ('active', 'lifted', 'expired')),
+  created_at             timestamptz not null default now(),
+  updated_at             timestamptz not null default now(),
+  primary key (organization_id, hold_id),
+  constraint pilot_training_holds_athlete_fk
+    foreign key (organization_id, athlete_id)
+    references pilot.athletes(organization_id, athlete_id)
+    on delete cascade,
+  constraint pilot_training_holds_expiry_check
+    check (expires_at is null or expires_at > placed_at)
+);
+
+create unique index if not exists idx_training_holds_one_active
+  on pilot.training_holds(organization_id, athlete_id)
+  where status = 'active';
+
+create index if not exists idx_training_holds_org_status
+  on pilot.training_holds(organization_id, status, placed_at desc);
 
 -- Document ingest backend audit stream
 create table if not exists pilot.document_ingest_audit (

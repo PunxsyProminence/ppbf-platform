@@ -35,6 +35,10 @@ jest.mock('@/src/server/pilot/db', () => ({
   queryOne: jest.fn(),
 }));
 
+jest.mock('@/src/server/pilot/safetyGateMatrix', () => ({
+  recordSafetyGateEvaluation: jest.fn().mockResolvedValue({ evaluation_id: 'eval-1' }),
+}));
+
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockRegister = registerForClassTransactionally as jest.Mock;
 const mockAssertCanAct = assertActorCanAccessAthlete as jest.Mock;
@@ -129,6 +133,33 @@ describe('POST /api/pilot/scheduler register_class', () => {
 
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toMatchObject({ ok: true, status: 'registered' });
+  });
+
+  // #82 STOP: the hold refusal carries the hold's own words -- the
+  // explanation written for the athlete and the lift condition -- and the
+  // blocked attempt is recorded as a gate evaluation so "how often is this
+  // child trying to come back" stays answerable.
+  test('403 with the athlete explanation when an all-training hold blocks the registration', async () => {
+    const { recordSafetyGateEvaluation } = jest.requireMock('@/src/server/pilot/safetyGateMatrix') as {
+      recordSafetyGateEvaluation: jest.Mock;
+    };
+    mockRequirePrincipal.mockResolvedValueOnce(athletePrincipal());
+    mockRegister.mockResolvedValueOnce({
+      outcome: 'training_hold',
+      holdId: 'hold-1',
+      athleteExplanation: 'We are giving your head time to heal.',
+      liftConditionText: 'A doctor says you are ready.',
+    });
+
+    const res = await POST(registerRequest());
+    const payload = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(payload.athlete_explanation).toBe('We are giving your head time to heal.');
+    expect(payload.lift_condition).toBe('A doctor says you are ready.');
+    expect(recordSafetyGateEvaluation).toHaveBeenCalledWith(
+      expect.objectContaining({ gateKey: 'training_hold', outcome: 'blocked', metadata: { hold_id: 'hold-1' } }),
+    );
   });
 });
 

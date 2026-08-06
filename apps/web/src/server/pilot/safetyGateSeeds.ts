@@ -50,6 +50,19 @@ export const DEFAULT_SAFETY_GATES: readonly SafetyGateSeed[] = [
       + 'observation is kept either way, and contact logged without a current clearance raises a near miss for '
       + 'coach/admin review.',
   },
+  {
+    // #82: the hold is a CONDITION this gate reads (trainingHolds.ts), the
+    // same seam medical status uses -- never an override the gate accepts.
+    // 'block' because it guards a PRE-action (class registration), where
+    // refusing loses nothing; post-action records stay flag-only.
+    gateKey: 'training_hold',
+    name: 'Active Training Hold',
+    category: 'training_level',
+    enforcement: 'block',
+    requirementText:
+      'Training is paused for this athlete until the hold placed by a coach or admin is lifted. '
+      + 'The hold explains what earns the lift; talk to your coach or the gym admin.',
+  },
 ] as const;
 
 export function safetyGateSeedId(seed: SafetyGateSeed, organizationId: string): string {

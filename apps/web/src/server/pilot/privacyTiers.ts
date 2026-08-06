@@ -243,6 +243,23 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     enforcedBy: 'wallDisplayPrivacy.test.ts',
     note: 'Which KIND of staff checked a child in is the same bookkeeping as who; never public.',
   },
+  'training_holds.reason_text': {
+    tier: 'organization',
+    enforcedBy: '../../../app/api/pilot/training-holds/route.ts#athleteFacing',
+    note:
+      'Staff-facing detail behind a hold. The athlete and their guardians read the athlete-safe '
+      + 'projection (explanation, lift condition, scope) and never this field.',
+  },
+  'training_holds.athlete_explanation': {
+    tier: 'athlete_record',
+    enforcedBy: '../../../app/api/pilot/training-holds/route.ts#athleteFacing',
+    note: 'Written FOR the athlete: age-appropriate, non-punitive, required at placement.',
+  },
+  'training_holds.reason_category': {
+    tier: 'organization',
+    enforcedBy: '../../../app/api/pilot/training-holds/route.ts#athleteFacing',
+    note: "A 'medical' category is a health signal; it stays off the athlete-safe projection with the rest.",
+  },
   'scheduler_attendance.note': {
     tier: 'organization',
     enforcedBy: 'attendanceReporting.ts#getClassAttendanceRoster',
@@ -272,6 +289,7 @@ export const PUBLIC_SURFACE_FORBIDDEN_TABLES: readonly string[] = [
   'pilot.intake_cases',
   'pilot.documents',
   'pilot.compliance_records',
+  'pilot.training_holds',
 ];
 
 /**

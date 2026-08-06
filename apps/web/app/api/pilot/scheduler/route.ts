@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, isOrganizationAdminRole } from '@/src/server/pilot/access';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
+import { recordSafetyGateEvaluation } from '@/src/server/pilot/safetyGateMatrix';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   bulkUpsertSchedulerAttendance,
@@ -380,6 +381,34 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           { error: 'Athlete already registered for this class' },
           { status: 409 },
+        );
+      }
+
+      // #82 STOP: registration refused by an active all-training hold. 403
+      // with the hold's own words -- the explanation was written FOR the
+      // athlete, and the lift condition is the teaching moment. The blocked
+      // attempt is recorded as a gate evaluation (append-only fact), so
+      // "how often is this child trying to come back" is answerable later.
+      if (result.outcome === 'training_hold') {
+        await recordSafetyGateEvaluation({
+          organizationId: actor.organizationId,
+          gateKey: 'training_hold',
+          athleteId,
+          outcome: 'blocked',
+          reason: 'Class registration refused: active all-training hold',
+          evaluatedByAccountId: actor.accountId,
+          evaluatedByRole: actorRole,
+          contextId: classId,
+          metadata: { hold_id: result.holdId },
+          evaluatedAt: now,
+        });
+        return NextResponse.json(
+          {
+            error: 'Training hold: registration is paused for this athlete',
+            athlete_explanation: result.athleteExplanation,
+            lift_condition: result.liftConditionText,
+          },
+          { status: 403 },
         );
       }
 

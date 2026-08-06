@@ -118,3 +118,24 @@ where organization_id not in (
   select organization_id from pilot.safety_gates where gate_key = 'contact_medical_clearance'
 )
 on conflict do nothing;
+
+-- #82: the training-hold gate. The hold state itself lives in
+-- pilot.training_holds (see the training-holds migration); this row is the
+-- per-org policy switch and the lesson text, read at class-registration
+-- time. 'block' because it guards a pre-action; the no-override doctrine
+-- of this matrix applies to it verbatim.
+insert into pilot.safety_gates (organization_id, gate_id, gate_key, name, category, enforcement, requirement_text, active_flag)
+select
+  organization_id,
+  'gate_' || organization_id || '_training_hold',
+  'training_hold',
+  'Active Training Hold',
+  'training_level',
+  'block',
+  'Training is paused for this athlete until the hold placed by a coach or admin is lifted. The hold explains what earns the lift; talk to your coach or the gym admin.',
+  true
+from pilot.organizations
+where organization_id not in (
+  select organization_id from pilot.safety_gates where gate_key = 'training_hold'
+)
+on conflict do nothing;

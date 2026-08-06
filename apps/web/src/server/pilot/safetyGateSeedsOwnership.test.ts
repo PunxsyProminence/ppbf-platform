@@ -16,7 +16,7 @@ const runnerPath = path.join(
 const workflowPath = path.join(repositoryRoot, '.github/workflows/apply-migrations.yml');
 const packageJsonPath = path.join(repositoryRoot, 'apps/web/package.json');
 
-const DEFAULT_GATE_KEYS = ['contact_medical_clearance'];
+const DEFAULT_GATE_KEYS = ['contact_medical_clearance', 'training_hold'];
 
 /** Migration text with `--` comment lines dropped, so counts see SQL only. */
 function statementsOnly(sql: string): string {

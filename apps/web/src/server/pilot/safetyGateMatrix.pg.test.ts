@@ -267,6 +267,16 @@ describe('safety gate matrix against real Postgres', () => {
             enforcement: 'flag',
             active_flag: true,
           }),
+          // #82: the training-hold gate seeds alongside -- 'block' because
+          // it guards a pre-action (class registration).
+          expect.objectContaining({
+            gate_id: `gate_${organizationId}_training_hold`,
+            gate_key: 'training_hold',
+            name: 'Active Training Hold',
+            category: 'training_level',
+            enforcement: 'block',
+            active_flag: true,
+          }),
         ]);
         expect(gates[0].requirement_text).toContain('cleared');
       }
@@ -304,8 +314,8 @@ describe('safety gate matrix against real Postgres', () => {
       await client.query(migrationSql);
 
       const gates = await gatesFor(client, ORG_A);
-      expect(gates).toHaveLength(1);
-      expect(gates[0].name).toBe('Renamed By Gym');
+      expect(gates).toHaveLength(2);
+      expect(gates.find((gate) => gate.gate_key === 'contact_medical_clearance')?.name).toBe('Renamed By Gym');
     } finally {
       await client.end();
     }
@@ -424,6 +434,12 @@ describe('safety gate matrix against real Postgres', () => {
           gate_id: 'gate_org-brand-new_contact_medical_clearance',
           gate_key: 'contact_medical_clearance',
           enforcement: 'flag',
+          active_flag: true,
+        }),
+        expect.objectContaining({
+          gate_id: 'gate_org-brand-new_training_hold',
+          gate_key: 'training_hold',
+          enforcement: 'block',
           active_flag: true,
         }),
       ]);
