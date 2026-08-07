@@ -149,6 +149,9 @@ export default function DecisionLoopReviewPage() {
   const [incidentOccurredAt, setIncidentOccurredAt] = useState('');
   const [incidentFiledMessage, setIncidentFiledMessage] = useState('');
 
+  const [behaviorNoteText, setBehaviorNoteText] = useState('');
+  const [behaviorNoteMessage, setBehaviorNoteMessage] = useState('');
+
   const [outcomeDecisionId, setOutcomeDecisionId] = useState('');
   const [outcomeObservationIds, setOutcomeObservationIds] = useState('');
   const [outcomeMatchState, setOutcomeMatchState] = useState<MatchState>('match');
@@ -320,6 +323,38 @@ export default function DecisionLoopReviewPage() {
       setIncidentFiledMessage('Incident filed -- it is now in the escalation queue.');
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to file incident report.');
+    }
+  }
+
+  // Capability #125/#70/#74: capture only, deliberately. pilot.coach_observations'
+  // note_type column already accepts any free-text value with no taxonomy
+  // (createCoachObservation/domain-upsert), so this is a UI wiring gap, not
+  // a schema one -- reuses domain-upsert directly rather than a new route.
+  // A single generic note_type ('behavior_standard') is used on purpose:
+  // picking specific category names (e.g. "respect," "effort") is a
+  // coaching-philosophy decision for the gym's own staff, not something to
+  // invent here. Pattern detection, streaks, and consequences are Phase 6
+  // scope (#70/#74's own engines) and are not attempted by this capture form.
+  async function handleLogBehaviorNote(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!athleteId || !behaviorNoteText.trim()) return;
+    setBehaviorNoteMessage('');
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/intake/domain-upsert`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entity_type: 'coach_note',
+          athlete_id: athleteId,
+          payload: { note_type: 'behavior_standard', note_text: behaviorNoteText },
+        }),
+      });
+      await readJsonOrThrow(response, 'Failed to log the note.');
+      setBehaviorNoteText('');
+      setBehaviorNoteMessage('Note logged.');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to log the note.');
     }
   }
 
@@ -704,6 +739,33 @@ export default function DecisionLoopReviewPage() {
                   </label>
                   <button type="submit" className="btn btn--ghost">
                     File Incident Report
+                  </button>
+                </form>
+              </section>
+
+              {/* Behavior & Habit Note */}
+              <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+                <h2 className="t-command text-[length:var(--t-lg)]">Behavior &amp; Habit Note</h2>
+                <p className="t-muted mt-[var(--s2)]">
+                  A quick note on behavior, discipline, or a habit you noticed -- not a safety concern (use
+                  Near-Misses or Report Incident for those). This just records it; nothing acts on it yet.
+                </p>
+
+                {behaviorNoteMessage && (
+                  <p className="t-body mt-[var(--s3)] text-[color:var(--brass-300)]">{behaviorNoteMessage}</p>
+                )}
+
+                <form onSubmit={handleLogBehaviorNote} className="mt-[var(--s4)] space-y-[var(--s3)]">
+                  <label className="field block">
+                    <span className="t-label">Note</span>
+                    <textarea
+                      value={behaviorNoteText}
+                      onChange={(event) => setBehaviorNoteText(event.target.value)}
+                      className="textarea min-h-[56px]"
+                    />
+                  </label>
+                  <button type="submit" className="btn btn--ghost">
+                    Log Note
                   </button>
                 </form>
               </section>
