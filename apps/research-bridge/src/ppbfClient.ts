@@ -24,7 +24,7 @@ export class PpbfResearchClient {
           authorization: `Bearer ${accessToken.token}`,
           accept: 'application/json',
         },
-        signal: AbortSignal.timeout(15_000),
+        signal: AbortSignal.timeout(60_000),
       },
     );
 
