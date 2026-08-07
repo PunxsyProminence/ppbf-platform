@@ -58,6 +58,18 @@
 -- escalation resolves when a human has looked; a hold lifts when a person
 -- lifts it (trainingHolds.ts owns that transition).
 --
+-- 'incident' (capability #152) is filed by escalationLadder.ts's
+-- fileIncidentReport, called from POST /api/pilot/incidents, when a coach or
+-- admin reports that something ACTUALLY happened -- distinct from every
+-- other source_type here, which are system-detected or derived from an
+-- existing near-miss/gate/hold row. pilot.shadow_near_misses is
+-- semantically "this almost happened," so reusing it for real harm would
+-- corrupt detectRepeatedPatternEscalations' own near-miss counts. source_id
+-- is null (an incident has no underlying row of its own, like
+-- repeated_pattern), triggered_by is always 'human', and severity is
+-- application-enforced to 'high'/'critical' only -- an incident report is
+-- never allowed to read as merely a possibility.
+--
 -- escalated_to_role IS CONSTRAINED, UNLIKE violation_escalations.escalated_to_role
 --
 -- The compliance table's equivalent column is unconstrained free text and in
@@ -80,7 +92,7 @@
 create table if not exists pilot.safety_escalations (
   organization_id             text not null references pilot.organizations(organization_id) on delete cascade,
   escalation_id                text not null,
-  source_type                  text not null constraint safety_escalations_source_type_check check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold')),
+  source_type                  text not null constraint safety_escalations_source_type_check check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold', 'incident')),
   source_id                    text null,
   athlete_id                   text not null,
   severity                     text not null check (severity in ('low', 'moderate', 'high', 'critical')),
@@ -105,14 +117,17 @@ create table if not exists pilot.safety_escalations (
 );
 
 -- Idempotent repair for a database where an earlier revision of this
--- migration created the table with the four-value source_type vocabulary
--- (pre-athlete_voice, #198): the create-if-not-exists above no-ops there,
--- which would leave every athlete_voice escalation violating the stale
--- CHECK -- and the filing code deliberately swallows that failure (oracle
--- safety), so the loss would be silent. Re-running this migration must
--- therefore widen the CHECK in place. The runner's readiness probe also
--- refuses to PASS until 'athlete_voice' is in the constraint, so a stale
--- database fails loudly instead of dropping disclosures.
+-- migration created the table with a narrower source_type vocabulary
+-- (pre-athlete_voice/#198, pre-training_hold/#82, or pre-incident/#152):
+-- the create-if-not-exists above no-ops there, which would leave every
+-- newer source_type's escalation violating the stale CHECK -- and the
+-- filing code deliberately swallows that failure (oracle safety), so the
+-- loss would be silent. Re-running this migration must therefore widen the
+-- CHECK in place, straight to the current full vocabulary regardless of
+-- which earlier revision is on disk. The runner's readiness probe also
+-- refuses to PASS until 'incident' is in the constraint, so a stale
+-- database fails loudly instead of dropping disclosures or incident
+-- reports.
 do $$
 declare
   stale_constraint text;
@@ -123,13 +138,13 @@ begin
     and contype = 'c'
     and pg_get_constraintdef(oid) like '%source_type%'
     and pg_get_constraintdef(oid) like '%''near_miss''%'
-    and pg_get_constraintdef(oid) not like '%''training_hold''%';
+    and pg_get_constraintdef(oid) not like '%''incident''%';
 
   if stale_constraint is not null then
     execute format('alter table pilot.safety_escalations drop constraint %I', stale_constraint);
     alter table pilot.safety_escalations
       add constraint safety_escalations_source_type_check
-      check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold'));
+      check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold', 'incident'));
   end if;
 end $$;
 

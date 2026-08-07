@@ -8,6 +8,7 @@ import { apiBase } from '@/lib/apiBase';
 type MedicalStatusValue = 'cleared' | 'restricted' | 'not_cleared' | 'pending';
 type RecommendationStatus = 'provisional' | 'accepted' | 'rejected' | 'expired' | 'superseded';
 type NearMissSeverity = 'low' | 'moderate' | 'high' | 'critical';
+type IncidentSeverity = 'high' | 'critical';
 type MatchState = 'match' | 'partial' | 'miss' | 'confounded';
 
 interface AthleteListItem {
@@ -142,6 +143,11 @@ export default function DecisionLoopReviewPage() {
   const [nearMissDescription, setNearMissDescription] = useState('');
   const [nearMissSeverity, setNearMissSeverity] = useState<NearMissSeverity>('low');
   const [nearMissDecisionId, setNearMissDecisionId] = useState('');
+
+  const [incidentDescription, setIncidentDescription] = useState('');
+  const [incidentSeverity, setIncidentSeverity] = useState<IncidentSeverity>('high');
+  const [incidentOccurredAt, setIncidentOccurredAt] = useState('');
+  const [incidentFiledMessage, setIncidentFiledMessage] = useState('');
 
   const [outcomeDecisionId, setOutcomeDecisionId] = useState('');
   const [outcomeObservationIds, setOutcomeObservationIds] = useState('');
@@ -283,6 +289,37 @@ export default function DecisionLoopReviewPage() {
       await refreshAll(athleteId);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to flag near-miss.');
+    }
+  }
+
+  // Capability #152: a post-hoc report that something actually happened --
+  // distinct from a near-miss above, which is a close call. Filing lands
+  // directly in the escalation ladder (severity forced high/critical), so
+  // there is no separate list to refresh here -- /admin/escalations is
+  // where a filed incident is read back and acted on.
+  async function handleReportIncident(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!athleteId || !incidentDescription.trim()) return;
+    setIncidentFiledMessage('');
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/incidents`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          athleteId,
+          description: incidentDescription,
+          severity: incidentSeverity,
+          occurredAt: incidentOccurredAt || undefined,
+        }),
+      });
+      await readJsonOrThrow(response, 'Failed to file incident report.');
+      setIncidentDescription('');
+      setIncidentSeverity('high');
+      setIncidentOccurredAt('');
+      setIncidentFiledMessage('Incident filed -- it is now in the escalation queue.');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to file incident report.');
     }
   }
 
@@ -619,6 +656,54 @@ export default function DecisionLoopReviewPage() {
                   </label>
                   <button type="submit" className="btn btn--ghost">
                     Flag Near-Miss
+                  </button>
+                </form>
+              </section>
+
+              {/* Report Incident */}
+              <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+                <h2 className="t-command text-[length:var(--t-lg)]">Report Incident</h2>
+                <p className="t-muted mt-[var(--s2)]">
+                  Use this when something actually happened -- an injury, a broken rule with a real
+                  consequence -- not a close call. This files directly into the safety escalation queue.
+                </p>
+
+                {incidentFiledMessage && (
+                  <p className="t-body mt-[var(--s3)] text-[color:var(--brass-300)]">{incidentFiledMessage}</p>
+                )}
+
+                <form onSubmit={handleReportIncident} className="mt-[var(--s4)] space-y-[var(--s3)]">
+                  <label className="field block">
+                    <span className="t-label">What happened</span>
+                    <textarea
+                      value={incidentDescription}
+                      onChange={(event) => setIncidentDescription(event.target.value)}
+                      className="textarea min-h-[56px]"
+                    />
+                  </label>
+                  <label className="field block">
+                    <span className="t-label">Severity</span>
+                    <select
+                      value={incidentSeverity}
+                      onChange={(event) => setIncidentSeverity(event.target.value as IncidentSeverity)}
+                      className="select"
+                    >
+                      <option value="high">High</option>
+                      <option value="critical">Critical</option>
+                    </select>
+                  </label>
+                  <label className="field block">
+                    <span className="t-label">When it happened (optional, if not today)</span>
+                    <input
+                      type="text"
+                      value={incidentOccurredAt}
+                      onChange={(event) => setIncidentOccurredAt(event.target.value)}
+                      placeholder="e.g. 2026-08-05"
+                      className="input"
+                    />
+                  </label>
+                  <button type="submit" className="btn btn--ghost">
+                    File Incident Report
                   </button>
                 </form>
               </section>

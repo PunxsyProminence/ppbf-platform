@@ -20,7 +20,7 @@ import { query, queryOne, withTransaction } from './db';
  */
 
 export type SafetyEscalationSeverity = 'low' | 'moderate' | 'high' | 'critical';
-export type SafetyEscalationSourceType = 'near_miss' | 'pain_report' | 'safety_gate_evaluation' | 'repeated_pattern' | 'athlete_voice' | 'training_hold';
+export type SafetyEscalationSourceType = 'near_miss' | 'pain_report' | 'safety_gate_evaluation' | 'repeated_pattern' | 'athlete_voice' | 'training_hold' | 'incident';
 export type SafetyEscalationStatus = 'open' | 'acknowledged' | 'resolved';
 /** Who an escalation is filed against. Deliberately excludes 'board' -- see the migration header for why. */
 export type SafetyEscalationTargetRole = 'coach' | 'organization_admin' | 'admin';
@@ -148,6 +148,51 @@ export async function fileEscalation(input: FileEscalationInput, client?: PoolCl
  */
 export function shouldAutoEscalateNearMiss(severity: SafetyEscalationSeverity): boolean {
   return severity === 'high' || severity === 'critical';
+}
+
+export interface FileIncidentReportInput {
+  organizationId: string;
+  athleteId: string;
+  /**
+   * An incident is, by definition, something that actually happened -- not
+   * a close call -- so 'low'/'moderate' are deliberately not accepted here.
+   * A near miss belongs on shadow_near_misses, not this path.
+   */
+  severity: 'high' | 'critical';
+  reason: string;
+  reportedByAccountId: string;
+  reportedByRole: string;
+  /**
+   * When the incident happened, if different from when it was filed (a
+   * coach reporting Monday's incident on Tuesday). No dedicated column
+   * exists for this -- created_at is always the filing time -- so it rides
+   * in metadata alongside every other source_type's contextual detail.
+   */
+  occurredAt?: string | null;
+}
+
+/**
+ * Capability #152: a post-hoc report that harm or a rule violation actually
+ * occurred, distinct from pilot.shadow_near_misses ("this almost happened")
+ * and from every other source_type here, which are all system-detected or
+ * derived from an existing record. An incident always has a human reporter
+ * and severity is never allowed to read as anything less than 'high' --
+ * this is the one source_type where the filer is asserting something
+ * genuinely happened, not flagging a possibility.
+ */
+export async function fileIncidentReport(input: FileIncidentReportInput): Promise<SafetyEscalationRow> {
+  return fileEscalation({
+    organizationId: input.organizationId,
+    sourceType: 'incident',
+    sourceId: null,
+    athleteId: input.athleteId,
+    severity: input.severity,
+    reason: input.reason,
+    triggeredBy: 'human',
+    triggeredByAccountId: input.reportedByAccountId,
+    triggeredByRole: input.reportedByRole,
+    metadata: input.occurredAt ? { occurred_at: input.occurredAt } : {},
+  });
 }
 
 export interface EscalationListFilters {

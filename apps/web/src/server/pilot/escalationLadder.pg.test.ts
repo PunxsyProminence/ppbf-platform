@@ -52,7 +52,7 @@ jest.mock('./db', () => ({
   }),
 }));
 
-import { listEscalations } from './escalationLadder';
+import { fileIncidentReport, listEscalations } from './escalationLadder';
 
 jest.setTimeout(180_000);
 
@@ -494,6 +494,42 @@ describe('safety escalations against real Postgres', () => {
       await client.end();
     }
   });
+
+  // #152: the same repair mechanism proven above for athlete_voice must also
+  // cover 'incident' -- a database stuck on any earlier revision (four-value
+  // OR six-value) must widen straight to the current full vocabulary in one
+  // pass, not require two separate re-runs.
+  test('re-running the migration widens a stale pre-incident CHECK in place', async () => {
+    const client = await freshDatabase('ppbf_test_escalations_stale_incident_check', {
+      dropEscalationsTableFirst: true,
+      applyIncrement: true,
+    });
+    try {
+      await client.query('alter table pilot.safety_escalations drop constraint safety_escalations_source_type_check');
+      await client.query(
+        `alter table pilot.safety_escalations
+         add constraint safety_escalations_source_type_check
+         check (source_type in ('near_miss', 'pain_report', 'safety_gate_evaluation', 'repeated_pattern', 'athlete_voice', 'training_hold'))`,
+      );
+      await expect(insertEscalation(client, { source_type: 'incident', severity: 'high', triggered_by: 'human' })).rejects.toThrow(
+        /violates check constraint/i,
+      );
+
+      await client.query(migrationSql);
+      await insertEscalation(client, {
+        escalation_id: 'esc-incident-repaired',
+        source_type: 'incident',
+        severity: 'high',
+        triggered_by: 'human',
+      });
+      const { rows } = await client.query(
+        `select source_type, severity, triggered_by from pilot.safety_escalations where escalation_id = 'esc-incident-repaired'`,
+      );
+      expect(rows[0]).toEqual({ source_type: 'incident', severity: 'high', triggered_by: 'human' });
+    } finally {
+      await client.end();
+    }
+  });
 });
 
 // ─── the real listEscalations against real rows (#198 coach exclusion) ───────
@@ -529,6 +565,48 @@ describe('the real listEscalations against real rows', () => {
       // An explicit false behaves like omission, not like true.
       const explicitFalse = await listEscalations(ORG_ID, { athleteIds: [ATHLETE_ID], excludeAthleteVoice: false });
       expect(explicitFalse.map((row) => row.escalation_id).sort()).toEqual(['esc-av', 'esc-nm']);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  // #152: fileIncidentReport is the actual production function POST
+  // /api/pilot/incidents calls -- this exercises it against a real database
+  // (via withTransaction routed to the embedded client) rather than only
+  // asserting the SQL string, and confirms a filed incident reads back
+  // through the same listEscalations an admin's queue uses.
+  test('fileIncidentReport writes a real row that listEscalations reads back', async () => {
+    const client = await freshDatabase('ppbf_test_escalations_real_incident', {
+      dropEscalationsTableFirst: true,
+      applyIncrement: true,
+    });
+    activeClient = client;
+    try {
+      const filed = await fileIncidentReport({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        severity: 'critical',
+        reason: 'Athlete was struck after the bell; medical staff called.',
+        reportedByAccountId: COACH_ID,
+        reportedByRole: 'coach',
+        occurredAt: '2026-08-05',
+      });
+
+      expect(filed.source_type).toBe('incident');
+      expect(filed.status).toBe('open');
+
+      const adminView = await listEscalations(ORG_ID, {});
+      expect(adminView).toHaveLength(1);
+      expect(adminView[0]).toEqual(expect.objectContaining({
+        escalation_id: filed.escalation_id,
+        source_type: 'incident',
+        severity: 'critical',
+        triggered_by: 'human',
+        triggered_by_account_id: COACH_ID,
+        triggered_by_role: 'coach',
+        metadata: { occurred_at: '2026-08-05' },
+      }));
     } finally {
       activeClient = null;
       await client.end();

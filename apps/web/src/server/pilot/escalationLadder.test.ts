@@ -14,6 +14,7 @@ import {
   acknowledgeEscalation,
   detectRepeatedPatternEscalations,
   fileEscalation,
+  fileIncidentReport,
   getBoardEscalationSummary,
   listEscalations,
   resolveEscalation,
@@ -95,6 +96,58 @@ describe('fileEscalation', () => {
     expect(escalation.escalated_to_role).toBe('coach');
     const [, params] = currentClient.query.mock.calls[0];
     expect(params).toContain('coach');
+  });
+});
+
+describe('fileIncidentReport', () => {
+  test('files as source_type incident, always human-triggered, with the reporter attributed', async () => {
+    const escalation = await fileIncidentReport({
+      organizationId: 'org-1',
+      athleteId: 'ATH-1',
+      severity: 'high',
+      reason: 'Athlete sprained an ankle during sparring.',
+      reportedByAccountId: 'acct-coach-1',
+      reportedByRole: 'coach',
+    });
+
+    expect(escalation.source_type).toBe('incident');
+    expect(escalation.triggered_by).toBe('human');
+    expect(escalation.triggered_by_account_id).toBe('acct-coach-1');
+    expect(escalation.triggered_by_role).toBe('coach');
+    expect(escalation.source_id).toBeNull();
+    const [, params] = currentClient.query.mock.calls[0];
+    expect(params).toContain('incident');
+  });
+
+  test('occurredAt rides in metadata -- there is no dedicated column for it', async () => {
+    await fileIncidentReport({
+      organizationId: 'org-1',
+      athleteId: 'ATH-1',
+      severity: 'critical',
+      reason: 'Reported a day late.',
+      reportedByAccountId: 'acct-coach-1',
+      reportedByRole: 'coach',
+      occurredAt: '2026-08-05',
+    });
+
+    const [, params] = currentClient.query.mock.calls[0];
+    const metadataJson = params[params.length - 1] as string;
+    expect(JSON.parse(metadataJson)).toEqual({ occurred_at: '2026-08-05' });
+  });
+
+  test('without occurredAt, metadata is empty', async () => {
+    await fileIncidentReport({
+      organizationId: 'org-1',
+      athleteId: 'ATH-1',
+      severity: 'high',
+      reason: 'Filed same day.',
+      reportedByAccountId: 'acct-coach-1',
+      reportedByRole: 'coach',
+    });
+
+    const [, params] = currentClient.query.mock.calls[0];
+    const metadataJson = params[params.length - 1] as string;
+    expect(JSON.parse(metadataJson)).toEqual({});
   });
 });
 
