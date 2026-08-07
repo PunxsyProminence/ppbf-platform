@@ -53,6 +53,39 @@ consent, a forward-looking gate) while leaving a documented follow-up:
    video to — adding one is its own schema decision, not something this
    migration makes.
 
+### Round-8 self-review fix (2026-08-07, commit `4cd01d1`)
+
+Self-applied adversarial review found 10 raw findings, 8 confirmed; all
+fixed. The critical one: `resolveActingParent` resolved the caller's
+*first* `pilot.parents` row with no athlete scoping — `pilot.parents`
+has no uniqueness constraint on `account_id`, so one signed-in account
+can legitimately back a different `parent_id` per child (one intake
+form per athlete is a real, schema-permitted shape). A guardian of two
+children could have a grant/withdraw for child B silently write under
+child A's `parent_id`, passing the route's own authorization check
+(athlete-membership only) while never touching the row
+`checkGuardianMediaConsent(B)` reads. Fixed by requiring the caller
+name the athlete and joining through `guardian_links`; the join itself
+was moved into `guardianAccess.ts` as `guardianParentIdForAthlete`, per
+that module's own "one definition of viewer-scoped guardian reach"
+doctrine, rather than hand-rolled a second time in `guardianConsent.ts`.
+The read-side "you" flag on `/parent/consent` now uses a full
+membership set (`callerParentIdSet`) instead of picking one row.
+
+Also fixed: a TOCTOU race where a guardian's withdrawal could commit in
+the gap between the pre-approval consent check and the CAS-guarded
+approval transaction (closed with an in-transaction re-check,
+`assertGuardianMediaConsentWithClient`, via a new `verifyBeforeCommit`
+hook on `decidePublicationCompliance`); a blocked-approval attempt
+going completely unaudited, despite this ticket's own acceptance
+criteria calling for exactly that ("who approved despite missing
+consent"); and three test-quality gaps (`guardianParentIds`/
+`guardianParentIdForAthlete` had no direct unit coverage; the
+real-Postgres suite never proved organization isolation, despite
+`pilot.athletes`' primary key being per-org, not global; and the grant
+route's default-value derivation was never exercised by a request that
+actually omitted `covers_video`/`public_use_allowed`).
+
 <!-- Everything below this line is the prompt. Paste the whole file into the
      builder AI. It must be able to succeed with no other context. -->
 
