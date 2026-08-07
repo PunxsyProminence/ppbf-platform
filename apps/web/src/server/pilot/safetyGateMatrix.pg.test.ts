@@ -28,6 +28,35 @@ import { pathToFileURL } from 'node:url';
 
 import { Client, type PoolClient } from 'pg';
 
+// Routes safetyGateMatrix.ts's getGuardianGateSummary into whichever
+// embedded database the current test opened, so the real listEscalations-
+// style LEFT JOIN LATERAL SQL executes against real rows. Round 9 review:
+// every existing test for this function mocked query() with one
+// pre-selected row per gate, so the "most recent evaluation" ORDER BY and
+// the org+athlete correlation in the LATERAL join were never actually
+// exercised by anything. withTransaction/queryOne are included so
+// safetyGateSeeds.ts's fallback (no-client) path stays safe even though
+// every test below passes an explicit client.
+let activeClient: Client | null = null;
+
+jest.mock('./db', () => ({
+  query: jest.fn(async (text: string, params: unknown[] = []) => {
+    if (!activeClient) throw new Error('test bug: no active embedded client');
+    const result = await activeClient.query(text, params);
+    return result.rows;
+  }),
+  queryOne: jest.fn(async (text: string, params: unknown[] = []) => {
+    if (!activeClient) throw new Error('test bug: no active embedded client');
+    const result = await activeClient.query(text, params);
+    return result.rows[0] ?? null;
+  }),
+  withTransaction: jest.fn(async (fn: (client: unknown) => Promise<unknown>) => {
+    if (!activeClient) throw new Error('test bug: no active embedded client');
+    return fn({ query: (text: string, values: unknown[]) => activeClient!.query(text, values) });
+  }),
+}));
+
+import { getGuardianGateSummary } from './safetyGateMatrix';
 import { seedDefaultSafetyGates } from './safetyGateSeeds';
 
 jest.setTimeout(180_000);
@@ -444,6 +473,144 @@ describe('safety gate matrix against real Postgres', () => {
         }),
       ]);
     } finally {
+      await client.end();
+    }
+  });
+});
+
+// ─── the real getGuardianGateSummary against real rows (#84, Round 9) ───────
+//
+// The "most recent evaluation per gate" ORDER BY and the org+athlete
+// correlation inside the LATERAL join live in this SQL. A mocked query()
+// handing back one pre-selected row per test can only prove the calling
+// code shapes its output correctly -- it cannot prove the ORDER BY actually
+// picks the newest row, or that the join doesn't leak a different
+// athlete's or organization's evaluation. This runs the real function.
+describe('the real getGuardianGateSummary against real rows', () => {
+  afterEach(() => {
+    activeClient = null;
+  });
+
+  async function insertEvaluation(
+    client: Client,
+    params: { evaluationId: string; organizationId: string; athleteId: string; outcome: string; evaluatedAt: string },
+  ): Promise<void> {
+    await client.query(
+      `insert into pilot.safety_gate_evaluations (
+         organization_id, evaluation_id, gate_key, athlete_id, outcome,
+         evaluated_by_account_id, evaluated_by_role, evaluated_at
+       ) values ($1, $2, 'contact_medical_clearance', $3, $4, $5, 'coach', $6)`,
+      [params.organizationId, params.evaluationId, params.athleteId, params.outcome, COACH_ID, params.evaluatedAt],
+    );
+  }
+
+  test('returns the most recent evaluation per gate, not an arbitrary one', async () => {
+    const client = await freshDatabase('ppbf_test_gate_summary_latest');
+    activeClient = client;
+    try {
+      // Inserted out of chronological order on purpose -- if the SQL's ORDER
+      // BY were missing or reversed, insertion order (not evaluated_at)
+      // would silently determine which row "wins."
+      await insertEvaluation(client, {
+        evaluationId: 'eval-newer',
+        organizationId: ORG_A,
+        athleteId: ATHLETE_ID,
+        outcome: 'flagged',
+        evaluatedAt: '2026-08-05T00:00:00Z',
+      });
+      await insertEvaluation(client, {
+        evaluationId: 'eval-older',
+        organizationId: ORG_A,
+        athleteId: ATHLETE_ID,
+        outcome: 'passed',
+        evaluatedAt: '2026-08-01T00:00:00Z',
+      });
+
+      const summary = await getGuardianGateSummary(ORG_A, ATHLETE_ID);
+      const clearance = summary.find((row) => row.gate_key === 'contact_medical_clearance');
+      expect(clearance?.outcome).toBe('flagged');
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('a gate with no evaluation for this athlete reads as not_evaluated, not a fabricated pass', async () => {
+    const client = await freshDatabase('ppbf_test_gate_summary_unevaluated');
+    activeClient = client;
+    try {
+      const summary = await getGuardianGateSummary(ORG_A, ATHLETE_ID);
+      expect(summary.every((row) => row.outcome === 'not_evaluated')).toBe(true);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('an evaluation on a different athlete never leaks into this one\'s summary', async () => {
+    const client = await freshDatabase('ppbf_test_gate_summary_athlete_scope');
+    activeClient = client;
+    try {
+      await client.query(
+        `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+         values ($1, 'ATH-GATE-OTHER', 'Other Athlete', '2012-01-01', 'fly', 'active', 'contact', true, $2, now(), now())`,
+        [ORG_A, COACH_ID],
+      );
+      await insertEvaluation(client, {
+        evaluationId: 'eval-other-athlete',
+        organizationId: ORG_A,
+        athleteId: 'ATH-GATE-OTHER',
+        outcome: 'flagged',
+        evaluatedAt: '2026-08-05T00:00:00Z',
+      });
+
+      const summary = await getGuardianGateSummary(ORG_A, ATHLETE_ID);
+      expect(summary.find((row) => row.gate_key === 'contact_medical_clearance')?.outcome).toBe('not_evaluated');
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('an evaluation in a different organization never leaks into this one\'s summary', async () => {
+    const client = await freshDatabase('ppbf_test_gate_summary_org_scope');
+    activeClient = client;
+    try {
+      await client.query(
+        `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+         values ($1, $2, 'Cross-Org Athlete', '2012-01-01', 'fly', 'active', 'contact', true, $3, now(), now())`,
+        [ORG_B, ATHLETE_ID, COACH_ID],
+      );
+      await insertEvaluation(client, {
+        evaluationId: 'eval-other-org',
+        organizationId: ORG_B,
+        athleteId: ATHLETE_ID,
+        outcome: 'flagged',
+        evaluatedAt: '2026-08-05T00:00:00Z',
+      });
+
+      const summary = await getGuardianGateSummary(ORG_A, ATHLETE_ID);
+      expect(summary.find((row) => row.gate_key === 'contact_medical_clearance')?.outcome).toBe('not_evaluated');
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('a deactivated gate is left out of the summary entirely', async () => {
+    const client = await freshDatabase('ppbf_test_gate_summary_inactive');
+    activeClient = client;
+    try {
+      await client.query(
+        `update pilot.safety_gates set active_flag = false where organization_id = $1 and gate_key = 'training_hold'`,
+        [ORG_A],
+      );
+
+      const summary = await getGuardianGateSummary(ORG_A, ATHLETE_ID);
+      expect(summary.find((row) => row.gate_key === 'training_hold')).toBeUndefined();
+      expect(summary.find((row) => row.gate_key === 'contact_medical_clearance')).toBeDefined();
+    } finally {
+      activeClient = null;
       await client.end();
     }
   });
