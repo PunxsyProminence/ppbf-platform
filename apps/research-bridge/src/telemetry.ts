@@ -38,7 +38,13 @@ export function trackSafeEvent(name: string, properties: Record<string, string |
 }
 
 export function trackSafeException(error: unknown, operation: string): void {
-  const safeError = error instanceof Error ? new Error(error.name) : new Error('UnknownError');
+  const safeMessage = error instanceof Error
+    && /^(ManagedIdentityTokenUnavailable|StagingExportHttp\d{3})$/.test(error.message)
+    ? error.message
+    : error instanceof Error
+      ? error.name
+      : 'UnknownError';
+  const safeError = new Error(safeMessage);
   if (initialized) {
     const span = trace.getTracer(tracerName).startSpan('bridge.error', { attributes: { operation } });
     span.recordException(safeError);
