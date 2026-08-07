@@ -151,6 +151,21 @@ describe('getWeeklyAttendanceTrend', () => {
     expect(sql).toContain("date_trunc('week', c.start_at)");
   });
 
+  // Round 9 review: the window must exclude the current, still-in-progress
+  // week, not just bound from below -- otherwise it silently returns
+  // weeks + 1 buckets whenever the current week already has marked
+  // attendance. A mocked query result can't catch the real date_trunc/
+  // interval arithmetic (see attendanceReporting.pg.test.ts), but it can at
+  // least pin that the upper-bound clause is present in the SQL sent.
+  test('the window excludes the current in-progress week', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+
+    await getWeeklyAttendanceTrend('org-1', { weeks: 8 });
+
+    const [sql] = mockQuery.mock.calls[0];
+    expect(sql).toContain("c.start_at < date_trunc('week', now())");
+  });
+
   test('weeks defaults to 8 and is clamped to a sane range', async () => {
     mockQuery.mockResolvedValueOnce([]);
     await getWeeklyAttendanceTrend('org-1');

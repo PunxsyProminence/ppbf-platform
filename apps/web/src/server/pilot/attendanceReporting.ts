@@ -221,6 +221,14 @@ interface WeeklyTrendSummaryRow {
  * null would be indistinguishable from a real 0% week, and this module's own
  * doctrine (see AttendanceAthleteSummary) is that "no data" and "a reported
  * 0%" must never share a representation. The page fills gaps on render.
+ *
+ * The window is the `weeks` most recent FULLY COMPLETED weeks -- it excludes
+ * the current, still-in-progress week explicitly (c.start_at < this week's
+ * start), rather than only bounding from below. An open-ended lower bound
+ * alone let the partial current week ride along as an extra, (weeks + 1)th
+ * bucket whenever it already had marked attendance, which silently changes
+ * the labeled window's width out from under a caller asking for "the last 8
+ * weeks."
  */
 export async function getWeeklyAttendanceTrend(
   organizationId: string,
@@ -246,6 +254,7 @@ export async function getWeeklyAttendanceTrend(
        and reg.status = 'registered'
      where a.organization_id = $1
        and c.start_at >= date_trunc('week', now()) - ($2 * interval '1 week')
+       and c.start_at < date_trunc('week', now())
        and (
          $3::text is null
          or c.coach_account_id = $3
