@@ -203,7 +203,12 @@ function clampSourceCount(value: number): number {
   return Math.max(1, Math.min(100, Math.trunc(value)));
 }
 
-function requireEvidenceReviewer(role: PilotRole): void {
+// Exported: drillVersioning.ts reuses this exact check for adopting/declining
+// a drill change proposal. Shared coaching content read by every athlete in
+// the org needs the same reviewer tier as SHADOW evidence review -- one
+// source of truth for "who may approve organization-wide content" rather
+// than a second copy that could drift from this one.
+export function requireEvidenceReviewer(role: PilotRole): void {
   if (role !== 'organization_admin' && role !== 'admin' && role !== 'platform_owner') {
     throw new Error('Forbidden: SHADOW evidence review requires an organization administrator');
   }

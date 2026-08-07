@@ -86,7 +86,7 @@ Evidence pointers are the primary module or route; tests live alongside.
 | # | Capability | Status | Evidence / gap | Phase |
 |---|---|---|---|---|
 | 37 | Combat Athlete Engine | ⬜ | | 5 |
-| 38 | Boxing Skill Tracking Engine | 🟡 | drills library (`drills.ts`), film study | 5 |
+| 38 | Boxing Skill Tracking Engine | 🟡 | drills library (`drills.ts`), film study, drill versioning + change-proposal review lifecycle (`drillVersioning.ts`, external spec, 2026-08-07) closing the drill-refinement traceability gap — schema/plumbing only, no effectiveness scoring | 5 |
 | 39 | Punch Quality / Volume Engine | 🟡 | SHADOW video-analysis / film-study diagnostic | 5 |
 | 40 | Defense / Exit / Reset Engine | 🟡 | film-study proposals | 5 |
 | 41 | Footwork / Ring Movement Engine | 🟡 | film-study scope | 5 |
