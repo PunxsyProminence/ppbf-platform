@@ -1,14 +1,37 @@
 import { createAzureClients, createCredential } from './azureClients.js';
-import { loadConfig } from './config.js';
+import { loadConfig, type BridgeConfig } from './config.js';
 import { PpbfResearchClient } from './ppbfClient.js';
 import { ensureResearchIndex, synchronizeResearchIndex } from './syncCore.js';
 import { initializeTelemetry, trackSafeEvent, trackSafeException } from './telemetry.js';
 
-async function main(): Promise<void> {
-  const config = loadConfig();
-  initializeTelemetry(config.applicationInsightsConnectionString);
-  const credential = createCredential(config);
-  const clients = createAzureClients(config, credential);
+/**
+ * Dependencies the job resolves for itself in production, injectable so the
+ * two entrypoints can be tested apart.
+ *
+ * The export client is a FACTORY rather than an instance on purpose: an
+ * index-bootstrap run must never construct it, and a test can only prove that
+ * if constructing it is something the test can observe.
+ */
+export interface BridgeJobDependencies {
+  createClients: typeof createAzureClients;
+  createCredential: typeof createCredential;
+  createExportClient: (config: BridgeConfig, credential: ReturnType<typeof createCredential>) => {
+    fetchExport: PpbfResearchClient['fetchExport'];
+  };
+}
+
+const productionDependencies: BridgeJobDependencies = {
+  createClients: createAzureClients,
+  createCredential,
+  createExportClient: (config, credential) => new PpbfResearchClient(config, credential),
+};
+
+export async function runBridgeJob(
+  config: BridgeConfig,
+  dependencies: BridgeJobDependencies = productionDependencies,
+): Promise<{ mode: 'index-bootstrap' | 'sync'; ok: boolean }> {
+  const credential = dependencies.createCredential(config);
+  const clients = dependencies.createClients(config, credential);
 
   // An index-bootstrap run returns before the export client is ever
   // constructed. Its identity is not authorized against the PPBF export (it
@@ -26,14 +49,14 @@ async function main(): Promise<void> {
         onStage: (stage) => { bootstrapOperation = stage; },
       });
       trackSafeEvent('research.index.bootstrapped', { index: config.searchIndexName });
+      return { mode: 'index-bootstrap', ok: true };
     } catch (error) {
       trackSafeException(error, bootstrapOperation);
-      process.exitCode = 1;
+      return { mode: 'index-bootstrap', ok: false };
     }
-    return;
   }
 
-  const ppbf = new PpbfResearchClient(config, credential);
+  const ppbf = dependencies.createExportClient(config, credential);
   let operation = 'research.fetch-export';
 
   try {
@@ -46,10 +69,24 @@ async function main(): Promise<void> {
       onStage: (stage) => { operation = stage; },
     });
     trackSafeEvent('research.sync.completed', result);
+    return { mode: 'sync', ok: true };
   } catch (error) {
     trackSafeException(error, operation);
+    return { mode: 'sync', ok: false };
+  }
+}
+
+async function main(): Promise<void> {
+  const config = loadConfig();
+  initializeTelemetry(config.applicationInsightsConnectionString);
+  const outcome = await runBridgeJob(config);
+  if (!outcome.ok) {
     process.exitCode = 1;
   }
 }
 
-await main();
+// Only when executed as the job entrypoint, so importing this module in a test
+// does not run a sync.
+if (process.env.RESEARCH_BRIDGE_SKIP_MAIN !== 'true') {
+  await main();
+}
