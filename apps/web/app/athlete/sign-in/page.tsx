@@ -8,6 +8,8 @@ import {
   loadAuthoritativeRoleSession,
 } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
+import type { PilotRole } from '@/src/server/pilot/contracts';
+import { usesPin } from '@/src/server/pilot/credentialPolicy';
 import { DEFAULT_PIN_LENGTH } from '@/src/server/pilot/pinPolicy';
 
 interface LoginPayload {
@@ -51,7 +53,10 @@ export default function AthletePinSignInPage() {
         throw new Error(payload.error || 'Sign in failed.');
       }
 
-      if (payload.role !== 'athlete') {
+      // Asks credentialPolicy rather than naming the role. This page and the
+      // server's PIN check used to state the rule separately; keeping one copy
+      // is what stops /login from drifting into offering PIN to everyone again.
+      if (!usesPin({ role: payload.role as PilotRole })) {
         throw new Error('This sign-in page is for athlete accounts only.');
       }
 
@@ -64,7 +69,7 @@ export default function AthletePinSignInPage() {
         router.replace('/change-pin');
         return;
       }
-      if (!resolution.ok || resolution.session.role !== 'athlete') {
+      if (!resolution.ok || !usesPin({ role: resolution.session.role as PilotRole })) {
         throw new Error('The athlete session could not be verified. Please sign in again.');
       }
 
