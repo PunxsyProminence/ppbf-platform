@@ -174,7 +174,7 @@ consequences) still land in Phase 6, unbuilt.
 | 90 | Family Communication Engine | 🟡 | announcements exist; no two-way family channel | 2 |
 | 91 | Recovery Homework Engine | ⬜ | | 3 |
 | 92 | Life-Skill Homework Engine | ⬜ | | 6 |
-| 93 | Parent / Guardian Dashboard | 🟡 | `app/parent/dashboard`, progression-visibility | 2 |
+| 93 | Parent / Guardian Dashboard | 🟡 | `app/parent/dashboard`, progression-visibility. Updated 2026-08-07: `ParentHub.tsx`'s Overview tab now links to `/parent/safety` (#84) and `/parent/consent` (T-008), with a best-effort summary line — both existed but the hub never surfaced either. Six tabs (assignments, observations, family goals, messages, attendance, resources) remain explicit `PLANNED \| NOT YET IMPLEMENTED` placeholders with no backend feed. | 2 |
 | 94 | Parent Confirmation System | ⬜ | Scoped 2026-08-07, deliberately not built: no general confirmation/RSVP concept exists to build against. A narrow analog does — `pilot.scheduler_classes` registrations already carry `parent_reviewed`/`parent_reviewed_at`/`parent_reviewer_account_id`, wired end-to-end (`schedulerDb.ts`, a "Mark Parent Reviewed" button on `app/schedule/page.tsx`) — but that's registration-confirmation only. Building "the" confirmation system generally means naming what gets confirmed (event RSVP? permission-slip sign-off? attendance-excuse confirmation? waiver acknowledgment is already `/parent/consent`) — an owner decision, not an implementation gap. The `parent_reviewed` pattern is a reusable template once a target is named. | 2 |
 | 95 | Home Barrier Reporting | ⬜ | Scoped 2026-08-07, deliberately not built: `pilot.coach_observations.note_type` is unconstrained text (no taxonomy migration needed, same as #125's reuse), but the one route that writes it (`domain-upsert`, via `createCoachObservation`) `requireRole`s `['organization_admin','coach']` only — a parent role is explicitly excluded, and no parent-facing write route exists at all. Unlike #125 (added a `note_type` value to an existing route), this needs a genuinely new surface: a parent-facing POST route + role gate, plus a decision on whether guardian-reported barriers belong in `coach_observations` (a coach-authored-data table, semantically) or a dedicated field/table — an owner call, not pure wiring. | 2 |
 | 96 | Transportation / Attendance Barrier Tracker | ⬜ | Same scoping and same blocker as #95 immediately above — no parent-facing write route exists, and the target table/taxonomy question is an owner decision. | 2 |
@@ -295,7 +295,7 @@ sits behind the Privacy-Tier System (#200).
 |---|---|---|---|---|
 | 165 | Athlete Dashboard | ✅ | athlete portal | — |
 | 166 | Coach Dashboard | ✅ | coach workspaces | — |
-| 167 | Parent / Guardian Dashboard | 🟡 | exists; thin until Group H ships | 2 |
+| 167 | Parent / Guardian Dashboard | 🟡 | exists; thin until Group H ships. See #93 above (same page, same 2026-08-07 update) — still thin (six placeholder tabs) but Safety/Consent are no longer orphaned surfaces. | 2 |
 | 168 | Admin Dashboard | ✅ | admin console suite | — |
 | 169 | Readiness Dashboard | ⬜ | needs Phase 3 engines | 3 |
 | 170 | Safety Dashboard | 🟡 | board compliance-monitoring page | 1 |

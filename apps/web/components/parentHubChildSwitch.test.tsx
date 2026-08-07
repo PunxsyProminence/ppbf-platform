@@ -2,6 +2,7 @@
  * @jest-environment jsdom
  */
 
+import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import type { AnnouncementItem } from './AnnouncementBanner';
@@ -31,7 +32,10 @@ function announcement(overrides: Partial<AnnouncementItem> = {}): AnnouncementIt
   };
 }
 
-function installFetch(announcements: () => Promise<Response> = async () => jsonResponse({ ok: true, announcements: [] })): jest.Mock {
+function installFetch(
+  announcements: () => Promise<Response> = async () => jsonResponse({ ok: true, announcements: [] }),
+  safety: () => Promise<Response> = async () => jsonResponse({ ok: true, items: [] }),
+): jest.Mock {
   const fetchMock = jest.fn(async (input: unknown) => {
     const url = String(input);
 
@@ -48,6 +52,9 @@ function installFetch(announcements: () => Promise<Response> = async () => jsonR
     }
     if (url.includes('/api/pilot/announcements/get')) {
       return announcements();
+    }
+    if (url.includes('/api/pilot/parent/safety')) {
+      return safety();
     }
 
     throw new Error(`Unexpected fetch: ${url}`);
@@ -157,6 +164,68 @@ describe('authored announcements on the parent hub', () => {
     });
 
     expect(screen.queryByText('Gym Notices')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Second Child' })).not.toBeNull();
+  });
+});
+
+// Capabilities #93/#167: the hub previously never linked to /parent/safety
+// or /parent/consent (both already built, #84/T-008) even though those
+// pages link back to it -- a pure aggregation gap, no new schema.
+describe('Safety & Consent card on the parent hub', () => {
+  test('links to both surfaces are always present', async () => {
+    installFetch();
+    await act(async () => {
+      render(<ParentHub />);
+    });
+
+    expect(screen.getByRole('link', { name: 'View Safety Status' })).toHaveAttribute('href', '/parent/safety');
+    expect(screen.getByRole('link', { name: 'Manage Consent' })).toHaveAttribute('href', '/parent/consent');
+  });
+
+  test('nothing to flag reads as a plain, non-alarming prompt', async () => {
+    installFetch(undefined, async () => jsonResponse({ ok: true, items: [{ athlete_id: 'ath_1', hold: null, gates: [] }] }));
+    await act(async () => {
+      render(<ParentHub />);
+    });
+
+    expect(screen.getByText(/Check your child.s active training-hold and safety-gate status/)).toBeDefined();
+    expect(screen.queryByText(/active training hold/)).toBeNull();
+  });
+
+  test('an active hold and a flagged gate are summarized without staff detail', async () => {
+    installFetch(
+      undefined,
+      async () =>
+        jsonResponse({
+          ok: true,
+          items: [
+            {
+              athlete_id: 'ath_1',
+              hold: { scope: 'full', athlete_explanation: 'Taking a short break.', lift_condition_text: '', placed_at: '2026-08-01T00:00:00Z', expires_at: null },
+              gates: [{ gate_key: 'contact_medical_clearance', name: 'Contact Requires Medical Clearance', category: 'medical', outcome: 'flagged', evaluated_at: '2026-08-01T00:00:00Z' }],
+            },
+          ],
+        }),
+    );
+    await act(async () => {
+      render(<ParentHub />);
+    });
+
+    expect(screen.getByText(/1 active training hold\(s\) and 1 gate\(s\) awaiting clearance/)).toBeDefined();
+    expect(screen.getByText(/This is not a punishment/)).toBeDefined();
+    // Never staff detail -- reason_text/reason_category never leave the server.
+    expect(screen.queryByText('Taking a short break.')).toBeNull();
+  });
+
+  test('a failed safety read leaves the rest of the hub working, card falls back to plain links', async () => {
+    installFetch(undefined, async () => {
+      throw new Error('safety summary offline');
+    });
+    await act(async () => {
+      render(<ParentHub />);
+    });
+
+    expect(screen.getByRole('link', { name: 'View Safety Status' })).toBeDefined();
     expect(screen.queryByRole('button', { name: 'Second Child' })).not.toBeNull();
   });
 });

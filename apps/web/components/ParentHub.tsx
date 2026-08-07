@@ -99,6 +99,11 @@ interface ParentResource {
   actionLabel: string;
 }
 
+interface SafetySummary {
+  activeHolds: number;
+  flaggedGates: number;
+}
+
 /* This hub sits on the warm canvas ground (Law 6 — family-facing), so every
    tone below is mixed against paper, and every state pairs its colour with a
    glyph and an uppercase label via the .badge component (Law 3). */
@@ -161,6 +166,37 @@ export default function ParentHub() {
   const [parentResources] = useState<ParentResource[]>([]);
 
   const [newMessage, setNewMessage] = useState('');
+
+  // Capabilities #93/#167: this hub links to /parent/safety and
+  // /parent/consent (both already built, #84/T-008) but never surfaced
+  // either, so a guardian had no reason to know they existed. Best-effort,
+  // own effect, own state -- a failure here must never block the rest of
+  // this page, same doctrine as every other secondary read on this hub.
+  const [safetySummary, setSafetySummary] = useState<SafetySummary | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/parent/safety`, {
+          method: 'GET',
+          credentials: 'include',
+        });
+        if (!response.ok) return;
+        const payload = (await response.json()) as {
+          items?: Array<{ hold: unknown; gates?: Array<{ outcome: string }> }>;
+        };
+        const items = payload.items ?? [];
+        const activeHolds = items.filter((item) => item.hold).length;
+        const flaggedGates = items.reduce(
+          (total, item) => total + (item.gates ?? []).filter((gate) => gate.outcome === 'flagged' || gate.outcome === 'blocked').length,
+          0,
+        );
+        setSafetySummary({ activeHolds, flaggedGates });
+      } catch {
+        // Card falls back to plain links with no summary line.
+      }
+    })();
+  }, []);
 
   // Fetch parent's children (athletes) from API
   useEffect(() => {
@@ -498,6 +534,33 @@ export default function ParentHub() {
                   >
                     Open SHADOW Intel
                   </button>
+                </div>
+              </section>
+
+              {/* Safety & Consent: pure aggregation of two guardian-facing
+                  surfaces this hub previously never linked to (#93/#167).
+                  Non-alarming by default -- the count line only appears once
+                  there is something for a guardian to actually look at, and
+                  it names a scope/outcome, never staff detail. */}
+              <section className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]">
+                <h3 className="t-label">Safety &amp; Consent</h3>
+                {safetySummary && (safetySummary.activeHolds > 0 || safetySummary.flaggedGates > 0) ? (
+                  <p className="t-body mt-[var(--s2)]">
+                    {safetySummary.activeHolds > 0 ? `${safetySummary.activeHolds} active training hold(s)` : null}
+                    {safetySummary.activeHolds > 0 && safetySummary.flaggedGates > 0 ? ' and ' : null}
+                    {safetySummary.flaggedGates > 0 ? `${safetySummary.flaggedGates} gate(s) awaiting clearance` : null}
+                    {' '}across your children. This is not a punishment -- see the Safety page for details.
+                  </p>
+                ) : (
+                  <p className="t-body mt-[var(--s2)]">Check your child&apos;s active training-hold and safety-gate status, and manage photo/video consent.</p>
+                )}
+                <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-2">
+                  <Link href="/parent/safety" className="btn w-full">
+                    View Safety Status
+                  </Link>
+                  <Link href="/parent/consent" className="btn btn--ghost w-full">
+                    Manage Consent
+                  </Link>
                 </div>
               </section>
 
