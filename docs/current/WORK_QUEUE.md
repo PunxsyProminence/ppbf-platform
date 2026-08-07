@@ -73,6 +73,8 @@ does not assert `CI_GREEN` per this table's own rule — observe it on the PR.
 
 | PR-238f | P1 | Stop/Hold/Regress (#82): `pilot.training_holds`, registration STOP, scoped-hold REGRESS contact flag, escalation + audit wiring, athlete banner | session B (remote) | build | PR_OPEN | PR-238b/c (same branch — gate row + `training_hold` escalation source_type; also widens the applied audit-vocabulary migration, operator must re-dispatch `apply-migrations: audit-event-vocabulary`) | `trainingHolds.ts` (new), `training-holds/route.ts` (new), `schedulerDb.ts`, `scheduler/route.ts`, `observations/route.ts`, `safetyGateSeeds.ts` + matrix migration seed, `escalationLadder.ts` vocab, `auditEventTypes.ts` + both SQL homes, `AthleteWorkspace` banner, 1 new migration | high — safety substrate, minors; owner decisions recorded in module doc | [#238](https://github.com/PunxsyProminence/ppbf-platform/pull/238) | — | — | Owner decisions 2026-08-06: all three rungs (regress = scope restriction, no athlete ranks); coaches AND admins place/lift; enforcement at registration | 2026-08-06 |
 
+| PR-238g | P2 | Portrait review exit UI (T-004): admin console listing `pending_review` portraits org-wide, approve/reject reusing the existing release/block state machine | session B (remote) | build | PR_OPEN | none (reuses existing `pilot.account_profiles` schema, `photo_review_state` column, and the partial index built for this exact query — no new migration) | `profileDb.ts` (+`listPendingReviewPortraits`), `admin/portrait-review/**` (new), `api/pilot/admin/portrait-review/**` (new) | medium — safeguarding, minors' photos; org-admin-only decide action, narrower than the sibling coach/self-carve-out route it reuses | [#238](https://github.com/PunxsyProminence/ppbf-platform/pull/238) | — | — | Two deliberate ticket deviations, reasoned through in scoping and recorded in the commit message: (1) "reject" is a state transition to `blocked` (blob deleted, row kept with attributed reviewer) matching the existing `photo/review` route's `block` path, not a row DELETE — a literal delete would be a second inconsistent code path and `delete` isn't in the audit-event vocabulary at all; (2) no thumbnail preview — `profileVisibility.ts` deliberately withholds a pending minor's photo from admins too, and loosening that is a safeguarding policy call, not a UI call, so it ships without it | 2026-08-07 |
+
 **T-002 collision, reconciled 2026-08-06 (collision rule 5).** Session B
 claimed and built T-002 on PR #238 in parallel with the Lane A build that
 merged as #242/#243 — the session B claim was pushed to the PR branch, so
@@ -100,9 +102,12 @@ addition to org admin), and the audit trail is row-column-based
 (`acknowledged_by_account_id`/`resolved_by_account_id`/etc.) rather
 than a separate `audit_events` entry — functionally equivalent. Ticket
 marked RESOLVED with the pointer. T-004, T-006, T-008 (added in the
-same commit) were checked and do not collide with anything on this
-branch — genuinely open. T-007 was resolved by the same commit that
-added it (`dataDeletion.ts` et al.).
+same commit) were checked and did not collide with anything on this
+branch at the time — genuinely open. T-007 was resolved by the same
+commit that added it (`dataDeletion.ts` et al.). T-004 has since been
+built as PR-238g above (2026-08-07); see that row and the ticket's own
+status header for the two deliberate deviations from its literal
+wording.
 
 **Refuted, not queued**: an automated audit pass flagged "athlete onboarding
 creates live accounts on a shared, guessable PIN with no safeguard" as a

@@ -1,8 +1,47 @@
 # T-004 — Portrait review queue: photos stuck in pending_review with no exit UI
 
-> Status: BACKLOG
+> Status: **RESOLVED — see delivery note below (2026-08-07)**
 > Lane: A (git-capable AI) or B (chat-only AI) — either
 > Priority: P2 operational blocker (UI missing, photos invisible forever)
+
+## Delivery note (2026-08-07, session B / remote)
+
+Built on PR #238 as PR-238g (see `docs/current/WORK_QUEUE.md`). Reused
+the existing `pilot.account_profiles` schema (`photo_review_state`
+column, already `pending_review`/`released`/`blocked`/`removed`) and the
+existing `profile/photo/review` route's underlying functions
+(`releasePhoto`, `clearPhoto`, `deletePilotProfilePhoto`) rather than
+inventing new schema — no new migration.
+
+Two deliberate deviations from this ticket's literal wording, both
+scoped before building and recorded in the delivery commit message:
+
+1. **"Reject" does not delete the record.** It transitions
+   `photo_review_state` to `blocked` — the blob is deleted, the row is
+   kept with an attributed reviewer/timestamp — matching the existing
+   `profile/photo/review` route's `block` semantics exactly. A literal
+   row `DELETE` would be a second, inconsistent path to the same action,
+   and `delete` is not in the `audit_events` vocabulary this platform
+   enforces (`auditEventTypes.ts`), so a hard-delete route would fail
+   its own audit write's check constraint. The *functional* acceptance
+   criterion — a rejected portrait "no longer appears in the queue" — is
+   satisfied: the list query filters on `photo_review_state =
+   'pending_review'`, so a blocked row drops out exactly as a delete
+   would read to the operator.
+2. **No thumbnail preview.** `profileVisibility.ts`'s own comment states
+   that a not-yet-released minor's photo is withheld from everyone but
+   the uploader — "including the organization's own administrators."
+   Adding a reviewer carve-out to show a pending thumbnail would loosen
+   that privacy tier, which is a safeguarding policy call, not a UI
+   call. Shipped without it: the queue shows name and upload date only.
+3. The exact path `admin/safety-escalations` in this ticket's own text
+   was for a different ticket (T-005) — not applicable here; the actual
+   page is at `admin/portrait-review/`, matching this ticket's own
+   stated path. No `WrongRoleNotice` component was built — the page
+   uses `RoleSessionGate` alone (single-role gate), matching the
+   `admin/escalations` and `admin/consent` precedent; a dedicated
+   `WrongRoleNotice` only exists on pages spanning two admin flavors
+   (`admin` + `platform_owner`) that need to tell them apart.
 
 <!-- Everything below this line is the prompt. Paste the whole file into the
      builder AI. It must be able to succeed with no other context. -->
