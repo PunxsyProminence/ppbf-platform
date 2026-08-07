@@ -16,6 +16,18 @@ param stagingAppOrigin string
 param mcpAudience string
 param syncCronExpression string
 
+// 'Schedule' for the recurring sync, 'Manual' for the one-time index bootstrap.
+@allowed([
+  'Schedule'
+  'Manual'
+])
+param triggerType string = 'Schedule'
+
+// Only the bootstrap job may create or update the index definition. The
+// recurring job holds Search Index Data Contributor, which cannot modify object
+// definitions, so leaving this false keeps it on least privilege.
+param manageIndexSchema bool = false
+
 var placeholderImage = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 var isPlaceholder = containerImage == placeholderImage
 var disabledPlaceholderCron = '0 0 31 2 *'
@@ -33,14 +45,18 @@ resource job 'Microsoft.App/jobs@2026-01-01' = {
   properties: {
     environmentId: managedEnvironmentId
     configuration: {
-      triggerType: 'Schedule'
+      triggerType: triggerType
       replicaTimeout: 1800
       replicaRetryLimit: 2
-      scheduleTriggerConfig: {
+      scheduleTriggerConfig: triggerType == 'Schedule' ? {
         cronExpression: isPlaceholder ? disabledPlaceholderCron : syncCronExpression
         parallelism: 1
         replicaCompletionCount: 1
-      }
+      } : null
+      manualTriggerConfig: triggerType == 'Manual' ? {
+        parallelism: 1
+        replicaCompletionCount: 1
+      } : null
       registries: isPlaceholder
         ? []
         : [
@@ -112,6 +128,10 @@ resource job 'Microsoft.App/jobs@2026-01-01' = {
             {
               name: 'DATA_CLASSIFICATION'
               value: 'sanitized-staging-only'
+            }
+            {
+              name: 'RESEARCH_MANAGE_INDEX_SCHEMA'
+              value: manageIndexSchema ? 'true' : 'false'
             }
           ]
           resources: {

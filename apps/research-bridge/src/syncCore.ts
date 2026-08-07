@@ -43,24 +43,35 @@ export async function synchronizeResearchIndex(input: {
   blobServiceClient: BlobServiceClient;
   onStage?: (stage: string) => void;
 }): Promise<{ uploaded: number; deleted: number }> {
-  input.onStage?.('research.search-create-index');
-  await input.searchIndexClient.createOrUpdateIndex({
-    name: input.config.searchIndexName,
-    fields: [
-      { name: 'id', type: 'Edm.String', key: true, filterable: true },
-      { name: 'kind', type: 'Edm.String', searchable: false, filterable: true, facetable: true },
-      { name: 'title', type: 'Edm.String', searchable: true },
-      { name: 'content', type: 'Edm.String', searchable: true },
-      { name: 'publisher', type: 'Edm.String', searchable: true, filterable: true },
-      { name: 'sourceType', type: 'Edm.String', searchable: false, filterable: true, facetable: true },
-      { name: 'authorityTier', type: 'Edm.Int32', searchable: false, filterable: true, sortable: true },
-      { name: 'url', type: 'Edm.String', searchable: false },
-      { name: 'publicationDate', type: 'Edm.String', searchable: false, filterable: true, sortable: true },
-      { name: 'status', type: 'Edm.String', searchable: false, filterable: true, facetable: true },
-      { name: 'syncedAt', type: 'Edm.String', searchable: false, sortable: true },
-    ],
-  });
+  // Only the bootstrap job manages the index definition. The recurring sync
+  // holds Search Index Data Contributor, which per Azure AI Search RBAC grants
+  // document read/write and explicitly NOT object management -- so calling
+  // createOrUpdateIndex here would 403 for the identity that normally runs this.
+  if (input.config.manageIndexSchema) {
+    input.onStage?.('research.search-create-index');
+    await input.searchIndexClient.createOrUpdateIndex({
+      name: input.config.searchIndexName,
+      fields: [
+        { name: 'id', type: 'Edm.String', key: true, filterable: true },
+        { name: 'kind', type: 'Edm.String', searchable: false, filterable: true, facetable: true },
+        { name: 'title', type: 'Edm.String', searchable: true },
+        { name: 'content', type: 'Edm.String', searchable: true },
+        { name: 'publisher', type: 'Edm.String', searchable: true, filterable: true },
+        { name: 'sourceType', type: 'Edm.String', searchable: false, filterable: true, facetable: true },
+        { name: 'authorityTier', type: 'Edm.Int32', searchable: false, filterable: true, sortable: true },
+        { name: 'url', type: 'Edm.String', searchable: false },
+        { name: 'publicationDate', type: 'Edm.String', searchable: false, filterable: true, sortable: true },
+        { name: 'status', type: 'Edm.String', searchable: false, filterable: true, facetable: true },
+        { name: 'syncedAt', type: 'Edm.String', searchable: false, sortable: true },
+      ],
+    });
+  }
 
+  // Its own stage. This transform used to run while the marker still read
+  // 'research.search-create-index', so a failure here was reported as a Search
+  // failure -- pointing every investigation at RBAC and the SDK instead of the
+  // data.
+  input.onStage?.('research.build-documents');
   const documents = toIndexDocuments(input.snapshot);
   if (documents.length > 0) {
     input.onStage?.('research.search-write-documents');

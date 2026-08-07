@@ -1,8 +1,99 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { toIndexDocuments } from './syncCore.js';
-import type { ResearchExport } from './schemas.js';
+import { synchronizeResearchIndex, toIndexDocuments } from './syncCore.js';
+import type { BridgeConfig } from './config.js';
+import type { ResearchExport, ResearchIndexDocument } from './schemas.js';
+
+function makeSnapshot(): ResearchExport {
+  return {
+    schema_version: '1',
+    classification: 'sanitized-staging-only',
+    generated_at: '2026-08-06T20:00:00.000Z',
+    research_needs: [{
+      id: 'need_0123456789abcdef',
+      title: 'Study adaptive stance cues',
+      knowledge_gap: 'Evidence is incomplete.',
+      evidence_status: 'missing',
+      confidence_tier: 'INSUFFICIENT',
+      verification_state: 'unknown',
+      status: 'open',
+      created_at: '2026-08-06T19:00:00.000Z',
+    }],
+    approved_evidence: [],
+  };
+}
+
+function makeConfig(manageIndexSchema: boolean): BridgeConfig {
+  return {
+    port: 3000,
+    stagingAppOrigin: 'https://staging.example.org',
+    mcpAudience: 'api://example',
+    searchEndpoint: 'https://srch.search.windows.net',
+    searchIndexName: 'ppbf-research-evidence-v1',
+    storageAccountUrl: 'https://example.blob.core.windows.net',
+    researchContainerName: 'research',
+    evidenceContainerName: 'evidence',
+    manageIndexSchema,
+    requirePlatformAuth: true,
+    allowedHosts: ['localhost'],
+  };
+}
+
+type SyncInput = Parameters<typeof synchronizeResearchIndex>[0];
+
+function makeHarness(manageIndexSchema: boolean) {
+  const stages: string[] = [];
+  let createIndexCalls = 0;
+  const containerClient = {
+    getBlockBlobClient: () => ({ uploadData: async () => undefined }),
+  };
+  const input = {
+    config: makeConfig(manageIndexSchema),
+    snapshot: makeSnapshot(),
+    searchIndexClient: {
+      createOrUpdateIndex: async () => { createIndexCalls += 1; },
+    },
+    searchClient: {
+      mergeOrUploadDocuments: async () => undefined,
+      search: async () => ({ results: [] as never[] }),
+      deleteDocuments: async () => undefined,
+    },
+    blobServiceClient: { getContainerClient: () => containerClient },
+    onStage: (stage: string) => { stages.push(stage); },
+  } as unknown as SyncInput;
+
+  return { stages, input, calls: () => createIndexCalls };
+}
+
+test('the recurring sync does not touch the index definition', async () => {
+  // Search Index Data Contributor cannot modify object definitions, so the
+  // scheduled job must never call createOrUpdateIndex -- it would 403.
+  const harness = makeHarness(false);
+  await synchronizeResearchIndex(harness.input);
+
+  assert.equal(harness.calls(), 0);
+  assert.equal(harness.stages.includes('research.search-create-index'), false);
+});
+
+test('the bootstrap run does manage the index definition', async () => {
+  const harness = makeHarness(true);
+  await synchronizeResearchIndex(harness.input);
+
+  assert.equal(harness.calls(), 1);
+  assert.equal(harness.stages.includes('research.search-create-index'), true);
+});
+
+test('document building reports its own stage, not the index stage', async () => {
+  const harness = makeHarness(true);
+  await synchronizeResearchIndex(harness.input);
+
+  // A failure while transforming the export must not be attributed to Search.
+  const createIndexAt = harness.stages.indexOf('research.search-create-index');
+  const buildAt = harness.stages.indexOf('research.build-documents');
+  assert.ok(buildAt > createIndexAt, 'build-documents must follow create-index');
+  assert.ok(buildAt < harness.stages.indexOf('research.search-write-documents'));
+});
 
 test('indexes only the explicit sanitized export fields', () => {
   const snapshot: ResearchExport = {
