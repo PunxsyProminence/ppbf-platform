@@ -36,7 +36,12 @@ import { queryOne } from './db';
 import { claimNextJob, completeJob, failJob, type JobType } from './shadowJobQueue';
 import { composeShadowSystemPrompt, SHADOW_SYSTEM_PROMPT, validateShadowResponse } from './shadowChat';
 import { appendAssistantMessage, queueHumanReview } from './shadowConversations';
-import { deriveEvidenceTier } from './shadowEvidenceTier';
+import {
+  deriveEvidenceTier,
+  selectStrongestEvidence,
+  type ShadowBoxingSpecificity,
+  type ShadowEvidenceClass,
+} from './shadowEvidenceTier';
 import { resolveHandoff } from './shadowHandoff';
 import { buildAzureAiChatCompletionsUrl, getAzureAiRuntimeConfig } from './azureAiRuntime';
 
@@ -212,7 +217,19 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
       const evidenceTier = deriveEvidenceTier({
         isAnsweredState: !bindingFiltered,
         evidenceAvailability: binding.availability,
-        citationCount: citationIds.length,
+        // Same reduction as the synchronous chat route: the strongest
+        // citation actually shown grades the tier. See
+        // selectStrongestEvidence's own comment for why.
+        strongestEvidence: selectStrongestEvidence(
+          binding.citationCatalog
+            .filter((item) => bundleCitationIds.includes(item.evidenceId))
+            .filter((item) => item.evidenceClass !== null && item.boxingSpecificity !== null)
+            .map((item) => ({
+              evidenceClass: item.evidenceClass as ShadowEvidenceClass,
+              authorityTier: item.authorityTier,
+              boxingSpecificity: item.boxingSpecificity as ShadowBoxingSpecificity,
+            })),
+        ),
       });
       // Same banner the synchronous path stores: the response's own topic
       // wins (a benign question can draw an answer that volunteers weight-cut
@@ -447,6 +464,9 @@ interface HeavyBagConversationBinding {
     token: string;
     sourceTitle: string;
     documentName: string;
+    authorityTier: number;
+    evidenceClass: string | null;
+    boxingSpecificity: string | null;
   }>;
 }
 
@@ -492,15 +512,35 @@ function parseConversationBinding(payload: Record<string, unknown>): HeavyBagCon
       || typeof (entry as Record<string, unknown>).token !== 'string'
       || typeof (entry as Record<string, unknown>).sourceTitle !== 'string'
       || typeof (entry as Record<string, unknown>).documentName !== 'string'
+      || typeof (entry as Record<string, unknown>).authorityTier !== 'number'
+      || !(
+        (entry as Record<string, unknown>).evidenceClass === null
+        || typeof (entry as Record<string, unknown>).evidenceClass === 'string'
+      )
+      || !(
+        (entry as Record<string, unknown>).boxingSpecificity === null
+        || typeof (entry as Record<string, unknown>).boxingSpecificity === 'string'
+      )
     ) {
       throw new Error('SHADOW_JOB_CONTEXT_INVALID');
     }
-    const item = entry as Record<string, string>;
+    const item = entry as {
+      evidenceId: string;
+      token: string;
+      sourceTitle: string;
+      documentName: string;
+      authorityTier: number;
+      evidenceClass: string | null;
+      boxingSpecificity: string | null;
+    };
     catalog.push({
       evidenceId: item.evidenceId,
       token: item.token,
       sourceTitle: item.sourceTitle,
       documentName: item.documentName,
+      authorityTier: item.authorityTier,
+      evidenceClass: item.evidenceClass,
+      boxingSpecificity: item.boxingSpecificity,
     });
   }
   return {

@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
-import { query, queryOne, withTransaction } from './db';
+import { query, queryOne } from './db';
 
-// pilot.activity_log and pilot.sparring_rounds are owned by
+// pilot.activity_log is owned by
 // infra/azure/pilot_slice_postgres_activity_log_migration.sql, applied
 // through the apply-migrations workflow like every other table. Nothing here
 // issues DDL.
@@ -13,10 +13,9 @@ import { query, queryOne, withTransaction } from './db';
 // before any backfill runs, and that decision belongs to a separate,
 // reviewable backfill script, not this module.
 //
-// WHAT SPARRING EXPOSURE FUNCTIONS HERE DO NOT DO: compute a damage score, a
-// cumulative risk index, or a recommended limit. getSparringExposureCounts
-// below returns raw counts only, by design -- see the migration's own
-// comment on pilot.sparring_rounds for why.
+// Sparring exposure lives in sparringExposure.ts (pilot.sparring_exposure),
+// not here -- see that module's header for why round count was replaced by
+// time_under_impact_sec before either ever shipped to a database.
 
 export type ActivityDomain =
   | 'boxing_training'
@@ -33,8 +32,6 @@ export type ActivityCaptureMethod =
   | 'admin_override'
   | 'supervisor_entry'
   | 'import';
-
-export type SparringType = 'hard' | 'play' | 'technical' | 'game' | 'conditioned';
 
 // The two domains pilot_activity_log_verified_check requires a named human
 // verifier on, because they are reported to an external authority. Kept as
@@ -66,34 +63,11 @@ export interface ActivityLogRow {
   updated_at: string;
 }
 
-export interface SparringRoundRow {
-  organization_id: string;
-  round_id: string;
-  activity_id: string;
-  athlete_id: string;
-  round_number: number;
-  duration_sec: number;
-  sparring_type: SparringType;
-  partner_athlete_id: string | null;
-  headgear_worn: boolean | null;
-  glove_oz: number | null;
-  supervising_coach_account_id: string;
-  stopped_early: boolean;
-  stop_reason: string | null;
-  coach_note: string;
-  created_at: string;
-}
-
 const ACTIVITY_FIELDS =
   'organization_id, activity_id, person_account_id, athlete_id, activity_domain, activity_type, '
   + 'occurred_on, started_at, duration_minutes, what_was_worked_on, class_id, attendance_status, '
   + 'capture_method, recorded_by_role, recorded_by_account_id, verified_by_account_id, verified_at, '
   + 'rpe, notes, created_at, updated_at';
-
-const SPARRING_FIELDS =
-  'organization_id, round_id, activity_id, athlete_id, round_number, duration_sec, sparring_type, '
-  + 'partner_athlete_id, headgear_worn, glove_oz, supervising_coach_account_id, stopped_early, '
-  + 'stop_reason, coach_note, created_at';
 
 export interface RecordActivityInput {
   organizationId: string;
@@ -206,118 +180,3 @@ export async function listActivityLog(
   );
 }
 
-export interface RecordSparringRoundInput {
-  athleteId: string;
-  roundNumber: number;
-  durationSec: number;
-  sparringType: SparringType;
-  partnerAthleteId?: string | null;
-  headgearWorn?: boolean | null;
-  gloveOz?: number | null;
-  supervisingCoachAccountId: string;
-  stoppedEarly?: boolean;
-  stopReason?: string | null;
-  coachNote?: string;
-}
-
-/**
- * All rounds for one activity occurrence, inserted together so a partial
- * write (three rounds in, the fourth rejected) never leaves an
- * undercounted exposure record on the table.
- */
-export async function recordSparringRounds(
-  organizationId: string,
-  activityId: string,
-  rounds: RecordSparringRoundInput[],
-): Promise<SparringRoundRow[]> {
-  if (rounds.length === 0) {
-    return [];
-  }
-
-  try {
-    return await withTransaction(async (client) => {
-      const inserted: SparringRoundRow[] = [];
-      for (const round of rounds) {
-        const roundId = randomUUID();
-        const result = await client.query<SparringRoundRow>(
-          `insert into pilot.sparring_rounds
-             (organization_id, round_id, activity_id, athlete_id, round_number, duration_sec, sparring_type,
-              partner_athlete_id, headgear_worn, glove_oz, supervising_coach_account_id, stopped_early,
-              stop_reason, coach_note)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-           returning ${SPARRING_FIELDS}`,
-          [
-            organizationId,
-            roundId,
-            activityId,
-            round.athleteId,
-            round.roundNumber,
-            round.durationSec,
-            round.sparringType,
-            round.partnerAthleteId ?? null,
-            round.headgearWorn ?? null,
-            round.gloveOz ?? null,
-            round.supervisingCoachAccountId,
-            round.stoppedEarly ?? false,
-            round.stopReason ?? null,
-            round.coachNote ?? '',
-          ],
-        );
-        inserted.push(result.rows[0]);
-      }
-      return inserted;
-    });
-  } catch (error) {
-    const { code, constraint } = (error ?? {}) as { code?: unknown; constraint?: unknown };
-    if (code === '23505' && constraint === 'pilot_sparring_rounds_round_number_uq') {
-      throw new Error('SPARRING_ROUND_NUMBER_DUPLICATE');
-    }
-    throw error;
-  }
-}
-
-export async function listSparringRounds(
-  organizationId: string,
-  filter: { athleteId?: string; activityId?: string; since?: string; until?: string } = {},
-): Promise<SparringRoundRow[]> {
-  return query<SparringRoundRow>(
-    `select ${SPARRING_FIELDS}
-     from pilot.sparring_rounds
-     where organization_id = $1
-       and ($2::text is null or athlete_id = $2)
-       and ($3::text is null or activity_id = $3)
-       and ($4::timestamptz is null or created_at >= $4)
-       and ($5::timestamptz is null or created_at <= $5)
-     order by created_at desc, round_number asc`,
-    [organizationId, filter.athleteId ?? null, filter.activityId ?? null, filter.since ?? null, filter.until ?? null],
-  );
-}
-
-export interface SparringExposureCounts {
-  total_rounds: number;
-  total_duration_sec: number;
-  rounds_by_type: Record<SparringType, number>;
-}
-
-/**
- * Raw counts only -- no score, no index, no limit. See this module's own
- * header and the migration's comment on pilot.sparring_rounds: no validated
- * safe sparring dose exists for any population this platform serves, so
- * nothing here may be read as a recommendation.
- */
-export async function getSparringExposureCounts(
-  organizationId: string,
-  athleteId: string,
-  since?: string,
-): Promise<SparringExposureCounts> {
-  const rounds = await listSparringRounds(organizationId, { athleteId, since });
-  const roundsByType: Record<SparringType, number> = {
-    hard: 0, play: 0, technical: 0, game: 0, conditioned: 0,
-  };
-  let totalDurationSec = 0;
-  for (const round of rounds) {
-    roundsByType[round.sparring_type] += 1;
-    totalDurationSec += round.duration_sec;
-  }
-  return { total_rounds: rounds.length, total_duration_sec: totalDurationSec, rounds_by_type: roundsByType };
-}

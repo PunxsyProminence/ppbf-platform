@@ -51,33 +51,43 @@ function resolveSslConfig() {
 
 const READINESS_QUERY = `
   select
-    to_regclass('pilot.activity_log') is not null as activity_log_table_ready,
+    to_regclass('pilot.workout_templates') is not null as templates_table_ready,
+    to_regclass('pilot.workout_template_items') is not null as items_table_ready,
+    exists (
+      select 1 from pg_constraint
+      where conname = 'pilot_wti_no_contact_volume'
+        and conrelid = to_regclass('pilot.workout_template_items')
+    ) as no_contact_volume_check_ready,
+    exists (
+      select 1 from pg_constraint
+      where conname = 'pilot_wti_one_source'
+        and conrelid = to_regclass('pilot.workout_template_items')
+    ) as one_source_check_ready,
+    exists (
+      select 1 from pg_constraint
+      where conname = 'pilot_wti_drill_fk'
+        and conrelid = to_regclass('pilot.workout_template_items')
+        and contype = 'f'
+    ) as drill_fk_ready,
     exists (
       select 1
       from pg_index i
       join pg_class c on c.oid = i.indexrelid
-      where i.indrelid = to_regclass('pilot.activity_log')
-        and c.relname = 'pilot_activity_log_one_per_occurrence'
+      where i.indrelid = to_regclass('pilot.workout_templates')
+        and c.relname = 'pilot_workout_templates_one_active_name'
         and i.indisunique
-    ) as activity_log_one_per_occurrence_ready,
+    ) as one_active_name_ready,
     exists (
-      select 1 from pg_constraint
-      where conname = 'pilot_activity_log_domain_check'
-        and conrelid = to_regclass('pilot.activity_log')
-        and pg_get_constraintdef(oid) like '%''boxing_training''%'
-        and pg_get_constraintdef(oid) like '%''community_service''%'
-        and pg_get_constraintdef(oid) like '%''work_study''%'
-    ) as activity_log_domain_vocabulary_ready,
-    exists (
-      select 1 from pg_constraint
-      where conname = 'pilot_activity_log_verified_check'
-        and conrelid = to_regclass('pilot.activity_log')
-    ) as activity_log_verified_check_ready
+      select 1
+      from information_schema.columns
+      where table_schema = 'pilot' and table_name = 'workout_template_items' and column_name = 'scale_level'
+        and is_nullable = 'YES'
+    ) as scale_level_nullable_ready
 `;
 
 function assertReadiness(row) {
   if (!row || Object.values(row).some((value) => value !== true)) {
-    throw new Error('ACTIVITY_LOG_NOT_READY');
+    throw new Error('WORKOUT_TEMPLATES_V2_NOT_READY');
   }
 }
 
@@ -106,7 +116,7 @@ export async function run() {
   const __dirname = path.dirname(__filename);
   const migrationPath = path.resolve(
     __dirname,
-    '../../../infra/azure/pilot_slice_postgres_activity_log_migration.sql',
+    '../../../infra/azure/pilot_slice_postgres_workout_templates_v2_migration.sql',
   );
 
   const sql = await fs.readFile(migrationPath, 'utf8');
@@ -125,8 +135,8 @@ export async function run() {
 
   console.log(`target_hostname: ${target.hostname}`);
   console.log(`target_database: ${target.database}`);
-  console.log(`Applied activity log migration: ${migrationPath}`);
-  console.log('PILOT ACTIVITY LOG MIGRATION PASS');
+  console.log(`Applied workout templates v2 migration: ${migrationPath}`);
+  console.log('PILOT WORKOUT TEMPLATES V2 MIGRATION PASS');
 }
 
 const isMainModule = process.argv[1] === fileURLToPath(import.meta.url);
@@ -134,7 +144,7 @@ if (isMainModule) {
   try {
     await run();
   } catch (error) {
-    console.error('PILOT ACTIVITY LOG MIGRATION FAIL');
+    console.error('PILOT WORKOUT TEMPLATES V2 MIGRATION FAIL');
     console.error(String(error));
     process.exit(1);
   }

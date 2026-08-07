@@ -64,6 +64,9 @@ function heavyBagJob(): ShadowJob {
           token: 'E1',
           sourceTitle: 'Punxsy Manual',
           documentName: 'Footwork',
+          authorityTier: 3,
+          evidenceClass: 'VERIFIED EVIDENCE',
+          boxingSpecificity: 'boxing_specific',
         }],
       },
     },
@@ -123,10 +126,13 @@ describe('background Heavy Bag completion parity with the synchronous path', () 
     expect(completedOutput.citations).toEqual([
       expect.objectContaining({ evidenceId: LIBRARY_ID }),
     ]);
-    // Two authorized citations put this answer on the PROVEN tier -- whose
-    // label used to trip the output sweep's own \bproven\b trigger and
-    // replace the entire output with the safe-filtered text.
-    expect(completedOutput.evidenceTier).toBe('PROVEN');
+    // Exactly one LIBRARY citation backs this answer -- the near-miss id is
+    // authorized for validation but is not evidence, so it must not count
+    // toward the tier (the same audit-F3 class of bug the synchronous path
+    // was already fixed for: counting an authorized-but-non-library id
+    // toward the grade). The fixture's one real citation is VERIFIED
+    // EVIDENCE at authority tier 3, which grades EMERGING.
+    expect(completedOutput.evidenceTier).toBe('EMERGING');
     expect(completedOutput.resultStatus).toBe('ok');
     // Benign answer: no banner, no review ticket.
     expect(mockAppendAssistantMessage).toHaveBeenCalledWith(

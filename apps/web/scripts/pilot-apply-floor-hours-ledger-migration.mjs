@@ -51,33 +51,30 @@ function resolveSslConfig() {
 
 const READINESS_QUERY = `
   select
-    to_regclass('pilot.activity_log') is not null as activity_log_table_ready,
+    to_regclass('pilot.activity_log_adjustments') is not null as adjustments_table_ready,
+    to_regclass('pilot.v_activity_effective_minutes') is not null as effective_minutes_view_ready,
+    to_regclass('pilot.v_floor_hours_public') is not null as floor_hours_public_view_ready,
+    to_regclass('pilot.v_floor_hours_admin') is not null as floor_hours_admin_view_ready,
     exists (
+      select 1 from pg_constraint
+      where conname = 'pilot_activity_adj_reason'
+        and conrelid = to_regclass('pilot.activity_log_adjustments')
+    ) as adjustments_reason_check_ready,
+    coalesce((
+      select reloptions @> array['security_invoker=true']
+      from pg_class where oid = to_regclass('pilot.v_floor_hours_public')
+    ), false) as floor_hours_public_security_invoker_ready,
+    not exists (
       select 1
-      from pg_index i
-      join pg_class c on c.oid = i.indexrelid
-      where i.indrelid = to_regclass('pilot.activity_log')
-        and c.relname = 'pilot_activity_log_one_per_occurrence'
-        and i.indisunique
-    ) as activity_log_one_per_occurrence_ready,
-    exists (
-      select 1 from pg_constraint
-      where conname = 'pilot_activity_log_domain_check'
-        and conrelid = to_regclass('pilot.activity_log')
-        and pg_get_constraintdef(oid) like '%''boxing_training''%'
-        and pg_get_constraintdef(oid) like '%''community_service''%'
-        and pg_get_constraintdef(oid) like '%''work_study''%'
-    ) as activity_log_domain_vocabulary_ready,
-    exists (
-      select 1 from pg_constraint
-      where conname = 'pilot_activity_log_verified_check'
-        and conrelid = to_regclass('pilot.activity_log')
-    ) as activity_log_verified_check_ready
+      from information_schema.columns
+      where table_schema = 'pilot' and table_name = 'v_floor_hours_public'
+        and column_name in ('person_account_id', 'athlete_id')
+    ) as floor_hours_public_no_person_identifier
 `;
 
 function assertReadiness(row) {
   if (!row || Object.values(row).some((value) => value !== true)) {
-    throw new Error('ACTIVITY_LOG_NOT_READY');
+    throw new Error('FLOOR_HOURS_LEDGER_NOT_READY');
   }
 }
 
@@ -106,7 +103,7 @@ export async function run() {
   const __dirname = path.dirname(__filename);
   const migrationPath = path.resolve(
     __dirname,
-    '../../../infra/azure/pilot_slice_postgres_activity_log_migration.sql',
+    '../../../infra/azure/pilot_slice_postgres_floor_hours_ledger_migration.sql',
   );
 
   const sql = await fs.readFile(migrationPath, 'utf8');
@@ -125,8 +122,8 @@ export async function run() {
 
   console.log(`target_hostname: ${target.hostname}`);
   console.log(`target_database: ${target.database}`);
-  console.log(`Applied activity log migration: ${migrationPath}`);
-  console.log('PILOT ACTIVITY LOG MIGRATION PASS');
+  console.log(`Applied floor hours ledger migration: ${migrationPath}`);
+  console.log('PILOT FLOOR HOURS LEDGER MIGRATION PASS');
 }
 
 const isMainModule = process.argv[1] === fileURLToPath(import.meta.url);
@@ -134,7 +131,7 @@ if (isMainModule) {
   try {
     await run();
   } catch (error) {
-    console.error('PILOT ACTIVITY LOG MIGRATION FAIL');
+    console.error('PILOT FLOOR HOURS LEDGER MIGRATION FAIL');
     console.error(String(error));
     process.exit(1);
   }

@@ -51,33 +51,53 @@ function resolveSslConfig() {
 
 const READINESS_QUERY = `
   select
-    to_regclass('pilot.activity_log') is not null as activity_log_table_ready,
+    to_regclass('pilot.sparring_exposure') is not null as sparring_exposure_table_ready,
+    to_regclass('pilot.session_load') is not null as session_load_table_ready,
+    exists (
+      select 1 from pg_constraint
+      where conname = 'pilot_sparring_exposure_type_check'
+        and conrelid = to_regclass('pilot.sparring_exposure')
+        and pg_get_constraintdef(oid) like '%''hard''%'
+        and pg_get_constraintdef(oid) like '%''conditioned''%'
+    ) as sparring_exposure_type_vocabulary_ready,
+    exists (
+      select 1 from pg_constraint
+      where conname = 'pilot_sparring_exposure_stop'
+        and conrelid = to_regclass('pilot.sparring_exposure')
+    ) as sparring_exposure_stop_check_ready,
+    exists (
+      select 1 from pg_constraint
+      where conname = 'pilot_sparring_exposure_segment_uq'
+        and conrelid = to_regclass('pilot.sparring_exposure')
+        and contype = 'u'
+    ) as sparring_exposure_segment_unique_ready,
     exists (
       select 1
-      from pg_index i
-      join pg_class c on c.oid = i.indexrelid
-      where i.indrelid = to_regclass('pilot.activity_log')
-        and c.relname = 'pilot_activity_log_one_per_occurrence'
-        and i.indisunique
-    ) as activity_log_one_per_occurrence_ready,
+      from information_schema.columns
+      where table_schema = 'pilot' and table_name = 'session_load' and column_name = 'rpe_physical'
+    ) as session_load_rpe_physical_ready,
+    exists (
+      select 1
+      from information_schema.columns
+      where table_schema = 'pilot' and table_name = 'session_load' and column_name = 'rpe_cognitive'
+    ) as session_load_rpe_cognitive_ready,
+    not exists (
+      select 1
+      from information_schema.columns
+      where table_schema = 'pilot' and table_name = 'session_load'
+        and column_name in ('derived_load', 'srpe_load', 'computed_load')
+    ) as session_load_no_stored_derived_column,
     exists (
       select 1 from pg_constraint
-      where conname = 'pilot_activity_log_domain_check'
-        and conrelid = to_regclass('pilot.activity_log')
-        and pg_get_constraintdef(oid) like '%''boxing_training''%'
-        and pg_get_constraintdef(oid) like '%''community_service''%'
-        and pg_get_constraintdef(oid) like '%''work_study''%'
-    ) as activity_log_domain_vocabulary_ready,
-    exists (
-      select 1 from pg_constraint
-      where conname = 'pilot_activity_log_verified_check'
-        and conrelid = to_regclass('pilot.activity_log')
-    ) as activity_log_verified_check_ready
+      where conname = 'pilot_session_load_rated_by_uq'
+        and conrelid = to_regclass('pilot.session_load')
+        and contype = 'u'
+    ) as session_load_rated_by_unique_ready
 `;
 
 function assertReadiness(row) {
   if (!row || Object.values(row).some((value) => value !== true)) {
-    throw new Error('ACTIVITY_LOG_NOT_READY');
+    throw new Error('SPARRING_EXPOSURE_NOT_READY');
   }
 }
 
@@ -106,7 +126,7 @@ export async function run() {
   const __dirname = path.dirname(__filename);
   const migrationPath = path.resolve(
     __dirname,
-    '../../../infra/azure/pilot_slice_postgres_activity_log_migration.sql',
+    '../../../infra/azure/pilot_slice_postgres_sparring_exposure_and_load_migration.sql',
   );
 
   const sql = await fs.readFile(migrationPath, 'utf8');
@@ -125,8 +145,8 @@ export async function run() {
 
   console.log(`target_hostname: ${target.hostname}`);
   console.log(`target_database: ${target.database}`);
-  console.log(`Applied activity log migration: ${migrationPath}`);
-  console.log('PILOT ACTIVITY LOG MIGRATION PASS');
+  console.log(`Applied sparring exposure / session load migration: ${migrationPath}`);
+  console.log('PILOT SPARRING EXPOSURE MIGRATION PASS');
 }
 
 const isMainModule = process.argv[1] === fileURLToPath(import.meta.url);
@@ -134,7 +154,7 @@ if (isMainModule) {
   try {
     await run();
   } catch (error) {
-    console.error('PILOT ACTIVITY LOG MIGRATION FAIL');
+    console.error('PILOT SPARRING EXPOSURE MIGRATION FAIL');
     console.error(String(error));
     process.exit(1);
   }

@@ -51,33 +51,42 @@ function resolveSslConfig() {
 
 const READINESS_QUERY = `
   select
-    to_regclass('pilot.activity_log') is not null as activity_log_table_ready,
-    exists (
-      select 1
-      from pg_index i
-      join pg_class c on c.oid = i.indexrelid
-      where i.indrelid = to_regclass('pilot.activity_log')
-        and c.relname = 'pilot_activity_log_one_per_occurrence'
-        and i.indisunique
-    ) as activity_log_one_per_occurrence_ready,
+    to_regclass('pilot.safety_flags') is not null as safety_flags_table_ready,
+    to_regclass('pilot.v_flag_calibration') is not null as flag_calibration_view_ready,
+    to_regclass('pilot.return_to_training_plans') is not null as rtt_plans_table_ready,
+    to_regclass('pilot.return_to_training_steps') is not null as rtt_steps_table_ready,
     exists (
       select 1 from pg_constraint
-      where conname = 'pilot_activity_log_domain_check'
-        and conrelid = to_regclass('pilot.activity_log')
-        and pg_get_constraintdef(oid) like '%''boxing_training''%'
-        and pg_get_constraintdef(oid) like '%''community_service''%'
-        and pg_get_constraintdef(oid) like '%''work_study''%'
-    ) as activity_log_domain_vocabulary_ready,
+      where conname = 'pilot_safety_flags_note_required'
+        and conrelid = to_regclass('pilot.safety_flags')
+    ) as safety_flags_note_required_ready,
     exists (
       select 1 from pg_constraint
-      where conname = 'pilot_activity_log_verified_check'
-        and conrelid = to_regclass('pilot.activity_log')
-    ) as activity_log_verified_check_ready
+      where conname = 'pilot_safety_flags_external_not_bypassed'
+        and conrelid = to_regclass('pilot.safety_flags')
+    ) as safety_flags_external_not_bypassed_ready,
+    exists (
+      select 1 from pg_constraint
+      where conname = 'pilot_safety_flags_medical_human_only'
+        and conrelid = to_regclass('pilot.safety_flags')
+        and pg_get_constraintdef(oid) like '%concussion_rest_period%'
+    ) as safety_flags_medical_human_only_ready,
+    exists (
+      select 1 from pg_constraint
+      where conname = 'pilot_rtt_steps_advance'
+        and conrelid = to_regclass('pilot.return_to_training_steps')
+    ) as rtt_steps_advance_check_ready,
+    exists (
+      select 1 from pg_constraint
+      where conname = 'pilot_rtt_steps_week_uq'
+        and conrelid = to_regclass('pilot.return_to_training_steps')
+        and contype = 'u'
+    ) as rtt_steps_week_unique_ready
 `;
 
 function assertReadiness(row) {
   if (!row || Object.values(row).some((value) => value !== true)) {
-    throw new Error('ACTIVITY_LOG_NOT_READY');
+    throw new Error('SAFETY_FLAGS_NOT_READY');
   }
 }
 
@@ -106,7 +115,7 @@ export async function run() {
   const __dirname = path.dirname(__filename);
   const migrationPath = path.resolve(
     __dirname,
-    '../../../infra/azure/pilot_slice_postgres_activity_log_migration.sql',
+    '../../../infra/azure/pilot_slice_postgres_safety_flags_migration.sql',
   );
 
   const sql = await fs.readFile(migrationPath, 'utf8');
@@ -125,8 +134,8 @@ export async function run() {
 
   console.log(`target_hostname: ${target.hostname}`);
   console.log(`target_database: ${target.database}`);
-  console.log(`Applied activity log migration: ${migrationPath}`);
-  console.log('PILOT ACTIVITY LOG MIGRATION PASS');
+  console.log(`Applied safety flags / return-to-training migration: ${migrationPath}`);
+  console.log('PILOT SAFETY FLAGS MIGRATION PASS');
 }
 
 const isMainModule = process.argv[1] === fileURLToPath(import.meta.url);
@@ -134,7 +143,7 @@ if (isMainModule) {
   try {
     await run();
   } catch (error) {
-    console.error('PILOT ACTIVITY LOG MIGRATION FAIL');
+    console.error('PILOT SAFETY FLAGS MIGRATION FAIL');
     console.error(String(error));
     process.exit(1);
   }

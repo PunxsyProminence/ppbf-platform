@@ -148,6 +148,14 @@ export interface ShadowLibrarySearchResult {
   publication_date: string | null;
   text_content: string;
   score: number;
+  // Extracted from the chunk's own metadata jsonb -- the quality-weighted
+  // evidence tier rule (shadowEvidenceTier.ts) reads these. Null for a
+  // chunk whose metadata does not carry the field (e.g. content seeded
+  // before the research-program corpus existed), which
+  // shadowEvidenceTier.ts's callers must treat as "not gradeable", never
+  // as a passing grade.
+  evidence_class: string | null;
+  boxing_specificity: string | null;
 }
 
 export interface ShadowApprovedEvidenceExportRow {
@@ -987,6 +995,8 @@ export async function searchShadowLibrary(input: {
            s.source_type, s.authority_tier, s.status as source_status,
            s.publication_date::text as publication_date,
            c.text_content, c.embedding,
+           c.metadata->>'evidence_class' as evidence_class,
+           c.metadata->>'boxing_specificity' as boxing_specificity,
            0::float as score
          from pilot.shadow_library_chunks c
          join pilot.shadow_library_documents d on d.document_id = c.document_id and d.organization_id = c.organization_id
@@ -995,6 +1005,7 @@ export async function searchShadowLibrary(input: {
            and s.status = 'active'
            and s.approval_state = 'approved'
            and s.verification_state = 'verified'
+           and not coalesce(s.retrieval_suppressed, false)
            and d.ingest_state = 'indexed'
            and d.index_completed_at is not null
            and d.approval_state = 'approved'
@@ -1061,6 +1072,8 @@ export async function searchShadowLibrary(input: {
        s.status as source_status,
        s.publication_date::text as publication_date,
        c.text_content,
+       c.metadata->>'evidence_class' as evidence_class,
+       c.metadata->>'boxing_specificity' as boxing_specificity,
        (
           case when lower(c.text_content) like '%' || $4 || '%' then 40 else 0 end
           + case when lower(d.document_name) like '%' || $4 || '%' then 20 else 0 end
@@ -1081,6 +1094,7 @@ export async function searchShadowLibrary(input: {
         and s.status = 'active'
         and s.approval_state = 'approved'
         and s.verification_state = 'verified'
+        and not coalesce(s.retrieval_suppressed, false)
         and d.ingest_state = 'indexed'
         and d.index_completed_at is not null
         and d.approval_state = 'approved'

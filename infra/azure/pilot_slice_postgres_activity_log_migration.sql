@@ -1,4 +1,13 @@
--- Activity logging, sparring exposure -- P-01 / P-03.
+-- Activity logging -- P-01 / P-03.
+--
+-- pilot.sparring_rounds (round-count exposure) previously lived in this file
+-- and was removed before ever being applied to any database, in favor of
+-- pilot.sparring_exposure in pilot_slice_postgres_sparring_exposure_and_load_migration.sql,
+-- which records time_under_impact_sec instead. Round count is a weak
+-- exposure proxy: collegiate boxers recorded 27.63 +/- 17.87 impacts above
+-- 9.6 g per boxer across two 2-minute rounds -- the standard deviation is
+-- roughly two thirds of the mean, so "two rounds" is not a consistent unit
+-- across athletes.
 --
 -- SCOPE NOTE. This is deliberately NOT a boxing-only log. PPBF tracks hours
 -- across activity domains that share one structure and one door: boxing
@@ -95,66 +104,5 @@ begin
 end
 $$;
 
--- ---------------------------------------------------------------------------
--- SPARRING EXPOSURE -- per round, not per session.
---
--- Session-level hours cannot answer "how many rounds did this athlete take
--- this month", which is the head-impact exposure proxy reviewed at every
--- coach review.
---
--- INTENSITY TYPES ARE NOT INTERCHANGEABLE. Verified evidence (A1-062)
--- found amateur boxing produces greater acute physiological, endocrine and
--- biochemical alterations in competitive bouts than in sparring, and
--- greater in sparring than in boxing-specific simulation -- a GRADED
--- response across intensity conditions, which is why the type is recorded
--- per round rather than assumed constant.
---
--- WHAT THIS TABLE DOES NOT DO: it does not compute a damage score, a
--- cumulative risk index, or a recommended limit. No validated safe
--- sparring dose exists for any population PPBF serves, and no validated
--- model converts round counts into individual injury risk. This table
--- COUNTS exposure so a qualified human can read it. It must never gate,
--- clear, or recommend.
-
-create table if not exists pilot.sparring_rounds (
-  organization_id     text not null references pilot.organizations(organization_id) on delete cascade,
-  round_id            text not null,
-  activity_id         text not null,
-  athlete_id          text not null,
-  round_number        integer not null check (round_number > 0),
-  duration_sec        integer not null check (duration_sec between 1 and 900),
-  sparring_type       text not null,   -- hard | play | technical | game | conditioned
-  partner_athlete_id  text null,
-  headgear_worn       boolean null,
-  glove_oz            integer null check (glove_oz is null or glove_oz between 8 and 20),
-  supervising_coach_account_id text not null references pilot.accounts(account_id),
-  stopped_early       boolean not null default false,
-  stop_reason         text null,
-  coach_note          text not null default '',
-  created_at          timestamptz not null default now(),
-  constraint pilot_sparring_rounds_pkey primary key (organization_id, round_id),
-  constraint pilot_sparring_rounds_activity_fk foreign key (organization_id, activity_id)
-    references pilot.activity_log(organization_id, activity_id) on delete cascade,
-  constraint pilot_sparring_rounds_athlete_fk foreign key (organization_id, athlete_id)
-    references pilot.athletes(organization_id, athlete_id) on delete cascade,
-  constraint pilot_sparring_rounds_round_number_uq unique (organization_id, activity_id, athlete_id, round_number)
-);
-
-do $$
-begin
-  if not exists (select 1 from pg_constraint where conname='pilot_sparring_rounds_type_check'
-                 and conrelid='pilot.sparring_rounds'::regclass) then
-    alter table pilot.sparring_rounds add constraint pilot_sparring_rounds_type_check
-      check (sparring_type in ('hard','play','technical','game','conditioned'));
-  end if;
-end
-$$;
-
-create index if not exists pilot_sparring_rounds_athlete_window
-  on pilot.sparring_rounds(organization_id, athlete_id, created_at desc);
-
 comment on table pilot.activity_log is
   'Cross-domain hours record (boxing_training, schoolwork, gym_service, community_service, work_study, other). Supersedes pilot.attendance and pilot.scheduler_attendance in intent -- neither is dropped or altered by this migration; a human-reviewed backfill decides which source wins on conflict.';
-
-comment on table pilot.sparring_rounds is
-  'Per-round sparring exposure counts only. No damage score, cumulative risk index, or recommended limit -- no validated safe sparring dose exists for any population this platform serves.';

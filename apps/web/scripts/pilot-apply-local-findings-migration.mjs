@@ -51,33 +51,39 @@ function resolveSslConfig() {
 
 const READINESS_QUERY = `
   select
-    to_regclass('pilot.activity_log') is not null as activity_log_table_ready,
-    exists (
-      select 1
-      from pg_index i
-      join pg_class c on c.oid = i.indexrelid
-      where i.indrelid = to_regclass('pilot.activity_log')
-        and c.relname = 'pilot_activity_log_one_per_occurrence'
-        and i.indisunique
-    ) as activity_log_one_per_occurrence_ready,
+    to_regclass('pilot.local_findings') is not null as local_findings_table_ready,
+    to_regclass('pilot.local_finding_tier_history') is not null as tier_history_table_ready,
+    to_regclass('pilot.v_evidence_combined') is not null as evidence_combined_view_ready,
     exists (
       select 1 from pg_constraint
-      where conname = 'pilot_activity_log_domain_check'
-        and conrelid = to_regclass('pilot.activity_log')
-        and pg_get_constraintdef(oid) like '%''boxing_training''%'
-        and pg_get_constraintdef(oid) like '%''community_service''%'
-        and pg_get_constraintdef(oid) like '%''work_study''%'
-    ) as activity_log_domain_vocabulary_ready,
+      where conname = 'pilot_local_findings_tested'
+        and conrelid = to_regclass('pilot.local_findings')
+    ) as local_findings_tested_check_ready,
     exists (
       select 1 from pg_constraint
-      where conname = 'pilot_activity_log_verified_check'
-        and conrelid = to_regclass('pilot.activity_log')
-    ) as activity_log_verified_check_ready
+      where conname = 'pilot_local_findings_reviewed'
+        and conrelid = to_regclass('pilot.local_findings')
+    ) as local_findings_reviewed_check_ready,
+    exists (
+      select 1 from pg_constraint
+      where conname = 'pilot_local_findings_contradiction'
+        and conrelid = to_regclass('pilot.local_findings')
+        and pg_get_constraintdef(oid) like '%20%'
+    ) as local_findings_contradiction_check_ready,
+    exists (
+      select 1 from pg_constraint
+      where conname = 'pilot_lfth_rationale'
+        and conrelid = to_regclass('pilot.local_finding_tier_history')
+    ) as tier_history_rationale_check_ready,
+    coalesce((
+      select reloptions @> array['security_invoker=true']
+      from pg_class where oid = to_regclass('pilot.v_evidence_combined')
+    ), false) as evidence_combined_security_invoker_ready
 `;
 
 function assertReadiness(row) {
   if (!row || Object.values(row).some((value) => value !== true)) {
-    throw new Error('ACTIVITY_LOG_NOT_READY');
+    throw new Error('LOCAL_FINDINGS_NOT_READY');
   }
 }
 
@@ -106,7 +112,7 @@ export async function run() {
   const __dirname = path.dirname(__filename);
   const migrationPath = path.resolve(
     __dirname,
-    '../../../infra/azure/pilot_slice_postgres_activity_log_migration.sql',
+    '../../../infra/azure/pilot_slice_postgres_local_findings_migration.sql',
   );
 
   const sql = await fs.readFile(migrationPath, 'utf8');
@@ -125,8 +131,8 @@ export async function run() {
 
   console.log(`target_hostname: ${target.hostname}`);
   console.log(`target_database: ${target.database}`);
-  console.log(`Applied activity log migration: ${migrationPath}`);
-  console.log('PILOT ACTIVITY LOG MIGRATION PASS');
+  console.log(`Applied local findings migration: ${migrationPath}`);
+  console.log('PILOT LOCAL FINDINGS MIGRATION PASS');
 }
 
 const isMainModule = process.argv[1] === fileURLToPath(import.meta.url);
@@ -134,7 +140,7 @@ if (isMainModule) {
   try {
     await run();
   } catch (error) {
-    console.error('PILOT ACTIVITY LOG MIGRATION FAIL');
+    console.error('PILOT LOCAL FINDINGS MIGRATION FAIL');
     console.error(String(error));
     process.exit(1);
   }

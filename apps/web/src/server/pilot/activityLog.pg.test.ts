@@ -1,8 +1,12 @@
-// Real PostgreSQL-backed contract test for the activity log / sparring
-// migration (pilot.activity_log, pilot.sparring_rounds) and for
-// activityLog.ts's functions running against a real transaction.
+// Real PostgreSQL-backed contract test for the activity log migration
+// (pilot.activity_log) and for activityLog.ts's functions running against a
+// real transaction.
 //
-// Six things need proving, and none can be proven by reading SQL or by a
+// pilot.sparring_rounds previously lived in this migration and this test
+// file; both were removed before ever shipping to a database, superseded by
+// pilot.sparring_exposure (sparringExposure.ts / sparringExposure.pg.test.ts).
+//
+// Four things need proving, and none can be proven by reading SQL or by a
 // mocked-query unit test:
 //
 // 1. A duplicate (person, date, domain, class) occurrence is rejected,
@@ -15,10 +19,7 @@
 // 3. recordActivity translates the raw constraint violation into
 //    ACTIVITY_LOG_DUPLICATE_OCCURRENCE and ACTIVITY_LOG_VERIFIER_REQUIRED,
 //    not a raw Postgres error.
-// 4. sparring_rounds round_number is unique per (activity, athlete) --
-//    recordSparringRounds's bulk insert rolls back entirely on a duplicate.
-// 5. The readiness check actually fails when the migration did not land.
-// 6. getSparringExposureCounts returns raw counts only (no computed score).
+// 4. The readiness check actually fails when the migration did not land.
 //
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
@@ -35,7 +36,6 @@ import { pathToFileURL } from 'node:url';
 import { Client } from 'pg';
 
 let activeClient: Client | null = null;
-let activeConnectionString: string | null = null;
 
 jest.mock('./db', () => ({
   query: jest.fn(async (text: string, params: unknown[] = []) => {
@@ -48,27 +48,9 @@ jest.mock('./db', () => ({
     const result = await activeClient.query(text, params);
     return result.rows[0] ?? null;
   }),
-  withTransaction: jest.fn(async (fn: (client: unknown) => Promise<unknown>) => {
-    if (!activeConnectionString) throw new Error('test bug: no active embedded database');
-    const client = new Client({ connectionString: activeConnectionString });
-    await client.connect();
-    try {
-      await client.query('BEGIN');
-      try {
-        const result = await fn({ query: (text: string, values: unknown[]) => client.query(text, values) });
-        await client.query('COMMIT');
-        return result;
-      } catch (error) {
-        await client.query('ROLLBACK').catch(() => {});
-        throw error;
-      }
-    } finally {
-      await client.end();
-    }
-  }),
 }));
 
-import { getSparringExposureCounts, listSparringRounds, recordActivity, recordSparringRounds } from './activityLog';
+import { recordActivity } from './activityLog';
 
 jest.setTimeout(180_000);
 
@@ -154,7 +136,6 @@ async function freshDatabase(name: string): Promise<Client> {
   );
 
   activeClient = client;
-  activeConnectionString = connectionStringFor(name);
   return client;
 }
 
@@ -228,7 +209,6 @@ describe('activity log migration readiness against real Postgres', () => {
       expect(table.rows[0].t).toBeNull();
     } finally {
       activeClient = null;
-      activeConnectionString = null;
       await client.end();
     }
   });
@@ -242,13 +222,11 @@ describe('activity log migration readiness against real Postgres', () => {
 
       const constraints = await client.query(
         `select count(*)::int as n from pg_constraint
-         where conname in ('pilot_activity_log_domain_check', 'pilot_activity_log_verified_check',
-                            'pilot_sparring_rounds_type_check')`,
+         where conname in ('pilot_activity_log_domain_check', 'pilot_activity_log_verified_check')`,
       );
-      expect(constraints.rows[0].n).toBe(3);
+      expect(constraints.rows[0].n).toBe(2);
     } finally {
       activeClient = null;
-      activeConnectionString = null;
       await client.end();
     }
   });
@@ -290,7 +268,6 @@ describe('pilot_activity_log_one_per_occurrence', () => {
       ).rejects.toThrow('ACTIVITY_LOG_DUPLICATE_OCCURRENCE');
     } finally {
       activeClient = null;
-      activeConnectionString = null;
       await client.end();
     }
   });
@@ -334,7 +311,6 @@ describe('pilot_activity_log_one_per_occurrence', () => {
       ).rejects.toThrow('ACTIVITY_LOG_DUPLICATE_OCCURRENCE');
     } finally {
       activeClient = null;
-      activeConnectionString = null;
       await client.end();
     }
   });
@@ -362,7 +338,6 @@ describe('pilot_activity_log_verified_check', () => {
       ).rejects.toThrow('ACTIVITY_LOG_VERIFIER_REQUIRED');
     } finally {
       activeClient = null;
-      activeConnectionString = null;
       await client.end();
     }
   });
@@ -387,7 +362,6 @@ describe('pilot_activity_log_verified_check', () => {
       expect(row.verified_by_account_id).toBeNull();
     } finally {
       activeClient = null;
-      activeConnectionString = null;
       await client.end();
     }
   });
@@ -414,101 +388,8 @@ describe('pilot_activity_log_verified_check', () => {
       expect(row.verified_at).not.toBeNull();
     } finally {
       activeClient = null;
-      activeConnectionString = null;
       await client.end();
     }
   });
 });
 
-describe('sparring_rounds round_number uniqueness', () => {
-  test('round_number is unique per (activity, athlete); a duplicate rolls back the whole batch', async () => {
-    const client = await freshDatabase('ppbf_test_actlog_sparring_dup');
-    activeClient = client;
-    try {
-      await applyMigrationTransaction(client, migrationSql);
-      const activity = await recordActivity({
-        organizationId: ORG_A,
-        personAccountId: ATHLETE_A,
-        athleteId: ATHLETE_A,
-        activityDomain: 'boxing_training',
-        activityType: 'sparring_session',
-        occurredOn: '2026-08-01',
-        durationMinutes: 60,
-        captureMethod: 'door_terminal',
-        recordedByRole: 'coach',
-        recordedByAccountId: COACH_A,
-      });
-
-      await recordSparringRounds(ORG_A, activity.activity_id, [
-        {
-          athleteId: ATHLETE_A, roundNumber: 1, durationSec: 180, sparringType: 'technical',
-          supervisingCoachAccountId: COACH_A,
-        },
-      ]);
-
-      await expect(
-        recordSparringRounds(ORG_A, activity.activity_id, [
-          {
-            athleteId: ATHLETE_A, roundNumber: 2, durationSec: 180, sparringType: 'hard',
-            supervisingCoachAccountId: COACH_A,
-          },
-          {
-            athleteId: ATHLETE_A, roundNumber: 1, durationSec: 180, sparringType: 'play',
-            supervisingCoachAccountId: COACH_A,
-          },
-        ]),
-      ).rejects.toThrow('SPARRING_ROUND_NUMBER_DUPLICATE');
-
-      // Round 2 must NOT have survived -- the whole batch is one transaction.
-      const rounds = await listSparringRounds(ORG_A, { activityId: activity.activity_id });
-      expect(rounds.map((r) => r.round_number)).toEqual([1]);
-    } finally {
-      activeClient = null;
-      activeConnectionString = null;
-      await client.end();
-    }
-  });
-
-  test('getSparringExposureCounts returns raw counts only, no computed score', async () => {
-    const client = await freshDatabase('ppbf_test_actlog_exposure_counts');
-    activeClient = client;
-    try {
-      await applyMigrationTransaction(client, migrationSql);
-      const activity = await recordActivity({
-        organizationId: ORG_A,
-        personAccountId: ATHLETE_A,
-        athleteId: ATHLETE_A,
-        activityDomain: 'boxing_training',
-        activityType: 'sparring_session',
-        occurredOn: '2026-08-01',
-        durationMinutes: 60,
-        captureMethod: 'door_terminal',
-        recordedByRole: 'coach',
-        recordedByAccountId: COACH_A,
-      });
-
-      await recordSparringRounds(ORG_A, activity.activity_id, [
-        {
-          athleteId: ATHLETE_A, roundNumber: 1, durationSec: 180, sparringType: 'hard',
-          supervisingCoachAccountId: COACH_A,
-        },
-        {
-          athleteId: ATHLETE_A, roundNumber: 2, durationSec: 120, sparringType: 'technical',
-          supervisingCoachAccountId: COACH_A,
-        },
-      ]);
-
-      const counts = await getSparringExposureCounts(ORG_A, ATHLETE_A);
-      expect(counts).toEqual({
-        total_rounds: 2,
-        total_duration_sec: 300,
-        rounds_by_type: { hard: 1, play: 0, technical: 1, game: 0, conditioned: 0 },
-      });
-      expect(Object.keys(counts)).toEqual(['total_rounds', 'total_duration_sec', 'rounds_by_type']);
-    } finally {
-      activeClient = null;
-      activeConnectionString = null;
-      await client.end();
-    }
-  });
-});

@@ -33,7 +33,13 @@ import {
   type ShadowUnlockState,
   type ShadowUnlockHint,
 } from '@/src/server/pilot/shadowUnlocks';
-import { deriveEvidenceTier, type ShadowEvidenceTier } from '@/src/server/pilot/shadowEvidenceTier';
+import {
+  deriveEvidenceTier,
+  selectStrongestEvidence,
+  type ShadowBoxingSpecificity,
+  type ShadowEvidenceClass,
+  type ShadowEvidenceTier,
+} from '@/src/server/pilot/shadowEvidenceTier';
 import {
   appendConversationExchange,
   appendUserMessage,
@@ -59,6 +65,7 @@ import {
 } from '@/src/server/pilot/omegaPlatformContext';
 import { budgetConversationHistory } from '@/src/server/pilot/shadowConversationHistory';
 import {
+  citedEvidenceQuality,
   publicEvidenceCitations,
   retrieveShadowEvidenceBundle,
   unavailableShadowEvidenceBundle,
@@ -891,7 +898,15 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
             ...platformEvidenceIds,
             ...(roleBasedContext.evidenceIds ?? []),
           ],
-          citationCatalog: publicEvidenceCitations(evidenceBundle, evidenceBundle.allowedEvidenceIds),
+          citationCatalog: citedEvidenceQuality(evidenceBundle, evidenceBundle.allowedEvidenceIds).map((item) => ({
+            evidenceId: item.evidenceId,
+            token: item.token,
+            sourceTitle: item.sourceTitle,
+            documentName: item.documentName,
+            authorityTier: item.authorityTier,
+            evidenceClass: item.evidenceClass,
+            boxingSpecificity: item.boxingSpecificity,
+          })),
         },
       });
       // The queued turn is audited HERE because this branch returns before
@@ -976,18 +991,29 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     const persistedEvidenceTier = deriveEvidenceTier({
       isAnsweredState: state === 'ok',
       evidenceAvailability: evidenceBundle.availability,
-      // Audit F3: this counted responseValidation.citationIds, which includes
-      // platform-rollup and near-miss context ids. Those are authorized for
-      // validation but are NOT library evidence, so `citations` above strips
-      // them from what the user sees. An answer citing two platform ids and no
-      // library document therefore earned PROVEN -- the top tier -- and
-      // rendered it above an empty Sources list.
+      // Audit F3: this used to count responseValidation.citationIds, which
+      // includes platform-rollup and near-miss context ids. Those are
+      // authorized for validation but are NOT library evidence, so
+      // `citations` above strips them from what the user sees. An answer
+      // citing two platform ids and no library document used to earn
+      // PROVEN -- the top tier -- and render it above an empty Sources
+      // list.
       //
-      // The tier is now derived from the citations actually displayed, so it
-      // can never claim more evidence than the reader can check. Latent while
-      // the Library is empty (every answer is RESEARCH_NEEDED), and no longer
-      // latent now that it has real doctrine in it.
-      citationCount: citations.length,
+      // The tier is derived only from citations actually displayed (the
+      // same set `citations` above draws from), so it can never claim more
+      // evidence than the reader can check. Within that set, the STRONGEST
+      // citation grades the tier -- see selectStrongestEvidence's own
+      // comment for why that reduction is the right one, not the weakest
+      // or an average.
+      strongestEvidence: selectStrongestEvidence(
+        citedEvidenceQuality(evidenceBundle, responseValidation.citationIds)
+          .filter((item) => item.evidenceClass !== null && item.boxingSpecificity !== null)
+          .map((item) => ({
+            evidenceClass: item.evidenceClass as ShadowEvidenceClass,
+            authorityTier: item.authorityTier,
+            boxingSpecificity: item.boxingSpecificity as ShadowBoxingSpecificity,
+          })),
+      ),
     });
     const persistedRequiresHumanReview = responseValidation.requiresHumanReview || state === 'filtered';
     const persistedHandoff = resolveHandoff({
