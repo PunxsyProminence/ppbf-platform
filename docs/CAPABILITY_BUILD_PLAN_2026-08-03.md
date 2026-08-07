@@ -32,6 +32,8 @@ Rough scoreboard across the 200 detailed items:
 
 **Drift check, 2026-08-06:** every row marked ✅ was audited against the actual codebase (does the cited evidence exist, still do what's claimed, and get reached by a real route/UI?). 16 of 21 confirmed clean. Five had real drift, each corrected in its own row: #8's evidence cited the wrong file for the review queue; #9 is admin-only, not athlete self-service, despite the "athlete portal" claim; #113/#166 are one capability double-counted under two numbers; #119's audit write path is real but has no reachable read UI. #82/#198/#200 (this session's builds) were verified end-to-end with full test suites at build time and are not re-audited here.
 
+**Phase-1 re-scope, 2026-08-07:** the remaining Phase-1 target list (#5, #11, #75, #76, #78, #83, #150, #152, #157) was re-audited against the current codebase before continuing the build. #11 and #83 were found already fully built (stale map cells, code was fine — rows corrected above); #78 and #150 were found genuinely blocked on capabilities that don't exist yet (#199 Parent Education, #149 Donor-Safe Reporting — both Phase 3/4), not fixable in place. #5, #75, #76, #152 had real, buildable gaps and are tracked as tickets T-009 through T-012+ in `docs/current/WORK_QUEUE.md`. The aggregate scoreboard counts above (21/~54/~125) have not been fully recomputed against this — treat them as directionally stale, not exact, until a full re-sweep happens.
+
 The build so far has been **deep in four areas** — identity/governance, SHADOW
 (AI layer), coach review/video, and board/compliance — and **thin in the
 training-science engines** (physical, skill, mental, transfer) that make up the
@@ -59,7 +61,7 @@ Evidence pointers are the primary module or route; tests live alongside.
 | 8 | Coach Review System | ✅ | Drift-corrected 2026-08-06: submission is `api/pilot/coach-reviews/route.ts` (real, called by `CoachWorkspace.tsx`); the queue a coach actually sees is `api/pilot/shadow/review-projection`, not `coach-reviews/list` (real route, but never called — the evidence cell named the wrong file). | — |
 | 9 | Athlete Update System | ✅ | Drift-corrected 2026-08-06: `athletes/update` is real but is an **admin-only correction tool** (`app/admin/athletes/page.tsx`, `allowedRoles={['admin','platform_owner']}`) — it is not called anywhere under `app/athlete/*`. "Athlete portal" self-service update does not exist; the capability as built is staff-side only. | — |
 | 10 | Development Route System | 🟡 | routing pieces in progression; Route Factory not built | 3 |
-| 11 | Goal Management System | 🟡 | `api/pilot/goals/*`; **known gap:** category & progress read by UI, stored nowhere (`pilot_slice_postgres.sql:77`) | 1 |
+| 11 | Goal Management System | ✅ | Drift-corrected 2026-08-07: the gap was closed by commit `5d750cc` (#202) — `pilot_slice_postgres_goal_category_progress_migration.sql` adds nullable `category`/`progress_percent` to `pilot.goals`, `validation.ts`/`entities.ts`/both goal write routes persist them for real, and `AthleteWorkspace.tsx` no longer fabricates `'Boxing'`/`0%` defaults. This doc's own map cell was stale, not the code. | — |
 | 12 | Roster / Participation System | 🟡 | roster export exists; no attendance (see #122) | 2 |
 
 ### Group B — Physical Training System (13–36) — the largest gap
@@ -146,12 +148,12 @@ there; the inference layers land in Phase 6.
 | 75 | Safety Review Engine | 🟡 | compliance rules + escalation (`compliance.ts`) | 1 |
 | 76 | Pain / Symptom Flag Engine | 🟡 | `coach/pain-reports` route | 1 |
 | 77 | Recovery Status Engine | ⬜ | | 3 |
-| 78 | Medical Uncertainty Routing | 🟡 | `shadowMedicalStatus.ts`, refusal doctrine | 1 |
+| 78 | Medical Uncertainty Routing | 🟡 | Drift-corrected 2026-08-07: `shadowMedicalStatus.ts` was a misidentification (that module is the recommendation-clearance gate, unrelated to chat refusals) — the real routing lives in `shadowChat.ts`/`shadowHandoff.ts`: a medical refusal already calls `queueHumanReview` and attaches a topic-specific `resolveHandoff()` lesson ("talk to your medical staff/coach/org admin"), so the human-routing half of the teaching-moment principle is done. What's genuinely missing is routing to educational *content* (Parent Education, #199) instead of only "ask a human" — and that is blocked on #199, which is an empty DRAFT stub with no data model or route. Not buildable until #199 exists. | 1 |
 | 79 | Water Safety Gate | ⬜ | swim module | 7 |
 | 80 | Breath-Hold Restriction Engine | ⬜ | swim module | 7 |
 | 81 | Fatigue Breakdown Engine | ⬜ | | 3 |
 | 82 | Stop / Hold / Regress Engine | ✅ 2026-08-06 — `pilot.training_holds` + `trainingHolds.ts`; all_training holds block class registration; scoped holds (regress = reduced permitted intensity, never a demotion) flag contact; escalation + audit wired | | 1 |
-| 83 | Unsafe Behavior Flag Engine | 🟡 | `shadowNearMisses.ts`, feedback safety scan | 1 |
+| 83 | Unsafe Behavior Flag Engine | ✅ | Drift-corrected 2026-08-07: `flagNearMiss()` is generic (any free-text description + severity, `detected_by: 'human'` or `'system'`), and `coach/decision-loop` already has a coach/admin-facing "Near-Misses" panel with unrestricted free-text — a coach can already flag observed unsafe behavior directly, not just wait on athlete self-report, and high/critical severity already auto-escalates through #194's ladder. No dedicated "unsafe behavior" label exists, but the capability is functionally covered end-to-end. | — |
 | 84 | Guardian Safety Report Engine | ⬜ | | 2 |
 
 ### Group H — At-Home / Parent / Guardian (85–96)
@@ -260,7 +262,7 @@ sits behind the Privacy-Tier System (#200).
 | 147 | Board Reporting Engine | 🟡 | board seats built; **~30 tiles "Unavailable"** (WQ 4.4) | 4 |
 | 148 | Program Outcome Reporting | ⬜ | | 4 |
 | 149 | Donor-Safe Reporting Engine | ⬜ | | 4 |
-| 150 | Privacy / Sensitive Data Boundary | 🟡 | org isolation, donor-safe rules pending | 1 |
+| 150 | Privacy / Sensitive Data Boundary | 🟡 | Re-audited 2026-08-07 against the now-shipped #200 registry: org isolation, field-tier enforcement, and board k-anonymity (`boardSummary.ts`, `BOARD_MINIMUM_COHORT_SIZE = 5`) are all solid and independently verified. The one open item, "donor-safe rules," is genuinely blocked on Phase 4 — no donor-facing report/export route exists anywhere in the codebase (#149 Donor-Safe Reporting is ⬜), so there is nothing to make safe yet. At its practical Phase-1 ceiling. | 1 |
 | 151 | Consent / Waiver Tracker | 🟡 | document-intake handles waiver docs; no lifecycle tracker | 2 |
 | 152 | Incident Report Engine | 🟡 | compliance violations/escalate, near-misses | 1 |
 | 153 | Compliance Checklist Engine | ✅ | compliance rules + default seeds (#159) | — |
