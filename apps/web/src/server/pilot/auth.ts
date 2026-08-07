@@ -5,6 +5,7 @@ import { getPilotRoleDestination } from '@/src/shared/pilotRoleRouting';
 
 import { seedDefaultComplianceRules } from './complianceRuleSeeds';
 import type { PilotRole } from './contracts';
+import { usesPin } from './credentialPolicy';
 import { getPilotDefaultOrganizationId, PILOT_SESSION_COOKIE } from './env';
 import { createOpaqueToken, hashPin, hashToken, verifyPin } from './security';
 import { computeSessionExpiry, parseRetentionDays } from './sessionPolicy';
@@ -133,7 +134,11 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
 
   // PIN sessions are athlete self-service only. Enforce before creating
   // any session token row so privileged local sessions are never minted.
-  if (data.role !== 'athlete') {
+  //
+  // Asks credentialPolicy rather than testing the role here. This check and the
+  // login page's default tab used to state the rule separately, and the page
+  // had it wrong -- it offered a PIN form to everyone.
+  if (!usesPin({ role: data.role })) {
     return null;
   }
 
@@ -281,7 +286,12 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
   // Fail closed: legacy or pre-deployment privileged local sessions are not
   // valid under athlete-only PIN policy. Revoke the session row immediately
   // so subsequent checks also fail without re-evaluating this branch.
-  if (row.auth_provider === 'ppbf_local' && row.role !== 'athlete') {
+  //
+  // This is what made the 19 abandoned platform-owner accounts found in
+  // production on 2026-08-07 inert rather than exploitable: every one was
+  // ppbf_local with a non-athlete role, so no session they held could survive
+  // this branch.
+  if (row.auth_provider === 'ppbf_local' && !usesPin({ role: row.role })) {
     await query(
       'update pilot.session_tokens set revoked_at = now() where token_hash = $1 and revoked_at is null',
       [tokenHash],
@@ -614,7 +624,11 @@ export async function changeOwnPin(accountId: string, currentPin: string, newPin
     );
 
     const row = account.rows[0];
-    if (!row?.active_flag || !row.pin_hash || row.role !== 'athlete') {
+    // Only someone whose credential IS a PIN may change one. Asks the policy
+    // rather than naming the role -- this was the third independent copy of the
+    // athlete-only rule, and the drift guard found it after two rounds of
+    // reading the file missed it.
+    if (!row?.active_flag || !row.pin_hash || !usesPin({ role: row.role })) {
       throw new Error('Unauthorized');
     }
 
