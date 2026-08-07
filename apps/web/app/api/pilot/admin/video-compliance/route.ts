@@ -4,6 +4,7 @@ import { getAthleteById } from '@/src/server/pilot/entities';
 import { sanitizedSqlState } from '@/src/server/pilot/db';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getPilotVideoSasUrl } from '@/src/server/pilot/blob';
+import { assertGuardianMediaConsent } from '@/src/server/pilot/guardianConsent';
 import { hiddenNotFound, jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/http';
 import {
   decidePublicationCompliance,
@@ -59,6 +60,11 @@ export const runtime = 'nodejs';
  *     out of this ticket's allowed files (no migration listed) and out of
  *     its own stated scope ("detailed athlete-level consent verification"
  *     is explicitly excluded).
+ *
+ * T-008: approving is additionally gated on guardian media consent
+ * (assertGuardianMediaConsent) -- see guardianConsent.ts for what "consent"
+ * means and what is deliberately not yet enforced (scope matching, retroactive
+ * un-publishing on revocation).
  */
 export async function GET(request: NextRequest) {
   try {
@@ -164,6 +170,14 @@ export async function POST(request: NextRequest) {
 
     const publication = await getPublicationForPublish(principal.organizationId, publicationId);
     if (!publication) return hiddenNotFound();
+
+    // T-008: only 'approve' is gated -- rejecting or requesting changes
+    // isn't publishing anything, so there is nothing for guardian consent to
+    // block. Checked before the CAS write, not after: an approval that
+    // fails this check must never touch the row.
+    if (decision === 'approve') {
+      await assertGuardianMediaConsent(principal.organizationId, publication.athlete_id);
+    }
 
     const newStatus = DECISION_TO_NEW_STATUS[decision];
     const checkStatus = DECISION_TO_CHECK_STATUS[decision];

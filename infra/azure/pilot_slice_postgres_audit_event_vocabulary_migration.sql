@@ -60,7 +60,9 @@ alter table pilot.audit_events
     'shadow_routing',
     'shadow_research_upload_requirement',
     'safety_hold_placed',
-    'safety_hold_lifted'
+    'safety_hold_lifted',
+    'consent_granted',
+    'consent_withdrawn'
   ));
 
 comment on column pilot.audit_events.event_type is

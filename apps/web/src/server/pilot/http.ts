@@ -5,6 +5,7 @@ import type { PilotRole } from './contracts';
 import { resolvePrincipal } from './auth';
 import { ShadowRuntimeUnavailableError } from './shadowRuntimeError';
 import { MedicalStatusBlockedError } from './shadowRecommendations';
+import { GuardianConsentMissingError } from './guardianConsent';
 
 /**
  * The default gate for every authenticated route.
@@ -78,6 +79,14 @@ export function jsonError(error: unknown, fallbackStatus = 500): NextResponse {
   // below, which replaces the message with "Internal server error" and
   // would leave the coach with no idea why the action was refused.
   if (error instanceof MedicalStatusBlockedError) {
+    return NextResponse.json({ error: error.message }, { status: 409 });
+  }
+
+  // T-008: same reasoning as MedicalStatusBlockedError above -- missing
+  // guardian consent is an expected, safe-to-disclose precondition failure
+  // on a DIFFERENT resource (the guardian's consent record), not a fault of
+  // this request. A 400/403 would misdescribe it; 500 would hide the reason.
+  if (error instanceof GuardianConsentMissingError) {
     return NextResponse.json({ error: error.message }, { status: 409 });
   }
 

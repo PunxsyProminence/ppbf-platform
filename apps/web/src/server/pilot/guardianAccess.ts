@@ -73,3 +73,19 @@ export async function guardianAthleteIds(organizationId: string, accountId: stri
 
   return rows.map((row) => row.athlete_id);
 }
+
+/**
+ * Every pilot.parents row this account backs, in this organization. Plural
+ * for the same reason guardianAthleteIds is distinct-guarded: one account can
+ * back more than one parent row. T-008's consent gate writes rows keyed by
+ * parent_id, not account_id, so a caller acting as "this signed-in guardian"
+ * needs this to know which parent_id(s) it may act as.
+ */
+export async function guardianParentIds(organizationId: string, accountId: string): Promise<string[]> {
+  const rows = await query<{ parent_id: string }>(
+    `select parent_id from pilot.parents where organization_id = $1 and account_id = $2`,
+    [organizationId, accountId],
+  );
+
+  return rows.map((row) => row.parent_id);
+}

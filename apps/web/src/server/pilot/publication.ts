@@ -116,6 +116,7 @@ export async function updatePublicationStatus(
 export interface PublicationGateRecord {
   publication_id: string;
   video_session_id: string;
+  athlete_id: string;
   submitted_by_account_id: string;
   title: string;
   description: string;
@@ -127,13 +128,15 @@ export interface PublicationGateRecord {
 // Read before publishing so the caller can name the exact reason a publish was
 // refused. The row -- not the request body -- is the authority for who
 // submitted the publication, which video session it covers, and what goes onto
-// the library shelf.
+// the library shelf. athlete_id is here (T-008) for the same reason: the
+// guardian-consent gate needs the row's own athlete_id, not a caller-supplied
+// one that could name a different athlete than the publication actually covers.
 export async function getPublicationForPublish(
   organizationId: string,
   publicationId: string,
 ): Promise<PublicationGateRecord | null> {
   return queryOne<PublicationGateRecord>(
-    `select publication_id, video_session_id, submitted_by_account_id, title, description, tags,
+    `select publication_id, video_session_id, athlete_id, submitted_by_account_id, title, description, tags,
             status, compliance_check_status
      from pilot.video_publications
      where organization_id = $1 and publication_id = $2`,

@@ -487,13 +487,19 @@ export async function upsertWaiver(params: {
   consentVersion: string;
   status: string;
   notes?: string;
+  // T-008: only meaningfully set for waiverType='photo_media'. One write
+  // path for every waiver_type -- see the guardian-media-consent migration's
+  // header for why this extends pilot.waivers instead of a second table.
+  parentId?: string | null;
+  coversVideo?: boolean;
+  publicUseAllowed?: boolean;
 }): Promise<string> {
   const waiverId = randomUUID();
 
   await query(
     `insert into pilot.waivers
-     (organization_id, waiver_id, athlete_id, waiver_type, signed_by_name, signed_by_role, signed_at, consent_version, status, notes)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+     (organization_id, waiver_id, athlete_id, waiver_type, signed_by_name, signed_by_role, signed_at, consent_version, status, notes, parent_id, covers_video, public_use_allowed)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
     [
       params.organizationId,
       waiverId,
@@ -505,6 +511,9 @@ export async function upsertWaiver(params: {
       params.consentVersion,
       params.status,
       params.notes ?? '',
+      params.parentId ?? null,
+      params.coversVideo ?? true,
+      params.publicUseAllowed ?? false,
     ],
   );
 

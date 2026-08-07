@@ -4,6 +4,7 @@ import { GET, POST } from './route';
 import { getAthleteById } from '@/src/server/pilot/entities';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getPilotVideoSasUrl } from '@/src/server/pilot/blob';
+import { assertGuardianMediaConsent, GuardianConsentMissingError } from '@/src/server/pilot/guardianConsent';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import {
   decidePublicationCompliance,
@@ -25,6 +26,18 @@ jest.mock('@/src/server/pilot/audit', () => ({
 jest.mock('@/src/server/pilot/blob', () => ({
   getPilotVideoSasUrl: jest.fn(() => 'https://blob.example/sas'),
 }));
+
+// The real GuardianConsentMissingError class is preserved (not replaced)
+// because http.ts's own jsonError does `error instanceof GuardianConsentMissingError`
+// against THIS module -- mocking only assertGuardianMediaConsent keeps that
+// instanceof check meaningful.
+jest.mock('@/src/server/pilot/guardianConsent', () => {
+  const actual = jest.requireActual('@/src/server/pilot/guardianConsent');
+  return {
+    ...actual,
+    assertGuardianMediaConsent: jest.fn(),
+  };
+});
 
 jest.mock('@/src/server/pilot/publication', () => ({
   getOrganizationPublications: jest.fn(),
@@ -59,6 +72,7 @@ const mockGetSubjectIdentity = jest.mocked(getSubjectIdentity);
 const mockGetVideoSession = jest.mocked(getVideoSessionById);
 const mockAudit = jest.mocked(writePilotAuditEvent);
 const mockSasUrl = jest.mocked(getPilotVideoSasUrl);
+const mockAssertConsent = jest.mocked(assertGuardianMediaConsent);
 
 function principal(role: string, overrides: Record<string, unknown> = {}) {
   return {
@@ -105,6 +119,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockDecide.mockResolvedValue(true);
   mockGetForPublish.mockResolvedValue(publication());
+  mockAssertConsent.mockResolvedValue(undefined);
 });
 
 describe('GET /api/pilot/admin/video-compliance', () => {
@@ -387,5 +402,40 @@ describe('POST /api/pilot/admin/video-compliance', () => {
       expect.objectContaining({ event: 'video-compliance-audit-write-failed' }),
     );
     consoleErrorSpy.mockRestore();
+  });
+
+  // T-008: approving is gated on guardian media consent.
+  describe('guardian media consent gate (T-008)', () => {
+    test('approve is refused with 409 when guardian consent is missing, and the row is never touched', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockAssertConsent.mockRejectedValueOnce(new GuardianConsentMissingError('ath-1', ['parent-1']));
+
+      const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'approve' }));
+
+      expect(response.status).toBe(409);
+      expect(mockAssertConsent).toHaveBeenCalledWith('org-a', 'ath-1');
+      expect(mockDecide).not.toHaveBeenCalled();
+      expect(mockAudit).not.toHaveBeenCalled();
+    });
+
+    test('approve proceeds once consent is verified', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+
+      const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'approve' }));
+
+      expect(response.status).toBe(200);
+      expect(mockAssertConsent).toHaveBeenCalledWith('org-a', 'ath-1');
+      expect(mockDecide).toHaveBeenCalled();
+    });
+
+    test('reject and request_changes are never gated on consent -- neither publishes anything', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+
+      await POST(jsonRequest({ publication_id: 'pub-1', decision: 'reject', note: 'Off-topic subject.' }));
+      await POST(jsonRequest({ publication_id: 'pub-1', decision: 'request_changes', note: 'Trim the clip.' }));
+
+      expect(mockAssertConsent).not.toHaveBeenCalled();
+    });
   });
 });

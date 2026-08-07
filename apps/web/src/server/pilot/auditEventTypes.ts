@@ -32,6 +32,13 @@ export const AUDIT_EVENT_TYPES = [
   // typo correction in the audit stream.
   'safety_hold_placed',
   'safety_hold_lifted',
+  // T-008: same reasoning as #82's pair -- a guardian granting or
+  // withdrawing consent for their child's photo/video is a safeguarding
+  // decision, not bookkeeping. Recorded as bare 'update' it would be
+  // indistinguishable from any other waiver row edit in the audit stream,
+  // and this is the one waiver_type this platform gates something on.
+  'consent_granted',
+  'consent_withdrawn',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
