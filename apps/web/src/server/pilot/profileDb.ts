@@ -497,3 +497,46 @@ export async function releasePhoto(
     [organizationId, accountId, reviewedByAccountId],
   );
 }
+
+export interface PendingReviewPortrait {
+  readonly accountId: string;
+  readonly fullName: string;
+  readonly athleteId: string | null;
+  readonly uploadedAt: string;
+}
+
+/**
+ * T-004: the review queue, oldest first. Uses
+ * idx_account_profiles_pending_review directly -- that partial index exists
+ * for exactly this query and nothing else read it before this.
+ *
+ * One getSubjectIdentity call per row rather than a join, because the name
+ * comes from two different tables depending on whether the subject is an
+ * athlete or staff (see getSubjectIdentity's own comment) and this queue is
+ * small (bulk approve/reject is explicitly out of scope for the console
+ * built on top of this).
+ */
+export async function listPendingReviewPortraits(organizationId: string): Promise<PendingReviewPortrait[]> {
+  const rows = await query<{ account_id: string; photo_uploaded_at: string }>(
+    `select account_id, photo_uploaded_at
+     from pilot.account_profiles
+     where organization_id = $1 and photo_review_state = 'pending_review'
+     order by photo_uploaded_at asc`,
+    [organizationId],
+  );
+  const portraits: PendingReviewPortrait[] = [];
+  for (const row of rows) {
+    // The account itself can vanish (offboarded) between the photo write and
+    // this read; skip rather than surface a null name for a row the review
+    // queue should not be pretending still belongs to someone.
+    const identity = await getSubjectIdentity(organizationId, row.account_id);
+    if (!identity) continue;
+    portraits.push({
+      accountId: identity.accountId,
+      fullName: identity.fullName,
+      athleteId: identity.athleteId,
+      uploadedAt: row.photo_uploaded_at,
+    });
+  }
+  return portraits;
+}
