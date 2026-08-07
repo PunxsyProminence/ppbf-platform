@@ -1,4 +1,5 @@
 import {
+  allowedResearchBridgeIssuers,
   extractBearerToken,
   hasRequiredClaims,
   isResearchBridgeExportActive,
@@ -30,6 +31,13 @@ describe('research bridge export activation', () => {
       null,
       'app-ppbf-staging.example.test',
     )).toBe('app-ppbf-staging.example.test');
+  });
+
+  test('accepts only the tenant v2 and managed-identity issuers', () => {
+    expect(allowedResearchBridgeIssuers('tenant-id')).toEqual([
+      'https://login.microsoftonline.com/tenant-id/v2.0',
+      'https://sts.windows.net/tenant-id/',
+    ]);
   });
 
   test('extracts only a single bearer token', () => {

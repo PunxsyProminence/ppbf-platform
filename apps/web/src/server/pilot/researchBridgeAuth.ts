@@ -44,6 +44,13 @@ export function resolveResearchBridgeRequestHost(
     || new URL(requestUrl).host;
 }
 
+export function allowedResearchBridgeIssuers(tenantId: string): string[] {
+  return [
+    `https://login.microsoftonline.com/${tenantId}/v2.0`,
+    `https://sts.windows.net/${tenantId}/`,
+  ];
+}
+
 export function extractBearerToken(authorization: string | null): string | null {
   if (!authorization) {
     return null;
@@ -95,13 +102,12 @@ export async function requireResearchBridgeAccess(
 
   try {
     const { createRemoteJWKSet, jwtVerify } = await import('jose');
-    const issuer = `https://login.microsoftonline.com/${tenantId}/v2.0`;
     const jwks = jwksByTenant.get(tenantId)
       ?? createRemoteJWKSet(new URL(`https://login.microsoftonline.com/${tenantId}/discovery/v2.0/keys`));
     jwksByTenant.set(tenantId, jwks);
     const { payload } = await jwtVerify(token, jwks, {
       audience,
-      issuer,
+      issuer: allowedResearchBridgeIssuers(tenantId),
       algorithms: ['RS256'],
     });
     if (payload.tid !== tenantId || !hasRequiredClaims(payload, allowedClientIds)) {
