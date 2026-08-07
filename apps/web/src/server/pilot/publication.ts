@@ -85,6 +85,13 @@ export async function updatePublicationStatus(
   status: string,
   complianceStatus?: string,
   approvedByAccountId?: string,
+  // Optional compare-and-swap guard: when provided, the UPDATE only matches a
+  // row whose status is still exactly this value. A single UPDATE statement
+  // takes an implicit row lock and re-evaluates its WHERE clause against
+  // whatever the row holds once that lock is granted, so two admins racing a
+  // compliance decision on the same publication serialize correctly instead
+  // of the second silently overwriting the first's already-committed verdict.
+  expectedCurrentStatus?: string,
 ): Promise<boolean> {
   const now = new Date().toISOString();
 
@@ -96,8 +103,11 @@ export async function updatePublicationStatus(
          approved_by_account_id = coalesce($6, approved_by_account_id),
          published_at = case when $3 = 'published' then $4::timestamptz else published_at end
      where organization_id = $1 and publication_id = $2
+       ${expectedCurrentStatus ? 'and status = $7' : ''}
      returning publication_id`,
-    [organizationId, publicationId, status, now, complianceStatus ?? null, approvedByAccountId ?? null],
+    expectedCurrentStatus
+      ? [organizationId, publicationId, status, now, complianceStatus ?? null, approvedByAccountId ?? null, expectedCurrentStatus]
+      : [organizationId, publicationId, status, now, complianceStatus ?? null, approvedByAccountId ?? null],
   );
 
   return result.length > 0;
