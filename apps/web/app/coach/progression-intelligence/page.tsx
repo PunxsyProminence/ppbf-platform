@@ -66,6 +66,18 @@ interface DrillLibraryItem {
   active: boolean;
 }
 
+interface ActiveHoldSummary {
+  scope: 'all_training' | 'contact_only' | 'conditioning_only';
+  reason_category: string;
+  athlete_explanation: string;
+}
+
+const HOLD_SCOPE_LABEL: Record<ActiveHoldSummary['scope'], string> = {
+  all_training: 'ALL TRAINING',
+  contact_only: 'CONTACT WORK',
+  conditioning_only: 'CONDITIONING',
+};
+
 export default function CoachProgressionIntelligencePage() {
   const [gaps, setGaps] = useState<ProgressionGap[]>([]);
   const [assignments, setAssignments] = useState<DrillAssignment[]>([]);
@@ -73,6 +85,12 @@ export default function CoachProgressionIntelligencePage() {
   const [roster, setRoster] = useState<RosterAthlete[]>([]);
   const [drills, setDrills] = useState<DrillLibraryItem[]>([]);
   const [selectedAthlete, setSelectedAthlete] = useState('');
+  // Capability #5: best-effort and independent of the gaps/assignments load
+  // above. progression.ts has no readiness rule connecting a hold to
+  // anything -- this is deliberately just visibility, not an enforced
+  // block, so a coach assigning drills or verifying completions for a held
+  // athlete sees that context instead of it being invisible on this page.
+  const [activeHold, setActiveHold] = useState<ActiveHoldSummary | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [showGapForm, setShowGapForm] = useState(false);
   const [showAssignForm, setShowAssignForm] = useState(false);
@@ -164,6 +182,30 @@ export default function CoachProgressionIntelligencePage() {
       }
     })();
   }, [selectedAthlete, reloadAthleteData]);
+
+  useEffect(() => {
+    void (async () => {
+      if (!selectedAthlete) {
+        setActiveHold(null);
+        return;
+      }
+      try {
+        const response = await fetch(
+          `${apiBase()}/api/pilot/training-holds?athlete_id=${encodeURIComponent(selectedAthlete)}&status=active`,
+          { credentials: 'include' },
+        );
+        if (!response.ok) {
+          setActiveHold(null);
+          return;
+        }
+        const payload = (await response.json().catch(() => ({}))) as { holds?: ActiveHoldSummary[] };
+        setActiveHold(payload.holds?.[0] ?? null);
+      } catch {
+        // Best-effort: no hold banner is a smaller loss than a broken page.
+        setActiveHold(null);
+      }
+    })();
+  }, [selectedAthlete]);
 
   const handleCreateGap = async () => {
     if (!selectedAthlete || !newGap.gap_description) {
@@ -332,6 +374,23 @@ export default function CoachProgressionIntelligencePage() {
 
         {selectedAthlete && (
           <>
+            {activeHold && (
+              <section
+                role="status"
+                className="mat-paper rounded-[var(--r-md)] border-2 border-[color:var(--brass-700)] p-[var(--s4)]"
+              >
+                <p className="t-eyebrow">Active Training Hold</p>
+                <p className="t-body mt-[var(--s2)] font-semibold">
+                  {HOLD_SCOPE_LABEL[activeHold.scope]} is currently paused for this athlete ({activeHold.reason_category}).
+                </p>
+                <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">{activeHold.athlete_explanation}</p>
+                <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">
+                  Progression tools below still work -- this is visibility, not a block. Confirm the hold&apos;s
+                  scope before assigning or verifying anything that conflicts with it.
+                </p>
+              </section>
+            )}
+
             {/* Progression Gaps Section */}
             <section className="space-y-[var(--s4)]">
               <div className="flex items-center justify-between gap-[var(--s3)]">
