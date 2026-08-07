@@ -51,6 +51,11 @@ export function allowedResearchBridgeIssuers(tenantId: string): string[] {
   ];
 }
 
+export function allowedResearchBridgeAudiences(audience: string): string[] {
+  const appId = audience.startsWith('api://') ? audience.slice('api://'.length) : null;
+  return appId ? [audience, appId] : [audience];
+}
+
 export function extractBearerToken(authorization: string | null): string | null {
   if (!authorization) {
     return null;
@@ -106,7 +111,7 @@ export async function requireResearchBridgeAccess(
       ?? createRemoteJWKSet(new URL(`https://login.microsoftonline.com/${tenantId}/discovery/v2.0/keys`));
     jwksByTenant.set(tenantId, jwks);
     const { payload } = await jwtVerify(token, jwks, {
-      audience,
+      audience: allowedResearchBridgeAudiences(audience),
       issuer: allowedResearchBridgeIssuers(tenantId),
       algorithms: ['RS256'],
     });

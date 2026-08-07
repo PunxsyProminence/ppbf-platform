@@ -1,4 +1,5 @@
 import {
+  allowedResearchBridgeAudiences,
   allowedResearchBridgeIssuers,
   extractBearerToken,
   hasRequiredClaims,
@@ -37,6 +38,13 @@ describe('research bridge export activation', () => {
     expect(allowedResearchBridgeIssuers('tenant-id')).toEqual([
       'https://login.microsoftonline.com/tenant-id/v2.0',
       'https://sts.windows.net/tenant-id/',
+    ]);
+  });
+
+  test('accepts only the configured API URI and its equivalent app ID audience', () => {
+    expect(allowedResearchBridgeAudiences('api://api-client-id')).toEqual([
+      'api://api-client-id',
+      'api-client-id',
     ]);
   });
 
