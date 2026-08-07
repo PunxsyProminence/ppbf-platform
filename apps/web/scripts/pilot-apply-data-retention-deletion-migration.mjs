@@ -14,7 +14,7 @@ import { fileURLToPath } from 'url';
 import { Pool } from 'pg';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const INFRA_DIR = path.join(__dirname, '../../infra/azure');
+const INFRA_DIR = path.join(__dirname, '../../../infra/azure');
 
 const pool = new Pool({
   connectionString: process.env.AZURE_POSTGRES_CONNECTION_STRING,

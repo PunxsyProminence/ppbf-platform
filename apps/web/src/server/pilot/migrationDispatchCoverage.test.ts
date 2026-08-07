@@ -80,7 +80,15 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     // The runner must read the migration it claims to apply. A copy-pasted
     // runner pointing at its template's SQL would pass every other check here
     // while applying the wrong file.
-    expect(fs.readFileSync(runner, 'utf8')).toContain(fileName);
+    const runnerSource = fs.readFileSync(runner, 'utf8');
+    expect(runnerSource).toContain(fileName);
+
+    // Naming the file is not the same as reaching it. The data-retention-deletion
+    // runner shipped with '../../infra/azure', which resolves to apps/infra/azure
+    // -- it passed the assertion above, passed CI, and died with ENOENT against
+    // staging, because nothing here had ever checked the path depth. Every runner
+    // sits at apps/web/scripts, so infra/azure is exactly three levels up.
+    expect(runnerSource).toContain('../../../infra/azure');
 
     expect(packageJson.scripts[`pilot:apply-${slug}`]).toBe(
       `node scripts/pilot-apply-${slug}-migration.mjs`,
