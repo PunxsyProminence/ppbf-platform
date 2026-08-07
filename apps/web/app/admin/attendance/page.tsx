@@ -191,6 +191,9 @@ export default function AttendanceDashboardPage() {
             <Link href="/schedule" className="btn btn--ghost">
               Go to Schedule (mark attendance)
             </Link>
+            <Link href="/admin/athletes" className="btn btn--ghost">
+              Athlete Records
+            </Link>
             <Link href="/operations" className="btn btn--ghost">
               Back to Mission Control
             </Link>
