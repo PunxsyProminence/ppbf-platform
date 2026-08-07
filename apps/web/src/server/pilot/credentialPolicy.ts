@@ -31,15 +31,15 @@ import type { PilotRole } from './contracts';
  *   name and a PIN
  *
  * Board seats are appointments, not roles: a board member is also a coach or a
- * parent underneath. Holding an OFFICER seat therefore upgrades that person to
- * Microsoft regardless of what their role would otherwise allow -- the seats
- * carrying fiduciary and legal authority get the strongest credential, and the
- * three director seats follow their holder's role.
+ * parent underneath. Holding ANY seat upgrades that person to Microsoft
+ * regardless of what their role would otherwise allow, because every board
+ * office has a mailbox on punxsyprominence.org and therefore already has the
+ * Microsoft identity.
  */
 
 export type PilotCredential = 'microsoft' | 'magic_link' | 'pin';
 
-/** Roles that administer the platform or an organization. */
+/** Roles that administer the platform, an organization, or the board. */
 export const MICROSOFT_ROLES = [
   'platform_owner',
   'organization_admin',
@@ -47,22 +47,11 @@ export const MICROSOFT_ROLES = [
   // organization_admin, but anything still carrying it holds admin authority
   // and must not fall through to a weaker credential.
   'admin',
+  // Every board office has a mailbox on punxsyprominence.org, so a board
+  // member already has the Microsoft identity -- there is nothing to make
+  // easier for them by dropping to a magic link.
+  'board',
 ] as const satisfies readonly PilotRole[];
-
-/**
- * Board seats whose holders must use Microsoft regardless of role.
- *
- * The five officers carry fiduciary and legal authority for the organization.
- * safety-director, community-director and at-large are program appointments
- * and follow their holder's role.
- */
-export const OFFICER_BOARD_SEATS = [
-  'president',
-  'chair',
-  'vice-chair',
-  'treasurer',
-  'secretary',
-] as const;
 
 /**
  * Adults who participate but do not administer. They sign in with a one-time
@@ -80,7 +69,6 @@ export const MAGIC_LINK_ROLES = [
   'staff',
   'volunteer',
   'parent',
-  'board',
 ] as const satisfies readonly PilotRole[];
 
 export interface CredentialSubject {
@@ -89,8 +77,16 @@ export interface CredentialSubject {
   boardSeats?: readonly string[];
 }
 
-export function isOfficerSeat(seat: string): boolean {
-  return (OFFICER_BOARD_SEATS as readonly string[]).includes(seat);
+/**
+ * Holding ANY board seat requires Microsoft, whatever the holder's role.
+ *
+ * There is deliberately no list of qualifying seats. Every board office has a
+ * mailbox on punxsyprominence.org, so every seat holder already has a Microsoft
+ * identity -- and a list of "seats that count" is one more thing to fall out of
+ * date the day a ninth seat is added. Holding a seat is the whole test.
+ */
+export function seatRequiresMicrosoft(boardSeats: readonly string[] | undefined): boolean {
+  return (boardSeats?.length ?? 0) > 0;
 }
 
 // Type predicates rather than bare .includes(). Widening the tuple to
@@ -112,9 +108,9 @@ function isMagicLinkRole(role: PilotRole): role is (typeof MAGIC_LINK_ROLES)[num
  * silent fallthrough to the weakest option.
  */
 export function requiredCredentialFor(subject: CredentialSubject): PilotCredential {
-  // Checked before role, so an officer seat upgrades a coach or parent rather
-  // than their role downgrading the seat.
-  if (subject.boardSeats?.some(isOfficerSeat)) {
+  // Checked before role, so a seat upgrades a coach or parent rather than their
+  // role downgrading the seat.
+  if (seatRequiresMicrosoft(subject.boardSeats)) {
     return 'microsoft';
   }
 

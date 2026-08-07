@@ -2,7 +2,6 @@ import type { PilotRole } from './contracts';
 import {
   MAGIC_LINK_ROLES,
   MICROSOFT_ROLES,
-  OFFICER_BOARD_SEATS,
   requiredCredentialFor,
   usesMicrosoft,
   usesPin,
@@ -70,23 +69,22 @@ describe('credential policy', () => {
     }
   });
 
-  test('an officer seat upgrades the holder to Microsoft whatever their role', () => {
-    for (const seat of OFFICER_BOARD_SEATS) {
+  test('ANY board seat upgrades the holder to Microsoft whatever their role', () => {
+    // Every seat, not a privileged subset: each board office has a mailbox on
+    // the domain, so each holder already has a Microsoft identity.
+    for (const seat of EVERY_SEAT) {
       // A parent is the weakest case: magic_link by role, Microsoft by seat.
       expect(requiredCredentialFor({ role: 'parent', boardSeats: [seat] })).toBe('microsoft');
       expect(requiredCredentialFor({ role: 'coach', boardSeats: [seat] })).toBe('microsoft');
+      expect(requiredCredentialFor({ role: 'volunteer', boardSeats: [seat] })).toBe('microsoft');
     }
   });
 
-  test('a director seat does not upgrade the holder', () => {
-    for (const seat of ['safety-director', 'community-director', 'at-large']) {
-      expect(requiredCredentialFor({ role: 'parent', boardSeats: [seat] })).toBe('magic_link');
-      expect(requiredCredentialFor({ role: 'coach', boardSeats: [seat] })).toBe('magic_link');
-    }
-  });
-
-  test('one officer seat among several is enough to upgrade', () => {
-    expect(requiredCredentialFor({ role: 'parent', boardSeats: ['at-large', 'treasurer'] }))
+  test('a seat slug the policy has never seen still upgrades the holder', () => {
+    // The rule is "holds a seat", not "holds one of these seats", so adding a
+    // ninth office to boardWorkspaceConfig cannot silently leave its holder on
+    // a weaker credential.
+    expect(requiredCredentialFor({ role: 'parent', boardSeats: ['ninth-office-added-later'] }))
       .toBe('microsoft');
   });
 
@@ -99,21 +97,16 @@ describe('credential policy', () => {
     }
   });
 
-  test('an athlete can never be given a board seat that changes their credential', () => {
-    // Athletes are minors. A seat should never move one onto an adult path.
-    for (const seat of EVERY_SEAT.filter((s) => !OFFICER_BOARD_SEATS.includes(s as never))) {
-      expect(requiredCredentialFor({ role: 'athlete', boardSeats: [seat] })).toBe('pin');
-    }
-  });
-
   test('no board seats and undefined board seats mean the same thing', () => {
     expect(requiredCredentialFor({ role: 'coach', boardSeats: [] }))
       .toBe(requiredCredentialFor({ role: 'coach' }));
+    expect(requiredCredentialFor({ role: 'coach', boardSeats: [] })).toBe('magic_link');
   });
 
-  test('an unknown seat slug does not silently upgrade anyone', () => {
-    expect(requiredCredentialFor({ role: 'parent', boardSeats: ['not-a-real-seat'] }))
-      .toBe('magic_link');
+  test('the board role uses Microsoft even with no seat recorded', () => {
+    // Someone carrying role='board' before their seat assignment lands still
+    // has a domain mailbox, so they take the strong credential either way.
+    expect(requiredCredentialFor({ role: 'board' })).toBe('microsoft');
   });
 
   test('an unclassified role is refused rather than given the weakest credential', () => {
