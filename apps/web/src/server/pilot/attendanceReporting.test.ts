@@ -5,6 +5,7 @@ jest.mock('./db', () => ({
 import {
   getClassAttendanceRoster,
   getOrganizationAttendanceSummary,
+  getWeeklyAttendanceTrend,
 } from './attendanceReporting';
 import { query } from './db';
 
@@ -106,5 +107,71 @@ describe('getClassAttendanceRoster', () => {
     // A registered athlete never checked in comes back with status: null,
     // not a fabricated 'absent'.
     expect(roster[0].status).toBeNull();
+  });
+});
+
+describe('getWeeklyAttendanceTrend', () => {
+  test('computes attendance_rate per week from present/absent only, excluding excused', async () => {
+    mockQuery.mockResolvedValueOnce([
+      { week_start: '2026-07-27', present_count: 6, absent_count: 2, excused_count: 1, total_marked: 9 },
+    ]);
+
+    const [week] = await getWeeklyAttendanceTrend('org-1');
+
+    expect(week.attendance_rate).toBe(0.75);
+    expect(week.total_marked).toBe(9);
+  });
+
+  test('a week with only excused marks gets a null rate, not 0', async () => {
+    mockQuery.mockResolvedValueOnce([
+      { week_start: '2026-07-27', present_count: 0, absent_count: 0, excused_count: 3, total_marked: 3 },
+    ]);
+
+    const [week] = await getWeeklyAttendanceTrend('org-1');
+
+    expect(week.attendance_rate).toBeNull();
+  });
+
+  test('only registration-backed marks count, same as the org summary', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+
+    await getWeeklyAttendanceTrend('org-1');
+
+    const [sql] = mockQuery.mock.calls[0];
+    expect(sql).toContain('join pilot.scheduler_registrations reg');
+    expect(sql).toContain("reg.status = 'registered'");
+  });
+
+  test('buckets by the class start_at, not the mark timestamp', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+
+    await getWeeklyAttendanceTrend('org-1');
+
+    const [sql] = mockQuery.mock.calls[0];
+    expect(sql).toContain("date_trunc('week', c.start_at)");
+  });
+
+  test('weeks defaults to 8 and is clamped to a sane range', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+    await getWeeklyAttendanceTrend('org-1');
+    expect(mockQuery.mock.calls[0][1]).toEqual(['org-1', 8, null]);
+
+    mockQuery.mockResolvedValueOnce([]);
+    await getWeeklyAttendanceTrend('org-1', { weeks: 500 });
+    expect(mockQuery.mock.calls[1][1]).toEqual(['org-1', 52, null]);
+
+    mockQuery.mockResolvedValueOnce([]);
+    await getWeeklyAttendanceTrend('org-1', { weeks: 0 });
+    expect(mockQuery.mock.calls[2][1]).toEqual(['org-1', 1, null]);
+  });
+
+  test('a coach scope narrows to their own classes, same ownership test as the org summary', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+
+    await getWeeklyAttendanceTrend('org-1', { coachAccountId: 'coach-1' });
+
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql).toContain('c.coach_account_id = $3');
+    expect(params).toEqual(['org-1', 8, 'coach-1']);
   });
 });

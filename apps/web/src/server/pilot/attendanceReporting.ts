@@ -190,3 +190,79 @@ export async function getClassAttendanceRoster(
     [organizationId, classId],
   );
 }
+
+export interface WeeklyAttendanceTrendRow {
+  week_start: string;
+  present_count: number;
+  absent_count: number;
+  excused_count: number;
+  total_marked: number;
+  attendance_rate: number | null;
+}
+
+interface WeeklyTrendSummaryRow {
+  week_start: string;
+  present_count: number;
+  absent_count: number;
+  excused_count: number;
+  total_marked: number;
+}
+
+/**
+ * Capability #173: the trend admin/attendance/page.tsx had no way to show --
+ * getOrganizationAttendanceSummary is a current-snapshot rollup with no
+ * week-over-week grouping. Buckets by the CLASS's own start_at (one row per
+ * dated session, per pilot.scheduler_classes), not by when a mark was
+ * recorded -- a late-entered check-in still belongs to the week the class
+ * actually happened. Same registration-backed join as the org summary, for
+ * the same reason: an unregistered stray mark must not inflate a week's rate.
+ *
+ * A week with zero marks is OMITTED, not zero-filled -- attendance-rate:
+ * null would be indistinguishable from a real 0% week, and this module's own
+ * doctrine (see AttendanceAthleteSummary) is that "no data" and "a reported
+ * 0%" must never share a representation. The page fills gaps on render.
+ */
+export async function getWeeklyAttendanceTrend(
+  organizationId: string,
+  options: { coachAccountId?: string | null; weeks?: number } = {},
+): Promise<WeeklyAttendanceTrendRow[]> {
+  const coachAccountId = options.coachAccountId ?? null;
+  const weeks = Math.min(52, Math.max(1, Math.trunc(options.weeks ?? 8)));
+
+  const rows = await query<WeeklyTrendSummaryRow>(
+    `select
+       date_trunc('week', c.start_at)::date::text as week_start,
+       count(*) filter (where a.status = 'present')::int as present_count,
+       count(*) filter (where a.status = 'absent')::int as absent_count,
+       count(*) filter (where a.status = 'excused')::int as excused_count,
+       count(*)::int as total_marked
+     from pilot.scheduler_attendance a
+     join pilot.scheduler_classes c
+       on c.organization_id = a.organization_id and c.class_id = a.class_id
+     join pilot.scheduler_registrations reg
+       on reg.organization_id = a.organization_id
+       and reg.class_id = a.class_id
+       and reg.athlete_id = a.athlete_id
+       and reg.status = 'registered'
+     where a.organization_id = $1
+       and c.start_at >= date_trunc('week', now()) - ($2 * interval '1 week')
+       and (
+         $3::text is null
+         or c.coach_account_id = $3
+         or c.scheduled_by_account_id = $3
+         or c.covering_coach_account_id = $3
+       )
+     group by date_trunc('week', c.start_at)
+     order by week_start asc`,
+    [organizationId, weeks, coachAccountId],
+  );
+
+  return rows.map((row) => ({
+    week_start: row.week_start,
+    present_count: row.present_count,
+    absent_count: row.absent_count,
+    excused_count: row.excused_count,
+    total_marked: row.total_marked,
+    attendance_rate: computeAttendanceRate(row.present_count, row.absent_count),
+  }));
+}

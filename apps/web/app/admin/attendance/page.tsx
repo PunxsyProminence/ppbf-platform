@@ -16,6 +16,25 @@ interface AttendanceAthleteSummary {
   attendance_rate: number | null;
 }
 
+interface WeeklyAttendanceTrendRow {
+  week_start: string;
+  present_count: number;
+  absent_count: number;
+  excused_count: number;
+  total_marked: number;
+  attendance_rate: number | null;
+}
+
+const TREND_WEEKS = 8;
+
+function formatWeekLabel(weekStart: string): string {
+  try {
+    return new Date(weekStart).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  } catch {
+    return weekStart;
+  }
+}
+
 function formatRate(rate: number | null): string {
   if (rate === null) return 'Unavailable';
   return `${Math.round(rate * 100)}%`;
@@ -45,6 +64,28 @@ function sortSummary(items: AttendanceAthleteSummary[]): AttendanceAthleteSummar
 export default function AttendanceDashboardPage() {
   const [items, setItems] = useState<AttendanceAthleteSummary[] | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
+  // Best-effort and independent of the summary above: a trend that fails to
+  // load must not take the athlete-level table down with it.
+  const [trend, setTrend] = useState<WeeklyAttendanceTrendRow[] | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/scheduler/attendance-summary?trend=1&weeks=${TREND_WEEKS}`, {
+          credentials: 'include',
+          signal: controller.signal,
+        });
+        if (!response.ok) return;
+        const payload = (await response.json().catch(() => ({}))) as { trend?: WeeklyAttendanceTrendRow[] };
+        setTrend(payload.trend ?? []);
+      } catch {
+        if (controller.signal.aborted) return;
+        // No trend strip is a smaller loss than a broken dashboard.
+      }
+    })();
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -130,6 +171,29 @@ export default function AttendanceDashboardPage() {
               </p>
             </article>
           </section>
+
+          {trend && trend.length > 0 ? (
+            <section className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s4)]">
+              <p className="t-eyebrow">Weekly trend (last {TREND_WEEKS} weeks)</p>
+              <div className="mt-[var(--s3)] flex items-end gap-[var(--s2)]" style={{ height: '72px' }}>
+                {trend.map((week) => {
+                  const heightPercent = week.attendance_rate === null ? 4 : Math.max(4, Math.round(week.attendance_rate * 100));
+                  return (
+                    <div key={week.week_start} className="flex flex-1 flex-col items-center justify-end gap-[var(--s1)]" style={{ height: '100%' }}>
+                      <div
+                        role="img"
+                        aria-label={`Week of ${formatWeekLabel(week.week_start)}: ${formatRate(week.attendance_rate)}`}
+                        title={`Week of ${formatWeekLabel(week.week_start)}: ${formatRate(week.attendance_rate)}`}
+                        className="w-full rounded-t-[var(--r-sm)] bg-[var(--brass-500)]"
+                        style={{ height: `${heightPercent}%`, minHeight: '4px' }}
+                      />
+                      <p className="t-data text-[length:var(--t-xs)] text-[color:var(--bone-400)]">{formatWeekLabel(week.week_start)}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
 
           {isLoading ? (
             <div className="empty mt-[var(--s5)]">

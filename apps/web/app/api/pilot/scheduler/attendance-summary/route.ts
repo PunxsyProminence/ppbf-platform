@@ -4,6 +4,7 @@ import { isOrganizationAdminRole } from '@/src/server/pilot/access';
 import {
   getClassAttendanceRoster,
   getOrganizationAttendanceSummary,
+  getWeeklyAttendanceTrend,
 } from '@/src/server/pilot/attendanceReporting';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { getSchedulerClassById } from '@/src/server/pilot/schedulerDb';
@@ -54,6 +55,20 @@ export async function GET(request: NextRequest) {
 
       const roster = await getClassAttendanceRoster(principal.organizationId, classId);
       return NextResponse.json({ ok: true, class_id: classId, roster });
+    }
+
+    // #173: a week-over-week trend, distinct from the current-snapshot
+    // summary below -- explicit opt-in via ?trend=1 rather than folding
+    // both shapes into one response, since a caller wanting the roster
+    // snapshot has no use for a second array it must ignore.
+    if (request.nextUrl.searchParams.get('trend') === '1') {
+      const weeksRaw = request.nextUrl.searchParams.get('weeks');
+      const weeks = weeksRaw === null ? undefined : Number(weeksRaw);
+      if (weeksRaw !== null && (!Number.isFinite(weeks) || weeks! <= 0)) {
+        throw new Error('Unsupported weeks: must be a positive number');
+      }
+      const trend = await getWeeklyAttendanceTrend(principal.organizationId, { coachAccountId, weeks });
+      return NextResponse.json({ ok: true, trend });
     }
 
     const sinceRaw = request.nextUrl.searchParams.get('since');

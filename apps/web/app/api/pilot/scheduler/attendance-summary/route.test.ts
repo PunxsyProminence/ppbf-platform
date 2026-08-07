@@ -4,6 +4,7 @@ import { GET } from './route';
 import {
   getClassAttendanceRoster,
   getOrganizationAttendanceSummary,
+  getWeeklyAttendanceTrend,
 } from '@/src/server/pilot/attendanceReporting';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { getSchedulerClassById } from '@/src/server/pilot/schedulerDb';
@@ -11,6 +12,7 @@ import { getSchedulerClassById } from '@/src/server/pilot/schedulerDb';
 jest.mock('@/src/server/pilot/attendanceReporting', () => ({
   getOrganizationAttendanceSummary: jest.fn(),
   getClassAttendanceRoster: jest.fn(),
+  getWeeklyAttendanceTrend: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/schedulerDb', () => ({
@@ -39,6 +41,7 @@ const mockRequirePrincipal = jest.mocked(requirePrincipal);
 const mockSummary = jest.mocked(getOrganizationAttendanceSummary);
 const mockRoster = jest.mocked(getClassAttendanceRoster);
 const mockGetClass = jest.mocked(getSchedulerClassById);
+const mockTrend = jest.mocked(getWeeklyAttendanceTrend);
 
 function principal(role: string, overrides: Record<string, unknown> = {}) {
   return {
@@ -163,5 +166,58 @@ describe('GET /api/pilot/scheduler/attendance-summary', () => {
     await GET(request('/api/pilot/scheduler/attendance-summary?since=2026-07-01T00:00:00.000Z'));
 
     expect(mockSummary).toHaveBeenCalledWith('org-a', { coachAccountId: undefined, sinceIso: '2026-07-01T00:00:00.000Z' });
+  });
+
+  describe('?trend=1 (#173)', () => {
+    test('returns the weekly trend instead of the athlete summary', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockTrend.mockResolvedValueOnce([
+        { week_start: '2026-07-27', present_count: 5, absent_count: 1, excused_count: 0, total_marked: 6, attendance_rate: 0.833 },
+      ]);
+
+      const response = await GET(request('/api/pilot/scheduler/attendance-summary?trend=1'));
+
+      expect(response.status).toBe(200);
+      const payload = await response.json();
+      expect(payload.trend).toHaveLength(1);
+      expect(mockSummary).not.toHaveBeenCalled();
+      expect(mockTrend).toHaveBeenCalledWith('org-a', { coachAccountId: undefined, weeks: undefined });
+    });
+
+    test('a coach gets a trend scoped to their own classes', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+      mockTrend.mockResolvedValueOnce([]);
+
+      await GET(request('/api/pilot/scheduler/attendance-summary?trend=1'));
+
+      expect(mockTrend).toHaveBeenCalledWith('org-a', { coachAccountId: 'acct-coach-1', weeks: undefined });
+    });
+
+    test('a weeks param is passed through', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockTrend.mockResolvedValueOnce([]);
+
+      await GET(request('/api/pilot/scheduler/attendance-summary?trend=1&weeks=12'));
+
+      expect(mockTrend).toHaveBeenCalledWith('org-a', { coachAccountId: undefined, weeks: 12 });
+    });
+
+    test('a non-positive weeks value is a 400, not passed through', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+
+      const response = await GET(request('/api/pilot/scheduler/attendance-summary?trend=1&weeks=0'));
+
+      expect(response.status).toBe(400);
+      expect(mockTrend).not.toHaveBeenCalled();
+    });
+
+    test('athlete, parent, and board are refused, same as the summary', async () => {
+      for (const role of ['athlete', 'parent', 'board']) {
+        mockRequirePrincipal.mockResolvedValueOnce(principal(role));
+        const response = await GET(request('/api/pilot/scheduler/attendance-summary?trend=1'));
+        expect(response.status).toBe(403);
+      }
+      expect(mockTrend).not.toHaveBeenCalled();
+    });
   });
 });
