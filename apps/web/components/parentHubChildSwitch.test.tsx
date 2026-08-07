@@ -3,15 +3,15 @@
  */
 
 import '@testing-library/jest-dom';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import type { AnnouncementItem } from './AnnouncementBanner';
 import ParentHub from './ParentHub';
 
-function jsonResponse(body: unknown): Response {
+function jsonResponse(body: unknown, ok = true): Response {
   return {
-    ok: true,
-    status: 200,
+    ok,
+    status: ok ? 200 : 400,
     json: async () => body,
   } as unknown as Response;
 }
@@ -35,8 +35,9 @@ function announcement(overrides: Partial<AnnouncementItem> = {}): AnnouncementIt
 function installFetch(
   announcements: () => Promise<Response> = async () => jsonResponse({ ok: true, announcements: [] }),
   safety: () => Promise<Response> = async () => jsonResponse({ ok: true, items: [] }),
+  barrierReport: (init?: RequestInit) => Promise<Response> = async () => jsonResponse({ ok: true, note_id: 'note-1' }),
 ): jest.Mock {
-  const fetchMock = jest.fn(async (input: unknown) => {
+  const fetchMock = jest.fn(async (input: unknown, init?: RequestInit) => {
     const url = String(input);
 
     if (url.includes('/api/pilot/auth/session')) {
@@ -55,6 +56,9 @@ function installFetch(
     }
     if (url.includes('/api/pilot/parent/safety')) {
       return safety();
+    }
+    if (url.includes('/api/pilot/parent/barrier-report')) {
+      return barrierReport(init);
     }
 
     throw new Error(`Unexpected fetch: ${url}`);
@@ -227,5 +231,87 @@ describe('Safety & Consent card on the parent hub', () => {
 
     expect(screen.getByRole('link', { name: 'View Safety Status' })).toBeDefined();
     expect(screen.queryByRole('button', { name: 'Second Child' })).not.toBeNull();
+  });
+});
+
+// Capabilities #95/#96: no parent-facing write path existed for a
+// guardian-reported home or transportation barrier -- this is the new one,
+// on the Parent Floor tab.
+describe('Report a Barrier (#95/#96)', () => {
+  async function openParentFloor() {
+    await act(async () => {
+      render(<ParentHub />);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Parent Floor' }));
+    });
+  }
+
+  test('defaults to Home and posts athleteId/barrierType/description', async () => {
+    const fetchMock = installFetch();
+    await openParentFloor();
+
+    fireEvent.change(screen.getByLabelText("What's going on"), { target: { value: 'No ride most weeknights.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Coach' }));
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find((c) => String(c[0]).includes('/api/pilot/parent/barrier-report'));
+      expect(call).toBeDefined();
+    });
+
+    const call = fetchMock.mock.calls.find((c) => String(c[0]).includes('/api/pilot/parent/barrier-report'));
+    const body = JSON.parse(String((call?.[1] as RequestInit).body));
+    expect(body).toEqual({ athleteId: 'ath_1', barrierType: 'home', description: 'No ride most weeknights.' });
+
+    await screen.findByText("Sent to your child's coach.");
+  });
+
+  test('switching to Transportation changes the posted barrierType', async () => {
+    const fetchMock = installFetch();
+    await openParentFloor();
+
+    fireEvent.change(screen.getByLabelText('Type'), { target: { value: 'transportation' } });
+    fireEvent.change(screen.getByLabelText("What's going on"), { target: { value: 'Car broke down.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Coach' }));
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find((c) => String(c[0]).includes('/api/pilot/parent/barrier-report'));
+      expect(call).toBeDefined();
+    });
+
+    const call = fetchMock.mock.calls.find((c) => String(c[0]).includes('/api/pilot/parent/barrier-report'));
+    const body = JSON.parse(String((call?.[1] as RequestInit).body));
+    expect(body.barrierType).toBe('transportation');
+  });
+
+  test('the description clears after a successful send', async () => {
+    installFetch();
+    await openParentFloor();
+
+    const textarea = screen.getByLabelText("What's going on") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: 'Something.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Coach' }));
+
+    await waitFor(() => expect(textarea.value).toBe(''));
+  });
+
+  test('an empty description does not submit', async () => {
+    const fetchMock = installFetch();
+    await openParentFloor();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Coach' }));
+
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/pilot/parent/barrier-report'))).toBe(false);
+  });
+
+  test('a failed send shows the error, not a false success message', async () => {
+    installFetch(undefined, undefined, async () => jsonResponse({ error: 'Forbidden' }, false));
+    await openParentFloor();
+
+    fireEvent.change(screen.getByLabelText("What's going on"), { target: { value: 'Something.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Coach' }));
+
+    await screen.findByText('Forbidden');
+    expect(screen.queryByText("Sent to your child's coach.")).toBeNull();
   });
 });

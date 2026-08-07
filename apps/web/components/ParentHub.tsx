@@ -198,6 +198,45 @@ export default function ParentHub() {
     })();
   }, []);
 
+  // Capabilities #95/#96: a real write path for a guardian-reported barrier
+  // (no ride, an unsafe walk, something at home getting in the way), where
+  // none existed before. Rides on pilot.coach_observations via a new
+  // parent-only route -- see api/pilot/parent/barrier-report/route.ts for
+  // why this is its own route rather than widening intake/domain-upsert.
+  const [barrierType, setBarrierType] = useState<'home' | 'transportation'>('home');
+  const [barrierDescription, setBarrierDescription] = useState('');
+  const [barrierMessage, setBarrierMessage] = useState('');
+  const [barrierSubmitting, setBarrierSubmitting] = useState(false);
+
+  async function handleReportBarrier(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!activeChildId || !barrierDescription.trim() || barrierSubmitting) return;
+    setBarrierMessage('');
+    setBarrierSubmitting(true);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/parent/barrier-report`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          athleteId: activeChildId,
+          barrierType,
+          description: barrierDescription,
+        }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.error || 'Failed to send the report.');
+      }
+      setBarrierDescription('');
+      setBarrierMessage('Sent to your child\'s coach.');
+    } catch (error) {
+      setBarrierMessage(error instanceof Error ? error.message : 'Failed to send the report.');
+    } finally {
+      setBarrierSubmitting(false);
+    }
+  }
+
   // Fetch parent's children (athletes) from API
   useEffect(() => {
     void (async () => {
@@ -701,6 +740,43 @@ export default function ParentHub() {
                   'Missing reporting deadlines'
                 ]}
               />
+
+              {/* #95/#96: the one real, working thing on this tab today. */}
+              <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
+                <h3 className="t-label">Report a Barrier</h3>
+                <p className="t-body">
+                  Let your child&apos;s coach know if something at home, or getting here, is getting in the way of training.
+                </p>
+
+                {barrierMessage && (
+                  <p className="t-body text-[color:var(--brass-300)]">{barrierMessage}</p>
+                )}
+
+                <form onSubmit={handleReportBarrier} className="space-y-[var(--s3)]">
+                  <label className="field block">
+                    <span className="t-label">Type</span>
+                    <select
+                      value={barrierType}
+                      onChange={(event) => setBarrierType(event.target.value as 'home' | 'transportation')}
+                      className="select"
+                    >
+                      <option value="home">Home</option>
+                      <option value="transportation">Transportation</option>
+                    </select>
+                  </label>
+                  <label className="field block">
+                    <span className="t-label">What&apos;s going on</span>
+                    <textarea
+                      value={barrierDescription}
+                      onChange={(event) => setBarrierDescription(event.target.value)}
+                      className="textarea min-h-[56px]"
+                    />
+                  </label>
+                  <button type="submit" className="btn w-full" disabled={!activeChildId || barrierSubmitting}>
+                    {barrierSubmitting ? 'Sending…' : 'Send to Coach'}
+                  </button>
+                </form>
+              </div>
 
               <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
                 <h3 className="t-label">This Week&apos;s Parent Support Tasks</h3>
