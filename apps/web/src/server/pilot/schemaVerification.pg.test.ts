@@ -193,6 +193,10 @@ describe('the pre-deploy schema verifier', () => {
     expect(checked.tables).toBeGreaterThan(30);
     expect(checked.columns).toBeGreaterThan(20);
     expect(checked.constraints).toBeGreaterThan(20);
+    // Views were unchecked until the research-triage migration exposed it. A
+    // zero here would mean the parser stopped recognising `create view` and the
+    // gate had quietly gone back to passing regardless.
+    expect(checked.views).toBeGreaterThan(0);
   });
 
   test('fails and names the object when a migration has not been applied', async () => {
@@ -207,6 +211,28 @@ describe('the pre-deploy schema verifier', () => {
       expect(code).not.toBe(0);
     } finally {
       await client.query(`alter table pilot.athletes add column deleted_at timestamptz null`);
+    }
+  });
+
+  test('fails when a view a migration created is missing', async () => {
+    // On 2026-08-07 the research-triage migration created this repo's first
+    // view, and the gate reported the identical object counts it reported
+    // before the migration existed -- it would have passed against a database
+    // that never ran it. This is that case, inverted into a test.
+    await client.query(`drop view pilot.v_shadow_research_triage`);
+    try {
+      const { code, result } = await runVerifier();
+      expect(result.event).toBe('schema.verify.failed');
+      expect((result.missing as { views: string[] }).views)
+        .toContain('v_shadow_research_triage');
+      expect(code).not.toBe(0);
+    } finally {
+      await client.query(
+        await fs.readFile(
+          path.join(INFRA_DIR, 'pilot_slice_postgres_research_triage_view_migration.sql'),
+          'utf8',
+        ),
+      );
     }
   });
 
