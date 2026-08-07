@@ -6,16 +6,19 @@ import {
   DEFAULT_COVERAGE_TTL_HOURS,
   grantCoachCoverage,
   isOrganizationAdminRole,
+  listActiveCoachCoverage,
   requireRole,
   revokeCoachCoverage,
 } from './access';
-import { queryOne } from './db';
+import { query, queryOne } from './db';
 import type { ActorIdentity } from './access';
 
 jest.mock('./db', () => ({
+  query: jest.fn(),
   queryOne: jest.fn(),
 }));
 
+const mockQuery = query as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
 
 afterEach(() => {
@@ -297,6 +300,46 @@ describe('revokeCoachCoverage', () => {
 
     await expect(revokeCoachCoverage({ organizationId: 'org-1', coverageId: 'cov-gone' })).resolves.toEqual({
       revoked: false,
+    });
+  });
+});
+
+describe('listActiveCoachCoverage', () => {
+  test('reads only the calling organization, ordered by soonest to expire', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+
+    await listActiveCoachCoverage('org-1');
+
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql).toContain('where cc.organization_id = $1');
+    expect(sql).toContain('and cc.expires_at > now()');
+    expect(sql).toContain('order by cc.expires_at asc');
+    expect(params).toEqual(['org-1']);
+  });
+
+  test('returns the joined athlete name and coach/granter emails', async () => {
+    mockQuery.mockResolvedValueOnce([
+      {
+        coverage_id: 'cov-1',
+        athlete_id: 'ath-1',
+        athlete_full_name: 'A Name',
+        covering_coach_id: 'coach-sub',
+        covering_coach_email: 'sub@example.org',
+        granted_by_account_id: 'admin-1',
+        granted_by_email: 'admin@example.org',
+        starts_at: '2026-08-01T00:00:00.000Z',
+        expires_at: '2026-08-02T00:00:00.000Z',
+      },
+    ]);
+
+    const rows = await listActiveCoachCoverage('org-1');
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      coverage_id: 'cov-1',
+      athlete_full_name: 'A Name',
+      covering_coach_email: 'sub@example.org',
+      granted_by_email: 'admin@example.org',
     });
   });
 });

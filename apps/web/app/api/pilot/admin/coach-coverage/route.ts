@@ -1,10 +1,34 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { grantCoachCoverage, isOrganizationAdminRole, revokeCoachCoverage } from '@/src/server/pilot/access';
+import {
+  grantCoachCoverage,
+  isOrganizationAdminRole,
+  listActiveCoachCoverage,
+  revokeCoachCoverage,
+} from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { jsonError, requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
+
+// Every coverage grant currently in effect for the caller's own gym. Until
+// this existed, an admin who forgot which athletes had an active grant had
+// no way to find out except a direct database query -- the POST/DELETE
+// halves of this route existed with no way to see what they had done.
+export async function GET(request: NextRequest) {
+  try {
+    const principal = await requireMicrosoftAuthenticatedPrincipal(request);
+
+    if (!isOrganizationAdminRole(principal.role)) {
+      throw new Error('Forbidden: role not allowed');
+    }
+
+    const coverage = await listActiveCoachCoverage(principal.organizationId);
+    return NextResponse.json({ coverage });
+  } catch (error) {
+    return jsonError(error);
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {

@@ -1,5 +1,5 @@
 import type { PilotRole } from './contracts';
-import { queryOne } from './db';
+import { query, queryOne } from './db';
 import { isGuardianLinkedToAthlete } from './guardianAccess';
 
 export interface ActorIdentity {
@@ -215,6 +215,52 @@ export async function revokeCoachCoverage(params: {
   );
 
   return { revoked: Boolean(row) };
+}
+
+export interface ActiveCoachCoverageRow {
+  coverage_id: string;
+  athlete_id: string;
+  athlete_full_name: string;
+  covering_coach_id: string;
+  covering_coach_email: string | null;
+  granted_by_account_id: string;
+  granted_by_email: string | null;
+  starts_at: string;
+  expires_at: string;
+}
+
+/**
+ * Every coverage grant currently in effect for the organization, soonest to
+ * expire first -- the read an admin needs to see what is about to lapse.
+ * Expired and revoked grants (expires_at <= now()) are excluded on purpose:
+ * this is "who has access right now," not the audit history. That history
+ * already exists in pilot.audit_events under entity_type 'coach_coverage'
+ * and is not duplicated here.
+ */
+export async function listActiveCoachCoverage(organizationId: string): Promise<ActiveCoachCoverageRow[]> {
+  return query<ActiveCoachCoverageRow>(
+    `select
+       cc.coverage_id,
+       cc.athlete_id,
+       ath.full_name as athlete_full_name,
+       cc.covering_coach_id,
+       coach.login_email as covering_coach_email,
+       cc.granted_by_account_id,
+       granter.login_email as granted_by_email,
+       cc.starts_at::text,
+       cc.expires_at::text
+     from pilot.coach_coverage cc
+     join pilot.athletes ath
+       on ath.organization_id = cc.organization_id and ath.athlete_id = cc.athlete_id
+     left join pilot.accounts coach
+       on coach.organization_id = cc.organization_id and coach.account_id = cc.covering_coach_id
+     left join pilot.accounts granter
+       on granter.organization_id = cc.organization_id and granter.account_id = cc.granted_by_account_id
+     where cc.organization_id = $1
+       and cc.expires_at > now()
+     order by cc.expires_at asc`,
+    [organizationId],
+  );
 }
 
 export async function assertAthleteBelongsToOrganization(organizationId: string, athleteId: string): Promise<void> {

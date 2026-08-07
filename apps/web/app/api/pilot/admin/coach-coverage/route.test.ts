@@ -1,5 +1,10 @@
-import { DELETE, POST } from './route';
-import { grantCoachCoverage, isOrganizationAdminRole, revokeCoachCoverage } from '@/src/server/pilot/access';
+import { DELETE, GET, POST } from './route';
+import {
+  grantCoachCoverage,
+  isOrganizationAdminRole,
+  listActiveCoachCoverage,
+  revokeCoachCoverage,
+} from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
 import type { NextRequest } from 'next/server';
@@ -8,6 +13,7 @@ jest.mock('@/src/server/pilot/access', () => ({
   isOrganizationAdminRole: jest.fn(),
   grantCoachCoverage: jest.fn(),
   revokeCoachCoverage: jest.fn(),
+  listActiveCoachCoverage: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/audit', () => ({
@@ -27,7 +33,37 @@ const mockRequirePrincipal = requireMicrosoftAuthenticatedPrincipal as jest.Mock
 const mockIsOrgAdmin = isOrganizationAdminRole as jest.Mock;
 const mockGrantCoverage = grantCoachCoverage as jest.Mock;
 const mockRevokeCoverage = revokeCoachCoverage as jest.Mock;
+const mockListCoverage = listActiveCoachCoverage as jest.Mock;
 const mockWriteAudit = writePilotAuditEvent as jest.Mock;
+
+describe('GET /api/pilot/admin/coach-coverage', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('refuses non-admin roles without reading the list', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce({ accountId: 'coach-1', role: 'coach', organizationId: 'org-1' });
+    mockIsOrgAdmin.mockReturnValueOnce(false);
+
+    const response = await GET({} as NextRequest);
+
+    expect(response.status).toBe(403);
+    expect(mockListCoverage).not.toHaveBeenCalled();
+  });
+
+  test('returns the active grants for the caller\'s organization', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce({ accountId: 'admin-1', role: 'organization_admin', organizationId: 'org-1' });
+    mockIsOrgAdmin.mockReturnValueOnce(true);
+    mockListCoverage.mockResolvedValueOnce([{ coverage_id: 'cov-1', athlete_id: 'ath-1' }]);
+
+    const response = await GET({} as NextRequest);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.coverage).toEqual([{ coverage_id: 'cov-1', athlete_id: 'ath-1' }]);
+    expect(mockListCoverage).toHaveBeenCalledWith('org-1');
+  });
+});
 
 describe('POST /api/pilot/admin/coach-coverage', () => {
   beforeEach(() => {
