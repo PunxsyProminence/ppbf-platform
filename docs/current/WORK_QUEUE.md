@@ -86,6 +86,24 @@ audit events on grant/revoke, the base-schema copy of the table, and a
 real-Postgres acceptance suite (`coachCoverage.pg.test.ts`) retargeted to
 the merged column names. The T-002 row above is Lane A's, unmodified.
 
+**T-005 collision, reconciled 2026-08-06 (collision rule 5).** Main added
+`intake/tickets/T-005-shadow-safety-escalations-readable-queue.md`
+(commit `e3cfd30`) describing an unreadable `pilot.safety_escalations`
+admin queue — a real gap against `origin/main` at that commit, and
+independently found: it predates and does not reference PR #238. That
+gap is exactly capability #194 (PR-238c above), already built and
+adversarially reviewed on this branch. No duplicate page was built.
+Full evidence mapping is in the ticket file's own reconciliation note;
+summary: `admin/escalations` (not `admin/safety-escalations` — a path
+difference, not a gap) is broader than asked (coach-scoped view in
+addition to org admin), and the audit trail is row-column-based
+(`acknowledged_by_account_id`/`resolved_by_account_id`/etc.) rather
+than a separate `audit_events` entry — functionally equivalent. Ticket
+marked RESOLVED with the pointer. T-004, T-006, T-008 (added in the
+same commit) were checked and do not collide with anything on this
+branch — genuinely open. T-007 was resolved by the same commit that
+added it (`dataDeletion.ts` et al.).
+
 **Refuted, not queued**: an automated audit pass flagged "athlete onboarding
 creates live accounts on a shared, guessable PIN with no safeguard" as a
 Tier-1 security gap. Verified false on direct code read: the shared PIN is a
