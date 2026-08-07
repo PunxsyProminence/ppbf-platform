@@ -152,3 +152,61 @@ export async function listSafetyGateEvaluationsForAthlete(
     [organizationId, athleteId, limit],
   );
 }
+
+export interface GuardianGateSummaryRow {
+  gate_key: string;
+  name: string;
+  category: SafetyGateCategory;
+  outcome: SafetyGateOutcome | 'not_evaluated';
+  evaluated_at: string | null;
+}
+
+/**
+ * Capability #84: the guardian-safe projection of gate status -- one row
+ * per ACTIVE gate the organization has, each carrying only its most recent
+ * outcome ('not_evaluated' if the gate has never fired for this athlete).
+ * Deliberately excludes `reason` and `metadata` -- both are staff-facing
+ * detail (mirrors training-holds' athleteFacing() never exposing
+ * reason_text). A retired gate (active_flag = false) is left out entirely
+ * rather than shown as a stale evaluation a guardian can no longer act on.
+ */
+export async function getGuardianGateSummary(
+  organizationId: string,
+  athleteId: string,
+): Promise<GuardianGateSummaryRow[]> {
+  const rows = await query<{
+    gate_key: string;
+    name: string;
+    category: SafetyGateCategory;
+    outcome: SafetyGateOutcome | null;
+    evaluated_at: string | null;
+  }>(
+    `select
+       g.gate_key,
+       g.name,
+       g.category,
+       latest.outcome,
+       latest.evaluated_at::text
+     from pilot.safety_gates g
+     left join lateral (
+       select outcome, evaluated_at
+       from pilot.safety_gate_evaluations e
+       where e.organization_id = g.organization_id
+         and e.gate_key = g.gate_key
+         and e.athlete_id = $2
+       order by e.evaluated_at desc
+       limit 1
+     ) latest on true
+     where g.organization_id = $1 and g.active_flag = true
+     order by g.name`,
+    [organizationId, athleteId],
+  );
+
+  return rows.map((row) => ({
+    gate_key: row.gate_key,
+    name: row.name,
+    category: row.category,
+    outcome: row.outcome ?? 'not_evaluated',
+    evaluated_at: row.evaluated_at,
+  }));
+}
