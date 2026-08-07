@@ -285,18 +285,6 @@ create table if not exists pilot.volunteers (
   primary key (organization_id, volunteer_id)
 );
 
-create table if not exists pilot.staff (
-  organization_id text not null references pilot.organizations(organization_id),
-  staff_id text not null,
-  account_id text null references pilot.accounts(account_id),
-  full_name text not null,
-  title text not null,
-  active_flag boolean not null default true,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  primary key (organization_id, staff_id)
-);
-
 create table if not exists pilot.attendance (
   organization_id text not null references pilot.organizations(organization_id),
   attendance_id uuid not null,
@@ -460,29 +448,6 @@ create table if not exists pilot.coach_observations (
   constraint pilot_coach_observations_athlete_fk foreign key (organization_id, athlete_id) references pilot.athletes(organization_id, athlete_id) on delete cascade
 );
 
-create table if not exists pilot.messages (
-  organization_id text not null references pilot.organizations(organization_id),
-  message_id uuid not null,
-  sender_account_id text not null references pilot.accounts(account_id),
-  recipient_account_id text not null references pilot.accounts(account_id),
-  body text not null,
-  created_at timestamptz not null default now(),
-  primary key (organization_id, message_id)
-);
-
-create table if not exists pilot.skills (
-  organization_id text not null references pilot.organizations(organization_id),
-  skill_id uuid not null,
-  athlete_id text not null,
-  skill_name text not null,
-  level text not null,
-  recorded_at timestamptz not null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  primary key (organization_id, skill_id),
-  constraint pilot_skills_athlete_fk foreign key (organization_id, athlete_id) references pilot.athletes(organization_id, athlete_id) on delete cascade
-);
-
 create index if not exists idx_pilot_memberships_org_role on pilot.organization_memberships(organization_id, role);
 create index if not exists idx_pilot_sessions_org_athlete_id on pilot.sessions(organization_id, athlete_id);
 create index if not exists idx_pilot_goals_org_athlete_id on pilot.goals(organization_id, athlete_id);
@@ -504,8 +469,6 @@ create index if not exists idx_pilot_medical_intake_org_athlete on pilot.medical
 create index if not exists idx_pilot_waivers_org_athlete on pilot.waivers(organization_id, athlete_id, created_at desc);
 create index if not exists idx_pilot_guardian_links_org_athlete on pilot.guardian_links(organization_id, athlete_id);
 create index if not exists idx_pilot_coach_observations_org_athlete on pilot.coach_observations(organization_id, athlete_id, created_at desc);
-create index if not exists idx_pilot_messages_org_recipient_created on pilot.messages(organization_id, recipient_account_id, created_at desc);
-create index if not exists idx_pilot_skills_org_athlete_recorded on pilot.skills(organization_id, athlete_id, recorded_at desc);
 
 -- SHADOW Feedback (effectiveness tracking)
 create table if not exists pilot.shadow_feedback (
