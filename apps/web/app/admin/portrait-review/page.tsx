@@ -26,7 +26,10 @@ export default function PortraitReviewPage() {
   const [items, setItems] = useState<PendingPortrait[] | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [actionMessage, setActionMessage] = useState('');
-  const [pendingAccountId, setPendingAccountId] = useState<string | null>(null);
+  // A set, not a single id -- an admin can start a decision on one row while
+  // another row's request is still in flight, and each row's own button must
+  // only re-enable when THAT row's request resolves.
+  const [pendingAccountIds, setPendingAccountIds] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     try {
@@ -58,7 +61,7 @@ export default function PortraitReviewPage() {
       );
       if (!confirmed) return;
     }
-    setPendingAccountId(accountId);
+    setPendingAccountIds((prev) => new Set(prev).add(accountId));
     try {
       const response = await fetch(`${apiBase()}/api/pilot/admin/portrait-review`, {
         method: 'POST',
@@ -75,7 +78,11 @@ export default function PortraitReviewPage() {
     } catch (error) {
       setActionMessage(error instanceof Error ? error.message : 'Unable to record the decision.');
     } finally {
-      setPendingAccountId(null);
+      setPendingAccountIds((prev) => {
+        const next = new Set(prev);
+        next.delete(accountId);
+        return next;
+      });
     }
   }
 
@@ -142,7 +149,7 @@ export default function PortraitReviewPage() {
                         <div className="flex flex-col gap-[var(--s2)]">
                           <button
                             type="button"
-                            disabled={pendingAccountId === item.account_id}
+                            disabled={pendingAccountIds.has(item.account_id)}
                             onClick={() => void decide(item.account_id, 'approve')}
                             className="btn--lever min-h-[44px] disabled:opacity-50"
                           >
@@ -150,7 +157,7 @@ export default function PortraitReviewPage() {
                           </button>
                           <button
                             type="button"
-                            disabled={pendingAccountId === item.account_id}
+                            disabled={pendingAccountIds.has(item.account_id)}
                             onClick={() => void decide(item.account_id, 'reject')}
                             className="btn--lever min-h-[44px] disabled:opacity-50"
                           >

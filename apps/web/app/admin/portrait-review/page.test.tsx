@@ -123,10 +123,47 @@ test('rejecting, once confirmed, posts decision=reject', async () => {
   await waitFor(() => expect(screen.getByText('Portrait rejected.')).toBeInTheDocument());
 });
 
+test("a pending decision on one row never disables another row's buttons, and starting a second row's decision does not re-enable the first row's still-in-flight buttons", async () => {
+  let resolveFirstPost: (value: Response) => void = () => {};
+  const firstPostPromise = new Promise<Response>((resolve) => {
+    resolveFirstPost = resolve;
+  });
+
+  const fetchMock = jest.fn((url: string, init?: RequestInit) => {
+    if (init?.method === 'POST') {
+      const body = JSON.parse(String(init.body));
+      if (body.account_id === 'acct-1') {
+        return firstPostPromise;
+      }
+      return Promise.resolve(jsonResponse({ ok: true, review_state: 'released' }));
+    }
+    return Promise.resolve(jsonResponse({ ok: true, portraits: PENDING }));
+  });
+  global.fetch = fetchMock as unknown as typeof fetch;
+
+  render(<PortraitReviewPage />);
+  await screen.findByText('Sample Athlete One');
+
+  const approveButtons = screen.getAllByRole('button', { name: 'Approve' });
+  fireEvent.click(approveButtons[0]); // acct-1 -- its request stays in flight
+
+  await waitFor(() => expect(approveButtons[0]).toBeDisabled());
+  // A different row's in-flight request must never disable this one.
+  expect(approveButtons[1]).not.toBeDisabled();
+
+  fireEvent.click(approveButtons[1]); // acct-2 -- resolves immediately
+  await waitFor(() => expect(screen.getByText('Portrait approved.')).toBeInTheDocument());
+  // Starting and finishing row 2's decision must not touch row 1's pending state.
+  expect(approveButtons[0]).toBeDisabled();
+
+  resolveFirstPost(jsonResponse({ ok: true, review_state: 'released' }));
+  await waitFor(() => expect(approveButtons[0]).not.toBeDisabled());
+});
+
 test('a failed decision surfaces the server error rather than silently reloading', async () => {
   const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
     if (init?.method === 'POST') {
-      return jsonResponse({ error: 'Unsupported: portrait is not pending review (current state: released)' }, false);
+      return jsonResponse({ error: 'Unsupported: portrait was already decided by another reviewer' }, false);
     }
     return jsonResponse({ ok: true, portraits: PENDING });
   });
@@ -137,5 +174,5 @@ test('a failed decision surfaces the server error rather than silently reloading
 
   fireEvent.click(screen.getAllByRole('button', { name: 'Approve' })[0]);
 
-  await screen.findByText('Unsupported: portrait is not pending review (current state: released)');
+  await screen.findByText('Unsupported: portrait was already decided by another reviewer');
 });

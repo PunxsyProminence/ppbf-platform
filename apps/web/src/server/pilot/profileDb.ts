@@ -464,8 +464,18 @@ export async function clearPhoto(
   accountId: string,
   reviewState: Extract<PhotoReviewState, 'removed' | 'blocked'>,
   reviewedByAccountId: string | null,
-): Promise<void> {
-  await query(
+  // T-004: an optional compare-and-swap guard. A single UPDATE statement
+  // takes an implicit row lock and re-evaluates its WHERE clause against
+  // whatever the row actually holds once that lock is granted -- so two
+  // concurrent callers racing the same account_id with the same
+  // expectedCurrentState serialize correctly: the first commits and moves
+  // the state off expectedCurrentState, and the second's WHERE clause then
+  // fails to match, returning false rather than silently overwriting a
+  // decision another reviewer already made. Omitted, this is the sibling
+  // photo/review route's original unconditional toggle -- unchanged.
+  expectedCurrentState?: PhotoReviewState,
+): Promise<boolean> {
+  const rows = await query<{ account_id: string }>(
     `update pilot.account_profiles
      set photo_blob_path = null,
          photo_content_type = null,
@@ -477,25 +487,37 @@ export async function clearPhoto(
          photo_reviewed_at = now(),
          photo_reviewed_by_account_id = $4,
          updated_at = now()
-     where organization_id = $1 and account_id = $2`,
-    [organizationId, accountId, reviewState, reviewedByAccountId],
+     where organization_id = $1 and account_id = $2
+       ${expectedCurrentState ? 'and photo_review_state = $5' : ''}
+     returning account_id`,
+    expectedCurrentState
+      ? [organizationId, accountId, reviewState, reviewedByAccountId, expectedCurrentState]
+      : [organizationId, accountId, reviewState, reviewedByAccountId],
   );
+  return rows.length > 0;
 }
 
 export async function releasePhoto(
   organizationId: string,
   accountId: string,
   reviewedByAccountId: string,
-): Promise<void> {
-  await query(
+  // See clearPhoto's expectedCurrentState comment -- same CAS guard.
+  expectedCurrentState?: PhotoReviewState,
+): Promise<boolean> {
+  const rows = await query<{ account_id: string }>(
     `update pilot.account_profiles
      set photo_review_state = 'released',
          photo_reviewed_at = now(),
          photo_reviewed_by_account_id = $3,
          updated_at = now()
-     where organization_id = $1 and account_id = $2 and photo_blob_path is not null`,
-    [organizationId, accountId, reviewedByAccountId],
+     where organization_id = $1 and account_id = $2 and photo_blob_path is not null
+       ${expectedCurrentState ? 'and photo_review_state = $4' : ''}
+     returning account_id`,
+    expectedCurrentState
+      ? [organizationId, accountId, reviewedByAccountId, expectedCurrentState]
+      : [organizationId, accountId, reviewedByAccountId],
   );
+  return rows.length > 0;
 }
 
 export interface PendingReviewPortrait {
@@ -520,7 +542,7 @@ export async function listPendingReviewPortraits(organizationId: string): Promis
   const rows = await query<{ account_id: string; photo_uploaded_at: string }>(
     `select account_id, photo_uploaded_at
      from pilot.account_profiles
-     where organization_id = $1 and photo_review_state = 'pending_review'
+     where organization_id = $1 and photo_review_state = 'pending_review' and photo_blob_path is not null
      order by photo_uploaded_at asc`,
     [organizationId],
   );

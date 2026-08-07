@@ -37,7 +37,19 @@ export async function GET(request: NextRequest) {
     requireRole(principal, ['organization_admin', 'admin']);
 
     const portraits = await listPendingReviewPortraits(principal.organizationId);
-    return NextResponse.json({ ok: true, portraits });
+    // The wire format is snake_case, matching every other admin route's JSON
+    // response in this codebase (e.g. admin/coach-coverage) -- the internal
+    // profileDb.ts return type stays camelCase, matching this module's own
+    // TS convention, so the mapping happens once, here, at the boundary.
+    return NextResponse.json({
+      ok: true,
+      portraits: portraits.map((portrait) => ({
+        account_id: portrait.accountId,
+        full_name: portrait.fullName,
+        athlete_id: portrait.athleteId,
+        uploaded_at: portrait.uploadedAt,
+      })),
+    });
   } catch (error) {
     return jsonError(error);
   }
@@ -67,18 +79,28 @@ export async function POST(request: NextRequest) {
 
     const profile = await getAccountProfile(principal.organizationId, accountId);
     if (!profile.photoBlobPath) return hiddenNotFound();
-    // The queue this console lists is pending_review only; acting on
-    // anything else here would be acting on a row nobody showed the admin,
-    // most likely a stale tab racing another reviewer.
-    if (profile.photoReviewState !== 'pending_review') {
-      throw new Error(`Unsupported: portrait is not pending review (current state: ${profile.photoReviewState})`);
-    }
 
+    // The queue this console lists is pending_review only, and two admins
+    // can have it open at once. expectedCurrentState makes the DB write
+    // itself the compare-and-swap: the UPDATE's WHERE clause re-checks
+    // photo_review_state at the moment it acquires the row lock, so a
+    // second reviewer racing the same account_id loses atomically instead
+    // of silently overwriting (or, for reject, deleting the blob out from
+    // under) whatever the first reviewer's decision already committed.
+    // Blob deletion happens only AFTER the CAS confirms this request won --
+    // deleting first and losing the race would destroy a photo the other
+    // reviewer just released.
     if (decision === 'approve') {
-      await releasePhoto(principal.organizationId, accountId, principal.accountId);
+      const applied = await releasePhoto(principal.organizationId, accountId, principal.accountId, 'pending_review');
+      if (!applied) {
+        throw new Error('Unsupported: portrait was already decided by another reviewer');
+      }
     } else {
+      const applied = await clearPhoto(principal.organizationId, accountId, 'blocked', principal.accountId, 'pending_review');
+      if (!applied) {
+        throw new Error('Unsupported: portrait was already decided by another reviewer');
+      }
       await deletePilotProfilePhoto(profile.photoBlobPath);
-      await clearPhoto(principal.organizationId, accountId, 'blocked', principal.accountId);
     }
 
     await writePilotAuditEvent({
