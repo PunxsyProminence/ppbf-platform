@@ -32,7 +32,7 @@ Rough scoreboard across the 200 detailed items:
 
 **Drift check, 2026-08-06:** every row marked ✅ was audited against the actual codebase (does the cited evidence exist, still do what's claimed, and get reached by a real route/UI?). 16 of 21 confirmed clean. Five had real drift, each corrected in its own row: #8's evidence cited the wrong file for the review queue; #9 is admin-only, not athlete self-service, despite the "athlete portal" claim; #113/#166 are one capability double-counted under two numbers; #119's audit write path is real but has no reachable read UI. #82/#198/#200 (this session's builds) were verified end-to-end with full test suites at build time and are not re-audited here.
 
-**Phase-1 re-scope, 2026-08-07:** the remaining Phase-1 target list (#5, #11, #75, #76, #78, #83, #150, #152, #157) was re-audited against the current codebase before continuing the build. #11, #83, and #76 were found already fully built (stale map cells or an untraced call chain, not a code gap — rows corrected above); #78 and #150 were found genuinely blocked on capabilities that don't exist yet (#199 Parent Education, #149 Donor-Safe Reporting — both Phase 3/4), not fixable in place. #75 and #152 had real, buildable gaps and shipped as PR-238j/p in `docs/current/WORK_QUEUE.md` (plus five Phase-2 items pulled forward: #84, #151, #12, #173, #125/70/74). #5 has a real, small, buildable gap (surfacing active hold/gate status on `coach/progression-intelligence` so a coach does not approve progression for a held athlete) not yet built as of this note. #157 remains genuinely open but is explicitly a design gap (curating specific high-risk-phrasing vs. benign-phrasing lists), not an implementation one — deliberately not attempted unsupervised; see the ticket note. The aggregate scoreboard counts above (21/~54/~125) have not been fully recomputed against this — treat them as directionally stale, not exact, until a full re-sweep happens.
+**Phase-1 re-scope, 2026-08-07:** the remaining Phase-1 target list (#5, #11, #75, #76, #78, #83, #150, #152, #157) was re-audited against the current codebase before continuing the build. #11, #83, and #76 were found already fully built (stale map cells or an untraced call chain, not a code gap — rows corrected above); #78 and #150 were found genuinely blocked on capabilities that don't exist yet (#199 Parent Education, #149 Donor-Safe Reporting — both Phase 3/4), not fixable in place. #75 and #152 had real, buildable gaps and shipped as PR-238j/p in `docs/current/WORK_QUEUE.md` (plus five Phase-2 items pulled forward: #84, #151, #12, #173, #125/70/74). #5 had a real, small, buildable gap (surfacing active hold status on `coach/progression-intelligence`, visibility only) and shipped the same night as PR-238q. #157 remains genuinely open but is explicitly a design gap (curating specific high-risk-phrasing vs. benign-phrasing lists), not an implementation one — deliberately not attempted unsupervised; see the ticket note. **Doc sync, 2026-08-07 (later same night):** rows #5, #12, #70, #74, #75, #84, #125, #151, #152, #173 above were updated to reflect what actually shipped (PR-238j–q, s) — three (#75, #151, #152) moved 🟡→✅, three (#70, #74, #125) moved ⬜→🟡 (generic capture only, no invented taxonomy), and #84 moved ⬜→🟡. The aggregate scoreboard counts above (21/~54/~125) still have not been fully recomputed against any of this — treat them as directionally stale, not exact, until a full re-sweep happens.
 
 The build so far has been **deep in four areas** — identity/governance, SHADOW
 (AI layer), coach review/video, and board/compliance — and **thin in the
@@ -55,14 +55,14 @@ Evidence pointers are the primary module or route; tests live alongside.
 | 2 | Raw Observation Intake | 🟡 | `shadow/formulas/observations`, feedback intake; no unified observation store | 1 |
 | 3 | Safety Gate System | 🟡 | Generalized 2026-08-06: `pilot.safety_gates` + `pilot.safety_gate_evaluations`, `safetyGateMatrix.ts` evaluation/recording substrate, seeded per-org. `contactClearanceGate.ts` is its first row (a 'flag' gate — see #43). No gate exists yet for age or training-level; no admin UI to configure gate rows beyond the seeded defaults. (Note: `gateSession` in the original evidence was a misidentification — it's CI/deploy session tooling, unrelated to athlete safety.) | 1 |
 | 4 | Performance Tracking | 🟡 | `shadowMetrics.ts`, formula engine; athlete-facing trends missing | 3 |
-| 5 | Progression Decision System | 🟡 | `progression.ts`, coach reviews; decision rules thin | 1 |
+| 5 | Progression Decision System | 🟡 | `progression.ts`, coach reviews; decision rules thin. Updated 2026-08-07: `coach/progression-intelligence` now shows an active training-hold banner (scope + athlete-safe explanation) — visibility only, since `progression.ts` still has no codified "ready to advance" rule for a hold to actually gate. The decision-rules gap itself remains open. | 1 |
 | 6 | Training Assignment System | 🟡 | `admin/track-assignments`, `progression/assignments` | 1 |
 | 7 | Session Builder | 🟡 | sessions CRUD exists (`api/pilot/sessions/*`); no builder workflow | 3 |
 | 8 | Coach Review System | ✅ | Drift-corrected 2026-08-06: submission is `api/pilot/coach-reviews/route.ts` (real, called by `CoachWorkspace.tsx`); the queue a coach actually sees is `api/pilot/shadow/review-projection`, not `coach-reviews/list` (real route, but never called — the evidence cell named the wrong file). | — |
 | 9 | Athlete Update System | ✅ | Drift-corrected 2026-08-06: `athletes/update` is real but is an **admin-only correction tool** (`app/admin/athletes/page.tsx`, `allowedRoles={['admin','platform_owner']}`) — it is not called anywhere under `app/athlete/*`. "Athlete portal" self-service update does not exist; the capability as built is staff-side only. | — |
 | 10 | Development Route System | 🟡 | routing pieces in progression; Route Factory not built | 3 |
 | 11 | Goal Management System | ✅ | Drift-corrected 2026-08-07: the gap was closed by commit `5d750cc` (#202) — `pilot_slice_postgres_goal_category_progress_migration.sql` adds nullable `category`/`progress_percent` to `pilot.goals`, `validation.ts`/`entities.ts`/both goal write routes persist them for real, and `AthleteWorkspace.tsx` no longer fabricates `'Boxing'`/`0%` defaults. This doc's own map cell was stale, not the code. | — |
-| 12 | Roster / Participation System | 🟡 | roster export exists; no attendance (see #122) | 2 |
+| 12 | Roster / Participation System | 🟡 | roster export exists; no attendance (see #122). Updated 2026-08-07: `/admin/athletes` now shows each athlete's live attendance rate (best-effort, non-blocking) and cross-links with `/admin/attendance`. The CSV export route still lacks the column — its test file's exact call-count/credential-leak assertions made merging a second data source under time pressure too risky; left as a documented follow-up. | 2 |
 
 ### Group B — Physical Training System (13–36) — the largest gap
 
@@ -123,9 +123,15 @@ would produce empty dashboards, which the truth-on-screen rule forbids.
 
 ### Group F — Mental / Emotional / Behavioral (64–74) — not started
 
-All eleven are ⬜. Two (70, 74) have natural data-capture hooks in the Phase 2
-class-management build (behavior standards, at-home habit engine) and start
-there; the inference layers land in Phase 6.
+Nine are ⬜. Two (70, 74) have natural data-capture hooks in the Phase 2
+class-management build (behavior standards, at-home habit engine); as of
+2026-08-07 the capture half is real — `coach/decision-loop`'s "Behavior &
+Habit Note" panel posts to `pilot.coach_observations` (`note_type:
+'behavior_standard'`), which #70/#74/#125 all share (see #125's row below
+for the full build note). Deliberately no invented taxonomy of specific
+behavior/habit categories yet — that's a coaching-philosophy decision for
+the gym's own staff. The inference layers (pattern detection, streaks,
+consequences) still land in Phase 6, unbuilt.
 
 | # | Capability | Status | Phase |
 |---|---|---|---|
@@ -135,17 +141,17 @@ there; the inference layers land in Phase 6.
 | 67 | Frustration Response Monitor | ⬜ | 6 |
 | 68 | Reset Ability Engine | ⬜ | 6 |
 | 69 | Behavior Pattern Engine | ⬜ | 6 |
-| 70 | Discipline / Accountability Engine | ⬜ | 2 (capture) → 6 |
+| 70 | Discipline / Accountability Engine | 🟡 | 2 (capture) → 6 |
 | 71 | Motivation / Engagement Engine | ⬜ | 6 |
 | 72 | Character Development Engine | ⬜ | 6 |
 | 73 | Leadership Development Engine | ⬜ | 6 |
-| 74 | Habit Formation Engine | ⬜ | 2 (capture) → 6 |
+| 74 | Habit Formation Engine | 🟡 | 2 (capture) → 6 |
 
 ### Group G — Safety / Recovery / Health (75–84) — the safety spine
 
 | # | Capability | Status | Evidence / gap | Phase |
 |---|---|---|---|---|
-| 75 | Safety Review Engine | 🟡 | compliance rules + escalation (`compliance.ts`) | 1 |
+| 75 | Safety Review Engine | ✅ | Updated 2026-08-07: `getOrganizationSafetyReview()` + `/admin/safety-review` now rolls up all four previously-siloed safety systems — active training holds, failing safety-gate evaluations, open escalations, and open compliance violations — into one admin console, closing the gap `escalationLadder.ts`'s own header had named as open. Pure read-side rollup (`Promise.all` over each system's own existing list function); the underlying schemas remain separate by design. | 1 |
 | 76 | Pain / Symptom Flag Engine | ✅ | Drift-corrected 2026-08-07: `alertCoachToPainReport` (`formulas/painReportAlert.ts`) already classifies severity from the 1-10 self-report and calls `flagNearMiss` with `metadata.trigger = PAIN_REPORT_TRIGGER` on every pain report; high/critical severity auto-escalates via #194's ladder. Tracing the full call chain further: `detectRepeatedPatternEscalations` (`escalationLadder.ts`) already groups near-misses by exactly that `metadata->>'trigger'` key and files a `repeated_pattern` escalation once an athlete crosses the threshold within the lookback window -- reachable today via `POST /api/pilot/escalations` (`action: 'scan_patterns'`) and a live "Scan for repeated patterns" button on `/admin/escalations`. Repeated-pain-report pattern detection is not a gap; it was already fully wired, just not traced end-to-end before. | — |
 | 77 | Recovery Status Engine | ⬜ | | 3 |
 | 78 | Medical Uncertainty Routing | 🟡 | Drift-corrected 2026-08-07: `shadowMedicalStatus.ts` was a misidentification (that module is the recommendation-clearance gate, unrelated to chat refusals) — the real routing lives in `shadowChat.ts`/`shadowHandoff.ts`: a medical refusal already calls `queueHumanReview` and attaches a topic-specific `resolveHandoff()` lesson ("talk to your medical staff/coach/org admin"), so the human-routing half of the teaching-moment principle is done. What's genuinely missing is routing to educational *content* (Parent Education, #199) instead of only "ask a human" — and that is blocked on #199, which is an empty DRAFT stub with no data model or route. Not buildable until #199 exists. | 1 |
@@ -154,7 +160,7 @@ there; the inference layers land in Phase 6.
 | 81 | Fatigue Breakdown Engine | ⬜ | | 3 |
 | 82 | Stop / Hold / Regress Engine | ✅ 2026-08-06 — `pilot.training_holds` + `trainingHolds.ts`; all_training holds block class registration; scoped holds (regress = reduced permitted intensity, never a demotion) flag contact; escalation + audit wired | | 1 |
 | 83 | Unsafe Behavior Flag Engine | ✅ | Drift-corrected 2026-08-07: `flagNearMiss()` is generic (any free-text description + severity, `detected_by: 'human'` or `'system'`), and `coach/decision-loop` already has a coach/admin-facing "Near-Misses" panel with unrestricted free-text — a coach can already flag observed unsafe behavior directly, not just wait on athlete self-report, and high/critical severity already auto-escalates through #194's ladder. No dedicated "unsafe behavior" label exists, but the capability is functionally covered end-to-end. | — |
-| 84 | Guardian Safety Report Engine | ⬜ | | 2 |
+| 84 | Guardian Safety Report Engine | 🟡 | Built 2026-08-07: `getGuardianGateSummary()` + `GET /api/pilot/parent/safety` + `/parent/safety` gives a guardian a read-only rollup of their own child's active training-hold and safety-gate status, reusing the exact athlete-safe projection already shipped for the athlete themselves. Deliberately excludes `pilot.safety_escalations` entirely (an `athlete_voice` escalation must never reach a guardian) and doesn't embed consent status (links to `/parent/consent` instead). Not yet: a full-fidelity guardian view of resolved/historical safety signal. | 2 |
 
 ### Group H — At-Home / Parent / Guardian (85–96)
 
@@ -227,7 +233,7 @@ sits behind the Privacy-Tier System (#200).
 | 122 | Attendance Engine | 🟡 | This entry was wrong: `pilot.scheduler_attendance` + `schedulerDb.ts` + the scheduler route's `attendance_checkin` action already existed and recorded real check-ins. The actual gaps closed 2026-08-06: no reporting/rollup layer (now `attendanceReporting.ts` + `/api/pilot/scheduler/attendance-summary` + `admin/attendance`), no bulk class check-in (now `bulk_attendance_checkin`), and a real bug where a parent's check-in was misattributed as `coach_override` (now its own `method: 'parent'`, migrated). Still open: `CoachWorkspace.tsx`'s roster view still hardcodes `attendance: 'Unknown'` instead of querying the new summary endpoint — deferred because that file was claimed by a concurrent session; a second legacy table, `pilot.attendance` (written by `intake.ts`'s manual-entry flow, read by `passbook.ts`), remains a second source of truth not unified with `scheduler_attendance` in this pass | 2 |
 | 123 | Station Rotation Engine | 🟡 | floor-plans route | 2 |
 | 124 | Capacity Management Engine | ⬜ | | 2 |
-| 125 | Behavior Standard Engine | ⬜ | | 2 |
+| 125 | Behavior Standard Engine | 🟡 | Built 2026-08-07 (capture only): `pilot.coach_observations.note_type` already accepted any free-text value with no taxonomy and the `domain-upsert` route already had the `coach_note` entity path — this was a pure UI wiring gap. `coach/decision-loop`'s "Behavior & Habit Note" panel posts a single generic `note_type: 'behavior_standard'`, shared with #70/#74. Deliberately does not invent specific behavior/habit category names ("respect," "effort," etc.) — a coaching-philosophy decision for the gym's own staff, left for the owner. Pattern detection, streaks, and consequences remain Phase 6, unbuilt. | 2 |
 | 126 | Recognition / Achievement Engine | ⬜ | | 2 |
 | 127 | 1% Club / Leadership Pathway | ⬜ | | 2 |
 | 128 | Community Service Tracker | ⬜ | | 2 |
@@ -263,8 +269,8 @@ sits behind the Privacy-Tier System (#200).
 | 148 | Program Outcome Reporting | ⬜ | | 4 |
 | 149 | Donor-Safe Reporting Engine | ⬜ | | 4 |
 | 150 | Privacy / Sensitive Data Boundary | 🟡 | Re-audited 2026-08-07 against the now-shipped #200 registry: org isolation, field-tier enforcement, and board k-anonymity (`boardSummary.ts`, `BOARD_MINIMUM_COHORT_SIZE = 5`) are all solid and independently verified. The one open item, "donor-safe rules," is genuinely blocked on Phase 4 — no donor-facing report/export route exists anywhere in the codebase (#149 Donor-Safe Reporting is ⬜), so there is nothing to make safe yet. At its practical Phase-1 ceiling. | 1 |
-| 151 | Consent / Waiver Tracker | 🟡 | document-intake handles waiver docs; no lifecycle tracker | 2 |
-| 152 | Incident Report Engine | 🟡 | compliance violations/escalate, near-misses | 1 |
+| 151 | Consent / Waiver Tracker | ✅ | Updated 2026-08-07: `getOrganizationWaiverStatus()` + `/admin/waiver-status` gives an org-wide roster × waiver-type status grid across all four tracked types (`general`, `medical_release`, `photo_media`, `travel` — the existing `admin/consent/page.tsx` vocabulary, not a new taxonomy). `pilot.waivers` has no expiry column, so "lifecycle" here means current-status visibility, not expiry tracking — a real schema gap left as-is, not worked around. | 2 |
+| 152 | Incident Report Engine | ✅ | Updated 2026-08-07: `fileIncidentReport()` + `POST /api/pilot/incidents` + `coach/decision-loop`'s "Report Incident" panel — a post-hoc "this actually happened" report, distinct from `pilot.shadow_near_misses`' "this almost happened," filed as a new `source_type: 'incident'` on the existing escalation ladder rather than a new table (reusing near-misses would have corrupted the repeated-pattern detector's counts). Severity forced to `high`/`critical` only, always human-triggered, enforced at both the route and the function itself. Write-only by design; reads go through the existing `/admin/escalations` queue. | 1 |
 | 153 | Compliance Checklist Engine | ✅ | compliance rules + default seeds (#159) | — |
 
 ### Group O — AI / Automation Support (154–164) — largely built via SHADOW
@@ -295,7 +301,7 @@ sits behind the Privacy-Tier System (#200).
 | 170 | Safety Dashboard | 🟡 | board compliance-monitoring page | 1 |
 | 171 | Progression Dashboard | 🟡 | progression pages; gaps route | 3 |
 | 172 | Performance Trend Dashboard | ⬜ | needs Phase 3 engines | 3 |
-| 173 | Attendance Dashboard | 🟡 | `admin/attendance` — org/coach-scoped rollup table; no trend charts or grant-facing view yet | 2 |
+| 173 | Attendance Dashboard | 🟡 | `admin/attendance` — org/coach-scoped rollup table; no trend charts or grant-facing view yet. Updated 2026-08-07: `getWeeklyAttendanceTrend()` adds a real week-over-week rate sparkline, bucketed by the class's own `start_at` (not mark time), gap-filled on render for omitted zero-mark weeks. A Round-9 review-confirmed off-by-one (the window silently included the current in-progress week) was fixed with a real-Postgres regression suite. Still missing: a grant-facing export/share view — needs branding and access-control decisions the owner should make. | 2 |
 | 174 | Grant / Impact Dashboard | ⬜ | needs #146 | 4 |
 | 175 | Source-Control Dashboard | 🟡 | placeholder (same as #143) | 4 |
 
