@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import { formatGymCustom } from '@/src/lib/gymTime';
 
 // Mirrors the closed vocabularies in src/server/pilot/announcements.ts and the
 // check constraints behind them. Declared here as well because this module is
@@ -88,12 +89,12 @@ export function formatAnnouncementTime(value: string): string {
   }
 
   try {
-    return new Date(parsed).toLocaleString(undefined, {
+    return formatGymCustom(parsed, {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
-    });
+    }) ?? value;
   } catch {
     return value;
   }

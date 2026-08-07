@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymStamp } from '@/src/lib/gymTime';
 
 const ML_PLACEHOLDER = 'PLANNED | ML REQUIRED | NOT YET AUTOMATED';
 
@@ -461,7 +462,7 @@ export default function CoachVideoAnalysisPage() {
                       {v.file_name} · {formatBytes(v.file_size_bytes)}
                       {v.athlete_id ? ` · Athlete: ${v.athlete_id}` : ''}
                     </p>
-                    <p className="t-data mt-[var(--s1)] text-[color:var(--bone-400)]">{new Date(v.created_at).toLocaleString()}</p>
+                    <p className="t-data mt-[var(--s1)] text-[color:var(--bone-400)]">{formatGymStamp(v.created_at)}</p>
                     {v.status === 'quarantined' ? (
                       <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">
                         {canRelease(v)
@@ -526,7 +527,7 @@ export default function CoachVideoAnalysisPage() {
                     Athlete: {p.athlete_id} · {p.frames_analyzed} frame(s) · {p.model_deployment}
                   </p>
                   <p className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-100)]">{p.observation_text}</p>
-                  <p className="t-data mt-[var(--s1)] text-[color:var(--bone-400)]">{new Date(p.created_at).toLocaleString()}</p>
+                  <p className="t-data mt-[var(--s1)] text-[color:var(--bone-400)]">{formatGymStamp(p.created_at)}</p>
                   <div className="mt-[var(--s3)] flex gap-[var(--s3)]">
                     <button
                       onClick={() => { void resolveProposal(p, 'accepted'); }}

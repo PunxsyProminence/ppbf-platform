@@ -25,6 +25,7 @@ import {
   toggleSelected,
   type Selection,
 } from '@/components/bulkSelection';
+import { formatGymClock24, formatGymDateNumeric } from '@/src/lib/gymTime';
 
 type CapabilityStatus = 'DRAFT' | 'ACTIVE' | 'BLOCKED' | 'ARCHIVED';
 type CapabilityVisibility = 'Internal' | 'Role-Bound' | 'Public Placeholder';
@@ -424,7 +425,7 @@ function formatDateLabel(value: string): string {
   if (Number.isNaN(date.getTime())) {
     return 'Unknown date';
   }
-  return date.toLocaleDateString();
+  return formatGymDateNumeric(date) ?? '';
 }
 
 export default function AdminCapabilitiesPage() {
@@ -512,12 +513,7 @@ export default function AdminCapabilitiesPage() {
 
   function logTrace(action: string, detail: string) {
     const trace: EventTrace = {
-      timestamp: new Date().toLocaleTimeString('en-US', {
-        hour12: false,
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      }),
+      timestamp: formatGymClock24(new Date(), { seconds: true }) ?? '',
       action,
       detail,
     };

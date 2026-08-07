@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import type { ClubRole } from '@/components/roleRoutes';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymDateNumeric, formatGymStamp, formatGymTimeOfDay } from '@/src/lib/gymTime';
 
 type SchedulerRole = 'athlete' | 'coach' | 'parent' | 'organization_admin' | 'admin';
 
@@ -273,7 +274,7 @@ export default function SchedulerPage() {
                         <div>
                           <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>{item.title}</p>
                           <p className="t-muted">
-                            {new Date(item.start_at).toLocaleString()} - {new Date(item.end_at).toLocaleTimeString()} | {item.location}
+                            {formatGymStamp(item.start_at)} - {formatGymTimeOfDay(item.end_at)} | {item.location}
                           </p>
                           <p className="t-data">
                             Seats: {item.registered_count ?? 0}/{item.capacity} | Coach: {item.coach_account_id}
@@ -463,7 +464,7 @@ export default function SchedulerPage() {
                   >
                     {classes.map((item) => (
                       <option key={item.class_id} value={item.class_id}>
-                        {item.title} ({new Date(item.start_at).toLocaleDateString()})
+                        {item.title} ({formatGymDateNumeric(item.start_at)})
                       </option>
                     ))}
                   </select>
@@ -563,7 +564,7 @@ export default function SchedulerPage() {
                           Attendance: {athleteMap.get(item.athlete_id) || item.athlete_id} {' -> '} {classes.find((x) => x.class_id === item.class_id)?.title || item.class_id}
                         </p>
                         <p className="text-[color:var(--bone-300)]">{item.status.toUpperCase()} via {item.method}</p>
-                        <p className="text-[color:var(--bone-400)]">{new Date(item.checked_in_at).toLocaleString()}</p>
+                        <p className="text-[color:var(--bone-400)]">{formatGymStamp(item.checked_in_at)}</p>
                       </div>
                     ))}
                   </div>
@@ -577,7 +578,7 @@ export default function SchedulerPage() {
                   {coachingRequests.map((item) => (
                     <div key={item.request_id} className="input">
                       <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>{athleteMap.get(item.athlete_id) || item.athlete_id}</p>
-                      <p className="text-[color:var(--bone-300)]">Preferred: {new Date(item.preferred_at).toLocaleString()} | Status: {item.status}</p>
+                      <p className="text-[color:var(--bone-300)]">Preferred: {formatGymStamp(item.preferred_at)} | Status: {item.status}</p>
                       <p className="text-[color:var(--bone-400)]">{item.goals}</p>
                     </div>
                   ))}

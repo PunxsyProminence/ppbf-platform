@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import { formatGymMonthDay } from '@/src/lib/gymTime';
 
 /**
  * FROM THE CORNER -- the parent digest.
@@ -54,7 +55,7 @@ const SHOWN = 3;
 function shortDate(iso: string): string {
   const parsed = new Date(iso);
   if (Number.isNaN(parsed.getTime())) return '';
-  return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return formatGymMonthDay(parsed) ?? '';
 }
 
 /** 'sessions-13' or 'first_spar' -> 'sessions 13' / 'first spar'. */

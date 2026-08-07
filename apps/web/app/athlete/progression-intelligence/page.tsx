@@ -5,6 +5,7 @@ import RabbitHole from '@/components/RabbitHole';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
+import { formatGymDateNumeric } from '@/src/lib/gymTime';
 
 const GAP_RABBIT_HOLE_CLASS = 'mat-paper mt-[var(--s4)] rounded-[var(--r-md)] border-l-4 border-[color:var(--brass-700)] p-[var(--s4)]';
 
@@ -279,7 +280,7 @@ export default function AthleteProgressionIntelligencePage() {
                       </div>
                       <div className="flex items-center gap-[var(--s3)]">
                         <StatusBadge status={gap.status} type="gap" />
-                        <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>Identified {new Date(gap.created_at).toLocaleDateString()}</span>
+                        <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>Identified {formatGymDateNumeric(gap.created_at)}</span>
                       </div>
                       <RabbitHole anchor={{ anchorType: 'gap_type', anchorKey: gap.gap_type }} className={GAP_RABBIT_HOLE_CLASS} />
                       <RabbitHole anchor={{ anchorType: 'severity', anchorKey: gap.severity }} className={GAP_RABBIT_HOLE_CLASS} />
@@ -431,7 +432,7 @@ export default function AthleteProgressionIntelligencePage() {
                                       <div className="flex-1">
                                         <div className="flex items-center gap-[var(--s3)]">
                                           <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
-                                            {new Date(completion.completed_at).toLocaleDateString()}
+                                            {formatGymDateNumeric(completion.completed_at)}
                                           </span>
                                           <StatusBadge status={completion.verification_status} type="completion" />
                                         </div>
@@ -443,7 +444,7 @@ export default function AthleteProgressionIntelligencePage() {
                                         )}
                                         {completion.verified_at && (
                                           <p className="mt-[var(--s2)] text-[length:var(--t-xs)] font-medium text-[color:var(--cleared-ink)]">
-                                            ✓ Verified on {new Date(completion.verified_at).toLocaleDateString()}
+                                            ✓ Verified on {formatGymDateNumeric(completion.verified_at)}
                                           </p>
                                         )}
                                       </div>
