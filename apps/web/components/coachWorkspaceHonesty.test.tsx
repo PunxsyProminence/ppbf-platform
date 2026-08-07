@@ -12,6 +12,7 @@ interface RouteResponses {
   reviewProjection?: () => Promise<Response>;
   coachReviews?: () => Promise<Response>;
   announcements?: () => Promise<Response>;
+  intakeReviewAction?: (body: { intake_case_id?: string; action?: string }) => Promise<Response>;
 }
 
 function announcement(overrides: Partial<AnnouncementItem> = {}): AnnouncementItem {
@@ -39,7 +40,7 @@ function jsonResponse(body: unknown, init?: { ok?: boolean; status?: number }): 
 }
 
 function installFetch(routes: RouteResponses = {}): jest.Mock {
-  const fetchMock = jest.fn(async (input: unknown) => {
+  const fetchMock = jest.fn(async (input: unknown, init?: RequestInit) => {
     const url = String(input);
 
     if (url.includes('/api/pilot/auth/session')) {
@@ -62,6 +63,12 @@ function installFetch(routes: RouteResponses = {}): jest.Mock {
     }
     if (url.includes('/api/pilot/announcements/get')) {
       return routes.announcements ? routes.announcements() : jsonResponse({ ok: true, announcements: [] });
+    }
+    if (url.includes('/api/pilot/intake/review-action')) {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { intake_case_id?: string; action?: string };
+      if (routes.intakeReviewAction) return routes.intakeReviewAction(body);
+      const status = body.action === 'approve' ? 'approved' : 'rejected';
+      return jsonResponse({ ok: true, intake_case_id: body.intake_case_id, status });
     }
 
     throw new Error(`Unexpected fetch: ${url}`);
@@ -203,6 +210,94 @@ describe('coach review submission', () => {
       fireEvent.click(screen.getByRole('button', { name: /Save Coach Review/i }));
     });
     expect(reviewCalls()).toBe(2);
+  });
+});
+
+// The Tasks tab's own copy tells a coach to "use the SHADOW tab to act on
+// review-queue items" -- these prove that action actually exists and works.
+// /api/pilot/intake/review-action already authorizes 'coach' for
+// approve/reject server-side; before this, nothing in the coach-facing UI
+// ever called it, so the promise in the Tasks tab's copy was false.
+describe('the SHADOW tab lets a coach act on review-queue items, as the Tasks tab promises', () => {
+  function queueItem(overrides: Record<string, unknown> = {}) {
+    return {
+      intake_case_id: 'case_1',
+      status: 'pending_review',
+      summary: 'New athlete intake: Jordan T.',
+      document_count: 2,
+      updated_at: '2026-08-01T00:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  function reviewActionCalls(fetchMock: jest.Mock): Array<Record<string, unknown>> {
+    return fetchMock.mock.calls
+      .filter((call) => String(call[0]).includes('/api/pilot/intake/review-action'))
+      .map((call) => JSON.parse(String((call[1] as RequestInit | undefined)?.body ?? '{}')) as Record<string, unknown>);
+  }
+
+  test('a pending_review item shows working Approve/Reject buttons', async () => {
+    const fetchMock = await renderWorkspace({
+      reviewProjection: async () => jsonResponse({ queue: [queueItem()] }),
+    });
+    openTab('SHADOW Intel');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+
+    await waitFor(() => expect(reviewActionCalls(fetchMock)).toEqual([
+      { intake_case_id: 'case_1', action: 'approve' },
+    ]));
+    await waitFor(() => expect(screen.queryByText('Status: approved')).not.toBeNull());
+  });
+
+  test('an already-decided item shows no action buttons', async () => {
+    await renderWorkspace({
+      reviewProjection: async () => jsonResponse({ queue: [queueItem({ status: 'approved' })] }),
+    });
+    openTab('SHADOW Intel');
+
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reject' })).toBeNull();
+  });
+
+  test('a rejection outside the coach\'s assigned athletes surfaces the server\'s refusal, not a silent no-op', async () => {
+    const fetchMock = await renderWorkspace({
+      reviewProjection: async () => jsonResponse({ queue: [queueItem()] }),
+      intakeReviewAction: async () => jsonResponse({ error: 'Forbidden: coach not assigned to athlete' }, { ok: false, status: 403 }),
+    });
+    openTab('SHADOW Intel');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
+
+    await waitFor(() => expect(screen.queryByText(/Forbidden: coach not assigned to athlete/i)).not.toBeNull());
+    // The item's own local status must not be optimistically flipped on a
+    // refused request -- it is still exactly what the server last said.
+    expect(screen.queryByText('Status: pending_review')).not.toBeNull();
+    expect(reviewActionCalls(fetchMock)).toHaveLength(1);
+  });
+
+  test('a double-click sends exactly one review-action request', async () => {
+    let releaseAction: (() => void) | undefined;
+    const fetchMock = await renderWorkspace({
+      reviewProjection: async () => jsonResponse({ queue: [queueItem()] }),
+      intakeReviewAction: (body) =>
+        new Promise<Response>((resolve) => {
+          releaseAction = () => resolve(jsonResponse({ ok: true, intake_case_id: body.intake_case_id, status: 'approved' }));
+        }),
+    });
+    openTab('SHADOW Intel');
+
+    const approveButton = screen.getByRole('button', { name: 'Approve' });
+    fireEvent.click(approveButton);
+    fireEvent.click(approveButton);
+
+    expect(reviewActionCalls(fetchMock)).toHaveLength(1);
+
+    await act(async () => {
+      releaseAction?.();
+    });
+    await waitFor(() => expect(screen.queryByText('Status: approved')).not.toBeNull());
+    expect(reviewActionCalls(fetchMock)).toHaveLength(1);
   });
 });
 
