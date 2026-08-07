@@ -77,6 +77,8 @@ does not assert `CI_GREEN` per this table's own rule — observe it on the PR.
 
 | PR-238h | P2 | Video compliance review console (T-006): admin console listing `pending_review` publications org-wide, approve/reject/request-changes reusing the existing check/status state machine | session B (remote) | build | PR_OPEN | none (reuses existing `pilot.video_publications` / `pilot.publication_checks` schema — no new migration) | `publication.ts` (+CAS param on `updatePublicationStatus`), `admin/video-compliance/**` (new), `api/pilot/admin/video-compliance/**` (new) | medium — safeguarding, minors' video footage; org-admin-only decide action, adds the audit logging the sibling `check`/`create` routes are missing | [#238](https://github.com/PunxsyProminence/ppbf-platform/pull/238) | — | — | Two deliberate ticket deviations, reasoned through in scoping and recorded in the commit message: (1) "reject" moves to the real terminal `rejected` status, not back to `draft` — no such transition exists in `publication.ts`, and the coach-facing UX already tells a rejected uploader to start a new publication; (2) "athlete list" is actually a single scalar `athlete_id` column, not a join table — the UI shows one athlete, not a list. Confirmed genuinely separate from T-003's scan-review gate during scoping (different table, downstream of it — `createPublication` refuses until the video session is `'ready'`). Proactively added the same CAS guard the T-004 review found missing there, before building this route, rather than waiting to be told twice | 2026-08-07 |
 
+| PR-238i | P1 | Guardian media consent (T-008): guardian grant/withdraw console + org-admin audit, gates video-compliance approval on consent | session B (remote) | build | PR_OPEN | PR-238h (same branch — gates video-compliance's approve decision) | `guardianConsent.ts` (new), `guardianAccess.ts` (+`guardianParentIds`), `intake.ts` (`upsertWaiver` +optional params), `http.ts` (+`GuardianConsentMissingError` 409), `auditEventTypes.ts` + both SQL homes (+`consent_granted`/`consent_withdrawn`), `parent/consent/**` (new), `api/pilot/parent/consent/**` (new), `admin/athlete-consent/**` (new), `api/pilot/admin/athlete-consent/**` (new), `api/pilot/admin/video-compliance/route.ts` (+consent gate on approve), 1 new migration (`pilot.waivers` +`parent_id`/`covers_video`/`public_use_allowed`), 1 new reporting script | high — safety substrate, minors' media; new schema, gates an existing approval path | [#238](https://github.com/PunxsyProminence/ppbf-platform/pull/238) | — | — | Extends the existing `pilot.waivers` table (`waiver_type='photo_media'`, already in `admin/consent/page.tsx`'s vocabulary from an earlier build) rather than the ticket's proposed new `guardian_media_consent` table — one source of truth for the same real-world fact, not two; full reasoning in the migration's own header. Deliberately deferred, and stated as such rather than silently dropped: consent-scope (photo/video, internal/public) is recorded but not yet matched against a publication's actual media type or visibility; withdrawing consent never retroactively un-publishes an already-published video (no such status value exists on `pilot.video_publications`) | 2026-08-07 |
+
 **T-002 collision, reconciled 2026-08-06 (collision rule 5).** Session B
 claimed and built T-002 on PR #238 in parallel with the Lane A build that
 merged as #242/#243 — the session B claim was pushed to the PR branch, so
@@ -106,10 +108,10 @@ than a separate `audit_events` entry — functionally equivalent. Ticket
 marked RESOLVED with the pointer. T-004, T-006, T-008 (added in the
 same commit) were checked and did not collide with anything on this
 branch at the time — genuinely open. T-007 was resolved by the same
-commit that added it (`dataDeletion.ts` et al.). T-004 has since been
-built as PR-238g above (2026-08-07); see that row and the ticket's own
-status header for the two deliberate deviations from its literal
-wording.
+commit that added it (`dataDeletion.ts` et al.). All three have since
+been built: T-004 as PR-238g, T-006 as PR-238h, T-008 as PR-238i
+(2026-08-07); see those rows and each ticket's own status header for
+the deliberate deviations from its literal wording.
 
 **Refuted, not queued**: an automated audit pass flagged "athlete onboarding
 creates live accounts on a shared, guessable PIN with no safeguard" as a
