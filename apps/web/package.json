@@ -21,6 +21,7 @@
     "pilot:check-activation-pin-exposure": "node scripts/pilot-check-activation-pin-exposure.mjs",
     "pilot:apply-shadow-runtime": "node scripts/pilot-apply-shadow-runtime-migration.mjs",
     "pilot:apply-research-triage-view": "node scripts/pilot-apply-research-triage-view-migration.mjs",
+    "pilot:apply-magic-link": "node scripts/pilot-apply-magic-link-migration.mjs",
     "pilot:apply-shadow-evidence": "node scripts/pilot-apply-shadow-evidence-migration.mjs",
     "pilot:apply-shadow-decision-loop": "node scripts/pilot-apply-shadow-decision-loop-migration.mjs",
     "pilot:apply-onboarding": "node scripts/pilot-apply-onboarding-migration.mjs",

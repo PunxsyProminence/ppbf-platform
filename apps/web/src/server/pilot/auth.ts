@@ -4,6 +4,7 @@ import type { PoolClient } from 'pg';
 import { getPilotRoleDestination } from '@/src/shared/pilotRoleRouting';
 
 import { seedDefaultComplianceRules } from './complianceRuleSeeds';
+import type { AuthProvider } from './authProviders';
 import type { PilotRole } from './contracts';
 import { usesPin } from './credentialPolicy';
 import { getPilotDefaultOrganizationId, PILOT_SESSION_COOKIE } from './env';
@@ -29,7 +30,7 @@ export interface PilotPrincipal {
   organizationId: string;
   athleteId: string | null;
   sessionToken: string;
-  authProvider: 'ppbf_local' | 'microsoft';
+  authProvider: AuthProvider;
   hasMasterShadowAccess?: boolean;
   /**
    * True while this account is still on the admin-issued bootstrap PIN.
@@ -49,7 +50,7 @@ interface AccountRow {
   organization_id: string | null;
   is_platform_owner: boolean;
   athlete_id: string | null;
-  auth_provider: 'ppbf_local' | 'microsoft';
+  auth_provider: AuthProvider;
   pin_hash: string | null;
   must_change_pin: boolean;
   active_flag: boolean;
@@ -63,7 +64,7 @@ interface FederatedAccountRow {
   organization_id: string | null;
   is_platform_owner: boolean;
   athlete_id: string | null;
-  auth_provider: 'ppbf_local' | 'microsoft';
+  auth_provider: AuthProvider;
   active_flag: boolean;
   has_master_shadow_access: boolean;
   organization_status: string | null;
@@ -249,7 +250,7 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
     organization_id: string | null;
     is_platform_owner: boolean;
     athlete_id: string | null;
-    auth_provider: 'ppbf_local' | 'microsoft';
+    auth_provider: AuthProvider;
     active_flag: boolean;
     has_master_shadow_access: boolean;
     must_change_pin: boolean;
