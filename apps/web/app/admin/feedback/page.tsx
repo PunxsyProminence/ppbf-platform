@@ -5,6 +5,7 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { FEEDBACK_ACKNOWLEDGEMENT } from '@/lib/feedbackWording';
+import { formatGymStamp } from '@/src/lib/gymTime';
 
 /**
  * The queue an administrator works.
@@ -47,7 +48,7 @@ type Scope = 'organization' | 'platform';
 
 function formatWhen(value: string): string {
   const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? value : new Date(parsed).toLocaleString();
+  return formatGymStamp(parsed) ?? value;
 }
 
 /**

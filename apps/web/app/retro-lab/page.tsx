@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import RoleSessionGate from '@/components/RoleSessionGate';
 import Link from "next/link";
 import { ThemeToggle, useThemeOptional } from "@/components/ThemeProvider";
+import { formatGymClock24 } from '@/src/lib/gymTime';
 
 type LedgerLine = {
   id: string;
@@ -13,7 +14,7 @@ type LedgerLine = {
 
 function nowTime() {
   const d = new Date();
-  return d.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" });
+  return formatGymClock24(d) ?? '';
 }
 
 function RetroLabPageContent() {

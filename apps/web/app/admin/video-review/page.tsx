@@ -6,6 +6,7 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { getRoleSessionSnapshot } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymStamp } from '@/src/lib/gymTime';
 
 interface QuarantinedVideoItem {
   video_session_id: string;
@@ -221,7 +222,7 @@ function VideoReviewConsoleContent() {
                             Athlete: {video.athlete_id ?? 'Unassigned'} | Filmed by: {video.uploaded_by_account_id}
                           </p>
                           <p className="t-data mt-[var(--s1)] text-[color:var(--bone-400)]">
-                            Uploaded: {new Date(video.created_at).toLocaleString()}
+                            Uploaded: {formatGymStamp(video.created_at)}
                           </p>
                         </div>
                         <span className="badge badge--restricted">

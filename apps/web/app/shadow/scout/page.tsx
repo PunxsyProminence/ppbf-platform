@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { readRoleSession } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymDateNumeric, formatGymStamp } from '@/src/lib/gymTime';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -409,7 +410,7 @@ export default function ScoutReportPage() {
                     <div>
                       <StatusBadge status={job.status} />
                       {/* Law 4: job identity and date are records -- mono voice. */}
-                      <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">{job.jobId.slice(0, 8)}... · {new Date(job.createdAt).toLocaleDateString()}</p>
+                      <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">{job.jobId.slice(0, 8)}... · {formatGymDateNumeric(job.createdAt)}</p>
                     </div>
                     {safeCompleted(job) && job.output?.profileTier ? (
                       <span className="plaque">{job.output.profileTier.toUpperCase()}</span>
@@ -503,7 +504,7 @@ export default function ScoutReportPage() {
                 <div key={job.jobId} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                   <div className="flex items-center justify-between gap-[var(--s3)]">
                     <StatusBadge status={job.status} />
-                    <p className="t-data text-[color:var(--bone-400)]">{job.jobId.slice(0, 8)}… · {new Date(job.createdAt).toLocaleDateString()}</p>
+                    <p className="t-data text-[color:var(--bone-400)]">{job.jobId.slice(0, 8)}… · {formatGymDateNumeric(job.createdAt)}</p>
                   </div>
                   {safeCompleted(job) && typeof job.output?.summary === 'string' ? (
                     <p className="t-body mt-[var(--s3)] whitespace-pre-wrap">{job.output.summary}</p>
@@ -533,7 +534,7 @@ export default function ScoutReportPage() {
                 >
                   <div className="flex items-center gap-[var(--s3)]">
                     <StatusBadge status={job.status} />
-                    <span className="t-data text-[color:var(--bone-400)]">{new Date(job.createdAt).toLocaleString()}</span>
+                    <span className="t-data text-[color:var(--bone-400)]">{formatGymStamp(job.createdAt)}</span>
                   </div>
                   {job.status === 'completed' && job.completedAt ? (
                     <span className="t-data text-[color:var(--bone-400)]">

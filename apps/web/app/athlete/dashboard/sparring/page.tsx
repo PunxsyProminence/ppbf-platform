@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymTimeOfDay } from '@/src/lib/gymTime';
 
 type OpponentStance = 'Orthodox' | 'Southpaw' | 'Switch';
 type PunchType = 'Jab' | 'Cross' | 'Hook' | 'Uppercut' | 'Body' | 'Other';
@@ -178,7 +179,7 @@ export default function SparringTelemetryPage() {
         return;
       }
 
-      const timestamp = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      const timestamp = formatGymTimeOfDay(new Date()) ?? '';
       setLastSubmitted(timestamp);
       const savedMessage = safetyReviewRaised
         ? 'Telemetry saved. Because there is no current medical clearance on file for this athlete, '

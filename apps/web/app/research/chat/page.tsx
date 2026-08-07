@@ -9,6 +9,7 @@ import {
   LibraryResearchError,
   type LibraryEvidenceItem,
 } from '@/client/libraryResearch';
+import { formatGymClock24 } from '@/src/lib/gymTime';
 
 interface QAMessage {
   id: string;
@@ -36,7 +37,7 @@ export default function ResearchQAChatPage() {
       id: '0',
       type: 'system',
       text: "The Library searches your organization's approved evidence. Answers come only from sources a reviewer approved -- nothing here is generated or guessed. No match means the question gets logged as a research need.",
-      timestamp: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      timestamp: formatGymClock24(new Date(), { seconds: true }) ?? '',
     },
   ]);
   const [userInput, setUserInput] = useState('');
@@ -79,7 +80,7 @@ export default function ResearchQAChatPage() {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       type,
       text,
-      timestamp: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      timestamp: formatGymClock24(new Date(), { seconds: true }) ?? '',
       source,
       evidence,
     };

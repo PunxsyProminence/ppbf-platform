@@ -15,6 +15,7 @@ import {
 } from '@/components/rabbitHoleAnchorLabels';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymCustom } from '@/src/lib/gymTime';
 
 // The authoring view of one lesson: what a reader gets, plus the three fields
 // only the people who write them need.
@@ -52,12 +53,12 @@ function formatWrittenTime(value: string): string {
   }
 
   try {
-    return new Date(parsed).toLocaleString(undefined, {
+    return formatGymCustom(parsed, {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
-    });
+    }) ?? value;
   } catch {
     return value;
   }

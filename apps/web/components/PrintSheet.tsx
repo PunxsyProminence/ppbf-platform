@@ -1,6 +1,7 @@
 'use client';
 
 import React, { type ReactNode } from 'react';
+import { formatGymDate } from '@/src/lib/gymTime';
 
 /**
  * ONE SHEET OF US LETTER.
@@ -99,7 +100,7 @@ export function PrintPlate({ initials, name }: { readonly initials: string; read
 /** Today, written the way a person writes a date on a form. */
 export function printDate(value: Date = new Date()): string {
   try {
-    return value.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+    return formatGymDate(value) ?? '';
   } catch {
     return value.toISOString().slice(0, 10);
   }

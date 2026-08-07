@@ -10,6 +10,7 @@ import { clearRoleSession } from '@/components/roleSession';
 import { usePilotSession } from '@/components/usePilotSession';
 import { revokeShadowSession } from '@/client/shadowLogout';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymDateNumeric } from '@/src/lib/gymTime';
 
 interface WorkspaceNotice {
   announcement_id: string;
@@ -61,7 +62,7 @@ const ROLE_LABELS: Record<string, string> = {
 
 function formatNoticeDate(value: string): string {
   const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? '' : parsed.toLocaleDateString();
+  return formatGymDateNumeric(parsed) ?? '';
 }
 
 function WorkspaceContent() {

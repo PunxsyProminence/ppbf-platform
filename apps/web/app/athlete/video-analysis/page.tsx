@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymStamp } from '@/src/lib/gymTime';
 
 // capabilityStatus constant available for future use in capability assessment framework
   // const capabilityStatus = 'PLANNED | FRONT-END PLACEHOLDER | NOT YET AUTOMATED | BACKEND REQUIRED | HUMAN REVIEW REQUIRED';
@@ -136,7 +137,7 @@ export default function AthleteVideoAnalysisPage() {
                     <div>
                       <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{v.title}</p>
                       <p className="t-muted mt-[var(--s1)]">{v.file_name} · {formatBytes(v.file_size_bytes)} · {v.status}</p>
-                      <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-xs)' }}>{new Date(v.created_at).toLocaleString()}</p>
+                      <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-xs)' }}>{formatGymStamp(v.created_at)}</p>
                     </div>
                     <button
                       onClick={() => { void openVideo(v.video_session_id); }}
