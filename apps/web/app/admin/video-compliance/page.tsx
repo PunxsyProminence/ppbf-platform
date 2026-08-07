@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymDateTimeShort } from '@/src/lib/gymTime';
 
 interface PendingPublication {
   publication_id: string;
@@ -33,11 +34,7 @@ const DECISION_PROMPT: Record<'reject' | 'request_changes', string> = {
 };
 
 function formatDate(value: string): string {
-  try {
-    return new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-  } catch {
-    return value;
-  }
+  return formatGymDateTimeShort(value) ?? value;
 }
 
 export default function VideoCompliancePage() {

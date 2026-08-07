@@ -62,7 +62,9 @@ alter table pilot.audit_events
     'safety_hold_placed',
     'safety_hold_lifted',
     'consent_granted',
-    'consent_withdrawn'
+    'consent_withdrawn',
+    'data_deletion_initiated',
+    'data_purged'
   ));
 
 comment on column pilot.audit_events.event_type is

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymDateShort, formatGymDayShort } from '@/src/lib/gymTime';
 
 interface AttendanceAthleteSummary {
   athlete_id: string;
@@ -28,11 +29,7 @@ interface WeeklyAttendanceTrendRow {
 const TREND_WEEKS = 8;
 
 function formatWeekLabel(weekStart: string): string {
-  try {
-    return new Date(weekStart).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  } catch {
-    return weekStart;
-  }
+  return formatGymDayShort(weekStart) ?? weekStart;
 }
 
 function formatRate(rate: number | null): string {
@@ -42,11 +39,7 @@ function formatRate(rate: number | null): string {
 
 function formatLastMarked(value: string | null): string {
   if (!value) return 'Never';
-  try {
-    return new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-  } catch {
-    return value;
-  }
+  return formatGymDateShort(value) ?? value;
 }
 
 // Sorts athletes with a real rate first (worst attendance first, so a coach

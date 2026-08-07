@@ -39,6 +39,13 @@ export const AUDIT_EVENT_TYPES = [
   // and this is the one waiver_type this platform gates something on.
   'consent_granted',
   'consent_withdrawn',
+  // T-007 retention. Both were written by dataDeletion.ts and by the cleanup
+  // script from the day that feature shipped, and neither was ever added here
+  // -- so every call to the admin deletion endpoint died on SQLSTATE 23514,
+  // exactly the failure this file exists to prevent. The deletion path is
+  // transactional so nothing was half-deleted, but the feature never worked.
+  'data_deletion_initiated',
+  'data_purged',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymDateTimeShort } from '@/src/lib/gymTime';
 
 type EscalationSeverity = 'low' | 'moderate' | 'high' | 'critical';
 type EscalationStatus = 'open' | 'acknowledged' | 'resolved';
@@ -44,11 +45,7 @@ const STATUS_TABS: Array<{ value: EscalationStatus | 'all'; label: string }> = [
 ];
 
 function formatDate(value: string): string {
-  try {
-    return new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-  } catch {
-    return value;
-  }
+  return formatGymDateTimeShort(value) ?? value;
 }
 
 export default function EscalationsPage() {

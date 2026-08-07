@@ -20,7 +20,7 @@
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
 
-import { type ChildProcessByStdio, spawn } from 'node:child_process';
+import { type ChildProcessByStdio, execFile, spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
@@ -159,6 +159,134 @@ afterAll(async () => {
   });
 });
 
+const CLEANUP_SCRIPT = path.resolve(__dirname, '../../../scripts/pilot-cleanup-deleted-data.mjs');
+
+/**
+ * Runs the real cleanup script as its own process, the way the scheduled job
+ * does, and returns the single JSON line it emits. Testing the exported
+ * function instead would skip every guard that lives in the script -- the write
+ * target assertion, the dry-run default, the blast-radius cap -- which are the
+ * parts that matter for a job that permanently deletes minors' records
+ * unattended.
+ */
+async function runCleanup(extraEnv: Record<string, string>): Promise<{
+  code: number;
+  event: Record<string, unknown>;
+}> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      process.execPath,
+      [CLEANUP_SCRIPT],
+      {
+        env: {
+          ...process.env,
+          AZURE_POSTGRES_CONNECTION_STRING: connectionStringFor(TEST_DB_NAME),
+          PPBF_EXPECTED_POSTGRES_HOSTNAME: 'localhost',
+          PPBF_EXPECTED_POSTGRES_DATABASE: TEST_DB_NAME,
+          PPBF_POSTGRES_DISABLE_SSL: 'true',
+          ...extraEnv,
+        },
+      },
+      (error, stdout, stderr) => {
+        const line = `${stdout}${stderr}`.split('\n').find((entry) => entry.trim().startsWith('{'));
+        if (!line) {
+          reject(new Error(`No JSON output. stdout=${stdout} stderr=${stderr}`));
+          return;
+        }
+        const code = error && typeof (error as { code?: unknown }).code === 'number'
+          ? (error as unknown as { code: number }).code
+          : 0;
+        resolve({ code, event: JSON.parse(line) as Record<string, unknown> });
+      },
+    );
+  });
+}
+
+describe('the retention cleanup job refuses to be casually destructive', () => {
+  const EXPIRED_ATHLETE_ID = 'ATH-RET-EXPIRED';
+
+  beforeAll(async () => {
+    // This block runs before the migration suite below, so apply the migration
+    // here too. It is idempotent by design, which is the property the rebuild
+    // path depends on anyway.
+    await client.query(await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8'));
+    await seedAthlete(EXPIRED_ATHLETE_ID, ORG_ID);
+    await client.query(
+      `update pilot.athletes set deleted_at = now() - interval '3 years'
+        where organization_id = $1 and athlete_id = $2`,
+      [ORG_ID, EXPIRED_ATHLETE_ID],
+    );
+  });
+
+  test('a dry run is the default and deletes nothing', async () => {
+    // A destructive default would make a mistyped command, or a copy-pasted CI
+    // step, unrecoverable.
+    const { event } = await runCleanup({});
+    expect(event.event).toBe('retention.cleanup.dry-run');
+    expect(event.athletes).toBe(1);
+
+    const survived = await client.query(
+      `select 1 from pilot.athletes where organization_id = $1 and athlete_id = $2`,
+      [ORG_ID, EXPIRED_ATHLETE_ID],
+    );
+    expect(survived.rowCount).toBe(1);
+  });
+
+  test('an unexpectedly large purge stops instead of enacting itself', async () => {
+    const { code, event } = await runCleanup({
+      PPBF_RETENTION_APPLY: 'true',
+      PPBF_RETENTION_MAX_ROWS: '0',
+    });
+    expect(event.event).toBe('retention.cleanup.refused');
+    expect(event.reason).toBe('BLAST_RADIUS_EXCEEDED');
+    expect(code).not.toBe(0);
+
+    const survived = await client.query(
+      `select 1 from pilot.athletes where organization_id = $1 and athlete_id = $2`,
+      [ORG_ID, EXPIRED_ATHLETE_ID],
+    );
+    expect(survived.rowCount).toBe(1);
+  });
+
+  test('it refuses a database the operator did not name', async () => {
+    const { code, event } = await runCleanup({
+      PPBF_RETENTION_APPLY: 'true',
+      PPBF_EXPECTED_POSTGRES_DATABASE: 'some_other_database',
+    });
+    expect(event.event).toBe('retention.cleanup.refused');
+    expect(event.reason).toBe('POSTGRES_TARGET_MISMATCH');
+    expect(code).not.toBe(0);
+
+    const survived = await client.query(
+      `select 1 from pilot.athletes where organization_id = $1 and athlete_id = $2`,
+      [ORG_ID, EXPIRED_ATHLETE_ID],
+    );
+    expect(survived.rowCount).toBe(1);
+  });
+
+  test('applying deletes the expired row and records that it did', async () => {
+    const { event } = await runCleanup({ PPBF_RETENTION_APPLY: 'true' });
+    expect(event.event).toBe('retention.cleanup.completed');
+    expect(event.athletes).toBe(1);
+
+    const gone = await client.query(
+      `select 1 from pilot.athletes where organization_id = $1 and athlete_id = $2`,
+      [ORG_ID, EXPIRED_ATHLETE_ID],
+    );
+    expect(gone.rowCount).toBe(0);
+
+    // The audit row is the only surviving evidence the deletion happened, and
+    // 'data_purged' was not in the vocabulary when this shipped -- so this
+    // insert would have failed, after the rows were already gone, had the two
+    // not been made a single transaction.
+    const audited = await client.query<{ details: { athletes_deleted: number } }>(
+      `select details from pilot.audit_events
+        where event_type = 'data_purged' order by audit_id desc limit 1`,
+    );
+    expect(audited.rows[0].details.athletes_deleted).toBe(1);
+  });
+});
+
 describe('the data retention migration applies and cascades', () => {
   test('the migration file parses and applies against the real schema', async () => {
     // The first staging attempt never got past this: nested dollar-quoting made
@@ -269,6 +397,63 @@ describe('the data retention migration applies and cascades', () => {
       [ORG_ID, EARLY_ATHLETE_ID],
     );
     expect(after.rows[0].deleted_at.toISOString()).toBe(before.rows[0].deleted_at.toISOString());
+  });
+
+  test('the audit vocabulary admits the event types the deletion path writes', async () => {
+    // dataDeletion.ts writes 'data_deletion_initiated' and 'data_purged'. Neither
+    // was in the check constraint when T-007 shipped, so every call to the admin
+    // deletion endpoint died on SQLSTATE 23514 in production -- the feature had
+    // never once worked. The unit tests could not see it: they assert on shapes
+    // and never reach a database.
+    for (const eventType of ['data_deletion_initiated', 'data_purged']) {
+      await expect(
+        client.query(
+          `insert into pilot.audit_events (event_type, organization_id, entity_type, entity_id, details)
+           values ($1, $2, 'vocabulary_probe', 'probe', '{}'::jsonb)`,
+          [eventType, ORG_ID],
+        ),
+      ).resolves.toBeDefined();
+    }
+    await client.query(`delete from pilot.audit_events where entity_type = 'vocabulary_probe'`);
+  });
+
+  test('the cascade count reflects the athletes actually stamped', async () => {
+    // The count compared deleted_at against a timestamp minted in JavaScript,
+    // which never equals the now() the trigger copies, so it reported zero
+    // cascaded athletes however many it had just deleted.
+    const COUNT_ATHLETE_ID = 'ATH-RET-COUNT';
+    const COUNT_GUARDIAN_ID = 'acct-retention-guardian-3';
+    const COUNT_PARENT_ID = 'parent-retention-3';
+
+    await seedAthlete(COUNT_ATHLETE_ID, ORG_ID);
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+       values ($1, 'parent', $2, 'microsoft')`,
+      [COUNT_GUARDIAN_ID, ORG_ID],
+    );
+    await client.query(
+      `insert into pilot.parents (organization_id, parent_id, account_id, full_name)
+       values ($1, $2, $3, 'Counted Guardian')`,
+      [ORG_ID, COUNT_PARENT_ID, COUNT_GUARDIAN_ID],
+    );
+    await client.query(
+      `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+       values ($1, $2, $3, 'mother')`,
+      [ORG_ID, COUNT_PARENT_ID, COUNT_ATHLETE_ID],
+    );
+
+    const updated = await client.query<{ deleted_at: string }>(
+      `update pilot.accounts set deleted_at = now(), updated_at = now()
+        where account_id = $1 returning deleted_at::text as deleted_at`,
+      [COUNT_GUARDIAN_ID],
+    );
+    const counted = await client.query<{ count: string }>(
+      `select count(*)::text as count from pilot.athletes
+        where deleted_at = $1::timestamptz and organization_id = $2`,
+      [updated.rows[0].deleted_at, ORG_ID],
+    );
+
+    expect(Number(counted.rows[0].count)).toBe(1);
   });
 
   test('a second update to an already-deleted guardian does not re-cascade', async () => {

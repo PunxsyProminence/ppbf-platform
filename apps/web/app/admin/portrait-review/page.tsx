@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymDateTimeShort } from '@/src/lib/gymTime';
 
 interface PendingPortrait {
   account_id: string;
@@ -15,11 +16,7 @@ interface PendingPortrait {
 type Decision = 'approve' | 'reject';
 
 function formatDate(value: string): string {
-  try {
-    return new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-  } catch {
-    return value;
-  }
+  return formatGymDateTimeShort(value) ?? value;
 }
 
 export default function PortraitReviewPage() {
