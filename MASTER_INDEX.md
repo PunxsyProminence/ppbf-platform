@@ -115,6 +115,18 @@ briefing external image tools; its colour table is not.
   such, while 4 dimensions were never audited and its 13 `[U]` findings were
   never verified. Treat the remainder as a to-check queue, not as fact.
 
+## Research
+
+- [docs/RESEARCH_EVIDENCE_REGISTRY.md](docs/RESEARCH_EVIDENCE_REGISTRY.md) — the
+  peer-review package behind SHADOW's coaching guidance: 1,193 claims with
+  independently-verified citations, a 34-item cross-track conflict ledger, and the
+  methods/limitations a reviewer needs before trusting any of it. Reference layer
+  only — not loaded into the database.
+- [docs/SHADOW_RESEARCH_INTAKE_IMPORT.md](docs/SHADOW_RESEARCH_INTAKE_IMPORT.md) —
+  the companion loadable corpus derived from the same research programme, and the
+  importer that seeds it into `pilot.shadow_library_*` (dry-run by default, evidence
+  left `pending_review`/`unverified` until a human reviews it).
+
 ## Audits
 
 Point-in-time, but not archived — these describe issues that may still be open.
