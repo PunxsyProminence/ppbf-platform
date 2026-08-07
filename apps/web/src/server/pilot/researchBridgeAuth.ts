@@ -39,8 +39,8 @@ export function resolveResearchBridgeRequestHost(
   forwardedHost: string | null,
   host: string | null,
 ): string {
-  return forwardedHost?.split(',')[0]?.trim()
-    || host?.trim()
+  return host?.trim()
+    || forwardedHost?.split(',')[0]?.trim()
     || new URL(requestUrl).host;
 }
 

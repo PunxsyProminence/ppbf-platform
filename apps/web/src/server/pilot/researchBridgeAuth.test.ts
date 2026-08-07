@@ -23,13 +23,13 @@ describe('research bridge export activation', () => {
   test('uses the external proxy host before the internal request URL', () => {
     expect(resolveResearchBridgeRequestHost(
       'http://localhost:3000/api/pilot/shadow/research-bridge/export',
+      'internal-proxy.example.test',
       'app-ppbf-staging.example.test',
-      'localhost:3000',
     )).toBe('app-ppbf-staging.example.test');
     expect(resolveResearchBridgeRequestHost(
       'http://localhost:3000/api/pilot/shadow/research-bridge/export',
-      null,
       'app-ppbf-staging.example.test',
+      null,
     )).toBe('app-ppbf-staging.example.test');
   });
 
