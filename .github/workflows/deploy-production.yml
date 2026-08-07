@@ -132,6 +132,46 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      # ─────────────────────────────────────────────────────────────────────
+      # Check the attestation instead of trusting it.
+      #
+      # `migrations_complete` is the only gate here nothing verifies, and the
+      # header of this file says so outright. It has now been attested ahead of
+      # the migration twice in two days -- and on 2026-08-07 a production deploy
+      # SUCCEEDED that way, shipping code whose audit constraint had not been
+      # widened. Nothing broke only because the endpoint that needed it was
+      # already failing for the same reason.
+      #
+      # This reads the schema objects the migrations in THIS commit create and
+      # asserts each exists in production. It is read-only: no DDL, no rows, and
+      # the output names schema objects only.
+      #
+      # Deliberately placed before the image checks, so a deploy that would have
+      # landed on a stale schema stops as early as possible.
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Set up Node For The Schema Check
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Locked Dependencies
+        run: npm ci
+
+      - name: Verify Production Schema Matches This Commit
+        run: |
+          CONN="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-postgres-connection-string \
+            --query value -o tsv)"
+          test -n "$CONN"
+          echo "::add-mask::$CONN"
+          if ! AZURE_POSTGRES_CONNECTION_STRING="$CONN" node apps/web/scripts/pilot-verify-schema.mjs; then
+            echo "::error::Production is missing schema objects this commit expects. Run apply-migrations against production first. migrations_complete=CONFIRMED was not true."
+            exit 1
+          fi
+
       - name: Verify release digest exists in ACR
         run: |
           RELEASE_DIGEST='${{ inputs.release_digest }}'
