@@ -2,6 +2,8 @@
 
 import React, { useEffect, useState } from 'react';
 
+import { formatGymDay } from '@/src/lib/gymTime';
+
 import { apiBase } from '@/lib/apiBase';
 
 /**
@@ -44,12 +46,7 @@ interface ThenAndNowProps {
   readonly athleteId: string | null;
 }
 
-function longDate(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  const parsed = new Date(iso);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
-}
+
 
 function prettyKey(key: string): string {
   return key.replace(/[_-]+/g, ' ').trim();
@@ -121,7 +118,7 @@ export default function ThenAndNow({ athleteId }: ThenAndNowProps) {
 
   if (!athleteId || !loaded) return null;
 
-  const firstDay = longDate(firstSession);
+  const firstDay = formatGymDay(firstSession);
   const hasHistory = firstDay !== null || firstMilestone !== null;
 
   return (

@@ -1,5 +1,5 @@
 import type { PilotRole } from './contracts';
-import { query, queryOne, withTransaction } from './db';
+import { query, withTransaction } from './db';
 
 export interface ActorIdentity {
   accountId: string;
@@ -15,7 +15,8 @@ export interface DeletionResult {
     accounts?: number;
     athletePhotos?: number;
     athleteVideos?: number;
-    coachObservations?: number;
+    // Retained, not deleted -- a soft delete leaves observations in place.
+    coachObservationsRetained?: number;
     medicalRecords?: number;
   };
   deletedAt: string;
@@ -47,17 +48,26 @@ export async function deleteGuardianAccount(
       throw new Error('Not found: parent account does not exist or is not a parent role');
     }
 
-    const deletionTime = new Date().toISOString();
-
-    // Soft-delete the parent account (triggers cascade)
-    await client.query(
+    // Take the timestamp the DATABASE stamped, not one minted in JavaScript.
+    // The cascade trigger copies new.deleted_at onto the linked athletes, so
+    // this is the only value that can match them. The count previously compared
+    // against a JS ISO string, which never equals now() from the same
+    // statement, so it reported zero cascaded athletes every time -- including
+    // when it had just soft-deleted several.
+    // ::text, not the bare column. node-pg parses timestamptz into a JS Date,
+    // which holds milliseconds while Postgres stores microseconds -- so a value
+    // round-tripped through JS no longer equals the one on the row, and the
+    // count below silently returns zero. Keeping it as text preserves the exact
+    // value for the comparison.
+    const deleted = await client.query<{ deleted_at: string }>(
       `update pilot.accounts
        set deleted_at = now(), updated_at = now()
-       where account_id = $1`,
+       where account_id = $1
+       returning deleted_at::text as deleted_at`,
       [parentAccountId],
     );
+    const deletionTime = deleted.rows[0].deleted_at;
 
-    // Count how many athletes were cascaded
     const athleteCount = await client.query<{ count: string }>(
       `select count(*)::text as count from pilot.athletes
        where deleted_at = $1::timestamptz and organization_id = $2`,
@@ -82,7 +92,7 @@ export async function deleteGuardianAccount(
         JSON.stringify({
           reason: reason || 'Not specified',
           cascade_deleted_athletes: parseInt(athleteCount.rows[0].count, 10),
-          deleted_at: deletionTime,
+          deleted_at: new Date(deletionTime).toISOString(),
         }),
       ],
     );
@@ -94,7 +104,7 @@ export async function deleteGuardianAccount(
         accounts: 1,
         athletes: parseInt(athleteCount.rows[0].count, 10),
       },
-      deletedAt: deletionTime,
+      deletedAt: new Date(deletionTime).toISOString(),
       auditEventId: auditResult.rows[0].audit_id,
     };
   });
@@ -125,17 +135,21 @@ export async function deleteAthleteRecord(
       throw new Error('Not found: athlete does not exist in this organization');
     }
 
-    const deletionTime = new Date().toISOString();
-
-    // Soft-delete the athlete (cascades to linked records via FK)
-    await client.query(
+    const deletedAthlete = await client.query<{ deleted_at: string }>(
       `update pilot.athletes
        set deleted_at = now(), updated_at = now()
-       where athlete_id = $1 and organization_id = $2`,
+       where athlete_id = $1 and organization_id = $2
+       returning deleted_at::text as deleted_at`,
       [athleteId, actor.organizationId],
     );
+    const deletionTime = deletedAthlete.rows[0].deleted_at;
 
-    // Count deleted observations (cascade delete happens automatically via FK)
+    // Observations still on file for this athlete. NOT a deletion count: a soft
+    // delete leaves the athlete row in place, so the FK cascade does not fire
+    // and nothing here is removed. The audit record used to call this
+    // 'cascade_deleted_observations', which claimed a deletion that had not
+    // happened -- in the record whose whole purpose is being accurate about
+    // what was deleted.
     const observationCount = await client.query<{ count: string }>(
       `select count(*)::text as count from pilot.coach_observations
        where athlete_id = $1 and organization_id = $2`,
@@ -159,8 +173,8 @@ export async function deleteAthleteRecord(
         athleteId,
         JSON.stringify({
           reason: reason || 'Not specified',
-          cascade_deleted_observations: parseInt(observationCount.rows[0].count, 10),
-          deleted_at: deletionTime,
+          observations_retained: parseInt(observationCount.rows[0].count, 10),
+          deleted_at: new Date(deletionTime).toISOString(),
         }),
       ],
     );
@@ -170,9 +184,9 @@ export async function deleteAthleteRecord(
       deletedEntityId: athleteId,
       deletedRecordsCounts: {
         athletes: 1,
-        coachObservations: parseInt(observationCount.rows[0].count, 10),
+        coachObservationsRetained: parseInt(observationCount.rows[0].count, 10),
       },
-      deletedAt: deletionTime,
+      deletedAt: new Date(deletionTime).toISOString(),
       auditEventId: auditResult.rows[0].audit_id,
     };
   });
@@ -183,51 +197,56 @@ export async function deleteAthleteRecord(
  * Runs as a background process. Returns count of rows deleted.
  */
 export async function purgeExpiredDeletedData(): Promise<{ rowsDeleted: number }> {
-  let totalDeleted = 0;
+  // One transaction. These are the only irreversible deletes in the platform,
+  // and the audit row is the sole record that they happened. Run apart, a
+  // failure at the audit insert leaves rows permanently gone and nothing
+  // saying so -- which is precisely the evidence a retention policy exists to
+  // produce.
+  return withTransaction(async (client) => {
+    let totalDeleted = 0;
 
-  // Delete athletes soft-deleted more than 2 years ago
-  const athleteDelete = await query<{ count: string }>(
-    `delete from pilot.athletes
-     where deleted_at is not null
-       and deleted_at < (now() - interval '2 years')
-     returning athlete_id`,
-  );
-  totalDeleted += athleteDelete.length;
+    // Delete athletes soft-deleted more than 2 years ago
+    const athleteDelete = await client.query(
+      `delete from pilot.athletes
+       where deleted_at is not null
+         and deleted_at < (now() - interval '2 years')
+       returning athlete_id`,
+    );
+    totalDeleted += athleteDelete.rows.length;
 
-  // Delete accounts (parents) soft-deleted more than 1 year ago
-  const accountDelete = await query<{ count: string }>(
-    `delete from pilot.accounts
-     where deleted_at is not null
-       and deleted_at < (now() - interval '1 year')
-       and role = 'parent'
-     returning account_id`,
-  );
-  totalDeleted += accountDelete.length;
+    // Delete accounts (parents) soft-deleted more than 1 year ago
+    const accountDelete = await client.query(
+      `delete from pilot.accounts
+       where deleted_at is not null
+         and deleted_at < (now() - interval '1 year')
+         and role = 'parent'
+       returning account_id`,
+    );
+    totalDeleted += accountDelete.rows.length;
 
-  // Log the purge operation
-  if (totalDeleted > 0) {
-    await query<{ audit_id: number }>(
+    if (totalDeleted > 0) {
+      await client.query(
       `insert into pilot.audit_events (
          event_type, organization_id, entity_type, entity_id, details
        ) values (
          $1, $2, $3, $4, $5
        )`,
-      [
-        'data_purged',
-        null,
-        'retention_cleanup',
-        'system',
-        JSON.stringify({
-          athletes_deleted: athleteDelete.length,
-          accounts_deleted: accountDelete.length,
-          total_rows_deleted: totalDeleted,
-          purged_at: new Date().toISOString(),
-        }),
-      ],
-    );
-  }
+        [
+          'data_purged',
+          null,
+          'retention_cleanup',
+          'system',
+          JSON.stringify({
+            athletes_deleted: athleteDelete.rows.length,
+            accounts_deleted: accountDelete.rows.length,
+            total_rows_deleted: totalDeleted,
+          }),
+        ],
+      );
+    }
 
-  return { rowsDeleted: totalDeleted };
+    return { rowsDeleted: totalDeleted };
+  });
 }
 
 /**
