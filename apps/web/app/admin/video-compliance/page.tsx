@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
@@ -15,6 +15,7 @@ interface PendingPublication {
   uploader_name: string | null;
   created_at: string;
   compliance_check_status: string;
+  previous_review_note: string | null;
   stream_url: string | null;
 }
 
@@ -46,17 +47,25 @@ export default function VideoCompliancePage() {
   // Per-row, not a single scalar -- deciding on one video must never disable
   // or re-enable a different row's still-in-flight buttons.
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
+  // Two decisions on two different rows can each trigger their own reload;
+  // nothing guarantees the HTTP responses land in the order they were sent.
+  // A generation counter lets a fresher request always win, even if its
+  // response arrives before an older, now-stale one's.
+  const loadSeq = useRef(0);
 
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     try {
       const response = await fetch(`${apiBase()}/api/pilot/admin/video-compliance`, { credentials: 'include' });
       const payload = (await response.json().catch(() => ({}))) as { items?: PendingPublication[]; error?: string };
+      if (seq !== loadSeq.current) return;
       if (!response.ok) {
         throw new Error(payload.error || 'Unable to load the compliance review queue.');
       }
       setItems(payload.items ?? []);
       setErrorMessage('');
     } catch (error) {
+      if (seq !== loadSeq.current) return;
       setItems([]);
       setErrorMessage(error instanceof Error ? error.message : 'Unable to load the compliance review queue.');
     }
@@ -173,6 +182,16 @@ export default function VideoCompliancePage() {
                     </div>
                     <div>
                       <p className="t-eyebrow">{item.title || 'Untitled Video'}</p>
+                      {item.compliance_check_status === 'manual_review' ? (
+                        <p role="status" className="badge badge--monitor mt-[var(--s2)]">
+                          <i>◉</i>Changes were previously requested on this video
+                        </p>
+                      ) : null}
+                      {item.previous_review_note ? (
+                        <p className="t-body mt-[var(--s2)] border-l-2 border-[color:var(--brass-300)] pl-[var(--s3)] italic">
+                          Previous reviewer note: {item.previous_review_note}
+                        </p>
+                      ) : null}
                       <p className="t-body mt-[var(--s2)]">{item.description}</p>
                       <dl className="t-body mt-[var(--s3)] grid grid-cols-[auto_1fr] gap-x-[var(--s3)] gap-y-[var(--s1)]">
                         <dt className="text-[color:var(--brass-300)]">Athlete</dt>

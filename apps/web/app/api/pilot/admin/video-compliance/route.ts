@@ -1,17 +1,35 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { getAthleteById } from '@/src/server/pilot/entities';
+import { sanitizedSqlState } from '@/src/server/pilot/db';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getPilotVideoSasUrl } from '@/src/server/pilot/blob';
 import { hiddenNotFound, jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/http';
 import {
+  decidePublicationCompliance,
+  getLatestPublicationCheck,
   getOrganizationPublications,
   getPublicationForPublish,
-  recordComplianceCheck,
-  updatePublicationStatus,
 } from '@/src/server/pilot/publication';
 import { getSubjectIdentity } from '@/src/server/pilot/profileDb';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
+
+// A lost audit row is a gap an operator can close by re-dispatching, not a
+// reason to tell the admin their (already-committed, atomically-correct)
+// compliance decision failed -- same doctrine as training-holds' auditHoldEvent.
+async function auditComplianceEvent(event: Parameters<typeof writePilotAuditEvent>[0]): Promise<void> {
+  try {
+    await writePilotAuditEvent(event);
+  } catch (error) {
+    const rawCode = error && typeof error === 'object' && 'code' in error ? (error as { code: unknown }).code : undefined;
+    const code = sanitizedSqlState(rawCode);
+    console.error({
+      event: 'video-compliance-audit-write-failed',
+      action: event.details && typeof event.details === 'object' ? (event.details as { action?: unknown }).action : undefined,
+      ...(code ? { code } : {}),
+    });
+  }
+}
 
 export const runtime = 'nodejs';
 
@@ -51,10 +69,18 @@ export async function GET(request: NextRequest) {
 
     const items = await Promise.all(
       publications.map(async (publication) => {
-        const [uploader, athlete, videoSession] = await Promise.all([
+        const [uploader, athlete, videoSession, latestCheck] = await Promise.all([
           getSubjectIdentity(principal.organizationId, publication.submitted_by_account_id),
           getAthleteById(principal.organizationId, publication.athlete_id),
           getVideoSessionById(principal.organizationId, publication.video_session_id),
+          // A publication only re-enters this queue via 'request_changes',
+          // which always leaves a check row behind -- so a non-'pending'
+          // compliance_check_status here means a reviewer has already looked
+          // at this once, and what they said must not be invisible to
+          // whoever opens it next.
+          publication.compliance_check_status !== 'pending'
+            ? getLatestPublicationCheck(principal.organizationId, publication.publication_id)
+            : null,
         ]);
 
         return {
@@ -70,6 +96,7 @@ export async function GET(request: NextRequest) {
           uploader_name: uploader?.fullName ?? null,
           created_at: publication.created_at,
           compliance_check_status: publication.compliance_check_status,
+          previous_review_note: latestCheck?.details || null,
           // Only a 'ready' video session has bytes worth streaming -- see
           // GET /api/pilot/video/[videoId], whose SAS-url pattern this
           // reuses directly rather than round-tripping through that route.
@@ -141,32 +168,29 @@ export async function POST(request: NextRequest) {
     const newStatus = DECISION_TO_NEW_STATUS[decision];
     const checkStatus = DECISION_TO_CHECK_STATUS[decision];
 
-    // CAS-guarded: two admins can have this queue open at once. The UPDATE's
-    // WHERE clause re-checks status at the moment it acquires the row lock,
-    // so a losing request fails atomically instead of silently overwriting
-    // whichever decision committed first.
-    const applied = await updatePublicationStatus(
-      principal.organizationId,
+    // CAS-guarded status transition AND its compliance-check record, as one
+    // transaction: two admins can have this queue open at once, and a losing
+    // request's UPDATE fails atomically instead of silently overwriting
+    // whichever decision committed first. Doing the check-record insert in
+    // the SAME transaction (rather than as a second, separate write) means
+    // there is no window where the status has moved but no row exists
+    // recording who decided it or why.
+    const applied = await decidePublicationCompliance({
+      organizationId: principal.organizationId,
       publicationId,
       newStatus,
       checkStatus,
-      decision === 'approve' ? principal.accountId : undefined,
-      'pending_review',
-    );
+      checkType: 'compliance',
+      details: note,
+      decidedByAccountId: principal.accountId,
+      approvedByAccountId: decision === 'approve' ? principal.accountId : undefined,
+      expectedCurrentStatus: 'pending_review',
+    });
     if (!applied) {
       throw new Error('Unsupported: publication was already decided by another reviewer');
     }
 
-    await recordComplianceCheck({
-      organizationId: principal.organizationId,
-      publicationId,
-      checkType: 'compliance',
-      checkStatus,
-      details: note,
-      checkedByAccountId: principal.accountId,
-    });
-
-    await writePilotAuditEvent({
+    await auditComplianceEvent({
       event_type: 'update',
       actor_account_id: principal.accountId,
       actor_role: principal.role,

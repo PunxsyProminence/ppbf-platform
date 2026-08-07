@@ -35,6 +35,7 @@ const PENDING = [
     uploader_name: 'Coach Alice',
     created_at: '2026-08-01T12:00:00Z',
     compliance_check_status: 'pending',
+    previous_review_note: null,
     stream_url: 'https://blob.example/vs-1',
   },
   {
@@ -47,6 +48,7 @@ const PENDING = [
     uploader_name: 'Coach Bob',
     created_at: '2026-08-02T12:00:00Z',
     compliance_check_status: 'pending',
+    previous_review_note: null,
     stream_url: null,
   },
 ];
@@ -60,15 +62,56 @@ afterEach(() => {
   jest.clearAllMocks();
 });
 
-test('lists the pending-review queue with athlete and uploader names', async () => {
+test('lists the pending-review queue with every ticket-mandated field: title, description, athlete, uploader, and upload date', async () => {
   global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: PENDING })) as unknown as typeof fetch;
 
   render(<VideoCompliancePage />);
 
   await screen.findByText('Sparring Round 1');
+  expect(screen.getByText('Session footage.')).toBeInTheDocument();
   expect(screen.getByText('Sample Athlete One')).toBeInTheDocument();
   expect(screen.getByText('Coach Alice')).toBeInTheDocument();
+  // Not an exact formatted-string match -- toLocaleString's output shifts
+  // with the runner's timezone. The month name is enough to prove
+  // formatDate(item.created_at) actually rendered, not an empty cell. Both
+  // fixture rows are in August, so at least one match is expected.
+  expect(screen.getAllByText(/Aug/).length).toBeGreaterThan(0);
   expect(screen.getByText('Footwork Drill')).toBeInTheDocument();
+});
+
+test('an item whose athlete/uploader identity lookup failed falls back to the raw id, not a blank cell', async () => {
+  const noNames = [
+    { ...PENDING[0], athlete_name: null, uploader_name: null },
+  ];
+  global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: noNames })) as unknown as typeof fetch;
+
+  render(<VideoCompliancePage />);
+
+  await screen.findByText('Sparring Round 1');
+  expect(screen.getByText('ath-1')).toBeInTheDocument();
+  expect(screen.getByText('acct-coach')).toBeInTheDocument();
+});
+
+test('a re-queued item (manual_review) shows the previous-review badge and note', async () => {
+  const requeued = [
+    { ...PENDING[0], compliance_check_status: 'manual_review', previous_review_note: 'Trim the last 10 seconds.' },
+  ];
+  global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: requeued })) as unknown as typeof fetch;
+
+  render(<VideoCompliancePage />);
+
+  await screen.findByText('Sparring Round 1');
+  expect(screen.getByText('Changes were previously requested on this video')).toBeInTheDocument();
+  expect(screen.getByText(/Trim the last 10 seconds\./)).toBeInTheDocument();
+});
+
+test('a first-pass item (pending) shows neither the previous-review badge nor a note', async () => {
+  global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: PENDING })) as unknown as typeof fetch;
+
+  render(<VideoCompliancePage />);
+
+  await screen.findByText('Sparring Round 1');
+  expect(screen.queryByText('Changes were previously requested on this video')).not.toBeInTheDocument();
 });
 
 test('a video with no stream_url shows the not-playable state instead of a broken player', async () => {
@@ -218,6 +261,59 @@ test("a pending decision on one row never disables another row's buttons", async
 
   resolveFirstPost(jsonResponse({ ok: true, status: 'approved' }));
   await waitFor(() => expect(approveButtons[0]).not.toBeDisabled());
+});
+
+// Round-6 review finding: two decisions on two different rows can each
+// trigger their own reload, and nothing guaranteed the responses landed in
+// the order they were sent. Simulates R1 (issued first, for pub-1's
+// decision) resolving AFTER R2 (issued second, for pub-2's decision) --
+// the fresher R2 must win, not be overwritten by the stale R1.
+test('an out-of-order reload response never overwrites a fresher one', async () => {
+  window.prompt = jest.fn();
+  let resolveFirstReload: (value: Response) => void = () => {};
+  const firstReloadPromise = new Promise<Response>((resolve) => {
+    resolveFirstReload = resolve;
+  });
+
+  let getCount = 0;
+  const fetchMock = jest.fn((url: string, init?: RequestInit) => {
+    if (init?.method === 'POST') {
+      const body = JSON.parse(String(init.body));
+      return Promise.resolve(jsonResponse({ ok: true, status: 'approved', publication_id: body.publication_id }));
+    }
+    getCount += 1;
+    if (getCount === 1) {
+      // Initial mount load -- resolves immediately.
+      return Promise.resolve(jsonResponse({ ok: true, items: PENDING }));
+    }
+    if (getCount === 2) {
+      // R1: triggered by deciding pub-1. Stays pending until released below.
+      return firstReloadPromise;
+    }
+    // R2: triggered by deciding pub-2, arrives before R1 resolves.
+    return Promise.resolve(
+      jsonResponse({
+        ok: true,
+        items: [{ ...PENDING[0], title: 'Sparring Round 1 (fresher)' }],
+      }),
+    );
+  });
+  global.fetch = fetchMock as unknown as typeof fetch;
+
+  render(<VideoCompliancePage />);
+  await screen.findByText('Sparring Round 1');
+
+  const approveButtons = screen.getAllByRole('button', { name: 'Approve' });
+  fireEvent.click(approveButtons[0]); // decide pub-1 -> fires R1, left pending
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3)); // mount GET, pub-1 POST, R1 GET
+
+  fireEvent.click(approveButtons[1]); // decide pub-2 -> fires R2, resolves immediately
+  await screen.findByText('Sparring Round 1 (fresher)');
+
+  // R1 (stale) resolves last -- it must NOT stomp the fresher state R2 set.
+  resolveFirstReload(jsonResponse({ ok: true, items: PENDING }));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(screen.getByText('Sparring Round 1 (fresher)')).toBeInTheDocument();
 });
 
 test('a failed decision surfaces the server error rather than silently reloading', async () => {

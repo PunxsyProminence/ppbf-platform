@@ -6,10 +6,10 @@ import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getPilotVideoSasUrl } from '@/src/server/pilot/blob';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import {
+  decidePublicationCompliance,
+  getLatestPublicationCheck,
   getOrganizationPublications,
   getPublicationForPublish,
-  recordComplianceCheck,
-  updatePublicationStatus,
 } from '@/src/server/pilot/publication';
 import { getSubjectIdentity } from '@/src/server/pilot/profileDb';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
@@ -29,8 +29,8 @@ jest.mock('@/src/server/pilot/blob', () => ({
 jest.mock('@/src/server/pilot/publication', () => ({
   getOrganizationPublications: jest.fn(),
   getPublicationForPublish: jest.fn(),
-  recordComplianceCheck: jest.fn(),
-  updatePublicationStatus: jest.fn(),
+  decidePublicationCompliance: jest.fn(),
+  getLatestPublicationCheck: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/profileDb', () => ({
@@ -52,8 +52,8 @@ jest.mock('@/src/server/pilot/http', () => {
 const mockRequirePrincipal = jest.mocked(requirePrincipal);
 const mockList = jest.mocked(getOrganizationPublications);
 const mockGetForPublish = jest.mocked(getPublicationForPublish);
-const mockRecordCheck = jest.mocked(recordComplianceCheck);
-const mockUpdateStatus = jest.mocked(updatePublicationStatus);
+const mockDecide = jest.mocked(decidePublicationCompliance);
+const mockGetLatestCheck = jest.mocked(getLatestPublicationCheck);
 const mockGetAthlete = jest.mocked(getAthleteById);
 const mockGetSubjectIdentity = jest.mocked(getSubjectIdentity);
 const mockGetVideoSession = jest.mocked(getVideoSessionById);
@@ -103,8 +103,7 @@ function publication(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockUpdateStatus.mockResolvedValue(true);
-  mockRecordCheck.mockResolvedValue({ check_id: 'check-1', publication_id: 'pub-1', check_type: 'compliance', check_status: 'passed', details: '' } as never);
+  mockDecide.mockResolvedValue(true);
   mockGetForPublish.mockResolvedValue(publication());
 });
 
@@ -120,6 +119,9 @@ describe('GET /api/pilot/admin/video-compliance', () => {
 
     expect(response.status).toBe(200);
     expect(mockList).toHaveBeenCalledWith('org-a', { status: 'pending_review' });
+    // compliance_check_status is 'pending' here, so no prior review has
+    // happened and the latest-check lookup must not even run.
+    expect(mockGetLatestCheck).not.toHaveBeenCalled();
     await expect(response.json()).resolves.toEqual({
       ok: true,
       items: [
@@ -133,10 +135,30 @@ describe('GET /api/pilot/admin/video-compliance', () => {
           uploader_name: 'Coach Alice',
           created_at: '2026-08-01T00:00:00Z',
           compliance_check_status: 'pending',
+          previous_review_note: null,
           stream_url: 'https://blob.example/sas',
         },
       ],
     });
+  });
+
+  // T-006 round-6 review finding: a re-queued item (compliance_check_status
+  // = 'manual_review', from a prior 'request_changes') must surface the
+  // prior reviewer's note, or a second reviewer has no way to know one
+  // review cycle already happened.
+  test('a re-queued item (manual_review) surfaces the previous reviewer note', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockList.mockResolvedValueOnce([publication({ compliance_check_status: 'manual_review' })]);
+    mockGetAthlete.mockResolvedValueOnce(null);
+    mockGetSubjectIdentity.mockResolvedValueOnce(null);
+    mockGetVideoSession.mockResolvedValueOnce(null);
+    mockGetLatestCheck.mockResolvedValueOnce({ check_status: 'manual_review', details: 'Trim the last 10 seconds.', checked_at: '2026-08-01T01:00:00Z' });
+
+    const response = await GET(request('/api/pilot/admin/video-compliance'));
+
+    expect(mockGetLatestCheck).toHaveBeenCalledWith('org-a', 'pub-1');
+    const payload = (await response.json()) as { items: Array<{ previous_review_note: string | null }> };
+    expect(payload.items[0].previous_review_note).toBe('Trim the last 10 seconds.');
   });
 
   test('a video session that is not ready yet has no stream_url', async () => {
@@ -164,37 +186,71 @@ describe('GET /api/pilot/admin/video-compliance', () => {
 });
 
 describe('POST /api/pilot/admin/video-compliance', () => {
-  test('approve moves the publication to approved with compliance_check_status=passed, no note required', async () => {
+  test('approve decides atomically and writes a fully-formed audit event', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
 
     const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'approve' }));
 
     expect(response.status).toBe(200);
-    expect(mockUpdateStatus).toHaveBeenCalledWith('org-a', 'pub-1', 'approved', 'passed', 'acct-admin', 'pending_review');
-    expect(mockRecordCheck).toHaveBeenCalledWith(
-      expect.objectContaining({ organizationId: 'org-a', publicationId: 'pub-1', checkType: 'compliance', checkStatus: 'passed', details: '' }),
-    );
+    expect(mockDecide).toHaveBeenCalledWith({
+      organizationId: 'org-a',
+      publicationId: 'pub-1',
+      newStatus: 'approved',
+      checkStatus: 'passed',
+      checkType: 'compliance',
+      details: '',
+      decidedByAccountId: 'acct-admin',
+      approvedByAccountId: 'acct-admin',
+      expectedCurrentStatus: 'pending_review',
+    });
     await expect(response.json()).resolves.toEqual({ ok: true, publication_id: 'pub-1', status: 'approved', compliance_check_status: 'passed' });
-    expect(mockAudit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        entity_type: 'video_publication',
-        entity_id: 'pub-1',
-        details: expect.objectContaining({ action: 'publication_compliance_approve' }),
-      }),
-    );
+    expect(mockAudit).toHaveBeenCalledWith({
+      event_type: 'update',
+      actor_account_id: 'acct-admin',
+      actor_role: 'organization_admin',
+      organization_id: 'org-a',
+      entity_type: 'video_publication',
+      entity_id: 'pub-1',
+      details: {
+        action: 'publication_compliance_approve',
+        note: undefined,
+        prior_status: 'pending_review',
+        new_status: 'approved',
+      },
+      shadow_mirror: false,
+    });
   });
 
-  test('reject moves the publication to the real terminal rejected status, not draft, and requires a note', async () => {
+  test('reject decides atomically to the real terminal rejected status, not draft, and audits it fully', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
 
     const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'reject', note: 'Off-topic subject visible in frame.' }));
 
     expect(response.status).toBe(200);
-    expect(mockUpdateStatus).toHaveBeenCalledWith('org-a', 'pub-1', 'rejected', 'failed', undefined, 'pending_review');
-    expect(mockRecordCheck).toHaveBeenCalledWith(
-      expect.objectContaining({ checkStatus: 'failed', details: 'Off-topic subject visible in frame.' }),
+    expect(mockDecide).toHaveBeenCalledWith(
+      expect.objectContaining({
+        newStatus: 'rejected',
+        checkStatus: 'failed',
+        checkType: 'compliance',
+        details: 'Off-topic subject visible in frame.',
+        approvedByAccountId: undefined,
+        expectedCurrentStatus: 'pending_review',
+      }),
     );
     await expect(response.json()).resolves.toMatchObject({ status: 'rejected' });
+    // Round-6 finding: the sibling check/route.ts writes no audit event at
+    // all -- this route's whole reason for the sibling gap being closeable
+    // is that EVERY decision, not just approve, is logged.
+    expect(mockAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        details: expect.objectContaining({
+          action: 'publication_compliance_reject',
+          note: 'Off-topic subject visible in frame.',
+          prior_status: 'pending_review',
+          new_status: 'rejected',
+        }),
+      }),
+    );
   });
 
   test('reject without a note is a 400, and nothing is written', async () => {
@@ -203,18 +259,30 @@ describe('POST /api/pilot/admin/video-compliance', () => {
     const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'reject' }));
 
     expect(response.status).toBe(400);
-    expect(mockUpdateStatus).not.toHaveBeenCalled();
+    expect(mockDecide).not.toHaveBeenCalled();
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
-  test('request_changes keeps the publication in pending_review and requires a note', async () => {
+  test('request_changes keeps the publication in pending_review, records the reason, and audits it', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
 
     const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'request_changes', note: 'Please trim the last 10 seconds.' }));
 
     expect(response.status).toBe(200);
-    expect(mockUpdateStatus).toHaveBeenCalledWith('org-a', 'pub-1', 'pending_review', 'manual_review', undefined, 'pending_review');
+    expect(mockDecide).toHaveBeenCalledWith(
+      expect.objectContaining({
+        newStatus: 'pending_review',
+        checkStatus: 'manual_review',
+        details: 'Please trim the last 10 seconds.',
+        approvedByAccountId: undefined,
+      }),
+    );
     await expect(response.json()).resolves.toMatchObject({ status: 'pending_review', compliance_check_status: 'manual_review' });
+    expect(mockAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        details: expect.objectContaining({ action: 'publication_compliance_request_changes', note: 'Please trim the last 10 seconds.' }),
+      }),
+    );
   });
 
   test('request_changes without a note is a 400', async () => {
@@ -223,7 +291,7 @@ describe('POST /api/pilot/admin/video-compliance', () => {
     const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'request_changes' }));
 
     expect(response.status).toBe(400);
-    expect(mockUpdateStatus).not.toHaveBeenCalled();
+    expect(mockDecide).not.toHaveBeenCalled();
   });
 
   test('a coach cannot use the admin console route', async () => {
@@ -244,10 +312,10 @@ describe('POST /api/pilot/admin/video-compliance', () => {
     expect(mockGetForPublish).not.toHaveBeenCalled();
   });
 
-  test('an unrecognized decision is a 400', async () => {
+  test('a non-string publication_id (e.g. a number) is treated as missing, never coerced through', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
 
-    const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'delete' }));
+    const response = await POST(jsonRequest({ publication_id: 42, decision: 'approve' }));
 
     expect(response.status).toBe(400);
     expect(mockGetForPublish).not.toHaveBeenCalled();
@@ -267,6 +335,15 @@ describe('POST /api/pilot/admin/video-compliance', () => {
     expect(mockGetForPublish).not.toHaveBeenCalled();
   });
 
+  test('an unrecognized decision is a 400', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+
+    const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'delete' }));
+
+    expect(response.status).toBe(400);
+    expect(mockGetForPublish).not.toHaveBeenCalled();
+  });
+
   test('a publication_id that does not belong to this organization is a hidden 404', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
     mockGetForPublish.mockResolvedValueOnce(null);
@@ -274,21 +351,41 @@ describe('POST /api/pilot/admin/video-compliance', () => {
     const response = await POST(jsonRequest({ publication_id: 'pub-other-org', decision: 'approve' }));
 
     expect(response.status).toBe(404);
-    expect(mockUpdateStatus).not.toHaveBeenCalled();
+    expect(mockDecide).not.toHaveBeenCalled();
   });
 
-  // Two admins racing the same publication: the CAS-guarded updatePublicationStatus
+  // Two admins racing the same publication: the CAS-guarded transaction
   // resolves false when it loses (the row's status no longer matches
   // 'pending_review' by the time this request's UPDATE acquires the lock).
-  test('losing the CAS race is refused, and nothing else is written', async () => {
+  // Because the status flip and the check-record insert are now one
+  // transaction, a lost race writes NOTHING -- not a half-applied state.
+  test('losing the CAS race is refused, and nothing is written at all', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
-    mockUpdateStatus.mockResolvedValueOnce(false);
+    mockDecide.mockResolvedValueOnce(false);
 
     const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'approve' }));
 
     expect(response.status).toBe(400);
-    expect(mockUpdateStatus).toHaveBeenCalledWith('org-a', 'pub-1', 'approved', 'passed', 'acct-admin', 'pending_review');
-    expect(mockRecordCheck).not.toHaveBeenCalled();
+    expect(mockDecide).toHaveBeenCalledWith(expect.objectContaining({ expectedCurrentStatus: 'pending_review' }));
     expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  // Round-6 finding fixed: a failed audit write must not undo or mask an
+  // already-committed compliance decision -- same doctrine as
+  // training-holds' auditHoldEvent. The decision is atomic (decidePublicationCompliance);
+  // only the best-effort audit copy can fail independently.
+  test('a failed audit write does not fail the request -- the decision already committed', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockAudit.mockRejectedValueOnce(Object.assign(new Error('insert failed'), { code: '23514' }));
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'approve' }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ status: 'approved' });
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'video-compliance-audit-write-failed' }),
+    );
+    consoleErrorSpy.mockRestore();
   });
 });
