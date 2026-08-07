@@ -58,7 +58,9 @@ alter table pilot.audit_events
     'logout',
     'shadow_classification',
     'shadow_routing',
-    'shadow_research_upload_requirement'
+    'shadow_research_upload_requirement',
+    'data_deletion_initiated',
+    'data_purged'
   ));
 
 comment on column pilot.audit_events.event_type is
