@@ -12,3 +12,7 @@
 **/npm-debug.log*
 **/yarn-error.log*
 **/.env*
+# Agent worktrees are full second copies of the repo -- 13MB of build
+# context that no Dockerfile stage copies from.
+.claude
+**/.worktrees
