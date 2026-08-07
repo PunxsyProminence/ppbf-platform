@@ -48,6 +48,15 @@ const ROSTER_QUERY = `
     guardian.guardians,
     login.account_id as athlete_login_id,
     login.active_flag as athlete_login_active,
+    -- Same formula as attendanceReporting.ts#computeAttendanceRate: present /
+    -- (present + absent), rounded to 3 places, null (not 0) when there is
+    -- nothing to compute a rate from yet. Excused marks are not counted
+    -- against the rate. Computed here rather than by calling that module, so
+    -- the export stays the single query this file's own tests pin it to.
+    case
+      when coalesce(attend.present_count, 0) + coalesce(attend.absent_count, 0) = 0 then null
+      else round(attend.present_count::numeric / (attend.present_count + attend.absent_count), 3)
+    end as attendance_rate,
     to_char(ath.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
     to_char(ath.updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
   from pilot.athletes ath
@@ -83,6 +92,26 @@ const ROSTER_QUERY = `
     where gl.organization_id = ath.organization_id
       and gl.athlete_id = ath.athlete_id
   ) guardian on true
+  -- Only marks backed by a live registration count -- same guard
+  -- getOrganizationAttendanceSummary uses, so a mark that predates that
+  -- enforcement (or one for a class the athlete was never on the roster
+  -- for) cannot inflate the exported rate beyond what the dashboard shows
+  -- for the same athlete.
+  left join lateral (
+    select
+      count(*) filter (where sa.status = 'present') as present_count,
+      count(*) filter (where sa.status = 'absent') as absent_count
+    from pilot.scheduler_attendance sa
+    join pilot.scheduler_classes sc
+      on sc.organization_id = sa.organization_id and sc.class_id = sa.class_id
+    join pilot.scheduler_registrations sr
+      on sr.organization_id = sa.organization_id
+      and sr.class_id = sa.class_id
+      and sr.athlete_id = sa.athlete_id
+      and sr.status = 'registered'
+    where sa.organization_id = ath.organization_id
+      and sa.athlete_id = ath.athlete_id
+  ) attend on true
   where ath.organization_id = $1
   order by ath.full_name asc, ath.athlete_id asc
 `;
