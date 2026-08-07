@@ -14,7 +14,7 @@ const config: BridgeConfig = {
   storageAccountUrl: 'https://storage.example.test',
   researchContainerName: 'research-needs',
   evidenceContainerName: 'evidence-drafts',
-  manageIndexSchema: false,
+  indexBootstrapMode: false,
   requirePlatformAuth: true,
   allowedHosts: ['localhost', '127.0.0.1', '[::1]'],
 };

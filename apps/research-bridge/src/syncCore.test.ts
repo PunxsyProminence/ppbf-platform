@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { synchronizeResearchIndex, toIndexDocuments } from './syncCore.js';
+import { ensureResearchIndex, synchronizeResearchIndex, toIndexDocuments } from './syncCore.js';
 import type { BridgeConfig } from './config.js';
 import type { ResearchExport, ResearchIndexDocument } from './schemas.js';
 
@@ -24,7 +24,7 @@ function makeSnapshot(): ResearchExport {
   };
 }
 
-function makeConfig(manageIndexSchema: boolean): BridgeConfig {
+function makeConfig(indexBootstrapMode: boolean): BridgeConfig {
   return {
     port: 3000,
     stagingAppOrigin: 'https://staging.example.org',
@@ -34,7 +34,7 @@ function makeConfig(manageIndexSchema: boolean): BridgeConfig {
     storageAccountUrl: 'https://example.blob.core.windows.net',
     researchContainerName: 'research',
     evidenceContainerName: 'evidence',
-    manageIndexSchema,
+    indexBootstrapMode,
     requirePlatformAuth: true,
     allowedHosts: ['localhost'],
   };
@@ -42,14 +42,14 @@ function makeConfig(manageIndexSchema: boolean): BridgeConfig {
 
 type SyncInput = Parameters<typeof synchronizeResearchIndex>[0];
 
-function makeHarness(manageIndexSchema: boolean) {
+function makeHarness(indexBootstrapMode: boolean) {
   const stages: string[] = [];
   let createIndexCalls = 0;
   const containerClient = {
     getBlockBlobClient: () => ({ uploadData: async () => undefined }),
   };
   const input = {
-    config: makeConfig(manageIndexSchema),
+    config: makeConfig(indexBootstrapMode),
     snapshot: makeSnapshot(),
     searchIndexClient: {
       createOrUpdateIndex: async () => { createIndexCalls += 1; },
@@ -66,7 +66,7 @@ function makeHarness(manageIndexSchema: boolean) {
   return { stages, input, calls: () => createIndexCalls };
 }
 
-test('the recurring sync does not touch the index definition', async () => {
+test('the sync path never touches the index definition', async () => {
   // Search Index Data Contributor cannot modify object definitions, so the
   // scheduled job must never call createOrUpdateIndex -- it would 403.
   const harness = makeHarness(false);
@@ -76,22 +76,25 @@ test('the recurring sync does not touch the index definition', async () => {
   assert.equal(harness.stages.includes('research.search-create-index'), false);
 });
 
-test('the bootstrap run does manage the index definition', async () => {
+test('ensureResearchIndex manages the definition and reads no documents', async () => {
   const harness = makeHarness(true);
-  await synchronizeResearchIndex(harness.input);
+  await ensureResearchIndex({
+    config: makeConfig(true),
+    searchIndexClient: harness.input.searchIndexClient,
+    onStage: (stage) => { harness.stages.push(stage); },
+  });
 
   assert.equal(harness.calls(), 1);
-  assert.equal(harness.stages.includes('research.search-create-index'), true);
+  assert.deepEqual(harness.stages, ['research.search-create-index']);
 });
 
-test('document building reports its own stage, not the index stage', async () => {
-  const harness = makeHarness(true);
+test('document building reports its own stage', async () => {
+  const harness = makeHarness(false);
   await synchronizeResearchIndex(harness.input);
 
   // A failure while transforming the export must not be attributed to Search.
-  const createIndexAt = harness.stages.indexOf('research.search-create-index');
   const buildAt = harness.stages.indexOf('research.build-documents');
-  assert.ok(buildAt > createIndexAt, 'build-documents must follow create-index');
+  assert.ok(buildAt >= 0, 'build-documents stage must be reported');
   assert.ok(buildAt < harness.stages.indexOf('research.search-write-documents'));
 });
 

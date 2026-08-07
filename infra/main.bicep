@@ -227,7 +227,7 @@ module containerJob './modules/container-app-job.bicep' = {
     mcpAudience: mcpAudience
     syncCronExpression: syncCronExpression
     triggerType: 'Schedule'
-    manageIndexSchema: false
+    indexBootstrapMode: false
   }
 }
 
@@ -265,7 +265,7 @@ module bootstrapJob './modules/container-app-job.bicep' = {
     mcpAudience: mcpAudience
     syncCronExpression: syncCronExpression
     triggerType: 'Manual'
-    manageIndexSchema: true
+    indexBootstrapMode: true
   }
 }
 

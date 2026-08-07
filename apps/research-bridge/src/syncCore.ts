@@ -35,6 +35,38 @@ export function toIndexDocuments(snapshot: ResearchExport): ResearchIndexDocumen
   return [...needs, ...evidence];
 }
 
+/**
+ * Creates or updates the index definition, and nothing else.
+ *
+ * Deliberately takes no snapshot and touches no documents: the identity that
+ * runs this holds Search Service Contributor and is not authorized against the
+ * PPBF export at all, which is the point. An index-bootstrap run needs no
+ * access to sanitized athlete data, so it is never given any.
+ */
+export async function ensureResearchIndex(input: {
+  config: BridgeConfig;
+  searchIndexClient: SearchIndexClient;
+  onStage?: (stage: string) => void;
+}): Promise<void> {
+  input.onStage?.('research.search-create-index');
+  await input.searchIndexClient.createOrUpdateIndex({
+    name: input.config.searchIndexName,
+    fields: [
+      { name: 'id', type: 'Edm.String', key: true, filterable: true },
+      { name: 'kind', type: 'Edm.String', searchable: false, filterable: true, facetable: true },
+      { name: 'title', type: 'Edm.String', searchable: true },
+      { name: 'content', type: 'Edm.String', searchable: true },
+      { name: 'publisher', type: 'Edm.String', searchable: true, filterable: true },
+      { name: 'sourceType', type: 'Edm.String', searchable: false, filterable: true, facetable: true },
+      { name: 'authorityTier', type: 'Edm.Int32', searchable: false, filterable: true, sortable: true },
+      { name: 'url', type: 'Edm.String', searchable: false },
+      { name: 'publicationDate', type: 'Edm.String', searchable: false, filterable: true, sortable: true },
+      { name: 'status', type: 'Edm.String', searchable: false, filterable: true, facetable: true },
+      { name: 'syncedAt', type: 'Edm.String', searchable: false, sortable: true },
+    ],
+  });
+}
+
 export async function synchronizeResearchIndex(input: {
   config: BridgeConfig;
   snapshot: ResearchExport;
@@ -43,29 +75,10 @@ export async function synchronizeResearchIndex(input: {
   blobServiceClient: BlobServiceClient;
   onStage?: (stage: string) => void;
 }): Promise<{ uploaded: number; deleted: number }> {
-  // Only the bootstrap job manages the index definition. The recurring sync
-  // holds Search Index Data Contributor, which per Azure AI Search RBAC grants
+  // The index definition is not this job's business. The recurring sync holds
+  // Search Index Data Contributor, which per Azure AI Search RBAC grants
   // document read/write and explicitly NOT object management -- so calling
-  // createOrUpdateIndex here would 403 for the identity that normally runs this.
-  if (input.config.manageIndexSchema) {
-    input.onStage?.('research.search-create-index');
-    await input.searchIndexClient.createOrUpdateIndex({
-      name: input.config.searchIndexName,
-      fields: [
-        { name: 'id', type: 'Edm.String', key: true, filterable: true },
-        { name: 'kind', type: 'Edm.String', searchable: false, filterable: true, facetable: true },
-        { name: 'title', type: 'Edm.String', searchable: true },
-        { name: 'content', type: 'Edm.String', searchable: true },
-        { name: 'publisher', type: 'Edm.String', searchable: true, filterable: true },
-        { name: 'sourceType', type: 'Edm.String', searchable: false, filterable: true, facetable: true },
-        { name: 'authorityTier', type: 'Edm.Int32', searchable: false, filterable: true, sortable: true },
-        { name: 'url', type: 'Edm.String', searchable: false },
-        { name: 'publicationDate', type: 'Edm.String', searchable: false, filterable: true, sortable: true },
-        { name: 'status', type: 'Edm.String', searchable: false, filterable: true, facetable: true },
-        { name: 'syncedAt', type: 'Edm.String', searchable: false, sortable: true },
-      ],
-    });
-  }
+  // createOrUpdateIndex here would 403. See ensureResearchIndex above.
 
   // Its own stage. This transform used to run while the marker still read
   // 'research.search-create-index', so a failure here was reported as a Search

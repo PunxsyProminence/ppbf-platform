@@ -26,7 +26,7 @@ param triggerType string = 'Schedule'
 // Only the bootstrap job may create or update the index definition. The
 // recurring job holds Search Index Data Contributor, which cannot modify object
 // definitions, so leaving this false keeps it on least privilege.
-param manageIndexSchema bool = false
+param indexBootstrapMode bool = false
 
 var placeholderImage = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 var isPlaceholder = containerImage == placeholderImage
@@ -130,8 +130,8 @@ resource job 'Microsoft.App/jobs@2026-01-01' = {
               value: 'sanitized-staging-only'
             }
             {
-              name: 'RESEARCH_MANAGE_INDEX_SCHEMA'
-              value: manageIndexSchema ? 'true' : 'false'
+              name: 'RESEARCH_INDEX_BOOTSTRAP'
+              value: indexBootstrapMode ? 'true' : 'false'
             }
           ]
           resources: {
