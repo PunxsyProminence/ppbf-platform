@@ -237,6 +237,15 @@ module containerJob './modules/container-app-job.bicep' = {
 module bootstrapJob './modules/container-app-job.bicep' = {
   name: 'container-app-job-bootstrap'
   scope: rg
+  // Container Apps validates that the identity can pull the image at create
+  // time, so the AcrPull assignment has to exist first. Without this the two
+  // modules run in parallel and the job fails with
+  // InvalidParameterValueInContainerTemplate -- which is exactly how the first
+  // deployment of it failed. The recurring job does not need this: its identity
+  // has held AcrPull since long before.
+  dependsOn: [
+    roleAssignments
+  ]
   params: {
     name: bootstrapJobName
     location: location
