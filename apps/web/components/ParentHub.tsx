@@ -14,6 +14,7 @@ import ShadowChatButton from './ShadowChatButton';
 import type { FightCardPayload } from './profileClient';
 import { cx } from './uiStyles';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymDateTimeShort } from '@/src/lib/gymTime';
 
 type TabID = 'overview' | 'parent-floor' | 'home-assignments' | 'observations' | 'family-goals' | 'messages' | 'attendance' | 'progress' | 'resources' | 'shadow';
 
@@ -58,12 +59,12 @@ interface FamilyGoal {
 }
 
 interface ParentMessage {
-  id: string;
-  sender: 'coach';
-  subject: string;
-  body: string;
-  date: string;
-  read?: boolean;
+  note_id: string;
+  athlete_id: string;
+  athlete_name: string | null;
+  sender_role: string;
+  note_text: string;
+  created_at: string;
 }
 
 interface AttendanceEntry {
@@ -155,7 +156,29 @@ export default function ParentHub() {
 
   const [familyGoals] = useState<FamilyGoal[]>([]);
 
-  const [messages] = useState<ParentMessage[]>([]);
+  // Capability #90, scoped to one-directional read: /api/pilot/parent/messages
+  // reads pilot.coach_observations rows a coach/admin filed with
+  // note_type: 'parent_message' (see coach/decision-loop's Message Home
+  // panel). Best-effort, own effect, own state -- same doctrine as the
+  // Safety & Consent card above: a failed read leaves the rest of the hub
+  // working, it just shows no messages.
+  const [messages, setMessages] = useState<ParentMessage[]>([]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/parent/messages`, {
+          method: 'GET',
+          credentials: 'include',
+        });
+        if (!response.ok) return;
+        const payload = (await response.json()) as { items?: ParentMessage[] };
+        setMessages(payload.items ?? []);
+      } catch {
+        // Messages tab falls back to its empty state.
+      }
+    })();
+  }, []);
 
   const [attendanceEntries] = useState<AttendanceEntry[]>([]);
 
@@ -422,7 +445,7 @@ export default function ParentHub() {
           tasksDue={tasksDue}
           upcomingEvents={upcomingEvents}
           attendancePercent={activeChild?.attendancePercent ?? null}
-          unreadMessages={messages.filter(m => !m.read).length}
+          unreadMessages={messages.length}
         />
 
         {!hasLiveChildMetrics && activeChild ? (
@@ -950,23 +973,22 @@ export default function ParentHub() {
                 ]}
               />
 
-              <p className="t-label">
-                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for coach messages yet, so this list
-                is always empty.
-              </p>
-
-              <div className="space-y-[var(--s4)] max-h-96 overflow-y-auto">
-                {messages.map(msg => (
-                  <div key={msg.id} className="mat-paper rounded-[var(--r-md)] p-[var(--s4)]">
-                    <div className="flex justify-between items-start gap-[var(--s3)] mb-[var(--s3)]">
-                      <h4 className="t-body font-semibold">{msg.subject}</h4>
-                      <span className="t-label">From Coach</span>
+              {messages.length === 0 ? (
+                <p className="t-muted">No messages yet.</p>
+              ) : (
+                <div className="space-y-[var(--s4)] max-h-96 overflow-y-auto">
+                  {messages.map((message) => (
+                    <div key={message.note_id} className="mat-paper rounded-[var(--r-md)] p-[var(--s4)]">
+                      <div className="flex justify-between items-start gap-[var(--s3)] mb-[var(--s3)]">
+                        <h4 className="t-body font-semibold">{message.athlete_name ?? 'Your child'}</h4>
+                        <span className="t-label">From {message.sender_role === 'coach' ? 'Coach' : 'Admin'}</span>
+                      </div>
+                      <p className="t-body mb-[var(--s3)]">{message.note_text}</p>
+                      <p className="t-muted">{formatGymDateTimeShort(message.created_at) ?? message.created_at}</p>
                     </div>
-                    <p className="t-body mb-[var(--s3)]">{msg.body}</p>
-                    <p className="t-muted">{msg.date}</p>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
 
               <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s4)]">
                 <h4 className="t-label">Reply to Coach</h4>
@@ -974,8 +996,9 @@ export default function ParentHub() {
                   PLANNED | NOT YET IMPLEMENTED
                 </p>
                 <p className="t-muted">
-                  There is no coach-messaging backend yet. This field is disabled so a message can&apos;t be typed
-                  and silently discarded -- until this is wired up, contact your child&apos;s coach directly.
+                  Messages from your child&apos;s coach appear above, but replying isn&apos;t available yet. This
+                  field is disabled so a message can&apos;t be typed and silently discarded -- for anything that
+                  needs a conversation, contact your child&apos;s coach directly.
                 </p>
                 <textarea
                   value={newMessage}

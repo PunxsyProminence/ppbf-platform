@@ -36,6 +36,7 @@ function installFetch(
   announcements: () => Promise<Response> = async () => jsonResponse({ ok: true, announcements: [] }),
   safety: () => Promise<Response> = async () => jsonResponse({ ok: true, items: [] }),
   barrierReport: (init?: RequestInit) => Promise<Response> = async () => jsonResponse({ ok: true, note_id: 'note-1' }),
+  messages: () => Promise<Response> = async () => jsonResponse({ ok: true, items: [] }),
 ): jest.Mock {
   const fetchMock = jest.fn(async (input: unknown, init?: RequestInit) => {
     const url = String(input);
@@ -59,6 +60,9 @@ function installFetch(
     }
     if (url.includes('/api/pilot/parent/barrier-report')) {
       return barrierReport(init);
+    }
+    if (url.includes('/api/pilot/parent/messages')) {
+      return messages();
     }
 
     throw new Error(`Unexpected fetch: ${url}`);
@@ -313,5 +317,66 @@ describe('Report a Barrier (#95/#96)', () => {
 
     await screen.findByText('Forbidden');
     expect(screen.queryByText("Sent to your child's coach.")).toBeNull();
+  });
+});
+
+// Capability #90, read side: the Messages tab previously showed hardcoded
+// mock data behind a permanent "PLANNED | NOT YET IMPLEMENTED" notice --
+// this is the real feed from GET /api/pilot/parent/messages.
+describe('Messages tab (#90)', () => {
+  async function openMessages() {
+    await act(async () => {
+      render(<ParentHub />);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Messages' }));
+    });
+  }
+
+  test('no messages reads as a plain empty state, not fabricated content', async () => {
+    installFetch();
+    await openMessages();
+
+    expect(screen.getByText('No messages yet.')).toBeDefined();
+  });
+
+  test('a real message renders with the sending role and the child it concerns', async () => {
+    installFetch(undefined, undefined, undefined, async () =>
+      jsonResponse({
+        ok: true,
+        items: [
+          {
+            note_id: 'note-1',
+            athlete_id: 'ath_1',
+            athlete_name: 'First Child',
+            sender_role: 'coach',
+            note_text: 'Great effort at practice this week!',
+            created_at: '2026-08-01T23:15:00.000Z',
+          },
+        ],
+      }),
+    );
+    await openMessages();
+
+    expect(await screen.findByText('Great effort at practice this week!')).toBeDefined();
+    expect(screen.getByText('First Child', { selector: 'h4' })).toBeDefined();
+    expect(screen.getByText('From Coach')).toBeDefined();
+  });
+
+  test('a failed messages read leaves the rest of the hub working', async () => {
+    installFetch(undefined, undefined, undefined, async () => {
+      throw new Error('messages offline');
+    });
+    await openMessages();
+
+    expect(screen.getByText('No messages yet.')).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Second Child' })).not.toBeNull();
+  });
+
+  test('replying stays disabled -- one-directional only', async () => {
+    installFetch();
+    await openMessages();
+
+    expect(screen.getByRole('button', { name: 'Send Message (unavailable)' })).toBeDisabled();
   });
 });

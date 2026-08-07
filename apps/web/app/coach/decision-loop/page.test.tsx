@@ -117,6 +117,66 @@ test('a failed log shows the error, not a false success message', async () => {
   expect(screen.queryByText('Note logged.')).toBeNull();
 });
 
+// Capability #90, scoped to one-directional send: a coach message to the
+// athlete's family, reusing domain-upsert exactly like the Behavior Note
+// panel, with note_type: 'parent_message' -- the one value
+// listParentMessages reads back on the guardian's Messages tab.
+describe('Message Home (#90)', () => {
+  test('posts entity_type coach_note with note_type parent_message', async () => {
+    const fetchMock = installFetch();
+    await selectAthlete();
+
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Great effort at practice this week!' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find((c) => String(c[0]).includes('/api/pilot/intake/domain-upsert'));
+      expect(call).toBeDefined();
+    });
+
+    const call = fetchMock.mock.calls.find((c) => String(c[0]).includes('/api/pilot/intake/domain-upsert'));
+    const body = JSON.parse(String((call?.[1] as RequestInit).body));
+    expect(body).toEqual({
+      entity_type: 'coach_note',
+      athlete_id: 'ath-1',
+      payload: { note_type: 'parent_message', note_text: 'Great effort at practice this week!' },
+    });
+
+    await screen.findByText('Sent to the family.');
+  });
+
+  test('the textarea clears after a successful send', async () => {
+    installFetch();
+    await selectAthlete();
+
+    const textarea = screen.getByLabelText('Message') as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: 'A message.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+
+    await waitFor(() => expect(textarea.value).toBe(''));
+  });
+
+  test('an empty message does not submit', async () => {
+    const fetchMock = installFetch();
+    await selectAthlete();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/pilot/intake/domain-upsert'))).toBe(false);
+  });
+
+  test('a failed send shows the error, not a false success message', async () => {
+    installFetch({ domainUpsert: () => jsonResponse({ error: 'Forbidden' }, false) });
+    await selectAthlete();
+
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'A message.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+
+    await screen.findByText('Forbidden');
+    expect(screen.queryByText('Sent to the family.')).toBeNull();
+  });
+});
+
 // Round 9 review: capability #152's Report Incident form shipped with zero
 // test coverage -- only the server route and the pure function were
 // exercised, never the UI a coach actually uses to file one.

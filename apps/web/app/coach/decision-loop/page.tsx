@@ -154,6 +154,10 @@ export default function DecisionLoopReviewPage() {
   const [behaviorNoteMessage, setBehaviorNoteMessage] = useState('');
   const [behaviorNoteSubmitting, setBehaviorNoteSubmitting] = useState(false);
 
+  const [messageHomeText, setMessageHomeText] = useState('');
+  const [messageHomeMessage, setMessageHomeMessage] = useState('');
+  const [messageHomeSubmitting, setMessageHomeSubmitting] = useState(false);
+
   const [outcomeDecisionId, setOutcomeDecisionId] = useState('');
   const [outcomeObservationIds, setOutcomeObservationIds] = useState('');
   const [outcomeMatchState, setOutcomeMatchState] = useState<MatchState>('match');
@@ -179,6 +183,7 @@ export default function DecisionLoopReviewPage() {
     // if that report/note was just filed for the athlete now selected.
     setIncidentFiledMessage('');
     setBehaviorNoteMessage('');
+    setMessageHomeMessage('');
     if (!targetAthleteId) {
       return;
     }
@@ -369,6 +374,40 @@ export default function DecisionLoopReviewPage() {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to log the note.');
     } finally {
       setBehaviorNoteSubmitting(false);
+    }
+  }
+
+  // Capability #90, scoped down deliberately to one-directional send: a
+  // coach/admin message to the athlete's guardian(s), read on
+  // /parent/messages. Reply, threading, and messaging any coach besides the
+  // athlete's own are real moderation/product decisions, not attempted
+  // here. Reuses domain-upsert exactly like the Behavior Note panel above --
+  // note_type: 'parent_message' is the one value listParentMessages reads
+  // back, so a message sent here and nothing else ever reaches a guardian's
+  // feed.
+  async function handleMessageHome(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!athleteId || !messageHomeText.trim() || messageHomeSubmitting) return;
+    setMessageHomeMessage('');
+    setMessageHomeSubmitting(true);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/intake/domain-upsert`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entity_type: 'coach_note',
+          athlete_id: athleteId,
+          payload: { note_type: 'parent_message', note_text: messageHomeText },
+        }),
+      });
+      await readJsonOrThrow(response, 'Failed to send the message.');
+      setMessageHomeText('');
+      setMessageHomeMessage('Sent to the family.');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to send the message.');
+    } finally {
+      setMessageHomeSubmitting(false);
     }
   }
 
@@ -780,6 +819,33 @@ export default function DecisionLoopReviewPage() {
                   </label>
                   <button type="submit" className="btn btn--ghost" disabled={behaviorNoteSubmitting}>
                     {behaviorNoteSubmitting ? 'Logging…' : 'Log Note'}
+                  </button>
+                </form>
+              </section>
+
+              {/* Message Home */}
+              <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+                <h2 className="t-command text-[length:var(--t-lg)]">Message Home</h2>
+                <p className="t-muted mt-[var(--s2)]">
+                  A one-way note to the athlete&apos;s family -- they&apos;ll see it on their Messages tab.
+                  There&apos;s no reply yet; call the family directly for anything that needs a conversation.
+                </p>
+
+                {messageHomeMessage && (
+                  <p className="t-body mt-[var(--s3)] text-[color:var(--brass-300)]">{messageHomeMessage}</p>
+                )}
+
+                <form onSubmit={handleMessageHome} className="mt-[var(--s4)] space-y-[var(--s3)]">
+                  <label className="field block">
+                    <span className="t-label">Message</span>
+                    <textarea
+                      value={messageHomeText}
+                      onChange={(event) => setMessageHomeText(event.target.value)}
+                      className="textarea min-h-[56px]"
+                    />
+                  </label>
+                  <button type="submit" className="btn btn--ghost" disabled={messageHomeSubmitting}>
+                    {messageHomeSubmitting ? 'Sending…' : 'Send to Family'}
                   </button>
                 </form>
               </section>

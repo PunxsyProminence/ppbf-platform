@@ -171,7 +171,7 @@ consequences) still land in Phase 6, unbuilt.
 | 87 | Guardian Observation Engine | ⬜ | | 2 |
 | 88 | Home Compliance / Habit Engine | ⬜ | | 2 |
 | 89 | Home Safety Boundary Engine | ⬜ | | 2 |
-| 90 | Family Communication Engine | 🟡 | announcements exist; no two-way family channel | 2 |
+| 90 | Family Communication Engine | 🟡 | announcements exist; no two-way family channel. Built 2026-08-07 (owner call: scope down to one-directional, keep it basic): a coach/admin sends via `coach/decision-loop`'s "Message Home" panel (reuses `domain-upsert`, `note_type: 'parent_message'` on `pilot.coach_observations` — no new table); a guardian reads on `ParentHub`'s Messages tab via new `GET /api/pilot/parent/messages`. Deliberately one-directional — no reply, no threading, no parent-initiated send. Reply/moderation/two-way is a real product decision, explicitly not attempted. | 2 |
 | 91 | Recovery Homework Engine | ⬜ | | 3 |
 | 92 | Life-Skill Homework Engine | ⬜ | | 6 |
 | 93 | Parent / Guardian Dashboard | 🟡 | `app/parent/dashboard`, progression-visibility. Updated 2026-08-07: `ParentHub.tsx`'s Overview tab now links to `/parent/safety` (#84) and `/parent/consent` (T-008), with a best-effort summary line — both existed but the hub never surfaced either. Six tabs (assignments, observations, family goals, messages, attendance, resources) remain explicit `PLANNED \| NOT YET IMPLEMENTED` placeholders with no backend feed. | 2 |
@@ -234,7 +234,7 @@ sits behind the Privacy-Tier System (#200).
 | 123 | Station Rotation Engine | 🟡 | floor-plans route | 2 |
 | 124 | Capacity Management Engine | ✅ | Drift-corrected 2026-08-07: `pilot.scheduler_classes.capacity` (`check (capacity > 0 and capacity <= 200)`) already exists; `schedulerDb.ts` computes `registeredCount` vs. capacity with row-locking to prevent overbooking races and sets a registration's status to `waitlisted` once a class is full; `app/schedule/page.tsx` already renders `Seats: {registered_count}/{capacity}` on the shared class-management surface, and the create-class form collects capacity. The core mechanic (track + enforce + display) is built; nothing here needed a product decision. | — |
 | 125 | Behavior Standard Engine | 🟡 | Built 2026-08-07 (capture only): `pilot.coach_observations.note_type` already accepted any free-text value with no taxonomy and the `domain-upsert` route already had the `coach_note` entity path — this was a pure UI wiring gap. `coach/decision-loop`'s "Behavior & Habit Note" panel posts a single generic `note_type: 'behavior_standard'`, shared with #70/#74. Deliberately does not invent specific behavior/habit category names ("respect," "effort," etc.) — a coaching-philosophy decision for the gym's own staff, left for the owner. Pattern detection, streaks, and consequences remain Phase 6, unbuilt. | 2 |
-| 126 | Recognition / Achievement Engine | ⬜ | | 2 |
+| 126 | Recognition / Achievement Engine | ✅ | Drift-corrected 2026-08-07: a full read+write model already exists, not a gap. `achievements.ts` persists recognition/milestones/mentorships (explicitly append-only, no ranking or negative/severity values, per its own header); `AthleteAchievements.tsx` renders them on both the athlete's own workspace and (read-only, family-worded) ParentHub's Progress tab; coach-award UI already exists and is role-gated (`POST /api/pilot/achievements/recognition`, `RECOGNITION_SENDER_ROLES = ['coach','organization_admin','admin']`) against a closed 10-value taxonomy already defined in `achievementPaths.ts` (`RECOGNITION_KINDS`) — not something this pass needed to invent. | — |
 | 127 | 1% Club / Leadership Pathway | ⬜ | | 2 |
 | 128 | Community Service Tracker | ⬜ | | 2 |
 | 129 | Program Phase Engine | ⬜ | | 2 |
@@ -286,7 +286,7 @@ sits behind the Privacy-Tier System (#200).
 | 160 | Duplicate-Risk Assistant | ⬜ | | 4 |
 | 161 | Report Drafting Assistant | ⬜ | | 4 |
 | 162 | Coach Prep Assistant | 🟡 | coach chat + prep surfaces | 5 |
-| 163 | Parent Message Drafting Assistant | ⬜ | | 2 |
+| 163 | Parent Message Drafting Assistant | ⬜ | Re-scoped 2026-08-07: was blocked on #90 (nothing to draft into); #90 now exists in one-directional-send form, so a drafting assist is technically possible, but no AI draft/compose assistant pattern exists anywhere in the codebase to build this from (`shadowChat.ts` is Q&A, not message composition) — still not attempted tonight, real scope beyond "keep it basic." | 2 |
 | 164 | No-Autonomous-Approval Guardrail | ✅ | `shadowAuthority.ts`, authority model doc | — |
 
 ### Group P — Dashboards / Reporting (165–175)
