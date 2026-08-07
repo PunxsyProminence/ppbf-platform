@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import type { BoardSeatSlug } from '@/app/board/boardWorkspaceConfig';
+import { formatGymDateNumeric } from '@/src/lib/gymTime';
 
 // The seat-specific half of a board workspace: the records this platform
 // actually holds for the seat accountable for them.
@@ -35,7 +36,7 @@ const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2
 
 function formatWhen(value: string): string {
   const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? 'Date unavailable' : parsed.toLocaleDateString();
+  return formatGymDateNumeric(parsed) ?? 'Date unavailable';
 }
 
 export default function BoardSeatEvidence({ seat }: Readonly<{ seat: BoardSeatSlug }>) {

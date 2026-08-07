@@ -5,6 +5,7 @@ import Link from 'next/link';
 import RabbitHole from '@/components/RabbitHole';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymStamp } from '@/src/lib/gymTime';
 
 // A rabbit hole renders as a paper note pinned to the leather panel, so it
 // takes the design system's paper material (which carries its own dark ink)
@@ -639,7 +640,7 @@ export default function CoachProgressionIntelligencePage() {
                               >
                                 <div>
                                   <span className="t-data text-[length:var(--t-xs)]">
-                                    {new Date(completion.completed_at).toLocaleString()}
+                                    {formatGymStamp(completion.completed_at)}
                                   </span>
                                   <span className="t-data ml-[var(--s2)] text-[color:var(--bone-400)]">
                                     {completion.verification_status}

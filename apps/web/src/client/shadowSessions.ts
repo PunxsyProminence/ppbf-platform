@@ -1,3 +1,5 @@
+import { formatGymClock24 } from '../lib/gymTime';
+
 export type StoredShadowResponseState = 'ok' | 'filtered';
 
 export type StoredShadowEvidenceTier =
@@ -329,12 +331,7 @@ export function mapStoredShadowMessage(
     id: message.messageId,
     type: message.role === 'assistant' ? 'shadow' : 'user',
     text: message.content,
-    timestamp: new Date(message.createdAt).toLocaleTimeString('en-US', {
-      hour12: false,
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    }),
+    timestamp: formatGymClock24(message.createdAt, { seconds: true }) ?? '',
     state,
     // A user turn has no grade of its own; grading only describes SHADOW's
     // answers. Assistant turns fall back to the flattest tier rather than the

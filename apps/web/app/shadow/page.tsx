@@ -23,6 +23,7 @@ import {
   type OwnedShadowConversation,
 } from '@/client/shadowSessions';
 import ShadowChatButton from '@/components/ShadowChatButton';
+import { formatGymClock24, formatGymDateNumeric } from '@/src/lib/gymTime';
 
 // How much verified evidence actually backed a response -- drives the
 // message background darkness (bigger shadow = more evidenced). Independent
@@ -214,7 +215,7 @@ async function submitFeedback(
 }
 
 function formatTimestamp() {
-  return new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return formatGymClock24(new Date(), { seconds: true }) ?? '';
 }
 
 // Entry hints from the launching page's query string (ShadowChatButton sends
@@ -1183,7 +1184,7 @@ function ShadowChatPageContent() {
                           </span>
                           {/* Law 4: session type and date are records -- mono voice. */}
                           <span className="t-data mt-[var(--s1)] block uppercase tracking-[0.08em] text-[color:var(--bone-400)]">
-                            {session.sessionType.replaceAll('_', ' ')} · {new Date(session.updatedAt).toLocaleDateString()}
+                            {session.sessionType.replaceAll('_', ' ')} · {formatGymDateNumeric(session.updatedAt)}
                           </span>
                         </button>
                         <div className="flex items-center gap-[var(--s3)] border-t border-[color:var(--hide-700)] px-[var(--s3)] py-[var(--s2)]">

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymStamp } from '@/src/lib/gymTime';
 
 type ReviewState = 'new' | 'contacted' | 'archived';
 
@@ -145,7 +146,7 @@ export default function PublicInterestReviewPage() {
                       {item.email}{item.phone ? ` · ${item.phone}` : ''} · Prefers: {item.preferred_contact_method}
                     </p>
                     <p className="t-muted">
-                      {item.visitor_type} · {item.program_interest} · {new Date(item.created_at).toLocaleString()}
+                      {item.visitor_type} · {item.program_interest} · {formatGymStamp(item.created_at)}
                     </p>
                     {item.message ? <p className="t-body mt-[var(--s2)] italic">&quot;{item.message}&quot;</p> : null}
                   </div>

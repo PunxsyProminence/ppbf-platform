@@ -1,10 +1,16 @@
 import {
+  formatGymClock24,
   formatGymDate,
+  formatGymDateNumeric,
   formatGymDateShort,
   formatGymDateTime,
   formatGymDateTimeShort,
   formatGymDay,
   formatGymDayShort,
+  formatGymMonthDay,
+  formatGymStamp,
+  formatGymTimeOfDay,
+  formatGymWeekday,
   GYM_TIME_ZONE,
 } from './gymTime';
 
@@ -83,5 +89,37 @@ describe('gym-local date formatting', () => {
     expect(formatGymDayShort('2026-01-12')).toBe('Jan 12');
     expect(formatGymDayShort('2026-01-12T18:00:00Z')).toBe('Jan 12');
     expect(formatGymDayShort('2026-01-12T00:00:00Z')).toBe('Jan 11');
+  });
+
+  test('every formatter resolves the gym day, not the viewer day', () => {
+    // 2026-01-12T02:30:00Z is 9:30pm on January 11 in America/New_York. Each of
+    // these used to answer with the viewer's day, so on a machine in the gym
+    // they all named the wrong date at once.
+    const lateNight = '2026-01-12T02:30:00Z';
+    expect(formatGymDateNumeric(lateNight)).toBe('1/11/2026');
+    expect(formatGymMonthDay(lateNight)).toBe('Jan 11');
+    expect(formatGymWeekday(lateNight)).toBe('Sunday');
+    expect(formatGymTimeOfDay(lateNight)).toBe('9:30 PM');
+    expect(formatGymClock24(lateNight)).toBe('21:30');
+    expect(formatGymClock24(lateNight, { seconds: true })).toBe('21:30:00');
+    expect(formatGymStamp(lateNight)).toBe('January 11, 2026 at 9:30 PM');
+  });
+
+  test('a Date is accepted as readily as an ISO string', () => {
+    // Call sites pass both -- `new Date()` for a live clock, a stored string
+    // for a record.
+    expect(formatGymDateNumeric(new Date('2026-01-12T02:30:00Z'))).toBe('1/11/2026');
+    expect(formatGymDay(new Date('2026-01-12T18:00:00Z'))).toBe('January 12, 2026');
+  });
+
+  test('the new formatters also refuse unusable input', () => {
+    for (const input of [null, undefined, '', 'not-a-date']) {
+      expect(formatGymDateNumeric(input)).toBeNull();
+      expect(formatGymTimeOfDay(input)).toBeNull();
+      expect(formatGymClock24(input)).toBeNull();
+      expect(formatGymWeekday(input)).toBeNull();
+      expect(formatGymMonthDay(input)).toBeNull();
+      expect(formatGymStamp(input)).toBeNull();
+    }
   });
 });

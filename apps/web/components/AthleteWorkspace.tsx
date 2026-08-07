@@ -18,6 +18,7 @@ import TrainingCard, { type TrainingSession } from './TrainingCard';
 import { cx } from './uiStyles';
 import useGymSound from './useGymSound';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymStamp, formatGymTimeOfDay } from '@/src/lib/gymTime';
 
 type TabID = 'my-dashboard' | 'athlete-floor' | 'smart-goals' | 'tracks' | 'assessments' | 'bio-checkin' | 'drill-library' | 'rabbit-holes' | 'message-coach' | 'schedule-session' | 'shadow';
 type ReadinessLevel = 'GREEN' | 'YELLOW' | 'RED';
@@ -244,7 +245,7 @@ const PANEL_RAISED = 'mat-leather--raised rounded-[var(--r-lg)] p-[var(--s5)]';
 
 function formatDueTime(checkInAt: Date, offsetMinutes: number): string {
   const due = new Date(checkInAt.getTime() + offsetMinutes * 60000);
-  return due.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return formatGymTimeOfDay(due) ?? '';
 }
 
 function buildWorkoutFloorTasks({ readiness, checkInAt, activeGoal }: WorkoutBuildInput): FloorTask[] {
@@ -593,7 +594,7 @@ export default function AthleteWorkspace() {
   const { play } = useGymSound();
 
   const currentReadiness: ReadinessLevel = getReadinessLevel(readinessToTrain);
-  const checkInTime = activeSessionRecord ? new Date(activeSessionRecord.createdAt).toLocaleString() : null;
+  const checkInTime = activeSessionRecord ? formatGymStamp(activeSessionRecord.createdAt) : null;
   const notesDraft = checkInNotes.trim();
   const notesStored = notesDraft.length > 0 && notesDraft === activeSessionRecord?.checkInNote;
   const recentSessions = storedSessions.filter((session) => session.completed).slice(0, 5);

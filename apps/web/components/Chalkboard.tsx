@@ -10,6 +10,7 @@ import {
 } from './AnnouncementBanner';
 import { usePilotSession, type PilotSessionRole } from './usePilotSession';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymMonthDay, formatGymWeekday } from '@/src/lib/gymTime';
 
 /**
  * THE CHALKBOARD — the gym's own voice, in somebody's handwriting.
@@ -106,13 +107,13 @@ export function chalkDateLabel(value: string, now: Date = new Date()): string {
   if (days === 1) return 'yesterday';
   if (days < 7) {
     try {
-      return then.toLocaleDateString(undefined, { weekday: 'long' });
+      return formatGymWeekday(then) ?? '';
     } catch {
       return '';
     }
   }
   try {
-    return then.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    return formatGymMonthDay(then) ?? '';
   } catch {
     return '';
   }

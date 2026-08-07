@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymStamp } from '@/src/lib/gymTime';
 
 interface ComplianceViolation {
   violation_id: string;
@@ -264,7 +265,7 @@ export default function AdminComplianceCenterPage() {
                       <p className="t-body font-semibold text-[color:var(--bone-100)]">Athlete: {v.athlete_id}</p>
                       <p className="t-data">Rule: {v.rule_id}</p>
                       <p className="t-muted mt-[var(--s2)]">
-                        {new Date(v.created_at).toLocaleString()}
+                        {formatGymStamp(v.created_at)}
                       </p>
                       {v.description && <p className="t-body mt-[var(--s3)]">{v.description}</p>}
                     </div>

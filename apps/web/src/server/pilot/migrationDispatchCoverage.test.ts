@@ -122,6 +122,7 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     // wrong fails a rebuild at the first ALTER against a missing table.
     const at = (slug: string) => allList.indexOf(slug);
     for (const dependent of [
+      'research-triage-view',
       'shadow-evidence',
       'shadow-decision-loop',
       'shadow-chunk-embedding',

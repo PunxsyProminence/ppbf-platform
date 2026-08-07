@@ -28,9 +28,12 @@ export const GYM_TIME_ZONE = 'America/New_York';
  */
 const GYM_LOCALE = 'en-US';
 
-function parse(iso: string | null | undefined): Date | null {
-  if (!iso) return null;
-  const parsed = new Date(iso);
+/** Accepts an ISO string or a Date, because call sites have both. */
+export type GymTimeInput = string | number | Date | null | undefined;
+
+function parse(value: GymTimeInput): Date | null {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = value instanceof Date ? value : new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
@@ -48,9 +51,9 @@ const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
  * so any shift into a western zone lands on the day before, which is how a
  * session recorded for January 12 came to display as January 11.
  */
-export function formatGymDay(value: string | null | undefined): string | null {
+export function formatGymDay(value: GymTimeInput): string | null {
   if (!value) return null;
-  if (DATE_ONLY.test(value)) {
+  if (typeof value === 'string' && DATE_ONLY.test(value)) {
     const parsed = new Date(`${value}T00:00:00Z`);
     if (Number.isNaN(parsed.getTime())) return null;
     // Formatted in UTC deliberately: it was parsed as UTC midnight, so UTC is
@@ -66,7 +69,7 @@ export function formatGymDay(value: string | null | undefined): string | null {
 }
 
 /** "January 12, 2026" in the gym's timezone, or null if the input is unusable. */
-export function formatGymDate(iso: string | null | undefined): string | null {
+export function formatGymDate(iso: GymTimeInput): string | null {
   const parsed = parse(iso);
   if (!parsed) return null;
   return parsed.toLocaleDateString(GYM_LOCALE, {
@@ -78,7 +81,7 @@ export function formatGymDate(iso: string | null | undefined): string | null {
 }
 
 /** "Jan 12, 2026" -- the compact form, for tables and chips. */
-export function formatGymDateShort(iso: string | null | undefined): string | null {
+export function formatGymDateShort(iso: GymTimeInput): string | null {
   const parsed = parse(iso);
   if (!parsed) return null;
   return parsed.toLocaleDateString(GYM_LOCALE, {
@@ -90,7 +93,7 @@ export function formatGymDateShort(iso: string | null | undefined): string | nul
 }
 
 /** "January 12, 2026 at 7:30 PM" in the gym's timezone. */
-export function formatGymDateTime(iso: string | null | undefined): string | null {
+export function formatGymDateTime(iso: GymTimeInput): string | null {
   const parsed = parse(iso);
   if (!parsed) return null;
   const date = formatGymDate(iso);
@@ -141,4 +144,93 @@ export function formatGymDayShort(value: string | null | undefined): string | nu
     day: 'numeric',
     timeZone: GYM_TIME_ZONE,
   });
+}
+
+/**
+ * "3/8/2026" -- the numeric form, for dense tables. Replaces a bare
+ * `toLocaleDateString()`, which took both the locale AND the zone from the
+ * viewer's device.
+ */
+export function formatGymDateNumeric(value: GymTimeInput): string | null {
+  const parsed = parse(value);
+  if (!parsed) return null;
+  return parsed.toLocaleDateString(GYM_LOCALE, {
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    timeZone: GYM_TIME_ZONE,
+  });
+}
+
+/** "7:15 PM" at the gym. */
+export function formatGymTimeOfDay(value: GymTimeInput): string | null {
+  const parsed = parse(value);
+  if (!parsed) return null;
+  return parsed.toLocaleTimeString(GYM_LOCALE, {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: GYM_TIME_ZONE,
+  });
+}
+
+/**
+ * "19:15" or "19:15:04" at the gym -- the 24-hour form the SHADOW and research
+ * consoles use for log-style timestamps.
+ */
+export function formatGymClock24(value: GymTimeInput, options: { seconds?: boolean } = {}): string | null {
+  const parsed = parse(value);
+  if (!parsed) return null;
+  return parsed.toLocaleTimeString(GYM_LOCALE, {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    ...(options.seconds ? { second: '2-digit' as const } : {}),
+    timeZone: GYM_TIME_ZONE,
+  });
+}
+
+/** "Monday" at the gym. */
+export function formatGymWeekday(value: GymTimeInput): string | null {
+  const parsed = parse(value);
+  if (!parsed) return null;
+  return parsed.toLocaleDateString(GYM_LOCALE, { weekday: 'long', timeZone: GYM_TIME_ZONE });
+}
+
+/** "Mar 8" at the gym -- month and day, no year. */
+export function formatGymMonthDay(value: GymTimeInput): string | null {
+  const parsed = parse(value);
+  if (!parsed) return null;
+  return parsed.toLocaleDateString(GYM_LOCALE, {
+    month: 'short',
+    day: 'numeric',
+    timeZone: GYM_TIME_ZONE,
+  });
+}
+
+/**
+ * "March 8, 2026 at 7:15 PM" -- the full stamp used where a record's exact
+ * moment matters (uploads, check-ins, generated reports). Replaces a bare
+ * `toLocaleString()`.
+ */
+export function formatGymStamp(value: GymTimeInput): string | null {
+  const parsed = parse(value);
+  if (!parsed) return null;
+  const date = formatGymDate(parsed);
+  const time = formatGymTimeOfDay(parsed);
+  return date && time ? `${date} at ${time}` : null;
+}
+
+/**
+ * Escape hatch for call sites with a bespoke option set (weekday + time,
+ * month/day + hour, and so on). Pins the locale and the zone and lets the
+ * caller choose the rest -- the point is that neither of those two is ever the
+ * viewer's to decide.
+ */
+export function formatGymCustom(
+  value: GymTimeInput,
+  options: Intl.DateTimeFormatOptions,
+): string | null {
+  const parsed = parse(value);
+  if (!parsed) return null;
+  return parsed.toLocaleString(GYM_LOCALE, { ...options, timeZone: GYM_TIME_ZONE });
 }

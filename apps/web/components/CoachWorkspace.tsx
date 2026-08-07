@@ -8,6 +8,7 @@ import { CoachSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryP
 import ShadowChatButton from './ShadowChatButton';
 import { cx, ui } from './uiStyles';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymStamp } from '@/src/lib/gymTime';
 
 type TabID = 'dashboard' | 'floor' | 'athlete-floor-plans' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
 type SessionMode = 'Group' | 'One-on-One';
@@ -191,7 +192,7 @@ function painReportTime(value: string | null): string {
     return 'Not recorded';
   }
   const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+  return formatGymStamp(parsed) ?? value;
 }
 
 export default function CoachWorkspace() {
@@ -1278,7 +1279,7 @@ export default function CoachWorkspace() {
                         <div>
                           <p className="t-eyebrow">Individual Plan</p>
                           <h4 className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{plan.athleteName}</h4>
-                          <p className="t-muted">Generated {new Date(plan.generatedAt).toLocaleString()}</p>
+                          <p className="t-muted">Generated {formatGymStamp(plan.generatedAt)}</p>
                         </div>
                         <StatusBadge tone={readinessBadgeTone(plan.readiness)} label={plan.readiness} />
                       </div>

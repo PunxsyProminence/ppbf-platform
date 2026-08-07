@@ -7,6 +7,7 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import { getRoleSessionSnapshot } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
 import { DEFAULT_ACTIVATION_TTL_HOURS } from '@/src/server/pilot/activationPolicy';
+import { formatGymStamp } from '@/src/lib/gymTime';
 
 interface OutstandingActivationCodeItem {
   account_id: string;
@@ -170,7 +171,7 @@ function ActivationCodesConsoleContent() {
                           Issued by: {item.issued_by_account_id}
                         </p>
                         <p className="t-data mt-[var(--s1)] text-[color:var(--bone-400)]">
-                          Expires: {new Date(item.expires_at).toLocaleString()}
+                          Expires: {formatGymStamp(item.expires_at)}
                         </p>
                         <p className="mt-[var(--s2)]">
                           <span
