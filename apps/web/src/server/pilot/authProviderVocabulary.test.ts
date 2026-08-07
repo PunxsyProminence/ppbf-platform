@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { AUTH_PROVIDERS, isAuthProvider } from './authProviders';
+import { requiredCredentialFor } from './credentialPolicy';
 
 /**
  * The auth_provider vocabulary is declared in TypeScript and in SQL. These read
@@ -76,8 +77,6 @@ describe('auth_provider vocabulary stays in step across TypeScript and SQL', () 
   test('ppbf_local stays athlete-only, whatever else joins the vocabulary', () => {
     // Guards the property the whole credential model rests on: adding a
     // provider must never quietly turn ppbf_local into a general-purpose login.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { requiredCredentialFor } = require('./credentialPolicy');
     expect(requiredCredentialFor({ role: 'athlete' })).toBe('pin');
     expect(requiredCredentialFor({ role: 'coach' })).toBe('magic_link');
   });
