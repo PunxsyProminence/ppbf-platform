@@ -120,10 +120,22 @@ where organization_id not in (
 on conflict do nothing;
 
 -- #82: the training-hold gate. The hold state itself lives in
--- pilot.training_holds (see the training-holds migration); this row is the
--- per-org policy switch and the lesson text, read at class-registration
--- time. 'block' because it guards a pre-action; the no-override doctrine
--- of this matrix applies to it verbatim.
+-- pilot.training_holds (see the training-holds migration); this row exists
+-- so pilot.safety_gate_evaluations has an FK target to record blocked
+-- registration attempts against, and requirement_text carries the lesson
+-- shown on the gym's gate-configuration surface if one is ever built.
+--
+-- active_flag is DELIBERATELY NOT CONSULTED for this gate -- unlike
+-- contactClearanceGate.ts, which honors it as a per-org disable switch.
+-- A registration BLOCK is exactly the case the no-override doctrine of
+-- this matrix protects: whether a specific held athlete may register is
+-- decided entirely by pilot.training_holds, and a gym-wide toggle that
+-- silently stopped enforcing every hold in the organization is a design
+-- decision nobody has signed off on, not a builder's call to wire in.
+-- If a future ticket wants that toggle, it is an explicit, reviewed
+-- change to this comment and to the registration-time check together.
+-- 'block' because it guards a pre-action; refusing costs nothing the way
+-- refusing a post-action record would.
 insert into pilot.safety_gates (organization_id, gate_id, gate_key, name, category, enforcement, requirement_text, active_flag)
 select
   organization_id,

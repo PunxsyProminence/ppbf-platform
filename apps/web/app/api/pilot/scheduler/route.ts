@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, isOrganizationAdminRole } from '@/src/server/pilot/access';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
-import { recordSafetyGateEvaluation } from '@/src/server/pilot/safetyGateMatrix';
+import { getSafetyGateDefinition, recordSafetyGateEvaluation } from '@/src/server/pilot/safetyGateMatrix';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   bulkUpsertSchedulerAttendance,
@@ -389,19 +389,43 @@ export async function POST(request: NextRequest) {
       // athlete, and the lift condition is the teaching moment. The blocked
       // attempt is recorded as a gate evaluation (append-only fact), so
       // "how often is this child trying to come back" is answerable later.
+      //
+      // Same FK constraint contactClearanceGate.ts already documents:
+      // pilot.safety_gate_evaluations references (organization_id,
+      // gate_key) in pilot.safety_gates, and that gate row's own migration
+      // is a separate operator dispatch from the training-holds migration
+      // -- an org can have holds placeable before it has the gate row.
+      // Recording is therefore best-effort, gated on the row existing,
+      // exactly like contactClearanceGate's pattern: the refusal itself,
+      // and the explanation written for the athlete, must never depend on
+      // whether the evaluations table can accept the write.
       if (result.outcome === 'training_hold') {
-        await recordSafetyGateEvaluation({
-          organizationId: actor.organizationId,
-          gateKey: 'training_hold',
-          athleteId,
-          outcome: 'blocked',
-          reason: 'Class registration refused: active all-training hold',
-          evaluatedByAccountId: actor.accountId,
-          evaluatedByRole: actorRole,
-          contextId: classId,
-          metadata: { hold_id: result.holdId },
-          evaluatedAt: now,
-        });
+        // pilot.safety_gates ships in this same PR, so the whole table --
+        // not just the training_hold row -- may not exist yet either;
+        // guard the table-missing case the same way trainingHolds.ts does
+        // elsewhere, so a fully pre-migration deploy still returns the 403.
+        let gate = null;
+        try {
+          gate = await getSafetyGateDefinition(actor.organizationId, 'training_hold');
+        } catch (error) {
+          if ((error as { code?: unknown }).code !== '42P01') {
+            throw error;
+          }
+        }
+        if (gate) {
+          await recordSafetyGateEvaluation({
+            organizationId: actor.organizationId,
+            gateKey: 'training_hold',
+            athleteId,
+            outcome: 'blocked',
+            reason: 'Class registration refused: active all-training hold',
+            evaluatedByAccountId: actor.accountId,
+            evaluatedByRole: actorRole,
+            contextId: classId,
+            metadata: { hold_id: result.holdId },
+            evaluatedAt: now,
+          });
+        }
         return NextResponse.json(
           {
             error: 'Training hold: registration is paused for this athlete',

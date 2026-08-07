@@ -261,6 +261,29 @@ describe('POST place', () => {
     expect(response.status).toBe(400);
   });
 
+  // Not "any positive delta": the DB CHECK compares against placed_at,
+  // stamped by the database's own now() at insert time. A value that
+  // clears an app-clock check by a few milliseconds could still lose the
+  // race to a slow insert and hit the CHECK as a raw 500 instead of a
+  // clean 400 here.
+  test('an expires_at only seconds in the future is refused, not just a strictly-past one', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+    const response = await POST(
+      postRequest({ ...placeBody, expires_at: new Date(Date.now() + 5_000).toISOString() }),
+    );
+    expect(response.status).toBe(400);
+    expect(mockPlace).not.toHaveBeenCalled();
+  });
+
+  test('an expires_at safely past the buffer is accepted', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+    mockPlace.mockResolvedValueOnce(FULL_HOLD);
+    const response = await POST(
+      postRequest({ ...placeBody, expires_at: new Date(Date.now() + 3_600_000).toISOString() }),
+    );
+    expect(response.status).toBe(200);
+  });
+
   test('athletes and parents cannot place holds', async () => {
     for (const role of ['athlete', 'parent', 'board']) {
       mockRequirePrincipal.mockResolvedValueOnce(principal(role));
@@ -277,6 +300,34 @@ describe('POST place', () => {
     const response = await POST(postRequest(placeBody));
 
     expect(response.status).toBe(409);
+  });
+
+  // THE deploy-window fix: the audit-vocabulary migration is already
+  // applied in real environments and this PR widens it in place, so an
+  // operator must re-dispatch it after deploy. If code lands first, the
+  // audit write hits the OLD constraint -- but the hold has already
+  // committed (placeTrainingHold resolved), so a 500 here would tell a
+  // coach their safety action failed when the child is in fact held.
+  test('a failing audit write does not fail the request -- the hold already committed', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockPlace.mockResolvedValueOnce(FULL_HOLD);
+      mockAudit.mockRejectedValueOnce(
+        Object.assign(new Error('new row for relation "audit_events" violates check constraint'), { code: '23514' }),
+      );
+
+      const response = await POST(postRequest(placeBody));
+      const payload = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(payload).toEqual({ ok: true, hold: FULL_HOLD });
+      expect(consoleError).toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'training-hold-audit-write-failed', code: '23514' }),
+      );
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 });
 
@@ -329,6 +380,29 @@ describe('POST lift', () => {
     const response = await POST(postRequest({ action: 'lift', hold_id: 'hold-1' }));
 
     expect(response.status).toBe(400);
+  });
+
+  test('a failing audit write does not fail the lift -- the hold is already lifted', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('admin'));
+      mockGetById.mockResolvedValueOnce(FULL_HOLD);
+      mockLift.mockResolvedValueOnce({ ...FULL_HOLD, status: 'lifted' });
+      mockAudit.mockRejectedValueOnce(
+        Object.assign(new Error('new row for relation "audit_events" violates check constraint'), { code: '23514' }),
+      );
+
+      const response = await POST(postRequest({ action: 'lift', hold_id: 'hold-1' }));
+      const payload = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(payload.hold).toMatchObject({ status: 'lifted' });
+      expect(consoleError).toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'training-hold-audit-write-failed', code: '23514' }),
+      );
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 });
 

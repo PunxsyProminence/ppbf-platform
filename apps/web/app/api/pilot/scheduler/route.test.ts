@@ -37,6 +37,7 @@ jest.mock('@/src/server/pilot/db', () => ({
 
 jest.mock('@/src/server/pilot/safetyGateMatrix', () => ({
   recordSafetyGateEvaluation: jest.fn().mockResolvedValue({ evaluation_id: 'eval-1' }),
+  getSafetyGateDefinition: jest.fn().mockResolvedValue({ gate_id: 'gate-1', gate_key: 'training_hold', active_flag: true }),
 }));
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
@@ -160,6 +161,57 @@ describe('POST /api/pilot/scheduler register_class', () => {
     expect(recordSafetyGateEvaluation).toHaveBeenCalledWith(
       expect.objectContaining({ gateKey: 'training_hold', outcome: 'blocked', metadata: { hold_id: 'hold-1' } }),
     );
+  });
+
+  // The gate-matrix migration is a separate operator dispatch from the
+  // training-holds migration -- an org can have holds placeable before it
+  // has the 'training_hold' gate row. The refusal (and the explanation
+  // written FOR the athlete) must never depend on the evaluations table
+  // accepting the write: without this, the FK violation on a missing gate
+  // row would mask the intended 403 as a 500 that eats the explanation.
+  test('the 403 still returns, with the explanation, when the gate row does not exist yet', async () => {
+    const { getSafetyGateDefinition, recordSafetyGateEvaluation } = jest.requireMock(
+      '@/src/server/pilot/safetyGateMatrix',
+    ) as { getSafetyGateDefinition: jest.Mock; recordSafetyGateEvaluation: jest.Mock };
+    getSafetyGateDefinition.mockResolvedValueOnce(null);
+    mockRequirePrincipal.mockResolvedValueOnce(athletePrincipal());
+    mockRegister.mockResolvedValueOnce({
+      outcome: 'training_hold',
+      holdId: 'hold-1',
+      athleteExplanation: 'We are giving your head time to heal.',
+      liftConditionText: 'A doctor says you are ready.',
+    });
+
+    const res = await POST(registerRequest());
+    const payload = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(payload.athlete_explanation).toBe('We are giving your head time to heal.');
+    expect(recordSafetyGateEvaluation).not.toHaveBeenCalled();
+  });
+
+  // A fully pre-migration deploy may lack pilot.safety_gates entirely, not
+  // just the training_hold row -- the lookup itself throws 42P01, and that
+  // must degrade the same way as a missing row: still a 403, never a 500.
+  test('the 403 still returns when the whole safety_gates table is missing', async () => {
+    const { getSafetyGateDefinition, recordSafetyGateEvaluation } = jest.requireMock(
+      '@/src/server/pilot/safetyGateMatrix',
+    ) as { getSafetyGateDefinition: jest.Mock; recordSafetyGateEvaluation: jest.Mock };
+    getSafetyGateDefinition.mockRejectedValueOnce(
+      Object.assign(new Error('relation "pilot.safety_gates" does not exist'), { code: '42P01' }),
+    );
+    mockRequirePrincipal.mockResolvedValueOnce(athletePrincipal());
+    mockRegister.mockResolvedValueOnce({
+      outcome: 'training_hold',
+      holdId: 'hold-1',
+      athleteExplanation: 'We are giving your head time to heal.',
+      liftConditionText: 'A doctor says you are ready.',
+    });
+
+    const res = await POST(registerRequest());
+
+    expect(res.status).toBe(403);
+    expect(recordSafetyGateEvaluation).not.toHaveBeenCalled();
   });
 });
 

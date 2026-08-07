@@ -34,9 +34,26 @@ jest.mock('./db', () => ({
     const result = await activeClient.query(text, params);
     return result.rows[0] ?? null;
   }),
+  // A REAL BEGIN/COMMIT/ROLLBACK, not a passthrough: an earlier version of
+  // this mock ran each client.query call as its own independent autocommit
+  // statement, which cannot reproduce Postgres's aborted-transaction
+  // semantics (SQLSTATE 25P02) -- the exact thing the SAVEPOINT fix in
+  // findRegistrationBlockingHold exists to survive, and the exact thing a
+  // mock without a real BEGIN cannot prove either broken or fixed. It also
+  // could not prove "the hold and its escalation commit or roll back
+  // together", since without one transaction there is nothing to roll back.
   withTransaction: jest.fn(async (fn: (client: unknown) => Promise<unknown>) => {
     if (!activeClient) throw new Error('test bug: no active embedded client');
-    return fn({ query: (text: string, values: unknown[]) => activeClient!.query(text, values) });
+    const client = activeClient;
+    await client.query('BEGIN');
+    try {
+      const result = await fn({ query: (text: string, values: unknown[]) => client.query(text, values) });
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw error;
+    }
   }),
 }));
 
@@ -264,6 +281,31 @@ describe('the real hold lifecycle against real rows (#82 acceptance)', () => {
     }
   });
 
+  // Property 1 is an ATOMICITY claim ("commit or roll back together"), and
+  // the happy-path lifecycle test above only proves both rows exist after
+  // a SUCCESSFUL placement -- it cannot distinguish "one transaction" from
+  // "two statements that both happened to succeed". Dropping
+  // safety_escalations mid-placement forces the escalation insert to fail
+  // after the hold insert has already run on the same connection; if the
+  // hold and its escalation are not truly one transaction, the hold row
+  // would survive this failure and leave a paused athlete with no alarm.
+  test('a failure filing the escalation rolls back the hold too -- they are one transaction, not two', async () => {
+    const client = await freshDatabase('ppbf_test_holds_atomicity', { dropHoldsTableFirst: true, applyIncrement: true });
+    activeClient = client;
+    try {
+      await client.query('drop table pilot.safety_escalations cascade');
+
+      await expect(placeTrainingHold(placeInput())).rejects.toThrow(
+        /relation "pilot.safety_escalations" does not exist/,
+      );
+
+      const { rows } = await client.query('select 1 from pilot.training_holds where organization_id = $1', [ORG_ID]);
+      expect(rows).toHaveLength(0);
+    } finally {
+      await client.end();
+    }
+  });
+
   test('a scoped (REGRESS) hold does not block registration, and flags contact instead', async () => {
     const client = await freshDatabase('ppbf_test_holds_scoped', { dropHoldsTableFirst: true, applyIncrement: true });
     activeClient = client;
@@ -322,8 +364,8 @@ describe('the real hold lifecycle against real rows (#82 acceptance)', () => {
     }
   });
 
-  test('re-lifting is an Unsupported transition, and an expired hold stops mattering at read time', async () => {
-    const client = await freshDatabase('ppbf_test_holds_transitions', { dropHoldsTableFirst: true, applyIncrement: true });
+  test('re-lifting is an Unsupported transition', async () => {
+    const client = await freshDatabase('ppbf_test_holds_relift', { dropHoldsTableFirst: true, applyIncrement: true });
     activeClient = client;
     try {
       const placed = await placeTrainingHold(placeInput());
@@ -337,16 +379,77 @@ describe('the real hold lifecycle against real rows (#82 acceptance)', () => {
         [placed.hold_id],
       );
       expect(rows[0]).toEqual({ lifted_by_account_id: ADMIN_ID, lift_note: 'Cleared.' });
+    } finally {
+      await client.end();
+    }
+  });
 
-      // A hold whose clock ran out: status still 'active', but every read
-      // excludes it -- expiry needs no cron.
+  // A hold whose clock ran out is stored exactly as if a lift had never
+  // happened -- status='active', lifted_by_account_id null -- until
+  // something sweeps it. These four assertions are the pg-level proof for
+  // properties the module doc claims and a unit mock cannot verify against
+  // real rows: (1) every read excludes it, (2) reading it ALSO writes
+  // status='expired' into storage (not merely a read-time predicate), (3)
+  // placing a new hold for the same athlete succeeds because the sweep
+  // frees the partial unique index's slot, (4) attempting to lift the
+  // lapsed hold throws Unsupported transition -- it can never be stamped
+  // with a fresh lifted_by_account_id/lifted_at for an action nobody took.
+  test('an expired hold is swept to status=expired in storage, frees the slot for a new hold, and cannot be lifted', async () => {
+    const client = await freshDatabase('ppbf_test_holds_expiry', { dropHoldsTableFirst: true, applyIncrement: true });
+    activeClient = client;
+    try {
       await client.query(
         `insert into pilot.training_holds (organization_id, hold_id, athlete_id, scope, reason_category, athlete_explanation, placed_by_account_id, placed_by_role, placed_at, expires_at)
          values ($1, 'hold-expired', $2, 'all_training', 'other', 'x', $3, 'admin', now() - interval '2 days', now() - interval '1 day')`,
         [ORG_ID, ATHLETE_ID, ADMIN_ID],
       );
+
+      // (1) + (2): reading the athlete's active hold excludes it AND
+      // sweeps it to 'expired' in storage.
       await expect(getActiveTrainingHold(ORG_ID, ATHLETE_ID)).resolves.toBeNull();
+      const swept = await client.query(
+        `select status, lifted_by_account_id, lifted_at from pilot.training_holds where hold_id = 'hold-expired'`,
+      );
+      expect(swept.rows[0]).toEqual({ status: 'expired', lifted_by_account_id: null, lifted_at: null });
+
       await expect(findRegistrationBlockingHold(ORG_ID, ATHLETE_ID)).resolves.toBeNull();
+
+      // (4): lifting the (already-swept) expired hold is refused, not a
+      // silent re-attribution.
+      await expect(liftTrainingHold(ORG_ID, 'hold-expired', ADMIN_ID, 'too late')).rejects.toThrow(
+        "Unsupported transition: hold is 'expired' and cannot be lifted",
+      );
+      const stillUnlifted = await client.query(
+        `select lifted_by_account_id from pilot.training_holds where hold_id = 'hold-expired'`,
+      );
+      expect(stillUnlifted.rows[0]).toEqual({ lifted_by_account_id: null });
+
+      // (3): placing a new hold succeeds -- the sweep already freed the
+      // partial unique index's slot.
+      const placed = await placeTrainingHold(placeInput());
+      expect(placed.status).toBe('active');
+    } finally {
+      await client.end();
+    }
+  });
+
+  // The same lift-time sweep proof, but reached WITHOUT a prior read
+  // having already swept the row -- liftTrainingHold's own guarded UPDATE
+  // must carry the expiry predicate itself, not rely on some other call
+  // having run first.
+  test('lifting a hold that has never been read first still refuses instead of re-attributing an expiry', async () => {
+    const client = await freshDatabase('ppbf_test_holds_lift_unswept', { dropHoldsTableFirst: true, applyIncrement: true });
+    activeClient = client;
+    try {
+      await client.query(
+        `insert into pilot.training_holds (organization_id, hold_id, athlete_id, scope, reason_category, athlete_explanation, placed_by_account_id, placed_by_role, placed_at, expires_at)
+         values ($1, 'hold-unswept', $2, 'all_training', 'other', 'x', $3, 'admin', now() - interval '2 days', now() - interval '1 day')`,
+        [ORG_ID, ATHLETE_ID, ADMIN_ID],
+      );
+
+      await expect(liftTrainingHold(ORG_ID, 'hold-unswept', ADMIN_ID, '')).rejects.toThrow(
+        "Unsupported transition: hold is 'expired' and cannot be lifted",
+      );
     } finally {
       await client.end();
     }

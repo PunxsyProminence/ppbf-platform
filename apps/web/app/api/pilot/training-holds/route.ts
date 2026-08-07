@@ -6,6 +6,7 @@ import {
   isOrganizationAdminRole,
 } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { sanitizedSqlState } from '@/src/server/pilot/db';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
@@ -59,6 +60,36 @@ function athleteFacing(hold: TrainingHoldRow): AthleteFacingHold {
 
 function isStaff(role: string): boolean {
   return role === 'coach' || isOrganizationAdminRole(role as never);
+}
+
+/**
+ * The hold row (and its same-transaction escalation) is the durable
+ * record of a safety action -- placeTrainingHold/liftTrainingHold have
+ * already committed by the time this runs. The audit event is a SEPARATE
+ * write on the platform's shared vocabulary table, which this commit
+ * widens in place; in real environments that widening migration is
+ * already applied under the OLD vocabulary, and an operator must
+ * re-dispatch it after deploy. If code lands before that re-dispatch, an
+ * uncaught audit-write failure here would 500 a request whose safety
+ * action already succeeded -- the coach believes placing/lifting the hold
+ * FAILED when the child is in fact held (or freed), and a retry then hits
+ * a misleading 409/400 instead of the truth. Logged and swallowed instead:
+ * the hold's own state is authoritative, and a lost audit row is a gap an
+ * operator can close by re-dispatching, not a reason to misreport a
+ * committed safety action as failed.
+ */
+async function auditHoldEvent(event: Parameters<typeof writePilotAuditEvent>[0]): Promise<void> {
+  try {
+    await writePilotAuditEvent(event);
+  } catch (error) {
+    const rawCode = error && typeof error === 'object' && 'code' in error ? (error as { code: unknown }).code : undefined;
+    const code = sanitizedSqlState(rawCode);
+    console.error({
+      event: 'training-hold-audit-write-failed',
+      hold_event_type: event.event_type,
+      ...(code ? { code } : {}),
+    });
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -163,8 +194,15 @@ export async function POST(request: NextRequest) {
         if (typeof body.expires_at !== 'string' || Number.isNaN(Date.parse(body.expires_at))) {
           throw new Error('Unsupported expires_at: must be an ISO timestamp');
         }
-        if (Date.parse(body.expires_at) <= Date.now()) {
-          throw new Error('Unsupported expires_at: must be in the future');
+        // A minute of headroom, not "any positive delta": the database
+        // CHECK compares against placed_at, which is stamped by the DB's
+        // own now() at insert time -- a value that clears this app-clock
+        // check by a few milliseconds could still arrive at the insert
+        // after the DB's clock has caught up to it, turning an accepted
+        // request into a raw constraint-violation 500.
+        const MIN_LEAD_MS = 60_000;
+        if (Date.parse(body.expires_at) <= Date.now() + MIN_LEAD_MS) {
+          throw new Error('Unsupported expires_at: must be at least a minute in the future');
         }
         expiresAt = new Date(body.expires_at).toISOString();
       }
@@ -188,7 +226,7 @@ export async function POST(request: NextRequest) {
         expiresAt,
       });
 
-      await writePilotAuditEvent({
+      await auditHoldEvent({
         event_type: 'safety_hold_placed',
         actor_account_id: principal.accountId,
         actor_role: principal.role,
@@ -226,7 +264,7 @@ export async function POST(request: NextRequest) {
       const lifted = await liftTrainingHold(principal.organizationId, holdId, principal.accountId, liftNote);
       if (!lifted) throw new Error('Missing hold record');
 
-      await writePilotAuditEvent({
+      await auditHoldEvent({
         event_type: 'safety_hold_lifted',
         actor_account_id: principal.accountId,
         actor_role: principal.role,
