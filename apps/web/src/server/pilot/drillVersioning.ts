@@ -227,6 +227,19 @@ export async function adoptDrillChangeProposal(input: {
     // version other than the one they were written against could silently
     // discard whatever the intervening change did, so a stale proposal is
     // refused outright rather than guessed at.
+    //
+    // This `for update` lock does NOT by itself guarantee a clean refusal
+    // under genuine concurrency: if two adopts on the same lineage are both
+    // blocked on this row, Postgres re-checks the SAME physical row via
+    // EvalPlanQual when the first commits, rather than re-running the
+    // ORDER BY/LIMIT -- so the second transaction can still read back a
+    // now-superseded row whose drill_id happens to still match
+    // based_on_drill_id, and only discover the conflict when its own
+    // INSERT collides with pilot_drills_lineage_version_uq below. Either
+    // way only one adopt ever survives (data integrity holds), but the
+    // catch below is what turns that into the same clean, catchable error
+    // this staleness check exists to produce, instead of a raw constraint
+    // violation reaching the caller.
     const currentResult = await client.query<PilotDrillVersionRow>(
       `select ${DRILL_VERSION_FIELDS}
        from pilot.drills
@@ -271,25 +284,42 @@ export async function adoptDrillChangeProposal(input: {
       [input.organizationId, current.drill_id],
     );
 
-    const insertResult = await client.query<PilotDrillVersionRow>(
-      `insert into pilot.drills
-         (organization_id, drill_id, name, category, focus, cues, difficulty, active,
-          version, lineage_id, supersedes_drill_id)
-       values ($1,$2,$3,$4,$5,$6::text[],$7,true,$8,$9,$10)
-       returning ${DRILL_VERSION_FIELDS}`,
-      [
-        input.organizationId,
-        newDrillId,
-        merged.name,
-        merged.category,
-        merged.focus,
-        merged.cues,
-        merged.difficulty,
-        current.version + 1,
-        current.lineage_id,
-        current.drill_id,
-      ],
-    );
+    let insertResult;
+    try {
+      insertResult = await client.query<PilotDrillVersionRow>(
+        `insert into pilot.drills
+           (organization_id, drill_id, name, category, focus, cues, difficulty, active,
+            version, lineage_id, supersedes_drill_id)
+         values ($1,$2,$3,$4,$5,$6::text[],$7,true,$8,$9,$10)
+         returning ${DRILL_VERSION_FIELDS}`,
+        [
+          input.organizationId,
+          newDrillId,
+          merged.name,
+          merged.category,
+          merged.focus,
+          merged.cues,
+          merged.difficulty,
+          current.version + 1,
+          current.lineage_id,
+          current.drill_id,
+        ],
+      );
+    } catch (error) {
+      // See the staleness comment above: under genuine concurrency this is
+      // the SAME situation the based_on_drill_id check above exists to
+      // catch, just discovered one statement later because the lock query
+      // read back a row EvalPlanQual re-validated rather than re-selected.
+      // Translated to the same error the caller already knows how to
+      // handle, matching drills.ts's own isDrillNameCollision pattern for
+      // turning a specific constraint violation into a domain error rather
+      // than a raw Postgres one.
+      const { code, constraint } = (error ?? {}) as { code?: unknown; constraint?: unknown };
+      if (code === '23505' && constraint === 'pilot_drills_lineage_version_uq') {
+        throw new Error('DRILL_CHANGE_PROPOSAL_STALE_BASE_VERSION');
+      }
+      throw error;
+    }
     const newDrillVersion = insertResult.rows[0];
 
     await client.query(

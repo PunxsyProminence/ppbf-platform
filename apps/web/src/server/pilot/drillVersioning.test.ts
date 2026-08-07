@@ -113,10 +113,12 @@ describe('proposeDrillChange', () => {
   });
 
   test('inherits the base drill lineage_id, not its own generated id', async () => {
+    // The INSERT ... RETURNING goes through queryOne (it always returns
+    // zero-or-one row), not query -- proposeDrillChange calls queryOne
+    // twice: once for the base drill lookup, once for the insert.
     mockQueryOne
       .mockResolvedValueOnce(drillRow({ lineage_id: 'lineage-original' }))
       .mockResolvedValueOnce(proposalRow({ lineage_id: 'lineage-original' }));
-    mockQuery.mockResolvedValueOnce([proposalRow({ lineage_id: 'lineage-original' })]);
 
     await proposeDrillChange({
       organizationId: 'org-1',
@@ -127,7 +129,7 @@ describe('proposeDrillChange', () => {
       observationNoteIds: ['00000000-0000-0000-0000-000000000001'],
     });
 
-    const [, params] = mockQuery.mock.calls[0];
+    const [, params] = mockQueryOne.mock.calls[1];
     expect(params[2]).toBe('lineage-original');
     expect(params[3]).toBe('drill-1');
   });
@@ -193,7 +195,10 @@ describe('adoptDrillChangeProposal', () => {
     });
     const adoptedProposal = proposalRow({ review_state: 'adopted', resulting_drill_id: 'drill-2' });
 
-    const client = fakeClient([proposal], [current], [newVersion], [], [adoptedProposal]);
+    // 6 statements in order: select proposal, select current lineage row,
+    // deactivate v1 (no RETURNING), insert v2, restamp v1's
+    // superseded_by_drill_id (no RETURNING), update the proposal.
+    const client = fakeClient([proposal], [current], [], [newVersion], [], [adoptedProposal]);
     mockWithTransaction.mockImplementationOnce((fn) => fn(client));
 
     const result = await adoptDrillChangeProposal({
@@ -207,7 +212,7 @@ describe('adoptDrillChangeProposal', () => {
     expect(result.newDrillVersion.version).toBe(2);
     expect(result.proposal.review_state).toBe('adopted');
 
-    const insertCall = client.query.mock.calls[2];
+    const insertCall = client.query.mock.calls[3];
     expect(insertCall[0]).toContain('insert into pilot.drills');
     expect(insertCall[1]).toEqual([
       'org-1',
@@ -251,6 +256,57 @@ describe('adoptDrillChangeProposal', () => {
     ).rejects.toThrow('DRILL_CHANGE_PROPOSAL_ALREADY_DECLINED');
   });
 
+  // The `for update` lock on the lineage's current-latest-version row does
+  // not guarantee a clean staleness refusal under genuine concurrency: a
+  // second transaction blocked on that row can be handed back the SAME
+  // physical row (now superseded) once the first commits, rather than a
+  // freshly re-selected one -- see the comment in adoptDrillChangeProposal.
+  // Its drill_id is unchanged, so the based_on_drill_id check above passes,
+  // and the conflict only surfaces here, as a unique-violation on the v2
+  // insert. This must be translated to the same clean error, not leaked as
+  // a raw Postgres constraint violation.
+  test('translates a lineage-version race lost at the insert into the same clean staleness error', async () => {
+    const proposal = proposalRow();
+    const current = drillRow();
+    // [proposal], [current], then an empty resolved response for the
+    // deactivate-v1 UPDATE that runs before the insert, before the insert
+    // itself is made to reject below.
+    const client = fakeClient([proposal], [current], []);
+    client.query.mockRejectedValueOnce(
+      Object.assign(new Error('duplicate key value violates unique constraint'), {
+        code: '23505',
+        constraint: 'pilot_drills_lineage_version_uq',
+      }),
+    );
+    mockWithTransaction.mockImplementationOnce((fn) => fn(client));
+
+    await expect(
+      adoptDrillChangeProposal({
+        organizationId: 'org-1',
+        proposalId: 'propchg-1',
+        reviewedByAccountId: 'acct-admin-1',
+        reviewedByRole: 'organization_admin',
+      }),
+    ).rejects.toThrow('DRILL_CHANGE_PROPOSAL_STALE_BASE_VERSION');
+  });
+
+  test('any other database failure during the insert is left alone', async () => {
+    const proposal = proposalRow();
+    const current = drillRow();
+    const client = fakeClient([proposal], [current], []);
+    client.query.mockRejectedValueOnce(Object.assign(new Error('connection terminated'), { code: '57P01' }));
+    mockWithTransaction.mockImplementationOnce((fn) => fn(client));
+
+    await expect(
+      adoptDrillChangeProposal({
+        organizationId: 'org-1',
+        proposalId: 'propchg-1',
+        reviewedByAccountId: 'acct-admin-1',
+        reviewedByRole: 'organization_admin',
+      }),
+    ).rejects.not.toThrow('DRILL_CHANGE_PROPOSAL_STALE_BASE_VERSION');
+  });
+
   test('refuses when the lineage the proposal targets has no drill at all', async () => {
     const client = fakeClient([proposalRow()], []);
     mockWithTransaction.mockImplementationOnce((fn) => fn(client));
@@ -289,7 +345,9 @@ describe('adoptDrillChangeProposal', () => {
     const proposal = proposalRow({ proposed_change: { name: 'New Name', active: false, version: 99 } });
     const current = drillRow();
     const newVersion = drillRow({ drill_id: 'drill-2', version: 2, name: 'New Name' });
-    const client = fakeClient([proposal], [current], [newVersion], [], [proposalRow({ review_state: 'adopted' })]);
+    const client = fakeClient(
+      [proposal], [current], [], [newVersion], [], [proposalRow({ review_state: 'adopted' })],
+    );
     mockWithTransaction.mockImplementationOnce((fn) => fn(client));
 
     await adoptDrillChangeProposal({
@@ -299,7 +357,7 @@ describe('adoptDrillChangeProposal', () => {
       reviewedByRole: 'organization_admin',
     });
 
-    const insertCall = client.query.mock.calls[2];
+    const insertCall = client.query.mock.calls[3];
     // active is always true (position 6) and version is always current+1
     // (position 7), regardless of what proposed_change tried to set them to.
     expect(insertCall[1][2]).toBe('New Name');

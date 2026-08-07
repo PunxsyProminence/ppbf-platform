@@ -3,7 +3,7 @@
 // pilot.drill_version_outcomes) and for drillVersioning.ts's server functions
 // running against a real transaction.
 //
-// Six things need proving, and none can be proven by reading SQL or by a
+// Seven things need proving, and none can be proven by reading SQL or by a
 // mocked-query unit test:
 //
 // 1. Adopting a proposal produces v2, deactivates v1, and both share
@@ -23,6 +23,24 @@
 // 6. The runner's readiness check actually fails when the migration did not
 //    land, when the partial unique index is still total, or when the
 //    lineage-defaulting trigger is missing.
+// 7. Two GENUINELY concurrent adopts on the same lineage -- on two separate
+//    real connections, actually contending for the same row lock, not two
+//    sequential calls dressed up as concurrent -- still leave exactly one
+//    surviving v2 and turn the loser into a clean, catchable error rather
+//    than a raw Postgres constraint violation. A prior version of this
+//    module's lock comment claimed the `for update` lock on its own made
+//    this a clean refusal; a review with a real two-connection reproduction
+//    found Postgres's EvalPlanQual re-check can hand the second transaction
+//    back the SAME (now-superseded) row instead of a re-selected one,
+//    surfacing the conflict one statement later, at the v2 INSERT, as
+//    `duplicate key value violates unique constraint
+//    "pilot_drills_lineage_version_uq"` -- not the intended
+//    DRILL_CHANGE_PROPOSAL_STALE_BASE_VERSION. Fixed by catching that
+//    specific violation and translating it, matching drills.ts's own
+//    pattern for turning a unique-constraint violation into a domain error.
+//    This is why withTransaction is mocked to open a FRESH connection per
+//    call rather than reusing one shared client -- see the mock's own
+//    comment below.
 //
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
@@ -38,11 +56,17 @@ import { pathToFileURL } from 'node:url';
 
 import { Client } from 'pg';
 
-// Routes drillVersioning.ts's query/queryOne/withTransaction into whichever
-// embedded database the current test opened, so adoptDrillChangeProposal's
-// locking, staleness check and rollback-on-error run as real SQL against a
-// real transaction rather than a stand-in.
+// Routes drillVersioning.ts's query/queryOne into whichever embedded
+// database the current test opened. withTransaction is different: it opens
+// its OWN fresh connection per call (mirroring db.ts's real
+// pool.connect()-per-call behavior), not activeClient, specifically so two
+// concurrent adoptDrillChangeProposal calls in the same test genuinely race
+// for the same row lock on two independent connections, the way two
+// concurrent requests would in production -- reusing one shared connection
+// would serialize them through Node's single-threaded query queue and could
+// never reproduce the lock-contention behavior this file tests for.
 let activeClient: Client | null = null;
+let activeConnectionString: string | null = null;
 
 jest.mock('./db', () => ({
   query: jest.fn(async (text: string, params: unknown[] = []) => {
@@ -56,16 +80,21 @@ jest.mock('./db', () => ({
     return result.rows[0] ?? null;
   }),
   withTransaction: jest.fn(async (fn: (client: unknown) => Promise<unknown>) => {
-    if (!activeClient) throw new Error('test bug: no active embedded client');
-    const client = activeClient;
-    await client.query('BEGIN');
+    if (!activeConnectionString) throw new Error('test bug: no active embedded database');
+    const client = new Client({ connectionString: activeConnectionString });
+    await client.connect();
     try {
-      const result = await fn({ query: (text: string, values: unknown[]) => client.query(text, values) });
-      await client.query('COMMIT');
-      return result;
-    } catch (error) {
-      await client.query('ROLLBACK').catch(() => {});
-      throw error;
+      await client.query('BEGIN');
+      try {
+        const result = await fn({ query: (text: string, values: unknown[]) => client.query(text, values) });
+        await client.query('COMMIT');
+        return result;
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw error;
+      }
+    } finally {
+      await client.end();
     }
   }),
 }));
@@ -171,6 +200,8 @@ async function freshDatabase(name: string): Promise<Client> {
      values ($1, 'organization_admin', $2, 'microsoft') on conflict do nothing`,
     [ADMIN_A, ORG_A],
   );
+
+  activeConnectionString = connectionStringFor(name);
   return client;
 }
 
@@ -621,6 +652,82 @@ describe('drillVersioning.ts against real Postgres', () => {
 
       const lineage = await getDrillLineage(ORG_A, 'drill-jab');
       expect(lineage).toHaveLength(2);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  // GENUINE concurrency, not two sequential calls: both adopts are launched
+  // together via Promise.allSettled, each on its own real connection (see
+  // the withTransaction mock above), so they actually contend for the same
+  // `for update` row lock on drill-jab's current-latest-version row --
+  // exactly the scenario this file's header describes. Regardless of which
+  // one wins the lock race, or whether the loser's staleness check trips
+  // before or after its own INSERT, exactly one adoption must survive and
+  // the other must fail with the clean DRILL_CHANGE_PROPOSAL_STALE_BASE_VERSION
+  // error -- never a raw Postgres constraint-violation message reaching the
+  // caller, and never two v2 rows.
+  test('two genuinely concurrent adopts on the same lineage: exactly one survives, the other fails cleanly', async () => {
+    const client = await freshDatabase('ppbf_test_drillver_real_race');
+    activeClient = client;
+    try {
+      await applyMigrationTransaction(client, versioningMigrationSql);
+      await insertDrill(client, { drillId: 'drill-jab', name: 'Straight Jab Retraction Snap' });
+
+      const proposalOne = await proposeDrillChange({
+        organizationId: ORG_A,
+        basedOnDrillId: 'drill-jab',
+        proposedByAccountId: COACH_A,
+        proposedByRole: 'coach',
+        rationale: 'First coach noticed guard drop.',
+        proposedChange: { focus: 'Updated focus from coach one.' },
+      });
+      const proposalTwo = await proposeDrillChange({
+        organizationId: ORG_A,
+        basedOnDrillId: 'drill-jab',
+        proposedByAccountId: COACH_A,
+        proposedByRole: 'coach',
+        rationale: 'Second coach noticed the same thing independently.',
+        proposedChange: { focus: 'Updated focus from coach two.' },
+      });
+
+      const [resultOne, resultTwo] = await Promise.allSettled([
+        adoptDrillChangeProposal({
+          organizationId: ORG_A,
+          proposalId: proposalOne.proposal_id,
+          reviewedByAccountId: ADMIN_A,
+          reviewedByRole: 'organization_admin',
+        }),
+        adoptDrillChangeProposal({
+          organizationId: ORG_A,
+          proposalId: proposalTwo.proposal_id,
+          reviewedByAccountId: ADMIN_A,
+          reviewedByRole: 'organization_admin',
+        }),
+      ]);
+
+      const outcomes = [resultOne, resultTwo];
+      const fulfilled = outcomes.filter((r) => r.status === 'fulfilled');
+      const rejected = outcomes.filter((r) => r.status === 'rejected');
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      // Never the raw Postgres constraint-violation message -- always the
+      // same clean, catchable error the sequential staleness test above
+      // asserts on.
+      const rejectedReason = (rejected[0] as PromiseRejectedResult).reason as Error;
+      expect(rejectedReason.message).toBe('DRILL_CHANGE_PROPOSAL_STALE_BASE_VERSION');
+
+      const lineage = await getDrillLineage(ORG_A, 'drill-jab');
+      expect(lineage).toHaveLength(2);
+      expect(lineage.filter((row) => row.version === 2)).toHaveLength(1);
+      expect(lineage.find((row) => row.version === 1)?.active).toBe(false);
+
+      const proposals = await listDrillChangeProposals(ORG_A, { lineageId: 'drill-jab' });
+      const adopted = proposals.filter((row) => row.review_state === 'adopted');
+      const stillProposed = proposals.filter((row) => row.review_state === 'proposed');
+      expect(adopted).toHaveLength(1);
+      expect(stillProposed).toHaveLength(1);
     } finally {
       activeClient = null;
       await client.end();
