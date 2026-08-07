@@ -119,6 +119,16 @@ audit events on grant/revoke, the base-schema copy of the table, and a
 real-Postgres acceptance suite (`coachCoverage.pg.test.ts`) retargeted to
 the merged column names. The T-002 row above is Lane A's, unmodified.
 
+**Follow-up closed 2026-08-07 (idle-time sweep, commit `a2ad169`):** the
+reconciled `POST`/`DELETE` route had no `GET` and no page -- an admin
+could grant or revoke coverage only by hand-typing a raw API call, with
+no way to see what was already active. Added `listActiveCoachCoverage()`
+(`access.ts`), a `GET` on the existing route, and an org-admin-only
+`/admin/coach-coverage` console (grant form + revoke button per active
+row), registered in `buildingMap.ts`. Deliberately reads only currently
+active grants (`expires_at > now()`), not history -- that already lives
+in `pilot.audit_events` under `entity_type = 'coach_coverage'`.
+
 **T-005 collision, reconciled 2026-08-06 (collision rule 5).** Main added
 `intake/tickets/T-005-shadow-safety-escalations-readable-queue.md`
 (commit `e3cfd30`) describing an unreadable `pilot.safety_escalations`
