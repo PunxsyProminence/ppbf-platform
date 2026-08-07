@@ -269,8 +269,22 @@ export async function decidePublicationCompliance(params: {
   decidedByAccountId: string;
   approvedByAccountId?: string;
   expectedCurrentStatus: string;
+  // T-008: an optional precondition checked on the SAME transaction client,
+  // immediately before the CAS UPDATE below. A caller that already checked
+  // something (e.g. guardian consent) BEFORE calling this function checked
+  // it outside any transaction -- the gap between that check returning and
+  // this UPDATE committing is a real window for the checked condition to
+  // change underneath it (a guardian withdrawing consent between an admin's
+  // click and the write landing). Running the same check again in here,
+  // against the same client, closes that window: if it throws, the
+  // transaction rolls back and nothing commits.
+  verifyBeforeCommit?: (client: { query<T>(text: string, params?: unknown[]): Promise<{ rows: T[] }> }) => Promise<void>;
 }): Promise<boolean> {
   return withTransaction(async (client) => {
+    if (params.verifyBeforeCommit) {
+      await params.verifyBeforeCommit(client);
+    }
+
     const now = new Date().toISOString();
 
     const updated = await client.query<{ publication_id: string }>(

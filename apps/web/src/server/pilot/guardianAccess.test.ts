@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { queryOne, query } from './db';
-import { guardianAthleteIds, isGuardianLinkedToAthlete } from './guardianAccess';
+import { guardianAthleteIds, guardianParentIdForAthlete, guardianParentIds, isGuardianLinkedToAthlete } from './guardianAccess';
 
 jest.mock('./db', () => ({
   query: jest.fn(),
@@ -71,6 +71,64 @@ describe('guardianAthleteIds', () => {
   test('no links means [], never undefined -- an empty scope must match nothing', async () => {
     mockQuery.mockResolvedValueOnce([]);
     await expect(guardianAthleteIds('org-1', 'parent-lonely')).resolves.toEqual([]);
+  });
+});
+
+describe('guardianParentIds', () => {
+  test('returns every pilot.parents row this account backs, in this org', async () => {
+    mockQuery.mockResolvedValueOnce([{ parent_id: 'p1' }, { parent_id: 'p2' }]);
+
+    await expect(guardianParentIds('org-1', 'parent-acct-1')).resolves.toEqual(['p1', 'p2']);
+
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(String(sql)).toContain('pilot.parents');
+    expect(String(sql)).toContain('organization_id = $1');
+    expect(String(sql)).toContain('account_id = $2');
+    expect(params).toEqual(['org-1', 'parent-acct-1']);
+  });
+
+  test('no rows means [], never undefined', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+    await expect(guardianParentIds('org-1', 'parent-lonely')).resolves.toEqual([]);
+  });
+});
+
+describe('guardianParentIdForAthlete', () => {
+  test('resolves the parent_id that is actually a guardian_links guardian of the given athlete', async () => {
+    mockQueryOne.mockResolvedValueOnce({ parent_id: 'p1', full_name: 'Jane Guardian' });
+
+    const result = await guardianParentIdForAthlete('org-a', 'acct-parent', 'ath-1');
+
+    expect(result).toEqual({ parentId: 'p1', fullName: 'Jane Guardian' });
+    const [sql, params] = mockQueryOne.mock.calls[0];
+    expect(String(sql)).toContain('join pilot.guardian_links');
+    expect(params).toEqual(['org-a', 'acct-parent', 'ath-1']);
+  });
+
+  test('null when this account has no parent row linked to this specific athlete', async () => {
+    mockQueryOne.mockResolvedValueOnce(null);
+
+    const result = await guardianParentIdForAthlete('org-a', 'acct-parent', 'ath-1');
+
+    expect(result).toBeNull();
+  });
+
+  // T-008 round-8 review finding: an account backing two parent rows, each
+  // guardian of a DIFFERENT child, must never resolve the wrong one just
+  // because it happened to be "first". Athlete-scoping the join (not just an
+  // ORDER BY) is what makes that structurally impossible rather than merely
+  // unlikely.
+  test('an account backing two parent rows for two different children resolves the one actually linked to the requested athlete', async () => {
+    mockQueryOne.mockImplementation(async (_sql: string, params: unknown[] = []) => {
+      const athleteId = params[2];
+      if (athleteId === 'ath-1') return { parent_id: 'parent-1', full_name: 'Parent One' };
+      if (athleteId === 'ath-2') return { parent_id: 'parent-2', full_name: 'Parent Two' };
+      return null;
+    });
+
+    const result = await guardianParentIdForAthlete('org-a', 'acct-parent', 'ath-2');
+
+    expect(result).toEqual({ parentId: 'parent-2', fullName: 'Parent Two' });
   });
 });
 

@@ -6,6 +6,7 @@ jest.mock('./db', () => ({
 jest.mock('./guardianAccess', () => ({
   guardianAthleteIds: jest.fn(),
   guardianParentIds: jest.fn(),
+  guardianParentIdForAthlete: jest.fn(),
 }));
 
 jest.mock('./intake', () => ({
@@ -13,10 +14,12 @@ jest.mock('./intake', () => ({
 }));
 
 import { query } from './db';
-import { guardianAthleteIds, guardianParentIds } from './guardianAccess';
+import { guardianAthleteIds, guardianParentIdForAthlete, guardianParentIds } from './guardianAccess';
 import { upsertWaiver } from './intake';
 import {
   assertGuardianMediaConsent,
+  assertGuardianMediaConsentWithClient,
+  callerParentIdSet,
   checkGuardianMediaConsent,
   GuardianConsentMissingError,
   grantMediaConsent,
@@ -29,6 +32,7 @@ import {
 const mockQuery = jest.mocked(query);
 const mockGuardianAthleteIds = jest.mocked(guardianAthleteIds);
 const mockGuardianParentIds = jest.mocked(guardianParentIds);
+const mockGuardianParentIdForAthlete = jest.mocked(guardianParentIdForAthlete);
 const mockUpsertWaiver = jest.mocked(upsertWaiver);
 
 beforeEach(() => {
@@ -170,21 +174,92 @@ describe('grantMediaConsent / withdrawMediaConsent', () => {
 });
 
 describe('resolveActingParent', () => {
-  test('resolves the caller\'s own parent_id and full_name', async () => {
-    mockGuardianParentIds.mockResolvedValueOnce(['p1']);
-    mockQuery.mockResolvedValueOnce([{ full_name: 'Jane Guardian' }]);
+  // The actual join (organization_id + account_id + gl.athlete_id) lives in
+  // guardianAccess.ts's guardianParentIdForAthlete, per that module's own
+  // consolidation doctrine -- see guardianAccess.test.ts for the SQL/join
+  // coverage, including the two-parent-rows-two-children regression case.
+  // This is just a delegation, so these tests only pin the delegation.
+  test('delegates to guardianParentIdForAthlete with the same arguments and returns its result', async () => {
+    mockGuardianParentIdForAthlete.mockResolvedValueOnce({ parentId: 'p1', fullName: 'Jane Guardian' });
 
-    const result = await resolveActingParent('org-a', 'acct-parent');
+    const result = await resolveActingParent('org-a', 'acct-parent', 'ath-1');
 
     expect(result).toEqual({ parentId: 'p1', fullName: 'Jane Guardian' });
+    expect(mockGuardianParentIdForAthlete).toHaveBeenCalledWith('org-a', 'acct-parent', 'ath-1');
   });
 
-  test('null when the account backs no parent row', async () => {
-    mockGuardianParentIds.mockResolvedValueOnce([]);
+  test('null when this account has no parent row linked to this specific athlete', async () => {
+    mockGuardianParentIdForAthlete.mockResolvedValueOnce(null);
 
-    const result = await resolveActingParent('org-a', 'acct-parent');
+    const result = await resolveActingParent('org-a', 'acct-parent', 'ath-1');
 
     expect(result).toBeNull();
+  });
+});
+
+describe('callerParentIdSet', () => {
+  test('returns every parent_id the account backs, as a set for membership testing', async () => {
+    mockGuardianParentIds.mockResolvedValueOnce(['parent-1', 'parent-2']);
+
+    const result = await callerParentIdSet('org-a', 'acct-parent');
+
+    expect(result).toEqual(new Set(['parent-1', 'parent-2']));
+  });
+
+  test('an empty set when the account backs no parent row', async () => {
+    mockGuardianParentIds.mockResolvedValueOnce([]);
+
+    const result = await callerParentIdSet('org-a', 'acct-parent');
+
+    expect(result.size).toBe(0);
+  });
+});
+
+describe('assertGuardianMediaConsentWithClient', () => {
+  // TypeScript can't validate a jest.fn() mock against a genuinely generic
+  // `query<T>(...): Promise<{ rows: T[] }>` method -- jest.Mock's inferred
+  // signature is necessarily monomorphic. Cast to the exact parameter type
+  // assertGuardianMediaConsentWithClient expects instead of fighting that;
+  // `.query` stays a real jest.Mock for the call-count assertion below.
+  function fakeClient(guardianRows: Array<{ parent_id: string }>, consentRows: Array<Record<string, unknown>>) {
+    let call = 0;
+    const query = jest.fn(async () => {
+      call += 1;
+      return { rows: call === 1 ? guardianRows : consentRows };
+    });
+    return { query } as unknown as Parameters<typeof assertGuardianMediaConsentWithClient>[0] & { query: jest.Mock };
+  }
+
+  test('resolves silently when every guardian has a current signed row', async () => {
+    const client = fakeClient(
+      [{ parent_id: 'p1' }],
+      [{ parent_id: 'p1', status: 'signed', covers_video: true, public_use_allowed: false, created_at: '2026-08-01T00:00:00Z' }],
+    );
+
+    await expect(assertGuardianMediaConsentWithClient(client, 'org-a', 'ath-1')).resolves.toBeUndefined();
+  });
+
+  test('throws GuardianConsentMissingError when a guardian has not signed', async () => {
+    const client = fakeClient([{ parent_id: 'p1' }], []);
+
+    await expect(assertGuardianMediaConsentWithClient(client, 'org-a', 'ath-1')).rejects.toThrow(GuardianConsentMissingError);
+  });
+
+  test('throws when the athlete has no guardians at all', async () => {
+    const client = fakeClient([], []);
+
+    await expect(assertGuardianMediaConsentWithClient(client, 'org-a', 'ath-1')).rejects.toThrow(/no guardians on file/);
+  });
+
+  test('reads through client.query, never the module-level query()', async () => {
+    const client = fakeClient(
+      [{ parent_id: 'p1' }],
+      [{ parent_id: 'p1', status: 'signed', covers_video: true, public_use_allowed: false, created_at: '2026-08-01T00:00:00Z' }],
+    );
+
+    await assertGuardianMediaConsentWithClient(client, 'org-a', 'ath-1');
+
+    expect(client.query).toHaveBeenCalledTimes(2);
     expect(mockQuery).not.toHaveBeenCalled();
   });
 });

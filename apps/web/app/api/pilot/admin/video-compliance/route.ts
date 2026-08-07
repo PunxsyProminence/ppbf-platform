@@ -4,7 +4,7 @@ import { getAthleteById } from '@/src/server/pilot/entities';
 import { sanitizedSqlState } from '@/src/server/pilot/db';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getPilotVideoSasUrl } from '@/src/server/pilot/blob';
-import { assertGuardianMediaConsent } from '@/src/server/pilot/guardianConsent';
+import { assertGuardianMediaConsent, assertGuardianMediaConsentWithClient, GuardianConsentMissingError } from '@/src/server/pilot/guardianConsent';
 import { hiddenNotFound, jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/http';
 import {
   decidePublicationCompliance,
@@ -171,37 +171,68 @@ export async function POST(request: NextRequest) {
     const publication = await getPublicationForPublish(principal.organizationId, publicationId);
     if (!publication) return hiddenNotFound();
 
-    // T-008: only 'approve' is gated -- rejecting or requesting changes
-    // isn't publishing anything, so there is nothing for guardian consent to
-    // block. Checked before the CAS write, not after: an approval that
-    // fails this check must never touch the row.
-    if (decision === 'approve') {
-      await assertGuardianMediaConsent(principal.organizationId, publication.athlete_id);
-    }
-
     const newStatus = DECISION_TO_NEW_STATUS[decision];
     const checkStatus = DECISION_TO_CHECK_STATUS[decision];
 
-    // CAS-guarded status transition AND its compliance-check record, as one
-    // transaction: two admins can have this queue open at once, and a losing
-    // request's UPDATE fails atomically instead of silently overwriting
-    // whichever decision committed first. Doing the check-record insert in
-    // the SAME transaction (rather than as a second, separate write) means
-    // there is no window where the status has moved but no row exists
-    // recording who decided it or why.
-    const applied = await decidePublicationCompliance({
-      organizationId: principal.organizationId,
-      publicationId,
-      newStatus,
-      checkStatus,
-      checkType: 'compliance',
-      details: note,
-      decidedByAccountId: principal.accountId,
-      approvedByAccountId: decision === 'approve' ? principal.accountId : undefined,
-      expectedCurrentStatus: 'pending_review',
-    });
-    if (!applied) {
-      throw new Error('Unsupported: publication was already decided by another reviewer');
+    try {
+      // T-008: only 'approve' is gated -- rejecting or requesting changes
+      // isn't publishing anything, so there is nothing for guardian consent
+      // to block. A cheap pre-check runs first (fails fast, no transaction
+      // opened for an obviously-blocked case); the SAME check runs again
+      // inside decidePublicationCompliance's own transaction
+      // (verifyBeforeCommit), against the same client, immediately before
+      // the CAS UPDATE -- closing the race where a guardian's withdrawal
+      // could otherwise commit in the gap between the pre-check returning
+      // and this transaction's UPDATE landing.
+      if (decision === 'approve') {
+        await assertGuardianMediaConsent(principal.organizationId, publication.athlete_id);
+      }
+
+      // CAS-guarded status transition AND its compliance-check record, as one
+      // transaction: two admins can have this queue open at once, and a losing
+      // request's UPDATE fails atomically instead of silently overwriting
+      // whichever decision committed first. Doing the check-record insert in
+      // the SAME transaction (rather than as a second, separate write) means
+      // there is no window where the status has moved but no row exists
+      // recording who decided it or why.
+      const applied = await decidePublicationCompliance({
+        organizationId: principal.organizationId,
+        publicationId,
+        newStatus,
+        checkStatus,
+        checkType: 'compliance',
+        details: note,
+        decidedByAccountId: principal.accountId,
+        approvedByAccountId: decision === 'approve' ? principal.accountId : undefined,
+        expectedCurrentStatus: 'pending_review',
+        verifyBeforeCommit: decision === 'approve'
+          ? (client) => assertGuardianMediaConsentWithClient(client, principal.organizationId, publication.athlete_id)
+          : undefined,
+      });
+      if (!applied) {
+        throw new Error('Unsupported: publication was already decided by another reviewer');
+      }
+    } catch (error) {
+      // T-008: a blocked approval attempt is itself a safeguarding-relevant
+      // fact ("who tried to approve unconsented footage of this child, and
+      // when") -- the ticket's own acceptance criteria calls for logging it,
+      // not just the successful decisions.
+      if (error instanceof GuardianConsentMissingError) {
+        await auditComplianceEvent({
+          event_type: 'update',
+          actor_account_id: principal.accountId,
+          actor_role: principal.role,
+          organization_id: principal.organizationId,
+          entity_type: 'video_publication',
+          entity_id: publicationId,
+          details: {
+            action: 'publication_compliance_approve_blocked_by_consent',
+            missing_parent_ids: error.missingParentIds,
+          },
+          shadow_mirror: false,
+        });
+      }
+      throw error;
     }
 
     await auditComplianceEvent({

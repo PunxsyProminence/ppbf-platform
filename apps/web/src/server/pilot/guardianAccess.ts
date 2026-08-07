@@ -89,3 +89,31 @@ export async function guardianParentIds(organizationId: string, accountId: strin
 
   return rows.map((row) => row.parent_id);
 }
+
+/**
+ * The ONE pilot.parents row this account backs that is a real guardian_links
+ * guardian of the named athlete -- never just "the account's first parent
+ * row" (see guardianConsent.ts's resolveActingParent header for the T-008
+ * multi-guardian bug this exists to make structurally impossible: one
+ * account can legitimately back a different parent_id per child, so any
+ * resolution that doesn't name the athlete can silently write under the
+ * wrong child's guardian record).
+ */
+export async function guardianParentIdForAthlete(
+  organizationId: string,
+  accountId: string,
+  athleteId: string,
+): Promise<{ parentId: string; fullName: string } | null> {
+  const row = await queryOne<{ parent_id: string; full_name: string }>(
+    `select p.parent_id, p.full_name
+     from pilot.parents p
+     join pilot.guardian_links gl
+       on gl.organization_id = p.organization_id and gl.parent_id = p.parent_id
+     where p.organization_id = $1 and p.account_id = $2 and gl.athlete_id = $3
+     limit 1`,
+    [organizationId, accountId, athleteId],
+  );
+
+  if (!row) return null;
+  return { parentId: row.parent_id, fullName: row.full_name };
+}

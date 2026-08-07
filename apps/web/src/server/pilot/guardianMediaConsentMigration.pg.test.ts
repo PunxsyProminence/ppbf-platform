@@ -447,4 +447,77 @@ describe('guardianConsent.ts against real Postgres', () => {
       await client.end();
     }
   });
+
+  // Round-8 review finding: no test proved organization scoping actually
+  // held. pilot.athletes' primary key is (organization_id, athlete_id) --
+  // athlete_id alone is NOT globally unique -- so two different gyms can
+  // genuinely collide on the same athlete_id. If any query in
+  // guardianConsent.ts ever dropped its organization_id predicate, this
+  // collision is exactly the shape that would let one org's consent state
+  // (or lack of it) leak into another org's read.
+  test('two organizations sharing the same athlete_id do not leak consent state across the boundary', async () => {
+    const client = await freshDatabase('ppbf_test_consent_cross_org');
+    activeClient = client;
+    const ORG_ID_2 = 'org-consent-2';
+    const PARENT_ID_ORG2 = 'parent-consent-org2';
+    try {
+      await client.query(
+        `insert into pilot.organizations (organization_id, organization_name, status) values ($1, $1, 'active') on conflict do nothing`,
+        [ORG_ID_2],
+      );
+      await client.query(
+        `insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1, 'coach', $2, 'microsoft') on conflict do nothing`,
+        ['acct-consent-coach-2', ORG_ID_2],
+      );
+      await client.query(
+        `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+         values ($1, $2, 'Other Org Athlete', '2013-05-06', 'bantam', 'active', 'contact', true, $3, now(), now())
+         on conflict do nothing`,
+        [ORG_ID_2, ATHLETE_ID, 'acct-consent-coach-2'],
+      );
+      await client.query(
+        `insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1, 'parent', $2, 'microsoft') on conflict do nothing`,
+        ['acct-consent-parent-org2', ORG_ID_2],
+      );
+      await client.query(
+        `insert into pilot.parents (organization_id, parent_id, account_id, full_name) values ($1, $2, $3, 'Org2 Guardian') on conflict do nothing`,
+        [ORG_ID_2, PARENT_ID_ORG2, 'acct-consent-parent-org2'],
+      );
+      await client.query(
+        `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete) values ($1, $2, $3, 'mother') on conflict do nothing`,
+        [ORG_ID_2, PARENT_ID_ORG2, ATHLETE_ID],
+      );
+
+      // Org 1's guardian signs; org 2's guardian (for the SAME athlete_id
+      // string) never does.
+      await grantMediaConsent({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        parentId: PARENT_ID,
+        signedByName: 'Jane Guardian',
+        coversVideo: true,
+        publicUseAllowed: false,
+      });
+
+      const org1Result = await checkGuardianMediaConsent(ORG_ID, ATHLETE_ID);
+      const org2Result = await checkGuardianMediaConsent(ORG_ID_2, ATHLETE_ID);
+
+      expect(org1Result.ok).toBe(true);
+      expect(org1Result.guardianIds).toEqual([PARENT_ID]);
+      expect(org2Result.ok).toBe(false);
+      expect(org2Result.guardianIds).toEqual([PARENT_ID_ORG2]);
+      expect(org2Result.missingParentIds).toEqual([PARENT_ID_ORG2]);
+
+      const org1Status = await listOrganizationConsentStatus(ORG_ID);
+      const org2Status = await listOrganizationConsentStatus(ORG_ID_2);
+      expect(org1Status).toHaveLength(1);
+      expect(org1Status[0].consent.ok).toBe(true);
+      expect(org2Status).toHaveLength(1);
+      expect(org2Status[0].athleteId).toBe(ATHLETE_ID);
+      expect(org2Status[0].consent.ok).toBe(false);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
 });

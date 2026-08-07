@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import {
+  callerParentIdSet,
   grantMediaConsent,
   listConsentForGuardian,
   resolveActingParent,
@@ -48,9 +49,15 @@ export async function GET(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['parent']);
 
-    const [items, actingParent] = await Promise.all([
+    const [items, ownParentIds] = await Promise.all([
       listConsentForGuardian(principal.organizationId, principal.accountId),
-      resolveActingParent(principal.organizationId, principal.accountId),
+      // A SET, not a single "the" parent_id: a guardian of more than one
+      // child can legitimately be backed by a different pilot.parents row
+      // per child (see resolveActingParent's own header for why picking
+      // just one was a real bug). Membership-tested per row below, so every
+      // one of this account's own guardian rows reads as "you", not just
+      // whichever row an arbitrary "first" pick happened to land on.
+      callerParentIdSet(principal.organizationId, principal.accountId),
     ]);
 
     return NextResponse.json({
@@ -62,11 +69,7 @@ export async function GET(request: NextRequest) {
         missing_guardian_count: consent.missingParentIds.length,
         per_guardian: consent.perGuardian.map((g) => ({
           parent_id: g.parentId,
-          // Whether THIS row is the signed-in guardian's own -- the page
-          // needs to know which guardian it is rendering controls for, not
-          // just "some guardian has an opinion" (an athlete can have more
-          // than one).
-          you: actingParent?.parentId === g.parentId,
+          you: ownParentIds.has(g.parentId),
           status: g.status,
           covers_video: g.coversVideo,
           public_use_allowed: g.publicUseAllowed,
@@ -110,11 +113,16 @@ export async function POST(request: NextRequest) {
       return hiddenNotFound();
     }
 
-    const actingParent = await resolveActingParent(principal.organizationId, principal.accountId);
+    // Athlete-scoped: resolves the specific pilot.parents row this account
+    // holds THAT IS a real guardian_links guardian of athleteId, never just
+    // "the account's first parent row" (see resolveActingParent's header).
+    const actingParent = await resolveActingParent(principal.organizationId, principal.accountId, athleteId);
     if (!actingParent) {
-      // This account is linked to the athlete via guardian_links but has no
-      // pilot.parents row of its own to write consent as -- a data
-      // inconsistency, not a caller error, so it must not read as "missing".
+      // The ownAthleteIds check above already confirmed this account guards
+      // athleteId through SOME parent row -- reaching here means that
+      // parent row exists in guardian_links but not in pilot.parents (or
+      // isn't linked to this specific account), a data inconsistency, not a
+      // caller error, so it must not read as "missing consent".
       throw new Error('Unsupported: no guardian record on file for this account');
     }
 

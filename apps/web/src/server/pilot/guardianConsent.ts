@@ -1,6 +1,14 @@
 import { query } from './db';
-import { guardianAthleteIds, guardianParentIds } from './guardianAccess';
+import { guardianAthleteIds, guardianParentIdForAthlete, guardianParentIds } from './guardianAccess';
 import { upsertWaiver } from './intake';
+
+// Structural, not `import type { PoolClient } from 'pg'`: the only thing
+// callers inside a withTransaction() block actually have is something
+// query-shaped, and pg's own QueryResult already returns { rows }. Matches
+// the shape publication.ts's decidePublicationCompliance already uses.
+interface QueryExecutor {
+  query<T>(text: string, params?: unknown[]): Promise<{ rows: T[] }>;
+}
 
 /**
  * T-008: guardian consent for a minor's photo/video.
@@ -124,6 +132,45 @@ export async function assertGuardianMediaConsent(organizationId: string, athlete
   }
 }
 
+// Round-8 review finding: the plain SELECT-based check above completes and
+// returns before the CAS-guarded approval transaction even opens, so a
+// guardian's withdrawal can commit in the gap between "checked" and
+// "approved" -- video-compliance/route.ts closes that window by calling
+// THIS variant from inside decidePublicationCompliance's own transaction
+// (verifyBeforeCommit), on the same client, so the re-check is serialized
+// against a concurrent withdrawal rather than racing it. Duplicates
+// currentConsentByGuardian's query rather than sharing it, because a
+// PoolClient's query() and db.ts's module-level query() return different
+// shapes ({rows} vs a bare array) -- the same asymmetry
+// decidePublicationCompliance itself already works around.
+export async function assertGuardianMediaConsentWithClient(
+  client: QueryExecutor,
+  organizationId: string,
+  athleteId: string,
+): Promise<void> {
+  const guardianResult = await client.query<{ parent_id: string }>(
+    `select parent_id from pilot.guardian_links where organization_id = $1 and athlete_id = $2`,
+    [organizationId, athleteId],
+  );
+  const guardianIds = guardianResult.rows.map((row) => row.parent_id);
+  if (guardianIds.length === 0) {
+    throw new GuardianConsentMissingError(athleteId, []);
+  }
+
+  const consentResult = await client.query<CurrentConsentRow>(
+    `select distinct on (parent_id) parent_id, status, covers_video, public_use_allowed, created_at
+     from pilot.waivers
+     where organization_id = $1 and athlete_id = $2 and waiver_type = $3 and parent_id is not null
+     order by parent_id, created_at desc`,
+    [organizationId, athleteId, MEDIA_CONSENT_WAIVER_TYPE],
+  );
+  const current = new Map(consentResult.rows.map((row) => [row.parent_id, row]));
+  const missingParentIds = guardianIds.filter((id) => current.get(id)?.status !== 'signed');
+  if (missingParentIds.length > 0) {
+    throw new GuardianConsentMissingError(athleteId, missingParentIds);
+  }
+}
+
 export async function grantMediaConsent(params: {
   organizationId: string;
   athleteId: string;
@@ -191,22 +238,36 @@ export interface ActingParent {
   fullName: string;
 }
 
-// The signed-in guardian's own parent row -- for grant/withdraw, both the
-// identity a write is scoped to (parent_id) and the name that goes on the
-// consent record as signed_by_name. One account backing more than one
-// parent row (guardianParentIds' own doc comment) is a real but rare shape;
-// the first is used, same choice this module makes everywhere a single
-// acting identity is needed for a write.
-export async function resolveActingParent(organizationId: string, accountId: string): Promise<ActingParent | null> {
-  const parentIds = await guardianParentIds(organizationId, accountId);
-  const parentId = parentIds[0];
-  if (!parentId) return null;
+// The signed-in guardian's own parent row -- FOR THIS SPECIFIC ATHLETE. Round-8
+// review finding: a first cut resolved "the account's first parent row" with
+// no athlete scoping and no ORDER BY, which is wrong whenever one account
+// backs more than one pilot.parents row (a real, schema-permitted shape --
+// pilot.parents has no uniqueness constraint on account_id, only on
+// (organization_id, parent_id)). Two different children linked through two
+// different parent rows on the same account meant a grant/withdraw for child
+// B could silently write under child A's parent_id -- passing this route's
+// own authorization check (which only verifies athlete_id membership, not
+// which parent row reaches it) while never actually touching the row
+// checkGuardianMediaConsent(B) reads. The fix is to require the caller name
+// the athlete; the actual join lives in guardianAccess.ts
+// (guardianParentIdForAthlete) alongside every other viewer-scoped
+// guardian_links join, per that module's own consolidation doctrine -- this
+// is a thin re-export, not a second copy of the query.
+export async function resolveActingParent(
+  organizationId: string,
+  accountId: string,
+  athleteId: string,
+): Promise<ActingParent | null> {
+  return guardianParentIdForAthlete(organizationId, accountId, athleteId);
+}
 
-  const rows = await query<{ full_name: string }>(
-    `select full_name from pilot.parents where organization_id = $1 and parent_id = $2`,
-    [organizationId, parentId],
-  );
-  return { parentId, fullName: rows[0]?.full_name ?? parentId };
+// The set of parent_ids this account backs, for the READ side (rendering
+// "which of these guardian rows is you") -- membership-tested per row rather
+// than picking a single "first" one, since a guardian of multiple children
+// can legitimately be backed by different parent rows per child.
+export async function callerParentIdSet(organizationId: string, accountId: string): Promise<Set<string>> {
+  const parentIds = await guardianParentIds(organizationId, accountId);
+  return new Set(parentIds);
 }
 
 export interface OrganizationConsentRow {

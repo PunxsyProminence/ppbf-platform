@@ -217,6 +217,10 @@ describe('POST /api/pilot/admin/video-compliance', () => {
       decidedByAccountId: 'acct-admin',
       approvedByAccountId: 'acct-admin',
       expectedCurrentStatus: 'pending_review',
+      // T-008 round-8: an approve decision re-verifies guardian consent
+      // INSIDE decidePublicationCompliance's own transaction, closing the
+      // race between the fast pre-check above and the CAS UPDATE.
+      verifyBeforeCommit: expect.any(Function),
     });
     await expect(response.json()).resolves.toEqual({ ok: true, publication_id: 'pub-1', status: 'approved', compliance_check_status: 'passed' });
     expect(mockAudit).toHaveBeenCalledWith({
@@ -415,7 +419,31 @@ describe('POST /api/pilot/admin/video-compliance', () => {
       expect(response.status).toBe(409);
       expect(mockAssertConsent).toHaveBeenCalledWith('org-a', 'ath-1');
       expect(mockDecide).not.toHaveBeenCalled();
-      expect(mockAudit).not.toHaveBeenCalled();
+    });
+
+    // Round-8 review finding: a blocked approval attempt is itself a
+    // safeguarding-relevant fact -- "who tried to approve unconsented
+    // footage of this child, and when" -- and a prior version of this route
+    // (and this very test) let it pass completely unaudited.
+    test('a blocked approval attempt is itself audited, with the missing parent ids', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockAssertConsent.mockRejectedValueOnce(new GuardianConsentMissingError('ath-1', ['parent-1']));
+
+      const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'approve' }));
+
+      expect(response.status).toBe(409);
+      expect(mockAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event_type: 'update',
+          actor_account_id: 'acct-admin',
+          entity_type: 'video_publication',
+          entity_id: 'pub-1',
+          details: expect.objectContaining({
+            action: 'publication_compliance_approve_blocked_by_consent',
+            missing_parent_ids: ['parent-1'],
+          }),
+        }),
+      );
     });
 
     test('approve proceeds once consent is verified', async () => {

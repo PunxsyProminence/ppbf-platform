@@ -4,6 +4,7 @@ import { GET, POST } from './route';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import {
+  callerParentIdSet,
   grantMediaConsent,
   listConsentForGuardian,
   resolveActingParent,
@@ -30,6 +31,7 @@ jest.mock('@/src/server/pilot/guardianConsent', () => {
     withdrawMediaConsent: jest.fn(),
     listConsentForGuardian: jest.fn(),
     resolveActingParent: jest.fn(),
+    callerParentIdSet: jest.fn(),
   };
 });
 
@@ -43,6 +45,7 @@ jest.mock('@/src/server/pilot/http', () => {
 
 const mockRequirePrincipal = jest.mocked(requirePrincipal);
 const mockList = jest.mocked(listConsentForGuardian);
+const mockCallerParentIdSet = jest.mocked(callerParentIdSet);
 const mockResolveParent = jest.mocked(resolveActingParent);
 const mockGrant = jest.mocked(grantMediaConsent);
 const mockWithdraw = jest.mocked(withdrawMediaConsent);
@@ -75,11 +78,13 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockGuardianAthleteIds.mockResolvedValue(['ath-1']);
   mockResolveParent.mockResolvedValue({ parentId: 'p1', fullName: 'Jane Guardian' });
+  mockCallerParentIdSet.mockResolvedValue(new Set(['p1']));
 });
 
 describe('GET /api/pilot/parent/consent', () => {
   test('a parent sees consent status for their own linked children, with a "you" flag on their own row', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
+    mockCallerParentIdSet.mockResolvedValueOnce(new Set(['p1']));
     mockList.mockResolvedValueOnce([
       {
         athleteId: 'ath-1',
@@ -111,6 +116,37 @@ describe('GET /api/pilot/parent/consent', () => {
     });
   });
 
+  // A guardian of two children via two different pilot.parents rows must
+  // see "you" only on the row that is actually theirs -- membership-tested
+  // per row against the FULL set of parent_ids they back, not a single
+  // "first" pick (the exact bug resolveActingParent used to have).
+  test('the "you" flag is membership-tested against every parent_id the caller backs, not just one', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
+    mockCallerParentIdSet.mockResolvedValueOnce(new Set(['p1', 'p3']));
+    mockList.mockResolvedValueOnce([
+      {
+        athleteId: 'ath-2',
+        consent: {
+          ok: false,
+          guardianIds: ['p2', 'p3'],
+          missingParentIds: ['p2'],
+          perGuardian: [
+            { parentId: 'p2', status: null, coversVideo: null, publicUseAllowed: null, signedAt: null },
+            { parentId: 'p3', status: 'signed', coversVideo: true, publicUseAllowed: false, signedAt: '2026-08-01T00:00:00Z' },
+          ],
+        },
+      },
+    ]);
+
+    const response = await GET(request('/api/pilot/parent/consent'));
+    const body = await response.json();
+
+    expect(body.items[0].per_guardian).toEqual([
+      expect.objectContaining({ parent_id: 'p2', you: false }),
+      expect.objectContaining({ parent_id: 'p3', you: true }),
+    ]);
+  });
+
   test('non-parent roles are refused', async () => {
     for (const role of ['athlete', 'coach', 'admin', 'organization_admin', 'board']) {
       mockRequirePrincipal.mockResolvedValueOnce(principal(role));
@@ -133,6 +169,25 @@ describe('POST /api/pilot/parent/consent', () => {
       expect.objectContaining({ organizationId: 'org-a', athleteId: 'ath-1', parentId: 'p1', signedByName: 'Jane Guardian', coversVideo: true, publicUseAllowed: false }),
     );
     expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ event_type: 'consent_granted', entity_id: 'ath-1' }));
+    // resolveActingParent must be athlete-scoped -- the route is only correct
+    // because it names which child it's acting for, not just which account.
+    expect(mockResolveParent).toHaveBeenCalledWith('org-a', 'acct-parent', 'ath-1');
+  });
+
+  // Round-8 review finding: every existing grant test supplied both
+  // covers_video and public_use_allowed explicitly, so the route's own
+  // default-derivation (`!== false` / `=== true`) was never actually
+  // exercised by an omitted-field request.
+  test('grant with covers_video and public_use_allowed omitted defaults to covers_video=true, public_use_allowed=false', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('parent'));
+    mockGrant.mockResolvedValueOnce('waiver-3');
+
+    const response = await POST(jsonRequest({ athlete_id: 'ath-1', decision: 'grant' }));
+
+    expect(response.status).toBe(200);
+    expect(mockGrant).toHaveBeenCalledWith(
+      expect.objectContaining({ coversVideo: true, publicUseAllowed: false }),
+    );
   });
 
   test('withdraw writes consent withdrawal and audits it', async () => {
