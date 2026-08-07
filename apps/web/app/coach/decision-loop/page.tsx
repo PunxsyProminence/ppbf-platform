@@ -148,9 +148,11 @@ export default function DecisionLoopReviewPage() {
   const [incidentSeverity, setIncidentSeverity] = useState<IncidentSeverity>('high');
   const [incidentOccurredAt, setIncidentOccurredAt] = useState('');
   const [incidentFiledMessage, setIncidentFiledMessage] = useState('');
+  const [incidentSubmitting, setIncidentSubmitting] = useState(false);
 
   const [behaviorNoteText, setBehaviorNoteText] = useState('');
   const [behaviorNoteMessage, setBehaviorNoteMessage] = useState('');
+  const [behaviorNoteSubmitting, setBehaviorNoteSubmitting] = useState(false);
 
   const [outcomeDecisionId, setOutcomeDecisionId] = useState('');
   const [outcomeObservationIds, setOutcomeObservationIds] = useState('');
@@ -171,6 +173,12 @@ export default function DecisionLoopReviewPage() {
   }, []);
 
   const refreshAll = useCallback(async (targetAthleteId: string) => {
+    // Round 9 review: these confirmation banners are scoped to whichever
+    // athlete was on screen when the form was submitted. Without this they
+    // survive a switch to a different athlete's data below them, reading as
+    // if that report/note was just filed for the athlete now selected.
+    setIncidentFiledMessage('');
+    setBehaviorNoteMessage('');
     if (!targetAthleteId) {
       return;
     }
@@ -302,8 +310,9 @@ export default function DecisionLoopReviewPage() {
   // where a filed incident is read back and acted on.
   async function handleReportIncident(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!athleteId || !incidentDescription.trim()) return;
+    if (!athleteId || !incidentDescription.trim() || incidentSubmitting) return;
     setIncidentFiledMessage('');
+    setIncidentSubmitting(true);
     try {
       const response = await fetch(`${apiBase()}/api/pilot/incidents`, {
         method: 'POST',
@@ -323,6 +332,8 @@ export default function DecisionLoopReviewPage() {
       setIncidentFiledMessage('Incident filed -- it is now in the escalation queue.');
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to file incident report.');
+    } finally {
+      setIncidentSubmitting(false);
     }
   }
 
@@ -337,8 +348,9 @@ export default function DecisionLoopReviewPage() {
   // scope (#70/#74's own engines) and are not attempted by this capture form.
   async function handleLogBehaviorNote(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!athleteId || !behaviorNoteText.trim()) return;
+    if (!athleteId || !behaviorNoteText.trim() || behaviorNoteSubmitting) return;
     setBehaviorNoteMessage('');
+    setBehaviorNoteSubmitting(true);
     try {
       const response = await fetch(`${apiBase()}/api/pilot/intake/domain-upsert`, {
         method: 'POST',
@@ -355,6 +367,8 @@ export default function DecisionLoopReviewPage() {
       setBehaviorNoteMessage('Note logged.');
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to log the note.');
+    } finally {
+      setBehaviorNoteSubmitting(false);
     }
   }
 
@@ -737,8 +751,8 @@ export default function DecisionLoopReviewPage() {
                       className="input"
                     />
                   </label>
-                  <button type="submit" className="btn btn--ghost">
-                    File Incident Report
+                  <button type="submit" className="btn btn--ghost" disabled={incidentSubmitting}>
+                    {incidentSubmitting ? 'Filing…' : 'File Incident Report'}
                   </button>
                 </form>
               </section>
@@ -764,8 +778,8 @@ export default function DecisionLoopReviewPage() {
                       className="textarea min-h-[56px]"
                     />
                   </label>
-                  <button type="submit" className="btn btn--ghost">
-                    Log Note
+                  <button type="submit" className="btn btn--ghost" disabled={behaviorNoteSubmitting}>
+                    {behaviorNoteSubmitting ? 'Logging…' : 'Log Note'}
                   </button>
                 </form>
               </section>

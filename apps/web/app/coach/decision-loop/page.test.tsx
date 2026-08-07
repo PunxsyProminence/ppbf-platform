@@ -3,7 +3,8 @@
  */
 
 import type { ReactNode } from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import '@testing-library/jest-dom';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import DecisionLoopReviewPage from './page';
 
@@ -37,6 +38,10 @@ function installFetch(overrides: Record<string, unknown> = {}) {
     if (key.includes('/api/pilot/intake/domain-upsert')) {
       const handler = overrides.domainUpsert as ((init?: RequestInit) => Response) | undefined;
       return handler ? handler(init) : jsonResponse({ ok: true, entity_type: 'coach_note', entity_id: 'obs-1', athlete_id: 'ath-1' });
+    }
+    if (key.includes('/api/pilot/incidents')) {
+      const handler = overrides.incidents as ((init?: RequestInit) => Response) | undefined;
+      return handler ? handler(init) : jsonResponse({ ok: true, escalation_id: 'esc-1', source_type: 'incident' });
     }
     throw new Error(`Unexpected fetch: ${key}`);
   });
@@ -110,4 +115,131 @@ test('a failed log shows the error, not a false success message', async () => {
 
   await screen.findByText('Forbidden');
   expect(screen.queryByText('Note logged.')).toBeNull();
+});
+
+// Round 9 review: capability #152's Report Incident form shipped with zero
+// test coverage -- only the server route and the pure function were
+// exercised, never the UI a coach actually uses to file one.
+describe('Report Incident (#152)', () => {
+  test('severity defaults to high and posts the payload the route expects', async () => {
+    const fetchMock = installFetch();
+    await selectAthlete();
+
+    fireEvent.change(screen.getByLabelText('What happened'), { target: { value: 'Athlete was struck after the bell.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'File Incident Report' }));
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find((c) => String(c[0]).includes('/api/pilot/incidents'));
+      expect(call).toBeDefined();
+    });
+
+    const call = fetchMock.mock.calls.find((c) => String(c[0]).includes('/api/pilot/incidents'));
+    const body = JSON.parse(String((call?.[1] as RequestInit).body));
+    expect(body).toEqual({
+      athleteId: 'ath-1',
+      description: 'Athlete was struck after the bell.',
+      severity: 'high',
+      occurredAt: undefined,
+    });
+
+    await screen.findByText('Incident filed -- it is now in the escalation queue.');
+  });
+
+  test('an explicit critical severity and an occurredAt value both pass through', async () => {
+    const fetchMock = installFetch();
+    await selectAthlete();
+
+    const incidentSection = screen.getByText('Report Incident').closest('section') as HTMLElement;
+    fireEvent.change(screen.getByLabelText('What happened'), { target: { value: 'Ambulance called.' } });
+    fireEvent.change(within(incidentSection).getByLabelText('Severity'), { target: { value: 'critical' } });
+    fireEvent.change(screen.getByLabelText('When it happened (optional, if not today)'), { target: { value: '2026-08-05' } });
+    fireEvent.click(screen.getByRole('button', { name: 'File Incident Report' }));
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find((c) => String(c[0]).includes('/api/pilot/incidents'));
+      expect(call).toBeDefined();
+    });
+
+    const call = fetchMock.mock.calls.find((c) => String(c[0]).includes('/api/pilot/incidents'));
+    const body = JSON.parse(String((call?.[1] as RequestInit).body));
+    expect(body).toEqual({
+      athleteId: 'ath-1',
+      description: 'Ambulance called.',
+      severity: 'critical',
+      occurredAt: '2026-08-05',
+    });
+  });
+
+  test('the description clears after a successful file', async () => {
+    installFetch();
+    await selectAthlete();
+
+    const textarea = screen.getByLabelText('What happened') as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: 'Something happened.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'File Incident Report' }));
+
+    await waitFor(() => expect(textarea.value).toBe(''));
+  });
+
+  test('an empty description does not submit', async () => {
+    const fetchMock = installFetch();
+    await selectAthlete();
+
+    fireEvent.click(screen.getByRole('button', { name: 'File Incident Report' }));
+
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/pilot/incidents'))).toBe(false);
+  });
+
+  test('a failed file shows the error, not a false success message', async () => {
+    installFetch({ incidents: () => jsonResponse({ error: 'Forbidden' }, false) });
+    await selectAthlete();
+
+    fireEvent.change(screen.getByLabelText('What happened'), { target: { value: 'Something happened.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'File Incident Report' }));
+
+    await screen.findByText('Forbidden');
+    expect(screen.queryByText('Incident filed -- it is now in the escalation queue.')).toBeNull();
+  });
+
+  test('the submit button disables while the request is in flight, so a double click cannot file twice', async () => {
+    let resolveIncident: (() => void) | undefined;
+    const pending = new Promise<void>((resolve) => {
+      resolveIncident = resolve;
+    });
+    const fetchMock = installFetch({
+      incidents: async () => {
+        await pending;
+        return jsonResponse({ ok: true, escalation_id: 'esc-1' });
+      },
+    });
+    await selectAthlete();
+
+    fireEvent.change(screen.getByLabelText('What happened'), { target: { value: 'Something happened.' } });
+    const button = screen.getByRole('button', { name: 'File Incident Report' });
+    fireEvent.click(button);
+
+    await waitFor(() => expect(button).toBeDisabled());
+    fireEvent.click(button);
+
+    resolveIncident?.();
+    await waitFor(() => expect(button).not.toBeDisabled());
+
+    expect(fetchMock.mock.calls.filter((c) => String(c[0]).includes('/api/pilot/incidents'))).toHaveLength(1);
+  });
+});
+
+// Round 9 review: incidentFiledMessage/behaviorNoteMessage were never
+// cleared on an athlete switch, so a stale "Incident filed" confirmation
+// from athlete A kept showing under athlete B's panel.
+test('switching athletes clears a stale incident-filed confirmation', async () => {
+  installFetch();
+  await selectAthlete();
+
+  fireEvent.change(screen.getByLabelText('What happened'), { target: { value: 'Something happened.' } });
+  fireEvent.click(screen.getByRole('button', { name: 'File Incident Report' }));
+  await screen.findByText('Incident filed -- it is now in the escalation queue.');
+
+  fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-2' } });
+
+  await waitFor(() => expect(screen.queryByText('Incident filed -- it is now in the escalation queue.')).toBeNull());
 });

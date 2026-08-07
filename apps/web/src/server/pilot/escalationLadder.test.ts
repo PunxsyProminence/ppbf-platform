@@ -149,6 +149,27 @@ describe('fileIncidentReport', () => {
     const metadataJson = params[params.length - 1] as string;
     expect(JSON.parse(metadataJson)).toEqual({});
   });
+
+  // Round 9 review: the 'high'/'critical' floor was a TypeScript-only type,
+  // with the only actual enforcement living in the route's own allow-list
+  // check -- nothing in this function or the database stopped a caller that
+  // bypasses TypeScript (or a future caller that never re-validates) from
+  // filing a sub-floor severity. Casts past the type on purpose to exercise
+  // the runtime guard.
+  test('rejects a severity below the floor even past the TypeScript type', async () => {
+    await expect(
+      fileIncidentReport({
+        organizationId: 'org-1',
+        athleteId: 'ATH-1',
+        severity: 'moderate' as unknown as 'high',
+        reason: 'Should never reach the database.',
+        reportedByAccountId: 'acct-coach-1',
+        reportedByRole: 'coach',
+      }),
+    ).rejects.toThrow(/severity must be 'high' or 'critical'/);
+
+    expect(currentClient.query).not.toHaveBeenCalled();
+  });
 });
 
 describe('listEscalations', () => {

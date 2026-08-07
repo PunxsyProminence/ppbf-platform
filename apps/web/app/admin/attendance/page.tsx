@@ -28,6 +28,47 @@ interface WeeklyAttendanceTrendRow {
 
 const TREND_WEEKS = 8;
 
+interface FilledTrendWeek extends WeeklyAttendanceTrendRow {
+  omitted?: boolean;
+}
+
+/**
+ * getWeeklyAttendanceTrend OMITS a week with zero marks rather than
+ * zero-filling it (see its own doc comment) -- attendance_rate: null would
+ * be indistinguishable from a real 0% week. That's the right call server
+ * side, but it pushes the promised "fills gaps on render" onto this page.
+ * Round 9 review caught that nothing here actually did that: trend.map(...)
+ * rendered whatever weeks came back as adjacent bars with no gap marker, so
+ * a closed-gym week read as identical to "there were only N weeks of data."
+ * This reindexes the response onto every Monday between its first and last
+ * returned week, inserting an explicit omitted placeholder for any week the
+ * server dropped.
+ */
+function fillWeeklyTrendGaps(trend: WeeklyAttendanceTrendRow[]): FilledTrendWeek[] {
+  if (trend.length === 0) return [];
+  const byWeekStart = new Map(trend.map((week) => [week.week_start, week]));
+  const filled: FilledTrendWeek[] = [];
+  const cursor = new Date(`${trend[0].week_start}T00:00:00Z`);
+  const end = new Date(`${trend[trend.length - 1].week_start}T00:00:00Z`);
+  while (cursor.getTime() <= end.getTime()) {
+    const key = cursor.toISOString().slice(0, 10);
+    const existing = byWeekStart.get(key);
+    filled.push(
+      existing ?? {
+        week_start: key,
+        present_count: 0,
+        absent_count: 0,
+        excused_count: 0,
+        total_marked: 0,
+        attendance_rate: null,
+        omitted: true,
+      },
+    );
+    cursor.setUTCDate(cursor.getUTCDate() + 7);
+  }
+  return filled;
+}
+
 function formatWeekLabel(weekStart: string): string {
   return formatGymDayShort(weekStart) ?? weekStart;
 }
@@ -169,15 +210,22 @@ export default function AttendanceDashboardPage() {
             <section className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgba(212,175,74,.14)] p-[var(--s4)]">
               <p className="t-eyebrow">Weekly trend (last {TREND_WEEKS} weeks)</p>
               <div className="mt-[var(--s3)] flex items-end gap-[var(--s2)]" style={{ height: '72px' }}>
-                {trend.map((week) => {
+                {fillWeeklyTrendGaps(trend).map((week) => {
                   const heightPercent = week.attendance_rate === null ? 4 : Math.max(4, Math.round(week.attendance_rate * 100));
+                  const label = week.omitted
+                    ? `Week of ${formatWeekLabel(week.week_start)}: no attendance data`
+                    : `Week of ${formatWeekLabel(week.week_start)}: ${formatRate(week.attendance_rate)}`;
                   return (
                     <div key={week.week_start} className="flex flex-1 flex-col items-center justify-end gap-[var(--s1)]" style={{ height: '100%' }}>
                       <div
                         role="img"
-                        aria-label={`Week of ${formatWeekLabel(week.week_start)}: ${formatRate(week.attendance_rate)}`}
-                        title={`Week of ${formatWeekLabel(week.week_start)}: ${formatRate(week.attendance_rate)}`}
-                        className="w-full rounded-t-[var(--r-sm)] bg-[var(--brass-500)]"
+                        aria-label={label}
+                        title={label}
+                        className={
+                          week.omitted
+                            ? 'w-full rounded-t-[var(--r-sm)] border border-dashed border-[color:var(--bone-500)] bg-transparent opacity-40'
+                            : 'w-full rounded-t-[var(--r-sm)] bg-[var(--brass-500)]'
+                        }
                         style={{ height: `${heightPercent}%`, minHeight: '4px' }}
                       />
                       <p className="t-data text-[length:var(--t-xs)] text-[color:var(--bone-400)]">{formatWeekLabel(week.week_start)}</p>

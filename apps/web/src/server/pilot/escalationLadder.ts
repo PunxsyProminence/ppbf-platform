@@ -181,6 +181,18 @@ export interface FileIncidentReportInput {
  * genuinely happened, not flagging a possibility.
  */
 export async function fileIncidentReport(input: FileIncidentReportInput): Promise<SafetyEscalationRow> {
+  // The 'high'/'critical' floor above is a TypeScript-only guarantee -- it
+  // does not survive past this module's own boundary. Round 9 review: the
+  // only actual enforcement was api/pilot/incidents/route.ts's own
+  // allow-list check, so any other caller (a script, a future route) could
+  // file a sub-floor severity with nothing in this function or the database
+  // (severity is app-enforced for source_type='incident', not a DB CHECK
+  // scoped to it) to stop it. Checked here too, so the floor holds even for
+  // a caller that bypasses TypeScript (JS, a malformed request already cast
+  // past the route's own check, or a future caller that never re-validates).
+  if (input.severity !== 'high' && input.severity !== 'critical') {
+    throw new Error(`fileIncidentReport: severity must be 'high' or 'critical', got '${String(input.severity)}'`);
+  }
   return fileEscalation({
     organizationId: input.organizationId,
     sourceType: 'incident',

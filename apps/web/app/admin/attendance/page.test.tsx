@@ -53,6 +53,29 @@ test('a real weekly trend renders the trend strip with a week label', async () =
   expect(screen.getByRole('img', { name: /Week of Jul 27: 83%/ })).toBeDefined();
 });
 
+// Round 9 review: getWeeklyAttendanceTrend omits a week with zero marks
+// rather than zero-filling it, and its own doc comment says "the page fills
+// gaps on render" -- this pins that the page actually does, instead of
+// silently rendering the surviving weeks back-to-back as if nothing were
+// skipped.
+test('an omitted week between two real weeks renders as a distinct gap, not a silent skip', async () => {
+  installFetch({
+    ok: true,
+    trend: [
+      { week_start: '2026-07-13', present_count: 4, absent_count: 0, excused_count: 0, total_marked: 4, attendance_rate: 1 },
+      // 2026-07-20 is missing -- a closed-gym week with zero marks.
+      { week_start: '2026-07-27', present_count: 5, absent_count: 1, excused_count: 0, total_marked: 6, attendance_rate: 0.833 },
+    ],
+  });
+
+  render(<AttendanceDashboardPage />);
+
+  await screen.findByText('Weekly trend (last 8 weeks)');
+  expect(screen.getByRole('img', { name: /Week of Jul 13: 100%/ })).toBeDefined();
+  expect(screen.getByRole('img', { name: /Week of Jul 27: 83%/ })).toBeDefined();
+  expect(screen.getByRole('img', { name: /Week of Jul 20: no attendance data/ })).toBeDefined();
+});
+
 test('an empty trend renders no trend strip, not an empty one', async () => {
   installFetch({ ok: true, trend: [] });
 
