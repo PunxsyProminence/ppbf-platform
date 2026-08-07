@@ -35,6 +35,12 @@
  * failure that has actually happened here, and it does not pretend to catch
  * every possible drift.
  *
+ * Views were in that list until 2026-08-07, when the research-triage migration
+ * became the first one here to create a view -- and the gate reported the same
+ * 99/100/136/72 it reported before the migration existed. It would have passed
+ * just as happily against a database where the view was absent, which is the
+ * exact failure this file was written to stop. Views are checked now.
+ *
  * READ ONLY. It issues no DDL and writes no row.
  *
  * Usage:
@@ -76,11 +82,20 @@ export function expectedObjectsFrom(sqlFiles) {
   const columns = new Set();
   const indexes = new Set();
   const constraints = new Set();
+  const views = new Set();
 
   for (const file of sqlFiles) {
     for (const statement of statementsIn(fs.readFileSync(file, 'utf8'))) {
       const createTable = statement.match(/^create table (?:if not exists )?pilot\.(\w+)/);
       if (createTable) tables.add(createTable[1]);
+
+      // `or replace` and `materialized` are both optional and independent; a
+      // migration may use either. Matching the name is all that is needed --
+      // the actual side queries pg_class for both relkinds.
+      const createView = statement.match(
+        /^create (?:or replace )?(?:materialized )?view (?:if not exists )?pilot\.(\w+)/,
+      );
+      if (createView) views.add(createView[1]);
 
       const alterTable = statement.match(/^alter table (?:if exists )?pilot\.(\w+)/);
       if (alterTable) {
@@ -98,7 +113,7 @@ export function expectedObjectsFrom(sqlFiles) {
     }
   }
 
-  return { tables, columns, indexes, constraints };
+  return { tables, columns, indexes, constraints, views };
 }
 
 function migrationFiles() {
@@ -143,12 +158,23 @@ async function main() {
           where n.nspname = 'pilot'`,
       )).rows.map((row) => row.conname),
     );
+    // pg_class rather than information_schema.views: the latter omits
+    // materialized views entirely, so a migration that created one would go
+    // unchecked for the same reason plain views did.
+    const actualViews = new Set(
+      (await client.query(
+        `select c.relname from pg_class c
+           join pg_namespace n on n.oid = c.relnamespace
+          where n.nspname = 'pilot' and c.relkind in ('v', 'm')`,
+      )).rows.map((row) => row.relname),
+    );
 
     const missing = {
       tables: [...expected.tables].filter((name) => !actualTables.has(name)),
       columns: [...expected.columns].filter((name) => !actualColumns.has(name)),
       indexes: [...expected.indexes].filter((name) => !actualIndexes.has(name)),
       constraints: [...expected.constraints].filter((name) => !actualConstraints.has(name)),
+      views: [...expected.views].filter((name) => !actualViews.has(name)),
     };
 
     const missingCount = Object.values(missing).reduce((total, list) => total + list.length, 0);
@@ -164,6 +190,7 @@ async function main() {
           columns: expected.columns.size,
           indexes: expected.indexes.size,
           constraints: expected.constraints.size,
+          views: expected.views.size,
         },
       }, null, 2));
       process.exitCode = 1;
@@ -177,6 +204,7 @@ async function main() {
         columns: expected.columns.size,
         indexes: expected.indexes.size,
         constraints: expected.constraints.size,
+        views: expected.views.size,
       },
     }));
   } finally {
