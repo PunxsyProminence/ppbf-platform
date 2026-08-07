@@ -57,12 +57,19 @@ const OTHER_ACCOUNT_ID = 'acct-curator-other';
 
 // The base schema creates the four shadow_library tables; the evidence
 // migration adds the approval/verification/index_completed_at columns that the
-// review gate and searchShadowLibrary both depend on.
+// review gate and searchShadowLibrary both depend on. The retraction
+// surveillance migration adds retrieval_suppressed, which searchShadowLibrary
+// also excludes on -- see its own "not coalesce(s.retrieval_suppressed, false)"
+// predicate. That column dependency is the same shape as approval_state's:
+// deploying the code before the migration would 42703 on every search, so the
+// runbook (apply-migrations.yml) applies migrations before the code that
+// depends on them, same as it always has.
 const SCHEMA_FILES = [
   'pilot_slice_postgres.sql',
   'pilot_slice_postgres_shadow_runtime_migration.sql',
   'pilot_slice_postgres_shadow_evidence_migration.sql',
   'pilot_slice_postgres_shadow_chunk_embedding_migration.sql',
+  'pilot_slice_postgres_retraction_surveillance_migration.sql',
 ];
 
 let PG_PORT: number;
