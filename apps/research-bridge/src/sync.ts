@@ -15,7 +15,12 @@ async function main(): Promise<void> {
   try {
     const snapshot = await ppbf.fetchExport();
     operation = 'research.index-and-store';
-    const result = await synchronizeResearchIndex({ config, snapshot, ...clients });
+    const result = await synchronizeResearchIndex({
+      config,
+      snapshot,
+      ...clients,
+      onStage: (stage) => { operation = stage; },
+    });
     trackSafeEvent('research.sync.completed', result);
   } catch (error) {
     trackSafeException(error, operation);

@@ -41,7 +41,9 @@ export async function synchronizeResearchIndex(input: {
   searchIndexClient: SearchIndexClient;
   searchClient: SearchClient<ResearchIndexDocument>;
   blobServiceClient: BlobServiceClient;
+  onStage?: (stage: string) => void;
 }): Promise<{ uploaded: number; deleted: number }> {
+  input.onStage?.('research.search-create-index');
   await input.searchIndexClient.createOrUpdateIndex({
     name: input.config.searchIndexName,
     fields: [
@@ -61,11 +63,13 @@ export async function synchronizeResearchIndex(input: {
 
   const documents = toIndexDocuments(input.snapshot);
   if (documents.length > 0) {
+    input.onStage?.('research.search-write-documents');
     await input.searchClient.mergeOrUploadDocuments(documents);
   }
 
   const currentIds = new Set(documents.map((document) => document.id));
   const staleIds: string[] = [];
+  input.onStage?.('research.search-read-existing');
   const existing = await input.searchClient.search('*', { select: ['id'] });
   for await (const result of existing.results) {
     if (!currentIds.has(result.document.id)) {
@@ -73,9 +77,11 @@ export async function synchronizeResearchIndex(input: {
     }
   }
   if (staleIds.length > 0) {
+    input.onStage?.('research.search-delete-stale');
     await input.searchClient.deleteDocuments('id', staleIds);
   }
 
+  input.onStage?.('research.blob-write-snapshots');
   const researchContainer = input.blobServiceClient.getContainerClient(input.config.researchContainerName);
   const evidenceContainer = input.blobServiceClient.getContainerClient(input.config.evidenceContainerName);
   await Promise.all([
