@@ -3,46 +3,60 @@
 
   "environments": {
     "staging": {
-      "deployed_sha": "07188a444a652c850ef4698116afb8e09c8f109f",
-      "deployed_image_digest": "sha256:028f4c8a4d7cf41f38e3e2a3f921c2f94237810c70a6cff774afe0bd7535950d",
-      "deployment_timestamp": "2026-08-06T05:50:00Z",
-      "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/30985796578",
+      "deployed_sha": "19d7e70d6ea56a77cf8457876bbbc25a977030fb",
+      "deployed_image_digest": "sha256:4e0e3cb5a3eceb69a271d346bd2eb8bea5a9c2d832ef8232fce9023bb1284a5b",
+      "deployment_timestamp": "2026-08-08T07:51:34Z",
+      "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/31247001987",
       "container_app": "app-ppbf-staging",
-      "revision": "app-ppbf-staging--0000121",
+      "revision": "app-ppbf-staging--0000137",
       "last_verified_by": "gatekeeper",
-      "last_verified_at": "2026-08-06T05:56:00Z",
-      "last_verification_method": "az containerapp show (image match) + curl smoke set (login 400, session 200, shadow 401, GET / 200, GET /login 200)",
-      "known_staging_gaps": []
+      "last_verified_at": "2026-08-08T07:55:00Z",
+      "last_verification_method": "az containerapp revision list (revision + image digest read off the live app), plus a live POST to /api/pilot/auth/magic-link/request (202) with the resulting container console line read back",
+      "known_staging_gaps": [
+        "Outbound mail is refused by Exchange. Graph sendMail answers 403 with graph_error_code=ErrorAccessDenied for Admin@punxsyprominence.org, observed 2026-08-08T07:54Z. Not a permissions gap: a token probe run inside the container showed roles=[\"Mail.Send\"] for appid 7835e2d0-4437-4845-8284-9ee147050296, and Test-ApplicationAccessPolicy reports Granted for Admin@ and Denied for three real staff mailboxes. Magic-link issuance therefore sends nothing. Redemption itself is verified working end to end (session cookie issued, replayed token refused, GET answered 405)."
+      ]
     },
     "production": {
-      "deployed_sha": "07188a444a652c850ef4698116afb8e09c8f109f",
-      "deployed_image_digest": "sha256:028f4c8a4d7cf41f38e3e2a3f921c2f94237810c70a6cff774afe0bd7535950d",
-      "deployment_timestamp": "2026-08-06T05:55:24Z",
-      "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/31017335138",
+      "deployed_sha": "19d7e70d6ea56a77cf8457876bbbc25a977030fb",
+      "deployed_image_digest": "sha256:4e0e3cb5a3eceb69a271d346bd2eb8bea5a9c2d832ef8232fce9023bb1284a5b",
+      "deployment_timestamp": "2026-08-08T07:58:29Z",
+      "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/31247308609",
       "container_app": "app-ppbf-production",
       "resource_group": "rg-ppbf-enterprise-staging",
-      "revision": "app-ppbf-production--0000114",
+      "revision": "app-ppbf-production--0000119",
+      "app_origin": "https://www.punxsyprominence.org",
       "last_verified_by": "gatekeeper",
-      "last_verified_at": "2026-08-06T06:15:00Z",
-      "last_verification_method": "az containerapp show, image digest compared against deployed_image_digest above",
-      "known_production_gaps": []
+      "last_verified_at": "2026-08-08T08:00:00Z",
+      "last_verification_method": "az containerapp revision list (revision + digest read off the live app, byte-equal to the digest staging tested), single-revision mode with 100% traffic on latest confirmed; deploy-production's own 'Verify Production Schema Matches This Commit' and 'Pilot API Smoke Checks' steps both green in the run above",
+      "known_production_gaps": [
+        "Magic-link mail delivery is not_verified on production. It has never been attempted here -- no production account has auth_provider='magic_link', so nothing would be sent. The Exchange refusal observed on staging is a tenant-level policy condition and should be assumed to apply to production until proven otherwise.",
+        "T-001, T-002 and T-003 reached production without a RUNTIME_VERIFIED row. Their PRs (#239, #242, #237) merged 2026-08-06 and rode to production inside this deploy of main. The pipeline's own rule is that no item may skip a state; this one was skipped, and is recorded here rather than backfilled."
+      ]
     }
   },
 
   "schema": {
     "known_applied_migrations": [
-      "goal-category-progress (confirmed applied to both staging and production, apply-migrations runs 2026-08-05T03:48Z and 04:30Z)"
+      "goal-category-progress (confirmed applied to both staging and production, apply-migrations runs 2026-08-05T03:48Z and 04:30Z)",
+      "magic-link (staging: apply-migrations run for 1adc244, 2026-08-08T05:31Z; production: run 31247060574, 2026-08-08T07:52Z, output 'PILOT MAGIC LINK MIGRATION PASS' against host ppbf-pg-195892.postgres.database.azure.com database postgres)"
     ],
     "note": "This is a log of what has been OBSERVED applied via apply-migrations run output, not a generated schema version. Every pilot:apply-* runner is additive/idempotent, so re-running one is safe -- this list exists to avoid re-running unnecessarily, not to gate anything."
   },
 
   "capabilities": {
-    "runtime_verified": [],
+    "runtime_verified": [
+      "magic-link redemption on staging: POST /api/pilot/auth/magic-link/consume returns 200 and sets ppbf_pilot_session for the correct principal; the same token replayed returns TOKEN_ALREADY_USED; GET returns 405 with Allow: POST so a mail scanner's prefetch cannot burn a link; exactly one session row created (2026-08-08, staging)"
+    ],
     "merged_not_deployed": [],
-    "deployed_not_runtime_verified": [],
-    "note": "Empty until the audit workflow's gap register is reconciled into intake/tickets/. Do not hand-populate this from source reading -- that is exactly the source-code-claims-mistaken-for-truth failure this file exists to prevent."
+    "deployed_not_runtime_verified": [
+      "T-001 admin activation-code console (#239)",
+      "T-002 covering-coach access window (#242, depends on #243)",
+      "T-003 quarantined-video scan-review console (#237)",
+      "magic-link issuance (the send half) -- deployed to both environments, blocked from verification by the Exchange refusal above"
+    ],
+    "note": "Empty until the audit workflow's gap register is reconciled into intake/tickets/. Do not hand-populate this from source reading -- that is exactly the source-code-claims-mistaken-for-truth failure this file exists to prevent. The entries above are recorded from observed deploy runs and live probes, not from reading source."
   },
 
   "last_updated_by": "gatekeeper",
-  "last_updated_at": "2026-08-06T06:20:00Z"
+  "last_updated_at": "2026-08-08T08:02:00Z"
 }

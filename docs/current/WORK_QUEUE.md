@@ -55,9 +55,20 @@ documentation-only.
 
 | ID | Pri | Title | Owner | Type | State | Depends on | Files/area | Risk | PR | Env | Verified by | Blocker | Updated |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| T-001 | P3 | Admin activation-code console (or remove dead route) | unclaimed | build | STAGING_READY | none | `admin/activation-codes/**` | low | #239 | — | — | Clean-room verified: typecheck, lint, 4 tests pass, build green | none | 2026-08-06 |
-| T-002 | P1 | Covering coach cannot access an athlete they don't own | unclaimed | build | STAGING_READY | #243 | `access.ts`, new migration | medium — auth + schema | #242 | — | — | Clean-room verified: 284 suites pass, 15 new tests, typecheck/lint green, migrations pending (embedded-postgres flake on Windows, GitHub will verify) | Blocker #243 (coach reassignment) merged 2026-08-06 | 2026-08-06 |
-| T-003 | P0 | Admin console for quarantined-video scan-review escalation | unclaimed | build | STAGING_READY | none | `admin/video-review/**` | medium — safeguarding, minors' footage | #237 | — | — | Clean-room verified: typecheck, lint, tests pass, E2E pass, build green | none | 2026-08-06 |
+| T-001 | P3 | Admin activation-code console (or remove dead route) | unclaimed | build | PRODUCTION_DEPLOYED | none | `admin/activation-codes/**` | low | #239 | production | Deploy run 31247308609, digest `sha256:4e0e3cb…84a5b`, revision `--0000119` read off the live app | RUNTIME_VERIFIED was skipped — see note below | 2026-08-08 |
+| T-002 | P1 | Covering coach cannot access an athlete they don't own | unclaimed | build | PRODUCTION_DEPLOYED | #243 | `access.ts`, new migration | medium — auth + schema | #242 | production | same run/digest/revision as T-001 | RUNTIME_VERIFIED was skipped — see note below | 2026-08-08 |
+| T-003 | P0 | Admin console for quarantined-video scan-review escalation | unclaimed | build | PRODUCTION_DEPLOYED | none | `admin/video-review/**` | medium — safeguarding, minors' footage | #237 | production | same run/digest/revision as T-001 | RUNTIME_VERIFIED was skipped — see note below | 2026-08-08 |
+
+**All three skipped `RUNTIME_VERIFIED`, and that is recorded rather than
+backfilled.** Their PRs merged to `main` on 2026-08-06 and then rode to
+production on 2026-08-08 inside a deploy of `main` dispatched for a different
+reason (the magic-link work). Nobody ran the acceptance-criteria probe against
+staging for any of them, so no row above may claim `PRODUCTION_VERIFIED`. The
+state machine says no item may skip a state; this is what it looks like when
+one does. T-003 is the one that matters most here — it is the P0
+safeguarding console for reviewing quarantined footage of minors, and it is
+live in production having never been exercised against a running environment.
+Running those three probes is the next queue item, not a formality.
 
 **Refuted, not queued**: an automated audit pass flagged "athlete onboarding
 creates live accounts on a shared, guessable PIN with no safeguard" as a
