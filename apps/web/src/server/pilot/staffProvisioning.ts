@@ -1,3 +1,4 @@
+import type { AuthProvider } from './authProviders';
 import type { PilotRole } from './contracts';
 import { query, queryOne, withTransaction } from './db';
 
@@ -77,7 +78,7 @@ export interface OrganizationGuardianLink {
 export interface OrganizationMember {
   account_id: string;
   login_email: string | null;
-  auth_provider: 'ppbf_local' | 'microsoft';
+  auth_provider: AuthProvider;
   role: PilotRole;
   athlete_id: string | null;
   active_flag: boolean;
@@ -232,7 +233,7 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
     account_id: string;
     organization_id: string | null;
     role: PilotRole;
-    auth_provider: 'ppbf_local' | 'microsoft';
+    auth_provider: AuthProvider;
     is_platform_owner: boolean;
   }>(
     `select account_id, organization_id, role, auth_provider, is_platform_owner

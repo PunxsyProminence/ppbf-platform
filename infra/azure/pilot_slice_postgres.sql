@@ -25,7 +25,7 @@ create table if not exists pilot.organization_memberships (
 create table if not exists pilot.accounts (
   account_id text primary key,
   login_email text null,
-  auth_provider text not null default 'ppbf_local' check (auth_provider in ('ppbf_local', 'microsoft')),
+  auth_provider text not null default 'ppbf_local' check (auth_provider in ('ppbf_local', 'microsoft', 'magic_link')),
   role text not null check (role in ('platform_owner', 'organization_admin', 'admin', 'coach', 'athlete', 'parent', 'volunteer', 'staff')),
   organization_id text not null references pilot.organizations(organization_id),
   is_platform_owner boolean not null default false,
