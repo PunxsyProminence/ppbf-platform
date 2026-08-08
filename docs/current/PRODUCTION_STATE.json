@@ -1,6 +1,5 @@
 {
   "_readme": "Controller-owned. Only the gatekeeper (VS Code Claude session) writes verified fields, after observing the target environment directly (az containerapp show / live smoke probes) -- never from reading source, a merged PR, or an agent's claim. External agents may read this file and may propose an update in a PR, but the PR does not become truth until the gatekeeper re-observes and re-writes it. Use null / 'not_verified' rather than guessing; a wrong value here is worse than an honest gap.",
-
   "environments": {
     "staging": {
       "deployed_sha": "c4660cece9d41cea1800ce358141717526a1c26c",
@@ -31,11 +30,10 @@
       "known_production_gaps": [
         "Production's SCHEMA is ahead of its CODE. All ~26 of PR #238's migrations were applied here at 2026-08-08T18:02Z (run 31268298138, migration=all, every step PASS) while the container still runs 19d7e70, which predates #238. Additive migrations are safe in that direction, but one of them was not additive: PILOT DEAD SCHEMA REMOVAL dropped pilot.messages, pilot.skills and pilot.staff. Verified safe against the deployed commit specifically -- `git grep` for those three tables across apps/web/{app,src,scripts} at 19d7e70, excluding tests, returns nothing. Checked against the running commit rather than against #238's own analysis, because #238 analysed its own tree, not this one.",
         "Magic-link mail delivery is not_verified on production. It has never been attempted here -- no production account has auth_provider='magic_link', so nothing would be sent. Staging's refusal has since resolved on its own (see the staging entry), so the tenant-level condition that caused it is gone; production still needs its own access policy checked before anything is claimed.",
-        "T-001, T-002 and T-003 reached production without a RUNTIME_VERIFIED row. Their PRs (#239, #242, #237) merged 2026-08-06 and rode to production inside this deploy of main. The pipeline's own rule is that no item may skip a state; this one was skipped, and is recorded here rather than backfilled."
+        "T-001 and T-002 reached production without a RUNTIME_VERIFIED row and still have none. Their PRs (#239, #242) merged 2026-08-06 and rode to production inside a deploy of main dispatched for the magic-link work. The pipeline's own rule is that no item may skip a state; two still have. T-003 was in this list and came out of it the honest way -- its probe was actually run on 2026-08-08 (see capabilities.runtime_verified), not backfilled."
       ]
     }
   },
-
   "schema": {
     "known_applied_migrations": [
       "goal-category-progress (confirmed applied to both staging and production, apply-migrations runs 2026-08-05T03:48Z and 04:30Z)",
@@ -45,25 +43,23 @@
     ],
     "note": "This is a log of what has been OBSERVED applied via apply-migrations run output, not a generated schema version. Every pilot:apply-* runner is additive/idempotent, so re-running one is safe -- this list exists to avoid re-running unnecessarily, not to gate anything."
   },
-
   "capabilities": {
     "runtime_verified": [
       "magic-link redemption on staging: POST /api/pilot/auth/magic-link/consume returns 200 and sets ppbf_pilot_session for the correct principal; the same token replayed returns TOKEN_ALREADY_USED; GET returns 405 with Allow: POST so a mail scanner's prefetch cannot burn a link; exactly one session row created (2026-08-08, staging)",
       "magic-link DELIVERY on staging, the whole chain with a human in it (2026-08-08T18:07-18:12Z): request answered 202 and wrote a token row; no magic_link.issue_failed line on a warm container; the mail arrived in a real mailbox; the owner clicked it; consumed_at 18:12:51.064Z. Silence alone would not have proved this -- issueMagicLink is deliberately silent for an unknown address too -- so the token row was read back to separate 'sent' from 'no such account'.",
       "magic-link single-transaction claim: the session row's created_at is 18:12:51.064Z, identical to the token's consumed_at, confirming the claim and the session insert happen in one transaction rather than two writes that could interleave. Exactly one session for that account from that click, and the only other session in the window belongs to a Microsoft sign-in by the owner.",
-      "magic-link supersession: every older token row carries invalidated_at set by the request that followed it, and no two were ever live at once -- so requesting a second link genuinely kills the first rather than leaving both valid."
+      "magic-link supersession: every older token row carries invalidated_at set by the request that followed it, and no two were ever live at once -- so requesting a second link genuinely kills the first rather than leaving both valid.",
+      "T-003 quarantined-video scan-review console (2026-08-08, retroactive). Acceptance criteria: page.test.tsx 5/5 including a WrongRoleNotice case for a non-deciding role and separate approve and block cases. Role gate proven against the DEPLOYED app, not only against mocks: a real coach session returns 403 'Forbidden: role not allowed' on POST /api/pilot/video/scan-review, which is the ticket's P0 rule (the coach who filmed footage of a minor gets no path into the decision). A real platform_owner session is refused identically -- VIDEO_REVIEW_DECIDE_ROLES is ['organization_admin'] and nothing else, so even the platform owner cannot decide. Unauthenticated, video/list, review-link and scan-review all answer 401 on BOTH environments and /admin/video-review renders 200. Production has 4 active organization_admin accounts, so the console is usable by someone. Probe sessions were minted on staging only and deleted in a finally block; 0 remained. No session was minted on production and no real video was approved or blocked anywhere."
     ],
     "merged_not_deployed": [],
     "deployed_not_runtime_verified": [
       "T-001 admin activation-code console (#239)",
       "T-002 covering-coach access window (#242, depends on #243)",
-      "T-003 quarantined-video scan-review console (#237)",
       "everything PR #238 added -- deployed to staging 2026-08-08T16:55Z, not to production. Its ~26 migrations are applied to BOTH databases.",
       "magic-link on production -- the code is deployed and the schema is applied, but nothing has been sent or redeemed there"
     ],
     "note": "Empty until the audit workflow's gap register is reconciled into intake/tickets/. Do not hand-populate this from source reading -- that is exactly the source-code-claims-mistaken-for-truth failure this file exists to prevent. The entries above are recorded from observed deploy runs and live probes, not from reading source."
   },
-
   "last_updated_by": "gatekeeper",
   "last_updated_at": "2026-08-08T18:22:00Z"
 }
