@@ -434,7 +434,12 @@ export async function run() {
   const connectionString = required('AZURE_POSTGRES_CONNECTION_STRING');
   const expectedHostname = required('PPBF_EXPECTED_POSTGRES_HOSTNAME');
   const expectedDatabase = required('PPBF_EXPECTED_POSTGRES_DATABASE');
-  const organizationId = process.env.PPBF_SEED_ORG_ID?.trim() || 'ppbf-default-org';
+  // No default. The app may fall back to 'ppbf-default-org' when it serves a
+  // request (see src/server/pilot/env.ts), because a running app needs some org
+  // to answer as. A bulk loader is the opposite case: it writes hundreds of
+  // owned rows into whichever database it was pointed at, and a silent default
+  // there means seeding the wrong organization and finding out later.
+  const organizationId = required('PPBF_SEED_ORG_ID');
   const seedAccountId = required('PPBF_SEED_ACCOUNT_ID');
 
   const target = parseConnectionTarget(connectionString);

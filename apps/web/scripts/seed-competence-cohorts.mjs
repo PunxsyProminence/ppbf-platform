@@ -266,7 +266,9 @@ export async function run() {
   const connectionString = required('AZURE_POSTGRES_CONNECTION_STRING');
   const expectedHostname = required('PPBF_EXPECTED_POSTGRES_HOSTNAME');
   const expectedDatabase = required('PPBF_EXPECTED_POSTGRES_DATABASE');
-  const organizationId = process.env.PPBF_SEED_ORG_ID?.trim() || 'ppbf-default-org';
+  // No default -- see the note in seed-drill-library.mjs. A loader that guesses
+  // its owning organization writes real rows under the wrong one, silently.
+  const organizationId = required('PPBF_SEED_ORG_ID');
 
   const target = parseConnectionTarget(connectionString);
   assertExpectedTarget(target, expectedHostname, expectedDatabase);
