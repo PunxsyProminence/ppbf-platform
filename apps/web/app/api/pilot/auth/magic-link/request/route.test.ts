@@ -1,0 +1,107 @@
+/**
+ * @jest-environment node
+ */
+import { POST } from './route';
+
+jest.mock('@/src/server/pilot/rateLimit', () => ({
+  getClientIp: () => '203.0.113.9',
+  checkRateLimit: jest.fn(() => ({ isLimited: false })),
+  recordFailedAttempt: jest.fn(),
+  checkDurableRateLimit: jest.fn(async () => ({ isLimited: false })),
+  recordDurableFailedAttempt: jest.fn(async () => undefined),
+}));
+
+import {
+  checkDurableRateLimit,
+  checkRateLimit,
+  recordDurableFailedAttempt,
+} from '@/src/server/pilot/rateLimit';
+
+function post(body: unknown) {
+  return POST({
+    json: async () => body,
+    headers: new Headers(),
+  } as never);
+}
+
+describe('POST /api/pilot/auth/magic-link/request', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (checkRateLimit as jest.Mock).mockReturnValue({ isLimited: false });
+    (checkDurableRateLimit as jest.Mock).mockResolvedValue({ isLimited: false });
+  });
+
+  test('answers 202 with the same body for an address that exists and one that does not', async () => {
+    // The route cannot tell them apart and must not appear to. Both calls go
+    // through the identical path; asserting byte-equal responses is the point.
+    const known = await post({ email: 'coach@example.com' });
+    const unknown = await post({ email: 'nobody-at-all@example.com' });
+
+    expect(known.status).toBe(202);
+    expect(unknown.status).toBe(202);
+    expect(await known.json()).toEqual(await unknown.json());
+  });
+
+  test('the message never confirms the address has an account', async () => {
+    const response = await post({ email: 'coach@example.com' });
+    const payload = (await response.json()) as { message: string };
+    // "If that address has an account" -- conditional, always.
+    expect(payload.message).toMatch(/if that address has an account/i);
+    expect(payload.message).not.toMatch(/\bsent\b|\bwe found\b|\byour account\b/i);
+  });
+
+  test('records an attempt even when the address is unknown', async () => {
+    // Recording only real addresses would make "no rate-limit entry" a signal
+    // that the address does not exist -- the leak this route exists to close.
+    await post({ email: 'nobody-at-all@example.com' });
+    expect(recordDurableFailedAttempt).toHaveBeenCalledWith(
+      expect.stringContaining('magic_link_email:nobody-at-all@example.com'),
+    );
+    expect(recordDurableFailedAttempt).toHaveBeenCalledWith(
+      expect.stringContaining('magic_link_ip:203.0.113.9'),
+    );
+  });
+
+  test('normalizes the address before keying the limiter', async () => {
+    // Otherwise Coach@ and coach@ get independent budgets and the per-address
+    // limit is trivially bypassed by varying case.
+    await post({ email: '  COACH@Example.com ' });
+    expect(recordDurableFailedAttempt).toHaveBeenCalledWith('magic_link_email:coach@example.com');
+  });
+
+  test('refuses a malformed address with 400, without touching the limiter', async () => {
+    const response = await post({ email: 'not-an-address' });
+    expect(response.status).toBe(400);
+    expect(recordDurableFailedAttempt).not.toHaveBeenCalled();
+  });
+
+  test('refuses a missing body the same way', async () => {
+    expect((await post({})).status).toBe(400);
+  });
+
+  test.each([
+    ['per-address durable', () => (checkDurableRateLimit as jest.Mock)
+      .mockImplementation(async (k: string) => ({ isLimited: k.startsWith('magic_link_email:') }))],
+    ['per-IP durable', () => (checkDurableRateLimit as jest.Mock)
+      .mockImplementation(async (k: string) => ({ isLimited: k.startsWith('magic_link_ip:') }))],
+    ['volatile', () => (checkRateLimit as jest.Mock).mockReturnValue({ isLimited: true })],
+  ])('%s limit returns 429', async (_label, arrange) => {
+    arrange();
+    const response = await post({ email: 'coach@example.com' });
+    expect(response.status).toBe(429);
+  });
+
+  test('both limit axes give the identical 429 body', async () => {
+    // A different message per axis tells the caller which limit they hit, and
+    // a per-ADDRESS limit firing is itself a hint the address is worth probing.
+    (checkDurableRateLimit as jest.Mock)
+      .mockImplementation(async (k: string) => ({ isLimited: k.startsWith('magic_link_email:') }));
+    const byEmail = await (await post({ email: 'coach@example.com' })).json();
+
+    (checkDurableRateLimit as jest.Mock)
+      .mockImplementation(async (k: string) => ({ isLimited: k.startsWith('magic_link_ip:') }));
+    const byIp = await (await post({ email: 'coach@example.com' })).json();
+
+    expect(byEmail).toEqual(byIp);
+  });
+});
