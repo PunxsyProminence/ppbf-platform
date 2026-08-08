@@ -114,12 +114,34 @@ describe('GET /api/pilot/video/list', () => {
     expect(res.status).toBe(403);
   });
 
-  test('coach without athlete_id is scoped to assigned athletes only', async () => {
+  test('coach without athlete_id sees their assigned athletes AND unassigned video', async () => {
+    // The old name for this test said "scoped to assigned athletes only",
+    // which the query has never done -- it also returns athlete_id is null.
+    // A test name is where the next reader forms their belief about scope, so
+    // it now says what the SQL actually does. The breadth is intended and
+    // owner-confirmed (2026-08-08); see the route's own comment for why.
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
     mockQuery.mockResolvedValueOnce([]);
     const res = await GET(request());
     expect(res.status).toBe(200);
-    expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining('coach_id = $2'), ['org-1', 'acct-1', 50]);
+
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql).toEqual(expect.stringContaining('coach_id = $2'));
+    expect(sql).toEqual(expect.stringContaining('athlete_id is null'));
+    expect(params).toEqual(['org-1', 'acct-1', 50]);
+  });
+
+  test('the coach listing deliberately does NOT pin status, unlike athlete and parent', async () => {
+    // Pinning status = 'ready' here would hide a coach's own quarantined
+    // upload from them -- it would simply never appear, with no explanation.
+    // If someone ever "fixes" this branch to match the other two, this fails
+    // and points them at the decision instead of letting it pass review.
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+    mockQuery.mockResolvedValueOnce([]);
+    await GET(request());
+
+    const [sql] = mockQuery.mock.calls[0];
+    expect(sql).not.toEqual(expect.stringContaining("status = 'ready'"));
   });
 
   test('organization_admin gets org-wide access', async () => {
