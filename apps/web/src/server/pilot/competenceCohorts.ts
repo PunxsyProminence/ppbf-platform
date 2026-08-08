@@ -265,32 +265,35 @@ export function evaluateCohortFit(input: CohortFitInput, cohort: CohortDefinitio
 
   const requiredDomains = splitList(cohort.required_domains);
   const { min_level_ordinal: min, max_level_ordinal: max } = cohort;
+  const hasRange = min !== null || max !== null;
+  const inRange = (ordinal: number) => (min === null || ordinal >= min) && (max === null || ordinal <= max);
 
-  if (min !== null || max !== null) {
-    const inRange = (ordinal: number) => (min === null || ordinal >= min) && (max === null || ordinal <= max);
-
-    if (requiredDomains.length > 0) {
-      // Named domains: EVERY one must be assessed and in range. A domain the
-      // athlete has never been assessed in is not a pass by omission.
-      for (const domain of requiredDomains) {
-        const ordinal = input.competenceByDomain[domain as CompetenceDomain];
-        if (ordinal === undefined) {
-          unmet.push(`No assessed level in ${domain.replace(/_/g, ' ')}.`);
-        } else if (!inRange(ordinal)) {
-          unmet.push(`${domain.replace(/_/g, ' ')} is at level ${ordinal}, outside this room's range.`);
-        }
+  if (requiredDomains.length > 0) {
+    // Named domains: EVERY one must be assessed, and in range if a range is
+    // set. The assessment requirement is checked even when the cohort carries
+    // no level bound -- required_domains means the domain must have been
+    // looked at, and skipping the check when min and max are both null would
+    // fail OPEN, admitting an unassessed athlete to a room that names the very
+    // domains it cares about. No cohort in the current seed hits that shape,
+    // which is exactly why it is worth pinning before one does.
+    for (const domain of requiredDomains) {
+      const ordinal = input.competenceByDomain[domain as CompetenceDomain];
+      if (ordinal === undefined) {
+        unmet.push(`No assessed level in ${domain.replace(/_/g, ' ')}.`);
+      } else if (hasRange && !inRange(ordinal)) {
+        unmet.push(`${domain.replace(/_/g, ' ')} is at level ${ordinal}, outside this room's range.`);
       }
-    } else {
-      // Blank required_domains means any domain qualifies, so one in-range
-      // domain is enough -- but zero assessments is still not enough.
-      const ordinals = Object.values(input.competenceByDomain).filter(
-        (o): o is number => typeof o === 'number',
-      );
-      if (ordinals.length === 0) {
-        unmet.push('No assessed competence levels yet.');
-      } else if (!ordinals.some(inRange)) {
-        unmet.push("No assessed domain falls in this room's level range.");
-      }
+    }
+  } else if (hasRange) {
+    // Blank required_domains means any domain qualifies, so one in-range
+    // domain is enough -- but zero assessments is still not enough.
+    const ordinals = Object.values(input.competenceByDomain).filter(
+      (o): o is number => typeof o === 'number',
+    );
+    if (ordinals.length === 0) {
+      unmet.push('No assessed competence levels yet.');
+    } else if (!ordinals.some(inRange)) {
+      unmet.push("No assessed domain falls in this room's level range.");
     }
   }
 

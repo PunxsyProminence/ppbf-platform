@@ -137,6 +137,34 @@ describe('evaluateCohortFit -- level range', () => {
     expect(evaluateCohortFit(input({ competenceByDomain: { defense: 3 } }), ceilingOnly).eligible).toBe(false);
   });
 
+  it('still requires the named domains to be assessed when no level bound is set', () => {
+    // Fails OPEN if the domain check is skipped whenever min and max are both
+    // null: a room that names the domains it cares about would admit an
+    // athlete never assessed in any of them. No seeded cohort has this shape
+    // today, which is why it is pinned before one does.
+    const fit = evaluateCohortFit(
+      input({ competenceByDomain: {} }),
+      cohort({ required_domains: 'defense,composure', min_level_ordinal: null, max_level_ordinal: null }),
+    );
+
+    expect(fit.eligible).toBe(false);
+    expect(fit.unmet).toEqual([
+      'No assessed level in defense.',
+      'No assessed level in composure.',
+    ]);
+  });
+
+  it('admits any level in the named domains when no level bound is set', () => {
+    // The requirement is that the domain was looked at, not that it reached a
+    // rung the cohort never named.
+    const fit = evaluateCohortFit(
+      input({ competenceByDomain: { defense: 1, composure: 9 } }),
+      cohort({ required_domains: 'defense,composure', min_level_ordinal: null, max_level_ordinal: null }),
+    );
+
+    expect(fit.eligible).toBe(true);
+  });
+
   it('tolerates spacing and trailing commas in required_domains', () => {
     const fit = evaluateCohortFit(
       input({ competenceByDomain: { defense: 4, composure: 4 } }),
