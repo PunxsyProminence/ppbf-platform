@@ -7,12 +7,40 @@
 -- every account keeps the provider it already has.
 begin;
 
--- Widen the vocabulary. The constraint is dropped and re-added rather than
--- altered because PostgreSQL has no ALTER CONSTRAINT for a check.
--- authProviderVocabulary.test.ts asserts this list matches authProviders.ts
--- exactly, in both directions -- the audit vocabulary drifted for want of
--- precisely that check.
-alter table pilot.accounts drop constraint if exists pilot_accounts_auth_provider_check;
+-- Widen the vocabulary.
+--
+-- TWO constraints govern auth_provider on a deployed database, not one:
+--
+--   accounts_auth_provider_check        the inline CHECK in the base schema's
+--                                       CREATE TABLE, auto-named by PostgreSQL
+--   pilot_accounts_auth_provider_check  added by the multiorg migration
+--
+-- A row must satisfy both. The first version of this migration dropped and
+-- re-added only the named one, so magic_link was still refused -- by a
+-- constraint nobody had written down anywhere, on a name nobody had chosen.
+-- Widening the inline CHECK in pilot_slice_postgres.sql fixes fresh databases
+-- and does nothing for existing ones, which is the worst combination: local
+-- tests pass, staging refuses the write.
+--
+-- So this drops EVERY check constraint on the column and re-adds exactly one.
+-- Enumerating rather than naming means a third constraint added by some
+-- future migration cannot silently outvote this one either.
+do $magic_link_vocabulary$
+declare
+  existing record;
+begin
+  for existing in
+    select conname
+      from pg_constraint
+     where conrelid = 'pilot.accounts'::regclass
+       and contype = 'c'
+       and pg_get_constraintdef(oid) ilike '%auth_provider%'
+  loop
+    execute format('alter table pilot.accounts drop constraint %I', existing.conname);
+  end loop;
+end
+$magic_link_vocabulary$;
+
 alter table pilot.accounts add constraint pilot_accounts_auth_provider_check
   check (auth_provider in ('ppbf_local', 'microsoft', 'magic_link'));
 
