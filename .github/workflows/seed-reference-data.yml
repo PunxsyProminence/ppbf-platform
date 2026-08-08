@@ -66,8 +66,11 @@ on:
         required: false
         type: string
       organization_id:
-        description: Existing PPBF organization_id that will own the rows
-        required: true
+        description: >-
+          organization_id that will own the rows. Leave BLANK to use the target
+          app's own default org secret, which is what you want in almost every
+          case. Only set it to seed a different organization on purpose.
+        required: false
         type: string
       seed_account_id:
         description: Existing privileged account_id recorded as the seeder (drill-library only)
@@ -92,12 +95,15 @@ jobs:
     env:
       RESOURCE_GROUP: rg-ppbf-enterprise-staging
       CONTAINER_APP_NAME: ${{ inputs.target == 'production' && 'app-ppbf-production' || 'app-ppbf-staging' }}
-      # These two names are the loaders' actual contract -- seed-drill-library.mjs,
-      # seed-disciplines.mjs and seed-competence-cohorts.mjs all read
-      # PPBF_SEED_ORG_ID / PPBF_SEED_ACCOUNT_ID. They are deliberately NOT named
-      # after the {{PPBF_ORG_ID}} placeholder in the CSVs: that placeholder is the
-      # token substituted into the seed text, not the variable carrying the value.
-      PPBF_SEED_ORG_ID: ${{ inputs.organization_id }}
+      # PPBF_SEED_ACCOUNT_ID is the loader's actual contract name -- see
+      # seed-drill-library.mjs. It is deliberately NOT named after the
+      # {{SEED_ACCOUNT_ID}} placeholder in the CSVs: that placeholder is the token
+      # substituted into the seed text, not the variable carrying the value.
+      #
+      # PPBF_SEED_ORG_ID is NOT set here. It is resolved in a step below, because
+      # when the operator leaves organization_id blank the value has to be read
+      # from the target app's own secret at run time. Setting it at job level too
+      # would leave two sources for one name.
       PPBF_SEED_ACCOUNT_ID: ${{ inputs.seed_account_id }}
     steps:
       - name: Confirm Explicit Target And Apply Intent
@@ -167,6 +173,41 @@ jobs:
           echo "PPBF_EXPECTED_POSTGRES_HOSTNAME=${OVERRIDE_HOST:-$HOST}" >> "$GITHUB_ENV"
           echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
 
+      # The organization that will own every seeded row. Asking an operator to
+      # type this was the wrong shape: the value is a secret they cannot see
+      # from here, so the only way to supply it was to copy it out of Azure by
+      # hand, and a typo seeds a real database under an organization that does
+      # not exist. The app already knows its own default org -- it reads this
+      # exact secret to answer requests, and the staging E2E gate resolves it
+      # the same way -- so the pipeline reads it too, and the operator supplies
+      # nothing unless they mean to override it.
+      - name: Resolve Owning Organization
+        env:
+          SUPPLIED: ${{ inputs.organization_id }}
+        run: |
+          set -euo pipefail
+          if [ -n "$SUPPLIED" ]; then
+            ORG="$SUPPLIED"
+            SOURCE="operator input"
+          else
+            ORG="$(az containerapp secret show \
+              --name "$CONTAINER_APP_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --secret-name ppbf-pilot-default-org-id \
+              --query value -o tsv)"
+            SOURCE="$CONTAINER_APP_NAME default org secret"
+          fi
+          if [ -z "$ORG" ]; then
+            echo "::error::Could not resolve an owning organization. Supply organization_id explicitly."
+            exit 1
+          fi
+          # Masked because the app treats it as a secret; the loaders print
+          # counts, never the org, so nothing downstream leaks it either.
+          echo "::add-mask::$ORG"
+          echo "PPBF_SEED_ORG_ID=$ORG" >> "$GITHUB_ENV"
+          echo "ORG_SOURCE=$SOURCE" >> "$GITHUB_ENV"
+          echo "Owning organization resolved from $SOURCE."
+
       # --dry-run still performs every insert for real inside a transaction and
       # then rolls back, so it proves the data actually fits the live schema
       # rather than only that the files parse.
@@ -193,7 +234,9 @@ jobs:
             echo "- target: \`${{ inputs.target }}\`"
             echo "- dataset: \`${{ inputs.dataset }}\`"
             echo "- mode: \`${{ inputs.mode }}\`"
-            echo "- organization_id: \`${{ inputs.organization_id }}\`"
+            # Never the value itself -- it is masked, and printing it here would
+            # put a secret in a summary anyone with repo read access can see.
+            echo "- owning organization: resolved from \`$ORG_SOURCE\`"
             echo ""
             if [ "${{ inputs.mode }}" = "dry-run" ]; then
               echo "Rehearsed and rolled back. Nothing was written."

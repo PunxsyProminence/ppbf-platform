@@ -78,6 +78,31 @@ describe('seed-reference-data workflow contract', () => {
     ]);
   });
 
+  it('resolves the owning organization before any loader runs', () => {
+    // PPBF_SEED_ORG_ID is written to $GITHUB_ENV by a step rather than declared
+    // at job level, because a blank organization_id is resolved from the target
+    // app's own secret at run time. $GITHUB_ENV only reaches LATER steps, so a
+    // resolution step ordered after a seed step would hand that loader an empty
+    // variable -- which now stops it rather than silently defaulting, but still
+    // fails a real dispatch for a reason nobody would guess from the form.
+    const resolveAt = workflow.indexOf('name: Resolve Owning Organization');
+    expect(resolveAt).toBeGreaterThan(-1);
+
+    const seedSteps = [...workflow.matchAll(/name: Seed [A-Za-z ]+/g)];
+    expect(seedSteps.length).toBeGreaterThan(0);
+    for (const step of seedSteps) {
+      expect(step.index).toBeGreaterThan(resolveAt);
+    }
+  });
+
+  it('never prints the resolved organization into the run summary', () => {
+    // The value is a secret the app reads for itself. Echoing it into
+    // GITHUB_STEP_SUMMARY would publish it to anyone with repo read access.
+    const summary = workflow.slice(workflow.indexOf('name: Record What Ran'));
+    expect(summary).not.toMatch(/\$\{\{\s*inputs\.organization_id\s*\}\}/);
+    expect(summary).not.toMatch(/\$PPBF_SEED_ORG_ID|\$\{PPBF_SEED_ORG_ID\}/);
+  });
+
   it.each(LOADERS)('%s does not default its owning organization', (loader) => {
     const source = fs.readFileSync(path.join(SCRIPTS_DIR, loader), 'utf8');
     // A loader that falls back to some literal organization writes real rows

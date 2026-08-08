@@ -85,12 +85,18 @@ rejected and the whole transaction aborts.
 
 Each loader is idempotent — re-running produces no duplicates.
 
-`organization_id` is the production organization the rows will belong to. It is
-the value behind the Container App secret `ppbf-pilot-default-org-id`, which is
-what the app itself reads as its default org; the SHADOW E2E gate resolves it
-the same way. Take it from there rather than typing a value you believe is
-right — the loaders no longer fall back to anything if it is wrong or missing,
-they stop.
+**Leave `organization_id` blank.** The workflow resolves the owning organization
+from the target app's own `ppbf-pilot-default-org-id` secret — the same value
+the app reads to answer requests, and the same one the SHADOW E2E gate uses. It
+is masked in the log and never printed into the run summary.
+
+Asking an operator to type it was the wrong shape to begin with: the value is a
+secret they cannot see from the Actions form, so supplying it meant copying it
+out of Azure by hand, and a typo seeds a real database under an organization
+that does not exist. Set it only to seed some *other* organization deliberately.
+
+`seed_account_id` is still yours to supply, and only `drill-library` needs it.
+It is an account id you already know, not a secret.
 
 That last point is a behaviour change. Until 2026-08-08 the workflow exported
 `PPBF_ORG_ID`/`SEED_ACCOUNT_ID` while every loader read
