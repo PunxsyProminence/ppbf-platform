@@ -81,17 +81,40 @@ describe('seed-reference-data workflow contract', () => {
     ]);
   });
 
+  it('resolves the owning organization before any loader runs', () => {
+    // PPBF_SEED_ORG_ID is written to $GITHUB_ENV by a step rather than declared
+    // at job level, because a blank organization_id is resolved from the target
+    // app's own secret at run time. $GITHUB_ENV only reaches LATER steps, so a
+    // resolution step ordered after a seed step would hand that loader an empty
+    // variable -- which now stops it rather than silently defaulting, but still
+    // fails a real dispatch for a reason nobody would guess from the form.
+    const resolveAt = workflow.indexOf('name: Resolve Owning Organization');
+    expect(resolveAt).toBeGreaterThan(-1);
+
+    const seedSteps = [...workflow.matchAll(/name: Seed [A-Za-z ]+/g)];
+    expect(seedSteps.length).toBeGreaterThan(0);
+    for (const step of seedSteps) {
+      expect(step.index).toBeGreaterThan(resolveAt);
+    }
+  });
+
+  it('never prints the resolved organization into the run summary', () => {
+    // The value is a secret the app reads for itself. Echoing it into
+    // GITHUB_STEP_SUMMARY would publish it to anyone with repo read access.
+    const summary = workflow.slice(workflow.indexOf('name: Record What Ran'));
+    expect(summary).not.toMatch(/\$\{\{\s*inputs\.organization_id\s*\}\}/);
+    expect(summary).not.toMatch(/\$PPBF_SEED_ORG_ID|\$\{PPBF_SEED_ORG_ID\}/);
+  });
+
   it('every dataset choice is actually run by a step', () => {
-    // A choice with no matching `if:` would dispatch, gate, seed nothing, and
-    // finish green. On a protected environment that costs an approval click
-    // and returns a success that means nothing -- the same shape of failure as
-    // the org-id drift above, where the run reported success and the operator's
-    // input reached nothing.
+    // A choice with no matching `if:` would dispatch, consume an approval on a
+    // protected environment, seed nothing, and finish green -- the same shape
+    // of failure as the org-id drift above, where the run reported success and
+    // the operator's input reached nothing.
+    //
     // Anchored on the YAML key at its own indent, not on the first occurrence
     // of the word: `dataset:` also appears in this file's header comment, and
     // slicing from there swept in `target:`'s own staging/production options.
-    // Lines are trimmed rather than matched with `$` because the file has CRLF
-    // endings and the trailing \r defeats the anchor.
     const block = workflow.match(/\n {6}dataset:\n([\s\S]*?)\n {6}mode:/);
     expect(block).not.toBeNull();
 
@@ -112,7 +135,7 @@ describe('seed-reference-data workflow contract', () => {
 
   it('"all" runs every single-dataset step, in the order the runbook requires', () => {
     // Not just that each step mentions `all`, but that the steps appear in
-    // dependency order -- drill-library's vocabulary widening has to land
+    // dependency order -- the drill-library vocabulary widening has to land
     // before anything reads the drill library.
     const steps = ['Seed Drill Library', 'Seed Disciplines', 'Seed Competence Cohorts'];
     const positions = steps.map((s) => workflow.indexOf(`- name: ${s}`));
@@ -128,8 +151,8 @@ describe('seed-reference-data workflow contract', () => {
 
   it('"all" still demands the seeder account drill-library needs', () => {
     // drill-library stamps a seeder onto every row and fails at the insert
-    // without one. If `all` skipped that precondition check, the run would get
-    // through the gate and die mid-seed against a real database.
+    // without one. If `all` skipped that precondition, the run would clear the
+    // gate and then die mid-seed against a real database.
     const guard = workflow.slice(workflow.indexOf('SEED_ACCOUNT'));
     expect(guard).toMatch(/DATASET"\s*=\s*"all"/);
   });
