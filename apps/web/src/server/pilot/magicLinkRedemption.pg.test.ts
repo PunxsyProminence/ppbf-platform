@@ -269,6 +269,36 @@ describe('magic-link redemption against real PostgreSQL', () => {
     expect((await redeem('hash-nonexistent')).reason).toBe('TOKEN_UNKNOWN');
   });
 
+  test('NO constraint on accounts still refuses magic_link', async () => {
+    // A deployed database carried two check constraints on auth_provider: the
+    // inline one from CREATE TABLE that PostgreSQL auto-named, and the one the
+    // multiorg migration added. The migration widened only the second, the
+    // readiness check asked only about the second, and the insert failed
+    // against the first. Both were satisfied on a freshly built database, so
+    // nothing local caught it.
+    //
+    // This asserts the property rather than a name, so a third constraint
+    // added later cannot reintroduce the same gap.
+    const refusing = await client.query(
+      `select conname, pg_get_constraintdef(oid) as def
+         from pg_constraint
+        where conrelid = 'pilot.accounts'::regclass
+          and contype = 'c'
+          and pg_get_constraintdef(oid) ilike '%auth_provider%'
+          and pg_get_constraintdef(oid) not ilike '%magic_link%'`,
+    );
+    expect(refusing.rows).toEqual([]);
+
+    // And the write actually succeeds, which is the thing the constraints exist
+    // to permit or refuse.
+    await client.query(
+      `insert into pilot.accounts
+         (account_id, organization_id, role, auth_provider, login_email, active_flag, is_platform_owner)
+       values ('magic-provider-probe', 'org-1', 'coach', 'magic_link', 'probe@example.com', true, false)`,
+    );
+    await client.query(`delete from pilot.accounts where account_id = 'magic-provider-probe'`);
+  });
+
   test('the single-outcome constraint refuses a row that is both used and cancelled', async () => {
     // Guards the schema, not the code: an ambiguous row should be impossible.
     await expect(
