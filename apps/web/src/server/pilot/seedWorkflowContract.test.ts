@@ -47,7 +47,10 @@ function seedVarsRequiredBy(loader: string): string[] {
 }
 
 describe('seed-reference-data workflow contract', () => {
-  const workflow = fs.readFileSync(WORKFLOW, 'utf8');
+  // Normalized because the repo checks out CRLF on Windows, and a trailing \r
+  // silently defeats any regex anchored with $ or ending in \n. A structural
+  // assertion that cannot match is a guard that always passes vacuously.
+  const workflow = fs.readFileSync(WORKFLOW, 'utf8').replace(/\r\n/g, '\n');
 
   it('reads a workflow and three loaders that actually exist', () => {
     // A broken path or regex would make every assertion below vacuously pass.
@@ -76,6 +79,59 @@ describe('seed-reference-data workflow contract', () => {
       'PPBF_SEED_ACCOUNT_ID',
       'PPBF_SEED_ORG_ID',
     ]);
+  });
+
+  it('every dataset choice is actually run by a step', () => {
+    // A choice with no matching `if:` would dispatch, gate, seed nothing, and
+    // finish green. On a protected environment that costs an approval click
+    // and returns a success that means nothing -- the same shape of failure as
+    // the org-id drift above, where the run reported success and the operator's
+    // input reached nothing.
+    // Anchored on the YAML key at its own indent, not on the first occurrence
+    // of the word: `dataset:` also appears in this file's header comment, and
+    // slicing from there swept in `target:`'s own staging/production options.
+    // Lines are trimmed rather than matched with `$` because the file has CRLF
+    // endings and the trailing \r defeats the anchor.
+    const block = workflow.match(/\n {6}dataset:\n([\s\S]*?)\n {6}mode:/);
+    expect(block).not.toBeNull();
+
+    const options = block![1]
+      .split('\n')
+      .map((l) => l.trim().match(/^- (\S+)$/)?.[1])
+      .filter((v): v is string => Boolean(v));
+
+    expect(options).toContain('all');
+    expect(options).toContain('drill-library');
+    expect(options.length).toBeGreaterThan(1);
+
+    for (const option of options) {
+      if (option === 'all') continue;
+      expect(workflow).toContain(`inputs.dataset == '${option}'`);
+    }
+  });
+
+  it('"all" runs every single-dataset step, in the order the runbook requires', () => {
+    // Not just that each step mentions `all`, but that the steps appear in
+    // dependency order -- drill-library's vocabulary widening has to land
+    // before anything reads the drill library.
+    const steps = ['Seed Drill Library', 'Seed Disciplines', 'Seed Competence Cohorts'];
+    const positions = steps.map((s) => workflow.indexOf(`- name: ${s}`));
+    expect(positions.every((p) => p > -1)).toBe(true);
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+
+    for (const step of steps) {
+      const body = workflow.slice(workflow.indexOf(`- name: ${step}`));
+      const condition = body.slice(0, body.indexOf('run:'));
+      expect(condition).toContain("inputs.dataset == 'all'");
+    }
+  });
+
+  it('"all" still demands the seeder account drill-library needs', () => {
+    // drill-library stamps a seeder onto every row and fails at the insert
+    // without one. If `all` skipped that precondition check, the run would get
+    // through the gate and die mid-seed against a real database.
+    const guard = workflow.slice(workflow.indexOf('SEED_ACCOUNT'));
+    expect(guard).toMatch(/DATASET"\s*=\s*"all"/);
   });
 
   it.each(LOADERS)('%s does not default its owning organization', (loader) => {

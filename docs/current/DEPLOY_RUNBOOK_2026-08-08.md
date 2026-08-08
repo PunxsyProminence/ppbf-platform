@@ -69,9 +69,22 @@ completed, re-running is a proven no-op, not a risk.
 
 ### 2. Staging: load seed data
 
-Dispatch `seed-reference-data` once per dataset. Run each in `dry-run` first —
-that performs every insert for real inside a transaction and rolls back, so it
-proves the data fits the live schema rather than only that the files parse.
+Dispatch `seed-reference-data` with `dataset: all`, once in `dry-run` and once
+in `apply`. Dry-run performs every insert for real inside a transaction and
+rolls back, so it proves the data fits the live schema rather than only that
+the files parse.
+
+`all` runs the three loaders in dependency order inside one run. Prefer it.
+Dispatching one dataset at a time still works and is fine on staging, but on
+production it turns a full pass into six gated runs — six approval clicks for
+one deploy — and firing them together does **not** solve that: the concurrency
+group holds a single pending run, so a third dispatch **cancels** the second.
+That happened on 2026-08-08 and a cancelled run reads a lot like a finished
+one.
+
+Each loader still opens its own transaction, so `all` is three independent
+commits rather than one. A failure partway leaves the earlier datasets loaded;
+every loader is idempotent, so the fix is to re-run, not to unpick anything.
 
 | dataset | loads |
 |---|---|
@@ -157,8 +170,14 @@ Take a backup first if `backup.yml` has not run recently.
 
 ### 6. Production: load seed data
 
-Same three `seed-reference-data` dispatches as step 2, with the same two
+Same as step 2 — `dataset: all`, dry-run then apply — with the same two
 datasets absent (session-scripts, transfer-claims).
+
+`organization_id` comes from the `ppbf-pilot-default-org-id` secret as above.
+`seed_account_id` is **not** the same string as staging's: production's active
+platform owner is `Admin@punxsyprominence.org` with a capital A, and the
+lowercase row is retired. Read it from the database rather than reusing what
+staging took.
 
 ### 7. Production: deploy code
 
