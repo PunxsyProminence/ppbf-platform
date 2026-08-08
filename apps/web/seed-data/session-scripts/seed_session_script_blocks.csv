@@ -1,0 +1,406 @@
+organization_id,block_id,script_id,block_order,start_offset_min,end_offset_min,block_label,what_to_say,what_to_explain,what_to_watch,what_to_fix,block_kind,drill_id,scale_level,contact_level
+{{PPBF_ORG_ID}},blk_989cbc8e4523e0,scr_0d0c3b6389e8d1,1,0,1,Bring group in and set tone,"“Today is about seeing before moving. Do not guess. Do not rush. We are going to stay calm, stay balanced, and make good decisions.”","Tell athletes:
+today is not about speed first
+today is about control first
+if they rush, they are wrong
+if they stay calm and see clearly, they are right","are athletes listening
+are they talking over you
+are they already distracted",If attention is poor:“Eyes here. Listen first.”,arrival,,,none
+{{PPBF_ORG_ID}},blk_11ed78a1cb6d98,scr_0d0c3b6389e8d1,2,1,2,Spread athletes out,,“You need enough room to move in stance without hitting anyone.”,"spacing
+athletes too close
+athletes standing flat footed",If spacing is poor:“Take two steps back.”“Spread out more.”,arrival,,,none
+{{PPBF_ORG_ID}},blk_a68fa2ca0bfa34,scr_0d0c3b6389e8d1,3,2,4,Warm up movement in stance,"“Everybody in stance. Start moving. Small steps only. Forward, backward, left, right.”","Explain:
+feet should not cross
+knees slightly bent
+hands up
+chin down
+movement should be quiet and controlled","crossing feet
+standing too tall
+hands dropping
+heavy stomping
+athletes bouncing wildly","If feet cross:“Smaller steps.”
+If standing too tall:“Bend your knees a little.”
+If hands drop:“Hands up while you move.”
+If movement is too wild:“Calm feet. Stay under control.”",instruction,,,none
+{{PPBF_ORG_ID}},blk_dbb5b4ee403658,scr_0d0c3b6389e8d1,4,4,6,Add jab to movement,"“When I say jab, throw one clean jab and keep moving. Do not stop after the punch.”
+Call:
+“Jab”
+“Move”
+“Jab”
+“Move”
+“Double jab”
+“Move”
+“Body jab”
+“Move”","Explain:
+jab should be straight
+do not fall forward
+after punching, recover stance immediately
+movement continues after punch","leaning on jab
+feet freezing after jab
+dropping rear hand
+overreaching","If they lean:“Touch with it, do not fall into it.”
+If they freeze after jab:“Punch then reset your feet.”
+If rear hand drops:“Other hand stays home.”
+If overreaching:“Punch from balance.”",instruction,,,none
+{{PPBF_ORG_ID}},blk_7bf240c24324ad,scr_0d0c3b6389e8d1,5,6,8,Add slip and visual response,"“Now when I say slip left or slip right, move your head only a small amount. Do not jump out of position.”
+Call:
+“Slip left”
+“Move”
+“Slip right”
+“Jab”
+“Slip left”
+“Body jab”
+Add fake pauses and fake cues.
+Then ask one athlete:“What did you see before you moved?”","Explain:
+a slip is small, not dramatic
+eyes stay up
+head moves first
+you are not guessing off sound alone","slipping too far
+bending at waist too much
+stepping when they should slip
+reacting before cue is clear
+panic movement","If slip is too big:“Smaller. Just off line.”
+If bending too much:“Eyes up. Small move.”
+If feet move first:“Head first.”
+If they react blindly:“See it first. Do not guess.”",instruction,,,none
+{{PPBF_ORG_ID}},blk_b1c2ed33577202,scr_0d0c3b6389e8d1,6,8,9,Bring partners together for Drill 1,"“One person jabs slow. One person slips. This is a control drill, not a speed drill.”","Explain:
+jab is light
+slip is small
+pause is real
+return jab is straight
+reset every rep","pair spacing
+athletes who are too close
+athletes who are already too fast","If too close:“One step back.”
+If already rushing:“Slow down before we even start.”",instruction,,,none
+{{PPBF_ORG_ID}},blk_54ec13d1c2176c,scr_0d0c3b6389e8d1,7,9,10,Demonstrate Drill 1,"“Watch the pause. That is the important part. Slip, pause, answer.”","Explain:
+the pause teaches control
+we are not trying to beat the punch with speed
+we are learning to stay calm and correct","are athletes watching
+are they nodding but not understanding",Ask:“Who goes first? What does the defender do?”Make them answer before starting.,demonstration,,,none
+{{PPBF_ORG_ID}},blk_891b93f036f761,scr_0d0c3b6389e8d1,8,10,12,Drill 1 Round 1,"“Round 1. Slip and pause only. No jab back yet. Ready. Go.”
+What athletes do
+Partner A throws one slow jab
+Partner B slips outside
+Partner B pauses
+reset
+repeat",,"head movement size
+balance
+feet moving first
+jab speed from feeder
+reset discipline","If feeder too fast:“Feeder slow down. Help your partner learn.”
+If slip too large:“Make it smaller.”
+If defender moves feet first:“Head first.”
+If no pause:“Freeze longer. Show me the pause.”
+What to explain during round
+Walk and say:“This pause is control.”“Do not rush the answer.”“Stay under yourself.”",drill_round,,,none
+{{PPBF_ORG_ID}},blk_b63293c10b8d16,scr_0d0c3b6389e8d1,9,12,13,Drill 1 reset minute,“Stop. Good. Now add the jab return. Same slow pace.”,"Explain:
+slip first
+pause second
+jab third
+reset last","who is understanding sequence
+who needs another demonstration",If confused:Demonstrate again immediately.,reset_minute,,,none
+{{PPBF_ORG_ID}},blk_2f46429f59afd1,scr_0d0c3b6389e8d1,10,13,15,Drill 1 Round 2,"“Go. Slip, pause, jab back, reset.”",,"pause disappearing
+jab becoming wide
+leaning on counter
+poor reset","If they fire back instantly:“Pause first.”
+If jab loops:“Straight back.”
+If leaning:“Stay balanced.”
+If no reset:“Back to start every rep.”
+What to explain while coaching
+“You are not trying to win. You are trying to answer correctly.”“Small movement, clean return.”",drill_round,,,none
+{{PPBF_ORG_ID}},blk_90d1a897f99517,scr_0d0c3b6389e8d1,11,15,16,Drill 1 teaching minute,"“Now if you are doing well, add a small angle step after the jab. If not, keep the basic version.”","Explain:
+only advanced athletes add angle
+angle is small
+do not sacrifice balance for extra movement","who is ready to progress
+who should stay basic",If someone adds angle badly:“Take angle out. Go back to basic.”,teaching_minute,,,none
+{{PPBF_ORG_ID}},blk_a9c6554491c0c5,scr_0d0c3b6389e8d1,12,16,18,Drill 1 Round 3 optional progression,"“Go. Slip, pause, jab, small angle, reset.”",,"quality of angle
+balance after angle
+overcomplication","If angle becomes jumpy:“Smaller step.”“Do not hop.”
+If form falls apart:“Remove the angle.”",drill_round,,,none
+{{PPBF_ORG_ID}},blk_e3e21448b23340,scr_0d0c3b6389e8d1,13,18,20,Gather and transition to Drill 2,“Good. That was control first. Now we add decision making. You must say what you see before you move.”,"Explain:
+eyes must lead action
+calling the punch forces awareness
+reacting without seeing is guessing","attention during transition
+athletes chatting and losing focus",“Eyes here. Next drill.”,transition,,,none
+{{PPBF_ORG_ID}},blk_e77651ffbb5442,scr_0d0c3b6389e8d1,14,20,21,Explain Drill 2,"“One partner throws jab or jab cross. The other partner must say what they see out loud before reacting. If you do not say it, it does not count.”","Explain:
+call must be loud enough for coach to hear
+call happens before reaction
+response must stay controlled","confusion about options
+quiet athletes",Ask:“What do you say if you see the jab?”“What do you say if you see the cross?”,instruction,,,none
+{{PPBF_ORG_ID}},blk_201dbdd648dd86,scr_0d0c3b6389e8d1,15,21,22,Demonstrate Drill 2,“Say it. Then solve it.”,"Explain:
+exact counter is less important than clear seeing and controlled answer
+first priority is recognition","athlete understanding
+attention level",If confused:Keep only jab for first round.,demonstration,,,none
+{{PPBF_ORG_ID}},blk_41c494b6347b2b,scr_0d0c3b6389e8d1,16,22,24,Drill 2 Round 1,“Go. Feeder throws jab only first. Responder says ‘jab’ before reacting.”,,"can you hear calls
+timing of calls
+freezing
+guessing
+feeder speed","If call too quiet:“Louder.”
+If reacting before speaking:“Say it first.”
+If freezing:“Feeder slower.”
+If feeder fast:“Help your partner learn.”
+What to explain during round
+“Your eyes should lead your hands.”“Correct first, fast later.”",drill_round,,,none
+{{PPBF_ORG_ID}},blk_b43b478691a59e,scr_0d0c3b6389e8d1,17,24,25,Reset minute,“Now feeder can choose jab or jab cross. Responder must call what they see.”,"Explain:
+cross call matters when second punch appears
+stay calm if sequence changes
+do not rush because you are unsure",who got overwhelmed in Round 1,Keep simpler version for struggling pairs.,reset_minute,,,none
+{{PPBF_ORG_ID}},blk_cffd821b3b07a4,scr_0d0c3b6389e8d1,18,25,27,Drill 2 Round 2,"“Go. Say it, then solve it.”",,"silent reactions
+wrong calls
+wrong responses
+panic
+balance","If silent:“Does not count. Say it.”
+If wrong call:“What did you actually see?”
+If panic:“Slow down and see clearly.”
+If balance breaks:“Stay under control.”
+What to explain while coaching
+“It is okay to be slower if you are accurate.”“Do not guess to be fast.”",drill_round,,,none
+{{PPBF_ORG_ID}},blk_67a5a37d53ba00,scr_0d0c3b6389e8d1,19,27,29,Drill 2 progression or cleanup,"“If your pair is doing well, feeder can change timing a little. If not, keep it steady.”","Explain:
+random timing increases thinking load
+but only if control is still present",whether randomness improves drill or ruins it,If too messy:“Back to steady timing.”,instruction,,,none
+{{PPBF_ORG_ID}},blk_7971deb33f5b38,scr_0d0c3b6389e8d1,20,29,32,Transition to Drill 3,“Now we take that calm decision making into a movement game. This is not about winning. It is about staying composed.”,"Explain:
+no punches
+touch shoulder only
+small movements
+calm under changing speed",,,transition,,,none
+{{PPBF_ORG_ID}},blk_3e2072816c339d,scr_0d0c3b6389e8d1,21,32,33,Explain Drill 3,“You are trying to lightly touch the shoulder while defending from being touched. Stay in stance. No wild lunging. No turning away.”,"Allowed defense:
+step back
+slip
+pivot
+Not allowed:
+rough contact
+lunging wildly
+turning the back
+running out of stance","who is too aggressive
+who does not understand game",Demonstrate one calm rep if needed.,instruction,,,none
+{{PPBF_ORG_ID}},blk_be3207d3519e3d,scr_0d0c3b6389e8d1,22,33,35,Drill 3 Round 1,“Go. Light shoulder touches only.”,,"stance
+balance
+overreaching
+tension
+eyes on partner
+wild speed","If lunging:“Small moves.”
+If standing still:“Keep moving.”
+If turning away:“Eyes on partner.”
+If too aggressive:“Light touches only.”
+What to explain during round
+“Calm athletes move better.”“Do not chase. Make them miss.”",drill_round,,,none
+{{PPBF_ORG_ID}},blk_27761ff0760f8a,scr_0d0c3b6389e8d1,23,35,36,Reset minute,"“Now I control speed. When I say go, speed increases. When I say slow, you must reduce speed immediately.”","Explain:
+speed changes test composure
+athletes must stay balanced even when tempo rises",who looks nervous about speed change,Remind:“Fast does not mean wild.”,reset_minute,,,none
+{{PPBF_ORG_ID}},blk_6d4ad711964888,scr_0d0c3b6389e8d1,24,36,38,Drill 3 Round 2 with speed changes,“Go.”Then later:“Slow.”Then:“Go.”,,"panic on “go”
+inability to slow down
+balance loss
+breathing getting erratic","If chaos on “go”:“Speed up without losing control.”
+If they cannot slow:“Slow means controlled now.”
+If balance lost:“Shorter steps.”
+What to explain while coaching
+“Control is the skill.”“Anyone can go wild. Good athletes stay organized.”",drill_round,,,none
+{{PPBF_ORG_ID}},blk_77e785942b794a,scr_0d0c3b6389e8d1,25,38,39,Fast feet burst,"“Fast feet, 10 seconds. Stay upright. Hands up.”",,"hands dropping
+athletes quitting early
+posture collapsing",“Hands up.”“Stay tall but athletic.”,conditioning,,,none
+{{PPBF_ORG_ID}},blk_ad0bac6b86853b,scr_0d0c3b6389e8d1,26,39,41,Drill 3 Round 3 optional,“Back to glove tag. Keep the same control.”,,"fatigue changing behavior
+frustration
+sloppier stance",If frustration rises:“Relax and reset.”,drill_round,,,none
+{{PPBF_ORG_ID}},blk_f0419d9c28f78c,scr_0d0c3b6389e8d1,27,41,44,Transition to bags,“Now we put the pattern on the bag. Defense first. Then offense. Then exit.”,"Every rep has 3 parts:
+defense
+two punch combo
+angle exit",,,transition,,,none
+{{PPBF_ORG_ID}},blk_cde8b781de61b8,scr_0d0c3b6389e8d1,28,44,45,Explain Drill 4 at bags,"“If you punch without defending first, it does not count.”","Options:
+slip
+roll
+step back
+Then:
+two punches
+Then:
+small step left or right","bag spacing
+athletes understanding sequence","Demonstrate one rep if needed:“Slip, cross hook, step out.”",instruction,,,none
+{{PPBF_ORG_ID}},blk_125bac7bef20d0,scr_0d0c3b6389e8d1,29,45,47,Drill 4 Round 1 basic pattern,"“Round 1. One pattern only. Slip, cross hook, step out.”",,"skipping defense
+rushing punches
+no exit
+squaring up
+heavy sloppy shots","If no defense:“Defense first.”
+If no exit:“Finish and move.”
+If sloppy punches:“Clean shots.”
+If squared up:“Reset stance.”
+What to explain during round
+“Do not stay in front after you punch.”“Move with purpose, not panic.”",drill_round,,,none
+{{PPBF_ORG_ID}},blk_59f3a09c182b64,scr_0d0c3b6389e8d1,30,47,48,Reset minute,"“Now you may use slip, roll, or step back, but every rep still needs defense, two punches, and an exit.”","Explain:
+freedom increases thinking
+structure stays the same
+do not add extra punches unless told","who handles variation well
+who gets sloppy with freedom",Keep fixed pattern for struggling athletes.,reset_minute,,,none
+{{PPBF_ORG_ID}},blk_566ae2cbced48e,scr_0d0c3b6389e8d1,31,48,50,Drill 4 Round 2 variable defense,"“Go. Defense, two punches, angle out.”",,"decision making
+clean sequence
+balance after exit
+athletes punching too hard","If hard punching takes over:“Technique over power.”
+If exit too large:“Small angle.”
+If sequence breaks:“Defense, punch, move.”",drill_round,,,none
+{{PPBF_ORG_ID}},blk_4ad0df80d40172,scr_0d0c3b6389e8d1,32,50,52,Optional progression minute,"“If you are looking good, coach may call left or right for your exit.”","Explain:
+this forces listening under movement
+still keep everything controlled","listening skill
+footwork quality on called exit",If listening poor:“Wait for the call.”,instruction,,,none
+{{PPBF_ORG_ID}},blk_57f1b472b8cb71,scr_0d0c3b6389e8d1,33,52,55,Drill 4 final round or cleanup,“Last bag round. Stay clean. No rushing.”,,"fatigue effects
+sloppy exits
+athletes abandoning defense first rule",“Defense first.”“Stay balanced.”“Reset after every rep.”,instruction,,,none
+{{PPBF_ORG_ID}},blk_edc6ed925ee1f8,scr_0d0c3b6389e8d1,34,55,60,Reflection and transition to contact,"“Bring it in.”
+Ask:“What did you see before you moved today?”“Where did you feel rushed?”“What helped you stay calm?”","Explain:
+being aware of what they felt helps learning
+calm, correct reps matter more than flashy reps","are athletes giving thoughtful answers
+who still seems amped up going into contact","If energy is too wild:“Contact block stays controlled. Same mindset.”
+5:00 PM TO 6:00 PM
+CONTACT SESSION",transition,,,none
+{{PPBF_ORG_ID}},blk_dd0645e8cd6145,scr_0d0c3b6389e8d1,35,60,62,Set expectations for contact,“This is controlled. We are applying what we just learned. Light work. Smart work. I will stop anything that gets too hard or too wild.”,"Explain:
+goal is reading and execution
+not ego
+not power
+not winning the round","emotional athletes
+athletes too excited for sparring","If intensity mindset is wrong:“We are learning, not fighting.”",instruction,,,light_technical
+{{PPBF_ORG_ID}},blk_4dbc85b85e493a,scr_0d0c3b6389e8d1,36,62,64,Reaction warm up setup,“One partner gives cues. One reacts correctly. We are still seeing before moving.”,"Explain:
+partner may call real or fake cues
+responder must not bite on false information",,,instruction,,,light_technical
+{{PPBF_ORG_ID}},blk_7d889434adfaa5,scr_0d0c3b6389e8d1,37,64,68,Contact warm up round,“Go. Call and react.”,,"reacting to fake calls
+poor stance
+guessing
+rushing","If reacting to fake:“Do not move unless you actually see it.”
+If too robotic:“Stay relaxed.”",instruction,,,light_technical
+{{PPBF_ORG_ID}},blk_aea0a9fb991e42,scr_0d0c3b6389e8d1,38,68,69,Technical spar explanation,“This is technical sparring. Light contact. Controlled tempo. Reading first.”,"Round 1:
+jab only
+Round 2:
+jab and cross
+Round 3:
+open but controlled",do athletes understand limits,Ask one athlete:“What is the rule for Round 1?”,instruction,,,light_technical
+{{PPBF_ORG_ID}},blk_4af8f6eef9478c,scr_0d0c3b6389e8d1,39,69,71,Technical spar Round 1,“Jab only. Read before you respond. Go.”,,"forcing action
+chasing
+poor defense
+intensity too high","If chasing:“Let the opening come.”
+If too hard:“Slow it down.”
+If no defense:“Do not just trade jabs. Read and answer.”",drill_round,,,light_technical
+{{PPBF_ORG_ID}},blk_1f3a13eaa8b6b0,scr_0d0c3b6389e8d1,40,71,72,Reset minute,“Round 2. Add the cross. Still light. Still controlled.”,"Explain:
+cross should not make them reckless
+defense still matters before counters",,,reset_minute,,,light_technical
+{{PPBF_ORG_ID}},blk_ec9fd7878b7c3c,scr_0d0c3b6389e8d1,41,72,74,Technical spar Round 2,,,"cross making them overcommit
+loss of balance
+escalation of power
+panic counters","If overcommitting:“Stay under your hips.”
+If hard counters:“Touch, do not blast.”
+If balance poor:“Smaller shots, cleaner feet.”",drill_round,,,light_technical
+{{PPBF_ORG_ID}},blk_00c9e915ac9318,scr_0d0c3b6389e8d1,42,74,75,Reset minute,"“Round 3. Open, but same control. Reading first.”","Explain:
+freedom does not remove discipline
+still light
+still smart",,,reset_minute,,,light_technical
+{{PPBF_ORG_ID}},blk_3b4ccf543baabc,scr_0d0c3b6389e8d1,43,75,77,Technical spar Round 3,,,"who keeps structure
+who loses patience
+emotional decisions
+hard shots sneaking in","If ego rises:“Settle down.”
+If structure lost:“Go back to jab first.”",drill_round,,,light_technical
+{{PPBF_ORG_ID}},blk_24db7f00540be3,scr_0d0c3b6389e8d1,44,77,80,Situational spar explanation,“Now we add rules. The rule matters more than winning.”,"Round 1:
+only score after a defensive action
+Round 2:
+start near ropes, escape first
+Round 3:
+last 30 seconds higher pace",,,instruction,,,light_technical
+{{PPBF_ORG_ID}},blk_3b59c6a831a050,scr_0d0c3b6389e8d1,45,80,82,Situational spar Round 1,“Defense before score. Go.”,,"forgetting rule
+scoring without defense
+rushing defense
+fake defensive movement just to qualify","If they forget rule:“Does not count. Defense first.”
+If defense fake:“Make it real. Actually evade or block.”",drill_round,,,light_technical
+{{PPBF_ORG_ID}},blk_492adb76f0af47,scr_0d0c3b6389e8d1,46,82,83,Reset minute,"“Round 2. Start near ropes. Escape first, then attack.”","Explain:
+first task is position
+offense starts after clean escape
+do not swing from bad position",,,reset_minute,,,light_technical
+{{PPBF_ORG_ID}},blk_b8dac81d7c80c2,scr_0d0c3b6389e8d1,47,83,85,Situational spar Round 2,,,"athletes attacking before escaping
+poor footwork off ropes
+panic when trapped
+turning sideways badly","If attacking too early:“Get out first.”
+If panic on ropes:“Small steps. Stay calm.”
+If footwork poor:“Angle out, do not square up.”",drill_round,,,light_technical
+{{PPBF_ORG_ID}},blk_ad86e76aabaef7,scr_0d0c3b6389e8d1,48,85,86,Reset minute,"“Round 3. Normal sparring, but last 30 seconds pick up tempo without losing form.”","Explain:
+faster does not mean sloppy
+composure is still the test",,,reset_minute,,,light_technical
+{{PPBF_ORG_ID}},blk_1930f5e846704e,scr_0d0c3b6389e8d1,49,86,88,Situational spar Round 3,,,"control during pace increase
+breathing
+emotional reactions
+form breakdown","If chaos appears:“Fast and clean, not fast and wild.”
+If breathing poor:“Breathe and reset.”",drill_round,,,light_technical
+{{PPBF_ORG_ID}},blk_b2ca2d5194bb47,scr_0d0c3b6389e8d1,50,88,90,Open spar explanation,“Now open spar. Seventy percent. I can stop this at any time.”,"Explain:
+this is still a learning round
+stay smooth
+no hard hunting
+control your emotions",,,instruction,,,light_technical
+{{PPBF_ORG_ID}},blk_822fd05220b239,scr_0d0c3b6389e8d1,51,90,92,Open spar Round 1,,,"power creep
+frustration
+loss of defense
+loss of structure","If power too high:“Bring it down now.”
+If frustration visible:“Relax. Breathe.”
+If defense disappears:“See first, then work.”",drill_round,,,light_technical
+{{PPBF_ORG_ID}},blk_73a8e9a566a6c1,scr_0d0c3b6389e8d1,52,92,93,10 second burst,“Ten second burst. Bag or shadow. Go.”,,"posture under fatigue
+sloppy punching
+quitting mentally",“Stay clean even when tired.”,conditioning,,,light_technical
+{{PPBF_ORG_ID}},blk_1e8569bf582b95,scr_0d0c3b6389e8d1,53,93,95,Open spar Round 2,,,"fatigue decisions
+athletes rushing more
+emotional exchanges","If rushed:“Slow your eyes down.”
+If brawling starts:“Reset. Too messy.”",drill_round,,,light_technical
+{{PPBF_ORG_ID}},blk_02317197be5f7e,scr_0d0c3b6389e8d1,54,95,96,Burst again,“Ten seconds. Fast but clean.”,,ability to follow command under fatigue,If they go sloppy:“Clean first.”,conditioning,,,light_technical
+{{PPBF_ORG_ID}},blk_ea0553d415a2f6,scr_0d0c3b6389e8d1,55,96,98,Open spar Round 3,,,"who stays composed late
+who falls apart under fatigue
+who keeps reading instead of guessing",Praise good examples:“Good patience.”“Good control.”“Good defense first.”,drill_round,,,light_technical
+{{PPBF_ORG_ID}},blk_e23a92595dd480,scr_0d0c3b6389e8d1,56,98,100,Conditioning finish explanation,“Last block. Technique while tired.”,"Round 1:
+jab only, high volume
+Round 2:
+defend then two punches
+Round 3:
+free, but defense before offense
+Last 20 seconds:
+high output",,,conditioning,,,light_technical
+{{PPBF_ORG_ID}},blk_e43b9729a3b1f0,scr_0d0c3b6389e8d1,57,100,102,Conditioning Round 1,,,"jab quality
+volume without collapse
+hands dropping
+posture","If jab gets sloppy:“Straight punches.”“Stay balanced.”
+If hands drop:“Hands home after every jab.”",drill_round,,,light_technical
+{{PPBF_ORG_ID}},blk_9c8d7ad83c1869,scr_0d0c3b6389e8d1,58,102,103,Reset minute,“Round 2. Defense before two punches.”,"Explain:
+rule matters even when tired
+tired is when discipline shows up",,,reset_minute,,,light_technical
+{{PPBF_ORG_ID}},blk_83666aee78b02e,scr_0d0c3b6389e8d1,59,103,105,Conditioning Round 2,,,"skipping defense
+throwing wide shots
+no reset
+panic speed","If defense skipped:“Does not count. Defense first.”
+If wide sloppy punches:“Shorter, cleaner punches.”",drill_round,,,light_technical
+{{PPBF_ORG_ID}},blk_de473be6fbd157,scr_0d0c3b6389e8d1,60,105,106,Reset minute,"“Round 3. Free, but still defend first. Last 20 seconds are high output.”","Explain:
+freedom does not remove structure
+stay composed into fatigue",,,reset_minute,,,light_technical
+{{PPBF_ORG_ID}},blk_33a4d8e54d0ac7,scr_0d0c3b6389e8d1,61,106,108,Conditioning Round 3,,,"mental discipline
+technical breakdown
+emotional effort versus smart effort","If they get wild:“Stay smart while tired.”
+If technique falls apart:“Lower speed, keep form.”",drill_round,,,light_technical
+{{PPBF_ORG_ID}},blk_2af045ea18a637,scr_0d0c3b6389e8d1,62,108,110,Final gather in,"“Bring it in.”
+Ask:“What did you see better today?”“When did you feel rushed?”“What helped you stay composed?”","Explain:
+good athletes reflect
+today was about vision, calm, and control
+better fighters are built by reading and responding, not by guessing","athlete understanding
+emotional tone of room
+whether lesson landed","If answers are weak:Summarize for them:“Today you worked on seeing first, controlling your reaction, and keeping technique while pressure increased.”
+QUICK WHAT TO WATCH FOR ALL DAY
+Always watch for
+balance
+hands dropping
+feet crossing
+panic movement
+rushing
+guessing
+poor reset
+too much intensity
+forgetting the rule of the round
+Always fix first
+safety
+speed that is too high
+balance problems
+misunderstanding of drill
+emotional intensity
+Explain repeatedly
+why the drill matters
+what the key rule is
+what success looks like
+what athletes should feel",transition,,,light_technical
+{{PPBF_ORG_ID}},blk_3bc86d4ec3c442,scr_6db2b8c6917dc0,1,0,10,Arrival and Preparation,,,,,arrival,,,none
+{{PPBF_ORG_ID}},blk_df4fb688e5b181,scr_6db2b8c6917dc0,2,10,40,Sparring Drill Rounds,,,,,instruction,,,controlled_sparring
+{{PPBF_ORG_ID}},blk_01b502a7e7336d,scr_6db2b8c6917dc0,3,40,110,Open Sparring,,,,,instruction,,,controlled_sparring
