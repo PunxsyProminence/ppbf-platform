@@ -1,4 +1,5 @@
 import { query, queryOne, withTransaction } from './db';
+import { findRegistrationBlockingHold } from './trainingHolds';
 
 export type SchedulerRole = 'athlete' | 'parent' | 'coach' | 'organization_admin' | 'admin';
 
@@ -49,7 +50,7 @@ export interface SchedulerAttendance {
   class_id: string;
   athlete_id: string;
   status: 'present' | 'absent' | 'excused';
-  method: 'self' | 'coach_override' | 'admin_override';
+  method: 'self' | 'parent' | 'coach_override' | 'admin_override';
   checked_in_by_role: SchedulerRole;
   checked_in_by_account_id: string;
   note: string;
@@ -179,6 +180,7 @@ export async function getSchedulerRegistrationById(
 export type RegisterForClassOutcome =
   | { outcome: 'class_not_found' }
   | { outcome: 'already_registered' }
+  | { outcome: 'training_hold'; holdId: string; athleteExplanation: string; liftConditionText: string }
   | { outcome: 'registered' | 'waitlisted'; registrationId: string };
 
 // Registration must not be a check-then-insert sequence: an unlocked
@@ -208,6 +210,22 @@ export async function registerForClassTransactionally(
     const classRow = classResult.rows[0];
     if (!classRow) {
       return { outcome: 'class_not_found' };
+    }
+
+    // #82 STOP: an active 'all_training' hold refuses the registration
+    // before the duplicate/capacity checks, so a held athlete hears the
+    // hold's own explanation consistently rather than a mix of conflict
+    // messages. Checked inside this transaction (same client), and a
+    // missing table (pre-migration window) degrades to the pre-#82
+    // behavior via the 42P01 guard in findRegistrationBlockingHold.
+    const blockingHold = await findRegistrationBlockingHold(organizationId, athleteId, client);
+    if (blockingHold) {
+      return {
+        outcome: 'training_hold',
+        holdId: blockingHold.hold_id,
+        athleteExplanation: blockingHold.athlete_explanation,
+        liftConditionText: blockingHold.lift_condition_text,
+      };
     }
 
     const existing = await client.query<{ registration_id: string }>(
@@ -310,41 +328,41 @@ export async function createSchedulerCoachingRequest(organizationId: string, ite
   );
 }
 
+// One record is the one-element case of the batch: the same atomic
+// ON CONFLICT upsert, so a double-tapped check-in button (two concurrent
+// requests for the same class/athlete) resolves as last-writer-wins instead
+// of the loser's 23505 unique-violation surfacing as an unexplained 500 --
+// which is exactly what the previous select-then-write body here did, the
+// same race the bulk function's own comment warned about.
 export async function upsertSchedulerAttendance(organizationId: string, item: SchedulerAttendance): Promise<void> {
-  const existing = await queryOne<{ attendance_id: string }>(
-    `select attendance_id
-     from pilot.scheduler_attendance
-     where organization_id = $1 and class_id = $2 and athlete_id = $3
-     limit 1`,
-    [organizationId, item.class_id, item.athlete_id],
-  );
+  await bulkUpsertSchedulerAttendance(organizationId, [item]);
+}
 
-  if (existing) {
-    await query(
-      `update pilot.scheduler_attendance
-       set status = $4,
-           method = $5,
-           checked_in_by_role = $6,
-           checked_in_by_account_id = $7,
-           note = $8,
-           checked_in_at = $9,
-           updated_at = $10
-       where organization_id = $1 and class_id = $2 and athlete_id = $3`,
-      [
-        organizationId,
-        item.class_id,
-        item.athlete_id,
-        item.status,
-        item.method,
-        item.checked_in_by_role,
-        item.checked_in_by_account_id,
-        item.note,
-        item.checked_in_at,
-        item.updated_at,
-      ],
-    );
-    return;
-  }
+/** Athlete ids with a live ('registered') registration for one class. */
+export async function listRegisteredAthleteIdsForClass(organizationId: string, classId: string): Promise<string[]> {
+  const rows = await query<{ athlete_id: string }>(
+    `select athlete_id
+     from pilot.scheduler_registrations
+     where organization_id = $1 and class_id = $2 and status = 'registered'`,
+    [organizationId, classId],
+  );
+  return rows.map((row) => row.athlete_id);
+}
+
+// Marks a whole roster in one call -- a coach standing in front of a class
+// should not have to make one round trip per athlete. A single set-based
+// upsert rather than a select-then-write loop per athlete: the loop was both
+// slow (2 round trips x roster size) and race-prone (a concurrent writer
+// could insert between the existence check and the insert, tripping the
+// table's own unique constraint). The database's ON CONFLICT handles the
+// existence check atomically, so there is nothing left to race.
+//
+// attendance_id is deliberately absent from the SET clause: Postgres upsert
+// semantics leave any column not listed there untouched on a conflict, so an
+// existing row keeps its original id and only a genuinely new row gets the
+// one this call generated.
+export async function bulkUpsertSchedulerAttendance(organizationId: string, items: SchedulerAttendance[]): Promise<void> {
+  if (items.length === 0) return;
 
   await query(
     `insert into pilot.scheduler_attendance (
@@ -352,24 +370,39 @@ export async function upsertSchedulerAttendance(organizationId: string, item: Sc
        status, method,
        checked_in_by_role, checked_in_by_account_id,
        note, checked_in_at, updated_at
-     ) values (
-       $1,$2,$3,$4,
-       $5,$6,
-       $7,$8,
-       $9,$10,$11
-     )`,
+     )
+     select
+       $1::text,
+       unnest($2::text[]),
+       unnest($3::text[]),
+       unnest($4::text[]),
+       unnest($5::text[]),
+       unnest($6::text[]),
+       unnest($7::text[]),
+       unnest($8::text[]),
+       unnest($9::text[]),
+       unnest($10::timestamptz[]),
+       unnest($11::timestamptz[])
+     on conflict (organization_id, class_id, athlete_id) do update
+     set status = excluded.status,
+         method = excluded.method,
+         checked_in_by_role = excluded.checked_in_by_role,
+         checked_in_by_account_id = excluded.checked_in_by_account_id,
+         note = excluded.note,
+         checked_in_at = excluded.checked_in_at,
+         updated_at = excluded.updated_at`,
     [
       organizationId,
-      item.attendance_id,
-      item.class_id,
-      item.athlete_id,
-      item.status,
-      item.method,
-      item.checked_in_by_role,
-      item.checked_in_by_account_id,
-      item.note,
-      item.checked_in_at,
-      item.updated_at,
+      items.map((item) => item.attendance_id),
+      items.map((item) => item.class_id),
+      items.map((item) => item.athlete_id),
+      items.map((item) => item.status),
+      items.map((item) => item.method),
+      items.map((item) => item.checked_in_by_role),
+      items.map((item) => item.checked_in_by_account_id),
+      items.map((item) => item.note),
+      items.map((item) => item.checked_in_at),
+      items.map((item) => item.updated_at),
     ],
   );
 }

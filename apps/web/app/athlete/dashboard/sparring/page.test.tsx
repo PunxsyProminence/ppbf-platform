@@ -77,6 +77,40 @@ describe('Deep-Track sparring submission status', () => {
     expect(screen.queryByText('Not submitted yet')).toBeNull();
   });
 
+  // The rounds field is TOTAL session rounds. Sending it as 'contact_rounds'
+  // for a contact level of 0 ('None') told the safety gate that a bag-work
+  // session was six rounds of contact -- filing a contact-without-clearance
+  // flag against an athlete who honestly reported that no contact occurred.
+  test('a zero-contact session submits neither contact_level nor contact_rounds', async () => {
+    global.fetch = mockFetch(() => true) as unknown as typeof fetch;
+    submittedObservations.length = 0;
+    const { container } = render(<SparringTelemetryPage />);
+
+    const submit = await screen.findByRole('button', { name: 'Log Combat Session' });
+    await waitFor(() => expect((submit as HTMLButtonElement).disabled).toBe(false));
+
+    fireEvent.change(screen.getByLabelText('Contact Level'), { target: { value: '0' } });
+    fireEvent.submit(container.querySelector('form') as HTMLFormElement);
+
+    await waitFor(() => expect(submittedObservations.length).toBeGreaterThan(0));
+    const kinds = submittedObservations.map((observation) => observation.kind);
+    expect(kinds).not.toContain('contact_level');
+    expect(kinds).not.toContain('contact_rounds');
+    // The non-contact observations still go through -- the session itself is
+    // still a record worth keeping.
+    expect(kinds).toContain('punch_attempted');
+    expect(kinds).toContain('focus_achieved');
+  });
+
+  test('a contact session still submits the contact pair', async () => {
+    await renderAndSubmit(() => true);
+
+    await waitFor(() => expect(submittedObservations.length).toBeGreaterThan(0));
+    const kinds = submittedObservations.map((observation) => observation.kind);
+    expect(kinds).toContain('contact_level');
+    expect(kinds).toContain('contact_rounds');
+  });
+
   // Every field on this form is submitted as a typed observation, and the API
   // rejects an unknown kind or unit outright -- so a term the server does not
   // share is a whole field silently lost, not a degraded one.

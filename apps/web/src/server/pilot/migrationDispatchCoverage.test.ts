@@ -40,6 +40,7 @@ const packageJsonPath = path.join(repositoryRoot, 'apps/web/package.json');
  */
 const SLUG_OVERRIDES: Record<string, string> = {
   'scheduler_registration_race': 'scheduler-race',
+  'sparring_exposure_and_load': 'sparring-exposure',
 };
 
 function slugFor(sqlFileName: string): string {

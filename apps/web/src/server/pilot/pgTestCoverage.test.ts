@@ -23,12 +23,19 @@ import path from 'node:path';
  */
 
 const PILOT_DIR = __dirname;
+const SCRIPTS_DIR = path.resolve(__dirname, '../../../scripts');
 const PACKAGE_JSON = path.resolve(__dirname, '../../../package.json');
 
+// Every .pg.test.ts file, full stop -- not just the ones under this
+// directory. Most live in src/server/pilot/, but a script with no
+// database-connecting counterpart in this directory (e.g. a standalone
+// data importer) can carry its own .pg.test.ts in scripts/ instead, and
+// that file needs this same guard just as much.
 function pgTestFiles(): string[] {
-  return readdirSync(PILOT_DIR)
-    .filter((file) => file.endsWith('.pg.test.ts'))
-    .sort();
+  return [
+    ...readdirSync(PILOT_DIR).filter((file) => file.endsWith('.pg.test.ts')),
+    ...readdirSync(SCRIPTS_DIR).filter((file) => file.endsWith('.pg.test.ts')),
+  ].sort();
 }
 
 function migrationChainScripts(): { chain: string; scripts: Record<string, string> } {

@@ -26,6 +26,10 @@ interface DeepTrackResult {
   // the record is kept deliberately -- but the athlete should be told, not left
   // to discover it from a coach later.
   safetyReviewRaised: boolean;
+  // What earns clearance, from the gate's own requirement_text -- the "teaching
+  // moment" doctrine: a stop names what's missing and where to fix it, not just
+  // that it happened. Undefined when no review was raised.
+  safetyReviewLesson: string | undefined;
 }
 
 async function submitDeepTrackObservations(input: {
@@ -51,8 +55,21 @@ async function submitDeepTrackObservations(input: {
     unit: string;
     dimensions?: Record<string, string | number | boolean>;
   }> = [
-    { kind: 'contact_level', value: input.contactLevel, unit: 'level_0_3', dimensions: baseDimensions },
-    { kind: 'contact_rounds', value: input.totalRoundsCompleted, unit: 'count', dimensions: baseDimensions },
+    // The contact pair is sent only when contact actually happened. The
+    // rounds field on this form is TOTAL session rounds, so sending it as
+    // 'contact_rounds' for a contact level of 0 ('None') would report 6
+    // rounds of contact for a bag-work session -- which files a
+    // contact-without-clearance safety flag against an athlete who honestly
+    // logged that no contact occurred. Omitting the whole pair keeps the
+    // formula engine's pair-per-context invariant intact and contributes
+    // exactly what a zero-contact session should to Contact Exposure:
+    // nothing.
+    ...(input.contactLevel > 0
+      ? [
+          { kind: 'contact_level', value: input.contactLevel, unit: 'level_0_3', dimensions: baseDimensions },
+          { kind: 'contact_rounds', value: input.totalRoundsCompleted, unit: 'count', dimensions: baseDimensions },
+        ]
+      : []),
     { kind: 'punch_attempted', value: input.punchesAttempted, unit: 'count', dimensions: { punchType: input.punchType } },
     { kind: 'punch_landed', value: input.punchesLanded, unit: 'count', dimensions: { punchType: input.punchType } },
     { kind: 'punch_absorbed', value: input.punchesAbsorbed, unit: 'count', dimensions: baseDimensions },
@@ -93,9 +110,13 @@ async function submitDeepTrackObservations(input: {
     });
 
     const payload = (await response.json().catch(() => ({}))) as {
-      safetyReview?: { raised?: boolean };
+      safetyReview?: { raised?: boolean; lesson?: string };
     };
-    return { ok: response.ok, safetyReviewRaised: payload.safetyReview?.raised === true };
+    return {
+      ok: response.ok,
+      safetyReviewRaised: payload.safetyReview?.raised === true,
+      safetyReviewLesson: payload.safetyReview?.lesson,
+    };
   }));
 
   const fulfilled = results.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
@@ -107,6 +128,7 @@ async function submitDeepTrackObservations(input: {
     // Any one of the contact observations tripping the gate is enough; they all
     // concern the same session.
     safetyReviewRaised: fulfilled.some((value) => value.safetyReviewRaised),
+    safetyReviewLesson: fulfilled.find((value) => value.safetyReviewLesson)?.safetyReviewLesson,
   };
 }
 
@@ -157,7 +179,7 @@ export default function SparringTelemetryPage() {
     const observedAt = new Date().toISOString();
 
     try {
-      const { ok, savedCount, safetyReviewRaised } = await submitDeepTrackObservations({
+      const { ok, savedCount, safetyReviewRaised, safetyReviewLesson } = await submitDeepTrackObservations({
         athleteId,
         contextId,
         observedAt,
@@ -184,6 +206,7 @@ export default function SparringTelemetryPage() {
       const savedMessage = safetyReviewRaised
         ? 'Telemetry saved. Because there is no current medical clearance on file for this athlete, '
           + 'a safety review has been raised for your coach. The session was still recorded -- do not re-enter it.'
+          + (safetyReviewLesson ? ` ${safetyReviewLesson}` : '')
         : 'Telemetry saved and sent to the SHADOW formula engine for coach review.';
 
       setStatusMessage(ok

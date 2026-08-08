@@ -5,6 +5,7 @@ import type { PilotRole } from './contracts';
 import { resolvePrincipal } from './auth';
 import { ShadowRuntimeUnavailableError } from './shadowRuntimeError';
 import { MedicalStatusBlockedError } from './shadowRecommendations';
+import { GuardianConsentMissingError } from './guardianConsent';
 
 /**
  * The default gate for every authenticated route.
@@ -81,6 +82,14 @@ export function jsonError(error: unknown, fallbackStatus = 500): NextResponse {
     return NextResponse.json({ error: error.message }, { status: 409 });
   }
 
+  // T-008: same reasoning as MedicalStatusBlockedError above -- missing
+  // guardian consent is an expected, safe-to-disclose precondition failure
+  // on a DIFFERENT resource (the guardian's consent record), not a fault of
+  // this request. A 400/403 would misdescribe it; 500 would hide the reason.
+  if (error instanceof GuardianConsentMissingError) {
+    return NextResponse.json({ error: error.message }, { status: 409 });
+  }
+
   if (error instanceof ShadowRuntimeUnavailableError) {
     console.error('shadow-runtime-unavailable', {
       ...(error.missingTables.length > 0 ? { missingTables: error.missingTables } : {}),
@@ -116,6 +125,8 @@ export function jsonError(error: unknown, fallbackStatus = 500): NextResponse {
     message.startsWith('Account already exists')
     || message.startsWith('Athlete is already linked')
     || message.startsWith('Athlete record already exists')
+    || message.startsWith('Coverage already exists')
+    || message.startsWith('Hold already exists')
   ) {
     return NextResponse.json({ error: message }, { status: 409 });
   }

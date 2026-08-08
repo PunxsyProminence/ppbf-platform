@@ -1,8 +1,42 @@
 # T-005 — SHADOW safety escalations: admin queue is unreadable (no visibility into who reported what)
 
-> Status: BACKLOG
+> Status: **RESOLVED — see reconciliation note below (2026-08-06)**
 > Lane: A (git-capable AI) or B (chat-only AI) — either
 > Priority: P1 safeguarding blocker (critical reports hidden from admin)
+
+## Reconciliation note (2026-08-06, session B / remote, collision rule 5)
+
+This gap is real against `origin/main` as of the commit that added this
+ticket (`e3cfd30`) — `pilot.safety_escalations` and its admin queue did
+not exist there. They already exist, built and adversarially reviewed,
+on **PR #238** (branch `claude/remaining-capabilities-ab0q7d`), as
+capability #194 "Red Flag Escalation Ladder" — built and reviewed
+*before* this ticket was written, so this is not new work responding to
+the ticket; the ticket independently found a real gap this PR already
+closes. Per collision rule 5 ("if you find the other session already did
+it, stop and reconcile rather than finishing yours"), no duplicate
+`/admin/safety-escalations` page was built. Evidence, mapped against this
+ticket's acceptance criteria:
+
+| Ticket asks for | Delivered in PR #238 |
+|---|---|
+| Query `pilot.safety_escalations` | Table + `escalationLadder.ts` (schema, transitions) |
+| Page under `admin/safety-escalations/**`, org-admin only | `apps/web/app/admin/escalations/page.tsx` (different path — `escalations`, not `safety-escalations`), gated `RoleSessionGate allowedRoles={['admin','coach']}` — **broader than the ticket asked**: a coach also sees their own athletes' escalations (scoped server-side), not just org admin. If the exact `/admin/safety-escalations` URL matters for an external link or bookmark, that is a small follow-up (route alias), not a rebuild. |
+| Athlete, severity, reporter, date, status, concern text | All rendered — `listEscalations()` returns `athlete_id, severity, reason, triggered_by_role, created_at, status` |
+| Mark acknowledged / resolved | `POST /api/pilot/escalations` (`action: 'acknowledge' \| 'resolve'`) → `acknowledgeEscalation()` / `resolveEscalation()`, guarded so an already-resolved record can't be silently reopened (status predicate on the UPDATE itself) |
+| Audit trail of who acted, when | `acknowledged_by_account_id`/`acknowledged_at` and `resolved_by_account_id`/`resolved_at`/`resolution_note` are first-class columns on the row itself (not a separate `pilot.audit_events` entry) — visible directly on the admin page. Functionally equivalent to the ticket's ask; a different mechanism, not a gap. |
+| Filtering by severity/date/status | `listEscalations` orders critical-first then newest; `status` filter on both the route and the page |
+| Tests: role gating, listing, status transitions | `escalationLadder.test.ts`, `escalationLadder.pg.test.ts` (19 real-Postgres tests), `app/api/pilot/escalations/route.test.ts` |
+
+Not yet built, and correctly out of scope per this ticket: two-way
+messaging, automatic coach notifications, embedded athlete profile view.
+
+If PR #238 has not merged by the time this ticket is picked up again,
+treat this note as the pointer and pull from that branch rather than
+rebuilding — the design (a pull-based queue, since the platform sends no
+email/notifications, ever) and the safeguarding invariants (board sees
+only a k-anonymity-gated count, never rows) are already reasoned through
+in that PR's commit history and worth reusing rather than re-deriving.
 
 <!-- Everything below this line is the prompt. Paste the whole file into the
      builder AI. It must be able to succeed with no other context. -->

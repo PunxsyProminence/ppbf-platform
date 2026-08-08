@@ -160,6 +160,14 @@ export async function loadSeedPackage({
     url: nullable(row.url),
     publication_date: nullable(row.publication_date),
     status: required(row.status, `MISSING_SOURCE_STATUS:${index + 2}`),
+    // The review gate. Not a column addition for its own sake -- these are
+    // the columns pilot_slice_postgres_shadow_evidence_migration.sql adds
+    // to gate retrieval, and a seed that omitted them and let the column
+    // default carry the posture left nothing in the version-controlled
+    // file recording that this corpus is unreviewed. Refused below to
+    // anything but the seed-only values -- see assertSeedOnlyReviewState.
+    approval_state: required(row.approval_state, `MISSING_APPROVAL_STATE:${index + 2}`),
+    verification_state: required(row.verification_state, `MISSING_VERIFICATION_STATE:${index + 2}`),
     created_by_account_id: row.created_by_account_id,
     created_by_role: row.created_by_role,
     metadata: metadata(row.metadata, FILES.sources, index + 2),
@@ -173,12 +181,38 @@ export async function loadSeedPackage({
     document_name: required(row.document_name, `MISSING_DOCUMENT_NAME:${index + 2}`),
     blob_path: nullable(row.blob_path),
     content_sha256: nullable(row.content_sha256),
+    // Never 'indexed' -- see assertSeedOnlyReviewState. The indexing
+    // pipeline owns that transition; this importer does not claim work it
+    // has not done.
     ingest_state: required(row.ingest_state, `MISSING_INGEST_STATE:${index + 2}`),
+    approval_state: required(row.approval_state, `MISSING_APPROVAL_STATE:${index + 2}`),
+    verification_state: required(row.verification_state, `MISSING_VERIFICATION_STATE:${index + 2}`),
     extraction_error: nullable(row.extraction_error),
     created_by_account_id: row.created_by_account_id,
     created_by_role: row.created_by_role,
     metadata: metadata(row.metadata, FILES.documents, index + 2),
   }));
+
+  // Defense in depth, not trust in the CSV: even though the committed
+  // files carry the right values, refuse outright if any row claims a
+  // trusted state. This is the ONLY route by which the seed path could
+  // ever mark evidence approved/verified/indexed, and it is closed here
+  // rather than relied upon by convention. reviewShadowLibrarySource /
+  // reviewShadowLibraryDocument (via requireEvidenceReviewer in
+  // shadowLibrary.ts) remain the only real route to those states.
+  for (const [index, row] of sources.entries()) {
+    if (row.approval_state !== 'pending_review' || row.verification_state !== 'unverified') {
+      fail(`SEED_ROW_CLAIMS_TRUSTED_STATE:sources:${index + 2}`);
+    }
+  }
+  for (const [index, row] of documents.entries()) {
+    if (row.approval_state !== 'pending_review' || row.verification_state !== 'unverified') {
+      fail(`SEED_ROW_CLAIMS_TRUSTED_STATE:documents:${index + 2}`);
+    }
+    if (row.ingest_state === 'indexed') {
+      fail(`SEED_ROW_CLAIMS_INDEXED:documents:${index + 2}`);
+    }
+  }
 
   const chunks = raw.chunks.map((row, index) => ({
     chunk_id: required(row.chunk_id, `MISSING_CHUNK_ID:${index + 2}`),
@@ -279,22 +313,48 @@ async function assertNoCrossTenantIds(client, table, idColumn, ids, organization
   if (result.rowCount) fail(`CROSS_TENANT_ID_COLLISION:${table}:${result.rows[0].id}`);
 }
 
+export async function assertReviewGateColumnsPresent(client) {
+  const result = await client.query(
+    `select
+       exists (select 1 from information_schema.columns
+               where table_schema = 'pilot' and table_name = 'shadow_library_sources'
+                 and column_name in ('approval_state', 'verification_state')
+               having count(*) = 2) as sources_ready,
+       exists (select 1 from information_schema.columns
+               where table_schema = 'pilot' and table_name = 'shadow_library_documents'
+                 and column_name in ('approval_state', 'verification_state')
+               having count(*) = 2) as documents_ready`,
+  );
+  const row = result.rows[0];
+  if (!row?.sources_ready || !row?.documents_ready) {
+    fail(
+      'SHADOW_EVIDENCE_MIGRATION_NOT_APPLIED: approval_state/verification_state are missing from '
+      + 'pilot.shadow_library_sources or pilot.shadow_library_documents -- apply '
+      + 'pilot_slice_postgres_shadow_evidence_migration.sql before importing',
+    );
+  }
+}
+
 async function upsertSources(client, rows) {
   await client.query(
     `insert into pilot.shadow_library_sources
        (source_id, organization_id, title, publisher, source_type, authority_tier, url,
-        publication_date, status, created_by_account_id, created_by_role, metadata)
+        publication_date, status, approval_state, verification_state,
+        created_by_account_id, created_by_role, metadata)
      select source_id, organization_id, title, publisher, source_type, authority_tier, url,
-            nullif(publication_date, '')::date, status, created_by_account_id, created_by_role, metadata
+            nullif(publication_date, '')::date, status, approval_state, verification_state,
+            created_by_account_id, created_by_role, metadata
      from jsonb_to_recordset($1::jsonb) as x(
        source_id text, organization_id text, title text, publisher text, source_type text,
        authority_tier smallint, url text, publication_date text, status text,
+       approval_state text, verification_state text,
        created_by_account_id text, created_by_role text, metadata jsonb
      )
      on conflict (source_id) do update set
        title = excluded.title, publisher = excluded.publisher, source_type = excluded.source_type,
        authority_tier = excluded.authority_tier, url = excluded.url,
        publication_date = excluded.publication_date, status = excluded.status,
+       approval_state = excluded.approval_state, verification_state = excluded.verification_state,
        created_by_account_id = excluded.created_by_account_id,
        created_by_role = excluded.created_by_role, metadata = excluded.metadata, updated_at = now()`,
     [JSON.stringify(rows)],
@@ -305,18 +365,22 @@ async function upsertDocuments(client, rows) {
   await client.query(
     `insert into pilot.shadow_library_documents
        (document_id, source_id, organization_id, subject_id, document_name, blob_path,
-        content_sha256, ingest_state, extraction_error, created_by_account_id, created_by_role, metadata)
+        content_sha256, ingest_state, approval_state, verification_state, extraction_error,
+        created_by_account_id, created_by_role, metadata)
      select document_id, source_id, organization_id, subject_id, document_name, blob_path,
-            content_sha256, ingest_state, extraction_error, created_by_account_id, created_by_role, metadata
+            content_sha256, ingest_state, approval_state, verification_state, extraction_error,
+            created_by_account_id, created_by_role, metadata
      from jsonb_to_recordset($1::jsonb) as x(
        document_id text, source_id text, organization_id text, subject_id text, document_name text,
-       blob_path text, content_sha256 text, ingest_state text, extraction_error text,
+       blob_path text, content_sha256 text, ingest_state text, approval_state text,
+       verification_state text, extraction_error text,
        created_by_account_id text, created_by_role text, metadata jsonb
      )
      on conflict (document_id) do update set
        source_id = excluded.source_id, subject_id = excluded.subject_id,
        document_name = excluded.document_name, blob_path = excluded.blob_path,
        content_sha256 = excluded.content_sha256, ingest_state = excluded.ingest_state,
+       approval_state = excluded.approval_state, verification_state = excluded.verification_state,
        extraction_error = excluded.extraction_error,
        created_by_account_id = excluded.created_by_account_id,
        created_by_role = excluded.created_by_role, metadata = excluded.metadata, updated_at = now()`,
@@ -429,6 +493,8 @@ export async function importSeedPackage(client, seed, organizationId) {
   try {
     await client.query("set local lock_timeout = '10s'");
     await client.query("set local statement_timeout = '5min'");
+
+    await assertReviewGateColumnsPresent(client);
 
     await assertNoCrossTenantIds(client, 'shadow_library_sources', 'source_id', seed.sources.map((r) => r.source_id), organizationId);
     await assertNoCrossTenantIds(client, 'shadow_library_documents', 'document_id', seed.documents.map((r) => r.document_id), organizationId);

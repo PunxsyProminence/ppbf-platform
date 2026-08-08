@@ -14,6 +14,7 @@ import ShadowChatButton from './ShadowChatButton';
 import type { FightCardPayload } from './profileClient';
 import { cx } from './uiStyles';
 import { apiBase } from '@/lib/apiBase';
+import { formatGymDateTimeShort } from '@/src/lib/gymTime';
 
 type TabID = 'overview' | 'parent-floor' | 'home-assignments' | 'observations' | 'family-goals' | 'messages' | 'attendance' | 'progress' | 'resources' | 'shadow';
 
@@ -58,12 +59,12 @@ interface FamilyGoal {
 }
 
 interface ParentMessage {
-  id: string;
-  sender: 'coach';
-  subject: string;
-  body: string;
-  date: string;
-  read?: boolean;
+  note_id: string;
+  athlete_id: string;
+  athlete_name: string | null;
+  sender_role: string;
+  note_text: string;
+  created_at: string;
 }
 
 interface AttendanceEntry {
@@ -97,6 +98,11 @@ interface ParentResource {
   type: 'Guide' | 'Checklist' | 'Video' | 'Policy';
   summary: string;
   actionLabel: string;
+}
+
+interface SafetySummary {
+  activeHolds: number;
+  flaggedGates: number;
 }
 
 /* This hub sits on the warm canvas ground (Law 6 — family-facing), so every
@@ -150,7 +156,29 @@ export default function ParentHub() {
 
   const [familyGoals] = useState<FamilyGoal[]>([]);
 
-  const [messages] = useState<ParentMessage[]>([]);
+  // Capability #90, scoped to one-directional read: /api/pilot/parent/messages
+  // reads pilot.coach_observations rows a coach/admin filed with
+  // note_type: 'parent_message' (see coach/decision-loop's Message Home
+  // panel). Best-effort, own effect, own state -- same doctrine as the
+  // Safety & Consent card above: a failed read leaves the rest of the hub
+  // working, it just shows no messages.
+  const [messages, setMessages] = useState<ParentMessage[]>([]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/parent/messages`, {
+          method: 'GET',
+          credentials: 'include',
+        });
+        if (!response.ok) return;
+        const payload = (await response.json()) as { items?: ParentMessage[] };
+        setMessages(payload.items ?? []);
+      } catch {
+        // Messages tab falls back to its empty state.
+      }
+    })();
+  }, []);
 
   const [attendanceEntries] = useState<AttendanceEntry[]>([]);
 
@@ -161,6 +189,76 @@ export default function ParentHub() {
   const [parentResources] = useState<ParentResource[]>([]);
 
   const [newMessage, setNewMessage] = useState('');
+
+  // Capabilities #93/#167: this hub links to /parent/safety and
+  // /parent/consent (both already built, #84/T-008) but never surfaced
+  // either, so a guardian had no reason to know they existed. Best-effort,
+  // own effect, own state -- a failure here must never block the rest of
+  // this page, same doctrine as every other secondary read on this hub.
+  const [safetySummary, setSafetySummary] = useState<SafetySummary | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/parent/safety`, {
+          method: 'GET',
+          credentials: 'include',
+        });
+        if (!response.ok) return;
+        const payload = (await response.json()) as {
+          items?: Array<{ hold: unknown; gates?: Array<{ outcome: string }> }>;
+        };
+        const items = payload.items ?? [];
+        const activeHolds = items.filter((item) => item.hold).length;
+        const flaggedGates = items.reduce(
+          (total, item) => total + (item.gates ?? []).filter((gate) => gate.outcome === 'flagged' || gate.outcome === 'blocked').length,
+          0,
+        );
+        setSafetySummary({ activeHolds, flaggedGates });
+      } catch {
+        // Card falls back to plain links with no summary line.
+      }
+    })();
+  }, []);
+
+  // Capabilities #95/#96: a real write path for a guardian-reported barrier
+  // (no ride, an unsafe walk, something at home getting in the way), where
+  // none existed before. Rides on pilot.coach_observations via a new
+  // parent-only route -- see api/pilot/parent/barrier-report/route.ts for
+  // why this is its own route rather than widening intake/domain-upsert.
+  const [barrierType, setBarrierType] = useState<'home' | 'transportation'>('home');
+  const [barrierDescription, setBarrierDescription] = useState('');
+  const [barrierMessage, setBarrierMessage] = useState('');
+  const [barrierSubmitting, setBarrierSubmitting] = useState(false);
+
+  async function handleReportBarrier(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!activeChildId || !barrierDescription.trim() || barrierSubmitting) return;
+    setBarrierMessage('');
+    setBarrierSubmitting(true);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/parent/barrier-report`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          athleteId: activeChildId,
+          barrierType,
+          description: barrierDescription,
+        }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.error || 'Failed to send the report.');
+      }
+      setBarrierDescription('');
+      setBarrierMessage('Sent to your child\'s coach.');
+    } catch (error) {
+      setBarrierMessage(error instanceof Error ? error.message : 'Failed to send the report.');
+    } finally {
+      setBarrierSubmitting(false);
+    }
+  }
 
   // Fetch parent's children (athletes) from API
   useEffect(() => {
@@ -347,7 +445,7 @@ export default function ParentHub() {
           tasksDue={tasksDue}
           upcomingEvents={upcomingEvents}
           attendancePercent={activeChild?.attendancePercent ?? null}
-          unreadMessages={messages.filter(m => !m.read).length}
+          unreadMessages={messages.length}
         />
 
         {!hasLiveChildMetrics && activeChild ? (
@@ -501,6 +599,33 @@ export default function ParentHub() {
                 </div>
               </section>
 
+              {/* Safety & Consent: pure aggregation of two guardian-facing
+                  surfaces this hub previously never linked to (#93/#167).
+                  Non-alarming by default -- the count line only appears once
+                  there is something for a guardian to actually look at, and
+                  it names a scope/outcome, never staff detail. */}
+              <section className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]">
+                <h3 className="t-label">Safety &amp; Consent</h3>
+                {safetySummary && (safetySummary.activeHolds > 0 || safetySummary.flaggedGates > 0) ? (
+                  <p className="t-body mt-[var(--s2)]">
+                    {safetySummary.activeHolds > 0 ? `${safetySummary.activeHolds} active training hold(s)` : null}
+                    {safetySummary.activeHolds > 0 && safetySummary.flaggedGates > 0 ? ' and ' : null}
+                    {safetySummary.flaggedGates > 0 ? `${safetySummary.flaggedGates} gate(s) awaiting clearance` : null}
+                    {' '}across your children. This is not a punishment -- see the Safety page for details.
+                  </p>
+                ) : (
+                  <p className="t-body mt-[var(--s2)]">Check your child&apos;s active training-hold and safety-gate status, and manage photo/video consent.</p>
+                )}
+                <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-2">
+                  <Link href="/parent/safety" className="btn w-full">
+                    View Safety Status
+                  </Link>
+                  <Link href="/parent/consent" className="btn btn--ghost w-full">
+                    Manage Consent
+                  </Link>
+                </div>
+              </section>
+
               {/* The child's own card, on the family ground. Same component and
                   same materials the athlete sees on their own surface -- a
                   guardian looking at their kid's card is looking at the kid's
@@ -638,6 +763,43 @@ export default function ParentHub() {
                   'Missing reporting deadlines'
                 ]}
               />
+
+              {/* #95/#96: the one real, working thing on this tab today. */}
+              <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
+                <h3 className="t-label">Report a Barrier</h3>
+                <p className="t-body">
+                  Let your child&apos;s coach know if something at home, or getting here, is getting in the way of training.
+                </p>
+
+                {barrierMessage && (
+                  <p className="t-body text-[color:var(--brass-300)]">{barrierMessage}</p>
+                )}
+
+                <form onSubmit={handleReportBarrier} className="space-y-[var(--s3)]">
+                  <label className="field block">
+                    <span className="t-label">Type</span>
+                    <select
+                      value={barrierType}
+                      onChange={(event) => setBarrierType(event.target.value as 'home' | 'transportation')}
+                      className="select"
+                    >
+                      <option value="home">Home</option>
+                      <option value="transportation">Transportation</option>
+                    </select>
+                  </label>
+                  <label className="field block">
+                    <span className="t-label">What&apos;s going on</span>
+                    <textarea
+                      value={barrierDescription}
+                      onChange={(event) => setBarrierDescription(event.target.value)}
+                      className="textarea min-h-[56px]"
+                    />
+                  </label>
+                  <button type="submit" className="btn w-full" disabled={!activeChildId || barrierSubmitting}>
+                    {barrierSubmitting ? 'Sending…' : 'Send to Coach'}
+                  </button>
+                </form>
+              </div>
 
               <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
                 <h3 className="t-label">This Week&apos;s Parent Support Tasks</h3>
@@ -811,23 +973,22 @@ export default function ParentHub() {
                 ]}
               />
 
-              <p className="t-label">
-                PLANNED | NOT YET IMPLEMENTED -- there is no backend feed for coach messages yet, so this list
-                is always empty.
-              </p>
-
-              <div className="space-y-[var(--s4)] max-h-96 overflow-y-auto">
-                {messages.map(msg => (
-                  <div key={msg.id} className="mat-paper rounded-[var(--r-md)] p-[var(--s4)]">
-                    <div className="flex justify-between items-start gap-[var(--s3)] mb-[var(--s3)]">
-                      <h4 className="t-body font-semibold">{msg.subject}</h4>
-                      <span className="t-label">From Coach</span>
+              {messages.length === 0 ? (
+                <p className="t-muted">No messages yet.</p>
+              ) : (
+                <div className="space-y-[var(--s4)] max-h-96 overflow-y-auto">
+                  {messages.map((message) => (
+                    <div key={message.note_id} className="mat-paper rounded-[var(--r-md)] p-[var(--s4)]">
+                      <div className="flex justify-between items-start gap-[var(--s3)] mb-[var(--s3)]">
+                        <h4 className="t-body font-semibold">{message.athlete_name ?? 'Your child'}</h4>
+                        <span className="t-label">From {message.sender_role === 'coach' ? 'Coach' : 'Admin'}</span>
+                      </div>
+                      <p className="t-body mb-[var(--s3)]">{message.note_text}</p>
+                      <p className="t-muted">{formatGymDateTimeShort(message.created_at) ?? message.created_at}</p>
                     </div>
-                    <p className="t-body mb-[var(--s3)]">{msg.body}</p>
-                    <p className="t-muted">{msg.date}</p>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
 
               <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s4)]">
                 <h4 className="t-label">Reply to Coach</h4>
@@ -835,8 +996,9 @@ export default function ParentHub() {
                   PLANNED | NOT YET IMPLEMENTED
                 </p>
                 <p className="t-muted">
-                  There is no coach-messaging backend yet. This field is disabled so a message can&apos;t be typed
-                  and silently discarded -- until this is wired up, contact your child&apos;s coach directly.
+                  Messages from your child&apos;s coach appear above, but replying isn&apos;t available yet. This
+                  field is disabled so a message can&apos;t be typed and silently discarded -- for anything that
+                  needs a conversation, contact your child&apos;s coach directly.
                 </p>
                 <textarea
                   value={newMessage}

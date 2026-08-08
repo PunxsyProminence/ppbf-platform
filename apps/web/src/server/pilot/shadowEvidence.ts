@@ -23,6 +23,13 @@ export interface ShadowEvidenceItem extends ShadowEvidenceCitation {
   chunkId: string;
   subjectId: string | null;
   excerpt: string;
+  // Carried through from the chunk/source row for shadowEvidenceTier.ts's
+  // quality-weighted rule. Null when the chunk's metadata does not carry
+  // evidence_class/boxing_specificity (see ShadowLibrarySearchResult's own
+  // comment) -- callers deriving a tier must treat null as not gradeable.
+  authorityTier: number;
+  evidenceClass: string | null;
+  boxingSpecificity: string | null;
 }
 
 export interface ShadowEvidenceBundle {
@@ -99,6 +106,9 @@ function buildEvidenceItems(
       sourceTitle: boundedText(row.source_title, 160),
       documentName: boundedText(row.document_name, 160),
       excerpt,
+      authorityTier: row.authority_tier,
+      evidenceClass: row.evidence_class,
+      boxingSpecificity: row.boxing_specificity,
     });
     remainingChars -= excerpt.length;
   }
@@ -253,4 +263,17 @@ export function publicEvidenceCitations(
       sourceTitle,
       documentName,
     }));
+}
+
+// Same filter as publicEvidenceCitations, but keeping the quality fields
+// deriveEvidenceTier needs and publicEvidenceCitations deliberately strips
+// before anything reaches the client. Internal to the tier computation --
+// never send authorityTier/evidenceClass/boxingSpecificity to a caller
+// outside this grading step.
+export function citedEvidenceQuality(
+  bundle: ShadowEvidenceBundle,
+  citationIds: string[],
+): ShadowEvidenceItem[] {
+  const requested = new Set(citationIds);
+  return bundle.items.filter((item) => requested.has(item.evidenceId));
 }

@@ -10,6 +10,7 @@ import PersonalGoalBoard from './PersonalGoalBoard';
 import type { RabbitHoleLessonItem } from './RabbitHole';
 import { ANCHOR_KEY_OPTIONS, anchorLabel } from './rabbitHoleAnchorLabels';
 import ProfileHeader from './ProfileHeader';
+import TrainingHoldBanner from './TrainingHoldBanner';
 import { AthleteSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
 import ThenAndNow from './ThenAndNow';
@@ -1467,6 +1468,11 @@ export default function AthleteWorkspace() {
             data and renders nothing until it has some, so this is the single
             insertion the profile layer makes into this file. */}
         <ProfileHeader />
+
+        {/* #82: an active training hold, in the athlete's own language.
+            Same self-contained contract as ProfileHeader -- renders nothing
+            when there is no hold. */}
+        <TrainingHoldBanner />
 
         {/* Notices are posted paper on the leather wall. */}
         <AnnouncementBanner

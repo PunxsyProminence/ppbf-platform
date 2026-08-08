@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { GET as getAdminCapabilities } from '@/app/api/pilot/admin/capabilities/route';
 import { POST as getAthlete } from '@/app/api/pilot/athletes/get/route';
 import { GET as getComplianceViolations } from '@/app/api/pilot/compliance/violations/route';
+import { GET as getEscalations } from '@/app/api/pilot/escalations/route';
 import { GET as listGoals } from '@/app/api/pilot/goals/list/route';
 import { POST as listIntakeReviews } from '@/app/api/pilot/intake/review-queue/route';
 import { GET as getScheduler } from '@/app/api/pilot/scheduler/route';
@@ -32,6 +33,13 @@ jest.mock('./compliance', () => ({
 
 jest.mock('./videoSessions', () => ({
   getVideoSessionById: jest.fn(),
+}));
+
+jest.mock('./escalationLadder', () => ({
+  listEscalations: jest.fn(),
+  acknowledgeEscalation: jest.fn(),
+  resolveEscalation: jest.fn(),
+  detectRepeatedPatternEscalations: jest.fn(),
 }));
 
 jest.mock('./db', () => ({
@@ -100,6 +108,12 @@ test.each([
     surface: 'athlete scheduler',
     invoke: () => getScheduler(new NextRequest(
       'http://localhost/api/pilot/scheduler',
+    )),
+  },
+  {
+    surface: 'safety escalations',
+    invoke: () => getEscalations(new NextRequest(
+      'http://localhost/api/pilot/escalations',
     )),
   },
 ])('keeps Board denied from the $surface surface', async ({ invoke }) => {

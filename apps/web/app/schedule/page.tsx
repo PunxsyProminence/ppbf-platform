@@ -52,7 +52,7 @@ type SchedulerAttendance = {
   class_id: string;
   athlete_id: string;
   status: 'present' | 'absent' | 'excused';
-  method: 'self' | 'coach_override' | 'admin_override';
+  method: 'self' | 'parent' | 'coach_override' | 'admin_override';
   note: string;
   checked_in_at: string;
 };
@@ -234,6 +234,11 @@ export default function SchedulerPage() {
               <span className="mat-brass--patina inline-flex min-h-[var(--s6)] items-center rounded-[var(--r-sm)] px-[var(--s4)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.14em] text-[color:var(--hide-950)]">
                 Role: {role || 'loading'}
               </span>
+              {roleCanOverrideAttendance(role) ? (
+                <Link href="/admin/attendance" className="btn btn--ghost">
+                  Attendance Dashboard
+                </Link>
+              ) : null}
               <Link href="/operations" className="btn btn--ghost">
                 Back to Operations
               </Link>

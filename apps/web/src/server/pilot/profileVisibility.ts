@@ -124,9 +124,12 @@ export interface PortraitVisibility {
 
 /**
  * The circle a minor's face never leaves. Written out rather than derived, so
- * widening it is an edit somebody has to make on purpose.
+ * widening it is an edit somebody has to make on purpose. Exported (read-only)
+ * so the privacy-tier registry (privacyTiers.ts, capability #200) can NAME
+ * this circle as its strictest tier without restating it -- the decision
+ * stays here, where decidePortrait enforces it.
  */
-const MINOR_CIRCLE: readonly ProfileRelationship[] = [
+export const MINOR_CIRCLE: readonly ProfileRelationship[] = [
   'self',
   'coach_of_subject',
   'guardian_of_subject',

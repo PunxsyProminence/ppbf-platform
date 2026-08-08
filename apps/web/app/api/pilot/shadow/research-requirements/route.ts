@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
-import { query } from '@/src/server/pilot/db';
+import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import { createShadowResearchRequirement, listShadowResearchRequirements, resolveShadowResearchRequirement } from '@/src/server/pilot/shadowResearch';
@@ -15,20 +15,7 @@ export const runtime = 'nodejs';
 // all, so callers can short-circuit instead of querying with an unbounded
 // filter.
 async function resolveParentAthleteScope(organizationId: string, accountId: string): Promise<string[]> {
-  const links = await query<{ athlete_id: string }>(
-    `select gl.athlete_id
-     from pilot.guardian_links gl
-     where gl.organization_id = $1
-       and gl.parent_id in (
-         select parent_id
-         from pilot.parents
-         where organization_id = $1
-           and account_id = $2
-       )`,
-    [organizationId, accountId],
-  );
-
-  return links.map((row) => row.athlete_id);
+  return guardianAthleteIds(organizationId, accountId);
 }
 
 async function handleList(request: NextRequest) {

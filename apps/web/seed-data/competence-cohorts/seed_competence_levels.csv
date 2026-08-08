@@ -1,0 +1,7 @@
+organization_id,level_key,ordinal,display_name,observable_test,typical_scale
+{{PPBF_ORG_ID}},exploring,1,Exploring,"Attempts the movement. Shape is inconsistent, often needs the demonstration repeated. Engaged and safe.",A
+{{PPBF_ORG_ID}},forming,2,Forming,Produces the movement correctly when cued and unhurried. Falls apart when pace or a partner is added.,A
+{{PPBF_ORG_ID}},holding,3,Holding,"Holds the movement under a simple external demand — a moving partner, a called cue, mild fatigue.",B
+{{PPBF_ORG_ID}},adapting,4,Adapting,Adjusts the movement to what the opponent gives. Chooses between options rather than running one pattern.,B
+{{PPBF_ORG_ID}},composed,5,Composed,"Keeps shape, tempo and decision quality when pressured, tired, or after being caught. Resets without being told.",C
+{{PPBF_ORG_ID}},teaching,6,Teaching,Can demonstrate correctly at low speed and correct a peer's error without coaching it wrongly.,C

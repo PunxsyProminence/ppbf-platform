@@ -58,6 +58,7 @@ const ROW = {
   guardians: 'Ana Quinteros (mother) 814-555-0101; Luis Quinteros (father) 814-555-0102',
   athlete_login_id: 'ath-001',
   athlete_login_active: true,
+  attendance_rate: 0.857,
   created_at: '2026-07-02T14:03:11Z',
   updated_at: '2026-07-20T09:41:00Z',
   pin: PIN,
@@ -145,6 +146,24 @@ describe('GET /api/pilot/admin/export/roster', () => {
     expect(body).toContain('Marisol Quinteros');
     expect(body).toContain('814-555-0142');
     expect(body).toContain('Ana Quinteros (mother)');
+    expect(body).toContain('0.857');
+  });
+
+  test('renders a never-marked athlete\'s attendance rate as empty, not 0', async () => {
+    mockPrincipal.mockResolvedValueOnce(adminSession());
+    mockQuery.mockResolvedValueOnce([{ ...ROW, attendance_rate: null }]);
+
+    const response = await GET(makeRequest());
+    const body = await response.text();
+    const [, dataLine] = body.trim().split('\r\n');
+    const cells = dataLine.split('","');
+    const columnIndex = ROSTER_EXPORT_COLUMNS.findIndex((column) => column.key === 'attendance_rate');
+
+    // An empty cell, not "0" or "0.000" -- a fabricated 0% would be a false
+    // claim that the athlete was marked absent every time, matching the
+    // same truth-on-screen rule attendanceReporting.ts already enforces.
+    expect(cells).toHaveLength(ROSTER_EXPORT_COLUMNS.length);
+    expect(cells[columnIndex]).toBe('');
   });
 
   test('accepts the legacy admin role the way its siblings do', async () => {
