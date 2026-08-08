@@ -1,5 +1,6 @@
 import {
   assertSenderIsExpected,
+  extractGraphErrorCode,
   magicLinkProviderIsSupported,
   MailSendError,
   sendPlainTextMail,
@@ -127,6 +128,61 @@ describe('Graph mailer', () => {
     expect(thrown?.statusCode).toBe(403);
     expect(JSON.stringify(thrown)).not.toContain('parent@example.com');
     expect(thrown?.message).not.toContain(secretBody);
+  });
+
+  test('a 403 carries the Graph error code that says WHICH 403 it is', async () => {
+    // ErrorAccessDenied means the Exchange access policy refused the mailbox.
+    // Authorization_RequestDenied means the token lacks Mail.Send. Identical
+    // status, opposite fixes -- staging lost an hour to that ambiguity.
+    let thrown: MailSendError | undefined;
+    try {
+      await sendPlainTextMail(
+        { to: 'parent@example.com', subject: 's', body: 'b' },
+        { sender: SENDER },
+        deps({
+          fetchImpl: async () => ({
+            ok: false,
+            status: 403,
+            text: async () => JSON.stringify({
+              error: { code: 'ErrorAccessDenied', message: 'Access to OData is disabled.' },
+            }),
+          } as unknown as Response),
+        }),
+      );
+    } catch (error) {
+      thrown = error as MailSendError;
+    }
+
+    expect(thrown?.statusCode).toBe(403);
+    expect(thrown?.graphErrorCode).toBe('ErrorAccessDenied');
+  });
+
+  test('the error code is dropped when it could be carrying an address', () => {
+    // The shape check is the whole safety argument for logging this field: an
+    // address contains @ and a dot, and neither can pass. If Graph ever puts
+    // user data in `code`, it is dropped rather than logged.
+    expect(extractGraphErrorCode(JSON.stringify({ error: { code: 'Authorization_RequestDenied' } })))
+      .toBe('Authorization_RequestDenied');
+
+    for (const unsafe of [
+      'parent@example.com',
+      'mailbox parent@example.com not found',
+      'Error.With.Dots',
+      'has space',
+      '9LeadingDigit',
+      'x'.repeat(65),
+    ]) {
+      expect(extractGraphErrorCode(JSON.stringify({ error: { code: unsafe } }))).toBeUndefined();
+    }
+  });
+
+  test('a body that is not JSON yields no code rather than a fragment of itself', () => {
+    // An HTML error page from a proxy tells us nothing worth the risk of
+    // logging part of it.
+    expect(extractGraphErrorCode('<html>gateway timeout</html>')).toBeUndefined();
+    expect(extractGraphErrorCode('')).toBeUndefined();
+    expect(extractGraphErrorCode(JSON.stringify({ error: { code: 42 } }))).toBeUndefined();
+    expect(extractGraphErrorCode(JSON.stringify({}))).toBeUndefined();
   });
 
   test('a sender that is not the configured mailbox is refused', () => {

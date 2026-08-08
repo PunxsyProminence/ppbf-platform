@@ -84,12 +84,18 @@ export async function POST(request: NextRequest) {
       // send failed with GRAPH_SEND_FAILED and nothing more, when the 403 that
       // came with it would have said "this identity lacks Mail.Send" outright.
       // The error class carried the status all along; the log threw it away.
-      const status = (issueError as { statusCode?: number })?.statusCode;
+      // graph_error_code is here for the same reason status_code is: a 403
+      // means "the access policy refused this mailbox" or "the token lacks
+      // Mail.Send", and only Graph's error code separates them. It is shape-
+      // checked at the mailer so it cannot carry an address.
+      const { statusCode: status, graphErrorCode: graphCode } =
+        (issueError ?? {}) as { statusCode?: number; graphErrorCode?: string };
       console.error(JSON.stringify({
         event: 'magic_link.issue_failed',
         error_type: issueError instanceof Error ? issueError.name : typeof issueError,
         error_code: issueError instanceof Error ? issueError.message : 'unknown',
         status_code: typeof status === 'number' ? status : null,
+        graph_error_code: typeof graphCode === 'string' ? graphCode : null,
       }));
     }
 
