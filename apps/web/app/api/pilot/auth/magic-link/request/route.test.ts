@@ -66,6 +66,36 @@ describe('POST /api/pilot/auth/magic-link/request', () => {
     spy.mockRestore();
   });
 
+  test('the failure log carries the HTTP status when the error has one', async () => {
+    // A staging send failed with GRAPH_SEND_FAILED and nothing else, when the
+    // accompanying 403 would have said "this identity lacks Mail.Send"
+    // outright. The error carried the status; the log discarded it.
+    const logged: string[] = [];
+    const spy = jest.spyOn(console, 'error').mockImplementation((line) => { logged.push(String(line)); });
+    const failure = Object.assign(new Error('GRAPH_SEND_FAILED'), { statusCode: 403 });
+    (issueMagicLink as jest.Mock).mockRejectedValue(failure);
+
+    await post({ email: 'coach@example.com' });
+
+    expect(JSON.parse(logged[0])).toMatchObject({
+      event: 'magic_link.issue_failed',
+      error_code: 'GRAPH_SEND_FAILED',
+      status_code: 403,
+    });
+    spy.mockRestore();
+  });
+
+  test('a failure without a status logs null rather than inventing one', async () => {
+    const logged: string[] = [];
+    const spy = jest.spyOn(console, 'error').mockImplementation((line) => { logged.push(String(line)); });
+    (issueMagicLink as jest.Mock).mockRejectedValue(new Error('MISSING_PPBF_APP_ORIGIN'));
+
+    await post({ email: 'coach@example.com' });
+
+    expect(JSON.parse(logged[0]).status_code).toBeNull();
+    spy.mockRestore();
+  });
+
   test('a rate-limited request never reaches issuance', async () => {
     (checkRateLimit as jest.Mock).mockReturnValue({ isLimited: true });
     await post({ email: 'coach@example.com' });
