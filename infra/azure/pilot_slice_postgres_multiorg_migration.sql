@@ -106,7 +106,7 @@ alter table pilot.accounts add column if not exists has_master_shadow_access boo
 alter table pilot.accounts alter column pin_hash drop not null;
 alter table pilot.accounts drop constraint if exists pilot_accounts_auth_provider_check;
 alter table pilot.accounts add constraint pilot_accounts_auth_provider_check
-  check (auth_provider in ('ppbf_local', 'microsoft'));
+  check (auth_provider in ('ppbf_local', 'microsoft', 'magic_link'));
 
 create unique index if not exists pilot_accounts_login_email_uq
   on pilot.accounts (lower(login_email))

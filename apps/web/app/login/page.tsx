@@ -11,13 +11,19 @@ import {
   loadAuthoritativeRoleSession,
 } from '@/components/roleSession';
 import { createMicrosoftSignInHandler } from '@/src/client/loginPageHelpers';
+import { DEFAULT_PIN_LENGTH } from '@/src/server/pilot/pinPolicy';
 
 type LoginMethod = 'microsoft' | 'pin';
 
 function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [selectedMethod, setSelectedMethod] = useState<LoginMethod>('pin');
+  // Microsoft, not PIN. PIN sign-in admits only athletes -- credentialPolicy
+  // says so and loginWithAccountIdAndPin enforces it -- and athletes have their
+  // own door at /athlete/sign-in. Opening on the PIN tab meant every coach,
+  // parent and staff member met a form that could not authenticate them, and a
+  // refusal that blamed their credential instead of the door.
+  const [selectedMethod, setSelectedMethod] = useState<LoginMethod>('microsoft');
   const [loginAccountId, setLoginAccountId] = useState('');
   const [loginPin, setLoginPin] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
@@ -108,6 +114,16 @@ function LoginPageContent() {
 
     if (!acctId || !pinCode) {
       setLoginError('Account ID and PIN are required.');
+      return;
+    }
+
+    // Caught here so a wrong-length PIN is named as a wrong length. The server
+    // answers every failure with the same "Invalid account ID or PIN", and this
+    // label used to read "4+ digits" -- so someone who followed it and entered
+    // four was told their PIN was wrong, retried the same four, and hit the
+    // rate limiter. The policy is exactly DEFAULT_PIN_LENGTH digits.
+    if (!new RegExp(`^\\d{${DEFAULT_PIN_LENGTH}}$`).test(pinCode)) {
+      setLoginError(`Your PIN is exactly ${DEFAULT_PIN_LENGTH} digits.`);
       return;
     }
 
@@ -315,15 +331,22 @@ function LoginPageContent() {
                   </div>
                   <div className="field">
                     <label className="t-label" htmlFor="login-pin">
-                      PIN (4+ digits)
+                      PIN ({DEFAULT_PIN_LENGTH} digits)
                     </label>
                     <input
                       id="login-pin"
                       type="password"
                       inputMode="numeric"
                       value={loginPin}
-                      onChange={(event) => setLoginPin(event.target.value)}
-                      placeholder="••••"
+                      // Non-digits dropped and the value capped, so the field
+                      // cannot hold something the policy will reject. The old
+                      // field took any length and any character, and the server
+                      // refused it with a message about the wrong thing.
+                      onChange={(event) =>
+                        setLoginPin(event.target.value.replace(/\D/g, '').slice(0, DEFAULT_PIN_LENGTH))
+                      }
+                      maxLength={DEFAULT_PIN_LENGTH}
+                      placeholder={'•'.repeat(DEFAULT_PIN_LENGTH)}
                       autoComplete="current-password"
                       className="input input--kiosk"
                     />
