@@ -85,6 +85,22 @@ rejected and the whole transaction aborts.
 
 Each loader is idempotent — re-running produces no duplicates.
 
+`organization_id` is the production organization the rows will belong to. It is
+the value behind the Container App secret `ppbf-pilot-default-org-id`, which is
+what the app itself reads as its default org; the SHADOW E2E gate resolves it
+the same way. Take it from there rather than typing a value you believe is
+right — the loaders no longer fall back to anything if it is wrong or missing,
+they stop.
+
+That last point is a behaviour change. Until 2026-08-08 the workflow exported
+`PPBF_ORG_ID`/`SEED_ACCOUNT_ID` while every loader read
+`PPBF_SEED_ORG_ID`/`PPBF_SEED_ACCOUNT_ID`, so the operator's typed
+`organization_id` reached nothing and each loader silently defaulted to the
+fixture organization `ppbf-default-org`. A production dispatch would have
+written every row under that fixture org and reported success. The names now
+match, the defaults are gone, and `seedWorkflowContract.test.ts` fails if either
+side drifts again.
+
 Do NOT run the npm scripts directly against a real database. The workflow reads
 the connection string from the Container App's own secret and masks it; running
 locally means putting a production connection string on a laptop to do

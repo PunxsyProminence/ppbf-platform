@@ -92,8 +92,13 @@ jobs:
     env:
       RESOURCE_GROUP: rg-ppbf-enterprise-staging
       CONTAINER_APP_NAME: ${{ inputs.target == 'production' && 'app-ppbf-production' || 'app-ppbf-staging' }}
-      PPBF_ORG_ID: ${{ inputs.organization_id }}
-      SEED_ACCOUNT_ID: ${{ inputs.seed_account_id }}
+      # These two names are the loaders' actual contract -- seed-drill-library.mjs,
+      # seed-disciplines.mjs and seed-competence-cohorts.mjs all read
+      # PPBF_SEED_ORG_ID / PPBF_SEED_ACCOUNT_ID. They are deliberately NOT named
+      # after the {{PPBF_ORG_ID}} placeholder in the CSVs: that placeholder is the
+      # token substituted into the seed text, not the variable carrying the value.
+      PPBF_SEED_ORG_ID: ${{ inputs.organization_id }}
+      PPBF_SEED_ACCOUNT_ID: ${{ inputs.seed_account_id }}
     steps:
       - name: Confirm Explicit Target And Apply Intent
         env:
