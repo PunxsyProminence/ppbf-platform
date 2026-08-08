@@ -1,0 +1,203 @@
+# ─────────────────────────────────────────────────────────────────────────
+# Reference-data seeding -- manual only, one loader per dispatch.
+#
+# Before this existed, the only way to load the drill library, the discipline
+# list or the competence ladder into a real environment was to point
+# AZURE_POSTGRES_CONNECTION_STRING at it from a laptop and run an npm script.
+# That put a production connection string on a developer's machine to do
+# something the pipeline should have been doing, and it bypassed every guard
+# the deploy path has -- environment protection, OIDC, and the declared-target
+# check the runners already implement.
+#
+# This mirrors import-shadow-research.yml exactly: the connection string is
+# read from the Container App's own secret at run time, masked, and never
+# leaves the runner.
+#
+# ORDER MATTERS. Every loader below requires its migration to have been applied
+# first via apply-migrations.yml. seed:drill-library additionally requires the
+# drill-vocabulary-widening migration -- without it, 228 scale-level rows and
+# 63 stop-rule rows are rejected and the whole seeding transaction aborts.
+#
+# TWO LOADERS ARE DELIBERATELY ABSENT from the choices below, because both fail
+# whole against the shipped schema and there is nothing to be gained by making
+# them one click away:
+#   * session-scripts -- two Friday-sparring blocks are block_kind='instruction'
+#     with no what_to_* content, violating pilot_ssb_content. 0 of 65 blocks
+#     load, not 63.
+#   * transfer-claims -- all 173 rows reference a drill-id generation that
+#     resolves against nothing shipped, violating pilot_transfer_drill_fk.
+# Add them here when the underlying data is fixed, not before.
+# ─────────────────────────────────────────────────────────────────────────
+
+name: seed-reference-data
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Database environment
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      confirm_target:
+        description: Retype the target exactly ("staging" or "production") to confirm
+        required: true
+        type: string
+      dataset:
+        description: Which reference dataset to load
+        required: true
+        type: choice
+        options:
+          - drill-library
+          - disciplines
+          - competence-cohorts
+      mode:
+        description: Rehearse inside a rolled-back transaction, or write for real
+        required: true
+        default: dry-run
+        type: choice
+        options:
+          - dry-run
+          - apply
+      confirm_seed:
+        description: For apply mode, type SEED REFERENCE DATA exactly
+        required: false
+        type: string
+      organization_id:
+        description: Existing PPBF organization_id that will own the rows
+        required: true
+        type: string
+      seed_account_id:
+        description: Existing privileged account_id recorded as the seeder (drill-library only)
+        required: false
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: seed-reference-data-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  seed:
+    # Same environment name as the target, so a protection rule on `production`
+    # gates this exactly as it gates apply-migrations and deploy-production.
+    environment: ${{ inputs.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RESOURCE_GROUP: rg-ppbf-enterprise-staging
+      CONTAINER_APP_NAME: ${{ inputs.target == 'production' && 'app-ppbf-production' || 'app-ppbf-staging' }}
+      # These two names are the loaders' actual contract -- seed-drill-library.mjs,
+      # seed-disciplines.mjs and seed-competence-cohorts.mjs all read
+      # PPBF_SEED_ORG_ID / PPBF_SEED_ACCOUNT_ID. They are deliberately NOT named
+      # after the {{PPBF_ORG_ID}} placeholder in the CSVs: that placeholder is the
+      # token substituted into the seed text, not the variable carrying the value.
+      PPBF_SEED_ORG_ID: ${{ inputs.organization_id }}
+      PPBF_SEED_ACCOUNT_ID: ${{ inputs.seed_account_id }}
+    steps:
+      - name: Confirm Explicit Target And Apply Intent
+        env:
+          TARGET: ${{ inputs.target }}
+          CONFIRM_TARGET: ${{ inputs.confirm_target }}
+          MODE: ${{ inputs.mode }}
+          CONFIRM_SEED: ${{ inputs.confirm_seed }}
+          DATASET: ${{ inputs.dataset }}
+          SEED_ACCOUNT: ${{ inputs.seed_account_id }}
+        run: |
+          set -euo pipefail
+          test "$TARGET" = "$CONFIRM_TARGET"
+          if [ "$MODE" = "apply" ]; then
+            test "$CONFIRM_SEED" = "SEED REFERENCE DATA"
+          fi
+          # seed-drill-library.mjs stamps a seeder onto every row it writes and
+          # fails at the insert without one. Catching that here costs a second
+          # instead of an aborted transaction against a real database.
+          if [ "$DATASET" = "drill-library" ]; then
+            test -n "$SEED_ACCOUNT"
+          fi
+
+      - name: Checkout Source Code
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Locked Dependencies
+        run: npm ci
+
+      - name: Authenticate via Azure OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve Declared Database Target
+        env:
+          OVERRIDE_HOST: ${{ vars.PPBF_EXPECTED_POSTGRES_HOSTNAME }}
+          OVERRIDE_DB: ${{ vars.PPBF_EXPECTED_POSTGRES_DATABASE }}
+        run: |
+          set -euo pipefail
+          CONN="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-postgres-connection-string \
+            --query value -o tsv)"
+          test -n "$CONN"
+          echo "::add-mask::$CONN"
+          echo "AZURE_POSTGRES_CONNECTION_STRING=$CONN" >> "$GITHUB_ENV"
+
+          DERIVED="$(CONN="$CONN" node -e '
+            const u = new URL(process.env.CONN);
+            const host = u.hostname.toLowerCase();
+            const db = decodeURIComponent(u.pathname.replace(/^\/+/, ""));
+            if (!host || !db) process.exit(2);
+            process.stdout.write(host + "\n" + db);
+          ')"
+          HOST="$(printf '%s' "$DERIVED" | sed -n 1p)"
+          DB="$(printf '%s' "$DERIVED" | sed -n 2p)"
+          echo "PPBF_EXPECTED_POSTGRES_HOSTNAME=${OVERRIDE_HOST:-$HOST}" >> "$GITHUB_ENV"
+          echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
+
+      # --dry-run still performs every insert for real inside a transaction and
+      # then rolls back, so it proves the data actually fits the live schema
+      # rather than only that the files parse.
+      - name: Seed Drill Library
+        if: inputs.dataset == 'drill-library'
+        working-directory: apps/web
+        run: npm run seed:drill-library ${{ inputs.mode == 'dry-run' && '-- --dry-run' || '' }}
+
+      - name: Seed Disciplines
+        if: inputs.dataset == 'disciplines'
+        working-directory: apps/web
+        run: npm run seed:disciplines ${{ inputs.mode == 'dry-run' && '-- --dry-run' || '' }}
+
+      - name: Seed Competence Cohorts
+        if: inputs.dataset == 'competence-cohorts'
+        working-directory: apps/web
+        run: npm run seed:competence-cohorts ${{ inputs.mode == 'dry-run' && '-- --dry-run' || '' }}
+
+      - name: Record What Ran
+        run: |
+          {
+            echo "### Reference data seeding"
+            echo ""
+            echo "- target: \`${{ inputs.target }}\`"
+            echo "- dataset: \`${{ inputs.dataset }}\`"
+            echo "- mode: \`${{ inputs.mode }}\`"
+            echo "- organization_id: \`${{ inputs.organization_id }}\`"
+            echo ""
+            if [ "${{ inputs.mode }}" = "dry-run" ]; then
+              echo "Rehearsed and rolled back. Nothing was written."
+            else
+              echo "Written. The loaders are idempotent -- re-running adds no duplicates."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

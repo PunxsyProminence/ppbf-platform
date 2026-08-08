@@ -46,18 +46,6 @@ create table if not exists pilot.volunteers (
   primary key (organization_id, volunteer_id)
 );
 
-create table if not exists pilot.staff (
-  organization_id text not null references pilot.organizations(organization_id),
-  staff_id text not null,
-  account_id text null references pilot.accounts(account_id),
-  full_name text not null,
-  title text not null,
-  active_flag boolean not null default true,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  primary key (organization_id, staff_id)
-);
-
 create table if not exists pilot.attendance (
   organization_id text not null references pilot.organizations(organization_id),
   attendance_id uuid not null,
@@ -107,29 +95,6 @@ create table if not exists pilot.documents (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   primary key (organization_id, document_id)
-);
-
-create table if not exists pilot.messages (
-  organization_id text not null references pilot.organizations(organization_id),
-  message_id uuid not null,
-  sender_account_id text not null references pilot.accounts(account_id),
-  recipient_account_id text not null references pilot.accounts(account_id),
-  body text not null,
-  created_at timestamptz not null default now(),
-  primary key (organization_id, message_id)
-);
-
-create table if not exists pilot.skills (
-  organization_id text not null references pilot.organizations(organization_id),
-  skill_id uuid not null,
-  athlete_id text not null,
-  skill_name text not null,
-  level text not null,
-  recorded_at timestamptz not null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  primary key (organization_id, skill_id),
-  constraint pilot_skills_athlete_fk foreign key (organization_id, athlete_id) references pilot.athletes(organization_id, athlete_id) on delete cascade
 );
 
 -- 1) Add organization columns to existing tables.
@@ -250,5 +215,3 @@ create index if not exists idx_pilot_attendance_org_athlete_date on pilot.attend
 create index if not exists idx_pilot_readiness_org_athlete_measured on pilot.readiness(organization_id, athlete_id, measured_at desc);
 create index if not exists idx_pilot_assessments_org_athlete_created on pilot.assessments(organization_id, athlete_id, created_at desc);
 create index if not exists idx_pilot_documents_org_owner on pilot.documents(organization_id, owner_entity_type, owner_entity_id);
-create index if not exists idx_pilot_messages_org_recipient_created on pilot.messages(organization_id, recipient_account_id, created_at desc);
-create index if not exists idx_pilot_skills_org_athlete_recorded on pilot.skills(organization_id, athlete_id, recorded_at desc);

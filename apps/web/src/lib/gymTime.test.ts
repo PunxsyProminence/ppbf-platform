@@ -4,7 +4,9 @@ import {
   formatGymDateNumeric,
   formatGymDateShort,
   formatGymDateTime,
+  formatGymDateTimeShort,
   formatGymDay,
+  formatGymDayShort,
   formatGymMonthDay,
   formatGymStamp,
   formatGymTimeOfDay,
@@ -73,8 +75,20 @@ describe('gym-local date formatting', () => {
       expect(formatGymDate(input)).toBeNull();
       expect(formatGymDateShort(input)).toBeNull();
       expect(formatGymDateTime(input)).toBeNull();
+      expect(formatGymDateTimeShort(input)).toBeNull();
       expect(formatGymDay(input)).toBeNull();
+      expect(formatGymDayShort(input)).toBeNull();
     }
+  });
+
+  test('the compact datetime form drops the full month name', () => {
+    expect(formatGymDateTimeShort('2026-08-01T23:15:00Z')).toBe('Aug 1, 2026, 7:15 PM');
+  });
+
+  test('a compact calendar date carries no year and is never moved by a timezone', () => {
+    expect(formatGymDayShort('2026-01-12')).toBe('Jan 12');
+    expect(formatGymDayShort('2026-01-12T18:00:00Z')).toBe('Jan 12');
+    expect(formatGymDayShort('2026-01-12T00:00:00Z')).toBe('Jan 11');
   });
 
   test('every formatter resolves the gym day, not the viewer day', () => {

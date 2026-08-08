@@ -8,6 +8,7 @@ import { apiBase } from '@/lib/apiBase';
 type MedicalStatusValue = 'cleared' | 'restricted' | 'not_cleared' | 'pending';
 type RecommendationStatus = 'provisional' | 'accepted' | 'rejected' | 'expired' | 'superseded';
 type NearMissSeverity = 'low' | 'moderate' | 'high' | 'critical';
+type IncidentSeverity = 'high' | 'critical';
 type MatchState = 'match' | 'partial' | 'miss' | 'confounded';
 
 interface AthleteListItem {
@@ -143,6 +144,20 @@ export default function DecisionLoopReviewPage() {
   const [nearMissSeverity, setNearMissSeverity] = useState<NearMissSeverity>('low');
   const [nearMissDecisionId, setNearMissDecisionId] = useState('');
 
+  const [incidentDescription, setIncidentDescription] = useState('');
+  const [incidentSeverity, setIncidentSeverity] = useState<IncidentSeverity>('high');
+  const [incidentOccurredAt, setIncidentOccurredAt] = useState('');
+  const [incidentFiledMessage, setIncidentFiledMessage] = useState('');
+  const [incidentSubmitting, setIncidentSubmitting] = useState(false);
+
+  const [behaviorNoteText, setBehaviorNoteText] = useState('');
+  const [behaviorNoteMessage, setBehaviorNoteMessage] = useState('');
+  const [behaviorNoteSubmitting, setBehaviorNoteSubmitting] = useState(false);
+
+  const [messageHomeText, setMessageHomeText] = useState('');
+  const [messageHomeMessage, setMessageHomeMessage] = useState('');
+  const [messageHomeSubmitting, setMessageHomeSubmitting] = useState(false);
+
   const [outcomeDecisionId, setOutcomeDecisionId] = useState('');
   const [outcomeObservationIds, setOutcomeObservationIds] = useState('');
   const [outcomeMatchState, setOutcomeMatchState] = useState<MatchState>('match');
@@ -162,6 +177,13 @@ export default function DecisionLoopReviewPage() {
   }, []);
 
   const refreshAll = useCallback(async (targetAthleteId: string) => {
+    // Round 9 review: these confirmation banners are scoped to whichever
+    // athlete was on screen when the form was submitted. Without this they
+    // survive a switch to a different athlete's data below them, reading as
+    // if that report/note was just filed for the athlete now selected.
+    setIncidentFiledMessage('');
+    setBehaviorNoteMessage('');
+    setMessageHomeMessage('');
     if (!targetAthleteId) {
       return;
     }
@@ -283,6 +305,109 @@ export default function DecisionLoopReviewPage() {
       await refreshAll(athleteId);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to flag near-miss.');
+    }
+  }
+
+  // Capability #152: a post-hoc report that something actually happened --
+  // distinct from a near-miss above, which is a close call. Filing lands
+  // directly in the escalation ladder (severity forced high/critical), so
+  // there is no separate list to refresh here -- /admin/escalations is
+  // where a filed incident is read back and acted on.
+  async function handleReportIncident(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!athleteId || !incidentDescription.trim() || incidentSubmitting) return;
+    setIncidentFiledMessage('');
+    setIncidentSubmitting(true);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/incidents`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          athleteId,
+          description: incidentDescription,
+          severity: incidentSeverity,
+          occurredAt: incidentOccurredAt || undefined,
+        }),
+      });
+      await readJsonOrThrow(response, 'Failed to file incident report.');
+      setIncidentDescription('');
+      setIncidentSeverity('high');
+      setIncidentOccurredAt('');
+      setIncidentFiledMessage('Incident filed -- it is now in the escalation queue.');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to file incident report.');
+    } finally {
+      setIncidentSubmitting(false);
+    }
+  }
+
+  // Capability #125/#70/#74: capture only, deliberately. pilot.coach_observations'
+  // note_type column already accepts any free-text value with no taxonomy
+  // (createCoachObservation/domain-upsert), so this is a UI wiring gap, not
+  // a schema one -- reuses domain-upsert directly rather than a new route.
+  // A single generic note_type ('behavior_standard') is used on purpose:
+  // picking specific category names (e.g. "respect," "effort") is a
+  // coaching-philosophy decision for the gym's own staff, not something to
+  // invent here. Pattern detection, streaks, and consequences are Phase 6
+  // scope (#70/#74's own engines) and are not attempted by this capture form.
+  async function handleLogBehaviorNote(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!athleteId || !behaviorNoteText.trim() || behaviorNoteSubmitting) return;
+    setBehaviorNoteMessage('');
+    setBehaviorNoteSubmitting(true);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/intake/domain-upsert`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entity_type: 'coach_note',
+          athlete_id: athleteId,
+          payload: { note_type: 'behavior_standard', note_text: behaviorNoteText },
+        }),
+      });
+      await readJsonOrThrow(response, 'Failed to log the note.');
+      setBehaviorNoteText('');
+      setBehaviorNoteMessage('Note logged.');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to log the note.');
+    } finally {
+      setBehaviorNoteSubmitting(false);
+    }
+  }
+
+  // Capability #90, scoped down deliberately to one-directional send: a
+  // coach/admin message to the athlete's guardian(s), read on
+  // /parent/messages. Reply, threading, and messaging any coach besides the
+  // athlete's own are real moderation/product decisions, not attempted
+  // here. Reuses domain-upsert exactly like the Behavior Note panel above --
+  // note_type: 'parent_message' is the one value listParentMessages reads
+  // back, so a message sent here and nothing else ever reaches a guardian's
+  // feed.
+  async function handleMessageHome(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!athleteId || !messageHomeText.trim() || messageHomeSubmitting) return;
+    setMessageHomeMessage('');
+    setMessageHomeSubmitting(true);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/intake/domain-upsert`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entity_type: 'coach_note',
+          athlete_id: athleteId,
+          payload: { note_type: 'parent_message', note_text: messageHomeText },
+        }),
+      });
+      await readJsonOrThrow(response, 'Failed to send the message.');
+      setMessageHomeText('');
+      setMessageHomeMessage('Sent to the family.');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to send the message.');
+    } finally {
+      setMessageHomeSubmitting(false);
     }
   }
 
@@ -619,6 +744,108 @@ export default function DecisionLoopReviewPage() {
                   </label>
                   <button type="submit" className="btn btn--ghost">
                     Flag Near-Miss
+                  </button>
+                </form>
+              </section>
+
+              {/* Report Incident */}
+              <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+                <h2 className="t-command text-[length:var(--t-lg)]">Report Incident</h2>
+                <p className="t-muted mt-[var(--s2)]">
+                  Use this when something actually happened -- an injury, a broken rule with a real
+                  consequence -- not a close call. This files directly into the safety escalation queue.
+                </p>
+
+                {incidentFiledMessage && (
+                  <p className="t-body mt-[var(--s3)] text-[color:var(--brass-300)]">{incidentFiledMessage}</p>
+                )}
+
+                <form onSubmit={handleReportIncident} className="mt-[var(--s4)] space-y-[var(--s3)]">
+                  <label className="field block">
+                    <span className="t-label">What happened</span>
+                    <textarea
+                      value={incidentDescription}
+                      onChange={(event) => setIncidentDescription(event.target.value)}
+                      className="textarea min-h-[56px]"
+                    />
+                  </label>
+                  <label className="field block">
+                    <span className="t-label">Severity</span>
+                    <select
+                      value={incidentSeverity}
+                      onChange={(event) => setIncidentSeverity(event.target.value as IncidentSeverity)}
+                      className="select"
+                    >
+                      <option value="high">High</option>
+                      <option value="critical">Critical</option>
+                    </select>
+                  </label>
+                  <label className="field block">
+                    <span className="t-label">When it happened (optional, if not today)</span>
+                    <input
+                      type="text"
+                      value={incidentOccurredAt}
+                      onChange={(event) => setIncidentOccurredAt(event.target.value)}
+                      placeholder="e.g. 2026-08-05"
+                      className="input"
+                    />
+                  </label>
+                  <button type="submit" className="btn btn--ghost" disabled={incidentSubmitting}>
+                    {incidentSubmitting ? 'Filing…' : 'File Incident Report'}
+                  </button>
+                </form>
+              </section>
+
+              {/* Behavior & Habit Note */}
+              <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+                <h2 className="t-command text-[length:var(--t-lg)]">Behavior &amp; Habit Note</h2>
+                <p className="t-muted mt-[var(--s2)]">
+                  A quick note on behavior, discipline, or a habit you noticed -- not a safety concern (use
+                  Near-Misses or Report Incident for those). This just records it; nothing acts on it yet.
+                </p>
+
+                {behaviorNoteMessage && (
+                  <p className="t-body mt-[var(--s3)] text-[color:var(--brass-300)]">{behaviorNoteMessage}</p>
+                )}
+
+                <form onSubmit={handleLogBehaviorNote} className="mt-[var(--s4)] space-y-[var(--s3)]">
+                  <label className="field block">
+                    <span className="t-label">Note</span>
+                    <textarea
+                      value={behaviorNoteText}
+                      onChange={(event) => setBehaviorNoteText(event.target.value)}
+                      className="textarea min-h-[56px]"
+                    />
+                  </label>
+                  <button type="submit" className="btn btn--ghost" disabled={behaviorNoteSubmitting}>
+                    {behaviorNoteSubmitting ? 'Logging…' : 'Log Note'}
+                  </button>
+                </form>
+              </section>
+
+              {/* Message Home */}
+              <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+                <h2 className="t-command text-[length:var(--t-lg)]">Message Home</h2>
+                <p className="t-muted mt-[var(--s2)]">
+                  A one-way note to the athlete&apos;s family -- they&apos;ll see it on their Messages tab.
+                  There&apos;s no reply yet; call the family directly for anything that needs a conversation.
+                </p>
+
+                {messageHomeMessage && (
+                  <p className="t-body mt-[var(--s3)] text-[color:var(--brass-300)]">{messageHomeMessage}</p>
+                )}
+
+                <form onSubmit={handleMessageHome} className="mt-[var(--s4)] space-y-[var(--s3)]">
+                  <label className="field block">
+                    <span className="t-label">Message</span>
+                    <textarea
+                      value={messageHomeText}
+                      onChange={(event) => setMessageHomeText(event.target.value)}
+                      className="textarea min-h-[56px]"
+                    />
+                  </label>
+                  <button type="submit" className="btn btn--ghost" disabled={messageHomeSubmitting}>
+                    {messageHomeSubmitting ? 'Sending…' : 'Send to Family'}
                   </button>
                 </form>
               </section>

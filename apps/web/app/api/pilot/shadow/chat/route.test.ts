@@ -178,6 +178,10 @@ jest.mock('@/src/server/pilot/shadowEvidence', () => ({
       sourceTitle: item.sourceTitle,
       documentName: item.documentName,
     }))),
+  citedEvidenceQuality: jest.fn((
+    bundle: { items: Array<{ evidenceId: string }> },
+    citationIds: string[],
+  ) => bundle.items.filter((item) => citationIds.includes(item.evidenceId))),
 }));
 
 const mockRequirePrincipal = jest.mocked(requirePrincipal);
@@ -345,6 +349,9 @@ describe('POST /api/pilot/shadow/chat trust boundary', () => {
         sourceTitle: 'Approved source',
         documentName: 'Approved document',
         excerpt: 'Approved bounded excerpt.',
+        authorityTier: 2,
+        evidenceClass: 'VERIFIED EVIDENCE',
+        boxingSpecificity: 'boxing_specific',
       }],
     });
     global.fetch = jest.fn().mockResolvedValue({
@@ -395,6 +402,9 @@ describe('POST /api/pilot/shadow/chat trust boundary', () => {
         sourceTitle: 'Approved source',
         documentName: 'Approved document',
         excerpt: 'Approved bounded excerpt.',
+        authorityTier: 2,
+        evidenceClass: 'VERIFIED EVIDENCE',
+        boxingSpecificity: 'boxing_specific',
       }],
     });
     global.fetch = jest.fn().mockResolvedValue({

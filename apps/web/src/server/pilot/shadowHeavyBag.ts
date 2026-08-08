@@ -34,6 +34,13 @@ export interface HeavyBagEvidenceSnapshot {
     token: string;
     sourceTitle: string;
     documentName: string;
+    // Quality fields for shadowEvidenceTier.ts's rule, captured at enqueue
+    // time same as everything else here -- never re-queried at completion.
+    // Null when the source chunk's metadata does not carry evidence_class/
+    // boxing_specificity (see ShadowLibrarySearchResult's own comment).
+    authorityTier: number;
+    evidenceClass: string | null;
+    boxingSpecificity: string | null;
   }>;
 }
 

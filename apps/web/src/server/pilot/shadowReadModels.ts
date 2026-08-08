@@ -1,5 +1,6 @@
 import type { PilotRole } from './contracts';
 import { query } from './db';
+import { guardianAthleteIds } from './guardianAccess';
 
 export interface ShadowReadContext {
   organizationId: string;
@@ -135,16 +136,7 @@ async function resolveAthleteScope(context: ShadowReadContext): Promise<AthleteS
   }
 
   if (context.actorRole === 'parent') {
-    const rows = await query<{ athlete_id: string }>(
-      `select gl.athlete_id
-       from pilot.guardian_links gl
-       where gl.organization_id = $1
-         and gl.parent_id in (
-           select parent_id from pilot.parents where organization_id = $1 and account_id = $2
-         )`,
-      [context.organizationId, context.actorAccountId],
-    );
-    const athleteIds = rows.map((row) => row.athlete_id);
+    const athleteIds = await guardianAthleteIds(context.organizationId, context.actorAccountId);
     return { restrictToAthleteIds: athleteIds.length > 0 ? athleteIds : ['__unbound_athlete__'], excludeAthleteScoped: false };
   }
 

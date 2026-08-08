@@ -268,6 +268,11 @@ describe('SHADOW job processor fail-closed modes', () => {
             token: '[E:e5a7c9d2-4b3f-4a21-8c6d-1f2e3a4b5c6d]',
             sourceTitle: 'Approved source',
             documentName: 'Approved document',
+            // Authority tier 3 -> EMERGING, matching the "one authorized
+            // citation -> EMERGING" comment below this fixture's usage.
+            authorityTier: 3,
+            evidenceClass: 'VERIFIED EVIDENCE',
+            boxingSpecificity: 'boxing_specific',
           }],
         },
       };

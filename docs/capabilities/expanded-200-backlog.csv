@@ -80,7 +80,7 @@
 "79","Water Safety Gate","safetyRecoveryHealth","Safety / Recovery / Health","DRAFT","False","True","2.0.0-draft-merged","","NOT_REQUIRED"
 "80","Breath-Hold Restriction Engine","safetyRecoveryHealth","Safety / Recovery / Health","DRAFT","False","True","2.0.0-draft-merged","","NOT_REQUIRED"
 "81","Fatigue Breakdown Engine","safetyRecoveryHealth","Safety / Recovery / Health","DRAFT","False","True","2.0.0-draft-merged","","NOT_REQUIRED"
-"82","Stop / Hold / Regress Engine","safetyRecoveryHealth","Safety / Recovery / Health","DRAFT","False","True","2.0.0-draft-merged","","NOT_REQUIRED"
+"82","Stop / Hold / Regress Engine","safetyRecoveryHealth","Safety / Recovery / Health","DONE","False","True","2.0.0-draft-merged","11 Safety Gate","PENDING_SIGN_OFF"
 "83","Unsafe Behavior Flag Engine","safetyRecoveryHealth","Safety / Recovery / Health","DRAFT","False","True","2.0.0-draft-merged","","NOT_REQUIRED"
 "84","Guardian Safety Report Engine","safetyRecoveryHealth","Safety / Recovery / Health","DRAFT","False","True","2.0.0-draft-merged","","NOT_REQUIRED"
 "85","At-Home Parent / Guardian Task System","atHomeParentGuardian","At-Home / Parent / Guardian","DONE","False","True","2.0.0-draft-merged","15 Guardian Portal","PENDING_SIGN_OFF"

@@ -1,8 +1,53 @@
 # T-006 — Video publication workflow: compliance-check screen is missing (videos stuck in draft)
 
-> Status: BACKLOG
+> Status: **RESOLVED — see delivery note below (2026-08-07)**
 > Lane: A (git-capable AI) or B (chat-only AI) — either
 > Priority: P1 operational blocker (publications cannot progress past draft)
+
+## Delivery note (2026-08-07, session B / remote)
+
+Built on PR #238 as PR-238h (see `docs/current/WORK_QUEUE.md`). This
+ticket's schema guess and state-machine description were both wrong —
+scoping confirmed the real table is `pilot.video_publications` /
+`pilot.publication_checks` (not `pilot.film_study_publications` or
+`pilot.videos`), the real state is `pending_review` (not
+`pending_compliance_review`), and the review-decision workflow
+(`recordComplianceCheck` + `updatePublicationStatus`) already existed
+via `POST /api/pilot/publications/check` — this ticket's job was the
+missing admin console and route wrapper, not new backend logic. No
+migration — reuses existing schema.
+
+Also confirmed during scoping: this is genuinely separate from T-003
+(admin video **scan-review**, an automated content-scanner quarantine
+gate on `pilot.video_sessions` at upload time) rather than a duplicate —
+`createPublication` refuses to even create a publication until the
+underlying video session is `'ready'`, i.e. this ticket's gate sits
+strictly downstream of T-003's.
+
+Two deliberate deviations from this ticket's literal wording:
+
+1. **"Reject" does not move a publication back to `draft`.** It moves to
+   the real terminal `rejected` status — matching what
+   `check/route.ts` already does for `check_status: 'failed'`. No
+   reject-to-draft transition exists anywhere in `publication.ts`, and
+   the coach-facing publication flow's own existing copy already tells
+   an uploader whose check failed to create a **new** publication once
+   the issue is fixed, not resubmit the same one. Building a literal
+   bounce-to-draft would be new code contradicting shipped UX.
+2. **"Athlete list" is actually a single athlete.**
+   `video_publications.athlete_id` is a scalar column, not a join
+   table — one publication covers one named athlete. Multi-athlete
+   tracking would need new schema, which is both outside this ticket's
+   allowed files (no migration listed) and explicitly excluded by its
+   own scope ("detailed athlete-level consent verification").
+
+A real gap found and closed in the new route only: neither
+`check/route.ts` nor `create/route.ts` writes an audit event today,
+despite this being exactly the kind of decision on a minor's footage
+the safeguarding rule demands be logged. The new
+`api/pilot/admin/video-compliance` route adds `writePilotAuditEvent` on
+every decision; the sibling routes are untouched (out of this ticket's
+allowed files) but the gap is worth knowing about as a follow-up.
 
 <!-- Everything below this line is the prompt. Paste the whole file into the
      builder AI. It must be able to succeed with no other context. -->

@@ -1,7 +1,19 @@
 import type { ObservationKind } from './formulas/types';
+import { getSafetyGateDefinition, recordSafetyGateEvaluation } from './safetyGateMatrix';
 import { getLatestMedicalAdministrativeStatus } from './shadowMedicalStatus';
-import { flagNearMiss } from './shadowNearMisses';
+import { findNearMissByTriggerContext, flagNearMiss } from './shadowNearMisses';
 import type { ShadowNearMissSeverity } from './shadowNearMisses';
+
+/** The gate_key this module is registered under in pilot.safety_gates. */
+const GATE_KEY = 'contact_medical_clearance';
+
+/** The metadata marker this gate's near misses are written and deduped by. */
+const NEAR_MISS_TRIGGER = 'contact_observation_without_medical_clearance';
+
+/** Used only if the gate row itself is missing (pre-migration organization). */
+const DEFAULT_LESSON =
+  "Ask your coach or gym admin to set an explicit 'cleared' medical administrative status "
+  + 'on file for this athlete before contact continues.';
 
 /**
  * The observation kinds that mean an athlete physically took contact.
@@ -62,6 +74,14 @@ export interface ContactClearanceOutcome {
   /** The status that caused the flag, for the caller's response body. */
   readonly medicalStatus?: string;
   readonly severity?: ShadowNearMissSeverity;
+  /**
+   * The gate's requirement_text -- what earns clearance -- present only
+   * when flagged. The "teaching moment" doctrine: a stop names what's
+   * missing and where to fix it, not just that it happened. Falls back to
+   * a plain-language default if the gate row is missing (pre-migration
+   * organization), so a flag is never explained by nothing at all.
+   */
+  readonly lesson?: string;
 }
 
 /**
@@ -84,6 +104,17 @@ export interface ContactClearanceOutcome {
  * observation write is idempotency-keyed. The cost of that ordering is a possible
  * near miss for an observation that then failed to save -- an over-alert, which is
  * the right direction to be wrong in.
+ *
+ * Registered in the Safety Gate Matrix (safetyGateMatrix.ts) under
+ * GATE_KEY = 'contact_medical_clearance', as a 'flag' gate -- see
+ * pilot_slice_postgres_safety_gate_matrix_migration.sql for why enforcement
+ * is a first-class property rather than assumed. Every evaluation this
+ * function performs (pass or flag) is recorded through that shared
+ * substrate, in addition to -- not instead of -- the near-miss this
+ * function has always raised on a flag. An organization can deactivate the
+ * gate row (`active_flag = false`) to turn off this specific check without
+ * a code change; that is a per-org configuration decision, not an override
+ * of an individual evaluation's outcome -- no such override exists.
  */
 export async function flagContactWithoutClearance(input: {
   organizationId: string;
@@ -99,35 +130,101 @@ export async function flagContactWithoutClearance(input: {
     return { flagged: false };
   }
 
+  const gate = await getSafetyGateDefinition(input.organizationId, GATE_KEY);
+  if (gate && !gate.active_flag) {
+    return { flagged: false };
+  }
+
   // Fail closed, matching assertMedicalStatusAllowsRecommendation: only an
   // explicit 'cleared' record counts. Absence of a clearance decision is not a
   // clearance decision.
   const record = await getLatestMedicalAdministrativeStatus(input.organizationId, input.athleteId);
+  const value = input.value as number;
+
   if (record?.status === 'cleared') {
+    // pilot.safety_gate_evaluations has a foreign key to (organization_id,
+    // gate_key) in pilot.safety_gates -- a pre-migration organization with
+    // no gate row would fail that constraint and abort the whole
+    // observation request. Recording is therefore best-effort, gated on the
+    // row actually existing; the underlying flagging/near-miss behavior
+    // below does not depend on it and must never be blocked by it.
+    if (gate) {
+      await recordSafetyGateEvaluation({
+        organizationId: input.organizationId,
+        gateKey: GATE_KEY,
+        athleteId: input.athleteId,
+        outcome: 'passed',
+        evaluatedByAccountId: input.actorAccountId,
+        evaluatedByRole: input.actorRole,
+        contextId: input.contextId,
+        metadata: { observation_kind: input.kind, observation_value: value },
+        evaluatedAt: input.observedAt,
+      });
+    }
     return { flagged: false };
   }
 
   const status = record?.status ?? 'no_record';
   const severity = severityForStatus(status);
-  const value = input.value as number;
+  const lesson = gate?.requirement_text ?? DEFAULT_LESSON;
 
-  await flagNearMiss({
-    organizationId: input.organizationId,
-    athleteId: input.athleteId,
-    description: describe(status, input.kind, value, input.athleteId),
-    severity,
-    detectedBy: 'system',
-    detectedByAccountId: input.actorAccountId,
-    detectedByRole: input.actorRole,
-    metadata: {
-      trigger: 'contact_observation_without_medical_clearance',
-      observation_kind: input.kind,
-      observation_value: value,
-      medical_status: status,
-      context_id: input.contextId,
-      observed_at: input.observedAt,
-    },
-  });
+  // One near miss (and thus one escalation) per SESSION, not per contact
+  // observation: a single sparring submission posts contact_level,
+  // contact_rounds, and punch_absorbed as separate requests, each of which
+  // lands here. Without this check, one uncleared session filed three
+  // near-identical near misses and three open escalations -- and three rows
+  // with the same trigger then read as a "repeated pattern" to the detector,
+  // which is supposed to mean repeated SESSIONS. The evaluation record below
+  // is still written per observation: that table is the audit trail of what
+  // was checked, not the alert surface.
+  const alreadyFlagged = await findNearMissByTriggerContext(
+    input.organizationId,
+    input.athleteId,
+    NEAR_MISS_TRIGGER,
+    input.contextId,
+  );
 
-  return { flagged: true, medicalStatus: status, severity };
+  if (!alreadyFlagged) {
+    await flagNearMiss({
+      organizationId: input.organizationId,
+      athleteId: input.athleteId,
+      description: describe(status, input.kind, value, input.athleteId),
+      severity,
+      detectedBy: 'system',
+      detectedByAccountId: input.actorAccountId,
+      detectedByRole: input.actorRole,
+      metadata: {
+        trigger: NEAR_MISS_TRIGGER,
+        observation_kind: input.kind,
+        observation_value: value,
+        medical_status: status,
+        context_id: input.contextId,
+        observed_at: input.observedAt,
+      },
+    });
+  }
+
+  // Same FK constraint as the passed path above -- best-effort, gated on the
+  // gate row existing, never a reason to fail a request that already
+  // succeeded at raising the near miss that actually matters.
+  if (gate) {
+    await recordSafetyGateEvaluation({
+      organizationId: input.organizationId,
+      gateKey: GATE_KEY,
+      athleteId: input.athleteId,
+      outcome: 'flagged',
+      reason: describe(status, input.kind, value, input.athleteId),
+      evaluatedByAccountId: input.actorAccountId,
+      evaluatedByRole: input.actorRole,
+      contextId: input.contextId,
+      metadata: {
+        observation_kind: input.kind,
+        observation_value: value,
+        medical_status: status,
+      },
+      evaluatedAt: input.observedAt,
+    });
+  }
+
+  return { flagged: true, medicalStatus: status, severity, lesson };
 }

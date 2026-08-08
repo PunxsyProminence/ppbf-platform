@@ -59,6 +59,10 @@ alter table pilot.audit_events
     'shadow_classification',
     'shadow_routing',
     'shadow_research_upload_requirement',
+    'safety_hold_placed',
+    'safety_hold_lifted',
+    'consent_granted',
+    'consent_withdrawn',
     'data_deletion_initiated',
     'data_purged'
   ));

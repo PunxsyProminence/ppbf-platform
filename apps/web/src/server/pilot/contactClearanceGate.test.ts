@@ -3,8 +3,11 @@ import {
   flagContactWithoutClearance,
   isContactObservation,
 } from './contactClearanceGate';
+import { getSafetyGateDefinition, recordSafetyGateEvaluation } from './safetyGateMatrix';
 import { getLatestMedicalAdministrativeStatus } from './shadowMedicalStatus';
-import { flagNearMiss } from './shadowNearMisses';
+import { findNearMissByTriggerContext, flagNearMiss } from './shadowNearMisses';
+
+const GATE_LESSON = 'Set status to cleared before contact continues (test gate text).';
 
 jest.mock('./shadowMedicalStatus', () => ({
   getLatestMedicalAdministrativeStatus: jest.fn(),
@@ -12,10 +15,27 @@ jest.mock('./shadowMedicalStatus', () => ({
 
 jest.mock('./shadowNearMisses', () => ({
   flagNearMiss: jest.fn().mockResolvedValue({ near_miss_id: 'nm-1' }),
+  findNearMissByTriggerContext: jest.fn().mockResolvedValue(null),
+}));
+
+jest.mock('./safetyGateMatrix', () => ({
+  getSafetyGateDefinition: jest.fn().mockResolvedValue({
+    gate_id: 'gate_punxsy_prominence_contact_medical_clearance',
+    gate_key: 'contact_medical_clearance',
+    name: 'Contact Requires Medical Clearance',
+    category: 'medical',
+    enforcement: 'flag',
+    requirement_text: 'Set status to cleared before contact continues (test gate text).',
+    active_flag: true,
+  }),
+  recordSafetyGateEvaluation: jest.fn().mockResolvedValue(undefined),
 }));
 
 const mockStatus = getLatestMedicalAdministrativeStatus as jest.Mock;
 const mockFlag = flagNearMiss as jest.Mock;
+const mockFindExisting = findNearMissByTriggerContext as jest.Mock;
+const mockGetGate = getSafetyGateDefinition as jest.Mock;
+const mockRecordEvaluation = recordSafetyGateEvaluation as jest.Mock;
 
 function call(overrides: Partial<Parameters<typeof flagContactWithoutClearance>[0]> = {}) {
   return flagContactWithoutClearance({
@@ -76,7 +96,7 @@ describe('contact without a current clearance raises a near miss', () => {
   test.each(['not_cleared', 'restricted'])('%s is critical', async (status) => {
     mockStatus.mockResolvedValueOnce({ status });
 
-    await expect(call()).resolves.toEqual({ flagged: true, medicalStatus: status, severity: 'critical' });
+    await expect(call()).resolves.toEqual({ flagged: true, medicalStatus: status, severity: 'critical', lesson: GATE_LESSON });
     expect(mockFlag).toHaveBeenCalledTimes(1);
   });
 
@@ -85,13 +105,13 @@ describe('contact without a current clearance raises a near miss', () => {
   test('pending is high', async () => {
     mockStatus.mockResolvedValueOnce({ status: 'pending' });
 
-    await expect(call()).resolves.toEqual({ flagged: true, medicalStatus: 'pending', severity: 'high' });
+    await expect(call()).resolves.toEqual({ flagged: true, medicalStatus: 'pending', severity: 'high', lesson: GATE_LESSON });
   });
 
   test('no record at all is high, and reported as no_record', async () => {
     mockStatus.mockResolvedValueOnce(null);
 
-    await expect(call()).resolves.toEqual({ flagged: true, medicalStatus: 'no_record', severity: 'high' });
+    await expect(call()).resolves.toEqual({ flagged: true, medicalStatus: 'no_record', severity: 'high', lesson: GATE_LESSON });
   });
 
   test('the near miss is system-detected and carries the triggering detail', async () => {
@@ -128,11 +148,13 @@ describe('contact without a current clearance raises a near miss', () => {
 
 describe('non-contact observations never reach the medical lookup', () => {
   // Not merely "is not flagged": a body-weight log must not cost a database
-  // round trip on every submission.
-  test('no status lookup happens for a non-contact kind', async () => {
+  // round trip on every submission. Extended to the matrix lookup too --
+  // generalizing the gate must not undo the original optimization.
+  test('no status lookup and no gate lookup happens for a non-contact kind', async () => {
     await expect(call({ kind: 'body_weight', value: 72 })).resolves.toEqual({ flagged: false });
     expect(mockStatus).not.toHaveBeenCalled();
     expect(mockFlag).not.toHaveBeenCalled();
+    expect(mockGetGate).not.toHaveBeenCalled();
   });
 
   test('no status lookup happens for zero contact', async () => {
@@ -150,5 +172,146 @@ describe('a failure while flagging propagates', () => {
     mockFlag.mockRejectedValueOnce(new Error('database unavailable'));
 
     await expect(call()).rejects.toThrow('database unavailable');
+  });
+});
+
+describe('every evaluation is recorded through the Safety Gate Matrix, pass or flag', () => {
+  test('a cleared athlete records a passed evaluation', async () => {
+    mockStatus.mockResolvedValueOnce({ status: 'cleared' });
+
+    await call();
+
+    expect(mockRecordEvaluation).toHaveBeenCalledTimes(1);
+    expect(mockRecordEvaluation).toHaveBeenCalledWith(expect.objectContaining({
+      organizationId: 'punxsy_prominence',
+      gateKey: 'contact_medical_clearance',
+      athleteId: 'Neeko-001',
+      outcome: 'passed',
+    }));
+  });
+
+  test('a flagged athlete records a flagged evaluation, in addition to the near miss', async () => {
+    mockStatus.mockResolvedValueOnce({ status: 'not_cleared' });
+
+    await call();
+
+    expect(mockFlag).toHaveBeenCalledTimes(1);
+    expect(mockRecordEvaluation).toHaveBeenCalledTimes(1);
+    expect(mockRecordEvaluation).toHaveBeenCalledWith(expect.objectContaining({
+      gateKey: 'contact_medical_clearance',
+      outcome: 'flagged',
+      reason: expect.stringContaining('Neeko-001'),
+    }));
+  });
+
+  test('non-contact observations record no evaluation either', async () => {
+    await call({ kind: 'body_weight', value: 72 });
+    expect(mockRecordEvaluation).not.toHaveBeenCalled();
+  });
+});
+
+describe('an organization can deactivate the gate without a code change', () => {
+  test('active_flag: false skips both the near miss and the evaluation record', async () => {
+    mockGetGate.mockResolvedValueOnce({
+      gate_id: 'gate_punxsy_prominence_contact_medical_clearance',
+      gate_key: 'contact_medical_clearance',
+      name: 'Contact Requires Medical Clearance',
+      category: 'medical',
+      enforcement: 'flag',
+      requirement_text: GATE_LESSON,
+      active_flag: false,
+    });
+
+    await expect(call()).resolves.toEqual({ flagged: false });
+
+    // Deactivated means no monitoring at all for this org, not "monitor but
+    // never flag" -- the medical status lookup itself is skipped.
+    expect(mockStatus).not.toHaveBeenCalled();
+    expect(mockFlag).not.toHaveBeenCalled();
+    expect(mockRecordEvaluation).not.toHaveBeenCalled();
+  });
+});
+
+describe('a missing gate row (pre-migration organization) still fails toward alerting', () => {
+  test('falls back to a plain-language lesson rather than an empty one', async () => {
+    mockGetGate.mockResolvedValueOnce(null);
+    mockStatus.mockResolvedValueOnce({ status: 'not_cleared' });
+
+    const result = await call();
+
+    expect(result.flagged).toBe(true);
+    expect(result.lesson).toEqual(expect.stringContaining('cleared'));
+    expect(mockFlag).toHaveBeenCalledTimes(1);
+  });
+
+  // pilot.safety_gate_evaluations foreign-keys to (organization_id, gate_key)
+  // in pilot.safety_gates. Recording an evaluation with no matching gate row
+  // would violate that constraint and abort the whole request -- the near
+  // miss above must land regardless, so recording is skipped rather than
+  // attempted and left to fail.
+  test('does not attempt to record an evaluation with no gate row to reference', async () => {
+    mockGetGate.mockResolvedValueOnce(null);
+    mockStatus.mockResolvedValueOnce({ status: 'not_cleared' });
+
+    await call();
+
+    expect(mockRecordEvaluation).not.toHaveBeenCalled();
+  });
+
+  test('a cleared athlete with no gate row is still not flagged, and records nothing', async () => {
+    mockGetGate.mockResolvedValueOnce(null);
+    mockStatus.mockResolvedValueOnce({ status: 'cleared' });
+
+    await expect(call()).resolves.toEqual({ flagged: false });
+    expect(mockRecordEvaluation).not.toHaveBeenCalled();
+  });
+});
+
+describe('one near miss per session, not per contact observation', () => {
+  // A single sparring submission posts contact_level, contact_rounds, and
+  // punch_absorbed as separate requests with the SAME contextId. Without
+  // dedup, one uncleared session filed three near-identical near misses and
+  // three open escalations -- and three same-trigger rows then read to the
+  // repeated-pattern detector as a pattern, which is supposed to mean
+  // repeated SESSIONS.
+  test('a second contact observation in the same session does not file a second near miss', async () => {
+    mockStatus.mockResolvedValueOnce({ status: 'not_cleared' });
+    mockFindExisting.mockResolvedValueOnce({ near_miss_id: 'nm-existing' });
+
+    const result = await call({ kind: 'punch_absorbed', value: 9 });
+
+    expect(mockFlag).not.toHaveBeenCalled();
+    // The caller still learns the truth: this observation IS flagged, with
+    // the same severity and lesson the first one carried.
+    expect(result.flagged).toBe(true);
+    expect(result.severity).toBe('critical');
+    expect(result.lesson).toBe(GATE_LESSON);
+    // The evaluation audit trail still records that this observation was
+    // checked -- that table is the audit trail, not the alert surface.
+    expect(mockRecordEvaluation).toHaveBeenCalledTimes(1);
+  });
+
+  test('the dedup key is athlete + trigger + context', async () => {
+    mockStatus.mockResolvedValueOnce({ status: 'pending' });
+    mockFindExisting.mockResolvedValueOnce(null);
+
+    await call({ kind: 'contact_level', value: 2 });
+
+    expect(mockFindExisting).toHaveBeenCalledWith(
+      'punxsy_prominence',
+      'Neeko-001',
+      'contact_observation_without_medical_clearance',
+      'sparring_123',
+    );
+    expect(mockFlag).toHaveBeenCalledTimes(1);
+  });
+
+  test('the same athlete in a NEW session is flagged fresh', async () => {
+    mockStatus.mockResolvedValueOnce({ status: 'not_cleared' });
+    mockFindExisting.mockResolvedValueOnce(null);
+
+    await call({ contextId: 'sparring_next_week' });
+
+    expect(mockFlag).toHaveBeenCalledTimes(1);
   });
 });

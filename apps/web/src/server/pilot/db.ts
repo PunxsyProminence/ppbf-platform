@@ -42,7 +42,7 @@ export function resolveSslConfig(override: SslOverride = {}): { rejectUnauthoriz
 // stuff an arbitrary string into an error's `code` property.
 const SQLSTATE_PATTERN = /^[0-9A-Z]{5}$/;
 
-function sanitizedSqlState(rawCode: unknown): string | undefined {
+export function sanitizedSqlState(rawCode: unknown): string | undefined {
   return typeof rawCode === 'string' && SQLSTATE_PATTERN.test(rawCode) ? rawCode : undefined;
 }
 

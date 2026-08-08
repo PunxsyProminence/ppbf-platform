@@ -2,15 +2,16 @@
  * @jest-environment jsdom
  */
 
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import '@testing-library/jest-dom';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import type { AnnouncementItem } from './AnnouncementBanner';
 import ParentHub from './ParentHub';
 
-function jsonResponse(body: unknown): Response {
+function jsonResponse(body: unknown, ok = true): Response {
   return {
-    ok: true,
-    status: 200,
+    ok,
+    status: ok ? 200 : 400,
     json: async () => body,
   } as unknown as Response;
 }
@@ -31,8 +32,13 @@ function announcement(overrides: Partial<AnnouncementItem> = {}): AnnouncementIt
   };
 }
 
-function installFetch(announcements: () => Promise<Response> = async () => jsonResponse({ ok: true, announcements: [] })): jest.Mock {
-  const fetchMock = jest.fn(async (input: unknown) => {
+function installFetch(
+  announcements: () => Promise<Response> = async () => jsonResponse({ ok: true, announcements: [] }),
+  safety: () => Promise<Response> = async () => jsonResponse({ ok: true, items: [] }),
+  barrierReport: (init?: RequestInit) => Promise<Response> = async () => jsonResponse({ ok: true, note_id: 'note-1' }),
+  messages: () => Promise<Response> = async () => jsonResponse({ ok: true, items: [] }),
+): jest.Mock {
+  const fetchMock = jest.fn(async (input: unknown, init?: RequestInit) => {
     const url = String(input);
 
     if (url.includes('/api/pilot/auth/session')) {
@@ -48,6 +54,15 @@ function installFetch(announcements: () => Promise<Response> = async () => jsonR
     }
     if (url.includes('/api/pilot/announcements/get')) {
       return announcements();
+    }
+    if (url.includes('/api/pilot/parent/safety')) {
+      return safety();
+    }
+    if (url.includes('/api/pilot/parent/barrier-report')) {
+      return barrierReport(init);
+    }
+    if (url.includes('/api/pilot/parent/messages')) {
+      return messages();
     }
 
     throw new Error(`Unexpected fetch: ${url}`);
@@ -158,5 +173,210 @@ describe('authored announcements on the parent hub', () => {
 
     expect(screen.queryByText('Gym Notices')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Second Child' })).not.toBeNull();
+  });
+});
+
+// Capabilities #93/#167: the hub previously never linked to /parent/safety
+// or /parent/consent (both already built, #84/T-008) even though those
+// pages link back to it -- a pure aggregation gap, no new schema.
+describe('Safety & Consent card on the parent hub', () => {
+  test('links to both surfaces are always present', async () => {
+    installFetch();
+    await act(async () => {
+      render(<ParentHub />);
+    });
+
+    expect(screen.getByRole('link', { name: 'View Safety Status' })).toHaveAttribute('href', '/parent/safety');
+    expect(screen.getByRole('link', { name: 'Manage Consent' })).toHaveAttribute('href', '/parent/consent');
+  });
+
+  test('nothing to flag reads as a plain, non-alarming prompt', async () => {
+    installFetch(undefined, async () => jsonResponse({ ok: true, items: [{ athlete_id: 'ath_1', hold: null, gates: [] }] }));
+    await act(async () => {
+      render(<ParentHub />);
+    });
+
+    expect(screen.getByText(/Check your child.s active training-hold and safety-gate status/)).toBeDefined();
+    expect(screen.queryByText(/active training hold/)).toBeNull();
+  });
+
+  test('an active hold and a flagged gate are summarized without staff detail', async () => {
+    installFetch(
+      undefined,
+      async () =>
+        jsonResponse({
+          ok: true,
+          items: [
+            {
+              athlete_id: 'ath_1',
+              hold: { scope: 'full', athlete_explanation: 'Taking a short break.', lift_condition_text: '', placed_at: '2026-08-01T00:00:00Z', expires_at: null },
+              gates: [{ gate_key: 'contact_medical_clearance', name: 'Contact Requires Medical Clearance', category: 'medical', outcome: 'flagged', evaluated_at: '2026-08-01T00:00:00Z' }],
+            },
+          ],
+        }),
+    );
+    await act(async () => {
+      render(<ParentHub />);
+    });
+
+    expect(screen.getByText(/1 active training hold\(s\) and 1 gate\(s\) awaiting clearance/)).toBeDefined();
+    expect(screen.getByText(/This is not a punishment/)).toBeDefined();
+    // Never staff detail -- reason_text/reason_category never leave the server.
+    expect(screen.queryByText('Taking a short break.')).toBeNull();
+  });
+
+  test('a failed safety read leaves the rest of the hub working, card falls back to plain links', async () => {
+    installFetch(undefined, async () => {
+      throw new Error('safety summary offline');
+    });
+    await act(async () => {
+      render(<ParentHub />);
+    });
+
+    expect(screen.getByRole('link', { name: 'View Safety Status' })).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Second Child' })).not.toBeNull();
+  });
+});
+
+// Capabilities #95/#96: no parent-facing write path existed for a
+// guardian-reported home or transportation barrier -- this is the new one,
+// on the Parent Floor tab.
+describe('Report a Barrier (#95/#96)', () => {
+  async function openParentFloor() {
+    await act(async () => {
+      render(<ParentHub />);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Parent Floor' }));
+    });
+  }
+
+  test('defaults to Home and posts athleteId/barrierType/description', async () => {
+    const fetchMock = installFetch();
+    await openParentFloor();
+
+    fireEvent.change(screen.getByLabelText("What's going on"), { target: { value: 'No ride most weeknights.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Coach' }));
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find((c) => String(c[0]).includes('/api/pilot/parent/barrier-report'));
+      expect(call).toBeDefined();
+    });
+
+    const call = fetchMock.mock.calls.find((c) => String(c[0]).includes('/api/pilot/parent/barrier-report'));
+    const body = JSON.parse(String((call?.[1] as RequestInit).body));
+    expect(body).toEqual({ athleteId: 'ath_1', barrierType: 'home', description: 'No ride most weeknights.' });
+
+    await screen.findByText("Sent to your child's coach.");
+  });
+
+  test('switching to Transportation changes the posted barrierType', async () => {
+    const fetchMock = installFetch();
+    await openParentFloor();
+
+    fireEvent.change(screen.getByLabelText('Type'), { target: { value: 'transportation' } });
+    fireEvent.change(screen.getByLabelText("What's going on"), { target: { value: 'Car broke down.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Coach' }));
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find((c) => String(c[0]).includes('/api/pilot/parent/barrier-report'));
+      expect(call).toBeDefined();
+    });
+
+    const call = fetchMock.mock.calls.find((c) => String(c[0]).includes('/api/pilot/parent/barrier-report'));
+    const body = JSON.parse(String((call?.[1] as RequestInit).body));
+    expect(body.barrierType).toBe('transportation');
+  });
+
+  test('the description clears after a successful send', async () => {
+    installFetch();
+    await openParentFloor();
+
+    const textarea = screen.getByLabelText("What's going on") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: 'Something.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Coach' }));
+
+    await waitFor(() => expect(textarea.value).toBe(''));
+  });
+
+  test('an empty description does not submit', async () => {
+    const fetchMock = installFetch();
+    await openParentFloor();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Coach' }));
+
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/pilot/parent/barrier-report'))).toBe(false);
+  });
+
+  test('a failed send shows the error, not a false success message', async () => {
+    installFetch(undefined, undefined, async () => jsonResponse({ error: 'Forbidden' }, false));
+    await openParentFloor();
+
+    fireEvent.change(screen.getByLabelText("What's going on"), { target: { value: 'Something.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Coach' }));
+
+    await screen.findByText('Forbidden');
+    expect(screen.queryByText("Sent to your child's coach.")).toBeNull();
+  });
+});
+
+// Capability #90, read side: the Messages tab previously showed hardcoded
+// mock data behind a permanent "PLANNED | NOT YET IMPLEMENTED" notice --
+// this is the real feed from GET /api/pilot/parent/messages.
+describe('Messages tab (#90)', () => {
+  async function openMessages() {
+    await act(async () => {
+      render(<ParentHub />);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Messages' }));
+    });
+  }
+
+  test('no messages reads as a plain empty state, not fabricated content', async () => {
+    installFetch();
+    await openMessages();
+
+    expect(screen.getByText('No messages yet.')).toBeDefined();
+  });
+
+  test('a real message renders with the sending role and the child it concerns', async () => {
+    installFetch(undefined, undefined, undefined, async () =>
+      jsonResponse({
+        ok: true,
+        items: [
+          {
+            note_id: 'note-1',
+            athlete_id: 'ath_1',
+            athlete_name: 'First Child',
+            sender_role: 'coach',
+            note_text: 'Great effort at practice this week!',
+            created_at: '2026-08-01T23:15:00.000Z',
+          },
+        ],
+      }),
+    );
+    await openMessages();
+
+    expect(await screen.findByText('Great effort at practice this week!')).toBeDefined();
+    expect(screen.getByText('First Child', { selector: 'h4' })).toBeDefined();
+    expect(screen.getByText('From Coach')).toBeDefined();
+  });
+
+  test('a failed messages read leaves the rest of the hub working', async () => {
+    installFetch(undefined, undefined, undefined, async () => {
+      throw new Error('messages offline');
+    });
+    await openMessages();
+
+    expect(screen.getByText('No messages yet.')).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Second Child' })).not.toBeNull();
+  });
+
+  test('replying stays disabled -- one-directional only', async () => {
+    installFetch();
+    await openMessages();
+
+    expect(screen.getByRole('button', { name: 'Send Message (unavailable)' })).toBeDisabled();
   });
 });

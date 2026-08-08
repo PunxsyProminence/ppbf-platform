@@ -8,6 +8,7 @@ import type { AuthProvider } from './authProviders';
 import type { PilotRole } from './contracts';
 import { usesPin } from './credentialPolicy';
 import { getPilotDefaultOrganizationId, PILOT_SESSION_COOKIE } from './env';
+import { seedDefaultSafetyGates } from './safetyGateSeeds';
 import { createOpaqueToken, hashPin, hashToken, verifyPin } from './security';
 import { computeSessionExpiry, parseRetentionDays } from './sessionPolicy';
 import { query, queryOne, withTransaction } from './db';
@@ -897,12 +898,13 @@ export async function createOrRotateAdminAccount(
 }
 
 export async function createOrganization(organizationId: string, organizationName: string, createdBy: string): Promise<void> {
-  // Organization and compliance rules are created together, in one transaction.
-  // The seed migration only reaches organizations that existed when an operator
-  // ran it, so a gym created afterwards through this route started with an empty
-  // rule set and compliance monitoring that silently checked nothing. Seeding
-  // here rather than leaving it to the next migration run means a gym cannot
-  // exist in that state, and the transaction means it cannot half-exist either.
+  // Organization, compliance rules, and safety gates are created together, in
+  // one transaction. The seed migrations only reach organizations that
+  // existed when an operator ran them, so a gym created afterwards through
+  // this route started with an empty rule set and no safety gate to evaluate
+  // contact observations against -- the same gap seedDefaultComplianceRules
+  // was written to close, now closed for safety_gates too. The transaction
+  // means the organization cannot half-exist either.
   await withTransaction(async (client) => {
     await client.query(
       `insert into pilot.organizations (organization_id, organization_name, status, created_by_account_id)
@@ -915,6 +917,7 @@ export async function createOrganization(organizationId: string, organizationNam
     );
 
     await seedDefaultComplianceRules(organizationId, client);
+    await seedDefaultSafetyGates(organizationId, client);
   });
 }
 

@@ -47,6 +47,50 @@ describe('the building map itself', () => {
   });
 });
 
+describe('previously-orphaned admin/parent consoles are now doors', () => {
+  // Grok's audit found activation-codes and video-review missing from the
+  // header; a full check found the entire safeguarding cluster (escalations,
+  // consent, portrait/video review, media-consent audit) and this session's
+  // own new consoles were never added to the building map at all --
+  // reachable only by typing the exact URL. Pinned so they can't quietly
+  // drop out again.
+  const expected = [
+    '/admin/activation-codes',
+    '/admin/feedback',
+    '/admin/attendance',
+    '/admin/escalations',
+    '/admin/consent',
+    '/admin/athlete-consent',
+    '/admin/portrait-review',
+    '/admin/video-review',
+    '/admin/video-compliance',
+    '/parent/consent',
+  ];
+
+  it('every previously-orphaned surface has a door', () => {
+    const hrefs = BUILDING.map((d) => d.href);
+    for (const href of expected) expect(hrefs).toContain(href);
+  });
+
+  it('an org-admin-only console (portrait/video review, media-consent audit) is not shown to a coach', () => {
+    const hrefs = visibleDoors('coach').map((d) => d.href);
+    expect(hrefs).not.toContain('/admin/portrait-review');
+    expect(hrefs).not.toContain('/admin/video-compliance');
+    expect(hrefs).not.toContain('/admin/athlete-consent');
+  });
+
+  it('a coach can still reach the escalations and consent queues admin/coach share', () => {
+    const hrefs = visibleDoors('coach').map((d) => d.href);
+    expect(hrefs).toContain('/admin/escalations');
+    expect(hrefs).toContain('/admin/consent');
+  });
+
+  it('the guardian media-consent console is parent-only, not shown to an athlete', () => {
+    expect(visibleDoors('parent').map((d) => d.href)).toContain('/parent/consent');
+    expect(visibleDoors('athlete').map((d) => d.href)).not.toContain('/parent/consent');
+  });
+});
+
 describe('visibleDoors', () => {
   it('shows a signed-out visitor only the ungated surfaces', () => {
     const doors = visibleDoors(null);

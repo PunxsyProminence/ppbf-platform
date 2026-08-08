@@ -1,5 +1,6 @@
 import type { PilotRole } from './contracts';
-import { queryOne } from './db';
+import { query, queryOne } from './db';
+import { isGuardianLinkedToAthlete } from './guardianAccess';
 
 export interface ActorIdentity {
   accountId: string;
@@ -31,6 +32,23 @@ export function requireRole(actor: ActorIdentity, allowed: PilotRole[]): void {
   }
 }
 
+/**
+ * A coach reaches an athlete two ways, checked in order:
+ *
+ * 1. They are the athlete's coach_id of record -- the original exact-match,
+ *    untouched (T-002's own rule: extend, don't replace).
+ * 2. They hold an active coverage grant (pilot.coach_coverage): started and
+ *    not yet expired -- a coach substituting for the coach of record,
+ *    granted temporary per-athlete access without ever becoming the
+ *    coach_id. Expiry is enforced by comparing against now() at read time,
+ *    so a lapsed grant needs no cleanup job to stop working, and a revoked
+ *    grant (expires_at forced to now()) stops working the same way.
+ *
+ * Both failures throw the SAME message on purpose: whether a coach has no
+ * relationship to this athlete, an expired grant, or a revoked one is not
+ * something the error channel should disclose -- and the pre-coverage
+ * assertion text stays byte-identical for every existing caller and test.
+ */
 export async function assertCoachAssignedToAthlete(coachId: string, athleteId: string, organizationId: string): Promise<void> {
   const row = await queryOne<{ athlete_id: string }>(
     'select athlete_id from pilot.athletes where athlete_id = $1 and coach_id = $2 and organization_id = $3',
@@ -41,16 +59,31 @@ export async function assertCoachAssignedToAthlete(coachId: string, athleteId: s
     return;
   }
 
-  const coverage = await queryOne<{ athlete_id: string }>(
-    `select athlete_id
-     from pilot.coach_coverage
-     where organization_id = $1
-       and athlete_id = $2
-       and covering_coach_id = $3
-       and starts_at <= now()
-       and expires_at > now()`,
-    [organizationId, athleteId, coachId],
-  );
+  let coverage: { athlete_id: string } | null = null;
+  try {
+    coverage = await queryOne<{ athlete_id: string }>(
+      `select athlete_id
+       from pilot.coach_coverage
+       where organization_id = $1
+         and athlete_id = $2
+         and covering_coach_id = $3
+         and starts_at <= now()
+         and expires_at > now()`,
+      [organizationId, athleteId, coachId],
+    );
+  } catch (error) {
+    // Migrations are operator-applied (guardrails section 7), so this code
+    // legitimately runs against databases the coach_coverage migration has
+    // not reached yet. In that window a missing relation (Postgres 42P01)
+    // must mean exactly what the pre-coverage code meant -- no coverage --
+    // not turn every non-assigned-coach 403 into an opaque 500 that also
+    // takes down the pain-report alert path layered on this gate. Any
+    // other database error still propagates.
+    const code = (error as { code?: unknown }).code;
+    if (code !== '42P01') {
+      throw error;
+    }
+  }
 
   if (coverage) {
     return;
@@ -90,6 +123,44 @@ export async function grantCoachCoverage(params: {
 
   const ttlHours = resolveCoverageTtlHours(params.ttlHours);
 
+  // The grantee must be an active coach in the granting organization. This
+  // table exists to admit its holder through assertCoachAssignedToAthlete,
+  // so a typo'd account id here is not a bad reference -- it is coach-level
+  // access to a minor's record handed to whatever account the typo names
+  // (a parent, an athlete, a deactivated coach).
+  const grantee = await queryOne<{ account_id: string }>(
+    `select account_id
+     from pilot.accounts
+     where account_id = $1
+       and organization_id = $2
+       and role = 'coach'
+       and active_flag = true`,
+    [params.coveringCoachId, params.organizationId],
+  );
+
+  if (!grantee) {
+    throw new Error('Missing covering_coach_id: must be an active coach account in this organization');
+  }
+
+  // At most one live grant per (athlete, coach). Stacked overlapping grants
+  // make revocation lie: an admin revokes "the" grant, the hidden second one
+  // keeps the door open. Refusing the overlap names the live grant so the
+  // admin can revoke it first if they really mean to re-issue.
+  const overlapping = await queryOne<{ coverage_id: string }>(
+    `select coverage_id
+     from pilot.coach_coverage
+     where organization_id = $1
+       and athlete_id = $2
+       and covering_coach_id = $3
+       and expires_at > now()
+     limit 1`,
+    [params.organizationId, params.athleteId, params.coveringCoachId],
+  );
+
+  if (overlapping) {
+    throw new Error(`Coverage already exists: grant ${overlapping.coverage_id} for this coach and athlete is still active`);
+  }
+
   const inserted = await queryOne<{ coverage_id: string; expires_at: string }>(
     `insert into pilot.coach_coverage (
        organization_id,
@@ -120,8 +191,9 @@ export async function grantCoachCoverage(params: {
  * Without this there was no way to withdraw coverage through the application
  * at all -- a grant issued to the wrong coach, or for longer than intended,
  * could only be undone with direct SQL against production. Re-granting does
- * not help either: unlike activation codes, a second grant does not supersede
- * the first, so both stay live until they expire on their own.
+ * not help either: a second grant does not supersede the first (grant-time
+ * overlap refusal blocks it outright while the first is live), so revoking
+ * is the only way to end access early.
  *
  * Expires rather than deletes, so the row survives as an audit trail of who
  * held access and when it was cut short. The `expires_at > now()` guard makes
@@ -143,6 +215,52 @@ export async function revokeCoachCoverage(params: {
   );
 
   return { revoked: Boolean(row) };
+}
+
+export interface ActiveCoachCoverageRow {
+  coverage_id: string;
+  athlete_id: string;
+  athlete_full_name: string;
+  covering_coach_id: string;
+  covering_coach_email: string | null;
+  granted_by_account_id: string;
+  granted_by_email: string | null;
+  starts_at: string;
+  expires_at: string;
+}
+
+/**
+ * Every coverage grant currently in effect for the organization, soonest to
+ * expire first -- the read an admin needs to see what is about to lapse.
+ * Expired and revoked grants (expires_at <= now()) are excluded on purpose:
+ * this is "who has access right now," not the audit history. That history
+ * already exists in pilot.audit_events under entity_type 'coach_coverage'
+ * and is not duplicated here.
+ */
+export async function listActiveCoachCoverage(organizationId: string): Promise<ActiveCoachCoverageRow[]> {
+  return query<ActiveCoachCoverageRow>(
+    `select
+       cc.coverage_id,
+       cc.athlete_id,
+       ath.full_name as athlete_full_name,
+       cc.covering_coach_id,
+       coach.login_email as covering_coach_email,
+       cc.granted_by_account_id,
+       granter.login_email as granted_by_email,
+       cc.starts_at::text,
+       cc.expires_at::text
+     from pilot.coach_coverage cc
+     join pilot.athletes ath
+       on ath.organization_id = cc.organization_id and ath.athlete_id = cc.athlete_id
+     left join pilot.accounts coach
+       on coach.organization_id = cc.organization_id and coach.account_id = cc.covering_coach_id
+     left join pilot.accounts granter
+       on granter.organization_id = cc.organization_id and granter.account_id = cc.granted_by_account_id
+     where cc.organization_id = $1
+       and cc.expires_at > now()
+     order by cc.expires_at asc`,
+    [organizationId],
+  );
 }
 
 export async function assertAthleteBelongsToOrganization(organizationId: string, athleteId: string): Promise<void> {
@@ -183,18 +301,7 @@ export async function assertActorCanAccessAthlete(actor: ActorIdentity, athleteI
   }
 
   if (actor.role === 'parent') {
-    const linked = await queryOne<{ athlete_id: string }>(
-      `select athlete_id
-       from pilot.guardian_links
-       where organization_id = $1 and athlete_id = $2 and parent_id in (
-         select parent_id
-         from pilot.parents
-         where organization_id = $1 and account_id = $3
-       )`,
-      [actor.organizationId, athleteId, actor.accountId],
-    );
-
-    if (!linked) {
+    if (!(await isGuardianLinkedToAthlete(actor.organizationId, actor.accountId, athleteId))) {
       throw new Error('Forbidden: parent not linked to athlete');
     }
 

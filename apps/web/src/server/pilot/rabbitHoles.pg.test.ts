@@ -567,10 +567,18 @@ describe('rabbit holes migration against real Postgres', () => {
       );
       const boardSeats = boardSeatConfigs.map((seat) => seat.slug);
       const evidenceTiers = [
-        deriveEvidenceTier({ isAnsweredState: true, evidenceAvailability: 'available', citationCount: 2 }),
-        deriveEvidenceTier({ isAnsweredState: true, evidenceAvailability: 'available', citationCount: 1 }),
-        deriveEvidenceTier({ isAnsweredState: true, evidenceAvailability: 'available', citationCount: 0 }),
-        deriveEvidenceTier({ isAnsweredState: false, evidenceAvailability: 'available', citationCount: 0 }),
+        deriveEvidenceTier({
+          isAnsweredState: true,
+          evidenceAvailability: 'available',
+          strongestEvidence: { evidenceClass: 'VERIFIED EVIDENCE', authorityTier: 1, boxingSpecificity: 'boxing_specific' },
+        }),
+        deriveEvidenceTier({
+          isAnsweredState: true,
+          evidenceAvailability: 'available',
+          strongestEvidence: { evidenceClass: 'VERIFIED EVIDENCE', authorityTier: 3, boxingSpecificity: 'transferred' },
+        }),
+        deriveEvidenceTier({ isAnsweredState: true, evidenceAvailability: 'available', strongestEvidence: null }),
+        deriveEvidenceTier({ isAnsweredState: false, evidenceAvailability: 'available', strongestEvidence: null }),
       ];
       // The frozen union lives in the workspace components; there is no runtime
       // array to import, so these three are written out.

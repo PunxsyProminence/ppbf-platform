@@ -210,6 +210,10 @@ export default function CoachWorkspace() {
   const [shadowObservations, setShadowObservations] = useState<ShadowObservationItem[]>([]);
   const [shadowReadError, setShadowReadError] = useState('');
   const [shadowQueueUnavailable, setShadowQueueUnavailable] = useState(false);
+  // Per-item, not a single shared flag: a coach can be resolving one case
+  // while a different one's error is still on screen.
+  const [intakeActionBusyId, setIntakeActionBusyId] = useState<string | null>(null);
+  const [intakeActionErrors, setIntakeActionErrors] = useState<Record<string, string>>({});
   const [painReports, setPainReports] = useState<CoachPainReport[]>([]);
   const [painReportWindowDays, setPainReportWindowDays] = useState<number | null>(null);
   const [painReportsTruncated, setPainReportsTruncated] = useState(false);
@@ -618,6 +622,49 @@ export default function CoachWorkspace() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadShadowData();
   }, [loadShadowData]);
+
+  // The Tasks tab tells a coach to "use the SHADOW tab to act on
+  // review-queue items" -- this is that action. /api/pilot/intake/review-action
+  // already authorizes 'organization_admin' AND 'coach' for approve/reject
+  // (promote is org-admin-only, and not offered here), so this was a pure UI
+  // wiring gap, not a new capability. The route's own assertActorCanAccessAthlete
+  // scopes a coach to their assigned athletes server-side -- a case outside
+  // that scope returns 403, surfaced below rather than silently retried.
+  async function actOnIntakeCase(intakeCaseId: string, action: 'approve' | 'reject') {
+    if (intakeActionBusyId) {
+      return;
+    }
+
+    setIntakeActionBusyId(intakeCaseId);
+    setIntakeActionErrors((prev) => ({ ...prev, [intakeCaseId]: '' }));
+
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/intake/review-action`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ intake_case_id: intakeCaseId, action }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; status?: string; error?: string };
+
+      if (!response.ok || !payload.ok) {
+        setIntakeActionErrors((prev) => ({ ...prev, [intakeCaseId]: payload.error || 'Action failed.' }));
+        return;
+      }
+
+      const nextStatus = payload.status;
+      if (nextStatus === 'approved' || nextStatus === 'rejected') {
+        setShadowQueue((prev) => prev.map((item) => (
+          item.intake_case_id === intakeCaseId ? { ...item, status: nextStatus } : item
+        )));
+      }
+    } catch {
+      setIntakeActionErrors((prev) => ({ ...prev, [intakeCaseId]: 'Network error -- action was not applied. Please try again.' }));
+    } finally {
+      setIntakeActionBusyId(null);
+    }
+  }
 
   async function submitCoachReview() {
     // The endpoint writes a new row per review_id and review_id is minted here
@@ -1513,6 +1560,29 @@ export default function CoachWorkspace() {
                           <p className="font-semibold text-[color:var(--bone-200)]">{item.summary}</p>
                           <p>Status: {item.status}</p>
                           <p>Documents: {item.document_count}</p>
+                          {item.status === 'pending_review' && (
+                            <div className="mt-[var(--s2)] flex flex-wrap gap-[var(--s2)]">
+                              <button
+                                type="button"
+                                disabled={intakeActionBusyId === item.intake_case_id}
+                                onClick={() => void actOnIntakeCase(item.intake_case_id, 'approve')}
+                                className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                type="button"
+                                disabled={intakeActionBusyId === item.intake_case_id}
+                                onClick={() => void actOnIntakeCase(item.intake_case_id, 'reject')}
+                                className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          )}
+                          {intakeActionErrors[item.intake_case_id] && (
+                            <p className="mt-[var(--s2)] text-[color:var(--locked-ink)]">{intakeActionErrors[item.intake_case_id]}</p>
+                          )}
                         </div>
                       ))}
                     </div>

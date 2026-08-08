@@ -47,7 +47,11 @@ const LESSON: RabbitHoleLessonItem = {
 
 let anchorsAsked: string[] = [];
 
-function mockFetch(byAnchor: Record<string, RabbitHoleLessonItem[]>, gaps = [GAP]) {
+function mockFetch(
+  byAnchor: Record<string, RabbitHoleLessonItem[]>,
+  gaps = [GAP],
+  holds: Array<Record<string, unknown>> = [],
+) {
   anchorsAsked = [];
   return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -56,6 +60,9 @@ function mockFetch(byAnchor: Record<string, RabbitHoleLessonItem[]>, gaps = [GAP
     }
     if (url.includes('/progression/assignments')) {
       return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }
+    if (url.includes('/api/pilot/training-holds')) {
+      return { ok: true, json: async () => ({ ok: true, holds }) } as Response;
     }
     if (url.includes('/rabbit-holes/get')) {
       const body = JSON.parse(String(init?.body)) as { anchor_type: string; anchor_key: string };
@@ -123,4 +130,53 @@ test('the coach can reach the surface where a rabbit hole is written', async () 
 
   const link = screen.getByRole('link', { name: 'Write a Rabbit Hole' }) as HTMLAnchorElement;
   expect(link.getAttribute('href')).toBe('/rabbit-holes');
+});
+
+// Capability #5: an active hold must be visible here, not just on the
+// safety pages, so a coach assigning progression work sees the context.
+describe('active training hold visibility (#5)', () => {
+  test('an athlete under an active hold shows the hold banner with scope and explanation', async () => {
+    await renderWithAthlete(mockFetch({}, [GAP], [
+      { scope: 'contact_only', reason_category: 'medical', athlete_explanation: 'Waiting on a doctor note before contact resumes.' },
+    ]));
+
+    await screen.findByText('Active Training Hold');
+    expect(screen.getByText(/CONTACT WORK is currently paused/)).toBeTruthy();
+    expect(screen.getByText('Waiting on a doctor note before contact resumes.')).toBeTruthy();
+  });
+
+  test('an athlete with no active hold shows no banner', async () => {
+    await renderWithAthlete(mockFetch({}, [GAP], []));
+
+    await screen.findByText('Rear foot stays flat through the cross.');
+    expect(screen.queryByText('Active Training Hold')).toBeNull();
+  });
+
+  test('progression tools remain usable and are not blocked by an active hold -- visibility only', async () => {
+    await renderWithAthlete(mockFetch({}, [GAP], [
+      { scope: 'all_training', reason_category: 'behavioral', athlete_explanation: 'explanation' },
+    ]));
+
+    await screen.findByText('Active Training Hold');
+    // The gap the athlete already has is still rendered underneath the banner.
+    expect(screen.getByText('Rear foot stays flat through the cross.')).toBeTruthy();
+  });
+
+  test('a failed hold fetch shows no banner rather than breaking the page', async () => {
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/pilot/training-holds')) {
+        return { ok: false, json: async () => ({ error: 'Forbidden' }) } as Response;
+      }
+      if (url.includes('/progression/gaps')) {
+        return { ok: true, json: async () => ({ items: [GAP] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    });
+
+    await renderWithAthlete(fetchMock);
+
+    await screen.findByText('Rear foot stays flat through the cross.');
+    expect(screen.queryByText('Active Training Hold')).toBeNull();
+  });
 });

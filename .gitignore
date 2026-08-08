@@ -22,3 +22,7 @@ build/
 # seed:shadow:library via PILOT_LIBRARY_MANIFEST. Never committed -- the
 # repository is public and the Library ingests via API, not via git.
 punxsy-corpus/
+
+# Proposed-migrations research archive: source material, not a build artifact
+ppbf_proposed_migrations/
+ppbf_proposed_migrations.tar.gz

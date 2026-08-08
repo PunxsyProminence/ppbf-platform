@@ -126,6 +126,14 @@ function AthleteRecordsConsoleContent() {
   const [roster, setRoster] = useState<RosterAthlete[]>([]);
   const [unreadableRows, setUnreadableRows] = useState(0);
   const [rosterLoad, setRosterLoad] = useState<RosterLoadState>('loading');
+  // Best-effort, independent of the roster load above: attendance rollup is
+  // a separate reporting surface (attendanceReporting.ts) that a
+  // platform_owner viewing this page cannot read at all (org-private data),
+  // and a coach can only read their own classes' athletes. A missing or
+  // partial map here must never block or blank the roster itself -- it only
+  // means the rate column reads as "no data" for whichever athletes it
+  // could not resolve.
+  const [attendanceRateByAthlete, setAttendanceRateByAthlete] = useState<Record<string, number | null>>({});
   const [coaches, setCoaches] = useState<CoachOption[]>([]);
   const [coachesAvailable, setCoachesAvailable] = useState(false);
   const [error, setError] = useState('');
@@ -198,6 +206,30 @@ function AthleteRecordsConsoleContent() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/scheduler/attendance-summary`, {
+          method: 'GET',
+          credentials: 'include',
+        });
+        if (!response.ok) return;
+        const payload = (await response.json().catch(() => ({}))) as {
+          athletes?: Array<{ athlete_id?: string; attendance_rate?: number | null }>;
+        };
+        const byAthlete: Record<string, number | null> = {};
+        for (const row of payload.athletes ?? []) {
+          if (typeof row.athlete_id === 'string') {
+            byAthlete[row.athlete_id] = row.attendance_rate ?? null;
+          }
+        }
+        setAttendanceRateByAthlete(byAthlete);
+      } catch {
+        // No attendance column is a smaller loss than a broken roster page.
+      }
+    })();
+  }, []);
 
   const selected = useMemo(
     () => roster.find((athlete) => athlete.athlete_id === selectedId) ?? null,
@@ -346,6 +378,9 @@ function AthleteRecordsConsoleContent() {
               </p>
             </div>
             <div className="flex flex-wrap gap-[var(--s3)]">
+              <Link href="/admin/attendance" className="btn btn--ghost">
+                Attendance
+              </Link>
               <Link href="/admin/people" className="btn btn--ghost">
                 People
               </Link>
@@ -431,12 +466,17 @@ function AthleteRecordsConsoleContent() {
                 </p>
               ) : (
                 <ul className="divide-y divide-[color:var(--hide-700)] overflow-hidden rounded-[var(--r-md)] border border-[color:var(--hide-700)]">
-                  {visibleRoster.map((athlete) => (
+                  {visibleRoster.map((athlete) => {
+                    const attendanceRate = attendanceRateByAthlete[athlete.athlete_id];
+                    return (
                     <li key={athlete.athlete_id} className="flex flex-wrap items-center justify-between gap-[var(--s3)] px-[var(--s4)] py-[var(--s3)]">
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{athlete.full_name}</p>
                         <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">
                           {athlete.athlete_id} · born {athlete.dob} · coach {athlete.coach_id}
+                          {typeof attendanceRate === 'number' && (
+                            <> · attendance {Math.round(attendanceRate * 100)}%</>
+                          )}
                         </p>
                         {!athlete.active_flag && (
                           <p className="mt-[var(--s2)]">
@@ -452,7 +492,8 @@ function AthleteRecordsConsoleContent() {
                         {selectedId === athlete.athlete_id ? 'Editing' : 'Correct Record'}
                       </button>
                     </li>
-                  ))}
+                    );
+                  })}
                 </ul>
               )}
             </>
