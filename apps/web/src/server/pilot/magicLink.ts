@@ -172,6 +172,54 @@ export function newMagicLinkToken(): string {
  * because "it didn't work" is the worst possible message for someone who has
  * been trying to see their kid's schedule for ten minutes.
  */
+/** The token row's shape, as both the validator and the store see it. */
+export interface RedeemableTokenRow {
+  account_id: string;
+  organization_id: string;
+  sent_to_email: string;
+  expires_at: Date;
+  consumed_at: Date | null;
+  invalidated_at: Date | null;
+  role: PilotRole;
+  active_flag: boolean;
+  login_email: string | null;
+}
+
+/**
+ * Every reason a link may be refused, as a pure function of the row and the
+ * time. Returns null when the link is good.
+ *
+ * Separated so the store can run exactly these checks inside the same
+ * transaction that claims the token and mints the session. Claiming in one
+ * statement and creating the session in another leaves two ways to fail: a
+ * consumed token with no session locks someone out of an account they just
+ * proved they control, and a session with an unconsumed token leaves the link
+ * reusable.
+ */
+export function validateTokenForRedemption(
+  row: RedeemableTokenRow,
+  now: Date,
+): ConsumeFailure | null {
+  if (row.invalidated_at) return 'TOKEN_INVALIDATED';
+  if (row.consumed_at) return 'TOKEN_ALREADY_USED';
+  if (row.expires_at.getTime() <= now.getTime()) return 'TOKEN_EXPIRED';
+
+  // Re-checked at redemption, not trusted from issuance. A coach deactivated
+  // in the fifteen minutes since the link was sent must not get in.
+  if (!row.active_flag) return 'ACCOUNT_INACTIVE';
+  if (requiredCredentialFor({ role: row.role }) !== 'magic_link') {
+    return 'ACCOUNT_NOT_MAGIC_LINK';
+  }
+
+  // The address moved while the link was in flight. The person holding it
+  // proved control of the OLD inbox, which is no longer this account's.
+  if (!row.login_email || normalizeEmail(row.login_email) !== normalizeEmail(row.sent_to_email)) {
+    return 'EMAIL_CHANGED';
+  }
+
+  return null;
+}
+
 export async function consumeMagicLink(
   token: string,
   dependencies: ConsumeDependencies,
@@ -181,24 +229,8 @@ export async function consumeMagicLink(
   const row = await dependencies.loadTokenByHash(hashToken(token));
   if (!row) return { ok: false, reason: 'TOKEN_UNKNOWN' };
 
-  if (row.invalidated_at) return { ok: false, reason: 'TOKEN_INVALIDATED' };
-  if (row.consumed_at) return { ok: false, reason: 'TOKEN_ALREADY_USED' };
-  if (row.expires_at.getTime() <= dependencies.now().getTime()) {
-    return { ok: false, reason: 'TOKEN_EXPIRED' };
-  }
-
-  // Re-checked at redemption, not trusted from issuance. A coach deactivated
-  // in the fifteen minutes since the link was sent must not get in.
-  if (!row.active_flag) return { ok: false, reason: 'ACCOUNT_INACTIVE' };
-  if (requiredCredentialFor({ role: row.role }) !== 'magic_link') {
-    return { ok: false, reason: 'ACCOUNT_NOT_MAGIC_LINK' };
-  }
-
-  // The address moved while the link was in flight. The person holding it
-  // proved control of the OLD inbox, which is no longer this account's.
-  if (!row.login_email || normalizeEmail(row.login_email) !== normalizeEmail(row.sent_to_email)) {
-    return { ok: false, reason: 'EMAIL_CHANGED' };
-  }
+  const refusal = validateTokenForRedemption(row, dependencies.now());
+  if (refusal) return { ok: false, reason: refusal };
 
   // Conditional write. markConsumed updates only where consumed_at is still
   // null and returns whether it changed a row, so two simultaneous clicks on

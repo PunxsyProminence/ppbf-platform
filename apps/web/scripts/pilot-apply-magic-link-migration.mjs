@@ -7,18 +7,31 @@ import { Client } from 'pg';
 import { assertDeclaredWriteTargetFromEnv } from './lib/postgres-write-target.mjs';
 
 // Verifies the migration actually took, rather than trusting that the SQL ran.
-// The widened constraint keeps its name, so "the constraint exists" proves
-// nothing about whether it admits magic_link -- this asks the constraint
-// definition directly.
+//
+// The vocabulary check asks whether ANY constraint still refuses magic_link,
+// not whether one named constraint admits it. That distinction is the whole
+// lesson of this file:
+//
+// A deployed database carried TWO check constraints on auth_provider -- the
+// inline one from the base schema's CREATE TABLE, auto-named
+// accounts_auth_provider_check, and pilot_accounts_auth_provider_check from
+// the multiorg migration. The first version of this query looked up the second
+// by name, found magic_link in it, and reported ready. The insert still failed,
+// because a row must satisfy both and nobody had widened the one PostgreSQL
+// named for itself.
+//
+// Checking the constraint you thought of is not checking the constraint.
 const READINESS_QUERY = `
   select
     to_regclass('pilot.magic_link_tokens') is not null as table_ready,
-    coalesce((
-      select pg_get_constraintdef(c.oid) like '%magic_link%'
+    (
+      select count(*) = 0
       from pg_constraint c
       where c.conrelid = 'pilot.accounts'::regclass
-        and c.conname = 'pilot_accounts_auth_provider_check'
-    ), false) as vocabulary_ready,
+        and c.contype = 'c'
+        and pg_get_constraintdef(c.oid) ilike '%auth_provider%'
+        and pg_get_constraintdef(c.oid) not ilike '%magic_link%'
+    ) as vocabulary_ready,
     (
       select count(*) = 2
       from pg_indexes
