@@ -69,17 +69,26 @@ completed, re-running is a proven no-op, not a risk.
 
 ### 2. Staging: load seed data
 
-```
-npm run seed:drill-library        # 119 drills, 357 scale levels, 674 stop rules, 258 cues
-npm run seed:disciplines          # 5 disciplines
-npm run seed:competence-cohorts   # 6 levels, 6 cohort definitions
-```
+Dispatch `seed-reference-data` once per dataset. Run each in `dry-run` first —
+that performs every insert for real inside a transaction and rolls back, so it
+proves the data fits the live schema rather than only that the files parse.
 
-`seed:drill-library` requires step 1's widening to have run first. Without it,
-228 scale-level rows and 63 stop-rule rows are rejected and the whole seeding
-transaction aborts.
+| dataset | loads |
+|---|---|
+| `drill-library` | 119 drills, 357 scale levels, 674 stop rules, 258 cues |
+| `disciplines` | 5 disciplines |
+| `competence-cohorts` | 6 levels, 6 cohort definitions |
+
+`drill-library` requires `seed_account_id` and requires step 1's widening to
+have run first; without it, 228 scale-level rows and 63 stop-rule rows are
+rejected and the whole transaction aborts.
 
 Each loader is idempotent — re-running produces no duplicates.
+
+Do NOT run the npm scripts directly against a real database. The workflow reads
+the connection string from the Container App's own secret and masks it; running
+locally means putting a production connection string on a laptop to do
+something the pipeline does properly.
 
 ### Two seed loaders you must NOT run
 
@@ -132,8 +141,8 @@ Take a backup first if `backup.yml` has not run recently.
 
 ### 6. Production: load seed data
 
-Same three commands as step 2, with the same two loaders excluded
-(`seed:session-scripts`, `seed:transfer-claims`).
+Same three `seed-reference-data` dispatches as step 2, with the same two
+datasets absent (session-scripts, transfer-claims).
 
 ### 7. Production: deploy code
 
