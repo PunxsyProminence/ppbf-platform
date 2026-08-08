@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────
-# Reference-data seeding -- manual only, one loader per dispatch.
+# Reference-data seeding -- manual only, one loader per dispatch or all three.
 #
 # Before this existed, the only way to load the drill library, the discipline
 # list or the competence ladder into a real environment was to point
@@ -17,6 +17,13 @@
 # first via apply-migrations.yml. seed:drill-library additionally requires the
 # drill-vocabulary-widening migration -- without it, 228 scale-level rows and
 # 63 stop-rule rows are rejected and the whole seeding transaction aborts.
+#
+# `dataset: all` exists because one-per-dispatch made a full pass six gated
+# runs -- three dry-run, three apply -- and on a protected environment that is
+# six approval clicks for one deploy. Worse, firing them together does not
+# work: the concurrency group holds a single pending run, so a third dispatch
+# CANCELS the second, and a cancelled run is easy to read as a finished one.
+# `all` runs the three in the required order inside one gated run.
 #
 # TWO LOADERS ARE DELIBERATELY ABSENT from the choices below, because both fail
 # whole against the shipped schema and there is nothing to be gained by making
@@ -46,10 +53,11 @@ on:
         required: true
         type: string
       dataset:
-        description: Which reference dataset to load
+        description: Which reference dataset to load ("all" runs all three in dependency order)
         required: true
         type: choice
         options:
+          - all
           - drill-library
           - disciplines
           - competence-cohorts
@@ -123,7 +131,7 @@ jobs:
           # seed-drill-library.mjs stamps a seeder onto every row it writes and
           # fails at the insert without one. Catching that here costs a second
           # instead of an aborted transaction against a real database.
-          if [ "$DATASET" = "drill-library" ]; then
+          if [ "$DATASET" = "drill-library" ] || [ "$DATASET" = "all" ]; then
             test -n "$SEED_ACCOUNT"
           fi
 
@@ -211,18 +219,24 @@ jobs:
       # --dry-run still performs every insert for real inside a transaction and
       # then rolls back, so it proves the data actually fits the live schema
       # rather than only that the files parse.
+      # The steps are ordered drill-library -> disciplines -> competence-cohorts,
+      # which is the order the runbook requires, so `all` cannot run them wrong.
+      # Each loader still opens its own transaction, so `all` is three
+      # independent commits and not one giant one -- a later failure leaves the
+      # earlier datasets loaded, and every loader is idempotent, so the fix is
+      # to re-run rather than to unpick anything.
       - name: Seed Drill Library
-        if: inputs.dataset == 'drill-library'
+        if: inputs.dataset == 'drill-library' || inputs.dataset == 'all'
         working-directory: apps/web
         run: npm run seed:drill-library ${{ inputs.mode == 'dry-run' && '-- --dry-run' || '' }}
 
       - name: Seed Disciplines
-        if: inputs.dataset == 'disciplines'
+        if: inputs.dataset == 'disciplines' || inputs.dataset == 'all'
         working-directory: apps/web
         run: npm run seed:disciplines ${{ inputs.mode == 'dry-run' && '-- --dry-run' || '' }}
 
       - name: Seed Competence Cohorts
-        if: inputs.dataset == 'competence-cohorts'
+        if: inputs.dataset == 'competence-cohorts' || inputs.dataset == 'all'
         working-directory: apps/web
         run: npm run seed:competence-cohorts ${{ inputs.mode == 'dry-run' && '-- --dry-run' || '' }}
 
