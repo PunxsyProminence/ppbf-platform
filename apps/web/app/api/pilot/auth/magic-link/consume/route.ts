@@ -1,7 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { PILOT_SESSION_COOKIE } from '@/src/server/pilot/env';
 import { jsonError } from '@/src/server/pilot/http';
+import { redeemMagicLink } from '@/src/server/pilot/magicLinkStore';
 import { getClientIp, checkRateLimit, recordFailedAttempt } from '@/src/server/pilot/rateLimit';
+import { SESSION_ABSOLUTE_LIFETIME_SECONDS } from '@/src/server/pilot/sessionPolicy';
 
 export const runtime = 'nodejs';
 
@@ -56,10 +60,43 @@ export async function POST(request: NextRequest) {
     }
     recordFailedAttempt(ipKey);
 
-    // Consumption is wired in the follow-up that binds the database queries.
-    // The method contract above is settled first, because it is the piece that
-    // silently breaks in production rather than in a test.
-    return NextResponse.json({ ok: false, reason: 'NOT_IMPLEMENTED' }, { status: 501 });
+    const result = await redeemMagicLink(token);
+
+    if (!result.ok || !result.session || !result.principal) {
+      // The reason IS returned, unlike the request route. Different situation:
+      // whoever holds a link already knows the address it went to, so there is
+      // no enumeration to protect against -- and "this link expired, ask for a
+      // new one" is the difference between a parent who retries and a parent
+      // who gives up.
+      return NextResponse.json({ ok: false, reason: result.reason ?? 'REDEMPTION_FAILED' }, { status: 401 });
+    }
+
+    await writePilotAuditEvent({
+      event_type: 'login',
+      actor_account_id: result.principal.accountId,
+      actor_role: result.principal.role,
+      organization_id: result.principal.organizationId,
+      entity_type: 'account',
+      entity_id: result.principal.accountId,
+      details: { auth_provider: 'magic_link' },
+    });
+
+    const response = NextResponse.json({
+      ok: true,
+      account_id: result.principal.accountId,
+      role: result.principal.role,
+      organization_id: result.principal.organizationId,
+    });
+
+    response.cookies.set(PILOT_SESSION_COOKIE, result.session.token, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+      maxAge: SESSION_ABSOLUTE_LIFETIME_SECONDS,
+    });
+
+    return response;
   } catch (error) {
     return jsonError(error);
   }

@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { jsonError } from '@/src/server/pilot/http';
+import { issueMagicLink } from '@/src/server/pilot/magicLink';
+import { magicLinkDependencies } from '@/src/server/pilot/magicLinkStore';
 import { getClientIp, checkRateLimit, recordFailedAttempt, checkDurableRateLimit, recordDurableFailedAttempt } from '@/src/server/pilot/rateLimit';
 
 export const runtime = 'nodejs';
@@ -59,10 +61,31 @@ export async function POST(request: NextRequest) {
     await recordDurableFailedAttempt(ipKey);
     recordFailedAttempt(ipKey);
 
-    // Issuance is wired in the follow-up that adds the database queries and
-    // the Graph transport binding. The contract this route promises -- one
-    // answer for every outcome -- is settled here, before there is anything
-    // to leak, so it cannot be lost while wiring.
+    // Failures are swallowed on purpose, and only here.
+    //
+    // issueMagicLink already returns silently for an unknown, deactivated,
+    // wrong-role or mismatched address. What is caught here is the other kind:
+    // Graph refusing, the identity endpoint being unreachable, a database
+    // blip. Those must not change the response either -- a 500 for a real
+    // address and a 202 for an unknown one distinguishes them just as well as
+    // a message would, and the whole contract of this route is that the two
+    // are indistinguishable.
+    //
+    // The cost is that a genuine outage looks like success to the requester.
+    // That is the right trade for an endpoint whose failure mode is a roster
+    // disclosure: they retry, and the error is logged for us rather than
+    // reported to them.
+    try {
+      await issueMagicLink(email, magicLinkDependencies());
+    } catch (issueError) {
+      // Shape only, never the address -- this line reaches logs.
+      console.error(JSON.stringify({
+        event: 'magic_link.issue_failed',
+        error_type: issueError instanceof Error ? issueError.name : typeof issueError,
+        error_code: issueError instanceof Error ? issueError.message : 'unknown',
+      }));
+    }
+
     return NextResponse.json(
       { ok: true, message: 'If that address has an account, a sign-in link is on its way.' },
       { status: 202 },

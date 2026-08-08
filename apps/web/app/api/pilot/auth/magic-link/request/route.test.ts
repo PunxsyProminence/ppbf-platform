@@ -11,6 +11,15 @@ jest.mock('@/src/server/pilot/rateLimit', () => ({
   recordDurableFailedAttempt: jest.fn(async () => undefined),
 }));
 
+jest.mock('@/src/server/pilot/magicLink', () => ({
+  issueMagicLink: jest.fn(async () => undefined),
+}));
+
+jest.mock('@/src/server/pilot/magicLinkStore', () => ({
+  magicLinkDependencies: jest.fn(() => ({})),
+}));
+
+import { issueMagicLink } from '@/src/server/pilot/magicLink';
 import {
   checkDurableRateLimit,
   checkRateLimit,
@@ -29,6 +38,43 @@ describe('POST /api/pilot/auth/magic-link/request', () => {
     jest.clearAllMocks();
     (checkRateLimit as jest.Mock).mockReturnValue({ isLimited: false });
     (checkDurableRateLimit as jest.Mock).mockResolvedValue({ isLimited: false });
+    (issueMagicLink as jest.Mock).mockResolvedValue(undefined);
+  });
+
+  test('issues a link with the normalized address', async () => {
+    await post({ email: '  COACH@Example.com ' });
+    expect(issueMagicLink).toHaveBeenCalledWith('coach@example.com', expect.anything());
+  });
+
+  test('a transport failure still answers 202, and does not leak the address', async () => {
+    // Graph refusing, the identity endpoint unreachable, a database blip --
+    // none may change the response. A 500 for a real address and a 202 for an
+    // unknown one distinguishes them exactly as well as a message would, and
+    // the whole contract of this route is that they are indistinguishable.
+    const logged: string[] = [];
+    const spy = jest.spyOn(console, 'error').mockImplementation((line) => {
+      logged.push(String(line));
+    });
+    (issueMagicLink as jest.Mock).mockRejectedValue(new Error('GRAPH_SEND_FAILED'));
+
+    const response = await post({ email: 'coach@example.com' });
+
+    expect(response.status).toBe(202);
+    expect(logged.join(' ')).toContain('magic_link.issue_failed');
+    // The log line reaches a log aggregator. The address must not.
+    expect(logged.join(' ')).not.toContain('coach@example.com');
+    spy.mockRestore();
+  });
+
+  test('a rate-limited request never reaches issuance', async () => {
+    (checkRateLimit as jest.Mock).mockReturnValue({ isLimited: true });
+    await post({ email: 'coach@example.com' });
+    expect(issueMagicLink).not.toHaveBeenCalled();
+  });
+
+  test('a malformed address never reaches issuance', async () => {
+    await post({ email: 'not-an-address' });
+    expect(issueMagicLink).not.toHaveBeenCalled();
   });
 
   test('answers 202 with the same body for an address that exists and one that does not', async () => {
