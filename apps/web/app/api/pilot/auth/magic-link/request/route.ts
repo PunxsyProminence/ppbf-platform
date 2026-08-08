@@ -79,10 +79,17 @@ export async function POST(request: NextRequest) {
       await issueMagicLink(email, magicLinkDependencies());
     } catch (issueError) {
       // Shape only, never the address -- this line reaches logs.
+      //
+      // status_code is included because its absence cost real time: a staging
+      // send failed with GRAPH_SEND_FAILED and nothing more, when the 403 that
+      // came with it would have said "this identity lacks Mail.Send" outright.
+      // The error class carried the status all along; the log threw it away.
+      const status = (issueError as { statusCode?: number })?.statusCode;
       console.error(JSON.stringify({
         event: 'magic_link.issue_failed',
         error_type: issueError instanceof Error ? issueError.name : typeof issueError,
         error_code: issueError instanceof Error ? issueError.message : 'unknown',
+        status_code: typeof status === 'number' ? status : null,
       }));
     }
 
