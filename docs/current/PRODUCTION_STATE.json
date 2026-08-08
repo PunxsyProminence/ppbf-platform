@@ -3,17 +3,17 @@
 
   "environments": {
     "staging": {
-      "deployed_sha": "19d7e70d6ea56a77cf8457876bbbc25a977030fb",
-      "deployed_image_digest": "sha256:4e0e3cb5a3eceb69a271d346bd2eb8bea5a9c2d832ef8232fce9023bb1284a5b",
-      "deployment_timestamp": "2026-08-08T07:51:34Z",
-      "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/31247001987",
+      "deployed_sha": "c4660cece9d41cea1800ce358141717526a1c26c",
+      "deployed_image_digest": "sha256:a5e3960e9e5f9a8dc5b44695b550fae04c6efaff6860c8e4e2b24fc6cf2b6bb3",
+      "deployment_timestamp": "2026-08-08T16:55:02Z",
+      "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/31267967708",
       "container_app": "app-ppbf-staging",
-      "revision": "app-ppbf-staging--0000137",
+      "revision": "app-ppbf-staging--0000138",
       "last_verified_by": "gatekeeper",
-      "last_verified_at": "2026-08-08T07:55:00Z",
-      "last_verification_method": "az containerapp revision list (revision + image digest read off the live app), plus a live POST to /api/pilot/auth/magic-link/request (202) with the resulting container console line read back",
+      "last_verified_at": "2026-08-08T18:20:00Z",
+      "last_verification_method": "az containerapp revision list (revision + image digest read off the live app), plus a full magic-link round trip against the live app with the database rows read back directly (token issued, delivered to a real mailbox, consumed, session created)",
       "known_staging_gaps": [
-        "Outbound mail is refused by Exchange. Graph sendMail answers 403 with graph_error_code=ErrorAccessDenied for Admin@punxsyprominence.org, observed 2026-08-08T07:54Z. Not a permissions gap: a token probe run inside the container showed roles=[\"Mail.Send\"] for appid 7835e2d0-4437-4845-8284-9ee147050296, and Test-ApplicationAccessPolicy reports Granted for Admin@ and Denied for three real staff mailboxes. Magic-link issuance therefore sends nothing. Redemption itself is verified working end to end (session cookie issued, replayed token refused, GET answered 405)."
+        "Outbound mail RESOLVED 2026-08-08T18:07Z. It was never a permissions gap and never a code gap: a token probe inside the container showed roles=[\"Mail.Send\"], and the refusal carried graph_error_code=ErrorAccessDenied, which is Exchange's application access policy rather than Entra. The policy was created 07:13Z and began enforcing between 07:54Z (last refusal) and 18:07Z (first success). Test-ApplicationAccessPolicy reported Granted the whole time because it evaluates configured state, not enforced state -- worth remembering before trusting it again."
       ]
     },
     "production": {
@@ -29,7 +29,8 @@
       "last_verified_at": "2026-08-08T08:00:00Z",
       "last_verification_method": "az containerapp revision list (revision + digest read off the live app, byte-equal to the digest staging tested), single-revision mode with 100% traffic on latest confirmed; deploy-production's own 'Verify Production Schema Matches This Commit' and 'Pilot API Smoke Checks' steps both green in the run above",
       "known_production_gaps": [
-        "Magic-link mail delivery is not_verified on production. It has never been attempted here -- no production account has auth_provider='magic_link', so nothing would be sent. The Exchange refusal observed on staging is a tenant-level policy condition and should be assumed to apply to production until proven otherwise.",
+        "Production's SCHEMA is ahead of its CODE. All ~26 of PR #238's migrations were applied here at 2026-08-08T18:02Z (run 31268298138, migration=all, every step PASS) while the container still runs 19d7e70, which predates #238. Additive migrations are safe in that direction, but one of them was not additive: PILOT DEAD SCHEMA REMOVAL dropped pilot.messages, pilot.skills and pilot.staff. Verified safe against the deployed commit specifically -- `git grep` for those three tables across apps/web/{app,src,scripts} at 19d7e70, excluding tests, returns nothing. Checked against the running commit rather than against #238's own analysis, because #238 analysed its own tree, not this one.",
+        "Magic-link mail delivery is not_verified on production. It has never been attempted here -- no production account has auth_provider='magic_link', so nothing would be sent. Staging's refusal has since resolved on its own (see the staging entry), so the tenant-level condition that caused it is gone; production still needs its own access policy checked before anything is claimed.",
         "T-001, T-002 and T-003 reached production without a RUNTIME_VERIFIED row. Their PRs (#239, #242, #237) merged 2026-08-06 and rode to production inside this deploy of main. The pipeline's own rule is that no item may skip a state; this one was skipped, and is recorded here rather than backfilled."
       ]
     }
@@ -38,27 +39,31 @@
   "schema": {
     "known_applied_migrations": [
       "goal-category-progress (confirmed applied to both staging and production, apply-migrations runs 2026-08-05T03:48Z and 04:30Z)",
-      "magic-link (staging: apply-migrations run for 1adc244, 2026-08-08T05:31Z; production: run 31247060574, 2026-08-08T07:52Z, output 'PILOT MAGIC LINK MIGRATION PASS' against host ppbf-pg-195892.postgres.database.azure.com database postgres)"
+      "magic-link (staging: apply-migrations run for 1adc244, 2026-08-08T05:31Z; production: run 31247060574, 2026-08-08T07:52Z, output 'PILOT MAGIC LINK MIGRATION PASS' against host ppbf-pg-195892.postgres.database.azure.com database postgres)",
+      "PR #238's full set, migration=all against PRODUCTION -- run 31268298138, 2026-08-08T18:02Z, every step PASS including dead-schema-removal, activity-log, drill-library-v3, drill-vocabulary-widening, assessment-protocols, clearance-register, sparring-exposure, safety-flags, floor-hours-ledger, local-findings, workout-templates-v2, source-citation-checks, retraction-surveillance, multidiscipline, session-scripts, transfer-claims, competence-cohorts and method-naming",
+      "PR #238's full set against STAGING -- applied ahead of the 2026-08-08T16:51Z deploy of c4660ce"
     ],
     "note": "This is a log of what has been OBSERVED applied via apply-migrations run output, not a generated schema version. Every pilot:apply-* runner is additive/idempotent, so re-running one is safe -- this list exists to avoid re-running unnecessarily, not to gate anything."
   },
 
   "capabilities": {
     "runtime_verified": [
-      "magic-link redemption on staging: POST /api/pilot/auth/magic-link/consume returns 200 and sets ppbf_pilot_session for the correct principal; the same token replayed returns TOKEN_ALREADY_USED; GET returns 405 with Allow: POST so a mail scanner's prefetch cannot burn a link; exactly one session row created (2026-08-08, staging)"
+      "magic-link redemption on staging: POST /api/pilot/auth/magic-link/consume returns 200 and sets ppbf_pilot_session for the correct principal; the same token replayed returns TOKEN_ALREADY_USED; GET returns 405 with Allow: POST so a mail scanner's prefetch cannot burn a link; exactly one session row created (2026-08-08, staging)",
+      "magic-link DELIVERY on staging, the whole chain with a human in it (2026-08-08T18:07-18:12Z): request answered 202 and wrote a token row; no magic_link.issue_failed line on a warm container; the mail arrived in a real mailbox; the owner clicked it; consumed_at 18:12:51.064Z. Silence alone would not have proved this -- issueMagicLink is deliberately silent for an unknown address too -- so the token row was read back to separate 'sent' from 'no such account'.",
+      "magic-link single-transaction claim: the session row's created_at is 18:12:51.064Z, identical to the token's consumed_at, confirming the claim and the session insert happen in one transaction rather than two writes that could interleave. Exactly one session for that account from that click, and the only other session in the window belongs to a Microsoft sign-in by the owner.",
+      "magic-link supersession: every older token row carries invalidated_at set by the request that followed it, and no two were ever live at once -- so requesting a second link genuinely kills the first rather than leaving both valid."
     ],
-    "merged_not_deployed": [
-      "PR #238 (merge commit c4660ce, 2026-08-08) -- 324 files, and critically about 26 new pilot_slice_postgres_*_migration.sql files with matching pilot-apply-* runners. Neither environment runs it: both are on 19d7e70, which predates the merge. The next deploy of main to EITHER environment is therefore not routine -- every one of those migrations has to be applied and confirmed first, or code will select on columns the database does not have. Recorded here because 'main is green' and 'main is deployable' stopped being the same statement at this commit."
-    ],
+    "merged_not_deployed": [],
     "deployed_not_runtime_verified": [
       "T-001 admin activation-code console (#239)",
       "T-002 covering-coach access window (#242, depends on #243)",
       "T-003 quarantined-video scan-review console (#237)",
-      "magic-link issuance (the send half) -- deployed to both environments, blocked from verification by the Exchange refusal above"
+      "everything PR #238 added -- deployed to staging 2026-08-08T16:55Z, not to production. Its ~26 migrations are applied to BOTH databases.",
+      "magic-link on production -- the code is deployed and the schema is applied, but nothing has been sent or redeemed there"
     ],
     "note": "Empty until the audit workflow's gap register is reconciled into intake/tickets/. Do not hand-populate this from source reading -- that is exactly the source-code-claims-mistaken-for-truth failure this file exists to prevent. The entries above are recorded from observed deploy runs and live probes, not from reading source."
   },
 
   "last_updated_by": "gatekeeper",
-  "last_updated_at": "2026-08-08T08:02:00Z"
+  "last_updated_at": "2026-08-08T18:22:00Z"
 }
