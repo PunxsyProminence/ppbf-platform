@@ -24,6 +24,6 @@
   "devDependencies": {
     "csv-parse": "^7.0.2",
     "tsx": "^4.23.6",
-    "typescript": "^5"
+    "typescript": "^7"
   }
 }
