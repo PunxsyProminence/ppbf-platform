@@ -36,7 +36,7 @@ is listed per row.
 
 ---
 
-## Table shape — 17 routes
+## Table shape — 19 routes
 
 A header, a filter row, and rows with per-row actions. Highest-leverage shape in
 the app.
@@ -44,6 +44,8 @@ the app.
 | Route | Ground | Notes |
 |---|---|---|
 | `admin/people` | ink | **Build first.** 1048 lines already — port it, don't rewrite |
+| `admin/activation-codes` | ink | Per-athlete activation code issuance (T-001) |
+| `admin/video-review` | ink | Quarantined-video scan-review escalation (T-003); resolves `needs_human_review`, never overturns `blocked`/`infected` |
 | `admin` | ink | Hub: capability tiles + KPI row, so table + dashboard hybrid |
 | `admin/pin` | ink | Expiring keys use `.badge.badge--restricted` |
 | `admin/organizations` | ink | |
@@ -63,13 +65,15 @@ the app.
 
 ---
 
-## Dashboard shape — 26 routes
+## Dashboard shape — 28 routes
 
 KPI row over content sections. The nine named board routes are one page with a
 role parameter; build `board/[member]` and the rest are routing.
 
 | Route | Ground | Notes |
 |---|---|---|
+| `admin/attendance` | ink | Rolls up `pilot.scheduler_attendance` (capability #122); a never-marked athlete renders `Unavailable`, never a fabricated 0% |
+| `admin/escalations` | ink | Reads `pilot.safety_escalations` (capability #194); the only pull surface for a near miss / pain report / safety-gate flag severe enough to auto-escalate — this platform sends no notification of any kind |
 | `board/[member]` | ink | **Build first.** The nine named board routes are this page |
 | `board` | ink | |
 | `board/president` | ink | |
@@ -141,4 +145,4 @@ No shared shape. Schedule these last, individually.
 4. Those three groups are independent and can then run in parallel
 5. Custom routes last, one at a time
 
-17 + 26 + 8 + 10 = 61.
+19 + 28 + 8 + 10 = 65.

@@ -106,6 +106,47 @@ export function formatGymDateTime(iso: GymTimeInput): string | null {
 }
 
 /**
+ * "Aug 12, 2026, 7:30 PM" -- the compact form of formatGymDateTime, for table
+ * cells and other tight spaces that formatGymDateTime's full month name
+ * doesn't fit.
+ */
+export function formatGymDateTimeShort(iso: string | null | undefined): string | null {
+  const parsed = parse(iso);
+  if (!parsed) return null;
+  const date = formatGymDateShort(iso);
+  const time = parsed.toLocaleTimeString(GYM_LOCALE, {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: GYM_TIME_ZONE,
+  });
+  return `${date}, ${time}`;
+}
+
+/**
+ * "Aug 12" -- a calendar date (see formatGymDay) with no year, for chart axis
+ * and chip labels where the year is implied by context.
+ */
+export function formatGymDayShort(value: string | null | undefined): string | null {
+  if (!value) return null;
+  if (DATE_ONLY.test(value)) {
+    const parsed = new Date(`${value}T00:00:00Z`);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toLocaleDateString(GYM_LOCALE, {
+      month: 'short',
+      day: 'numeric',
+      timeZone: 'UTC',
+    });
+  }
+  const parsed = parse(value);
+  if (!parsed) return null;
+  return parsed.toLocaleDateString(GYM_LOCALE, {
+    month: 'short',
+    day: 'numeric',
+    timeZone: GYM_TIME_ZONE,
+  });
+}
+
+/**
  * "3/8/2026" -- the numeric form, for dense tables. Replaces a bare
  * `toLocaleDateString()`, which took both the locale AND the zone from the
  * viewer's device.

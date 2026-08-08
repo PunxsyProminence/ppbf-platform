@@ -325,6 +325,9 @@ export default function AdminComplianceCenterPage() {
         )}
 
         <div className="flex flex-wrap gap-[var(--s4)]">
+          <Link href="/admin/escalations" className="btn btn--ghost">
+            Escalations
+          </Link>
           <Link href="/admin" className="btn btn--ghost">
             Back to Admin
           </Link>

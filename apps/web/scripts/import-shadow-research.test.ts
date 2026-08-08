@@ -59,4 +59,32 @@ describe('SHADOW research intake package', () => {
     })()`);
     expect(result).toBe('INVALID_POSTGRES_TEXT_ARRAY:peer_reviewed');
   });
+
+  test('no seeded source or document row lands with an approved or verified state', () => {
+    const result = evaluate(`(async () => {
+      const seed = await m.loadSeedPackage({
+        organizationId: 'org-research-test',
+        accountId: 'account-research-test',
+        createdByRole: 'organization_admin',
+      });
+      return {
+        sourceStates: [...new Set(seed.sources.map((r) => \`\${r.approval_state}:\${r.verification_state}\`))],
+        documentStates: [...new Set(seed.documents.map((r) => \`\${r.approval_state}:\${r.verification_state}\`))],
+      };
+    })()`);
+    expect(result.sourceStates).toEqual(['pending_review:unverified']);
+    expect(result.documentStates).toEqual(['pending_review:unverified']);
+  });
+
+  test('all 14 document rows land with ingest_state=pending, never indexed', () => {
+    const result = evaluate(`(async () => {
+      const seed = await m.loadSeedPackage({
+        organizationId: 'org-research-test',
+        accountId: 'account-research-test',
+        createdByRole: 'organization_admin',
+      });
+      return [...new Set(seed.documents.map((r) => r.ingest_state))];
+    })()`);
+    expect(result).toEqual(['pending']);
+  });
 });

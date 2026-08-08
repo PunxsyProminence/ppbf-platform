@@ -1,0 +1,54 @@
+-- Removes three tables that were never used: pilot.messages, pilot.skills,
+-- pilot.staff.
+--
+-- THE FINDING (2026-08-07): a full sweep of every table created by the base
+-- schema and every migration file, checked against every route and server
+-- module under apps/web, found these three with zero application code
+-- reading or writing them, anywhere:
+--
+--   pilot.messages -- looked like the obvious table for #90's one-directional
+--   parent messaging, but has no athlete/lineage dimension, so #90 used
+--   pilot.coach_observations instead. Nothing else ever touched it either.
+--
+--   pilot.skills -- the table capability #38 (Boxing Skill Tracking Engine)
+--   would logically be built on, but no read or write path was ever built
+--   against it.
+--
+--   pilot.staff -- the more pointed finding of the three: the research
+--   package (apps/web/seed-data/shadow-research/2026-08-07/) already names
+--   pilot.staff by title as where coach credential/clearance/SafeSport
+--   fields belong, but nothing populates the table at all today.
+--
+-- Recorded in docs/current/WORK_QUEUE.md as BACKLOG-dead-schema. Owner
+-- confirmed (2026-08-07): no manual/direct-SQL data in any of the three in
+-- any environment (single-developer, AI-only usage), and approved dropping
+-- all three rather than leaving them as dead schema an auditor could mistake
+-- for load-bearing.
+--
+-- NO INBOUND REFERENCES: verified against every migration file in this
+-- directory -- nothing has a foreign key to any of these three tables, so
+-- dropping them cannot cascade into anything else. Each DROP below is a
+-- plain `drop table if exists`, not CASCADE: if some future change quietly
+-- added a reference this migration does not know about, that should fail
+-- loudly, not silently take a second table down with it.
+--
+-- THE CREATE STATEMENTS ARE ALSO REMOVED from pilot_slice_postgres.sql (the
+-- base schema, so no new environment ever creates these again) and from
+-- pilot_slice_postgres_multiorg_migration.sql (which independently declared
+-- all three with its own `create table if not exists` -- removing them only
+-- from the base schema would have let a re-run of the multiorg migration
+-- silently resurrect them on any environment that still needed it applied).
+-- THIS migration is what removes them from environments where the old
+-- create statements already ran.
+--
+-- Idempotent: `drop table if exists` is a no-op against an environment
+-- where the tables are already gone (including any brand-new environment
+-- built from the now-edited base schema, which never created them at all).
+--
+-- No `begin;`/`commit;` here on purpose, matching this repo's runner-opens-
+-- the-transaction convention (the runner is
+-- apps/web/scripts/pilot-apply-dead-schema-removal-migration.mjs).
+
+drop table if exists pilot.messages;
+drop table if exists pilot.skills;
+drop table if exists pilot.staff;

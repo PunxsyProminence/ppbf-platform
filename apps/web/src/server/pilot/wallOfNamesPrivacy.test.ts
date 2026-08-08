@@ -18,36 +18,17 @@ const READ_MODULES = [
   path.join(HERE, 'wallOfNamesDb.ts'),
 ];
 
-/** Health, safety, clinical or conduct records. None of it belongs on a wall. */
-const FORBIDDEN_TABLES = [
-  'pilot.readiness',
-  'pilot.medical_intake',
-  'pilot.coach_observations',
-  'pilot.assessments',
-  'pilot.emergency_contacts',
-  'pilot.shadow_medical',
-  'pilot.shadow_near_misses',
-  'pilot.feedback',
-  'pilot.intake_cases',
-  'pilot.documents',
-  'pilot.compliance_records',
-];
+// The denylists live in privacyTiers.ts (capability #200) so the same
+// field-level rules govern the NEXT public surface without being
+// rediscovered here. This test keeps the teeth; the registry keeps the list.
+import {
+  PUBLIC_RANKING_FORBIDDEN_TABLES,
+  PUBLIC_SURFACE_FORBIDDEN_COLUMNS,
+  PUBLIC_SURFACE_FORBIDDEN_TABLES,
+} from './privacyTiers';
 
-/**
- * Columns on tables the wall DOES read, which must not be selected from them.
- * weight_class and gym_status are records about a person's body and standing;
- * emergency_contact is a phone number belonging to somebody who never agreed to
- * appear anywhere; waivers.notes and .signed_by_name are the family's own
- * paperwork, and the gate needs only the type, status, signer ROLE and date.
- */
-const FORBIDDEN_COLUMNS = [
-  'weight_class',
-  'gym_status',
-  'emergency_contact',
-  'clearance_status',
-  'signed_by_name',
-  'waivers.notes',
-];
+const FORBIDDEN_TABLES = PUBLIC_SURFACE_FORBIDDEN_TABLES;
+const FORBIDDEN_COLUMNS = PUBLIC_SURFACE_FORBIDDEN_COLUMNS;
 
 function sqlOf(source: string): string {
   // Only the code, so a column named in prose -- and both modules discuss their
@@ -81,10 +62,9 @@ describe('the wall of names reads nothing it must not', () => {
     // child and 3 beside another ranks children against each other, which
     // achievementPaths.ts forbids platform-wide.
     for (const { file, sql } of sources) {
-      expect({ file, mentions: sql.includes('pilot.sessions') }).toEqual({ file, mentions: false });
-      expect({ file, mentions: sql.includes('pilot.attendance') }).toEqual({ file, mentions: false });
-      expect({ file, mentions: sql.includes('pilot.scheduler_attendance') }).toEqual({ file, mentions: false });
-      expect({ file, mentions: sql.includes('pilot.athlete_milestones') }).toEqual({ file, mentions: false });
+      for (const table of PUBLIC_RANKING_FORBIDDEN_TABLES) {
+        expect({ file, table, mentions: sql.includes(table) }).toEqual({ file, table, mentions: false });
+      }
     }
   });
 

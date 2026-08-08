@@ -5,14 +5,20 @@ jest.mock('./db', () => ({
 jest.mock('./shadowAuditEntries', () => ({
   writeShadowAuditEntry: jest.fn(),
 }));
+jest.mock('./escalationLadder', () => ({
+  fileEscalation: jest.fn().mockResolvedValue(undefined),
+  shouldAutoEscalateNearMiss: jest.fn((severity: string) => severity === 'high' || severity === 'critical'),
+}));
 
 import { query, withTransaction } from './db';
+import { fileEscalation } from './escalationLadder';
 import { writeShadowAuditEntry } from './shadowAuditEntries';
-import { flagNearMiss, listNearMisses } from './shadowNearMisses';
+import { findNearMissByTriggerContext, flagNearMiss, listNearMisses } from './shadowNearMisses';
 
 const mockQuery = jest.mocked(query);
 const mockWithTransaction = jest.mocked(withTransaction);
 const mockWriteAudit = jest.mocked(writeShadowAuditEntry);
+const mockFileEscalation = jest.mocked(fileEscalation);
 
 function nearMissRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -120,6 +126,52 @@ describe('flagNearMiss', () => {
     expect(auditInput.entityType).toBe('near_miss');
     expect(auditInput.afterState).toEqual({ severity: 'high', decisionId: 'dec-1' });
   });
+
+  describe('auto-escalation (capability #194)', () => {
+    test.each(['high', 'critical'])('a %s severity near miss escalates automatically', async (severity) => {
+      const clientQuery = jest.fn().mockResolvedValue({ rows: [nearMissRow({ severity })] });
+      mockWithTransaction.mockImplementation(async (callback) => callback({ query: clientQuery } as never));
+
+      await flagNearMiss({
+        organizationId: 'org-1',
+        athleteId: 'athlete-1',
+        description: 'Some near miss.',
+        severity: severity as 'high' | 'critical',
+        detectedByAccountId: 'coach-1',
+        detectedByRole: 'coach',
+      });
+
+      expect(mockFileEscalation).toHaveBeenCalledTimes(1);
+      const [escalationInput, client] = mockFileEscalation.mock.calls[0];
+      expect(escalationInput).toMatchObject({
+        organizationId: 'org-1',
+        sourceType: 'near_miss',
+        sourceId: 'nm-1',
+        athleteId: 'athlete-1',
+        severity,
+        triggeredBy: 'system',
+      });
+      // Passed the same transaction client the near-miss row was written
+      // with, not left to open a second, unrelated transaction.
+      expect(client).toEqual(expect.objectContaining({ query: clientQuery }));
+    });
+
+    test.each(['low', 'moderate'])('a %s severity near miss does not escalate', async (severity) => {
+      const clientQuery = jest.fn().mockResolvedValue({ rows: [nearMissRow({ severity })] });
+      mockWithTransaction.mockImplementation(async (callback) => callback({ query: clientQuery } as never));
+
+      await flagNearMiss({
+        organizationId: 'org-1',
+        athleteId: 'athlete-1',
+        description: 'Some near miss.',
+        severity: severity as 'low' | 'moderate',
+        detectedByAccountId: 'coach-1',
+        detectedByRole: 'coach',
+      });
+
+      expect(mockFileEscalation).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('listNearMisses', () => {
@@ -132,5 +184,33 @@ describe('listNearMisses', () => {
     const [sql, params] = mockQuery.mock.calls[0];
     expect(String(sql)).toContain('order by created_at desc');
     expect(params).toEqual(['org-1', 'athlete-1']);
+  });
+});
+
+describe('findNearMissByTriggerContext', () => {
+  test('matches on org + athlete + metadata trigger + context, newest first', async () => {
+    mockQuery.mockResolvedValueOnce([nearMissRow({ near_miss_id: 'nm-newest' })]);
+
+    const found = await findNearMissByTriggerContext(
+      'org-1',
+      'athlete-1',
+      'contact_observation_without_medical_clearance',
+      'sparring_123',
+    );
+
+    expect(found?.near_miss_id).toBe('nm-newest');
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(String(sql)).toContain("metadata->>'trigger' = $3");
+    expect(String(sql)).toContain("metadata->>'context_id' = $4");
+    expect(String(sql)).toContain('limit 1');
+    expect(params).toEqual(['org-1', 'athlete-1', 'contact_observation_without_medical_clearance', 'sparring_123']);
+  });
+
+  test('resolves null when the session has not been flagged before', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+
+    await expect(
+      findNearMissByTriggerContext('org-1', 'athlete-1', 'trigger-x', 'ctx-x'),
+    ).resolves.toBeNull();
   });
 });

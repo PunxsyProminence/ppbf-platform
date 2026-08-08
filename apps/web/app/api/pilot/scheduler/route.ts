@@ -3,13 +3,16 @@ import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, isOrganizationAdminRole } from '@/src/server/pilot/access';
-import { query } from '@/src/server/pilot/db';
+import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
+import { getSafetyGateDefinition, recordSafetyGateEvaluation } from '@/src/server/pilot/safetyGateMatrix';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
+  bulkUpsertSchedulerAttendance,
   createSchedulerClass,
   createSchedulerCoachingRequest,
   getSchedulerClassById,
   getSchedulerRegistrationById,
+  listRegisteredAthleteIdsForClass,
   listSchedulerStore,
   markSchedulerRegistrationReviewed,
   registerForClassTransactionally,
@@ -30,7 +33,8 @@ type SchedulerAction =
   | 'register_class'
   | 'parent_review_registration'
   | 'request_coaching'
-  | 'attendance_checkin';
+  | 'attendance_checkin'
+  | 'bulk_attendance_checkin';
 
 type SchedulerActorRole = SchedulerRole | 'platform_owner' | 'volunteer' | 'staff';
 
@@ -79,20 +83,44 @@ function canManageAll(actor: SchedulerActor): boolean {
   return actor.role === 'admin' || isOrganizationAdminRole(actor.role as SchedulerActorRole);
 }
 
+// A parent has been able to check in their own linked child since
+// attendance_checkin shipped (assertCanActOnAthlete permits it), but this
+// resolution only ever considered "is this the athlete themself" or "can
+// this actor manage the whole org" -- a parent fell into the `else` branch
+// and was recorded as `coach_override`, misattributing who actually made the
+// call. `checked_in_by_role` was always correct ('parent'); only `method`
+// lied. See infra/azure/pilot_slice_postgres_attendance_parent_method_migration.sql
+// for why a migration was needed to store this honestly.
+function resolveAttendanceMethod(actor: SchedulerActor, isSelf: boolean): SchedulerAttendance['method'] {
+  if (isSelf) return 'self';
+  if (actor.role === 'parent') return 'parent';
+  return canManageAll(actor) ? 'admin_override' : 'coach_override';
+}
+
+// A coach writes attendance only into a class they own (teach, scheduled, or
+// cover) -- the same ownership test the attendance-summary READ route already
+// enforces. Without this, a coach could overwrite another coach's attendance
+// attestations in a class they cannot even view: write access without read
+// access, on a safeguarding record about minors. Athlete/parent paths are
+// governed by assertCanActOnAthlete instead, and admin manages all.
+function assertCoachOwnsClass(actor: SchedulerActor, classItem: SchedulerClass): void {
+  if (actor.role !== 'coach') return;
+  if (
+    classItem.coach_account_id === actor.accountId
+    || classItem.scheduled_by_account_id === actor.accountId
+    || classItem.covering_coach_account_id === actor.accountId
+  ) {
+    return;
+  }
+  throw new Error('Forbidden: coach does not own this class');
+}
+
 async function getParentAthleteIds(actor: SchedulerActor): Promise<string[]> {
   if (actor.role !== 'parent') {
     return [];
   }
 
-  const rows = await query<{ athlete_id: string }>(
-    `select distinct gl.athlete_id
-     from pilot.guardian_links gl
-     join pilot.parents p on p.parent_id = gl.parent_id and p.organization_id = gl.organization_id
-     where gl.organization_id = $1 and p.account_id = $2`,
-    [actor.organizationId, actor.accountId],
-  );
-
-  return rows.map((row) => row.athlete_id);
+  return guardianAthleteIds(actor.organizationId, actor.accountId);
 }
 
 async function assertCanActOnAthlete(actor: SchedulerActor, athleteId: string): Promise<void> {
@@ -250,6 +278,11 @@ export async function POST(request: NextRequest) {
       registration_id?: string;
       status?: 'present' | 'absent' | 'excused';
       note?: string;
+      entries?: Array<{
+        athlete_id?: string;
+        status?: 'present' | 'absent' | 'excused';
+        note?: string;
+      }>;
     };
 
     const action = body.action;
@@ -351,6 +384,58 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // #82 STOP: registration refused by an active all-training hold. 403
+      // with the hold's own words -- the explanation was written FOR the
+      // athlete, and the lift condition is the teaching moment. The blocked
+      // attempt is recorded as a gate evaluation (append-only fact), so
+      // "how often is this child trying to come back" is answerable later.
+      //
+      // Same FK constraint contactClearanceGate.ts already documents:
+      // pilot.safety_gate_evaluations references (organization_id,
+      // gate_key) in pilot.safety_gates, and that gate row's own migration
+      // is a separate operator dispatch from the training-holds migration
+      // -- an org can have holds placeable before it has the gate row.
+      // Recording is therefore best-effort, gated on the row existing,
+      // exactly like contactClearanceGate's pattern: the refusal itself,
+      // and the explanation written for the athlete, must never depend on
+      // whether the evaluations table can accept the write.
+      if (result.outcome === 'training_hold') {
+        // pilot.safety_gates ships in this same PR, so the whole table --
+        // not just the training_hold row -- may not exist yet either;
+        // guard the table-missing case the same way trainingHolds.ts does
+        // elsewhere, so a fully pre-migration deploy still returns the 403.
+        let gate = null;
+        try {
+          gate = await getSafetyGateDefinition(actor.organizationId, 'training_hold');
+        } catch (error) {
+          if ((error as { code?: unknown }).code !== '42P01') {
+            throw error;
+          }
+        }
+        if (gate) {
+          await recordSafetyGateEvaluation({
+            organizationId: actor.organizationId,
+            gateKey: 'training_hold',
+            athleteId,
+            outcome: 'blocked',
+            reason: 'Class registration refused: active all-training hold',
+            evaluatedByAccountId: actor.accountId,
+            evaluatedByRole: actorRole,
+            contextId: classId,
+            metadata: { hold_id: result.holdId },
+            evaluatedAt: now,
+          });
+        }
+        return NextResponse.json(
+          {
+            error: 'Training hold: registration is paused for this athlete',
+            athlete_explanation: result.athleteExplanation,
+            lift_condition: result.liftConditionText,
+          },
+          { status: 403 },
+        );
+      }
+
       return NextResponse.json({
         ok: true,
         class_id: classId,
@@ -438,15 +523,22 @@ export async function POST(request: NextRequest) {
       }
 
       const now = new Date().toISOString();
-      const method: SchedulerAttendance['method'] = isSelf
-        ? 'self'
-        : canManageAll(actor)
-          ? 'admin_override'
-          : 'coach_override';
+      const method = resolveAttendanceMethod(actor, isSelf);
 
       const classItem = await getSchedulerClassById(actor.organizationId, classId);
       if (!classItem) {
         throw new Error('Missing class record');
+      }
+      assertCoachOwnsClass(actor, classItem);
+
+      // Attendance is only recordable for a registered athlete. An
+      // unregistered mark would count in the org summary while appearing on
+      // no class roster -- a number no drill-down could explain or correct --
+      // and it is also what let an athlete self-mark 'present' in every
+      // class in the gym.
+      const registeredIds = await listRegisteredAthleteIdsForClass(actor.organizationId, classId);
+      if (!registeredIds.includes(athleteId)) {
+        throw new Error('Missing registration: athlete is not registered for this class');
       }
 
       const attendanceRecord: SchedulerAttendance = {
@@ -465,6 +557,84 @@ export async function POST(request: NextRequest) {
       await upsertSchedulerAttendance(actor.organizationId, attendanceRecord);
 
       return NextResponse.json({ ok: true, class_id: classId, athlete_id: athleteId });
+    }
+
+    if (action === 'bulk_attendance_checkin') {
+      // A coach marking a whole class at once, rather than one athlete per
+      // request. Only coach/admin may use this action -- an athlete or
+      // parent's self/child-scoped check-in stays on attendance_checkin,
+      // where assertCanActOnAthlete already enforces they can only ever
+      // touch their own record.
+      if (!(actor.role === 'coach' || canManageAll(actor))) {
+        throw new Error('Forbidden: only coach/admin can bulk-mark attendance');
+      }
+
+      const classId = requiredString(body.class_id, 'class_id');
+      const classItem = await getSchedulerClassById(actor.organizationId, classId);
+      if (!classItem) {
+        throw new Error('Missing class record');
+      }
+      assertCoachOwnsClass(actor, classItem);
+
+      const entries = body.entries;
+      if (!Array.isArray(entries) || entries.length === 0) {
+        throw new Error('Missing entries: must be a non-empty array');
+      }
+      if (entries.length > 200) {
+        throw new Error('Unsupported entries: must not exceed 200 per request');
+      }
+
+      // Same registration requirement as the single check-in path, for the
+      // same reason -- fetched once for the whole batch.
+      const registeredIds = new Set(await listRegisteredAthleteIdsForClass(actor.organizationId, classId));
+
+      const now = new Date().toISOString();
+      const seenAthleteIds = new Set<string>();
+      const records: SchedulerAttendance[] = [];
+
+      for (const entry of entries) {
+        const entryAthleteId = requiredString(entry?.athlete_id, 'entries[].athlete_id');
+        const entryStatus = entry?.status;
+        if (entryStatus !== 'present' && entryStatus !== 'absent' && entryStatus !== 'excused') {
+          throw new Error('Unsupported entries[].status: must be present, absent, or excused');
+        }
+        if (seenAthleteIds.has(entryAthleteId)) {
+          throw new Error(`Unsupported entries: duplicate athlete_id ${entryAthleteId}`);
+        }
+        seenAthleteIds.add(entryAthleteId);
+        if (!registeredIds.has(entryAthleteId)) {
+          throw new Error(`Missing registration: athlete ${entryAthleteId} is not registered for this class`);
+        }
+
+        // Every athlete in the batch, not just the actor's own athleteId,
+        // must pass the same ownership check a single check-in would --
+        // a coach can only mark athletes they are actually assigned to
+        // (assertCanActOnAthlete -> assertCoachAssignedToAthlete), even
+        // inside a bulk call.
+        await assertCanActOnAthlete(actor, entryAthleteId);
+
+        records.push({
+          attendance_id: randomUUID(),
+          class_id: classId,
+          athlete_id: entryAthleteId,
+          status: entryStatus,
+          method: resolveAttendanceMethod(actor, false),
+          checked_in_by_role: actorRole,
+          checked_in_by_account_id: actor.accountId,
+          note: typeof entry?.note === 'string' ? entry.note.trim() : '',
+          checked_in_at: now,
+          updated_at: now,
+        });
+      }
+
+      await bulkUpsertSchedulerAttendance(actor.organizationId, records);
+
+      return NextResponse.json({
+        ok: true,
+        class_id: classId,
+        marked_count: records.length,
+        athlete_ids: records.map((record) => record.athlete_id),
+      });
     }
 
     throw new Error(`Unsupported action: ${action}`);

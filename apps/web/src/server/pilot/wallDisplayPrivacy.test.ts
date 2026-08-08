@@ -24,36 +24,13 @@ const READ_MODULES = [
   path.join(HERE, 'wallDisplayDb.ts'),
 ];
 
-/** Everything on this list is a health, safety, clinical or conduct record. */
-const FORBIDDEN_TABLES = [
-  'pilot.readiness',
-  'pilot.medical_intake',
-  'pilot.coach_observations',
-  'pilot.assessments',
-  'pilot.emergency_contacts',
-  'pilot.shadow_medical',
-  'pilot.shadow_near_misses',
-  'pilot.feedback',
-  'pilot.intake_cases',
-  'pilot.documents',
-];
+// The denylists live in privacyTiers.ts (capability #200) so the same
+// field-level rules govern every public surface from one registry. This
+// test keeps the teeth; the registry keeps the list.
+import { PUBLIC_SURFACE_FORBIDDEN_COLUMNS, PUBLIC_SURFACE_FORBIDDEN_TABLES } from './privacyTiers';
 
-/**
- * Columns that exist on tables the wall DOES read, and must not be selected
- * from them. scheduler_attendance.note is free text a coach typed about a
- * child; waivers.notes and signed_by_name are the family's paperwork;
- * athletes.gym_status and weight_class are records about a person's body and
- * standing, neither of which belongs on a wall.
- */
-const FORBIDDEN_COLUMNS = [
-  'clearance_status',
-  'signed_by_name',
-  'weight_class',
-  'gym_status',
-  'emergency_contact',
-  'checked_in_by_account_id',
-  'checked_in_by_role',
-];
+const FORBIDDEN_TABLES = PUBLIC_SURFACE_FORBIDDEN_TABLES;
+const FORBIDDEN_COLUMNS = PUBLIC_SURFACE_FORBIDDEN_COLUMNS;
 
 function sqlOf(source: string): string {
   // Only the query text, so a column named in a comment (this file's own

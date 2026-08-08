@@ -1,8 +1,90 @@
 # T-008 — Safeguarding audit: guardian consent tracking for minors' photos and videos
 
-> Status: BACKLOG
+> Status: **RESOLVED — see delivery note below (2026-08-07)**
 > Lane: A (git-capable AI) or B (chat-capable AI)
 > Priority: P1 safeguarding (photos/videos require guardian consent)
+
+## Delivery note (2026-08-07, session B / remote)
+
+Built on PR #238 as PR-238i (see `docs/current/WORK_QUEUE.md`). This
+ticket's own "propose model first if schema is large" instruction was
+followed, but the proposal is a correction rather than the suggested
+new table: `pilot.waivers` already recorded this exact fact —
+`waiver_type='photo_media'` is a first-class value in
+`admin/consent/page.tsx`'s vocabulary (built earlier in this session,
+predating this ticket), and its append-only shape (a new row supersedes
+the last one; status admits `signed`/`declined`/`withdrawn`) already IS
+"revocable and auditable." A second, parallel `guardian_media_consent`
+table for the same real-world fact would give a safeguarding auditor
+two places to check instead of one, so this migration extends
+`pilot.waivers` with `parent_id` (ties a row to the specific guardian
+who signed it), `covers_video`, and `public_use_allowed` instead of
+duplicating it. Full reasoning in the migration's own header.
+
+Delivered: a guardian-facing console (`/parent/consent`) to grant or
+withdraw consent for each linked child, scoped so a guardian can only
+ever act on their own children; an org-admin read-only audit
+(`/admin/athlete-consent`) showing every athlete's consent status
+org-wide, including athletes with zero guardians on file (surfaced as
+its own finding — consent is unverifiable, not vacuously satisfied); the
+video-compliance console (T-006) now refuses to approve a publication
+whose athlete's guardian consent is missing or withdrawn; and a
+read-only reporting script
+(`pilot-check-videos-missing-consent.mjs`) for a standing compliance
+sweep, matching this repo's existing `pilot-check-stranded-guardians.mjs`
+shape.
+
+Two deliberate cuts, stated explicitly rather than silently dropped —
+both satisfy this ticket's literal acceptance criteria (which only ask
+the compliance-check endpoint to refuse approval on missing/withdrawn
+consent, a forward-looking gate) while leaving a documented follow-up:
+
+1. **Consent scope is recorded but not yet enforced.** A guardian can
+   mark "photos only, no video" or "internal use only," and that is
+   stored — but the video-compliance gate today only checks that
+   consent exists and is signed, not that its scope actually covers the
+   publication being approved (video vs. photo, public vs.
+   internal). Enforcing that requires matching against
+   `pilot.video_publications.visibility`/`publication_type`, deferred
+   as a follow-up.
+2. **Withdrawing consent never retroactively un-publishes.** The gate
+   blocks future approvals only. `pilot.video_publications.status` has
+   no `unpublished`/`retracted` value to move an already-published
+   video to — adding one is its own schema decision, not something this
+   migration makes.
+
+### Round-8 self-review fix (2026-08-07, commit `4cd01d1`)
+
+Self-applied adversarial review found 10 raw findings, 8 confirmed; all
+fixed. The critical one: `resolveActingParent` resolved the caller's
+*first* `pilot.parents` row with no athlete scoping — `pilot.parents`
+has no uniqueness constraint on `account_id`, so one signed-in account
+can legitimately back a different `parent_id` per child (one intake
+form per athlete is a real, schema-permitted shape). A guardian of two
+children could have a grant/withdraw for child B silently write under
+child A's `parent_id`, passing the route's own authorization check
+(athlete-membership only) while never touching the row
+`checkGuardianMediaConsent(B)` reads. Fixed by requiring the caller
+name the athlete and joining through `guardian_links`; the join itself
+was moved into `guardianAccess.ts` as `guardianParentIdForAthlete`, per
+that module's own "one definition of viewer-scoped guardian reach"
+doctrine, rather than hand-rolled a second time in `guardianConsent.ts`.
+The read-side "you" flag on `/parent/consent` now uses a full
+membership set (`callerParentIdSet`) instead of picking one row.
+
+Also fixed: a TOCTOU race where a guardian's withdrawal could commit in
+the gap between the pre-approval consent check and the CAS-guarded
+approval transaction (closed with an in-transaction re-check,
+`assertGuardianMediaConsentWithClient`, via a new `verifyBeforeCommit`
+hook on `decidePublicationCompliance`); a blocked-approval attempt
+going completely unaudited, despite this ticket's own acceptance
+criteria calling for exactly that ("who approved despite missing
+consent"); and three test-quality gaps (`guardianParentIds`/
+`guardianParentIdForAthlete` had no direct unit coverage; the
+real-Postgres suite never proved organization isolation, despite
+`pilot.athletes`' primary key being per-org, not global; and the grant
+route's default-value derivation was never exercised by a request that
+actually omitted `covers_video`/`public_use_allowed`).
 
 <!-- Everything below this line is the prompt. Paste the whole file into the
      builder AI. It must be able to succeed with no other context. -->

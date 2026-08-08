@@ -47,7 +47,9 @@
     "runtime_verified": [
       "magic-link redemption on staging: POST /api/pilot/auth/magic-link/consume returns 200 and sets ppbf_pilot_session for the correct principal; the same token replayed returns TOKEN_ALREADY_USED; GET returns 405 with Allow: POST so a mail scanner's prefetch cannot burn a link; exactly one session row created (2026-08-08, staging)"
     ],
-    "merged_not_deployed": [],
+    "merged_not_deployed": [
+      "PR #238 (merge commit c4660ce, 2026-08-08) -- 324 files, and critically about 26 new pilot_slice_postgres_*_migration.sql files with matching pilot-apply-* runners. Neither environment runs it: both are on 19d7e70, which predates the merge. The next deploy of main to EITHER environment is therefore not routine -- every one of those migrations has to be applied and confirmed first, or code will select on columns the database does not have. Recorded here because 'main is green' and 'main is deployable' stopped being the same statement at this commit."
+    ],
     "deployed_not_runtime_verified": [
       "T-001 admin activation-code console (#239)",
       "T-002 covering-coach access window (#242, depends on #243)",

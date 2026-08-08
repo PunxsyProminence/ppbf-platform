@@ -1,0 +1,675 @@
+organization_id,stop_rule_id,drill_id,ordinal,condition_text,scope,rule_kind
+{{PPBF_ORG_ID}},stp_0a60ff4c505cac,drl_7f812fecacfee4,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_2626a2b2ed23ce,drl_7f812fecacfee4,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_0f9dd19ead15cc,drl_7f812fecacfee4,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_7da55f0468747d,drl_7f812fecacfee4,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_3b88a9bf68abd3,drl_7f812fecacfee4,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_c9a19abac5d1ff,drl_7f812fecacfee4,6,Stop when exits become late on consecutive reps.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_454410aa312fc3,drl_7f812fecacfee4,7,Stop when the athlete is watching punches instead of leaving.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_d55ca126754007,drl_7f812fecacfee4,8,Stop when fatigue makes balance recovery unreliable.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_9d71f75ab19ea7,drl_7f812fecacfee4,9,Stop when the room starts treating the drill as volume chasing.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_3ed6689acdac11,drl_2d0193a7c52e58,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_d7e19e708fed17,drl_2d0193a7c52e58,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_e442821db9f39b,drl_2d0193a7c52e58,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_cd50abfcfced1c,drl_2d0193a7c52e58,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_02cc4f57136933,drl_2d0193a7c52e58,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_162df890add118,drl_2d0193a7c52e58,6,Stop when the athlete repeatedly breaks count.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_fbebb9ffa16f18,drl_2d0193a7c52e58,7,Stop when exit timing is erased by punch hunger.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_7c27ddbdbbaa4c,drl_2d0193a7c52e58,8,Stop when stance collapses on the second half of the sequence.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_e3008453ac92af,drl_08c95a746f83e9,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_bc9b1370bc7da6,drl_08c95a746f83e9,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_7df0666e056d5c,drl_08c95a746f83e9,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_a8c1e93f905fc9,drl_08c95a746f83e9,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_40069f40bf4aa2,drl_08c95a746f83e9,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_61261e9b4c6c17,drl_08c95a746f83e9,6,Stop when movement becomes a chase pattern.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_28c2b7e1ba3378,drl_08c95a746f83e9,7,Stop when the athlete cannot stay calm under repeated retreat.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_a7b699795d7493,drl_08c95a746f83e9,8,Stop when pressure quality drops into running and reaching.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_5d892ba3fa847b,drl_7af719b3b85e94,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_5eda64badbd142,drl_7af719b3b85e94,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_6c96a810feb064,drl_7af719b3b85e94,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_5689135d316bdb,drl_7af719b3b85e94,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_853ab327751823,drl_7af719b3b85e94,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_9d548808d39c1f,drl_7af719b3b85e94,6,Stop when every contact triggers emotional re-entry.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_9bdd345a91ffbe,drl_7af719b3b85e94,7,Stop when reset posture disappears under fatigue.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_418fcb45339ac1,drl_7af719b3b85e94,8,Stop when the athlete cannot recover eyes and feet before acting.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_866fd924155e18,drl_0c72ef57315f70,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_e4ffc24c88c7f9,drl_0c72ef57315f70,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_f60dde6d4d364f,drl_0c72ef57315f70,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_5d57db544d0e0c,drl_0c72ef57315f70,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_898b6ecb6927b2,drl_0c72ef57315f70,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_98d2dee2fa8035,drl_0c72ef57315f70,6,Stop when the room starts enjoying the mess more than the correction.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_40ea09f11df0dd,drl_0c72ef57315f70,7,Stop when the athlete repeatedly fights through disorder instead of recognizing it.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_7901177546479c,drl_0c72ef57315f70,8,Stop when fatigue blurs the difference between controlled live work and random chaos.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_e5bbf4368f34f9,drl_9de5719225a39c,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_77429b6f2b65bc,drl_9de5719225a39c,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_0b161dec69e719,drl_9de5719225a39c,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_18f83c1dd4527b,drl_9de5719225a39c,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_2bf88f97b1343e,drl_9de5719225a39c,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_3042b470b40e91,drl_0485b7a8023ef4,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_acc51327d419d4,drl_0485b7a8023ef4,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_7c56427df6bf8d,drl_0485b7a8023ef4,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_24e6f530da3499,drl_0485b7a8023ef4,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_956c3e5291084a,drl_0485b7a8023ef4,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_1819c4531cff91,drl_c256be2f4f5fab,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_e9341f4c367e26,drl_c256be2f4f5fab,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_362bfc5fd2baf6,drl_c256be2f4f5fab,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_ce09043ea2ac13,drl_c256be2f4f5fab,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_650ca528770f77,drl_c256be2f4f5fab,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_8568ce2191e4e0,drl_43da0d1ce221fe,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_6ac35ed9487f85,drl_43da0d1ce221fe,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_a48bc56e8ae182,drl_43da0d1ce221fe,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_ed2f2a28b8c539,drl_43da0d1ce221fe,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_f4210d7f97cefd,drl_43da0d1ce221fe,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_c3bc906f5ef477,drl_e3a1b88c8d90a6,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_15f3db43f51578,drl_e3a1b88c8d90a6,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_45b0e6937bb8d5,drl_e3a1b88c8d90a6,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_729d66893c7859,drl_e3a1b88c8d90a6,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_cd2cb56c008a30,drl_e3a1b88c8d90a6,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_08be6be791931b,drl_b761c27849920e,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_e141d56656e129,drl_b761c27849920e,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_87a4c2bc240798,drl_b761c27849920e,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_2b9238d23cb42b,drl_b761c27849920e,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_2d5718e3b93bf5,drl_b761c27849920e,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_f77be7514b035f,drl_7908566cc70d14,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_edbcf2f3910a0c,drl_7908566cc70d14,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_666b19fe3c1407,drl_7908566cc70d14,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_6c969550431ee0,drl_7908566cc70d14,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_f909aacfd20b35,drl_7908566cc70d14,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_6232e2077c4ddd,drl_105923e88c4fff,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_e592bea588e8a9,drl_105923e88c4fff,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_95564da631ee1e,drl_105923e88c4fff,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_a01cf557c22bdb,drl_105923e88c4fff,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_64fd7b06cac270,drl_105923e88c4fff,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_ae4d3e697833b1,drl_8590c60fd782a8,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_f0c30af57bcc61,drl_8590c60fd782a8,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_c4cc43ccd6620e,drl_8590c60fd782a8,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_5dbd61a7b46fac,drl_8590c60fd782a8,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_29c646f00e3a4d,drl_8590c60fd782a8,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_477bc8c6f87e95,drl_f98704fda3b068,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_1e82318e086559,drl_f98704fda3b068,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_66b8db5ab75be7,drl_f98704fda3b068,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_a2251fbc9b6ac5,drl_f98704fda3b068,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_401b09cacabf18,drl_f98704fda3b068,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_737dbae4cf1933,drl_7e09f9990ea721,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_bcece8978a9eb7,drl_7e09f9990ea721,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_bd7c165da3a751,drl_7e09f9990ea721,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_86e9fa4bdf09ee,drl_7e09f9990ea721,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_08e4f4298344f2,drl_7e09f9990ea721,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_ed492393348890,drl_d418eb017730d7,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_91a6a3426fa0ff,drl_d418eb017730d7,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_3086093c4030c5,drl_d418eb017730d7,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_e6dd94839566ee,drl_d418eb017730d7,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_4515aee79bfe89,drl_d418eb017730d7,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_b03226a13b2be0,drl_01fa10cd503857,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_e97ae0e281e677,drl_01fa10cd503857,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_f8232d29aca3e7,drl_01fa10cd503857,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_225c1c18f26f57,drl_01fa10cd503857,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_285b6d7008a2b7,drl_01fa10cd503857,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_c1168676649491,drl_f44b6b2f12ba97,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_a04fb997ceee97,drl_f44b6b2f12ba97,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_e450df42055671,drl_f44b6b2f12ba97,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_82b5f02c99ffc0,drl_f44b6b2f12ba97,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_3bc84e1fb3fdd0,drl_f44b6b2f12ba97,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_db9bbbbdd978c4,drl_b37c52526817b7,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_221f9767f3165e,drl_b37c52526817b7,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_ae1e1432fcc6cd,drl_b37c52526817b7,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_4252d529a03461,drl_b37c52526817b7,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_904d83769e5ad0,drl_b37c52526817b7,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_a13eb018f179e8,drl_4347e2c1a20806,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_03a56e89ba7867,drl_4347e2c1a20806,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_6ee0531b1cdf8e,drl_4347e2c1a20806,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_e68a75094b7f2c,drl_4347e2c1a20806,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_13656a5d3bed28,drl_4347e2c1a20806,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_18c1427f68b0d2,drl_d79b33ee316e09,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_0c68ce4e266451,drl_d79b33ee316e09,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_aed94aea600a29,drl_d79b33ee316e09,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_66f7cd4e584324,drl_d79b33ee316e09,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_5e9edaaa9ba8c8,drl_d79b33ee316e09,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_26f489593fb635,drl_1d6e36f12d7c87,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_a2366325aef93f,drl_1d6e36f12d7c87,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_6642ad15f9bc32,drl_1d6e36f12d7c87,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_5ef7774bf338a9,drl_1d6e36f12d7c87,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_e0dac1657a4fb5,drl_1d6e36f12d7c87,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_25a9da503de558,drl_087353a71f3b4e,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_9b8dec01473f79,drl_087353a71f3b4e,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_7fccd55e3503d3,drl_087353a71f3b4e,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_92f4bb1d1ac27c,drl_087353a71f3b4e,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_8f98667d0be306,drl_087353a71f3b4e,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_756f3e2f3222c0,drl_c339eeabf109d4,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_1c4753b0b3eff5,drl_c339eeabf109d4,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_2e3beca6b60308,drl_c339eeabf109d4,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_65a5e763ddfc00,drl_c339eeabf109d4,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_2ecedb491ff783,drl_c339eeabf109d4,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_d8279c5cda678b,drl_e0428b3066b8c2,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_87472cea007dbc,drl_e0428b3066b8c2,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_7d4206d0ffd2e7,drl_e0428b3066b8c2,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_769742cf7b63f3,drl_e0428b3066b8c2,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_c23195aa7aeeaa,drl_e0428b3066b8c2,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_8d4fd244ec5467,drl_cae76c934d4067,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_5db61b046f75df,drl_cae76c934d4067,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_697b18e4c22de1,drl_cae76c934d4067,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_3d53cbbcdaa749,drl_cae76c934d4067,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_75c397f60670c1,drl_cae76c934d4067,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_c129351cdb0c00,drl_d54f831b93ec55,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_02be0968f09820,drl_d54f831b93ec55,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_9be5b5751a68c6,drl_d54f831b93ec55,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_1ce502eaa0a0f3,drl_d54f831b93ec55,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_6de2d51031804e,drl_d54f831b93ec55,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_7306b42a145ea8,drl_87f94622479ae5,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_6969df50db6983,drl_87f94622479ae5,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_4ff407caa0495f,drl_87f94622479ae5,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_20ff009de540f6,drl_87f94622479ae5,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_de8d499474795e,drl_87f94622479ae5,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_54e4150e544b3e,drl_e87143cad096a4,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_e61cccbd718954,drl_e87143cad096a4,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_3b446477000195,drl_e87143cad096a4,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_d58da99a935c11,drl_e87143cad096a4,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_1660f852a478d7,drl_e87143cad096a4,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_3f162188d6d81f,drl_ff1c5f67a3635b,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_6fc660f6e0310d,drl_ff1c5f67a3635b,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_45d8b5ac75e538,drl_ff1c5f67a3635b,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_e04d35871ceab6,drl_ff1c5f67a3635b,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_5afd216296559f,drl_ff1c5f67a3635b,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_da461d15716ae2,drl_47e30881c7b416,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_8dfb1484671463,drl_47e30881c7b416,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_8e75f223dae6fa,drl_47e30881c7b416,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_18c1c2f14023b0,drl_47e30881c7b416,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_d1b01fef77837f,drl_47e30881c7b416,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_594c85511c2443,drl_160ff16df2a668,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_821fed65c6e345,drl_160ff16df2a668,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_9c7d3a61dcf5d1,drl_160ff16df2a668,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_4c2d5724375119,drl_160ff16df2a668,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_58a2a8e2d9073f,drl_160ff16df2a668,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_73bfa16c7e0b5b,drl_a8fcfc8f0a4c63,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_6f96c544deeed4,drl_a8fcfc8f0a4c63,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_ec1a9076d7fa8e,drl_a8fcfc8f0a4c63,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_1f7026c98a8e26,drl_a8fcfc8f0a4c63,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_a880d1ed02a748,drl_a8fcfc8f0a4c63,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_21c4b6c8612c24,drl_9994cbb4a19315,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_f05c73f0444b2f,drl_9994cbb4a19315,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_fafdfe0af3f91e,drl_9994cbb4a19315,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_2ef63b3189f39f,drl_9994cbb4a19315,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_3f7c961c55522c,drl_9994cbb4a19315,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_968ee9c6b6b952,drl_9b6c91030876ae,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_d5e72347a43c2a,drl_9b6c91030876ae,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_cc05c68da420b4,drl_9b6c91030876ae,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_fecf8287784d88,drl_9b6c91030876ae,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_b880e803a10d85,drl_9b6c91030876ae,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_bd02db70539904,drl_15847de4920418,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_7ff145c9ea24a5,drl_15847de4920418,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_342c366c705321,drl_15847de4920418,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_fcb40412c59716,drl_15847de4920418,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_934f9f22841928,drl_15847de4920418,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_f6129af844c592,drl_45d9662ee44c36,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_a40b70516163cd,drl_45d9662ee44c36,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_66176f34cf31d4,drl_45d9662ee44c36,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_4707960f184224,drl_45d9662ee44c36,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_207515d017a231,drl_45d9662ee44c36,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_09313bbabbf611,drl_3df01682e604dd,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_122e533975d1d8,drl_3df01682e604dd,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_991db96bb05a48,drl_3df01682e604dd,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_5f7e2bdb24895c,drl_3df01682e604dd,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_3de83078aac773,drl_3df01682e604dd,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_eae99fe1d2a500,drl_0af42a73a6878f,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_137c8e128f3189,drl_0af42a73a6878f,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_50e2517676ace0,drl_0af42a73a6878f,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_439bbd77f7ad24,drl_0af42a73a6878f,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_292aa09c661de5,drl_0af42a73a6878f,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_48d15b54942c43,drl_1ad44e91b32842,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_a606cdb0dc560d,drl_1ad44e91b32842,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_ca33bd0f619a5a,drl_1ad44e91b32842,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_496d1747cdba05,drl_1ad44e91b32842,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_cae1b95124b2dc,drl_1ad44e91b32842,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_385d862d6c658c,drl_da603edd55075d,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_8ccd848926daf9,drl_da603edd55075d,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_3f52f9ad718188,drl_da603edd55075d,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_cdb398e899f7ae,drl_da603edd55075d,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_594ad1e9c08f89,drl_da603edd55075d,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_6edcc196c29958,drl_484dc64b436811,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_7e234b0795b17f,drl_484dc64b436811,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_31e0f09e4f86ca,drl_484dc64b436811,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_f1bda2e1b56dc3,drl_484dc64b436811,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_feaaa12382403d,drl_484dc64b436811,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_3f0223c66153d5,drl_5c075cf813c4d8,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_32c92fa9161208,drl_5c075cf813c4d8,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_86750bba670c66,drl_5c075cf813c4d8,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_37b559d6bef189,drl_5c075cf813c4d8,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_29cd0e04bdd4a6,drl_5c075cf813c4d8,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_b1ed868a30dd79,drl_5c3353db6cc6ab,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_7d3f51e384df33,drl_5c3353db6cc6ab,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_aacd63c26eca0b,drl_5c3353db6cc6ab,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_4b1917a59d3674,drl_5c3353db6cc6ab,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_9f86d5eb3ea1bd,drl_5c3353db6cc6ab,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_e70e5523a31d5a,drl_3e2e2cb0a54792,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_e6cec4e44ee605,drl_3e2e2cb0a54792,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_300c3a1100ec8a,drl_3e2e2cb0a54792,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_efef2758f78138,drl_3e2e2cb0a54792,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_abb3069878164d,drl_3e2e2cb0a54792,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_91b069b1276f8f,drl_3554c55ab8b584,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_e88d52e70d365b,drl_3554c55ab8b584,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_296ad3960fce43,drl_3554c55ab8b584,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_2b8d40a4e0e173,drl_3554c55ab8b584,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_366f82ddcbb693,drl_3554c55ab8b584,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_86888b07670b76,drl_4700995bab7b07,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_14c71018e97197,drl_4700995bab7b07,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_9e7e9645cd0f72,drl_4700995bab7b07,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_bd0a21531d6bb3,drl_4700995bab7b07,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_29bafb4f5982b4,drl_4700995bab7b07,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_56985ade0e9774,drl_2713ad55cfcbf0,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_5747ba863978d4,drl_2713ad55cfcbf0,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_853588cbd721bf,drl_2713ad55cfcbf0,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_562a71ebc89204,drl_2713ad55cfcbf0,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_708d1bff37d2a8,drl_2713ad55cfcbf0,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_fd2a456eccbfa9,drl_badeec66ed769d,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_abe23160a6136a,drl_badeec66ed769d,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_e3621aa5827d30,drl_badeec66ed769d,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_e9ae375f497d74,drl_badeec66ed769d,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_42ec28bd3db038,drl_badeec66ed769d,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_0c86e769b1b15e,drl_464b8ff7d556f9,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_8b4937c21b47c7,drl_464b8ff7d556f9,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_19b8d7b331ef38,drl_464b8ff7d556f9,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_bc420c5f7ba548,drl_464b8ff7d556f9,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_3d9e8167489a77,drl_464b8ff7d556f9,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_d9627966fa45ee,drl_2268ec918e08c5,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_a0e83f8c874fed,drl_2268ec918e08c5,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_8b8a0edbfde309,drl_2268ec918e08c5,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_0752e63cb961c1,drl_2268ec918e08c5,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_8ca8a2c212f161,drl_2268ec918e08c5,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_6d90eabb146e3d,drl_f9e5a58017fd10,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_fe729caf725659,drl_f9e5a58017fd10,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_cbac354d538ac8,drl_f9e5a58017fd10,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_9ded2b7d7d617b,drl_f9e5a58017fd10,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_c169fe03d590e8,drl_f9e5a58017fd10,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_15139f51167492,drl_87d9424cc9f2a3,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_cbb4f2a7440ff3,drl_87d9424cc9f2a3,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_60d7f56c113ba1,drl_87d9424cc9f2a3,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_57fd7118d3fa31,drl_87d9424cc9f2a3,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_e6f32ab5557c50,drl_87d9424cc9f2a3,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_0eb02d59441d73,drl_f0b1aab1457617,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_32624db92294f7,drl_f0b1aab1457617,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_29042f7c4395d1,drl_f0b1aab1457617,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_6f6510a9c44ab9,drl_f0b1aab1457617,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_ce499bef79645c,drl_f0b1aab1457617,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_54c61fbf8ffb89,drl_480bb9dea67e50,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_9b4082b86d735b,drl_480bb9dea67e50,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_1b3f6c96f07148,drl_480bb9dea67e50,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_848bfaa13b8e90,drl_480bb9dea67e50,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_f1638fac17a614,drl_480bb9dea67e50,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_4c3ea93831d7e0,drl_61b0f5ffcdff04,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_fa8ac24bb1cf27,drl_61b0f5ffcdff04,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_1b85c3df8ee240,drl_61b0f5ffcdff04,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_67da2fe74d6958,drl_61b0f5ffcdff04,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_0a990ce37cec91,drl_61b0f5ffcdff04,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_13dd7d1005f54c,drl_ec1217050c15b0,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_78ab3ae43babbd,drl_ec1217050c15b0,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_6d1e6d3d485d10,drl_ec1217050c15b0,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_7e8b8f48937985,drl_ec1217050c15b0,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_4d925a69b72886,drl_ec1217050c15b0,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_ecc5013fcaf606,drl_8c5a8a78b41320,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_9bbef128760acb,drl_8c5a8a78b41320,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_f8315858686409,drl_8c5a8a78b41320,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_92f878b471d09c,drl_8c5a8a78b41320,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_276803d618b895,drl_8c5a8a78b41320,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_4b183ccce712d0,drl_c16cda24f9fce2,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_f2afdfd6769774,drl_c16cda24f9fce2,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_60794edaf08dc0,drl_c16cda24f9fce2,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_9f42d070deb240,drl_c16cda24f9fce2,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_8ea73d88dac184,drl_c16cda24f9fce2,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_c0b4f0883c9828,drl_22a255209c1c9b,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_c149d36f59fedb,drl_22a255209c1c9b,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_8ee2ea20a136da,drl_22a255209c1c9b,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_a301fe665746d5,drl_22a255209c1c9b,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_c9b0d2aceaefb2,drl_22a255209c1c9b,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_2b905d51c62cdc,drl_c8fa1590a8649a,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_5a59f6c563e218,drl_c8fa1590a8649a,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_2c50b943f8751a,drl_c8fa1590a8649a,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_d020b1e96dcb60,drl_c8fa1590a8649a,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_9173da2a476408,drl_c8fa1590a8649a,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_fe2ee8e32560d3,drl_e9d88bb256a70c,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_b9d5ac880861e9,drl_e9d88bb256a70c,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_6fa34f4f8b5aac,drl_e9d88bb256a70c,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_207accac1710e3,drl_e9d88bb256a70c,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_11114752794f48,drl_e9d88bb256a70c,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_c2ca9e1262c52f,drl_c30d15370004ba,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_fca3de72597411,drl_c30d15370004ba,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_3e9acacec3112d,drl_c30d15370004ba,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_1552bab81b6fa6,drl_c30d15370004ba,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_853db746f248b9,drl_c30d15370004ba,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_22fb9093643133,drl_9e0e66daf70fed,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_24839a8a7f176b,drl_9e0e66daf70fed,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_d17942e94a6a52,drl_9e0e66daf70fed,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_85600b8ae15baf,drl_9e0e66daf70fed,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_360cf7b62cec75,drl_9e0e66daf70fed,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_9f5f3c7d7c39a1,drl_403a46cda65935,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_2170506586e33e,drl_403a46cda65935,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_66b67bddffb50d,drl_403a46cda65935,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_2f99e455b9999b,drl_403a46cda65935,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_d74ed98d619595,drl_403a46cda65935,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_5c6237ab401a83,drl_0ffe13585e6bdc,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_5172e856a8ff79,drl_0ffe13585e6bdc,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_f4f87508feecec,drl_0ffe13585e6bdc,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_703e7e0818c652,drl_0ffe13585e6bdc,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_c66d9d81097c7f,drl_0ffe13585e6bdc,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_f1ec1932f90da5,drl_b755caac79e37e,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_87e80d71b3dcb2,drl_b755caac79e37e,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_f44e14cb0a5c4a,drl_b755caac79e37e,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_6794cb0919a8b1,drl_b755caac79e37e,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_df836cea1c7689,drl_b755caac79e37e,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_21afd66b0d6351,drl_3c2aad1eb8baa9,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_ea31179144d6bb,drl_3c2aad1eb8baa9,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_8757fe991cf148,drl_3c2aad1eb8baa9,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_3baa32a804f3fc,drl_3c2aad1eb8baa9,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_a94a83edfde1a1,drl_3c2aad1eb8baa9,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_160bae7b3abac9,drl_111f0a8ae15fc3,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_d0d7a2f4baa6cc,drl_111f0a8ae15fc3,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_e2dda5d47064d0,drl_111f0a8ae15fc3,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_ed3ecb85d2d21e,drl_111f0a8ae15fc3,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_13a23facc380a4,drl_111f0a8ae15fc3,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_b80aa05c42aa99,drl_e7587c167c1ebd,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_21e08397ecb962,drl_e7587c167c1ebd,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_8f4075cb3d8afd,drl_e7587c167c1ebd,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_d5247b4207a8bf,drl_e7587c167c1ebd,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_8bff4aaf6ee992,drl_e7587c167c1ebd,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_113cc808876e2d,drl_acf2fe66e284ff,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_3a778053041797,drl_acf2fe66e284ff,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_2f7f057b6ad428,drl_acf2fe66e284ff,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_f4eb5dec6c7526,drl_acf2fe66e284ff,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_d0dfc8537a8ca4,drl_acf2fe66e284ff,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_7ddeedcb0655c0,drl_3c9cf54f121e59,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_f65bc6b57051cc,drl_3c9cf54f121e59,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_0bb9e48acfe008,drl_3c9cf54f121e59,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_9f6fac4faa322b,drl_3c9cf54f121e59,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_66babf7a96c13f,drl_3c9cf54f121e59,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_b7d04723fe448e,drl_31f81811de1b2f,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_8f8f1b3495dbd5,drl_31f81811de1b2f,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_3379136a1467b3,drl_31f81811de1b2f,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_43730f4c2fc297,drl_31f81811de1b2f,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_51285abfd13c59,drl_31f81811de1b2f,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_61e49f810e0cb0,drl_d305c9e9ba7ddd,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_2033c166064a28,drl_d305c9e9ba7ddd,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_8c425b8027988a,drl_d305c9e9ba7ddd,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_b3fde725864126,drl_d305c9e9ba7ddd,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_6d3296a281f279,drl_d305c9e9ba7ddd,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_6a43a97e20101e,drl_93b8eac77911a2,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_c33c10a6eb749f,drl_93b8eac77911a2,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_fb5c518c1530c5,drl_93b8eac77911a2,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_54009d2c72a3a4,drl_93b8eac77911a2,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_d9dae022c15077,drl_93b8eac77911a2,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_f53a3a419fb01f,drl_367b662564784e,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_32045deefd2c30,drl_367b662564784e,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_c7b2a56ffec825,drl_367b662564784e,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_5ab73fb1744842,drl_367b662564784e,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_3eb76df0850fcb,drl_367b662564784e,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_c35d15a8847d93,drl_e1f757f0c3e703,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_99c96c6141eb5f,drl_e1f757f0c3e703,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_e24cf0c550a995,drl_e1f757f0c3e703,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_295f4d4abca18c,drl_e1f757f0c3e703,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_482846ffd177e3,drl_e1f757f0c3e703,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_7eb328417f17de,drl_cb54d49d71c270,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_50ea7cd7654347,drl_cb54d49d71c270,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_97e311075b4802,drl_cb54d49d71c270,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_bd95ea5e97820e,drl_cb54d49d71c270,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_6fec638f591b5c,drl_cb54d49d71c270,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_3ead569cabf487,drl_a1b0aa882e6719,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_c137039edd0ca1,drl_a1b0aa882e6719,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_8d54b21fb914f6,drl_a1b0aa882e6719,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_680c1f78a6ea29,drl_a1b0aa882e6719,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_67943f7b290dc0,drl_a1b0aa882e6719,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_212096e8ff935f,drl_dbde0fe502575d,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_e8abf6aeff93ec,drl_dbde0fe502575d,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_d8f7fe3592da40,drl_dbde0fe502575d,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_e14c98a0945737,drl_dbde0fe502575d,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_5f43c27ac7abd8,drl_dbde0fe502575d,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_475a871d934728,drl_2d85a3b7a132a7,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_c906aff333dadd,drl_2d85a3b7a132a7,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_c87548546adc9f,drl_2d85a3b7a132a7,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_2a1777b5d0f59d,drl_2d85a3b7a132a7,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_82425600d0c0d7,drl_2d85a3b7a132a7,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_6ccd979d7b448c,drl_1f5bf3a2ca967b,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_cb393bd9e7c8ec,drl_1f5bf3a2ca967b,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_7f2643c2e1d520,drl_1f5bf3a2ca967b,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_6c0b39bdfc2971,drl_1f5bf3a2ca967b,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_3a86b93101dde4,drl_1f5bf3a2ca967b,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_cc9054e9690472,drl_1315b52f037c2a,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_2c22d7ae305896,drl_1315b52f037c2a,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_554a6057982a38,drl_1315b52f037c2a,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_c93a20bc2a6ad2,drl_1315b52f037c2a,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_d3846cdb0c633b,drl_1315b52f037c2a,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_f6d8e0a9792f52,drl_e3362ef055ceff,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_a878429fe373e1,drl_e3362ef055ceff,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_fa51889a296704,drl_e3362ef055ceff,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_53414f47f15ac8,drl_e3362ef055ceff,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_3164d732fa34c2,drl_e3362ef055ceff,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_e44084618ef98b,drl_70d70c8e6af657,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_f8355e52030933,drl_70d70c8e6af657,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_5890374db2429a,drl_70d70c8e6af657,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_0642eb515738f6,drl_70d70c8e6af657,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_9b2776ad8206a0,drl_70d70c8e6af657,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_02cf75b51a3e8a,drl_81c1dc6ae59852,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_fcae2b06df0d30,drl_81c1dc6ae59852,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_24cc31fd155ca6,drl_81c1dc6ae59852,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_a2fb4f4cfdd117,drl_81c1dc6ae59852,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_a3f82086acebe2,drl_81c1dc6ae59852,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_477e83e5d293bf,drl_006134ad264754,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_f610cbce521f4a,drl_006134ad264754,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_a0b83579bcd0db,drl_006134ad264754,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_e18f3bb0e97199,drl_006134ad264754,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_45fc005b902c56,drl_006134ad264754,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_593348009a7003,drl_225e5d543beb1f,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_17b301f868c5b5,drl_225e5d543beb1f,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_8d5ae5f113dff6,drl_225e5d543beb1f,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_2b6191a4997df3,drl_225e5d543beb1f,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_49c3d0f3955f07,drl_225e5d543beb1f,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_add67aa3dbf788,drl_b2fcf989112703,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_31532e637dac98,drl_b2fcf989112703,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_e126ed66e99a23,drl_b2fcf989112703,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_244a316de4897f,drl_b2fcf989112703,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_b7d26c0605761c,drl_b2fcf989112703,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_013858a227f4d6,drl_39ed71de8c14cd,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_eab054a51531a7,drl_39ed71de8c14cd,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_081af7477232ec,drl_39ed71de8c14cd,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_f09ae760bc52eb,drl_39ed71de8c14cd,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_7d2ac761ab1191,drl_39ed71de8c14cd,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_7cd7fe0b1a117c,drl_dbb0347500e7eb,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_6aac6192dc9b64,drl_dbb0347500e7eb,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_a39c66603ca3fa,drl_dbb0347500e7eb,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_6ec2df4c3ccbd4,drl_dbb0347500e7eb,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_af5d7fc0a1a968,drl_dbb0347500e7eb,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_bc2758cdf41e45,drl_f54d4fe102fb09,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_cb959775cb0891,drl_f54d4fe102fb09,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_e03dc7853374d6,drl_f54d4fe102fb09,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_8188aef01c913d,drl_f54d4fe102fb09,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_0d88373235706d,drl_f54d4fe102fb09,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_f9b856f1e3d326,drl_0eaa11e875ffef,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_24c397a4c4c30d,drl_0eaa11e875ffef,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_8f56a9be8d8bfa,drl_0eaa11e875ffef,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_f0c5e1e88eb878,drl_0eaa11e875ffef,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_c85515bbdf5094,drl_0eaa11e875ffef,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_b400f89e9abbb4,drl_25e4934a3ab2ab,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_5ca7c2f2f40177,drl_25e4934a3ab2ab,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_aa91c7f685470a,drl_25e4934a3ab2ab,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_634a3de772dd37,drl_25e4934a3ab2ab,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_e2daba7195bb37,drl_25e4934a3ab2ab,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_e2d32632623f86,drl_b101573cb451e4,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_ad10fad5eba161,drl_b101573cb451e4,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_3ce2157d9831a0,drl_b101573cb451e4,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_500b371127d1f0,drl_b101573cb451e4,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_fb073f057f53c9,drl_b101573cb451e4,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_747a0b73bd7484,drl_61ef34ab64a92c,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_264af9443cb5f6,drl_61ef34ab64a92c,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_ca493ddcf91c00,drl_61ef34ab64a92c,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_ff7798744e8a3f,drl_61ef34ab64a92c,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_3f6870474a6066,drl_61ef34ab64a92c,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_c92847c1bedb6d,drl_325b6ba2613eb0,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_6ef291955d7827,drl_325b6ba2613eb0,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_c53c04b72edbe3,drl_325b6ba2613eb0,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_6e762a885ab656,drl_325b6ba2613eb0,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_ed0303e1d86488,drl_325b6ba2613eb0,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_496bf89a1e7fe9,drl_786d761c9321c0,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_435edbb8d64f48,drl_786d761c9321c0,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_bf1a5c56268f04,drl_786d761c9321c0,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_c753997e2ad3ba,drl_786d761c9321c0,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_94d90f16605543,drl_786d761c9321c0,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_6c6b9cf30305b5,drl_ee5abe0d5aa056,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_59d19a7b7e0286,drl_ee5abe0d5aa056,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_671bba28d02297,drl_ee5abe0d5aa056,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_ad38edb91c4b09,drl_ee5abe0d5aa056,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_02568128e2bce7,drl_ee5abe0d5aa056,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_65d6892e531f1e,drl_81b9474a9fc367,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_3ca05692cfc253,drl_81b9474a9fc367,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_8f2896b1923b9d,drl_81b9474a9fc367,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_17e2d939c523f7,drl_81b9474a9fc367,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_78d3bf98858fe7,drl_81b9474a9fc367,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_b5c7619432014d,drl_3a682d5a98e954,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_e3a40c6f728cfc,drl_3a682d5a98e954,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_19ea8660e22c92,drl_3a682d5a98e954,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_008aeb1aa87557,drl_3a682d5a98e954,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_e2bd94a92258d0,drl_3a682d5a98e954,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_bd0ec73a35bac4,drl_40acc6820f5df6,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_467a5bc1b62757,drl_40acc6820f5df6,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_0d9813ebc67dd2,drl_40acc6820f5df6,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_19db893050207b,drl_40acc6820f5df6,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_2a3f4e17d30b0f,drl_40acc6820f5df6,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_811fc1254fa03b,drl_b67ee94d958d32,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_2ae6e20f479525,drl_b67ee94d958d32,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_1bfb7c1df9989e,drl_b67ee94d958d32,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_15eba86edb6533,drl_b67ee94d958d32,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_9582df42a38b78,drl_b67ee94d958d32,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_d7cc399b84446b,drl_7b05e2c6d49010,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_c52c6f54dfe8b7,drl_7b05e2c6d49010,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_b7313a5a4df0da,drl_7b05e2c6d49010,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_8a3c87636a9701,drl_7b05e2c6d49010,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_9b863ca4fb6dd7,drl_7b05e2c6d49010,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_155eaf897ead95,drl_edb69a2d822df7,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_dcdf3d1973e72c,drl_edb69a2d822df7,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_3eff274bf1c5b6,drl_edb69a2d822df7,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_b42db193e65d7b,drl_edb69a2d822df7,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_9c52f4eb1a88f4,drl_edb69a2d822df7,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_46cad22f55f41c,drl_f84ea554b6aae6,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_68053bb79b5d63,drl_f84ea554b6aae6,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_06a033a87f35ff,drl_f84ea554b6aae6,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_37bcd9657804a7,drl_f84ea554b6aae6,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_ee45839e2bb469,drl_f84ea554b6aae6,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_44080e7b7c4aaf,drl_8549299fc8d8c7,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_f41312054c1c0d,drl_8549299fc8d8c7,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_49c3de6c2da23d,drl_8549299fc8d8c7,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_7e9649888f987c,drl_8549299fc8d8c7,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_a8f6cb5fcfa99d,drl_8549299fc8d8c7,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_c35141ef698e33,drl_ed59c17ae9a3b1,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_12e581a94038ca,drl_ed59c17ae9a3b1,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_ef2d0773fb5281,drl_ed59c17ae9a3b1,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_8cfba34904c80d,drl_ed59c17ae9a3b1,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_b107f422a47143,drl_ed59c17ae9a3b1,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_3273630dda1f4a,drl_129b59c4f4dd76,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_5718bec5796fbf,drl_129b59c4f4dd76,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_315589fc6cdc72,drl_129b59c4f4dd76,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_4fa7d02ac8e86a,drl_129b59c4f4dd76,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_2115af92571377,drl_129b59c4f4dd76,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_778b6f56a84f41,drl_472ef7f81f3356,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_9dd21ce7fddfb6,drl_472ef7f81f3356,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_79abe3798db7ee,drl_472ef7f81f3356,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_3f85283ddb7a9b,drl_472ef7f81f3356,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_07dfd5fa3bab50,drl_472ef7f81f3356,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_ff2e48bdc86eb8,drl_f472a511f53d54,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_7157cca82614e7,drl_f472a511f53d54,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_e973ab8de162e7,drl_f472a511f53d54,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_f4e64d7aba6e2c,drl_f472a511f53d54,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_6f1eccc4714a4e,drl_f472a511f53d54,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_e6d3a589f883c6,drl_d0af795c388a24,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_333de1624864c2,drl_d0af795c388a24,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_dac74793f4454f,drl_d0af795c388a24,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_654d5723b7e49a,drl_d0af795c388a24,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_3aa3b733745ddb,drl_d0af795c388a24,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_df8d1ae2b8145b,drl_af8541eacc70e5,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_3c94c8d6081286,drl_af8541eacc70e5,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_99ea1f29fc0590,drl_af8541eacc70e5,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_7f35f714b2fe99,drl_af8541eacc70e5,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_41ea5cd6d1145b,drl_af8541eacc70e5,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_1a99133fc9b529,drl_47df49e2316ef0,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_2a96d2e0c09017,drl_47df49e2316ef0,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_1c4caea4c41ce8,drl_47df49e2316ef0,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_a31cf83c83fd1b,drl_47df49e2316ef0,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_b95633d1277194,drl_47df49e2316ef0,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_38a1fd3abe0212,drl_c11293701ebdec,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_015f0086aecb89,drl_c11293701ebdec,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_ce6861df8873b1,drl_c11293701ebdec,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_906ba3fe2c4df5,drl_c11293701ebdec,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_da7f30e5e1bcb3,drl_c11293701ebdec,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_348f9591594fc8,drl_06673587c434a7,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_2ac4efb72f42af,drl_06673587c434a7,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_9e4de05a8f1c05,drl_06673587c434a7,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_632a0b60691e91,drl_06673587c434a7,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_fb3386bd92e501,drl_06673587c434a7,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_fc03ada2b2ea41,drl_681a54fa579bb1,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_d67f8ffc42b7a6,drl_681a54fa579bb1,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_1e6eb6f9c12855,drl_681a54fa579bb1,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_d683fd2ca388d6,drl_681a54fa579bb1,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_d59ac174ef8489,drl_681a54fa579bb1,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_d81fd45d761735,drl_146f4afdc88839,1,Stop when chasing replaces positioning.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_a53e3c0014c63b,drl_146f4afdc88839,2,Stop when the athlete is practicing the exact failure pattern the drill was meant to remove.,universal,technique_degradation
+{{PPBF_ORG_ID}},stp_f902af10279658,drl_146f4afdc88839,3,Stop when coaching language becomes too long to be usable.,universal,intent_drift
+{{PPBF_ORG_ID}},stp_11366cf6481db3,drl_146f4afdc88839,4,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,universal,fatigue
+{{PPBF_ORG_ID}},stp_aed1e431502ce3,drl_146f4afdc88839,5,Stop when assistant coaches cannot identify what the drill is for.,universal,coach_judgment
+{{PPBF_ORG_ID}},stp_7168d5e2f07044,drl_006134ad264754,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_a5b9f598ce619e,drl_0485b7a8023ef4,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_5672304f1c08b5,drl_06673587c434a7,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_c250397dacb989,drl_08c95a746f83e9,9,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_0e4ac703f4dbdc,drl_0af42a73a6878f,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_a111b9c25b69b5,drl_0c72ef57315f70,9,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_ebd2149c2b938e,drl_0ffe13585e6bdc,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_12271f1c688799,drl_111f0a8ae15fc3,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_0d4f59786ae7d1,drl_15847de4920418,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_211ee984cc5efd,drl_160ff16df2a668,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_aed5b19f0d73ea,drl_1ad44e91b32842,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_631dc1fae847a6,drl_1d6e36f12d7c87,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_4a63c965925563,drl_225e5d543beb1f,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_b4b713b8bc4589,drl_2268ec918e08c5,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_215ba091bf88ed,drl_22a255209c1c9b,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_c8b3063348e9ad,drl_2713ad55cfcbf0,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_2a3fc44d400db7,drl_2d0193a7c52e58,9,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_6cca0e39ff6414,drl_31f81811de1b2f,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_4f8cb79a64e332,drl_3554c55ab8b584,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_63ee452a3f5e77,drl_3c2aad1eb8baa9,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_d3fb638a06e293,drl_3c9cf54f121e59,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_dc03c17a5f8708,drl_3df01682e604dd,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_2a8c99563c49c0,drl_3e2e2cb0a54792,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_7dad55ef40495d,drl_403a46cda65935,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_720890eae247c8,drl_45d9662ee44c36,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_f07bbe2362d8fe,drl_464b8ff7d556f9,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_6eb987d7c133e9,drl_4700995bab7b07,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_021f776f426358,drl_47df49e2316ef0,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_c166b07ea3325b,drl_480bb9dea67e50,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_f3c029353bc34b,drl_484dc64b436811,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_184f7ce7b4cb0e,drl_5c075cf813c4d8,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_0b46032651e081,drl_5c3353db6cc6ab,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_59270f702b3ceb,drl_61b0f5ffcdff04,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_81ea50d66b0237,drl_7af719b3b85e94,9,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_bcd666af67caaf,drl_7f812fecacfee4,10,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_61e9438b7c84a1,drl_87d9424cc9f2a3,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_266ad26e9cd30a,drl_87f94622479ae5,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_9a4be8d2754cb2,drl_8c5a8a78b41320,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_9d23fa75c4802e,drl_93b8eac77911a2,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_ca56e2ee963257,drl_9994cbb4a19315,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_046f47269d5897,drl_9b6c91030876ae,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_f0775979c52617,drl_9e0e66daf70fed,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_fca09712b53078,drl_acf2fe66e284ff,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_76dc058dbe2c16,drl_af8541eacc70e5,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_f08fcd4a7b5ca6,drl_b2fcf989112703,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_4c2d7af9094969,drl_b755caac79e37e,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_15fe07b9a46175,drl_badeec66ed769d,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_782c04a9204ce4,drl_c16cda24f9fce2,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_d36eb41336d2d3,drl_c30d15370004ba,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_dc50892a64f50c,drl_c339eeabf109d4,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_62dcfcd2b69c49,drl_c8fa1590a8649a,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_b2c41133684470,drl_cb54d49d71c270,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_16017bbc9904cd,drl_d305c9e9ba7ddd,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_380e780f3a9b87,drl_d54f831b93ec55,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_7d632fec81f573,drl_da603edd55075d,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_43cc4ba31ef36d,drl_e0428b3066b8c2,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_dc8964d6c8f4d7,drl_e1f757f0c3e703,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_38c44ced32c849,drl_e3a1b88c8d90a6,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_cf64e16557dfc5,drl_e9d88bb256a70c,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_702b554e387737,drl_ec1217050c15b0,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_a4223d1f7820e1,drl_f0b1aab1457617,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_8690a9b4028822,drl_f9e5a58017fd10,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_3cee96309e3d10,drl_ff1c5f67a3635b,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay

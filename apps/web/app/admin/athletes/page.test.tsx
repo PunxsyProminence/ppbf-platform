@@ -93,6 +93,9 @@ function consoleFetch(handler?: (url: string, init?: RequestInit) => Response | 
     if (String(url).includes('/api/pilot/athletes/update')) {
       return jsonResponse({ ok: true, athlete_id: 'ath-001' });
     }
+    if (String(url).includes('/api/pilot/scheduler/attendance-summary')) {
+      return jsonResponse({ ok: true, athletes: [] });
+    }
 
     throw new Error(`Unexpected fetch: ${url}`);
   });
@@ -184,6 +187,58 @@ describe('/admin/athletes', () => {
     expect(await screen.findByText(/could not be read/i)).toBeDefined();
     expect(screen.queryByText(/no athlete records in your gym yet/i)).toBeNull();
     expect(screen.queryByRole('button', { name: /correct record/i })).toBeNull();
+  });
+
+  test('an athlete with attendance data shows the rate alongside the roster row', async () => {
+    const fetchMock = consoleFetch((url) =>
+      url.includes('/api/pilot/scheduler/attendance-summary')
+        ? jsonResponse({ ok: true, athletes: [{ athlete_id: 'ath-001', attendance_rate: 0.857 }] })
+        : undefined);
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+
+    await screen.findByText(/attendance 86%/i);
+  });
+
+  test('an athlete with no attendance data yet shows the roster row with no rate, not a fabricated one', async () => {
+    const fetchMock = consoleFetch((url) =>
+      url.includes('/api/pilot/scheduler/attendance-summary')
+        ? jsonResponse({ ok: true, athletes: [{ athlete_id: 'ath-001', attendance_rate: null }] })
+        : undefined);
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+
+    await screen.findByText('Dawn Kellerman');
+    expect(screen.queryByText(/attendance \d/i)).toBeNull();
+  });
+
+  // The roster is the reason this page exists; a reporting-layer failure
+  // (a coach without a class, or attendance-summary being unreachable) must
+  // never blank or break it.
+  test('a failed attendance fetch leaves the roster itself fully intact', async () => {
+    const fetchMock = consoleFetch((url) =>
+      url.includes('/api/pilot/scheduler/attendance-summary')
+        ? jsonResponse({ error: 'Forbidden' }, false, 403)
+        : undefined);
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+
+    expect(await screen.findByRole('button', { name: /correct record/i })).toBeDefined();
+    expect(screen.getByText('Dawn Kellerman')).toBeDefined();
+    expect(screen.queryByText(/attendance \d/i)).toBeNull();
+  });
+
+  test('links to the attendance dashboard', async () => {
+    const fetchMock = consoleFetch();
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+
+    await screen.findByRole('button', { name: /correct record/i });
+    expect((screen.getByRole('link', { name: 'Attendance' }) as HTMLAnchorElement).getAttribute('href')).toBe('/admin/attendance');
   });
 
   test('a coach directory that could not be read never reassigns the athlete', async () => {
