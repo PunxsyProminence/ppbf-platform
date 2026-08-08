@@ -85,6 +85,27 @@ describe('POST /api/pilot/auth/magic-link/request', () => {
     spy.mockRestore();
   });
 
+  test('the failure log carries the Graph error code that disambiguates a 403', async () => {
+    // 403 alone does not say whether the access policy refused the mailbox or
+    // the token lacks Mail.Send. The error code does, and it is shape-checked
+    // at the mailer so it cannot smuggle an address into this line.
+    const logged: string[] = [];
+    const spy = jest.spyOn(console, 'error').mockImplementation((line) => { logged.push(String(line)); });
+    const failure = Object.assign(new Error('GRAPH_SEND_FAILED'), {
+      statusCode: 403,
+      graphErrorCode: 'ErrorAccessDenied',
+    });
+    (issueMagicLink as jest.Mock).mockRejectedValue(failure);
+
+    await post({ email: 'coach@example.com' });
+
+    expect(JSON.parse(logged[0])).toMatchObject({
+      status_code: 403,
+      graph_error_code: 'ErrorAccessDenied',
+    });
+    spy.mockRestore();
+  });
+
   test('a failure without a status logs null rather than inventing one', async () => {
     const logged: string[] = [];
     const spy = jest.spyOn(console, 'error').mockImplementation((line) => { logged.push(String(line)); });
@@ -93,6 +114,7 @@ describe('POST /api/pilot/auth/magic-link/request', () => {
     await post({ email: 'coach@example.com' });
 
     expect(JSON.parse(logged[0]).status_code).toBeNull();
+    expect(JSON.parse(logged[0]).graph_error_code).toBeNull();
     spy.mockRestore();
   });
 

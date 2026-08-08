@@ -62,12 +62,42 @@ export class MailSendError extends Error {
     readonly reason: string,
     /** Present only when Graph answered; absent when the call never completed. */
     readonly statusCode?: number,
+    /** Graph's own error code, when it passed extractGraphErrorCode. */
+    readonly graphErrorCode?: string,
   ) {
     // Never the response body. Graph echoes request detail in errors, and this
     // message reaches logs -- a recipient address in a log line is exactly the
     // athlete-adjacent data this platform is careful with elsewhere.
     super(reason);
     this.name = 'MailSendError';
+  }
+}
+
+/**
+ * Graph's error.code, and only if it cannot possibly be an address.
+ *
+ * A 403 from sendMail has two entirely different causes that look identical
+ * from outside: ErrorAccessDenied means the Exchange Application Access Policy
+ * refused the mailbox, Authorization_RequestDenied means the token lacks
+ * Mail.Send. They need opposite fixes, and staging burned an hour on that
+ * ambiguity because the log said only GRAPH_SEND_FAILED and 403.
+ *
+ * The body's `message` field is the one that echoes the recipient back --
+ * "Access to OData is disabled" is safe, but Graph is not obliged to keep it
+ * that way and this line reaches a log aggregator. So the code is taken and the
+ * message is dropped, and the code is only passed through if it matches a shape
+ * an email address CANNOT have: no @, no dot, no space, bounded length. A
+ * future Graph error code that carries user data cannot get through that.
+ */
+export function extractGraphErrorCode(body: string): string | undefined {
+  try {
+    const code = (JSON.parse(body) as { error?: { code?: unknown } })?.error?.code;
+    if (typeof code !== 'string') return undefined;
+    return /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(code) ? code : undefined;
+  } catch {
+    // A non-JSON body (an HTML error page from a proxy, say) tells us nothing
+    // worth the risk of logging part of it.
+    return undefined;
   }
 }
 
@@ -125,9 +155,10 @@ export async function sendPlainTextMail(
   });
 
   if (!response.ok) {
-    // Status only. The body carries the recipient and Graph's own diagnostics
-    // back into whatever logs this error.
-    throw new MailSendError('GRAPH_SEND_FAILED', response.status);
+    // The status, plus Graph's error code if it survives the shape check. The
+    // body itself never leaves this function -- it carries the recipient.
+    const body = await response.text().catch(() => '');
+    throw new MailSendError('GRAPH_SEND_FAILED', response.status, extractGraphErrorCode(body));
   }
 }
 
