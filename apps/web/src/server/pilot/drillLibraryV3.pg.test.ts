@@ -79,6 +79,7 @@ const nativeDynamicImport = new Function('specifier', 'return import(specifier)'
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let migrationSql: string;
+let vocabularyWideningSql: string;
 let baseSchemaSql: string;
 let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
 let seedAll: (
@@ -210,6 +211,13 @@ beforeAll(async () => {
 
   baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
+  // The shipped seed CSVs carry authoring_state='literature_grounded_draft'
+  // and rule_kind='warmup_decay', which only the vocabulary-widening
+  // migration permits. It is a genuine prerequisite for loading them, so the
+  // seed tests below apply it -- reading it here keeps that explicit.
+  vocabularyWideningSql = await fs.readFile(
+    path.join(INFRA_DIR, 'pilot_slice_postgres_drill_vocabulary_widening_migration.sql'), 'utf8',
+  );
 
   const runnerModule = await nativeDynamicImport(pathToFileURL(MIGRATION_RUNNER_PATH).href);
   applyMigrationTransaction = runnerModule.applyMigrationTransaction as (
@@ -483,6 +491,7 @@ describe('seed-drill-library.mjs against real Postgres', () => {
     const client = await freshDatabase('ppbf_test_drilllib_seed_dry_run');
     try {
       await applyMigrationTransaction(client, migrationSql);
+      await client.query(vocabularyWideningSql);
       await client.query(
         `insert into pilot.organizations (organization_id, organization_name, status)
          values ($1, $1, 'active') on conflict do nothing`,
@@ -508,6 +517,7 @@ describe('seed-drill-library.mjs against real Postgres', () => {
     const client = await freshDatabase('ppbf_test_drilllib_seed_real_run');
     try {
       await applyMigrationTransaction(client, migrationSql);
+      await client.query(vocabularyWideningSql);
       await client.query(
         `insert into pilot.organizations (organization_id, organization_name, status)
          values ($1, $1, 'active') on conflict do nothing`,
@@ -523,6 +533,29 @@ describe('seed-drill-library.mjs against real Postgres', () => {
       );
       expect(rows[0].n).toBe(119);
       expect(rows[0].n_for_org).toBe(119);
+
+      // The child tables, pinned to the supplied CSVs' own row counts. Two of
+      // these files were rejected outright until the vocabulary-widening
+      // migration landed, so these numbers are the proof the widening actually
+      // let the real data in -- not just that a synthetic row passes the CHECK.
+      const children = await client.query(
+        `select
+           (select count(*)::int from pilot.drill_scale_levels where organization_id = $1) as scale_levels,
+           (select count(*)::int from pilot.drill_stop_rules  where organization_id = $1) as stop_rules,
+           (select count(*)::int from pilot.drill_cues        where organization_id = $1) as cues,
+           (select count(*)::int from pilot.drill_scale_levels
+              where organization_id = $1 and authoring_state = 'literature_grounded_draft') as lit_grounded,
+           (select count(*)::int from pilot.drill_stop_rules
+              where organization_id = $1 and rule_kind = 'warmup_decay') as warmup_decay`,
+        [SEED_ORG],
+      );
+      expect(children.rows[0]).toEqual({
+        scale_levels: 357,
+        stop_rules: 674,
+        cues: 258,
+        lit_grounded: 228,
+        warmup_decay: 63,
+      });
     } finally {
       activeClient = null;
       await client.end();
@@ -533,6 +566,7 @@ describe('seed-drill-library.mjs against real Postgres', () => {
     const client = await freshDatabase('ppbf_test_drilllib_seed_idempotent');
     try {
       await applyMigrationTransaction(client, migrationSql);
+      await client.query(vocabularyWideningSql);
       await client.query(
         `insert into pilot.organizations (organization_id, organization_name, status)
          values ($1, $1, 'active') on conflict do nothing`,
