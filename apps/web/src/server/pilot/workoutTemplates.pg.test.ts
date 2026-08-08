@@ -79,6 +79,7 @@ const nativeDynamicImport = new Function('specifier', 'return import(specifier)'
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let drillLibraryMigrationSql: string;
+let vocabularyWideningSql: string;
 let migrationSql: string;
 let baseSchemaSql: string;
 let applyDrillLibraryMigrationTransaction: (client: Client, sql: string) => Promise<void>;
@@ -128,6 +129,11 @@ async function freshDatabase(name: string): Promise<Client> {
   await client.connect();
   await client.query(baseSchemaSql);
   await applyDrillLibraryMigrationTransaction(client, drillLibraryMigrationSql);
+  // seed-drill-library.mjs loads the real CSVs, which carry
+  // authoring_state='literature_grounded_draft' and rule_kind='warmup_decay'.
+  // Only the vocabulary-widening migration permits those, so it is a genuine
+  // prerequisite for any test in this file that seeds the real library.
+  await client.query(vocabularyWideningSql);
 
   await client.query(
     `insert into pilot.organizations (organization_id, organization_name, status)
@@ -193,6 +199,9 @@ beforeAll(async () => {
 
   baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
   drillLibraryMigrationSql = await fs.readFile(path.join(INFRA_DIR, DRILL_LIBRARY_MIGRATION_FILE), 'utf8');
+  vocabularyWideningSql = await fs.readFile(
+    path.join(INFRA_DIR, 'pilot_slice_postgres_drill_vocabulary_widening_migration.sql'), 'utf8',
+  );
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
 
   const drillLibraryRunnerModule = await nativeDynamicImport(pathToFileURL(DRILL_LIBRARY_RUNNER_PATH).href);
