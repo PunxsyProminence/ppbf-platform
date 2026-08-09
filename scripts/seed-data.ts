@@ -38,6 +38,8 @@ interface SeedConfig {
 
 interface SeedResult {
   table: string;
+  /** Distinct guardian records written, as opposed to athlete links. Only set by insertGuardians. */
+  newParents?: number;
   inserted: number;
   skipped: number;
   errors: Array<{ row: number; error: string }>;
@@ -200,6 +202,123 @@ async function insertAthletes(
   }
 
   return { result, athleteIds };
+}
+
+/**
+ * Guardian records from the athlete rows, when they carry guardian columns.
+ *
+ * WHY THIS WRITES NO ACCOUNT AND NO PIN. pilot.parents.account_id is nullable on purpose -- a
+ * guardian can be RECORDED before they have a login, which is how intake already works. So this
+ * populates who the guardian is and which child they are responsible for, and stops there. It
+ * deliberately does not create accounts: pinPolicy.ts states that an account should be created
+ * when you are with the athlete, "not in a batch the week before", because the window between
+ * account creation and first sign-in is the exposure. Creating 40 logins here would widen exactly
+ * that window 40-fold. Inviting a guardian stays a per-family action through staffProvisioning,
+ * which attaches account_id to the row this writes.
+ *
+ * ONE PARENT ROW PER GUARDIAN, NOT PER CHILD. Siblings share a guardian, so rows are deduplicated
+ * within the run: by email when present, otherwise by name+phone. Without this, a family with two
+ * athletes in the gym becomes two guardian records that later diverge, and no read path can tell
+ * which one is current.
+ *
+ * The guardian columns are OPTIONAL. A roster file predating them imports exactly as before and
+ * reports zero guardians rather than failing -- the gym's existing files must not break.
+ */
+async function insertGuardians(
+  rows: any[],
+  org: string,
+  dryRun: boolean,
+  athleteIds: Set<string>
+): Promise<SeedResult> {
+  const result: SeedResult = { table: 'guardians', inserted: 0, skipped: 0, errors: [] };
+
+  // parent_id per deduplication key, so the second sibling links to the first's parent row.
+  const parentIdByKey = new Map<string, string>();
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const name = (row.guardian_full_name ?? '').trim();
+    const email = (row.guardian_email ?? '').trim().toLowerCase();
+    const phone = (row.guardian_phone ?? '').trim();
+    const relationship = (row.guardian_relationship ?? '').trim();
+
+    // No guardian columns at all: not an error, just nothing to do for this athlete.
+    if (!name && !email && !phone && !relationship) continue;
+
+    if (!name) {
+      result.errors.push({
+        row: i + 1,
+        error: "guardian_full_name is required when any guardian column is present -- the guardian's own name is what pilot.parents records",
+      });
+      result.skipped++;
+      continue;
+    }
+    if (!relationship) {
+      // guardian_links.relationship_to_athlete is NOT NULL, and guessing "parent" would put an
+      // invented family relationship on a minor's record.
+      result.errors.push({
+        row: i + 1,
+        error: 'guardian_relationship is required when a guardian is named (relationship_to_athlete is not nullable and must not be guessed)',
+      });
+      result.skipped++;
+      continue;
+    }
+    if (!athleteIds.has(row.athlete_id)) {
+      // The athlete row failed validation or was skipped, so a link would dangle.
+      result.errors.push({
+        row: i + 1,
+        error: `guardian named for athlete ${row.athlete_id}, which was not imported`,
+      });
+      result.skipped++;
+      continue;
+    }
+
+    const dedupeKey = email ? `email:${email}` : `name:${name.toLowerCase()}|phone:${phone}`;
+    let parentId = parentIdByKey.get(dedupeKey);
+    const isNewParent = parentId === undefined;
+    if (parentId === undefined) {
+      parentId = `par_${org}_${Buffer.from(dedupeKey).toString('base64url').slice(0, 24)}`;
+      parentIdByKey.set(dedupeKey, parentId);
+    }
+
+    if (!dryRun) {
+      try {
+        // account_id is left alone entirely -- omitted on insert, untouched on conflict -- so
+        // re-running this can never detach a guardian who has since been invited.
+        await query(
+          `INSERT INTO pilot.parents (
+            organization_id, parent_id, full_name, phone, email, created_at, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+          ON CONFLICT (organization_id, parent_id) DO UPDATE SET
+            full_name = excluded.full_name,
+            phone = excluded.phone,
+            email = excluded.email,
+            updated_at = NOW()`,
+          [org, parentId, name, phone || null, email || null]
+        );
+        await query(
+          `INSERT INTO pilot.guardian_links (
+            organization_id, parent_id, athlete_id, relationship_to_athlete, created_at, updated_at
+          ) VALUES ($1, $2, $3, $4, NOW(), NOW())
+          ON CONFLICT (organization_id, parent_id, athlete_id) DO UPDATE SET
+            relationship_to_athlete = excluded.relationship_to_athlete,
+            updated_at = NOW()`,
+          [org, parentId, row.athlete_id, relationship]
+        );
+      } catch (err) {
+        result.errors.push({ row: i + 1, error: (err as Error).message });
+        result.skipped++;
+        continue;
+      }
+    }
+
+    // Counts links, not parents: two siblings sharing a guardian is two links and one parent row,
+    // and reporting one would understate what was written.
+    result.inserted++;
+    if (isNewParent) result.newParents = (result.newParents ?? 0) + 1;
+  }
+
+  return result;
 }
 
 async function insertGoals(
@@ -390,6 +509,32 @@ async function seedData(config: SeedConfig) {
       console.log(
         `  ✓ Inserted: ${result.inserted}, Skipped: ${result.skipped}, Errors: ${result.errors.length}\n`
       );
+
+      // Guardians ride along on the athlete file rather than needing a second one: the link is
+      // per athlete, and a separate file would let the two drift out of step. Runs after athletes
+      // so a link is only written for a child who actually imported.
+      const guardianResult = await insertGuardians(
+        athletes,
+        config.organizationId,
+        dryRun,
+        athleteIds
+      );
+      if (
+        guardianResult.inserted > 0
+        || guardianResult.skipped > 0
+        || guardianResult.errors.length > 0
+      ) {
+        results.push(guardianResult);
+        console.log(
+          `  ✓ Guardian links: ${guardianResult.inserted} (${guardianResult.newParents ?? 0} distinct guardians), Skipped: ${guardianResult.skipped}, Errors: ${guardianResult.errors.length}`
+        );
+        console.log(
+          '    Guardians are recorded WITHOUT accounts or PINs. Invite each family through the\n'
+          + '    People screen when you are with them -- see pinPolicy.ts.\n'
+        );
+      } else {
+        console.log('  (no guardian columns in this file -- nothing to link)\n');
+      }
     }
 
     // ========== GOALS ==========
