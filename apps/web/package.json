@@ -120,6 +120,7 @@
     "pilot:apply-multidiscipline": "node scripts/pilot-apply-multidiscipline-migration.mjs",
     "seed:disciplines": "node scripts/seed-disciplines.mjs",
     "pilot:apply-session-scripts": "node scripts/pilot-apply-session-scripts-migration.mjs",
+    "pilot:apply-session-run-state": "node scripts/pilot-apply-session-run-state-migration.mjs",
     "pilot:apply-transfer-claims": "node scripts/pilot-apply-transfer-claims-migration.mjs",
     "seed:session-scripts": "node scripts/seed-session-scripts.mjs",
     "seed:transfer-claims": "node scripts/seed-transfer-claims.mjs",
