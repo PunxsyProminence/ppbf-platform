@@ -9,6 +9,7 @@
  *   npm run seed:data -- --config path/to/seed-data.config.ts
  */
 
+import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { pathToFileURL } from 'url';
@@ -273,11 +274,31 @@ async function insertGuardians(
       continue;
     }
 
+    // A guardian identified only by name cannot be deduplicated. Two different people who share a
+    // name would collapse into one parent row and every one of their children would be linked to
+    // the same adult -- a wrong statement about who is responsible for a minor, and not one any
+    // later screen could detect. Refusing is the only correct answer; there is nothing to infer.
+    if (!email && !phone) {
+      result.errors.push({
+        row: i + 1,
+        error: 'guardian_email or guardian_phone is required -- a guardian identified only by name cannot be told apart from another of the same name, and merging two families is not recoverable',
+      });
+      result.skipped++;
+      continue;
+    }
+
     const dedupeKey = email ? `email:${email}` : `name:${name.toLowerCase()}|phone:${phone}`;
     let parentId = parentIdByKey.get(dedupeKey);
     const isNewParent = parentId === undefined;
     if (parentId === undefined) {
-      parentId = `par_${org}_${Buffer.from(dedupeKey).toString('base64url').slice(0, 24)}`;
+      // HASH THE WHOLE KEY, never a prefix of it. This previously base64'd the key and truncated to
+      // 24 characters -- which encodes only the first 18 BYTES -- so two addresses sharing a long
+      // prefix produced the SAME parent_id, and the second guardian silently overwrote the first,
+      // taking their children with them. The example roster in this repo triggered it exactly:
+      // example.guardian1@example.invalid and example.guardian2@example.invalid diverge at byte 22,
+      // past the cut, and the summary still reported two distinct guardians. A digest of the
+      // complete key cannot lose a distinguishing character wherever in the string it falls.
+      parentId = `par_${org}_${createHash('sha256').update(dedupeKey).digest('hex').slice(0, 24)}`;
       parentIdByKey.set(dedupeKey, parentId);
     }
 

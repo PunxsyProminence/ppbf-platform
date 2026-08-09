@@ -36,10 +36,16 @@ const HEADER = 'athlete_id,full_name,dob,weight_class,gym_status,emergency_conta
   + ',guardian_full_name,guardian_phone,guardian_email,guardian_relationship';
 
 // Two siblings sharing one guardian, plus a third child with their own.
+//
+// THE EMAILS MATTER. These are the two addresses that collided under the previous parent_id scheme
+// (base64 of the dedupe key truncated to 24 chars = 18 bytes; they diverge at byte 22). The first
+// version of this harness used alpha@/beta@, which diverge at byte 7 -- inside the window -- so it
+// passed while the bug shipped in the example roster. Fixtures that cannot reach the defect prove
+// nothing, so these are deliberately the hard pair.
 const ROWS = [
-  'ATH-1,Athlete One,2010-01-01,middleweight,active,contact-1,true,EXAMPLE-COACH-1,Guardian Alpha,000-0001,alpha@example.invalid,mother',
-  'ATH-2,Athlete Two,2011-02-02,heavyweight,active,contact-2,true,EXAMPLE-COACH-1,Guardian Alpha,000-0001,alpha@example.invalid,mother',
-  'ATH-3,Athlete Three,2012-03-03,light-heavyweight,active,contact-3,true,EXAMPLE-COACH-1,Guardian Beta,000-0002,beta@example.invalid,father',
+  'ATH-1,Athlete One,2010-01-01,middleweight,active,contact-1,true,EXAMPLE-COACH-1,Guardian One,000-0001,example.guardian1@example.invalid,mother',
+  'ATH-2,Athlete Two,2011-02-02,heavyweight,active,contact-2,true,EXAMPLE-COACH-1,Guardian One,000-0001,example.guardian1@example.invalid,mother',
+  'ATH-3,Athlete Three,2012-03-03,light-heavyweight,active,contact-3,true,EXAMPLE-COACH-1,Guardian Two,000-0002,example.guardian2@example.invalid,father',
 ];
 
 function freePort() {
@@ -149,7 +155,7 @@ async function main() {
       `select p.parent_id, p.account_id, count(l.athlete_id)::int as children
          from pilot.parents p
          join pilot.guardian_links l on l.parent_id = p.parent_id and l.organization_id = p.organization_id
-        where p.organization_id=$1 and p.email='alpha@example.invalid'
+        where p.organization_id=$1 and p.email='example.guardian1@example.invalid'
         group by 1,2`, [ORG]);
     check('the shared guardian has 2 children on ONE row', alpha.rows.length === 1 ? alpha.rows[0].children : alpha.rows.length, 2);
     // Row existence is checked separately from the value: `?? 'NO ROW'` would coalesce the
@@ -166,9 +172,9 @@ async function main() {
     await v.query(`insert into pilot.accounts (account_id, role, organization_id, auth_provider, active_flag)
                    values ('acct-guardian-alpha','parent',$1,'microsoft',true) on conflict do nothing`, [ORG]);
     await v.query(`update pilot.parents set account_id='acct-guardian-alpha'
-                    where organization_id=$1 and email='alpha@example.invalid'`, [ORG]);
+                    where organization_id=$1 and email='example.guardian1@example.invalid'`, [ORG]);
     const invited = await v.query(
-      `select account_id from pilot.parents where organization_id=$1 and email='alpha@example.invalid'`, [ORG]);
+      `select account_id from pilot.parents where organization_id=$1 and email='example.guardian1@example.invalid'`, [ORG]);
     check('guardian is now linked to a login', invited.rows[0].account_id, 'acct-guardian-alpha');
     await v.end();
 
@@ -184,7 +190,7 @@ async function main() {
 
     // THE POINT OF THIS REHEARSAL.
     const after = await v2.query(
-      `select account_id from pilot.parents where organization_id=$1 and email='alpha@example.invalid'`, [ORG]);
+      `select account_id from pilot.parents where organization_id=$1 and email='example.guardian1@example.invalid'`, [ORG]);
     check('re-seeding did NOT detach the invited guardian', after.rows[0].account_id, 'acct-guardian-alpha');
 
     step(6, 'CORRECTIONS — an edited phone number must reach the existing row');
@@ -195,7 +201,7 @@ async function main() {
     const v3 = new Client({ connectionString: conn(DB) });
     await v3.connect();
     const edited = await v3.query(
-      `select phone, account_id from pilot.parents where organization_id=$1 and email='alpha@example.invalid'`, [ORG]);
+      `select phone, account_id from pilot.parents where organization_id=$1 and email='example.guardian1@example.invalid'`, [ORG]);
     check('phone updated on the existing row', edited.rows[0].phone, '000-9999');
     check('and the login survived the correction', edited.rows[0].account_id, 'acct-guardian-alpha');
 
