@@ -16,19 +16,19 @@
       ]
     },
     "production": {
-      "deployed_sha": "19d7e70d6ea56a77cf8457876bbbc25a977030fb",
-      "deployed_image_digest": "sha256:4e0e3cb5a3eceb69a271d346bd2eb8bea5a9c2d832ef8232fce9023bb1284a5b",
-      "deployment_timestamp": "2026-08-08T07:58:29Z",
-      "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/31247308609",
+      "deployed_sha": "fbb81559c0cdeb70002d28d677c25a71828a44db",
+      "deployed_image_digest": "sha256:e3ca7dc3cb91bc6cf4f193738f865073f721eb2c877186e8f274d977536326d1",
+      "deployment_timestamp": "2026-08-09T01:36:58Z",
+      "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/31288537060",
       "container_app": "app-ppbf-production",
       "resource_group": "rg-ppbf-enterprise-staging",
-      "revision": "app-ppbf-production--0000119",
+      "revision": "not_verified",
       "app_origin": "https://www.punxsyprominence.org",
-      "last_verified_by": "gatekeeper",
-      "last_verified_at": "2026-08-08T08:00:00Z",
-      "last_verification_method": "az containerapp revision list (revision + digest read off the live app, byte-equal to the digest staging tested), single-revision mode with 100% traffic on latest confirmed; deploy-production's own 'Verify Production Schema Matches This Commit' and 'Pilot API Smoke Checks' steps both green in the run above",
+      "last_verified_by": "agent -- PROPOSED, NOT YET GATEKEEPER-OBSERVED",
+      "last_verified_at": "2026-08-09T01:37:02Z",
+      "last_verification_method": "Read off deploy-production run 31288537060's own steps, NOT off the live app. All eleven steps green, including 'Verify Production Schema Matches This Commit', 'Verify release digest exists in ACR', 'Refuse a Rollback Nobody Asked For' and 'Pilot API Smoke Checks'. The digest is the one deploy-staging run 31288251081 built and the SHADOW E2E gate passed against. NOT independently confirmed by az: the revision name and the 100%-traffic-on-latest condition were not read off the live app, which is why revision is 'not_verified' here rather than carrying a number. A gatekeeper must re-observe before this entry counts as verified.",
       "known_production_gaps": [
-        "Production's SCHEMA is ahead of its CODE. All ~26 of PR #238's migrations were applied here at 2026-08-08T18:02Z (run 31268298138, migration=all, every step PASS) while the container still runs 19d7e70, which predates #238. Additive migrations are safe in that direction, but one of them was not additive: PILOT DEAD SCHEMA REMOVAL dropped pilot.messages, pilot.skills and pilot.staff. Verified safe against the deployed commit specifically -- `git grep` for those three tables across apps/web/{app,src,scripts} at 19d7e70, excluding tests, returns nothing. Checked against the running commit rather than against #238's own analysis, because #238 analysed its own tree, not this one.",
+        "Production reference data is NOT seeded. The schema is present and the code is deployed, but seed-reference-data has never been run against production for any of the three datasets, so pilot.drill_library, pilot.disciplines and the competence ladder are empty. /coach/cohorts and /coach/disciplines therefore render empty lists -- that is missing data, not a broken page. Blocked on seed_account_id: drill-library (and therefore dataset 'all') requires it, production's active platform owner is Admin@punxsyprominence.org with a CAPITAL A, the lowercase row is retired, and no read-only workflow exposes the id -- check-database.yml has three fixed checks and none of them look it up. It has to come from a human who can read it out of the database.",
         "Magic-link mail delivery is not_verified on production. It has never been attempted here -- no production account has auth_provider='magic_link', so nothing would be sent. Staging's refusal has since resolved on its own (see the staging entry), so the tenant-level condition that caused it is gone; production still needs its own access policy checked before anything is claimed.",
         "T-001 and T-002 reached production without a RUNTIME_VERIFIED row and still have none. Their PRs (#239, #242) merged 2026-08-06 and rode to production inside a deploy of main dispatched for the magic-link work. The pipeline's own rule is that no item may skip a state; two still have. T-003 was in this list and came out of it the honest way -- its probe was actually run on 2026-08-08 (see capabilities.runtime_verified), not backfilled."
       ]
@@ -55,11 +55,11 @@
     "deployed_not_runtime_verified": [
       "T-001 admin activation-code console (#239)",
       "T-002 covering-coach access window (#242, depends on #243)",
-      "everything PR #238 added -- deployed to staging 2026-08-08T16:55Z, not to production. Its ~26 migrations are applied to BOTH databases.",
+      "everything PR #238 added -- now deployed to BOTH environments (production 2026-08-09T01:36:58Z, run 31288537060), with its ~26 migrations applied to both databases. Deployed is not verified: none of its surfaces has been exercised on production, and the three new coach pages cannot be meaningfully checked there until the reference data is seeded.",
       "magic-link on production -- the code is deployed and the schema is applied, but nothing has been sent or redeemed there"
     ],
     "note": "Empty until the audit workflow's gap register is reconciled into intake/tickets/. Do not hand-populate this from source reading -- that is exactly the source-code-claims-mistaken-for-truth failure this file exists to prevent. The entries above are recorded from observed deploy runs and live probes, not from reading source."
   },
-  "last_updated_by": "gatekeeper",
-  "last_updated_at": "2026-08-08T18:22:00Z"
+  "last_updated_by": "agent -- production entry PROPOSED from run output, pending gatekeeper re-observation",
+  "last_updated_at": "2026-08-09T01:40:00Z"
 }
