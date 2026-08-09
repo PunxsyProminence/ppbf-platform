@@ -165,9 +165,28 @@ const READINESS_QUERY = `
     ) as assignment_free_text_preserved
 `;
 
+// The readiness query asks eleven separate questions and names every one of
+// them in its select list. Collapsing all eleven into a bare DRILLS_NOT_READY
+// threw that away: `apply-migrations` (migration=all, target=staging) failed on
+// this runner twice -- runs 31293202234 and 31337647625, seventeen hours apart
+// -- and neither failure said which check was unmet, so neither was actionable.
+// The information was already in the row; only the message was missing.
+//
+// Deliberately reports EVERY unmet check, not just the first: these are
+// independent properties of the same table, so stopping at one would turn a
+// single diagnosis into as many round trips as there are problems, and each
+// round trip here is a workflow dispatch against a real database.
+export function unmetReadinessChecks(row) {
+  if (!row) return ['(the readiness query returned no row at all)'];
+  return Object.entries(row)
+    .filter(([, value]) => value !== true)
+    .map(([name, value]) => `${name}=${JSON.stringify(value)}`);
+}
+
 function assertReadiness(row) {
-  if (!row || Object.values(row).some((value) => value !== true)) {
-    throw new Error('DRILLS_NOT_READY');
+  const unmet = unmetReadinessChecks(row);
+  if (unmet.length > 0) {
+    throw new Error(`DRILLS_NOT_READY -- unmet: ${unmet.join(', ')}`);
   }
 }
 
