@@ -605,6 +605,41 @@ describe('finishing settles the row', () => {
     expect(settled.what_worked).toBe('slip drill landed');
   });
 
+  // Found in review, not by the original suite: the first version of finishSessionScriptRun cleared
+  // paused_at without banking the open interval, so ending a session that was still paused lost that
+  // pause and made every later reading of actual teaching time overcount by its length. The original
+  // test paused and finished but only asserted paused_at was null, which this defect satisfies.
+  it('banks an OPEN pause into paused_seconds instead of discarding it', async () => {
+    await seedScript(ORG_A, COACH_A, 'scr-finpause', ['blk-fp1']);
+    const live = await startSessionScriptRun(ORG_A, COACH_A, { scriptId: 'scr-finpause' });
+
+    await pauseSessionScriptRun(ORG_A, COACH_A, live.run_id);
+    // Backdate the pause so there is a real interval to lose.
+    await client.query(
+      `update pilot.session_script_runs set paused_at = now() - interval '45 seconds'
+        where run_id = $1`,
+      [live.run_id],
+    );
+
+    const settled = await finishSessionScriptRun(ORG_A, COACH_A, live.run_id, {
+      runState: 'completed',
+    });
+
+    expect(settled.paused_at).toBeNull();
+    expect(settled.paused_seconds).toBeGreaterThanOrEqual(45);
+    expect(settled.paused_seconds).toBeLessThan(50);
+  });
+
+  it('leaves paused_seconds alone when the run was not paused at the end', async () => {
+    await seedScript(ORG_A, COACH_A, 'scr-finnopause', ['blk-fn1']);
+    const live = await startSessionScriptRun(ORG_A, COACH_A, { scriptId: 'scr-finnopause' });
+    const settled = await finishSessionScriptRun(ORG_A, COACH_A, live.run_id, {
+      runState: 'completed',
+    });
+    // 0, not null: this run genuinely never paused, which is a different fact from unknown.
+    expect(settled.paused_seconds).toBe(0);
+  });
+
   it('records an abandoned session as abandoned rather than as a delivery', async () => {
     await seedScript(ORG_A, COACH_A, 'scr-ab', ['blk-ab1']);
     const live = await startSessionScriptRun(ORG_A, COACH_A, { scriptId: 'scr-ab' });

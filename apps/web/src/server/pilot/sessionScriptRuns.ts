@@ -332,9 +332,10 @@ export interface FinishSessionScriptRunInput {
   whatDidNot?: string;
 }
 
-// Finishing settles the row: the cursor and any pause are cleared, because neither is meaningful
-// once the room has emptied, and pilot_ssrun_pause_only_live would reject a paused settled run
-// anyway. Clearing run_state's live value also releases the one-live-per-coach index so the coach
+// Finishing settles the row. An OPEN pause is banked into paused_seconds first -- dropping it
+// would make every later reading of actual teaching time overcount by the final pause -- and only
+// then is the cursor and paused_at cleared, because neither is meaningful once the room has emptied
+// and pilot_ssrun_pause_only_live would reject a paused settled run anyway. Clearing run_state's live value also releases the one-live-per-coach index so the coach
 // can start their next class.
 export async function finishSessionScriptRun(
   organizationId: string,
@@ -352,6 +353,16 @@ export async function finishSessionScriptRun(
         set run_state = $3,
             ended_at = now(),
             current_block_id = null,
+            -- Bank the OPEN pause before discarding it. A coach who pauses and then ends the
+            -- session without resuming would otherwise lose that final interval, and every later
+            -- reading of actual teaching time (ended_at - started_at - paused_seconds) would
+            -- overcount by exactly the length of the last pause.
+            paused_seconds = coalesce(paused_seconds, 0)
+                             + case
+                                 when paused_at is not null
+                                   then greatest(0, floor(extract(epoch from (now() - paused_at)))::integer)
+                                 else 0
+                               end,
             paused_at = null,
             blocks_completed = coalesce($4, blocks_completed),
             athletes_present = coalesce($5, athletes_present),
