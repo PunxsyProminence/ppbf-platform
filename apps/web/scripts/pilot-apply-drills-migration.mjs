@@ -117,6 +117,23 @@ const READINESS_QUERY = `
         and contype = 'p'
         and pg_get_constraintdef(oid) like '%(organization_id, drill_id)%'
     ) as drill_key_ready,
+    -- Deliberately does NOT constrain indpred. This migration creates the
+    -- index total, but drill-versioning later replaces it with a PARTIAL
+    -- unique index on (organization_id, name) WHERE active, reusing the same
+    -- name on purpose so drills.ts#isDrillNameCollision keeps matching it.
+    --
+    -- This check used to require "indpred is null", which made apply-migrations
+    -- migration=all a one-way door: drills runs at position 27 of that list and
+    -- drill-versioning at 44, so the first pass succeeded (total, then
+    -- converted) and every later pass failed here (now partial), on staging and
+    -- production alike, with "create unique index if not exists" unable to
+    -- restore the shape it wanted. Three dispatches died on this.
+    --
+    -- Not a weakening: what this runner owns is that the one-name-per-gym rule
+    -- is held by a UNIQUE index of that name, and it still asserts exactly
+    -- that. Which rows the rule spans is drill-versioning's decision, and
+    -- drill-versioning's own readiness check asserts the partial shape. Each
+    -- runner now asserts only what it owns, so neither can contradict the other.
     exists (
       select 1
       from pg_index i
@@ -124,7 +141,6 @@ const READINESS_QUERY = `
       where i.indrelid = to_regclass('pilot.drills')
         and c.relname = 'pilot_drills_one_name_per_org'
         and i.indisunique
-        and i.indpred is null
     ) as drill_name_unique_ready,
     exists (
       select 1
