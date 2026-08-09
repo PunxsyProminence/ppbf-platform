@@ -18,6 +18,7 @@
     "pilot:check-stranded-guardians": "node scripts/pilot-check-stranded-guardians.mjs",
     "pilot:check-orphan-chat-audit": "node scripts/pilot-check-orphan-chat-audit.mjs",
     "pilot:check-runtime-claims": "node scripts/pilot-check-runtime-claims.mjs",
+    "pilot:runtime-verify": "node scripts/pilot-runtime-verify.mjs",
     "pilot:check-activation-pin-exposure": "node scripts/pilot-check-activation-pin-exposure.mjs",
     "pilot:apply-shadow-runtime": "node scripts/pilot-apply-shadow-runtime-migration.mjs",
     "pilot:apply-research-triage-view": "node scripts/pilot-apply-research-triage-view-migration.mjs",

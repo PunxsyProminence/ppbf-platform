@@ -2,15 +2,15 @@
   "_readme": "Controller-owned. Only the gatekeeper (VS Code Claude session) writes verified fields, after observing the target environment directly (az containerapp show / live smoke probes) -- never from reading source, a merged PR, or an agent's claim. External agents may read this file and may propose an update in a PR, but the PR does not become truth until the gatekeeper re-observes and re-writes it. Use null / 'not_verified' rather than guessing; a wrong value here is worse than an honest gap.",
   "environments": {
     "staging": {
-      "deployed_sha": "c4660cece9d41cea1800ce358141717526a1c26c",
-      "deployed_image_digest": "sha256:a5e3960e9e5f9a8dc5b44695b550fae04c6efaff6860c8e4e2b24fc6cf2b6bb3",
-      "deployment_timestamp": "2026-08-08T16:55:02Z",
-      "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/31267967708",
+      "deployed_sha": "fbb81559c0cdeb70002d28d677c25a71828a44db",
+      "deployed_image_digest": "sha256:e3ca7dc3cb91bc6cf4f193738f865073f721eb2c877186e8f274d977536326d1",
+      "deployment_timestamp": "2026-08-09T01:32:34Z",
+      "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/31288251081",
       "container_app": "app-ppbf-staging",
-      "revision": "app-ppbf-staging--0000138",
-      "last_verified_by": "gatekeeper",
-      "last_verified_at": "2026-08-08T18:20:00Z",
-      "last_verification_method": "az containerapp revision list (revision + image digest read off the live app), plus a full magic-link round trip against the live app with the database rows read back directly (token issued, delivered to a real mailbox, consumed, session created)",
+      "revision": "not_verified",
+      "last_verified_by": "agent -- PROPOSED, NOT YET GATEKEEPER-OBSERVED",
+      "last_verified_at": "2026-08-09T21:30:00Z",
+      "last_verification_method": "CORRECTION OF A STALE ENTRY, not a new observation. This entry read c4660ce/2026-08-08T16:55:02Z/run 31267967708/revision --0000138 until now, but staging moved to fbb8155 on 2026-08-09T01:25:58Z and this file was never updated -- so it under-reported staging by one deploy while the production entry directly below it already named fbb8155. Basis: deploy-staging run 31288251081 (head_sha fbb8155, conclusion success, completed 01:32:34Z) read off the Actions API, and deploy-staging.yml genuinely deploys rather than only building -- it runs 'Deploy to Azure Container App' (az containerapp update) followed by 'Wait For New Revision To Take Traffic'. NOT read off the live app: no az call was made, so 'revision' is now not_verified rather than carrying the old --0000138, which belonged to c4660ce and would have been actively wrong. The digest is the one the production entry already attributes to this same run 31288251081 ('the digest is the one deploy-staging run 31288251081 built and the SHADOW E2E gate passed against'), so it is inherited from that recorded provenance chain, NOT independently observed on staging. A gatekeeper must re-observe revision and digest before this entry counts as verified. The PRIOR gatekeeper verification remains real history and is not being erased: on 2026-08-08T18:20Z a gatekeeper read revision --0000138 and digest sha256:a5e3960... off the live app and ran a full magic-link round trip against it, with the database rows read back directly (token issued, delivered to a real mailbox, consumed, session created) -- but that observation was of c4660ce, which staging no longer runs.",
       "known_staging_gaps": [
         "Outbound mail RESOLVED 2026-08-08T18:07Z. It was never a permissions gap and never a code gap: a token probe inside the container showed roles=[\"Mail.Send\"], and the refusal carried graph_error_code=ErrorAccessDenied, which is Exchange's application access policy rather than Entra. The policy was created 07:13Z and began enforcing between 07:54Z (last refusal) and 18:07Z (first success). Test-ApplicationAccessPolicy reported Granted the whole time because it evaluates configured state, not enforced state -- worth remembering before trusting it again."
       ]
@@ -60,6 +60,6 @@
     ],
     "note": "Empty until the audit workflow's gap register is reconciled into intake/tickets/. Do not hand-populate this from source reading -- that is exactly the source-code-claims-mistaken-for-truth failure this file exists to prevent. The entries above are recorded from observed deploy runs and live probes, not from reading source."
   },
-  "last_updated_by": "agent -- production entry PROPOSED from run output, pending gatekeeper re-observation",
-  "last_updated_at": "2026-08-09T01:40:00Z"
+  "last_updated_by": "agent -- production AND staging entries both PROPOSED, pending gatekeeper re-observation",
+  "last_updated_at": "2026-08-09T21:30:00Z"
 }
