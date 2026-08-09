@@ -923,21 +923,28 @@ export default function CoachWorkspace() {
               { id: 'athlete-floor-plans', label: 'Athlete Floor Plans' },
               { id: 'development', label: 'Development' },
               { id: 'goals', label: 'Goals' },
-              { id: 'tasks', label: 'Tasks' },
+              // Both counts are the same number by construction -- coachTasks
+              // is derived entirely from shadowQueue's pending_review items
+              // (see the comment above coachTasks) -- so Tasks and SHADOW
+              // Intel badge the same underlying work seen from two angles,
+              // not two different counts that could disagree.
+              { id: 'tasks', label: 'Tasks', count: assignmentsDue },
               { id: 'assessments', label: 'Assessments' },
               { id: 'film-study', label: 'Film Study' },
               { id: 'athlete-reviews', label: 'Athlete Reviews' },
-              { id: 'shadow', label: 'SHADOW Intel' }
+              { id: 'shadow', label: 'SHADOW Intel', count: assignmentsDue }
             ].map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as TabID)}
                 className={cx(
                   ui.tabButtonBase,
+                  'gap-2',
                   activeTab === tab.id ? ui.tabButtonActive : ui.tabButtonInactive,
                 )}
               >
                 {tab.label}
+                {tab.count ? <StatusBadge tone="monitor" label={`${tab.count} pending`} /> : null}
               </button>
             ))}
           </div>
