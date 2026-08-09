@@ -20,7 +20,7 @@ import useGymSound from './useGymSound';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymStamp, formatGymTimeOfDay } from '@/src/lib/gymTime';
 
-type TabID = 'my-dashboard' | 'athlete-floor' | 'smart-goals' | 'tracks' | 'assessments' | 'bio-checkin' | 'drill-library' | 'rabbit-holes' | 'message-coach' | 'schedule-session' | 'shadow';
+type TabID = 'my-dashboard' | 'athlete-floor' | 'smart-goals' | 'bio-checkin' | 'drill-library' | 'rabbit-holes' | 'message-coach' | 'shadow';
 type ReadinessLevel = 'GREEN' | 'YELLOW' | 'RED';
 /**
  * The categories a goal can be filed under, and the mirror of GOAL_CATEGORIES
@@ -1463,7 +1463,6 @@ export default function AthleteWorkspace() {
                 this was rendering at roughly half of it. */}
           </div>
         </div>
-
         {/* The athlete's own fight card. Self-contained: it fetches its own
             data and renders nothing until it has some, so this is the single
             insertion the profile layer makes into this file. */}
@@ -1473,40 +1472,6 @@ export default function AthleteWorkspace() {
             Same self-contained contract as ProfileHeader -- renders nothing
             when there is no hold. */}
         <TrainingHoldBanner />
-
-        {/* Notices are posted paper on the leather wall. */}
-        <AnnouncementBanner
-          placement="athlete_workspace"
-          kind="notice"
-          heading="Gym Notices"
-          className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]"
-        />
-
-        {/* The chalkboard REPLACES the paper "From the Gym" card that used to
-            sit here. Same table, same placement, same kind ('motivation') --
-            what changed is the object. A line somebody wrote by hand was being
-            rendered as a clean UI card with a heading on it; it is slate and
-            chalk now, and it shows one line rather than a list, because that is
-            what a board by the door holds. See Chalkboard.tsx. */}
-        <Chalkboard placement="athlete_workspace" />
-
-        {/* The gym wall used to hang here, third from the top. It is 421px of
-            empty frames on a page whose Quick Actions -- Open Scheduler,
-            Complete Check-In, Open Floor Tasks -- began at 2123px, so an
-            athlete opening their own training dashboard saw a blank chalkboard
-            and two empty frames above the fold and had to scroll past two full
-            screens to reach anything they could do.
-
-            The wall is ambient by design and correct as an object; it is the
-            room, hung on a wall, waiting for somebody to photograph it. That
-            makes it the last thing on the page rather than the third. It is
-            rendered at the foot of this component now. */}
-
-        <div className={PANEL}>
-          <p className="t-eyebrow">Daily Reminder</p>
-          <p className="mt-[var(--s2)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Show up. Do the hard rounds. Own the details. Progress is earned through consistent grit and disciplined effort.</p>
-          {backendSyncMessage ? <p className="mt-[var(--s3)] t-data" style={{ fontSize: 'var(--t-xs)' }} role="status">{backendSyncMessage}</p> : null}
-        </div>
 
         {/* ROLE SUMMARY PANEL */}
         {/* Class times and registrations live behind the unified scheduler;
@@ -1520,74 +1485,18 @@ export default function AthleteWorkspace() {
           unreadMessages={0}
         />
 
-        {/* The training card. One stamp per session row from the ledger -- a
-            record the athlete accumulates, so there is something to come back
-            to. Cumulative, never a streak: see TrainingCard.tsx.
-
-            The athlete id scopes the ceremony's record of which seals have
-            already been pressed. This is a shared gym tablet: without it, the
-            first athlete to open their card on one would silence the next
-            athlete's first milestone. */}
-        <TrainingCard sessions={trainingSessions} athleteId={backendAthleteId ?? undefined} />
-
-        {/* Everything the card cannot count. The card measures attendance, and
-            attendance is one of four programmes this gym runs -- a fitness-only
-            member and a kid here for the mentorship both had a progression
-            system that was measuring somebody else's sport. This panel carries
-            what a coach said, the conditioning / craft / community path, and
-            who mentors whom. Complete for every programme: what somebody's
-            programme does not include is absent, never greyed out. */}
-        <AthleteAchievements athleteId={backendAthleteId} />
-
-        {/* Two things that leave the screen. A route nobody can reach is a dead
-            feature, and neither of these has a home anywhere else. */}
-        <div className={PANEL}>
-          <p className="t-eyebrow">Off the screen</p>
-          <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
-            <Link href="/print" className="btn btn--ghost min-h-[var(--tap)]">
-              Print your card
-            </Link>
-            <Link href="/names" className="btn btn--ghost min-h-[var(--tap)]">
-              The Wall of Names
-            </Link>
-          </div>
-        </div>
-
-        <details className={PANEL}>
-          <summary className="t-label cursor-pointer">What&apos;s Coming</summary>
-          <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
-            <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Video Analysis - Not Built Yet</p>
-              <p className="t-muted mt-[var(--s2)]">The screens are drawn. Nothing behind them works yet.</p>
-              <Link href="/athlete/video-analysis" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
-                Open Video Analysis
-              </Link>
-            </article>
-            <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Automatic Progress Tracking - Not Built Yet</p>
-              <p className="t-muted mt-[var(--s2)]">Your coach still decides what comes next. Nothing here scores you on its own.</p>
-              <Link href="/athlete/progression-intelligence" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
-                Open Progress Tracking
-              </Link>
-            </article>
-          </div>
-        </details>
-
         {/* TAB NAVIGATION — floor-sized targets (Law 5). */}
         <div className="mat-leather rounded-[var(--r-md)]">
           <div className="flex flex-wrap gap-[var(--s2)] p-[var(--s3)]">
             {[
-              { id: 'my-dashboard', label: 'Dashboard' },
-              { id: 'athlete-floor', label: 'Floor' },
-              { id: 'smart-goals', label: 'Goals' },
-              { id: 'tracks', label: 'Tracks' },
-              { id: 'assessments', label: 'Assessments' },
-              { id: 'bio-checkin', label: 'Bio Check-In' },
-              { id: 'drill-library', label: 'Drills' },
-              { id: 'rabbit-holes', label: 'Rabbit Holes' },
-              { id: 'message-coach', label: 'Messages' },
-              { id: 'schedule-session', label: 'Schedule' },
-              { id: 'shadow', label: 'SHADOW Intel' }
+              { id: 'my-dashboard', label: 'Dashboard', count: undefined },
+              { id: 'athlete-floor', label: 'Floor', count: tasksDue > 0 ? tasksDue : undefined },
+              { id: 'smart-goals', label: 'Goals', count: goalsActive > 0 ? goalsActive : undefined },
+              { id: 'bio-checkin', label: 'Bio Check-In', count: undefined },
+              { id: 'drill-library', label: 'Drills', count: undefined },
+              { id: 'rabbit-holes', label: 'Rabbit Holes', count: undefined },
+              { id: 'message-coach', label: 'Coach Notes', count: undefined },
+              { id: 'shadow', label: 'SHADOW Intel', count: undefined }
             ].map(tab => (
               <button
                 key={tab.id}
@@ -1598,6 +1507,27 @@ export default function AthleteWorkspace() {
                 )}
               >
                 {tab.label}
+                {/* A count is something waiting on the athlete -- tasks not
+                    yet done, goals actively tracked -- so it earns a place on
+                    the tab itself rather than a click to find out. Zero draws
+                    nothing: an empty badge would read as "you have zero",
+                    which is not a fact this bar should assert about a tab
+                    nobody has opened yet today. */}
+                {tab.count !== undefined ? (
+                  // aria-hidden: a child's own aria-label folds into the
+                  // button's accessible name (the accname spec's text
+                  // alternative computation), which would turn "Goals" into
+                  // "Goals 1 awaiting" for every assistive-tech user and any
+                  // test or future code that looks a tab up by its plain
+                  // label. The badge is sighted-only enrichment; the tab's
+                  // name stays exactly its label.
+                  <span
+                    aria-hidden="true"
+                    className="ml-[var(--s2)] inline-flex min-w-[1.4em] items-center justify-center rounded-[var(--r-pill)] bg-[color:var(--hide-950)]/40 px-[6px] text-[10px] font-bold leading-[1.4em]"
+                  >
+                    {tab.count}
+                  </span>
+                ) : null}
               </button>
             ))}
           </div>
@@ -1721,19 +1651,48 @@ export default function AthleteWorkspace() {
                       <input id="readiness-soreness" type="range" min="0" max="10" value={soreness} onChange={(e) => setSoreness(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
                       <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{soreness}/10</p>
                     </div>
-                    <div className="grid grid-cols-3 gap-[var(--s3)] pt-[var(--s2)]">
-                      {painLocations.slice(0, 3).map(loc => (
-                        <button
-                          key={loc}
-                          onClick={() => {
+                    <div className="space-y-[var(--s3)] pt-[var(--s2)]">
+                      <div className="grid grid-cols-3 gap-[var(--s3)]">
+                        {painLocations.slice(0, 3).map(loc => (
+                          <button
+                            key={loc}
+                            onClick={() => {
+                              setSelectedPainLocation(loc);
+                              setShowPainModal(true);
+                            }}
+                            className="btn btn--ghost min-h-[var(--tap)] px-[var(--s3)]"
+                          >
+                            {loc}
+                          </button>
+                        ))}
+                      </div>
+                      {/* The other seven locations -- Lower back, Core, Hips,
+                          Quads, Hamstrings, Calves, Hands/Wrists -- had no
+                          control at all: this card offered exactly three
+                          buttons out of a ten-location list, and an athlete
+                          sore anywhere past "Upper back" had nothing to tap.
+                          A dropdown reaches the rest without turning the quick
+                          row into seven more floor-sized buttons. */}
+                      <div className="field">
+                        <label className="t-label" htmlFor="pain-location-more">More areas</label>
+                        <select
+                          id="pain-location-more"
+                          value=""
+                          onChange={(e) => {
+                            const loc = e.target.value;
+                            if (!loc) return;
                             setSelectedPainLocation(loc);
                             setShowPainModal(true);
+                            e.target.value = '';
                           }}
-                          className="btn btn--ghost min-h-[var(--tap)] px-[var(--s3)]"
+                          className="select input--kiosk"
                         >
-                          {loc}
-                        </button>
-                      ))}
+                          <option value="">Select an area...</option>
+                          {painLocations.slice(3).map(loc => (
+                            <option key={loc} value={loc}>{loc}</option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                     {painSaveMessage ? (
                       <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-200)]" role="status">{painSaveMessage}</p>
@@ -2139,55 +2098,6 @@ export default function AthleteWorkspace() {
           )}
 
           {/* TRACKS - Placeholder */}
-          {activeTab === 'tracks' && (
-            <div className={`${PANEL} space-y-[var(--s4)] panel-settle`}>
-              <h3 className="t-label">Track Management</h3>
-              <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">View current track assignment and request upgrades as you progress.</p>
-              {/* Track assignment, membership, scholarship, and support status
-                  have no backing column anywhere in the schema -- the track
-                  itself would come from pilot.admin_track_assignments, which
-                  does not exist in staging or prod. These were hardcoded to the
-                  same "supported / active member" values for every athlete
-                  regardless of their actual status, which is a billing- and
-                  eligibility-adjacent misstatement, not a placeholder. Show
-                  unavailable honestly until real fields exist. Mirrors the same
-                  correction already applied in ParentHub.tsx. */}
-              <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)] space-y-[var(--s2)]">
-                <p className="text-[length:var(--t-sm)]"><strong>Current Track:</strong> <span className="text-[color:var(--bone-400)]">Unavailable - not yet tracked</span></p>
-                <p className="text-[length:var(--t-sm)] text-[color:var(--bone-400)]"><strong>Program Membership:</strong> <span>Unavailable - not yet tracked</span></p>
-                <p className="text-[length:var(--t-sm)] text-[color:var(--bone-400)]"><strong>Participation Status:</strong> <span>Unavailable - not yet tracked</span></p>
-                <p className="text-[length:var(--t-sm)] text-[color:var(--bone-400)]"><strong>Support Status:</strong> <span>Unavailable - not yet tracked</span></p>
-                <p className="text-[length:var(--t-sm)] text-[color:var(--bone-400)]"><strong>Community Service Credits:</strong> <span>Unavailable - not yet tracked</span></p>
-              </div>
-            </div>
-          )}
-
-          {/* ASSESSMENTS - Placeholder */}
-          {activeTab === 'assessments' && (
-            <div className={`${PANEL} space-y-[var(--s4)] panel-settle`}>
-              <h3 className="t-label">Assessments</h3>
-              <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Complete personality tests, surveys, and skill assessments.</p>
-              {/* Not-built-yet is a statement of fact, not a refusal or a safety
-                  state — the label voice, never the safety gate's red (Law 2). */}
-              <p className="t-label">
-                NOT BUILT YET -- there is nothing behind this tab, so nothing here can start or score anything.
-              </p>
-              <div className="space-y-[var(--s4)]">
-                <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-                  <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">MBTI Personality Test</p>
-                  <p className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">Discover your personality type and learning style.</p>
-                  <button
-                    type="button"
-                    disabled
-                    className="btn btn--ghost mt-[var(--s4)] min-h-[var(--tap)] cursor-not-allowed opacity-50"
-                  >
-                    Start Assessment
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* BIO CHECK-IN */}
           {activeTab === 'bio-checkin' && (
             <div className="space-y-6 panel-settle">
@@ -2428,36 +2338,6 @@ export default function AthleteWorkspace() {
             </div>
           )}
 
-          {/* SCHEDULE SESSION */}
-          {activeTab === 'schedule-session' && (
-            <div className="space-y-6 panel-settle">
-              <div className="flex flex-wrap gap-[var(--s3)]">
-                <Link href="/schedule" className="btn min-h-[var(--tap)]">
-                  Open Unified Scheduler
-                </Link>
-              </div>
-              <HelpPanel
-                title="Schedule Session"
-                description="Booking happens in the unified scheduler; this tab is a placeholder until it can read the gym's classes."
-                usage={[
-                  'Open the unified scheduler to see live classes',
-                  'Check your academic status first',
-                  'Readiness RED may limit contact work'
-                ]}
-                mistakes={[
-                  'Booking while on academic hold',
-                  'Booking contact work with RED readiness'
-                ]}
-              />
-
-              {/* Statement of fact, not a refusal or safety state (Law 2). */}
-              <p className="t-label">
-                NOT BUILT YET -- this tab cannot see the gym&apos;s classes or sign you up for one. Open the
-                scheduler above for real classes and real sign-ups.
-              </p>
-            </div>
-          )}
-
           {/* SHADOW AI */}
           {activeTab === 'shadow' && (
             <div className="space-y-6 panel-settle">
@@ -2540,6 +2420,121 @@ export default function AthleteWorkspace() {
             </div>
           )}
         </div>
+
+        {/* Notices are posted paper on the leather wall. */}
+        <AnnouncementBanner
+          placement="athlete_workspace"
+          kind="notice"
+          heading="Gym Notices"
+          className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]"
+        />
+
+        {/* The chalkboard REPLACES the paper "From the Gym" card that used to
+            sit here. Same table, same placement, same kind ('motivation') --
+            what changed is the object. A line somebody wrote by hand was being
+            rendered as a clean UI card with a heading on it; it is slate and
+            chalk now, and it shows one line rather than a list, because that is
+            what a board by the door holds. See Chalkboard.tsx. */}
+        <Chalkboard placement="athlete_workspace" />
+
+        {/* The gym wall used to hang here, third from the top. It is 421px of
+            empty frames on a page whose Quick Actions -- Open Scheduler,
+            Complete Check-In, Open Floor Tasks -- began at 2123px, so an
+            athlete opening their own training dashboard saw a blank chalkboard
+            and two empty frames above the fold and had to scroll past two full
+            screens to reach anything they could do.
+
+            The wall is ambient by design and correct as an object; it is the
+            room, hung on a wall, waiting for somebody to photograph it. That
+            makes it the last thing on the page rather than the third. It is
+            rendered at the foot of this component now. */}
+
+        <div className={PANEL}>
+          <p className="t-eyebrow">Daily Reminder</p>
+          <p className="mt-[var(--s2)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Show up. Do the hard rounds. Own the details. Progress is earned through consistent grit and disciplined effort.</p>
+          {backendSyncMessage ? <p className="mt-[var(--s3)] t-data" style={{ fontSize: 'var(--t-xs)' }} role="status">{backendSyncMessage}</p> : null}
+        </div>
+
+        {/* The training card. One stamp per session row from the ledger -- a
+            record the athlete accumulates, so there is something to come back
+            to. Cumulative, never a streak: see TrainingCard.tsx.
+
+            The athlete id scopes the ceremony's record of which seals have
+            already been pressed. This is a shared gym tablet: without it, the
+            first athlete to open their card on one would silence the next
+            athlete's first milestone. */}
+        <TrainingCard sessions={trainingSessions} athleteId={backendAthleteId ?? undefined} />
+
+        {/* Everything the card cannot count. The card measures attendance, and
+            attendance is one of four programmes this gym runs -- a fitness-only
+            member and a kid here for the mentorship both had a progression
+            system that was measuring somebody else's sport. This panel carries
+            what a coach said, the conditioning / craft / community path, and
+            who mentors whom. Complete for every programme: what somebody's
+            programme does not include is absent, never greyed out. */}
+        <AthleteAchievements athleteId={backendAthleteId} />
+
+        {/* Two things that leave the screen. A route nobody can reach is a dead
+            feature, and neither of these has a home anywhere else. */}
+        <div className={PANEL}>
+          <p className="t-eyebrow">Off the screen</p>
+          <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
+            <Link href="/print" className="btn btn--ghost min-h-[var(--tap)]">
+              Print your card
+            </Link>
+            <Link href="/names" className="btn btn--ghost min-h-[var(--tap)]">
+              The Wall of Names
+            </Link>
+          </div>
+        </div>
+
+        <details className={PANEL}>
+          <summary className="t-label cursor-pointer">What&apos;s Coming</summary>
+          <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
+            <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Video Analysis - Not Built Yet</p>
+              <p className="t-muted mt-[var(--s2)]">The screens are drawn. Nothing behind them works yet.</p>
+              <Link href="/athlete/video-analysis" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
+                Open Video Analysis
+              </Link>
+            </article>
+            <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Automatic Progress Tracking - Not Built Yet</p>
+              <p className="t-muted mt-[var(--s2)]">Your coach still decides what comes next. Nothing here scores you on its own.</p>
+              <Link href="/athlete/progression-intelligence" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
+                Open Progress Tracking
+              </Link>
+            </article>
+            {/* Tracks, Assessments, and in-workspace scheduling used to be
+                clickable tabs sitting beside working ones -- Floor, Goals,
+                Drills -- with nothing behind them. A tab that looks like the
+                others but leads nowhere costs more trust than it saves clicks,
+                so they moved here, in progress, with what each one is actually
+                planned to become. */}
+            <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Track Management - In Progress</p>
+              <p className="t-muted mt-[var(--s2)]">
+                Planned: your real track assignment, program membership, participation status, support
+                status, and community-service credits, read from the gym&apos;s own records once that
+                schema exists.
+              </p>
+            </article>
+            <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Assessments - In Progress</p>
+              <p className="t-muted mt-[var(--s2)]">
+                Planned: an MBTI personality test, learning-style surveys, and skill assessments you can
+                take and get scored on from this tab.
+              </p>
+            </article>
+            <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">In-Workspace Scheduling - In Progress</p>
+              <p className="t-muted mt-[var(--s2)]">
+                Planned: book a real class without leaving this workspace. Until it reads the gym&apos;s
+                classes, use Open Scheduler in Quick Actions above -- that one is real today.
+              </p>
+            </article>
+          </div>
+        </details>
 
         {/* PAIN MODAL */}
         {showPainModal && selectedPainLocation && (

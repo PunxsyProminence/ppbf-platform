@@ -186,21 +186,22 @@ describe('athlete workspace honesty', () => {
     expect(screen.getByText('Unavailable - not yet tracked')).toBeTruthy();
   });
 
-  test('the Schedule tab offers the real scheduler instead of unbookable class rows', async () => {
+  test('Tracks, Assessments, and Schedule are not offered as tabs with nothing behind them', async () => {
+    // These three used to be clickable tabs beside working ones -- Floor,
+    // Goals, Drills -- each one either hardcoding fake data or disabling its
+    // only control. They moved to the "What's Coming" panel instead of
+    // shipping a tab that looks like the others and leads nowhere.
     await renderWorkspace();
-    openTab('Schedule');
 
-    expect(screen.queryByRole('button', { name: 'Book' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Tracks' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Assessments' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Schedule' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Start Assessment' })).toBeNull();
     expect(screen.queryByText(/Mon-Thu 4:00 PM Youth Class/)).toBeNull();
-    expect(screen.getByRole('link', { name: 'Open Unified Scheduler' })).toBeTruthy();
-  });
 
-  test('the Assessments tab does not present a start control that cannot start anything', async () => {
-    await renderWorkspace();
-    openTab('Assessments');
-
-    const start = screen.getByRole('button', { name: 'Start Assessment' }) as HTMLButtonElement;
-    expect(start.disabled).toBe(true);
+    // The real scheduler is still one click away, from Quick Actions on the
+    // default dashboard tab -- not behind a tab that only pretended to book.
+    expect(screen.getByRole('link', { name: 'Open Scheduler' })).toBeTruthy();
   });
 
   test('double-clicking Create Goal posts the goal once', async () => {
