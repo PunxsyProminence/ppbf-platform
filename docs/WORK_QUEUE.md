@@ -117,12 +117,23 @@ exception to it.
 
 ### Still real — verified 2026-08-09
 
-- [ ] **Bulk athlete + guardian import: `npm run seed:data` still cannot start.** Confirmed:
-      no `ts-node` and no `csv-parse` in `node_modules`, no root `tsconfig.json` for its `@/`
-      import, and only `scripts/seed-data.config.example.ts` — no real config. Even repaired it
-      writes no logins and no guardians. Hand entry is 8 mandatory fields per athlete plus 80
-      unique IDs: 1.5–2 hours for 40, and a coach must be fully provisioned first or the form
-      will not submit. **This is the largest remaining time cost to the gym.**
+- [ ] **Bulk import writes no logins and no guardians.** The "cannot start / four independent
+      failures" half of this item is **stale** — `seed:data` runs. It uses `tsx` (not the
+      undeclared `npx ts-node` it once did), imports `db.ts` relatively rather than through the
+      `@/` alias that only ever resolved for the editor, and `csv-parse` is in the lockfile. A
+      dry-run against `seed-data.config.example.ts` loads, reports the organization, warns
+      honestly that coach-existence checks are skipped without a database, and then asks for
+      `scripts/data/athletes.csv` — which is the intended workflow, not a defect.
+      **What remains is real and is the substantive gap:** the script inserts
+      `pilot.athletes`, `pilot.goals` and `pilot.sessions`, and only *reads* `pilot.accounts`.
+      It writes no account, no PIN and no `pilot.parents`/`pilot.guardian_links` row, so a
+      successful bulk import still leaves 40 children with records and no way to sign in, and 40
+      families unlinked. That is the remaining time cost, and it is an additive change to this
+      script rather than a repair of it.
+      *Verification note: an earlier draft of this reconciliation asserted the four startup
+      failures were confirmed today. They were not — that reading came from a checkout 173
+      commits behind `main`. Recorded because a reconciliation pass that gets an item wrong is
+      the same defect it exists to fix.*
 - [ ] **`/public` advertises seven programs and seven FAQ answers, hardcoded.** Confirmed: 25
       program/FAQ references in `app/public/page.tsx`. That is the page a Punxsutawney family
       lands on, and changing it needs a deploy. Needs an owner read-through, not a code fix.
