@@ -1,9 +1,21 @@
 # Work queue — shared between agent sessions
 
-> **Superseded.** The current queue is
-> [docs/current/WORK_QUEUE.md](current/WORK_QUEUE.md). Kept here because the
-> incidents below are real history worth keeping, not because this table is
-> still authoritative — do not claim an item from it.
+> # ⛔ SUPERSEDED — DO NOT PLAN OR CLAIM FROM THIS FILE
+>
+> **The authoritative queue is [docs/current/WORK_QUEUE.md](current/WORK_QUEUE.md).**
+> If this file contradicts it, that file wins.
+>
+> This one is kept only because the incidents recorded below are real history worth
+> keeping. **Every task table in it is historical.** Items marked open may be long
+> since finished; items marked done may have regressed. Nothing here is maintained.
+>
+> **This banner was made this loud on 2026-08-09 because it failed.** An agent
+> session read this file from the middle, never saw the four-line note that used to
+> sit here, reconciled the whole "Ready to build" table against the repository, and
+> reported the result as the live plan — including telling the owner it was "the
+> single largest drag on the build". Ten items were correctly identified as finished
+> and none of it mattered, because no one should have been reading this table at all.
+> If you are here to find work, stop and open the file linked above.
 
 Two Claude sessions work this repository at the same time. Today that cost real
 duplicated work: the same nine compliance/progression/publication tables were
@@ -91,10 +103,10 @@ exception to it.
       `cron: '10 7 * * *'`, `docs/BACKUP_RUNBOOK.md` documents restore plus a drill checklist, and
       `app/api/pilot/admin/export/roster/` ships a CSV with `Content-Disposition`. #232 also
       verified four consecutive successful scheduled runs.
-- [x] ~~**Do not invite anyone as "Parent / Guardian".**~~ Fixed and guarded. Two non-test writers
-      populate `pilot.parents` **and** `pilot.guardian_links` in the same transaction as the
-      account — `intake.ts:650` and `staffProvisioning.ts:381` — and a guard refuses a parent
-      invite naming no athlete, with the silent-failure reasoning recorded beside it.
+- [x] ~~**Guardian linking has no writer at all.**~~ Writers exist — `intake.ts:650` and
+      `staffProvisioning.ts:381` both populate `pilot.parents` and `pilot.guardian_links`, and a
+      guard refuses a parent invite naming no athlete. **Only that half is closed. See the open
+      atomicity item below — this is NOT safe to treat as finished.**
 - [x] ~~**Two platform-owner routes return a full roster of minors' names.**~~
       `admin/athlete-pin-directory` requires `organization_admin`, explicitly **excludes**
       `platform_owner`, carries a redundant `isOrganizationAdminRole` check, and states the
@@ -105,15 +117,28 @@ exception to it.
       "Sponsor Family" strings remain; no dollar figures in the file.
 - [x] ~~**`drillsPersistence.pg.test.ts` runs nowhere.**~~ `test:migrations:drills-persistence`
       exists and is in the `test:migrations` chain, which `ci.yml` runs.
-- [x] ~~**Decide the consent posture** (claimed zero `.tsx` references).~~ Partly stale:
-      `app/admin/athlete-consent/page.tsx` exists. **The decision itself is still open** and moved
-      to the owner-blocked section, because a screen existing is not the same as a posture chosen,
-      and the seeded "Medical Clearance Status" rule still tells the Safety Director the platform
-      verifies forms it may not store.
-- [x] ~~**`scripts/data/` ships five invented minors.**~~ Now `athletes.example.csv`,
-      `goals.example.csv`, `sessions.example.csv` — marked as examples rather than sitting
-      unlabelled where the real roster goes. **Contents not audited**; if those rows still carry
-      real-looking DOBs, that is a smaller separate item.
+- [x] ~~**"Zero `.tsx` files reference `pilot.waivers` / `medical_intake` /
+      `emergency_contacts`."**~~ That claim is stale — `app/admin/athlete-consent/page.tsx` exists.
+      **Only the claim is closed. Deciding the consent posture is NOT done** and sits in
+      owner-blocked: a screen existing is not a posture chosen, and the seeded "Medical Clearance
+      Status" rule still tells the Safety Director the platform verifies forms it may not store.
+- [x] ~~**`scripts/data/` ships invented minors UNLABELLED, in the folder the seed guide names
+      for the real roster.**~~ Now `athletes.example.csv`, `goals.example.csv`,
+      `sessions.example.csv` — labelled as examples. **Only the labelling is closed**; the row
+      contents were never audited, which is now its own open item below.
+
+- [x] ~~**Coach coverage.**~~ **Done.** `grantCoachCoverage` in `access.ts` issues a TTL-bounded
+      grant that `assertCoachAssignedToAthlete` admits, validates the grantee is an active coach
+      in the granting organization (a typo'd id would otherwise hand coach-level access to a
+      minor's record to whatever account it names), and `app/admin/coach-coverage/` ships the
+      surface plus a test.
+- [x] ~~**A pain report does not name the child on the coach's screen.**~~ **Done.**
+      `CoachWorkspace.tsx:402-436` fetches `/api/pilot/coach/pain-reports` on mount and its
+      always-visible section at `754-824` renders the athlete name, severity/score and body
+      location, served by `app/api/pilot/coach/pain-reports/route.ts:17-76`.
+      *An earlier draft of this reconciliation left this unknown because it searched only for the
+      old event constant `SHADOW_ATHLETE_PAIN_REPORT_PENDING_REVIEW`, which the implementation does
+      not use — a grep for a symbol that was replaced cannot find the thing that replaced it.*
 
 ### Still real — verified 2026-08-09
 
@@ -134,29 +159,37 @@ exception to it.
       failures were confirmed today. They were not — that reading came from a checkout 173
       commits behind `main`. Recorded because a reconciliation pass that gets an item wrong is
       the same defect it exists to fix.*
+- [ ] **Audit the row contents of `scripts/data/*.example.csv`.** They are labelled as examples now,
+      but nobody has checked whether those rows still carry real-looking dates of birth for invented
+      minors. Labelling fixed where they sit; it did not fix what they say.
 - [ ] **`/public` advertises seven programs and seven FAQ answers, hardcoded.** Confirmed: 25
       program/FAQ references in `app/public/page.tsx`. That is the page a Punxsutawney family
       lands on, and changing it needs a deploy. Needs an owner read-through, not a code fix.
-- [ ] **`/admin` and fabricated capability rows.** Not settled either way. The page has a
-      save-effect that POSTs the registry "as a whole array" (`app/admin/page.tsx:480`) and three
-      POST sites. Whether opening the page writes rows nobody entered needs someone to actually
-      run it — a grep cannot answer it, and this is the item most worth resolving because it is
-      the one that turns demo data into records nobody can distinguish from real ones.
+- [ ] **Guardian provisioning is not atomic, so a parent can sign in with no linked child.**
+      `app/api/pilot/intake/review-action/route.ts:348-370` awaits
+      `createOrUpdateMicrosoftStaffAccount` — which commits its own transaction — and only then
+      calls `upsertGuardian` and `linkGuardianAthlete`, which are two further independent
+      `await query()` calls (`intake.ts:649` and `:669`). Three transactions, not one. If either
+      later write fails or the request is interrupted, the committed account still signs in and
+      resolves no children, which is exactly the silent failure the original item described.
+      *Verified 2026-08-09 after an earlier draft of this reconciliation wrongly claimed all three
+      writes shared the account's transaction and struck the item off on that basis.*
+- [ ] **`/admin` writes fabricated capability rows into the database the first time it is opened.
+      CONFIRMED, not merely suspected** — an earlier draft of this reconciliation called it
+      "unsettled either way", which removed an actionable production-data defect from the queue.
+      The path is deterministic and needs no user input:
+      `app/api/pilot/admin/capabilities/route.ts:34-44` returns an empty array for any organization
+      with no `admin_capability_registry` row; `app/admin/page.tsx:578-589` therefore leaves the
+      seeded `fallbackCapabilities` state intact and sets `capabilitiesHydrated`; the effect at
+      `598-610` then POSTs that entire seed array back. Opening the page creates the rows.
+      This is the item that turns demo data into records nobody can distinguish from real ones.
 
-### Not re-verified in this pass — status unknown
+### Not fully verified in this pass — treat as unknown
 
-These were not checked on 2026-08-09 and may be as stale as the eight above. **Verify before
-building.**
+Each item states what was and was not checked. Where it says nothing was checked, **verify before
+building** — the struck-off items above are what happens when nobody does. Two entries that started
+in this section have since been resolved and moved up; that they were ever here is the point.
 
-- [x] ~~**Coach coverage.**~~ **Done.** `grantCoachCoverage` in `access.ts` issues a TTL-bounded
-      grant that `assertCoachAssignedToAthlete` admits, validates the grantee is an active coach
-      in the granting organization (a typo'd id would otherwise hand coach-level access to a
-      minor's record to whatever account it names), and `app/admin/coach-coverage/` ships the
-      surface plus a test.
-- [ ] **A pain report does not name the child on the coach's screen.** *Partly checked:* no `.tsx`
-      references `SHADOW_ATHLETE_PAIN_REPORT_PENDING_REVIEW` — only `painReportAlert.ts` and a
-      route test — so the specific rendering described here could not be located. Either the
-      surface moved or the claim is stale. Needs someone to look at the coach feed, not a grep.
 - [ ] **Athlete check-out loses notes silently** — session state in-memory, never rehydrated. A
       grep for "Check Out"/"checkOut" in `.tsx` found nothing, so this surface may have moved or
       been renamed; the underlying pattern is the one #279 fixed for coach sessions.
@@ -173,7 +206,6 @@ building.**
       that bulk-creates athlete accounts would widen the exact window this names, 40-fold, and
       must not be built without the owner overriding that decision deliberately.
 - [ ] **Rabbit Hole seed content** — re-author the Biomechanics lesson through the real path.
-
 ## In progress — claimed
 
 | Item | Session | Branch |
