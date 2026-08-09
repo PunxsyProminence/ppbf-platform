@@ -1,5 +1,5 @@
 import { query } from './db';
-import { listShadowEvents, listShadowTelemetry, getShadowReviewProjection } from './shadowReadModels';
+import { listShadowEvents, listShadowTelemetry, getShadowReviewProjection, getShadowObservationProjection } from './shadowReadModels';
 import type { ShadowReadContext } from './shadowReadModels';
 
 jest.mock('./db', () => ({
@@ -114,3 +114,91 @@ describe('getShadowReviewProjection athlete scoping', () => {
     expect(itemsParams[itemsParams.length - 1]).toBeNull();
   });
 });
+
+describe('getShadowObservationProjection pain-report labels', () => {
+  test('decodes a pain report event into a sentence instead of the raw constant', async () => {
+    mockQuery.mockResolvedValueOnce([
+      {
+        shadow_event_id: 1,
+        organization_id: 'org-1',
+        event_name: 'SHADOW_ATHLETE_PAIN_REPORT_PENDING_REVIEW',
+        entity_type: 'athlete',
+        entity_id: 'ath-1',
+        actor_account_id: 'ath-1',
+        actor_role: 'athlete',
+        payload: { athlete_id: 'ath-1', severity_1_10: 7, location: 'Hips', pain_type: 'Sharp' },
+        created_at: '2026-08-01T00:00:00.000Z',
+      },
+    ]); // events query
+    mockQuery.mockResolvedValueOnce([]); // telemetry query
+
+    const items = await getShadowObservationProjection(context({ actorRole: 'coach' }));
+
+    expect(items[0].label).toBe('Pain reported: Hips (Sharp), severity 7/10');
+    expect(items[0].label).not.toBe('SHADOW_ATHLETE_PAIN_REPORT_PENDING_REVIEW');
+  });
+
+  test('missing location and pain type read as not stated, never invented', async () => {
+    mockQuery.mockResolvedValueOnce([
+      {
+        shadow_event_id: 2,
+        organization_id: 'org-1',
+        event_name: 'SHADOW_ATHLETE_PAIN_REPORT_PENDING_REVIEW',
+        entity_type: 'athlete',
+        entity_id: 'ath-1',
+        actor_account_id: 'ath-1',
+        actor_role: 'athlete',
+        payload: { athlete_id: 'ath-1', severity_1_10: 4, location: null, pain_type: null },
+        created_at: '2026-08-01T00:00:00.000Z',
+      },
+    ]);
+    mockQuery.mockResolvedValueOnce([]);
+
+    const items = await getShadowObservationProjection(context({ actorRole: 'coach' }));
+
+    expect(items[0].label).toBe('Pain reported: an unspecified location, severity 4/10');
+  });
+
+  test('a pain-report event with no severity in the payload falls back to the raw event name rather than guessing', async () => {
+    mockQuery.mockResolvedValueOnce([
+      {
+        shadow_event_id: 3,
+        organization_id: 'org-1',
+        event_name: 'SHADOW_ATHLETE_PAIN_REPORT_PENDING_REVIEW',
+        entity_type: 'athlete',
+        entity_id: 'ath-1',
+        actor_account_id: 'ath-1',
+        actor_role: 'athlete',
+        payload: {},
+        created_at: '2026-08-01T00:00:00.000Z',
+      },
+    ]);
+    mockQuery.mockResolvedValueOnce([]);
+
+    const items = await getShadowObservationProjection(context({ actorRole: 'coach' }));
+
+    expect(items[0].label).toBe('SHADOW_ATHLETE_PAIN_REPORT_PENDING_REVIEW');
+  });
+
+  test('an unrelated event still passes through as its raw name, unaffected by the new decoder', async () => {
+    mockQuery.mockResolvedValueOnce([
+      {
+        shadow_event_id: 4,
+        organization_id: 'org-1',
+        event_name: 'SHADOW_INTAKE_DOCUMENT_UPLOADED',
+        entity_type: 'intake_case',
+        entity_id: 'case-1',
+        actor_account_id: 'coach-1',
+        actor_role: 'coach',
+        payload: {},
+        created_at: '2026-08-01T00:00:00.000Z',
+      },
+    ]);
+    mockQuery.mockResolvedValueOnce([]);
+
+    const items = await getShadowObservationProjection(context({ actorRole: 'coach' }));
+
+    expect(items[0].label).toBe('SHADOW_INTAKE_DOCUMENT_UPLOADED');
+  });
+});
+

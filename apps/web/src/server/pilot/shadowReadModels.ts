@@ -212,6 +212,43 @@ function toReviewState(eventName: string): ShadowReviewState {
   return 'unknown';
 }
 
+/**
+ * A human-readable label for events whose payload carries something worth
+ * saying, in place of the raw event_name every projection item fell back to.
+ *
+ * SHADOW_ATHLETE_PAIN_REPORT_PENDING_REVIEW is the motivating case: the write
+ * path (painReportAlert.ts) already builds a full sentence for the near-miss
+ * record, but this generic observation feed never read the same payload, so
+ * a coach or the athlete themself saw the bare constant instead -- no body
+ * location, no severity, nothing that made it worth opening. The payload
+ * that constant is written with is stable (it is this event name's contract,
+ * not free-form), so it is safe to read here rather than only where it was
+ * written.
+ *
+ * A location or pain type the athlete did not supply reads as "not stated",
+ * matching describePainReportAthleteView's rule elsewhere: a value this
+ * screen invents is worse than one it admits it does not have.
+ */
+function describeKnownEvent(eventName: string, payload: Record<string, unknown>): string | null {
+  if (eventName !== 'SHADOW_ATHLETE_PAIN_REPORT_PENDING_REVIEW') {
+    return null;
+  }
+
+  const severity = typeof payload.severity_1_10 === 'number' ? payload.severity_1_10 : null;
+  if (severity === null) {
+    // The one field this label cannot go without -- everything else has a
+    // "not stated" fallback, but a pain report with no severity is not one
+    // this function can describe, so it defers to the raw name instead of
+    // guessing a number.
+    return null;
+  }
+
+  const location = typeof payload.location === 'string' && payload.location.trim() ? payload.location.trim() : 'an unspecified location';
+  const painType = typeof payload.pain_type === 'string' && payload.pain_type.trim() ? payload.pain_type.trim() : null;
+
+  return `Pain reported: ${location}${painType ? ` (${painType})` : ''}, severity ${severity}/10`;
+}
+
 export async function listShadowEvents(context: ShadowReadContext, filters: ShadowListFilters = {}): Promise<ShadowEventRow[]> {
   const limit = clampLimit(filters.limit, 25, 200);
   const offset = clampOffset(filters.offset);
@@ -568,7 +605,7 @@ export async function getShadowObservationProjection(
   const observationEvents = events.map<ShadowObservationProjectionItem>((event) => ({
     id: `event-${event.shadow_event_id}`,
     source: 'event',
-    label: event.event_name,
+    label: describeKnownEvent(event.event_name, event.payload ?? {}) ?? event.event_name,
     entity_type: event.entity_type,
     entity_id:
       event.entity_id
