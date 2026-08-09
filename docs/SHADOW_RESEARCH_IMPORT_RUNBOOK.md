@@ -1,8 +1,10 @@
 # SHADOW research corpus — import runbook
 
 **Status as of 2026-08-09:** the corpus is staged, complete, and proven to import. Nothing needs
-gathering or building. What remains is three operator actions, in order, and **the third one is the
-one everybody forgets** — without it the corpus is loaded and invisible.
+gathering or building. What remains is operator work in three steps: **import**, then **backfill
+embeddings**, then **index and approve**. Import must come first. The other two are independent of
+each other and may be done in either order, but **both are required** — importing alone leaves the
+corpus loaded and invisible, and that is the part most easily missed.
 
 Rehearsed end to end before this was written: `npm --prefix apps/web run rehearse:shadow:research`
 runs the real importer with `--apply` over the real corpus against a disposable local Postgres. It
@@ -59,11 +61,16 @@ Dispatch inputs:
 | `confirm_target` | retype the target exactly |
 | `mode` | `dry-run` first, then `apply` |
 | `confirm_import` | for apply mode, exactly `IMPORT RESEARCH` |
-| `organization_id` | the owning organization — resolvable from the Container App secret `ppbf-pilot-default-org-id` |
+| `organization_id` | **leave blank.** #284 makes the workflow resolve it from the target app's own `ppbf-pilot-default-org-id` secret, masked. Set it only to import for some other organization deliberately. |
 | `seed_account_id` | an **active** account whose role is `platform_owner`, `organization_admin` or `admin`, in that organization |
 
-**`seed_account_id` gotcha:** production's owner is `Admin@punxsyprominence.org` with a **capital A**
-(recorded in #274/#275). The lowercase row is retired. Using it fails `SEED_ACCOUNT_NOT_FOUND`.
+**Finding `seed_account_id`:** dispatch `check-database` with `check: seed-identity` (#283) and read
+it off the log. It lists organizations and privileged accounts only — never athletes or parents —
+marks inactive rows, and flags account ids that differ only by case.
+
+That last part matters here: production's owner is `Admin@punxsyprominence.org` with a **capital A**
+(#274/#275) and the lowercase row is retired, so the two differ by exactly one character and only one
+of them works. The other fails `SEED_ACCOUNT_NOT_FOUND`. Copy the exact string.
 
 The importer is transactional and self-verifying — it counts every table after writing and rolls
 back the whole import if any count disagrees. It is also idempotent: the rehearsal ran it twice and
@@ -91,23 +98,44 @@ meaningless score and get cited as evidence.
 Required environment:
 
 - `AZURE_POSTGRES_CONNECTION_STRING`
+- `PPBF_EXPECTED_POSTGRES_HOSTNAME` **and** `PPBF_EXPECTED_POSTGRES_DATABASE` — the script calls
+  `assertDeclaredWriteTargetFromEnv` unconditionally (`pilot-backfill-chunk-embeddings.mjs:46`),
+  and that guard throws when either is absent. An earlier draft of this runbook omitted them, so
+  anyone following it exactly could not start this step even with everything else configured.
 - `AZURE_AI_ENDPOINT`
 - `AZURE_AI_KEY`
 - `AZURE_AI_EMBEDDING_DEPLOYMENT_NAME` — **the embedding deployment must exist first.** The script
   fails with "create the embedding deployment first; nothing to backfill without it."
 - optional `PPBF_BACKFILL_ORGANIZATION_ID` to scope it
 
-Re-run it after any embedding-model change: the script re-embeds rows whose model has drifted, not
-only `NULL` rows (#232).
+**RUN IT REPEATEDLY UNTIL NOTHING REMAINS.** `BATCH_LIMIT = 500` and the script does not loop — its
+inner `for` iterates the batch it fetched, it does not fetch again. One invocation therefore embeds
+at most 500 of the 1,193 chunks, so a single run leaves **at least 693 chunks with no embedding and
+excluded from semantic candidates**. Repeat until it reports no chunks needing work. A first pass
+that exits cleanly is not the same as a finished backfill.
 
-### 3. Approve — `/admin/shadow`
+Also re-run it after any embedding-model change: the script re-embeds rows whose model has drifted,
+not only `NULL` rows (#232).
+
+### 3. Index, then approve — on `/evidence`, not `/admin/shadow`
+
+Two corrections to what an earlier draft of this runbook said.
+
+**The controls are on `/evidence`** (`app/evidence/page.tsx`), which holds both the indexing action
+and the evidence-approval action.
+
+**Indexing comes before approval, and it is not optional.** All 14 imported documents land
+`ingest_state = 'pending'`, while `reviewShadowLibraryDocument` refuses approval until a document is
+indexed with an `index_completed_at`, and retrieval enforces the same predicate
+(`shadowLibrary.ts:561` — `and d.ingest_state = 'indexed'`). Skip it and every document is
+permanently unapprovable and the corpus stays uncitable, with nothing obviously wrong on screen.
 
 Every source and document lands `approval_state = 'pending_review'`, `verification_state =
 'unverified'`. The rehearsal confirmed all 1,214 sources and 14 documents land that way, with none
-leaking to another state. Retrieval stays human-gated until someone approves them.
+leaking to another state.
 
-The importer never approves anything. That is by design, and it means **importing is not
-publishing**.
+The importer never approves and never indexes anything. That is by design, and it means **importing
+is not publishing**.
 
 ---
 
@@ -116,10 +144,12 @@ publishing**.
 | after | chunks exist | semantic search finds them | citable |
 |---|---|---|---|
 | step 1 only | yes | **no** | no |
-| steps 1 + 2 | yes | yes | no |
-| steps 1 + 2 + 3 | yes | yes | yes |
+| step 1 + a single backfill run | yes | at most 500 of 1,193 | no |
+| step 1 + backfill run to completion | yes | yes | no |
+| all three, indexing included | yes | yes | yes |
 
-Steps 2 and 3 are independent of each other and can be done in either order. Both are required.
+Steps 2 and 3 are independent of each other and can be done in either order. Both are required, and
+step 2 is not one command but a command repeated until it reports nothing left.
 
 ---
 

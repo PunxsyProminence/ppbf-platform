@@ -67,8 +67,10 @@ async function main() {
     step(2, `creating database ${DB}`);
     const admin = new Client({ connectionString: conn('postgres') });
     await admin.connect();
-    await admin.query(`drop database if exists ${DB}`);
-    await admin.query(`create database ${DB}`);
+    // Quoted identifiers: safe for the current constant, and it stays safe if DB ever becomes
+    // configurable rather than silently breaking on the first name needing quotes.
+    await admin.query(`drop database if exists "${DB}"`);
+    await admin.query(`create database "${DB}"`);
     await admin.end();
 
     const client = new Client({ connectionString: conn(DB) });
@@ -185,8 +187,17 @@ async function main() {
       `select count(*)::int as total,
               count(embedding)::int as with_embedding
          from pilot.shadow_library_chunks where organization_id = $1`, [ORG]).catch(() => null);
-    if (emb) console.log(`    ${emb.rows[0].with_embedding} of ${emb.rows[0].total} chunks have an embedding`);
-    else console.log('    (no embedding column at this schema level -- backfill migration not applied)');
+    if (emb) {
+      console.log(`    ${emb.rows[0].with_embedding} of ${emb.rows[0].total} chunks have an embedding`);
+      // Asserted, not merely printed. The whole point of this step is that the importer generates no
+      // embeddings; if any appeared, the conclusion that retrieval cannot match on them is false.
+      if (emb.rows[0].with_embedding !== 0) {
+        allOk = false;
+        console.log('    !! the importer produced embeddings -- it must not');
+      }
+    } else {
+      console.log('    (no embedding column at this schema level -- backfill migration not applied)');
+    }
 
     step(12, 'IDEMPOTENCE — running it a second time must not duplicate');
     await v.end();
@@ -204,6 +215,13 @@ async function main() {
     for (const [t, e] of Object.entries(expected)) {
       const r = await v2.query(`select count(*)::int as n from pilot.${t} where organization_id = $1`, [ORG]);
       if (r.rows[0].n !== e) { dupes = true; console.log(`    ${t}: ${r.rows[0].n} (expected still ${e}) DUPLICATED`); }
+    }
+    // A non-zero exit must fail the rehearsal even when counts are unchanged: if the conflict path
+    // breaks on the second invocation, the first import's rows are still exactly right, so counting
+    // alone would print PASS while proving nothing about re-running.
+    if (code2 !== 0) {
+      allOk = false;
+      console.log(`    !! second run exited ${code2} -- re-running is not proven`);
     }
     console.log(dupes ? '    !! second run changed row counts' : `    row counts unchanged after second run (exit ${code2})`);
     if (dupes) allOk = false;
