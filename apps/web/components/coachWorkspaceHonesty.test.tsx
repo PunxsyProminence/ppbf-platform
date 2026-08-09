@@ -13,6 +13,8 @@ interface RouteResponses {
   coachReviews?: () => Promise<Response>;
   announcements?: () => Promise<Response>;
   intakeReviewAction?: (body: { intake_case_id?: string; action?: string }) => Promise<Response>;
+  athletesList?: () => Promise<Response>;
+  sessionsList?: () => Promise<Response>;
 }
 
 function announcement(overrides: Partial<AnnouncementItem> = {}): AnnouncementItem {
@@ -47,7 +49,10 @@ function installFetch(routes: RouteResponses = {}): jest.Mock {
       return jsonResponse({ authenticated: true, account_id: 'acct_coach_1' });
     }
     if (url.includes('/api/pilot/athletes/list')) {
-      return jsonResponse({ items: [] });
+      return routes.athletesList ? routes.athletesList() : jsonResponse({ items: [] });
+    }
+    if (url.includes('/api/pilot/sessions/list')) {
+      return routes.sessionsList ? routes.sessionsList() : jsonResponse({ items: [] });
     }
     if (url.includes('/api/pilot/floor-plans')) {
       return routes.floorPlans ? routes.floorPlans() : jsonResponse({ items: [] });
@@ -178,6 +183,10 @@ describe('coach review submission', () => {
   test('a double-click persists exactly one review', async () => {
     let releaseReview: (() => void) | undefined;
     const fetchMock = await renderWorkspace({
+      athletesList: async () => jsonResponse({ items: [{ athlete_id: 'ath_1', full_name: 'Marcus D.', gym_status: 'active' }] }),
+      sessionsList: async () => jsonResponse({
+        items: [{ session_id: 'session_1', athlete_id: 'ath_1', date: '2026-07-30', rpe: '7', notes: 'Good pace', completed_flag: true }],
+      }),
       coachReviews: () =>
         new Promise<Response>((resolve) => {
           releaseReview = () => resolve(jsonResponse({ ok: true }));
@@ -185,9 +194,13 @@ describe('coach review submission', () => {
     });
 
     openTab('Athlete Reviews');
-    fireEvent.change(screen.getByPlaceholderText(/Session ID/i), {
-      target: { value: 'session_1' },
-    });
+
+    // The old free-text "Session ID" field asked a coach to type an id that
+    // was never displayed anywhere -- an athlete, then one of their real
+    // sessions, replaces it with something the coach can actually pick.
+    fireEvent.change(screen.getByRole('combobox', { name: 'Athlete' }), { target: { value: 'ath_1' } });
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Session' })).toBeTruthy());
+    fireEvent.change(screen.getByRole('combobox', { name: 'Session' }), { target: { value: 'session_1' } });
 
     const saveButton = screen.getByRole('button', { name: /Save Coach Review/i });
     fireEvent.click(saveButton);

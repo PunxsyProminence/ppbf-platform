@@ -10,7 +10,7 @@ import { cx, ui } from './uiStyles';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymStamp } from '@/src/lib/gymTime';
 
-type TabID = 'dashboard' | 'floor' | 'athlete-floor-plans' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
+type TabID = 'dashboard' | 'floor' | 'athlete-floor-plans' | 'development' | 'goals' | 'tasks' | 'athlete-reviews' | 'shadow';
 type SessionMode = 'Group' | 'One-on-One';
 type ReadinessStatus = 'GREEN' | 'YELLOW' | 'RED';
 
@@ -57,6 +57,21 @@ interface Athlete {
   initials?: string;
   ringName?: string | null;
   photoAvailable?: boolean;
+}
+
+/**
+ * One of an athlete's own sessions, as the coach review form offers it.
+ *
+ * Read from the same pilot.sessions rows the athlete's own Session Log
+ * writes (see AthleteWorkspace's StoredSession) -- this is not a separate
+ * review-only record, so a session the athlete never checked out of shows up
+ * here as still open, not silently omitted.
+ */
+interface CoachReviewSessionOption {
+  sessionId: string;
+  date: string;
+  rpe: number;
+  completed: boolean;
 }
 
 // A block template only. There is no live-session backend, so a block has no
@@ -206,6 +221,16 @@ export default function CoachWorkspace() {
   const [reviewNotes, setReviewNotes] = useState('');
   const [reviewSyncMessage, setReviewSyncMessage] = useState('');
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  // The session ID this form asks for is minted client-side by the athlete's
+  // own check-in (`session_${Date.now()}`) and was never displayed on any
+  // screen -- a coach had a required text field with nothing to type into it
+  // but a guess. Picking an athlete, then a session from that athlete's own
+  // history, replaces the blind field with real ones the coach can actually
+  // read (date, RPE, whether it is still open).
+  const [reviewAthleteId, setReviewAthleteId] = useState('');
+  const [reviewAthleteSessions, setReviewAthleteSessions] = useState<CoachReviewSessionOption[]>([]);
+  const [reviewSessionsLoading, setReviewSessionsLoading] = useState(false);
+  const [reviewSessionsError, setReviewSessionsError] = useState('');
   const [shadowQueue, setShadowQueue] = useState<ShadowReviewQueueItem[]>([]);
   const [shadowObservations, setShadowObservations] = useState<ShadowObservationItem[]>([]);
   const [shadowReadError, setShadowReadError] = useState('');
@@ -554,6 +579,64 @@ export default function CoachWorkspace() {
     void loadAthletes();
   }, [loadAthletes]);
 
+  /**
+   * The sessions the review form's athlete picker offers, read from the same
+   * pilot.sessions rows the athlete's own Session Log writes to.
+   *
+   * rpe comes back as a string from node-postgres (numeric column), the same
+   * seam AthleteWorkspace's normalizeStoredSession works around, so it is
+   * coerced here too rather than displayed as-is.
+   */
+  const loadReviewSessions = useCallback(async (athleteId: string) => {
+    if (!athleteId) {
+      setReviewAthleteSessions([]);
+      return;
+    }
+
+    setReviewSessionsLoading(true);
+    setReviewSessionsError('');
+
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/sessions/list?athlete_id=${encodeURIComponent(athleteId)}`,
+        { method: 'GET', credentials: 'include' },
+      );
+      if (!response.ok) {
+        throw new Error('This athlete\'s sessions did not load.');
+      }
+
+      const data = (await response.json()) as { items?: Array<Record<string, unknown>> };
+      const sessions: CoachReviewSessionOption[] = (data.items ?? [])
+        .map((row) => {
+          const sessionId = typeof row.session_id === 'string' ? row.session_id.trim() : '';
+          const date = typeof row.date === 'string' ? row.date.slice(0, 10) : '';
+          const rpe = Number(row.rpe);
+          if (!sessionId || !date || !Number.isFinite(rpe)) {
+            return null;
+          }
+          return { sessionId, date, rpe, completed: row.completed_flag === true };
+        })
+        .filter((session): session is CoachReviewSessionOption => session !== null)
+        .sort((left, right) => right.date.localeCompare(left.date));
+
+      setReviewAthleteSessions(sessions);
+    } catch (error) {
+      setReviewAthleteSessions([]);
+      setReviewSessionsError(error instanceof Error ? error.message : 'This athlete\'s sessions did not load.');
+    } finally {
+      setReviewSessionsLoading(false);
+    }
+  }, []);
+
+  function handleReviewAthleteChange(athleteId: string) {
+    setReviewAthleteId(athleteId);
+    // A session id picked for the last athlete is not a valid answer for this
+    // one -- carrying it over silently would let a review get filed against
+    // the wrong athlete's session.
+    setReviewSessionId('');
+    void loadReviewSessions(athleteId);
+  }
+
   const loadShadowData = useCallback(async () => {
       try {
         const [queueResult, observationResult] = await Promise.allSettled([
@@ -677,7 +760,7 @@ export default function CoachWorkspace() {
     setReviewSyncMessage('');
 
     if (!reviewSessionId.trim()) {
-      setReviewSyncMessage('Session ID is required.');
+      setReviewSyncMessage('Select an athlete and one of their sessions first.');
       return;
     }
 
@@ -918,16 +1001,14 @@ export default function CoachWorkspace() {
         <div className={ui.tabContainer}>
           <div className={ui.tabRow}>
             {[
-              { id: 'dashboard', label: 'Dashboard' },
-              { id: 'floor', label: 'Floor' },
-              { id: 'athlete-floor-plans', label: 'Athlete Floor Plans' },
-              { id: 'development', label: 'Development' },
-              { id: 'goals', label: 'Goals' },
-              { id: 'tasks', label: 'Tasks' },
-              { id: 'assessments', label: 'Assessments' },
-              { id: 'film-study', label: 'Film Study' },
-              { id: 'athlete-reviews', label: 'Athlete Reviews' },
-              { id: 'shadow', label: 'SHADOW Intel' }
+              { id: 'dashboard', label: 'Dashboard', count: undefined },
+              { id: 'floor', label: 'Floor', count: undefined },
+              { id: 'athlete-floor-plans', label: 'Athlete Floor Plans', count: undefined },
+              { id: 'development', label: 'Development', count: undefined },
+              { id: 'goals', label: 'Goals', count: undefined },
+              { id: 'tasks', label: 'Tasks', count: assignmentsDue > 0 ? assignmentsDue : undefined },
+              { id: 'athlete-reviews', label: 'Athlete Reviews', count: reviewsNeeded > 0 ? reviewsNeeded : undefined },
+              { id: 'shadow', label: 'SHADOW Intel', count: undefined }
             ].map(tab => (
               <button
                 key={tab.id}
@@ -938,6 +1019,26 @@ export default function CoachWorkspace() {
                 )}
               >
                 {tab.label}
+                {/* Same rule as the athlete workspace's tab bar: a count is
+                    something waiting on the coach, so it belongs on the tab
+                    itself. Zero draws nothing -- an empty badge would assert
+                    "zero reviews needed" about a roster that might just not be
+                    loaded yet. */}
+                {tab.count !== undefined ? (
+                  // aria-hidden: a child's own aria-label folds into the
+                  // button's accessible name (the accname spec's text
+                  // alternative computation), which would turn "Goals" into
+                  // "Goals 1 awaiting" for every assistive-tech user and any
+                  // test or future code that looks a tab up by its plain
+                  // label. The badge is sighted-only enrichment; the tab's
+                  // name stays exactly its label.
+                  <span
+                    aria-hidden="true"
+                    className="ml-[var(--s2)] inline-flex min-w-[1.4em] items-center justify-center rounded-[var(--r-pill)] bg-[color:var(--hide-950)]/40 px-[6px] text-[10px] font-bold leading-[1.4em]"
+                  >
+                    {tab.count}
+                  </span>
+                ) : null}
               </button>
             ))}
           </div>
@@ -1624,38 +1725,6 @@ export default function CoachWorkspace() {
             </div>
           )}
 
-          {/* ASSESSMENTS */}
-          {activeTab === 'assessments' && (
-            <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)] animate-fadeIn">
-              <h3 className="t-eyebrow">Coach Assessments</h3>
-              <p><span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span></p>
-              <p className="t-body text-[color:var(--bone-400)]">Evaluate coaching effectiveness, communication, and athlete development.</p>
-              <div className="t-body text-[color:var(--bone-400)]">Coming soon: Leadership assessment, communication effectiveness survey, teaching impact evaluation.</div>
-            </div>
-          )}
-
-          {/* FILM STUDY */}
-          {activeTab === 'film-study' && (
-            <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)] animate-fadeIn">
-              <h3 className="t-eyebrow">Film Study</h3>
-              <p><span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span></p>
-              <p className="t-body text-[color:var(--bone-400)]">Record observations from training videos and self-evaluations.</p>
-              <div className="t-body text-[color:var(--bone-400)]">Coming soon: Video upload, timestamp annotations, technical analysis tools.</div>
-              <div className="rounded-[var(--r-md)] border border-[color:rgba(212,175,74,.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
-                <p className="t-label">AI Video Analysis - Planned</p>
-                <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">Video Upload: FRONT-END PLACEHOLDER | Skill Recognition: BACKEND REQUIRED | Technique Scoring: ML REQUIRED</p>
-                <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
-                  <Link href="/coach/video-analysis" className="btn">
-                    Open Video Analysis Surface
-                  </Link>
-                  <Link href="/athlete/video-analysis" className="btn btn--ghost">
-                    Athlete Feedback Surface
-                  </Link>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* ATHLETE REVIEWS */}
           {activeTab === 'athlete-reviews' && (
             <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)] animate-fadeIn">
@@ -1664,13 +1733,51 @@ export default function CoachWorkspace() {
               <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)] space-y-[var(--s3)]">
                 <p className="t-label">Persist Coach Review</p>
                 <label className="field">
-                  <span className="t-label">Session ID</span>
-                  <input
-                    value={reviewSessionId}
-                    onChange={(event) => setReviewSessionId(event.target.value)}
-                    placeholder="Session ID (from persisted session)"
-                    className="input"
-                  />
+                  <span className="t-label">Athlete</span>
+                  <select
+                    value={reviewAthleteId}
+                    onChange={(event) => handleReviewAthleteChange(event.target.value)}
+                    className="select"
+                  >
+                    <option value="">Select an athlete...</option>
+                    {athletes.map((athlete) => (
+                      <option key={athlete.id} value={athlete.id}>{athlete.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span className="t-label">Session</span>
+                  {!reviewAthleteId ? (
+                    <p className="t-muted">Pick an athlete to see their sessions.</p>
+                  ) : reviewSessionsLoading ? (
+                    <span className="working">Loading this athlete&apos;s sessions...</span>
+                  ) : reviewSessionsError ? (
+                    <div className="space-y-[var(--s2)]">
+                      <p className="text-[color:var(--locked-ink)] text-[length:var(--t-xs)]">{reviewSessionsError}</p>
+                      <button
+                        type="button"
+                        onClick={() => void loadReviewSessions(reviewAthleteId)}
+                        className="btn btn--ghost"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  ) : reviewAthleteSessions.length === 0 ? (
+                    <p className="t-muted">This athlete has no recorded sessions yet.</p>
+                  ) : (
+                    <select
+                      value={reviewSessionId}
+                      onChange={(event) => setReviewSessionId(event.target.value)}
+                      className="select"
+                    >
+                      <option value="">Select a session...</option>
+                      {reviewAthleteSessions.map((session) => (
+                        <option key={session.sessionId} value={session.sessionId}>
+                          {session.date} -- RPE {session.rpe}{session.completed ? '' : ' (still open)'}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </label>
                 <label className="field">
                   <span className="t-label">Decision</span>
@@ -1713,6 +1820,42 @@ export default function CoachWorkspace() {
             </div>
           )}
         </div>
+
+        {/* Assessments and Film Study used to be tabs sitting beside working
+            ones -- Floor, Tasks, Athlete Reviews -- with a "Planned — Not Yet
+            Implemented" stamp as their entire content. Same correction as the
+            athlete workspace's Tracks/Assessments/Schedule tabs: a dead tab
+            looks identical to a working one until it is clicked, so it moved
+            here instead, with what each one is actually planned to become. */}
+        <details className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
+          <summary className="t-eyebrow cursor-pointer">What&apos;s Coming</summary>
+          <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
+            <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+              <p className="t-label">Coach Assessments - In Progress</p>
+              <p className="t-muted mt-[var(--s2)]">
+                Planned: a leadership assessment, a communication-effectiveness survey, and a teaching
+                impact evaluation, so coaching development has the same kind of record athlete progress
+                already does.
+              </p>
+            </article>
+            <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+              <p className="t-label">Film Study - In Progress</p>
+              <p className="t-muted mt-[var(--s2)]">
+                Planned: video upload, timestamp annotations, and technical analysis tools for training
+                video and self-evaluations. Skill recognition and technique scoring need a backend and a
+                model that do not exist yet.
+              </p>
+              <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
+                <Link href="/coach/video-analysis" className="btn btn--ghost">
+                  Open Video Analysis Surface
+                </Link>
+                <Link href="/athlete/video-analysis" className="btn btn--ghost">
+                  Athlete Feedback Surface
+                </Link>
+              </div>
+            </article>
+          </div>
+        </details>
       </div>
     </div>
   );
