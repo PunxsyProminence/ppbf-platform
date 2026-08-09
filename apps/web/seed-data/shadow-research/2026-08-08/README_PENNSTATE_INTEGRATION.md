@@ -110,3 +110,39 @@ A correlation in 20 elite boxers is not a formula for a community gym.
 
 **Nothing from the heat-training papers.** Repeated sprint training in heat is real evidence, but applying
 it to youth athletes is a medical-supervision question rather than a programming one.
+
+---
+
+## Combatives fragment merged, 2026-08-09 — 1,235 -> 1,243
+
+The eight `CB-*` claims from `evidence_fragment_CB.csv` (archived under
+`ppbf_proposed_migrations/06_multidiscipline/`) had been sitting outside the registry
+since the folder 06-09 work landed. They are now in it.
+
+Checked before merging rather than after:
+
+- **No `claim_id` collision.** The registry uses `A`, `B` and `PS` prefixes; `CB` is
+  disjoint from all three.
+- **The fragment is a strict column subset.** Every one of its 21 columns exists in the
+  registry's 29, so the merge drops nothing.
+
+Eight registry columns have no counterpart in the fragment and are left **empty**:
+`track`, `sample_size`, `effect_or_estimate`, `url`, `verification`, `ppbf_implication`,
+`tbd_flag`, `independent_verification_detail`.
+
+Empty rather than derived, deliberately. Several of these claims state a figure in prose —
+"20.8 concussions per 100 exposures", "9.2 per 1000 exposures", "n=15" — and lifting those
+into `effect_or_estimate` and `sample_size` would be interpretation dressed as extraction.
+`ppbf_implication` is a judgment about this gym that nobody has made yet. A blank cell is
+readable as unknown; a populated one is not.
+
+`independent_verification_status` **is** carried across, because the fragment has that
+column: seven rows are `RESOLVED` with `TITLE_MATCHES_CITATION`, and CB-008 is
+`NO_IDENTIFIER_BY_DESIGN`.
+
+CB-008 is kept even though it records an absence — no study was located evaluating an
+instructional method or assessment rubric specific to modern Army combatives. A documented
+gap is why the combatives curriculum must be labelled coaching craft rather than
+evidence-based, so dropping the row for being "empty" would delete the reason.
+
+`track_name` is `Combatives, wrestling & grappling`, which no existing registry row uses.
