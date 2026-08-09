@@ -12,6 +12,17 @@ import type { ShadowNearMissSeverity } from '../shadowNearMisses';
 export const PAIN_REPORT_KIND = 'pain_report';
 
 /**
+ * The shadow event name a pain report is written under.
+ *
+ * Exported rather than repeated as a literal: shadowReadModels.toReviewState
+ * already depends on the substring 'PENDING' inside this name, and
+ * getShadowObservationProjection depends on the exact string to recognize a
+ * pain-report event and build a human label from its payload. A drifted copy
+ * in either place silently breaks one of those without the other noticing.
+ */
+export const PAIN_REPORT_PENDING_REVIEW_EVENT_NAME = 'SHADOW_ATHLETE_PAIN_REPORT_PENDING_REVIEW';
+
+/**
  * The metadata marker every pain-report near miss is written with, and the only
  * thing that distinguishes one from a hand-flagged near miss on read.
  *
@@ -129,7 +140,7 @@ export async function alertCoachToPainReport(input: {
   // the event name to show the coach that this item is still unreviewed.
   await emitShadowEvent({
     organizationId: input.organizationId,
-    eventName: 'SHADOW_ATHLETE_PAIN_REPORT_PENDING_REVIEW',
+    eventName: PAIN_REPORT_PENDING_REVIEW_EVENT_NAME,
     entityType: 'athlete',
     entityId: input.athleteId,
     actorAccountId: input.actorAccountId,
