@@ -86,8 +86,12 @@ async function renderWorkspace(routes: RouteResponses = {}): Promise<jest.Mock> 
   return fetchMock;
 }
 
+// A tab carrying a pending-count badge (see StatusBadge in CoachWorkspace.tsx)
+// has that count in its accessible name too -- "Tasks 3 pending", not just
+// "Tasks" -- so this matches on the label as a prefix rather than requiring
+// an exact string that only holds when the queue happens to be empty.
 function openTab(label: string): void {
-  fireEvent.click(screen.getByRole('button', { name: label }));
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${label}\\b`) }));
 }
 
 afterEach(() => {
