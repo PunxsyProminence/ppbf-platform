@@ -231,8 +231,16 @@ idempotent), not to roll back the schema.
    blocks the ENTIRE session-scripts seed, not just those two rows: 0 of 65
    blocks and 0 of 3 scripts load. `/coach/session-scripts` stays empty until
    it is resolved.
-3. **The 8 combatives claims** in `evidence_fragment_CB.csv` are still not
-   merged into the 1,235-claim registry.
+3. ~~**The 8 combatives claims** in `evidence_fragment_CB.csv` are still not
+   merged into the 1,235-claim registry.~~ **Resolved 2026-08-09** — merged,
+   1,235 -> 1,243. The fragment was a strict column subset of the registry, so
+   nothing was dropped; the eight registry columns it lacks (`sample_size`,
+   `effect_or_estimate`, `ppbf_implication`, `url`, `verification`,
+   `tbd_flag`, `track`, `independent_verification_detail`) are left EMPTY
+   rather than derived. Several claims state a figure in prose ("20.8
+   concussions per 100 exposures", "9.2 per 1000 exposures", "n=15") and
+   parsing those into `effect_or_estimate`/`sample_size` would be
+   interpretation presented as extraction.
 4. **Seven orphaned admin surfaces** (`/admin/export`, `/admin/import`,
    `/admin/gear`, `/admin/gear/vendors`, `/admin/athletes`,
    `/admin/organizations/test`, `/admin/platform/overview`) have no door in the
