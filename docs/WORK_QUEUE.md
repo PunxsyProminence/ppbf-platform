@@ -148,16 +148,30 @@ exception to it.
 These were not checked on 2026-08-09 and may be as stale as the eight above. **Verify before
 building.**
 
-- [ ] **Coach coverage.** Scheduler lists every athlete but writes call
-      `assertCoachAssignedToAthlete` and 403, stranding a covering coach mid-session.
-- [ ] **A pain report does not name the child on the coach's screen.**
+- [x] ~~**Coach coverage.**~~ **Done.** `grantCoachCoverage` in `access.ts` issues a TTL-bounded
+      grant that `assertCoachAssignedToAthlete` admits, validates the grantee is an active coach
+      in the granting organization (a typo'd id would otherwise hand coach-level access to a
+      minor's record to whatever account it names), and `app/admin/coach-coverage/` ships the
+      surface plus a test.
+- [ ] **A pain report does not name the child on the coach's screen.** *Partly checked:* no `.tsx`
+      references `SHADOW_ATHLETE_PAIN_REPORT_PENDING_REVIEW` — only `painReportAlert.ts` and a
+      route test — so the specific rendering described here could not be located. Either the
+      surface moved or the claim is stale. Needs someone to look at the coach feed, not a grep.
 - [ ] **Athlete check-out loses notes silently** — session state in-memory, never rehydrated. A
       grep for "Check Out"/"checkOut" in `.tsx` found nothing, so this surface may have moved or
       been renamed; the underlying pattern is the one #279 fixed for coach sessions.
 - [ ] **The coach review form cannot be completed** — first required field is a session ID minted
       in the athlete's browser and shown on no screen.
-- [ ] **Per-athlete starting PIN.** Every account created on `123456`. Interim mitigation stands:
-      create each account minutes before handing over credentials.
+- [ ] **Per-athlete starting PIN — a known accepted risk, NOT an unimplemented feature.**
+      `pinPolicy.ts` documents the whole design: `DEFAULT_FIRST_LOGIN_PIN` is a bootstrap
+      credential written *only* alongside `must_change_pin = true`, and `assertChosenPinAllowed`
+      refuses it when someone chooses it for themselves. Two account paths exist and differ on
+      purpose — `auth.ts:752` creates an athlete account with `pin_hash = null, active_flag =
+      false`, while `auth.ts:580` and the admin reset in `people/page.tsx` issue the bootstrap PIN.
+      **The mitigation is a design constraint, not a workaround:** `pinPolicy.ts` says in terms to
+      create the account when you are with the athlete, *not in a batch the week before*. Any work
+      that bulk-creates athlete accounts would widen the exact window this names, 40-fold, and
+      must not be built without the owner overriding that decision deliberately.
 - [ ] **Rabbit Hole seed content** — re-author the Biomechanics lesson through the real path.
 
 ## In progress — claimed
