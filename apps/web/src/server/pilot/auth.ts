@@ -717,6 +717,30 @@ export async function createAthleteAccountPendingActivation(
   organizationId: string,
 ): Promise<void> {
   await withTransaction(async (client) => {
+    // Both callers are platform-scoped and take organization_id from the REQUEST
+    // BODY rather than from the caller's own session, so the roster row has to be
+    // proved to exist in that organization here. Without this an account can be
+    // minted against an athlete_id that belongs to another gym, or to nobody --
+    // createAthleteAccount has always checked this, and the two platform routes
+    // were the ones missing it.
+    const athlete = await client.query<{ athlete_id: string }>(
+      'select athlete_id from pilot.athletes where athlete_id = $1 and organization_id = $2',
+      [athleteId, organizationId],
+    );
+
+    if (athlete.rows.length === 0) {
+      throw new Error('Athlete not found in organization');
+    }
+
+    const existingAthleteBinding = await client.query<{ account_id: string }>(
+      'select account_id from pilot.accounts where athlete_id = $1 and organization_id = $2 limit 1',
+      [athleteId, organizationId],
+    );
+
+    if (existingAthleteBinding.rows.length > 0 && existingAthleteBinding.rows[0].account_id !== accountId) {
+      throw new Error('Athlete is already linked to another account');
+    }
+
     const existing = await client.query<{ organization_id: string }>(
       'select organization_id from pilot.accounts where account_id = $1 limit 1',
       [accountId],

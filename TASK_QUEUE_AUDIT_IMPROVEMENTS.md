@@ -440,6 +440,51 @@ have tests. See `docs/WORK_QUEUE.md` for that evidence.
 
 ---
 
+## 🔴 SEC-007: Platform owner could take over any athlete account (found 2026-08-03)
+
+**Severity: HIGH. Present on `main` today; fixed on this branch.**
+
+`POST /api/pilot/platform/athlete-shell` is platform_owner-only and documents itself
+as creating an inert shell — "no PIN and active_flag false ... grants no sign-in
+capability". It called `createAthleteAccount`, which writes `active_flag = true` with
+a usable `pin_hash`. A live account, not a shell.
+
+**The chain, before the per-athlete PIN work landed:**
+1. Platform owner calls this route for **any** organization (`organization_id` comes
+   from the request body) against any athlete without a login yet.
+2. The account is created live on `hash('123456')` — the shared starting PIN, which
+   was published in `pinPolicy.ts` and printed in the admin UI.
+3. `loginWithAccountIdAndPin` checks only `active_flag` and the PIN. `must_change_pin`
+   does not block login.
+4. `must_change_pin` deliberately permits the change-PIN route
+   (`requirePrincipalAllowingPinChange`), so the caller sets a PIN of their own,
+   clearing the flag.
+5. They now hold a minor's account, in a gym they do not administer.
+
+This is the exact capability the route's own docblock says platform_owner is
+"permanently excluded from" — it carefully refuses to mint an activation code, then
+reaches the same outcome another way.
+
+**Why it is not currently exploitable on this branch:** the per-athlete PIN change
+made `createAthleteAccount` issue a random PIN and return it, and this route discards
+the return value — so the owner never learns it. That was accidental mitigation, not
+a fix, and it left the account live with a PIN nobody knows.
+
+**Fix:** call `createAthleteAccountPendingActivation` — what the docblock describes,
+and what the sibling route `platform/users/create` already used. Main's commit
+9d25947 ("a child-account boundary") fixed that sibling and missed this one.
+
+Also hardened `createAthleteAccountPendingActivation` itself: it did not verify the
+athlete roster row existed in the named organization, nor that the athlete was not
+already linked to a different account. **Both** platform routes take
+`organization_id` from the request body, so neither had that protection —
+`createAthleteAccount` had always checked it.
+
+**Tests:** 7, including one asserting `createAthleteAccount` is never reached from
+this route. Verified they fail when the fix is reverted (2 of 7).
+
+---
+
 ## 🔎 Found while implementing, not in the original audit
 
 **The intake promotion route was a second unvalidated write path.**

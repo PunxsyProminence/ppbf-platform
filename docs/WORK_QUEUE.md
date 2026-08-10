@@ -197,6 +197,31 @@ Ordered by a floor-readiness trace run 2026-08-01.
 | Coach coverage (403 on a covered class) | session A | `feature/knowledge-and-feedback` |
 | Security audit fixes + Capability #2 hardening | session B | `claude/ppbf-platform-audit-w3va0j` |
 | Per-athlete starting PIN | session B | `claude/ppbf-platform-audit-w3va0j` |
+| Platform-owner athlete-shell takeover (security) | session B | `claude/ppbf-platform-audit-w3va0j` |
+
+### 🔴 Security fix on that branch — present on `main` today
+
+`POST /api/pilot/platform/athlete-shell` is platform_owner-only and its docblock
+promises a shell "with no PIN and active_flag false ... it grants no sign-in
+capability". It called `createAthleteAccount`, which writes `active_flag = true`
+with a usable `pin_hash` — a **live, signable account**.
+
+Before the per-athlete PIN change that hash was the published `123456`, so the
+chain was: platform owner creates a shell in **any** organization → signs in as
+that athlete with the public PIN → `must_change_pin` still permits the change-PIN
+route → sets their own PIN and holds the account. That is exactly the capability
+the same docblock says platform_owner is "permanently excluded from", reached by a
+different door than the activation code it carefully refuses to mint.
+
+Fixed by calling `createAthleteAccountPendingActivation` (what the sibling route
+`platform/users/create` already used, and what the docblock describes). Also added
+the roster-existence and already-linked checks to that function — **both** platform
+routes take `organization_id` from the request body and neither validated the
+athlete row, so an account could be minted against another gym's athlete_id or
+none at all.
+
+Seven tests pin the boundary, including one that fails if anyone reaches for
+`createAthleteAccount` here again. Verified they fail when the fix is reverted.
 
 ### ⚠️ session B touched two reserved files — read before merging
 

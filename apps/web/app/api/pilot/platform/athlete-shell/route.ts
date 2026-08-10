@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
-import { createAthleteAccount } from '@/src/server/pilot/auth';
+import { createAthleteAccountPendingActivation } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { jsonError, requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
 
@@ -39,7 +39,13 @@ export async function POST(request: NextRequest) {
       throw new Error('Missing organization_id, account_id, or athlete_id');
     }
 
-    await createAthleteAccount(accountId, athleteId, organizationId);
+    // MUST stay the pending-activation create, never createAthleteAccount.
+    // createAthleteAccount writes active_flag = true with a usable pin_hash --
+    // a live, signable account. Called from here that handed the platform owner
+    // the exact capability the docblock above says they are permanently excluded
+    // from: sign in as the athlete, and (because must_change_pin allows the
+    // change-PIN route) set a PIN of their own and keep the account.
+    await createAthleteAccountPendingActivation(accountId, athleteId, organizationId);
 
     await writePilotAuditEvent({
       event_type: 'create',
@@ -57,7 +63,7 @@ export async function POST(request: NextRequest) {
       athlete_id: athleteId,
       organization_id: organizationId,
       account_state: 'pending_pin_activation',
-      next_step: "This gym's own admin must issue an activation code in Admin > People before this athlete can sign in.",
+      next_step: "This gym's own admin must issue a starting PIN from Admin > People before this athlete can sign in. The PIN is generated there and shown once; nobody outside that gym ever sees it.",
     });
   } catch (error) {
     return jsonError(error);
