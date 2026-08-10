@@ -68,6 +68,16 @@ async function main() {
   const client = new Client({ connectionString, ssl: resolveSslConfig() });
   await client.connect();
 
+  // The seventh read-only check, and the only one that shipped without this.
+  // Every sibling (runtime-claims, multiorg-orphans, stranded-guardians,
+  // orphan-chat-audit, activation-pin-exposure, videos-missing-consent) wraps
+  // its statements this way so POSTGRES ITSELF refuses any write the file could
+  // attempt -- the reads below are SELECT-only by inspection, but inspection is
+  // what a future edit gets to skip. On a script whose whole purpose is to stop
+  // a human holding a production connection string, the database should be the
+  // one enforcing read-only, not the reviewer.
+  await client.query('BEGIN TRANSACTION READ ONLY');
+
   try {
     const orgs = await client.query(
       `select organization_id, organization_name, status
@@ -125,6 +135,12 @@ async function main() {
     const activeCount = actors.rows.filter((r) => r.active_flag).length;
     console.log(`organizations: ${orgs.rowCount} | privileged accounts: ${actors.rowCount} (${activeCount} active)`);
     console.log('PILOT SEED IDENTITY CHECK PASS');
+    await client.query('COMMIT');
+  } catch (error) {
+    // Rollback failure must not mask the real error, same as db.ts's own
+    // rollback swallow.
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
   } finally {
     await client.end();
   }
